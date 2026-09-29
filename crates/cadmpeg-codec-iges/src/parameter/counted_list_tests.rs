@@ -246,7 +246,7 @@ fn a_negative_or_missing_count_admits_no_list() {
     );
     assert_eq!(
         absent.items_before_default_tail_at(2, stride, absent.parameter_end()),
-        Some(0)
+        None
     );
 }
 

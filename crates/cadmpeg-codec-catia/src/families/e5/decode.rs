@@ -3113,9 +3113,10 @@ fn e5_pcurve_on_surface(
                 };
                 let scale = decoded_surface.uv_scale.map(FiniteReal::get);
                 if nurbs
-                    .edit_control_points(|point| {
-                        *point = Point2::new(point.u * scale[0], point.v * scale[1]);
-                        Ok(())
+                    .try_map_control_points(|_, point| {
+                        let point = point.get();
+                        FinitePoint2::new(Point2::new(point.u * scale[0], point.v * scale[1]))
+                            .ok_or(())
                     })
                     .is_err()
                 {
@@ -3322,7 +3323,7 @@ fn e5_lift_plane_nurbs(
             let bytes = points
                 .len()
                 .checked_mul(std::mem::size_of::<FinitePoint3>())
-                .and_then(|bytes| u64::try_from(bytes).ok())
+                .map(cadmpeg_core::decode::u64_from_index)
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
             ctx.charge_retained(bytes, operation)?;
             let Some(points) =
@@ -3336,7 +3337,7 @@ fn e5_lift_plane_nurbs(
             let bytes = points
                 .len()
                 .checked_mul(std::mem::size_of::<WeightedPole3<FinitePoint3>>())
-                .and_then(|bytes| u64::try_from(bytes).ok())
+                .map(cadmpeg_core::decode::u64_from_index)
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
             ctx.charge_retained(bytes, operation)?;
             let Some(points) = crate::resource::collect_options(

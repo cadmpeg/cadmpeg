@@ -214,14 +214,13 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
                 unreachable!("test result is a NURBS")
             };
             let last = curve.pole_rows().count().checked_sub(1);
-            let mut pole_index = 0usize;
             curve
-                .edit_control_points(|point| {
+                .try_map_control_points(|pole_index, point| {
+                    let mut point = point.get();
                     if Some(pole_index) == last {
                         point.u += 0.01;
                     }
-                    pole_index += 1;
-                    Ok(())
+                    cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
                 })
                 .unwrap();
         };

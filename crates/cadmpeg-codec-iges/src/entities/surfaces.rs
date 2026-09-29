@@ -577,16 +577,22 @@ fn homogeneous_product_control(
     let scalar_degree = scalar_controls.len().checked_sub(1)?;
     let degree = vector_degree.checked_add(scalar_degree)?;
     let denominator = bernstein_binomial(degree, index)?;
-    let lower = index.saturating_sub(scalar_degree);
     let upper = index.min(vector_degree);
     let mut control = [0.0; 4];
-    for (offset, vector_control) in vector_controls[lower..=upper].iter().enumerate() {
-        let vector_index = lower + offset;
-        let scalar_index = index - vector_index;
+    for (vector_index, vector_control) in vector_controls.iter().enumerate() {
+        if vector_index > upper {
+            break;
+        }
+        let Some(scalar_index) = index.checked_sub(vector_index) else {
+            continue;
+        };
+        let Some(scalar_control) = scalar_controls.get(scalar_index) else {
+            continue;
+        };
         let coefficient = bernstein_binomial(vector_degree, vector_index)?
             * bernstein_binomial(scalar_degree, scalar_index)?
             / denominator;
-        let scalar = scalar_controls[scalar_index][3];
+        let scalar = scalar_control[3];
         for axis in 0..4 {
             control[axis] += coefficient * vector_control[axis] * scalar;
         }
@@ -2156,13 +2162,14 @@ pub(super) fn project(
             .map_or(cached_interval, |geometry| {
                 source_parameter_interval(geometry, cached_interval)
             });
+        let mut directrix = directrix;
         let placed_directrix = if entry.transform == 0 {
             directrix
         } else {
             match directrix
-                .try_map_owned_control_points(|point| transform.apply_point(point.get()).ok_or(()))
+                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
             {
-                Ok(placed) => placed,
+                Ok(()) => directrix,
                 Err(()) => {
                     super::push_optional_attributed_loss(
                         ctx,
@@ -2864,8 +2871,9 @@ pub(super) fn project(
         } else if let Some(orientation) = similarity_orientation(transform) {
             // This arm is the transformed route, so the generatrix is placed
             // here rather than carried past the untransformed one.
-            let Ok(placed_generatrix) = generatrix
-                .try_map_owned_control_points(|point| transform.apply_point(point.get()).ok_or(()))
+            let mut placed_generatrix = generatrix;
+            let Ok(()) = placed_generatrix
+                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
             else {
                 super::push_optional_attributed_loss(
                     ctx,

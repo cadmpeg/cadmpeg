@@ -923,8 +923,8 @@ fn utf16_payload<'a>(reader: &mut BoundedReader<'a>) -> Result<&'a [u8], Framing
     if count == 0 {
         return Ok(&[]);
     }
-    let bytes = reader.take(count.saturating_mul(2))?;
-    if View::u16_le_at(bytes, count.saturating_sub(1).saturating_mul(2)) != Some(0) {
+    let bytes = reader.take(count * 2)?;
+    if View::u16_le_at(bytes, (count - 1) * 2) != Some(0) {
         return Err(FramingError::structural(
             count_offset,
             "UTF-16 string is missing NUL terminator",
@@ -1066,22 +1066,16 @@ fn parse_layer_extensions(
         outer_reader.position(),
     )?;
     let parent_is_nil = parent_id.is_none_or(Uuid::is_nil);
-    let count_u64 = u64::try_from(count).map_err(|_| FramingError::Overflow {
-        offset: outer_reader.position(),
-    })?;
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count_u64, "Rhino layer extension entries")
         .map_err(|error| match error {
             CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
             other => FramingError::structural(outer_reader.position(), other.to_string()),
         })?;
     let retained_bytes = count_u64
-        .checked_mul(
-            u64::try_from(std::mem::size_of::<LayerPerViewportSettings>()).map_err(|_| {
-                FramingError::Overflow {
-                    offset: outer_reader.position(),
-                }
-            })?,
-        )
+        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            LayerPerViewportSettings,
+        >()))
         .ok_or(FramingError::Overflow {
             offset: outer_reader.position(),
         })?;
@@ -1092,14 +1086,12 @@ fn parse_layer_extensions(
         })?;
     let mut values = Vec::new();
     values.try_reserve_exact(count).map_err(|_| {
-        FramingError::Resource(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: ctx.policy().limits.max_retained_bytes,
-            used: 0,
-            additional: retained_bytes,
-            operation: "Rhino layer extension capacity",
-        })
+        FramingError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            ctx.policy().limits.max_retained_bytes,
+            retained_bytes,
+            "Rhino layer extension capacity",
+        ))
     })?;
     for _ in 0..count {
         let entry = chunk_at(

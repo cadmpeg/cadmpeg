@@ -233,7 +233,10 @@ fn semantic_work_counts_nested_source_graph_nodes() {
     let (simple_exchange, _) = crate::parse::parse(simple).expect("simple exchange");
     let (nested_exchange, _) = crate::parse::parse(nested).expect("nested exchange");
 
-    assert!(semantic_input_work(&nested_exchange) > semantic_input_work(&simple_exchange));
+    assert!(
+        semantic_input_work(&nested_exchange).expect("nested work fits")
+            > semantic_input_work(&simple_exchange).expect("simple work fits")
+    );
 }
 
 #[test]
@@ -241,7 +244,7 @@ fn implicit_face_plane_work_scales_with_point_count() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=POLY_LOOP('',(#2,#3,#4,#5));#2=ITEM();#3=ITEM();#4=ITEM();#5=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = crate::parse::parse(source).expect("polygon exchange");
 
-    assert_eq!(implicit_face_plane_work(&exchange), 4);
+    assert_eq!(implicit_face_plane_work(&exchange).expect("work fits"), 4);
 }
 
 use std::fmt::Write as _;

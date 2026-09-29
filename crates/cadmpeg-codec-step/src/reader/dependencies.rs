@@ -143,10 +143,13 @@ pub(super) fn decode(
     ctx.charge_collection_items(u64_from_index(notes.len()), "step_dependency_note_vector")?;
     let mut ordered_notes = Vec::new();
     ordered_notes.try_reserve_exact(notes.len()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "step_dependency_note_vector",
-            0,
-            u64_from_index(notes.len()),
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("step_dependency_note_vector"),
+                0,
+                u64_from_index(notes.len()),
+                "step_dependency_note_vector",
+            ),
         )
     })?;
     ordered_notes.extend(notes);
@@ -165,9 +168,16 @@ fn insert_claim(
 ) -> Result<(), CodecError> {
     if !claims.contains(&id) {
         ctx.charge_collection_items(1, "step_dependency_claims")?;
-        claims
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("step_dependency_claims", 0, 1))?;
+        claims.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("step_dependency_claims"),
+                    0,
+                    1,
+                    "step_dependency_claims",
+                ),
+            )
+        })?;
         claims.insert(id);
     }
     Ok(())
@@ -251,8 +261,16 @@ fn charged_note(parts: &[&str], ctx: &DecodeContext<'_>) -> Result<String, Codec
     let len = len.ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_retained(u64_from_index(len), operation)?;
     let mut note = String::new();
-    note.try_reserve_exact(len)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(len)))?;
+    note.try_reserve_exact(len).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                u64_from_index(len),
+                operation,
+            ),
+        )
+    })?;
     for part in parts {
         note.push_str(part);
     }

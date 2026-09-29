@@ -1096,9 +1096,7 @@ fn parse_nurbs_pcurve(
     if degree == 0 || knot_count == 0 || [zero0, zero1, zero2] != [0; 3] {
         return Ok(None);
     }
-    let Some(knot_count_u64) = u64::try_from(knot_count).ok() else {
-        return Ok(None);
-    };
+    let knot_count_u64 = cadmpeg_core::decode::u64_from_index(knot_count);
     if view.counted(knot_count_u64, 12).is_none() {
         return Ok(None);
     }
@@ -1135,9 +1133,7 @@ fn parse_nurbs_pcurve(
     else {
         return Ok(None);
     };
-    let Some(control_count_u64) = u64::try_from(control_count).ok() else {
-        return Ok(None);
-    };
+    let control_count_u64 = cadmpeg_core::decode::u64_from_index(control_count);
     if view.counted(control_count_u64, 16).is_none() {
         return Ok(None);
     }
@@ -1218,7 +1214,7 @@ fn expand_nurbs_knots_limited(
     }
     let Some(bytes) = total
         .checked_mul(size_of::<FiniteReal>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
     else {
         return Err(ctx.refuse_codec_limit("catia_e5_pcurve_expanded_knots", u64::MAX, u64::MAX));
     };
@@ -1240,9 +1236,7 @@ fn read_finite_lane(
     count: usize,
     operation: &'static str,
 ) -> Result<Option<Vec<FiniteReal>>, CodecError> {
-    let Some(count_u64) = u64::try_from(count).ok() else {
-        return Ok(None);
-    };
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     if view.counted(count_u64, 8).is_none() {
         return Ok(None);
     }
@@ -1263,9 +1257,7 @@ fn read_u32_lane(
     count: usize,
     operation: &'static str,
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    let Some(count_u64) = u64::try_from(count).ok() else {
-        return Ok(None);
-    };
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     if view.counted(count_u64, 4).is_none() {
         return Ok(None);
     }
@@ -1381,7 +1373,7 @@ fn parse_jet_pcurve(
     }
     let Some(bytes) = site_count
         .checked_mul(size_of::<E5PcurveJetSite>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
     else {
         return Err(ctx.refuse_codec_limit("catia_e5_jet_sites", u64::MAX, u64::MAX));
     };

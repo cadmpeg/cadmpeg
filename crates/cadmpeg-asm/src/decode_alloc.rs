@@ -11,13 +11,19 @@ pub(crate) fn counted_vec<T>(
     count: usize,
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
-    let count_u64 =
-        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count_u64, operation)?;
     let mut values = Vec::new();
-    values
-        .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+    values.try_reserve(count).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                count_u64,
+                operation,
+            ),
+        )
+    })?;
     Ok(values)
 }
 
@@ -39,12 +45,18 @@ pub(crate) fn append_vec<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     let count = source.len();
-    let amount =
-        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let amount = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(amount, operation)?;
-    target
-        .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, amount))?;
+    target.try_reserve(count).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                amount,
+                operation,
+            ),
+        )
+    })?;
     target.append(source);
     Ok(())
 }
@@ -64,9 +76,16 @@ pub(crate) fn reserve_vec_slot<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    values.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        )
+    })?;
     Ok(())
 }
 
@@ -91,8 +110,16 @@ pub(crate) fn collect_hash_set<T: Eq + Hash>(
     for value in values {
         if !out.contains(&value) {
             ctx.charge_collection_items(1, operation)?;
-            out.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            out.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                        0,
+                        1,
+                        operation,
+                    ),
+                )
+            })?;
             out.insert(value);
         }
     }
@@ -109,9 +136,16 @@ pub(crate) fn insert_hash_set<T: Eq + Hash>(
         return Ok(false);
     }
     ctx.charge_collection_items(1, operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    values.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        )
+    })?;
     Ok(values.insert(value))
 }
 
@@ -125,10 +159,17 @@ pub(crate) fn insert_string_set(
         return Ok(false);
     }
     ctx.charge_collection_items(1, operation)?;
-    let owned = copy_string(ctx, value, operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    let owned = ctx.copy_retained_text(value, operation)?;
+    values.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        )
+    })?;
     Ok(values.insert(owned))
 }
 
@@ -141,8 +182,16 @@ pub(crate) fn collect_hash_map<K: Eq + Hash, V>(
     for (key, value) in values {
         if !out.contains_key(&key) {
             ctx.charge_collection_items(1, operation)?;
-            out.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            out.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                        0,
+                        1,
+                        operation,
+                    ),
+                )
+            })?;
         }
         out.insert(key, value);
     }
@@ -168,9 +217,16 @@ pub(crate) fn reserve_hash_map_entry<K: Eq + Hash, V>(
 ) -> Result<(), CodecError> {
     if !values.contains_key(key) {
         ctx.charge_collection_items(1, operation)?;
-        values
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        values.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            )
+        })?;
     }
     Ok(())
 }
@@ -219,17 +275,6 @@ pub(crate) trait CountedIteratorExt: Iterator + Sized {
 }
 
 impl<I: Iterator> CountedIteratorExt for I {}
-
-pub(crate) fn copy_string(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let bytes = ctx.copy_retained(value.as_bytes(), operation)?;
-    String::from_utf8(bytes).map_err(|error| {
-        CodecError::malformed(format_args!("invalid UTF-8 after copying string: {error}"))
-    })
-}
 
 pub(crate) fn try_collect_vec<T, E: From<CodecError>>(
     ctx: &DecodeContext<'_>,

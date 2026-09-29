@@ -209,9 +209,7 @@ fn appearance_id(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("Inventor appearance key length", u64::MAX - 1, u64::MAX)
         })?;
-    let key_len = u64::try_from(key_len).map_err(|_| {
-        ctx.refuse_codec_limit("Inventor appearance key length", u64::MAX - 1, u64::MAX)
-    })?;
+    let key_len = cadmpeg_core::decode::u64_from_index(key_len);
     ctx.charge_retained(key_len, "retain Inventor appearance key")?;
     let key = instance_key.dash(record_key);
     let namespace = cadmpeg_ir::identity_namespace!("inventor", "protein", "appearance");
@@ -226,9 +224,7 @@ fn appearance_id(
             ctx.refuse_codec_limit("Inventor appearance id length", u64::MAX - 1, u64::MAX)
         })?;
     ctx.charge_retained(
-        u64::try_from(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("Inventor appearance id length", u64::MAX - 1, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(id_len),
         "retain Inventor appearance id",
     )?;
     Ok(AppearanceId::compose(&namespace, key))

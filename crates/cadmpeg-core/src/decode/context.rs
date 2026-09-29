@@ -44,7 +44,7 @@ impl<'a> DecodeContext<'a> {
         container_only: bool,
     ) -> Result<(Self, View<'a>), CodecError> {
         let max = policy.limits.max_input_bytes;
-        let cap = max.saturating_add(1);
+        let cap = max.checked_add(1);
         let size = match reader.seek(SeekFrom::End(0)) {
             Ok(size) => {
                 reader.rewind().map_err(CodecError::Io)?;
@@ -53,7 +53,10 @@ impl<'a> DecodeContext<'a> {
             Err(_) => None,
         };
         let buffer = if let Some(size) = size {
-            let reserve = size.min(cap);
+            let reserve = match cap {
+                Some(cap) => size.min(cap),
+                None => size,
+            };
             let reserve = usize::try_from(reserve)
                 .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, reserve))?;
             let mut buffer = Vec::new();
@@ -66,8 +69,18 @@ impl<'a> DecodeContext<'a> {
             })?;
             let mut chunk =
                 alloc_filled(256 * 1024, 0_u8, "decode root read chunk")?.into_boxed_slice();
-            while (u64_from_index(buffer.len())) < cap {
-                let remaining = cap.saturating_sub(u64_from_index(buffer.len()));
+            loop {
+                let remaining = if let Some(cap) = cap {
+                    let Some(remaining) = cap.checked_sub(u64_from_index(buffer.len())) else {
+                        break;
+                    };
+                    if remaining == 0 {
+                        break;
+                    }
+                    remaining
+                } else {
+                    u64_from_index(chunk.len())
+                };
                 // The chunk length is already the bound: `remaining` above the
                 // chunk means this read takes the whole chunk, so the chunk
                 // length is the answer rather than a default standing in for
@@ -90,10 +103,17 @@ impl<'a> DecodeContext<'a> {
             let mut buffer = Vec::new();
             let mut chunk = [0u8; 8192];
             loop {
-                let remaining = cap.saturating_sub(u64_from_index(buffer.len()));
-                if remaining == 0 {
-                    break;
-                }
+                let remaining = if let Some(cap) = cap {
+                    let Some(remaining) = cap.checked_sub(u64_from_index(buffer.len())) else {
+                        break;
+                    };
+                    if remaining == 0 {
+                        break;
+                    }
+                    remaining
+                } else {
+                    u64_from_index(chunk.len())
+                };
                 // The chunk length is already the bound: `remaining` above the
                 // chunk means this read takes the whole chunk, so the chunk
                 // length is the answer rather than a default standing in for
@@ -172,14 +192,18 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn per_expand_allowance(&self) -> u64 {
-        let proportional = DECOMPRESSED_PER_EXPAND_BASE.saturating_add(
-            DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE.saturating_mul(self.budget.input_bytes()),
-        );
-        self.budget
+        let policy_limit = self
+            .budget
             .policy()
             .limits
-            .max_decompressed_bytes_per_expand
-            .min(proportional)
+            .max_decompressed_bytes_per_expand;
+        let Some(proportional) = DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE
+            .checked_mul(self.budget.input_bytes())
+            .and_then(|bytes| DECOMPRESSED_PER_EXPAND_BASE.checked_add(bytes))
+        else {
+            return policy_limit;
+        };
+        policy_limit.min(proportional)
     }
 
     fn allocate_space(&self) -> Result<SpaceId, CodecError> {
@@ -261,6 +285,16 @@ impl<'a> DecodeContext<'a> {
         Ok(copy)
     }
 
+    /// Copies admitted text into session-retained storage.
+    pub fn copy_retained_text(
+        &self,
+        text: &str,
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
+        self.copy_retained_text_limit(text, operation)
+            .map_err(Into::into)
+    }
+
     /// Copies bytes into session-retained storage after charging and reserving safely.
     pub fn copy_retained(
         &self,
@@ -306,7 +340,11 @@ impl<'a> DecodeContext<'a> {
         admitted: &mut u64,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let additional = current.saturating_sub(*admitted);
+        if current < *admitted {
+            *admitted = current;
+            return Ok(());
+        }
+        let additional = current - *admitted;
         self.charge_entities(additional, operation)?;
         *admitted = current;
         Ok(())
@@ -357,12 +395,16 @@ impl<'a> DecodeContext<'a> {
         limit: u64,
         requested: u64,
     ) -> CodecError {
+        let (used, additional) = match requested.checked_sub(limit) {
+            Some(excess) => (limit, excess),
+            None => (requested, 0),
+        };
         self.budget.refuse(
             ResourceDimension::Codec(operation),
             ResourceFailure::BudgetExceeded,
             limit,
-            requested.min(limit),
-            requested.saturating_sub(limit),
+            used,
+            additional,
             operation,
         )
     }
@@ -390,10 +432,10 @@ impl<'a> DecodeContext<'a> {
                     "begin_expand",
                 ));
             }
-            if size
-                > self
-                    .decompression_allowance()
-                    .saturating_sub(self.budget.decompressed_used())
+            if self
+                .decompression_allowance()
+                .checked_sub(self.budget.decompressed_used())
+                .is_none_or(|remaining| size > remaining)
             {
                 return Err(self.fuse(
                     ResourceFailure::BudgetExceeded,
@@ -492,8 +534,7 @@ impl<'a> DecodeContext<'a> {
                 CodecError::NotImplemented("retained concatenation exceeds usize".into())
             })
         })?;
-        let total_bytes = u64::try_from(total)
-            .map_err(|_| CodecError::NotImplemented("retained concatenation exceeds u64".into()))?;
+        let total_bytes = crate::decode::u64_from_index(total);
         let reservation = self.reserve_scoped(total_bytes, operation)?;
         self.charge_retained(total_bytes, operation)?;
         let mut buffer = Vec::new();
@@ -557,12 +598,23 @@ impl<'a> DecodeContext<'a> {
 
 /// Builds the root-input resource error before a context exists.
 fn root_error(reason: ResourceFailure, limit: u64, used: u64) -> CodecError {
+    if used <= limit {
+        return CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::InputBytes,
+            reason,
+            limit,
+            used,
+            additional: 0,
+            operation: "read_root",
+        });
+    }
+    let additional = used - limit;
     CodecError::ResourceLimit(ResourceLimit {
         dimension: ResourceDimension::InputBytes,
         reason,
         limit,
         used,
-        additional: used.saturating_sub(limit),
+        additional,
         operation: "read_root",
     })
 }
@@ -588,7 +640,14 @@ impl<'a> ExpandWriter<'_, 'a> {
     /// Appends decompressed output, charging before it is retained.
     pub fn write(&mut self, data: &[u8]) -> Result<(), CodecError> {
         let len = u64_from_index(data.len());
-        let new_written = self.written().saturating_add(len);
+        let new_written = self.written().checked_add(len).ok_or_else(|| {
+            self.ctx.fuse(
+                ResourceFailure::BudgetExceeded,
+                LimitScope::PerExpand,
+                len,
+                "expand_write",
+            )
+        })?;
         match self.spec {
             ExpandSpec::Exact(size) if new_written > size => {
                 return Err(CodecError::malformed(format_args!(

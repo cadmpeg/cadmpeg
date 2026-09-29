@@ -13,7 +13,7 @@ use crate::decode_resource::{
     reserve_vec_growth,
 };
 use crate::directory::DirectoryFieldSlot;
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -157,7 +157,9 @@ impl<'a> BitReader<'a> {
                 .bytes
                 .get(self.byte)
                 .ok_or_else(|| malformed("a Binary primitive is truncated"))?;
-            let shift = 7_u8.saturating_sub(self.bit);
+            let shift = 7_u8
+                .checked_sub(self.bit)
+                .ok_or_else(|| malformed("a Binary bit offset is out of range"))?;
             value = (value << 1) | u64::from((byte >> shift) & 1);
             self.bit += 1;
             if self.bit == 8 {
@@ -267,7 +269,11 @@ impl<'a> BitReader<'a> {
             let negative = count < 0;
             let count = usize::try_from(count.unsigned_abs())
                 .map_err(|_| malformed("a Binary string count is out of range"))?;
-            let remaining = self.bytes.len().saturating_sub(self.byte);
+            let remaining = self
+                .bytes
+                .len()
+                .checked_sub(self.byte)
+                .ok_or_else(|| malformed("a Binary string offset is out of range"))?;
             if count > remaining {
                 return Err(malformed("a Binary string payload is truncated"));
             }
@@ -275,10 +281,15 @@ impl<'a> BitReader<'a> {
                 ctx.charge_retained(u64_from_index(count), "iges binary string payload")?;
             }
             output.try_reserve(count).map_err(|_| {
-                refuse_local_limit(
-                    "iges binary string payload",
-                    u64_from_index(count),
-                    u64_from_index(count),
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "iges binary string payload",
+                        ),
+                        u64_from_index(count),
+                        u64_from_index(count),
+                        "iges binary string payload",
+                    ),
                 )
             })?;
             for _ in 0..count {
@@ -382,9 +393,16 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
         if let Some(ctx) = self.ctx {
             ctx.charge_collection_items(1, "iges binary repeated values")?;
         }
-        self.pending
-            .try_reserve(1)
-            .map_err(|_| refuse_local_limit("iges binary repeated values", 1, 1))
+        self.pending.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("iges binary repeated values"),
+                    1,
+                    1,
+                    "iges binary repeated values",
+                ),
+            )
+        })
     }
 
     fn clone_value(&self, value: &BinaryValue) -> Result<BinaryValue, CodecError> {
@@ -751,9 +769,16 @@ fn append_retained(
 ) -> Result<(), CodecError> {
     let count = u64_from_index(bytes.len());
     ctx.charge_retained(count, operation)?;
-    output
-        .try_reserve(bytes.len())
-        .map_err(|_| refuse_local_limit(operation, count, count))?;
+    output.try_reserve(bytes.len()).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                count,
+                count,
+                operation,
+            ),
+        )
+    })?;
     output.extend_from_slice(bytes);
     Ok(())
 }
@@ -1389,9 +1414,16 @@ fn append_output_card(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     ctx.charge_retained(81, "iges binary normalized card")?;
-    output
-        .try_reserve(81)
-        .map_err(|_| refuse_local_limit("iges binary normalized card", 81, 81))?;
+    output.try_reserve(81).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("iges binary normalized card"),
+                81,
+                81,
+                "iges binary normalized card",
+            ),
+        )
+    })?;
     output.extend_from_slice(card);
     output.push(b'\n');
     Ok(())
@@ -1402,10 +1434,10 @@ fn charge_normalization(
     source_len: usize,
     normalized_len: usize,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(
-        u64_from_index(source_len.saturating_add(normalized_len)),
-        "iges_binary_normalization",
-    )
+    let total = source_len
+        .checked_add(normalized_len)
+        .ok_or_else(|| ctx.refuse_codec_limit("iges_binary_normalization", u64::MAX, u64::MAX))?;
+    ctx.charge_work(u64_from_index(total), "iges_binary_normalization")
 }
 
 /// Normalize one Binary IGES source into the Fixed ASCII image consumed by the
@@ -1435,13 +1467,23 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     let mut output = Vec::new();
     let mut start_sequence = 1_u32;
     render_start_cards(&mut output, &start_text, &mut start_sequence, ctx)?;
-    let start_count = cadmpeg_core::decode::index_from_u32(start_sequence.saturating_sub(1));
+    let start_count = usize::try_from(
+        start_sequence
+            .checked_sub(1)
+            .ok_or_else(|| malformed("a Binary Start sequence is zero"))?,
+    )
+    .map_err(|_| malformed("a Binary Start count does not fit memory"))?;
     let mut global_sequence = 1_u32;
     let global_cards = crate::global::layout_global_cards(&global_text, Some(ctx))?;
     for card in &global_cards {
         render_cards(&mut output, card, b'G', &mut global_sequence, ctx)?;
     }
-    let global_count = cadmpeg_core::decode::index_from_u32(global_sequence.saturating_sub(1));
+    let global_count = usize::try_from(
+        global_sequence
+            .checked_sub(1)
+            .ok_or_else(|| malformed("a Binary Global sequence is zero"))?,
+    )
+    .map_err(|_| malformed("a Binary Global count does not fit memory"))?;
     let (directory_count, parameter_count) =
         normalize_directory_and_parameters(&mut output, &directory, parameters, ctx)?;
     render_terminate(

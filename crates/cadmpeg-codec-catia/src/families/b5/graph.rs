@@ -1915,8 +1915,7 @@ fn parse_a8_class21_pcurve(
         count: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let items = u64::try_from(count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let items = cadmpeg_core::decode::u64_from_index(count);
         ctx.charge_collection_items(items, operation)
     }
 
@@ -3661,11 +3660,14 @@ fn canonical_point(
     for dx in -1..=1 {
         for dy in -1..=1 {
             for dz in -1..=1 {
-                let neighbor = [
-                    cell[0].saturating_add(dx),
-                    cell[1].saturating_add(dy),
-                    cell[2].saturating_add(dz),
-                ];
+                let (Some(x), Some(y), Some(z)) = (
+                    cell[0].checked_add(dx),
+                    cell[1].checked_add(dy),
+                    cell[2].checked_add(dz),
+                ) else {
+                    continue;
+                };
+                let neighbor = [x, y, z];
                 for &point_index in index.get(&neighbor).into_iter().flatten() {
                     if distance_squared(coordinates(points[point_index]), endpoint)
                         <= POINT_TOLERANCE * POINT_TOLERANCE

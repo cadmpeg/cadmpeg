@@ -170,7 +170,7 @@ pub fn source_attribute(
     Ok(SourceAttribute {
         id: brep_id!(format, AttributeId, "attribute", record.index),
         target,
-        name: crate::decode_alloc::copy_string(ctx, &record.name, "ASM attribute record name")?,
+        name: ctx.copy_retained_text(&record.name, "ASM attribute record name")?,
         values,
     })
 }
@@ -196,11 +196,9 @@ fn attribute_value(
             Some(value) => value,
             None => return Ok(None),
         },
-        Token::Str(value) => AttributeValue::String(crate::decode_alloc::copy_string(
-            ctx,
-            value,
-            "ASM attribute string",
-        )?),
+        Token::Str(value) => {
+            AttributeValue::String(ctx.copy_retained_text(value, "ASM attribute string")?)
+        }
         Token::True => AttributeValue::Boolean(true),
         Token::False => AttributeValue::Boolean(false),
         Token::Ref(value) => {
@@ -216,9 +214,9 @@ fn attribute_value(
             Some(value) => value,
             None => return Ok(None),
         },
-        Token::Ident(value) | Token::SubIdent(value) => AttributeValue::String(
-            crate::decode_alloc::copy_string(ctx, value, "ASM attribute identifier")?,
-        ),
+        Token::Ident(value) | Token::SubIdent(value) => {
+            AttributeValue::String(ctx.copy_retained_text(value, "ASM attribute identifier")?)
+        }
     }))
 }
 
@@ -439,7 +437,7 @@ pub fn attribute_chain_name(
             }
             if let (Some("name"), Some(value)) = (previous, last) {
                 if !value.is_empty() {
-                    let name = crate::decode_alloc::copy_string(ctx, value, "ASM attribute name")?;
+                    let name = ctx.copy_retained_text(value, "ASM attribute name")?;
                     return Ok(Some(name));
                 }
             }
@@ -460,7 +458,7 @@ pub fn unknown_record_id(
     rec: &Record,
     format: IdFormat,
 ) -> Result<UnknownId, cadmpeg_core::CodecError> {
-    let name = crate::decode_alloc::copy_string(ctx, rec.head(), "ASM unknown record kind")?;
+    let name = ctx.copy_retained_text(rec.head(), "ASM unknown record kind")?;
     let kind = IdentityComponent::try_new(name).map_err(|error| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "invalid ASM source identity component: {error}"

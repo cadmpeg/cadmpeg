@@ -62,3 +62,23 @@ pub struct ResourceLimit {
     /// The operation that failed, as a static label.
     pub operation: &'static str,
 }
+
+impl ResourceLimit {
+    /// Reports an allocator refusal before any resource is charged.
+    #[must_use]
+    pub const fn allocation_failed(
+        dimension: ResourceDimension,
+        limit: u64,
+        additional: u64,
+        operation: &'static str,
+    ) -> Self {
+        Self {
+            dimension,
+            reason: ResourceFailure::AllocationFailed,
+            limit,
+            used: 0,
+            additional,
+            operation,
+        }
+    }
+}

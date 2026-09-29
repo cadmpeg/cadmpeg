@@ -970,9 +970,10 @@ pub(super) fn project(
                     )?;
                     continue;
                 };
-                let Some(domain_end) = function_nurbs
-                    .knots()
-                    .get(function_nurbs.knots().len().saturating_sub(degree + 1))
+                let Some(domain_end) = degree
+                    .checked_add(1)
+                    .and_then(|count| function_nurbs.knots().len().checked_sub(count))
+                    .and_then(|index| function_nurbs.knots().get(index))
                     .copied()
                 else {
                     super::push_optional_entity_loss(

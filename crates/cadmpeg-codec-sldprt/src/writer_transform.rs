@@ -332,7 +332,7 @@ fn transform_surface(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             nurbs
-                .map_control_points(|point| {
+                .try_map_control_points(|_, point| {
                     transform
                         .apply_point(point.get())
                         .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))
@@ -416,7 +416,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             nurbs
-                .map_control_points(|point| {
+                .try_map_control_points(|_, point| {
                     transform
                         .apply_point(point.get())
                         .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))

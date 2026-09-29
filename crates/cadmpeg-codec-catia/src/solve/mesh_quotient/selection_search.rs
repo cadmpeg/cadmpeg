@@ -91,7 +91,7 @@ impl MeshSelectionSearch<'_, '_> {
                     let remaining = (0..local.len())
                         .filter(|&node| local.find(node) == node)
                         .count();
-                    (component, roots.len().saturating_sub(remaining))
+                    (component, roots.len() - remaining)
                 })
                 .collect()
         }
@@ -179,7 +179,10 @@ impl MeshSelectionSearch<'_, '_> {
                         .or_insert(reduction);
                 }
             }
-            independent_capacity = independent_capacity.saturating_add(independent_face_capacity);
+            let Some(capacity) = independent_capacity.checked_add(independent_face_capacity) else {
+                return Ok(None);
+            };
+            independent_capacity = capacity;
             for (component, capacity) in face_capacity {
                 *component_merge_capacity.entry(component).or_default() += capacity;
             }
@@ -208,10 +211,13 @@ impl MeshSelectionSearch<'_, '_> {
                     .unwrap_or(0),
             )
         };
-        let universal_required = universal_components
+        let Some(universal_required) = universal_components
             .iter()
             .map(required_count)
-            .fold(0usize, usize::saturating_add);
+            .try_fold(0usize, usize::checked_add)
+        else {
+            return Ok(None);
+        };
         let mut domains = possible_domains
             .into_iter()
             .flat_map(|(component, domain)| {
@@ -219,7 +225,10 @@ impl MeshSelectionSearch<'_, '_> {
                 std::iter::repeat_n(domain, required)
             })
             .collect::<Vec<_>>();
-        if universal_required > point_count.saturating_sub(domains.len()) {
+        let Some(available_points) = point_count.checked_sub(domains.len()) else {
+            return Ok(None);
+        };
+        if universal_required > available_points {
             return Ok(None);
         }
         domains.sort_unstable_by_key(HashSet::len);
@@ -251,7 +260,10 @@ impl MeshSelectionSearch<'_, '_> {
                 return Ok(None);
             }
         }
-        Ok(Some(before.saturating_sub(after).min(independent_capacity)))
+        let Some(reduction) = before.checked_sub(after) else {
+            return Ok(None);
+        };
+        Ok(Some(reduction.min(independent_capacity)))
     }
 
     pub(super) fn face_projection_signature(
@@ -447,7 +459,7 @@ impl MeshSelectionSearch<'_, '_> {
                                     domain.len().checked_mul(std::mem::size_of::<usize>())?,
                                 )
                         })
-                        .and_then(|bytes| u64::try_from(bytes).ok())
+                        .map(cadmpeg_core::decode::u64_from_index)
                     else {
                         return Err(self.ctx.refuse_codec_limit(
                             "catia_forced_equation_cache_key",
@@ -661,24 +673,12 @@ impl MeshSelectionSearch<'_, '_> {
                 continue;
             };
             self.ctx.charge_collection_items(
-                u64::try_from(assignment.boundaries.len()).map_err(|_| {
-                    self.ctx.refuse_codec_limit(
-                        "catia_selection_completion_boundaries",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?,
+                cadmpeg_core::decode::u64_from_index(assignment.boundaries.len()),
                 "catia_selection_completion_boundaries",
             )?;
             for boundary in &assignment.boundaries {
                 self.ctx.charge_collection_items(
-                    u64::try_from(boundary.len()).map_err(|_| {
-                        self.ctx.refuse_codec_limit(
-                            "catia_selection_completion_directions",
-                            u64::MAX,
-                            u64::MAX,
-                        )
-                    })?,
+                    cadmpeg_core::decode::u64_from_index(boundary.len()),
                     "catia_selection_completion_directions",
                 )?;
             }
@@ -937,7 +937,7 @@ impl MeshSelectionSearch<'_, '_> {
                         !adjacent,
                         viable_options,
                         local_fixed == 0,
-                        usize::MAX.saturating_sub(use_count),
+                        usize::MAX - use_count,
                         directions.len(),
                         face,
                     ),
@@ -1478,7 +1478,10 @@ impl MeshSelectionSearch<'_, '_> {
                 self.outcome.exhaust();
                 return Ok(());
             }
-            let remaining = remaining_work.saturating_sub(options.len());
+            let Some(remaining) = remaining_work.checked_sub(options.len()) else {
+                self.outcome.exhaust();
+                return Ok(());
+            };
             if remaining == 0 {
                 break;
             }
@@ -2204,7 +2207,7 @@ pub(super) fn resolve_singleton_mesh_selection(
                 .len()
                 .checked_mul(std::mem::size_of::<usize>())
                 .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<usize>>()))
-                .and_then(|bytes| u64::try_from(bytes).ok())
+                .map(cadmpeg_core::decode::u64_from_index)
                 .ok_or_else(|| {
                     ctx.refuse_codec_limit("catia_singleton_root_domain_copy", u64::MAX, u64::MAX)
                 })?;

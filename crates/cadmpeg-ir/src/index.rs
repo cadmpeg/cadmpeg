@@ -40,9 +40,16 @@ fn admitted_map<K: Eq + Hash, V>(
     let requested = u64_from_index(count);
     ctx.charge_collection_items(requested, operation)?;
     let mut values = HashMap::new();
-    values
-        .try_reserve(count)
-        .map_err(|_| refuse_local_limit(operation, requested, requested))?;
+    values.try_reserve(count).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                requested,
+                requested,
+                operation,
+            ),
+        )
+    })?;
     Ok(values)
 }
 
@@ -54,9 +61,16 @@ fn admitted_vec<T>(
     let requested = u64_from_index(count);
     ctx.charge_collection_items(requested, operation)?;
     let mut values = Vec::new();
-    values
-        .try_reserve_exact(count)
-        .map_err(|_| refuse_local_limit(operation, requested, requested))?;
+    values.try_reserve_exact(count).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                requested,
+                requested,
+                operation,
+            ),
+        )
+    })?;
     Ok(values)
 }
 
@@ -66,9 +80,16 @@ fn grow_admitted_vec<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| refuse_local_limit(operation, 1, 1))
+    values.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                1,
+                1,
+                operation,
+            ),
+        )
+    })
 }
 
 fn build_admitted_identity_index<T: EntitySchema>(
@@ -111,9 +132,16 @@ fn insert_admitted_identity(
     let count = u64_from_index(identity.len());
     ctx.charge_retained(count, "model identity universe text")?;
     let mut copied = String::new();
-    copied
-        .try_reserve_exact(identity.len())
-        .map_err(|_| refuse_local_limit("model identity universe text", count, count))?;
+    copied.try_reserve_exact(identity.len()).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("model identity universe text"),
+                count,
+                count,
+                "model identity universe text",
+            ),
+        )
+    })?;
     copied.push_str(identity);
     identities.insert(copied);
     Ok(())
@@ -281,7 +309,7 @@ macro_rules! define_model_index {
                 let requested = u64_from_index(identity_count);
                 ctx.charge_collection_items(requested, "model identity universe slots")?;
                 let mut identities = HashSet::new();
-                identities.try_reserve(identity_count).map_err(|_| refuse_local_limit("model identity universe slots", requested, requested))?;
+                identities.try_reserve(identity_count).map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("model identity universe slots"), requested, requested, "model identity universe slots")))?;
                 $(for entity in &ir.model.$field {
                     insert_admitted_identity(&mut identities, entity.identity(), ctx)?;
                 })*

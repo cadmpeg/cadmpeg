@@ -386,17 +386,19 @@ impl ReferenceSignatureWire {
                 ctx.refuse_codec_limit("catia_reference_signature_wire_text", u64::MAX, u64::MAX)
             })?;
         }
-        let bytes = u64::try_from(byte_len).map_err(|_| {
-            ctx.refuse_codec_limit("catia_reference_signature_wire_text", u64::MAX, u64::MAX)
-        })?;
+        let bytes = cadmpeg_core::decode::u64_from_index(byte_len);
         ctx.charge_retained(bytes, "catia_reference_signature_wire_text")?;
         let mut signature = String::new();
         signature.try_reserve(byte_len).map_err(|_| {
-            crate::resource::allocation_failed(
-                0,
-                signature.capacity(),
-                byte_len,
-                "catia_reference_signature_wire_text",
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "catia_reference_signature_wire_text",
+                    ),
+                    cadmpeg_core::decode::u64_from_index(signature.capacity()),
+                    cadmpeg_core::decode::u64_from_index(byte_len),
+                    "catia_reference_signature_wire_text",
+                ),
             )
         })?;
         for token in &value.tokens {
@@ -544,9 +546,7 @@ fn reference_signature_program_charged(
                 "catia_reference_signature_instructions",
             )
         },
-        |digits| {
-            crate::resource::copy_retained_str(ctx, digits, "catia_reference_signature_digits")
-        },
+        |digits| ctx.copy_retained_text(digits, "catia_reference_signature_digits"),
     )
 }
 
@@ -882,8 +882,7 @@ impl PacketGrowth for ChargedPacketGrowth<'_, '_> {
     }
 
     fn work(&self, units: usize, operation: &'static str) -> Result<(), Self::Error> {
-        let units = u64::try_from(units)
-            .map_err(|_| self.0.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let units = cadmpeg_core::decode::u64_from_index(units);
         self.0.charge_work(units, operation)
     }
 }
@@ -1273,7 +1272,7 @@ fn parse_candidate_runs(
     data: &[u8],
 ) -> Result<Vec<Vec<EntityRecordCandidates>>, CodecError> {
     ctx.charge_work(
-        collection_count(ctx, data.len())?,
+        cadmpeg_core::decode::u64_from_index(data.len()),
         "scan CATIA 7C05 markers",
     )?;
     let mut roots = Vec::new();
@@ -1387,7 +1386,7 @@ fn unique_monotone_run(
         return Ok(None);
     }
     ctx.charge_collection_items(
-        collection_count(ctx, first.len())?,
+        cadmpeg_core::decode::u64_from_index(first.len()),
         "collect CATIA 7C05 path states",
     )?;
     let mut previous = Vec::new();
@@ -1403,7 +1402,7 @@ fn unique_monotone_run(
     }));
     let mut layers = Vec::new();
     for record in &records[1..] {
-        let previous_count = collection_count(ctx, previous.len())?;
+        let previous_count = cadmpeg_core::decode::u64_from_index(previous.len());
         ctx.charge_collection_items(previous_count, "collect CATIA 7C05 ordered predecessors")?;
         let mut ordered_predecessors = Vec::new();
         crate::resource::reserve_admitted_vec(
@@ -1420,7 +1419,7 @@ fn unique_monotone_run(
         ctx.charge_work(sort_units, "sort CATIA 7C05 predecessor states")?;
         ordered_predecessors.sort_by_key(|(_, state)| state.identity.entity_id);
         ctx.charge_collection_items(
-            collection_count(ctx, ordered_predecessors.len())?,
+            cadmpeg_core::decode::u64_from_index(ordered_predecessors.len()),
             "collect CATIA 7C05 cumulative paths",
         )?;
         let mut cumulative = Vec::new();
@@ -1437,7 +1436,7 @@ fn unique_monotone_run(
                 (cumulative_count == PathCount::One).then_some(*index),
             ));
         }
-        let search_units = collection_count(ctx, record.identities.len())?
+        let search_units = cadmpeg_core::decode::u64_from_index(record.identities.len())
             .checked_mul(u64::from(previous_count.ilog2()) + 1)
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("resolve CATIA 7C05 identity paths", u64::MAX, u64::MAX)
@@ -1486,7 +1485,7 @@ fn unique_monotone_run(
         return Ok(None);
     };
     ctx.charge_collection_items(
-        collection_count(ctx, records.len())?,
+        cadmpeg_core::decode::u64_from_index(records.len()),
         "collect CATIA 7C05 resolved identities",
     )?;
     let mut result = Vec::new();
@@ -1504,12 +1503,6 @@ fn unique_monotone_run(
     }
     result.reverse();
     Ok(Some(result))
-}
-
-fn collection_count(ctx: &DecodeContext<'_>, count: usize) -> Result<u64, CodecError> {
-    u64::try_from(count).map_err(|_| {
-        ctx.refuse_codec_limit("count CATIA 7C05 collection items", u64::MAX, u64::MAX)
-    })
 }
 
 fn parse_candidate_variants(
@@ -1601,7 +1594,7 @@ fn identity_candidates(
         return Ok(identities);
     }
     ctx.charge_work(
-        collection_count(ctx, end - start)?,
+        cadmpeg_core::decode::u64_from_index(end - start),
         "scan CATIA 7C05 identities",
     )?;
     let mut at = start;
@@ -1831,10 +1824,9 @@ pub(crate) fn parse_reference_signature(
         {
             return None;
         }
-        let signature = admitted!(crate::resource::copy_retained_str(
-            ctx,
+        let signature = admitted!(ctx.copy_retained_text(
             std::str::from_utf8(signature_bytes).ok()?,
-            "catia_reference_signature_text",
+            "catia_reference_signature_text"
         ));
         let signature_program = admitted!(reference_signature_program_charged(
             ctx,

@@ -44,9 +44,16 @@ pub(super) fn copy_decode_slice<T: Copy>(
 ) -> Result<Vec<T>, CodecError> {
     charge_decode_copy::<T>(values.len(), ctx, operation)?;
     let mut copied = Vec::new();
-    copied
-        .try_reserve_exact(values.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(values.len())))?;
+    copied.try_reserve_exact(values.len()).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                u64_from_index(values.len()),
+                operation,
+            ),
+        )
+    })?;
     copied.extend_from_slice(values);
     Ok(copied)
 }
@@ -442,7 +449,14 @@ impl SolvedCurveGeometry {
                 charge_decode_copy::<CompositeCurveSegment>(segments.len(), ctx, operation)?;
                 let mut copied = Vec::new();
                 copied.try_reserve_exact(segments.len()).map_err(|_| {
-                    ctx.refuse_codec_limit(operation, 0, u64_from_index(segments.len()))
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                            0,
+                            u64_from_index(segments.len()),
+                            operation,
+                        ),
+                    )
                 })?;
                 for segment in segments {
                     copied.push(segment.clone());
@@ -6965,22 +6979,6 @@ impl IntcurveSupportContext {
     /// Set a support pcurve with the solved-curve parameterization.
     pub fn set_unmapped_pcurve(&mut self, side: usize, geometry: Option<PcurveGeometry>) {
         self.sides[side].pcurve = geometry.map(SupportPcurve::from);
-    }
-
-    /// Copy a pcurve mapping between support sides of this context.
-    pub fn copy_pcurve(&mut self, source: usize, target: usize) {
-        let (source, target) = match source.cmp(&target) {
-            std::cmp::Ordering::Less => {
-                let (before, after) = self.sides.split_at_mut(target);
-                (&before[source], &mut after[0])
-            }
-            std::cmp::Ordering::Greater => {
-                let (before, after) = self.sides.split_at_mut(source);
-                (&after[0], &mut before[target])
-            }
-            std::cmp::Ordering::Equal => return,
-        };
-        target.pcurve.clone_from(&source.pcurve);
     }
 
     /// Copy a support pcurve under a decoder's allocation limits.

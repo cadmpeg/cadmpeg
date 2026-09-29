@@ -95,11 +95,25 @@ fn read_entry_bounded(
         if read == 0 {
             break;
         }
+        let requested = bytes
+            .len()
+            .checked_add(read)
+            .map(cadmpeg_core::decode::u64_from_index)
+            .ok_or_else(|| {
+                cadmpeg_core::decode::refuse_local_limit(
+                    "Protein schema allocation",
+                    MAX_SCHEMA_BYTES,
+                    u64::MAX,
+                )
+            })?;
         bytes.try_reserve(read).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Protein schema allocation",
-                MAX_SCHEMA_BYTES,
-                cadmpeg_core::decode::u64_from_index(bytes.len().saturating_add(read)),
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("Protein schema allocation"),
+                    MAX_SCHEMA_BYTES,
+                    requested,
+                    "Protein schema allocation",
+                ),
             )
         })?;
         bytes.extend_from_slice(&chunk[..read]);
@@ -361,9 +375,7 @@ fn decode_frames(
 ) -> Result<DecodeOutcome, CodecError> {
     let mut outcome = DecodeOutcome::default();
     for (ordinal, frame) in frames.iter().enumerate() {
-        let ordinal = u64::try_from(ordinal).map_err(|_| {
-            CodecError::Malformed("Protein logical-record ordinal exceeds u64".into())
-        })?;
+        let ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, "Protein record outcome")?;
         }
@@ -469,8 +481,7 @@ fn parse_schema_document(
     schemas: &mut HashMap<String, Schema>,
 ) -> Result<(), CodecError> {
     let _reservation = if let Some(ctx) = ctx {
-        let xml_len = u64::try_from(bytes.len())
-            .map_err(|_| CodecError::Malformed("Protein schema XML length exceeds u64".into()))?;
+        let xml_len = cadmpeg_core::decode::u64_from_index(bytes.len());
         let mut tag_markers = 0_u64;
         let mut attribute_separators = 0_u64;
         for &byte in bytes {

@@ -446,10 +446,7 @@ impl Provenance<AnnotationLocation> {
         let tag = self
             .tag
             .as_deref()
-            .map(|tag| {
-                String::from_utf8(ctx.copy_retained(tag.as_bytes(), operation)?)
-                    .map_err(cadmpeg_core::CodecError::malformed)
-            })
+            .map(|tag| ctx.copy_retained_text(tag, operation))
             .transpose()?;
         Ok(Self::annotation(
             Arc::clone(&self.location.stream),
@@ -480,21 +477,13 @@ impl Provenance<SourceLocation> {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        fn copy(
-            ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-            value: &str,
-            operation: &'static str,
-        ) -> Result<String, cadmpeg_core::CodecError> {
-            String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
-                .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))
-        }
-        let format = copy(ctx, &self.location.format, operation)?;
+        let format = ctx.copy_retained_text(&self.location.format, operation)?;
         let stream = self
             .location
             .stream
             .as_ref()
             .map(|value| {
-                let text = copy(ctx, value.as_str(), operation)?;
+                let text = ctx.copy_retained_text(value.as_str(), operation)?;
                 StreamName::try_from(text)
                     .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))
             })
@@ -502,7 +491,7 @@ impl Provenance<SourceLocation> {
         let tag = self
             .tag
             .as_deref()
-            .map(|value| copy(ctx, value, operation))
+            .map(|value| ctx.copy_retained_text(value, operation))
             .transpose()?;
         Ok(Self {
             location: SourceLocation { format, stream },
