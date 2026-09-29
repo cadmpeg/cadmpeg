@@ -303,7 +303,7 @@ pub(crate) fn annotations(
         .iter()
         .zip(&root.annotations.entities)
     {
-        let Some(prefix) = pmi_id(&reference.id).map(PmiId::into_string) else {
+        let Some(prefix) = pmi_id_charged(ctx, &reference.id)?.map(PmiId::into_string) else {
             continue;
         };
         for annotation in projected.iter().filter(|annotation| {
@@ -316,7 +316,7 @@ pub(crate) fn annotations(
         }) {
             crate::annotations::note(
                 annotations,
-                annotation.id.as_str().to_owned(),
+                ctx.format_retained(format_args!("{}", annotation.id.as_str()), "copy SWIFT provenance ID")?,
                 &stream,
                 entity.offset as u64,
                 "swift_gdt_analysis",
@@ -468,7 +468,7 @@ pub(crate) fn unsupported_annotation_classes(
         .zip(&root.annotations.entities)
     {
         let class = short_class(&entity.class);
-        if pmi_id(&reference.id).is_none()
+        if pmi_id_charged(ctx, &reference.id)?.is_none()
             || (class != "GdtDatum"
                 && tolerance_kind(class).is_none()
                 && dimension_kind(class).is_none())
@@ -2705,6 +2705,7 @@ fn object_name(ctx: &DecodeContext<'_>, entity: &Entity) -> Result<Option<String
         .transpose()
 }
 
+#[cfg(test)]
 fn pmi_id(source_id: &str) -> Option<PmiId> {
     PmiId::mint(format!("sldprt:model:pmi#{source_id}")).ok()
 }
