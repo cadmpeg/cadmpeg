@@ -1744,77 +1744,83 @@ pub(crate) fn project_spatial_hole_position_sketches(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
-    let native_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
-    let model_sketches = features
-        .iter()
-        .filter_map(|feature| {
+    const INDEX_OPERATION: &str = "index SLDPRT spatial position features";
+    let mut native_features = HashMap::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, INDEX_OPERATION)?;
+        let key = feature.id.as_str();
+        if !native_features.contains_key(key) {
+            ctx.charge_collection_items(1, INDEX_OPERATION)?;
+            native_features.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        native_features.insert(key, feature);
+    }
+    for index in 0..features.len() {
+        let feature = &features[index];
+        if feature.suppressed == Some(true) {
+            continue;
+        }
+        let FeatureDefinition::Operation(FeatureOperation::Hole { placements, shape, .. }) =
+            feature.evaluation.definition() else {
+            continue;
+        };
+        let Some(diameter) = shape.diameter() else {
+            continue;
+        };
+        if placements.is_some() {
+            continue;
+        }
+        let diameter = diameter.get();
+        let Some(native) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| native_features.get(native).copied())
+        else {
+            continue;
+        };
+        let Some(position_feature) = hole_position_feature(native, histories, lanes) else {
+            continue;
+        };
+        ctx.charge_work(u64_from_index(features.len()), "find SLDPRT spatial position sketch")?;
+        let Some(sketch_id) = features.iter().filter_map(|candidate| {
             let FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch),
-            }) = feature.evaluation.definition()
-            else {
+            }) = candidate.evaluation.definition() else {
                 return None;
             };
-            Some((feature.native_ref.clone()?, sketch.clone()))
-        })
-        .collect::<HashMap<_, _>>();
-    for feature in features.iter_mut() {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            if feature.suppressed == Some(true) {
-                break 'feature_edit;
-            }
-            let FeatureDefinition::Operation(FeatureOperation::Hole {
-                placements, shape, ..
-            }) = &mut definition
-            else {
-                break 'feature_edit;
-            };
-            let Some(diameter) = shape.diameter() else {
-                break 'feature_edit;
-            };
-            let diameter = diameter.get();
-
-            if placements.is_some() {
-                break 'feature_edit;
-            }
-            let Some(native) = feature
-                .native_ref
-                .as_deref()
-                .and_then(|native| native_features.get(native).copied())
-            else {
-                break 'feature_edit;
-            };
-            let Some(position_feature) = hole_position_feature(native, histories, lanes) else {
-                break 'feature_edit;
-            };
-            let Some(sketch_id) = model_sketches.get(position_feature.id.as_str()) else {
-                break 'feature_edit;
-            };
-            let Some(sketch) = spatial_sketches
-                .iter()
-                .find(|sketch| sketch.id == *sketch_id)
-            else {
-                break 'feature_edit;
-            };
-            let authored_markers = lanes
-                .iter()
-                .filter(|lane| lane.configuration == sketch.configuration)
-                .flat_map(|lane| &lane.sketch_entities)
-                .filter(|marker| {
-                    marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
+            (candidate.native_ref.as_deref() == Some(position_feature.id.as_str()))
+                .then_some(sketch)
+        }).last() else {
+            continue;
+        };
+        let Some(sketch) = spatial_sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
+            continue;
+        };
+            let mut authored_markers = Vec::new();
+            for lane in lanes.iter().filter(|lane| lane.configuration == sketch.configuration) {
+                for marker in &lane.sketch_entities {
+                    ctx.charge_work(1, "scan SLDPRT spatial position markers")?;
+                    if marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
                         && marker.object_index().is_some()
-                })
-                .collect::<Vec<_>>();
+                    {
+                        ctx.reserve_collection_vec(
+                            &mut authored_markers,
+                            1,
+                            "collect SLDPRT spatial position markers",
+                        )?;
+                        authored_markers.push(marker);
+                    }
+                }
+            }
             let radius = diameter * 0.5;
             let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
             let axis_tolerance_squared = EPS_HOLE_EXACT_GEOMETRY;
-            let mut resolved = Vec::with_capacity(authored_markers.len());
+            let mut resolved = Vec::new();
             let mut ambiguous = false;
             for marker in &authored_markers {
+                ctx.charge_work(u64_from_index(spatial_entities.len()), "match SLDPRT spatial position points")?;
                 let mut points = spatial_entities.iter().filter_map(|entity| {
                     (entity.sketch == *sketch_id
                         && entity.native_ref.as_deref() == Some(marker.id()))
@@ -1831,9 +1837,10 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     ambiguous = true;
                     break;
                 }
-                let mut axes = surfaces
-                    .iter()
-                    .filter_map(|surface| match &surface.geometry {
+                let mut axes = Vec::new();
+                for surface in surfaces {
+                    ctx.charge_work(1, "scan SLDPRT spatial bore surfaces")?;
+                    let candidate_axis = match &surface.geometry {
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                             cylinder_surface,
                         )) => {
@@ -1846,14 +1853,26 @@ pub(crate) fn project_spatial_hole_position_sketches(
                                 .then_some((origin, axis))
                         }
                         _ => None,
-                    })
-                    .collect::<Vec<_>>();
+                    };
+                    if let Some(candidate_axis) = candidate_axis {
+                        ctx.reserve_collection_vec(&mut axes, 1, "collect SLDPRT spatial bore axes")?;
+                        axes.push(candidate_axis);
+                    }
+                }
                 if axes.is_empty() {
-                    let mut support_axes = surfaces
-                        .iter()
-                        .filter_map(|surface| cylindrical_support_normal(surface, point))
-                        .map(canonical_axis)
-                        .collect::<Vec<_>>();
+                    let mut support_axes = Vec::new();
+                    for surface in surfaces {
+                        ctx.charge_work(1, "scan SLDPRT spatial support surfaces")?;
+                        if let Some(axis) = cylindrical_support_normal(surface, point) {
+                            ctx.reserve_collection_vec(
+                                &mut support_axes,
+                                1,
+                                "collect SLDPRT spatial support axes",
+                            )?;
+                            support_axes.push(canonical_axis(axis));
+                        }
+                    }
+                    ctx.charge_work(u64_from_index(support_axes.len()), "sort SLDPRT spatial support axes")?;
                     support_axes
                         .sort_by_key(|axis| [axis.x.to_bits(), axis.y.to_bits(), axis.z.to_bits()]);
                     support_axes
@@ -1862,6 +1881,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                         let Some(axis) = FeatureDirection3::new(*axis) else {
                             continue;
                         };
+                        ctx.reserve_collection_vec(&mut axes, 1, "collect SLDPRT spatial bore axes")?;
                         axes.push((point, axis));
                     }
                 }
@@ -1872,21 +1892,27 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     ambiguous = true;
                     break;
                 };
+                ctx.reserve_collection_vec(&mut resolved, 1, "collect SLDPRT spatial hole placements")?;
                 resolved.push(placement.clone());
             }
             if resolved.is_empty() && !ambiguous {
-                let points = spatial_entities
-                    .iter()
-                    .filter(|entity| entity.sketch == *sketch_id)
-                    .filter_map(|entity| match entity.geometry.definition() {
-                        SpatialSketchGeometryDefinition::Point { position } => Some(position.get()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>();
-                if let Some(inferred) = coplanar_spatial_position_placements(&points) {
+                let mut points = Vec::new();
+                for entity in spatial_entities {
+                    ctx.charge_work(1, "scan SLDPRT spatial position points")?;
+                    if entity.sketch == *sketch_id {
+                        if let SpatialSketchGeometryDefinition::Point { position } =
+                            entity.geometry.definition()
+                        {
+                            ctx.reserve_collection_vec(&mut points, 1, "collect SLDPRT spatial position points")?;
+                            points.push(position.get());
+                        }
+                    }
+                }
+                if let Some(inferred) = coplanar_spatial_position_placements(ctx, &points)? {
                     resolved = inferred;
                 }
             }
+            ctx.charge_work(u64_from_index(resolved.len()), "sort SLDPRT spatial hole placements")?;
             resolved.sort_by_key(|placement| match placement {
                 HolePlacement::Axis { origin, axis } => [
                     origin.x.to_bits(),
@@ -1900,20 +1926,29 @@ pub(crate) fn project_spatial_hole_position_sketches(
             });
             resolved.dedup();
             if !ambiguous && !resolved.is_empty() {
-                *placements = Some(resolved);
+                features[index].evaluation.edit(|definition, _| {
+                    if let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition {
+                        *placements = Some(resolved);
+                    }
+                });
             }
-        }
-        feature.evaluation.set_definition(definition);
     }
     Ok(())
 }
 
-fn coplanar_spatial_position_placements(points: &[Point3]) -> Option<Vec<HolePlacement>> {
-    let mut points = points.to_vec();
+fn coplanar_spatial_position_placements(
+    ctx: &DecodeContext<'_>,
+    points: &[Point3],
+) -> Result<Option<Vec<HolePlacement>>, CodecError> {
+    let mut sorted_points = Vec::new();
+    ctx.reserve_collection_vec(&mut sorted_points, points.len(), "sort SLDPRT spatial position points")?;
+    sorted_points.extend_from_slice(points);
+    let mut points = sorted_points;
+    ctx.charge_work(u64_from_index(points.len()), "sort SLDPRT spatial position points")?;
     points.sort_by_key(|point| [point.x.to_bits(), point.y.to_bits(), point.z.to_bits()]);
     points.dedup();
     if points.len() < 3 || points.iter().any(|point| !point.is_finite()) {
-        return None;
+        return Ok(None);
     }
     let displacement = |point: Point3| {
         Vector3::new(
@@ -1927,19 +1962,23 @@ fn coplanar_spatial_position_placements(points: &[Point3]) -> Option<Vec<HolePla
         .skip(1)
         .map(|point| displacement(*point).norm())
         .fold(1.0_f64, f64::max);
-    let first = points
+    let Some(first) = points
         .iter()
         .skip(1)
         .map(|point| displacement(*point))
-        .max_by(|left, right| left.norm().total_cmp(&right.norm()))?;
-    let candidate = points
+        .max_by(|left, right| left.norm().total_cmp(&right.norm())) else {
+        return Ok(None);
+    };
+    let Some(candidate) = points
         .iter()
         .skip(1)
         .map(|point| first.cross(displacement(*point)))
-        .max_by(|left, right| left.norm().total_cmp(&right.norm()))?;
+        .max_by(|left, right| left.norm().total_cmp(&right.norm())) else {
+        return Ok(None);
+    };
     let norm = candidate.norm();
     if norm <= extent * extent * EPS_HOLE_DEGENERATE_NORMAL {
-        return None;
+        return Ok(None);
     }
     let normal = Vector3::new(candidate.x / norm, candidate.y / norm, candidate.z / norm);
     if points.iter().any(|point| {
@@ -1952,7 +1991,7 @@ fn coplanar_spatial_position_placements(points: &[Point3]) -> Option<Vec<HolePla
         .abs()
             > extent * EPS_HOLE_POSITION
     }) {
-        return None;
+        return Ok(None);
     }
     let axis = canonical_axis(normal);
     let axis = Vector3::new(
@@ -1972,15 +2011,18 @@ fn coplanar_spatial_position_placements(points: &[Point3]) -> Option<Vec<HolePla
             axis.z
         },
     );
-    points
-        .into_iter()
-        .map(|origin| {
-            Some(HolePlacement::Axis {
-                origin: FinitePoint3::new(origin)?,
-                axis: FeatureDirection3::new(axis)?,
-            })
-        })
-        .collect::<Option<Vec<_>>>()
+    let mut placements = Vec::new();
+    for origin in points {
+        let Some(origin) = FinitePoint3::new(origin) else {
+            return Ok(None);
+        };
+        let Some(axis) = FeatureDirection3::new(axis) else {
+            return Ok(None);
+        };
+        ctx.reserve_collection_vec(&mut placements, 1, "collect SLDPRT coplanar position axes")?;
+        placements.push(HolePlacement::Axis { origin, axis });
+    }
+    Ok(Some(placements))
 }
 
 /// Resolve hole axes from persistent identities of faces generated by the

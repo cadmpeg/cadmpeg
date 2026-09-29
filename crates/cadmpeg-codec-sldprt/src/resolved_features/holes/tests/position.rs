@@ -1,7 +1,8 @@
 //! Hole position-sketch and spatial-locus tests.
 
 use super::{cylinder, lane, lane_with_position_reference, model_hole, native_history};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{holes::HolePlacement, FeatureDefinition, FeatureId, FeatureOperation};
@@ -34,6 +35,48 @@ use crate::resolved_features::holes::project_hole_position_sketches;
 use crate::resolved_features::holes::project_spatial_hole_position_sketches;
 use crate::resolved_features::holes::HoleTopology;
 use crate::resolved_features::parameters::enrich_history_parameters;
+
+#[test]
+fn spatial_hole_position_route_refuses_collection_growth() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = project_spatial_hole_position_sketches(
+        &ctx,
+        &mut [],
+        &[],
+        &[],
+        &[],
+        &[native_history()],
+        &[],
+    )
+    .expect_err("native feature lookup requires one collection item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "index SLDPRT spatial position features"));
+}
+
+#[test]
+fn spatial_hole_position_route_refuses_lookup_work() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = project_spatial_hole_position_sketches(
+        &ctx,
+        &mut [],
+        &[],
+        &[],
+        &[],
+        &[native_history()],
+        &[],
+    )
+    .expect_err("native feature scan requires work");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "index SLDPRT spatial position features"));
+}
 
 #[test]
 fn hole_position_carrier_presence_requires_a_serialized_position_source() {
@@ -1381,6 +1424,8 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
 
 #[test]
 fn noncollinear_coplanar_spatial_positions_define_one_hole_axis() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let points = [
         Point3::new(23.5, 10.0, -75.0),
         Point3::new(23.5, 10.0, -23.0),
@@ -1388,7 +1433,7 @@ fn noncollinear_coplanar_spatial_positions_define_one_hole_axis() {
         Point3::new(151.5, 10.0, -75.0),
     ];
     assert_eq!(
-        coplanar_spatial_position_placements(&points),
+        coplanar_spatial_position_placements(&ctx, &points).unwrap(),
         Some(vec![
             HolePlacement::Axis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(23.5, 10.0, -23.0))
@@ -1417,17 +1462,17 @@ fn noncollinear_coplanar_spatial_positions_define_one_hole_axis() {
         ])
     );
     assert_eq!(
-        coplanar_spatial_position_placements(&[
+        coplanar_spatial_position_placements(&ctx, &[
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 1.0),
             Point3::new(0.0, 2.0, 0.0),
-        ]),
+        ]).unwrap(),
         None
     );
     let translated =
         points.map(|point| Point3::new(point.x + 1.0e12, point.y - 1.0e12, point.z + 1.0e12));
-    assert!(coplanar_spatial_position_placements(&translated).is_some());
+    assert!(coplanar_spatial_position_placements(&ctx, &translated).unwrap().is_some());
 }
 
 #[test]
