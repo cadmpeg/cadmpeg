@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::decode::build::units::{malformed_refusal, not_implemented_refusal};
+
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -38,7 +40,7 @@ impl SourceUnitCarriers {
     ) -> Result<SketchGeometry, CodecError> {
         let copy_nonblank = |value: &NonBlankString, operation: &'static str| {
             NonBlankString::new(ctx.copy_retained_text(value.as_str(), operation)?)
-                .ok_or_else(|| CodecError::malformed("admitted sketch text became blank"))
+                .ok_or_else(|| malformed_refusal(ctx, "admitted sketch text became blank"))
         };
         match geometry.definition() {
             SketchGeometryDefinition::Nurbs { curve } => {
@@ -126,13 +128,11 @@ impl SourceUnitCarriers {
         }
     }
 
-    fn scale_product_translation(&self, transform: &mut Transform) -> Result<(), CodecError> {
+    fn scale_product_translation(&self, ctx: &DecodeContext<'_>, transform: &mut Transform) -> Result<(), CodecError> {
         if let Some(scale) = self.length_scale_mm {
             *transform = transform.scaled_translation(scale).ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "Creo product transform translation cannot be represented in millimeters"
-                        .into(),
-                )
+                not_implemented_refusal(ctx, "Creo product transform translation cannot be represented in millimeters"
+                        )
             })?;
         }
         Ok(())
@@ -140,7 +140,7 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_body(&self, ctx: &DecodeContext<'_>, ir: &mut CadIr, mut body: Body) -> Result<(), CodecError> {
         if let Some(transform) = body.transform.as_mut() {
-            self.scale_product_translation(transform)?;
+            self.scale_product_translation(ctx, transform)?;
         }
         ctx.try_reserve_items(&mut ir.model.bodies, 1, "creo model bodies")?;
         ir.model.bodies.push(body);
@@ -153,9 +153,9 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         mut occurrence: Occurrence,
     ) -> Result<(), CodecError> {
-        self.scale_product_translation(&mut occurrence.transform)?;
+        self.scale_product_translation(ctx, &mut occurrence.transform)?;
         if let Some(transform) = occurrence.linked_prototype.as_mut() {
-            self.scale_product_translation(transform)?;
+            self.scale_product_translation(ctx, transform)?;
         }
         ctx.try_reserve_items(&mut ir.model.occurrences, 1, "creo model occurrences")?;
         ir.model.occurrences.push(occurrence);
@@ -203,7 +203,7 @@ impl SourceUnitCarriers {
         if let (Some(scale), Some(ParameterValue::Length(length))) =
             (self.length_scale_mm, parameter.value.as_mut())
         {
-            crate::decode::build::units::scale_length(length, scale)
+            crate::decode::build::units::scale_length(ctx, length, scale)
                 .map_err(Self::unrepresentable_length)?;
         }
         ctx.try_reserve_items(&mut ir.model.parameters, 1, "creo model parameters")?;
@@ -228,9 +228,7 @@ impl SourceUnitCarriers {
             (self.length_scale_mm, sketch.resolved_placement())
         {
             let origin = origin.scaled(scale).ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "sketch origin cannot be represented in millimeters".into(),
-                )
+                not_implemented_refusal(ctx, "sketch origin cannot be represented in millimeters")
             })?;
             sketch.placement = sketch.placement.with_origin(origin);
         }
@@ -257,7 +255,7 @@ impl SourceUnitCarriers {
             let source_geometry = Self::copy_sketch_geometry(ctx, &entity.geometry)?;
             let source_geometry = if let Some(scale) = self.length_scale_mm {
                 let unscaled = std::mem::replace(&mut entity.geometry, source_geometry);
-                let scaled = crate::decode::build::units::scale_sketch_geometry(unscaled, scale)
+                let scaled = crate::decode::build::units::scale_sketch_geometry(ctx, unscaled, scale)
                     .map_err(Self::unrepresentable_length)?;
                 std::mem::replace(&mut entity.geometry, scaled)
             } else {
@@ -288,10 +286,10 @@ impl SourceUnitCarriers {
             if let Some(scale) = self.length_scale_mm {
                 constraint.definition.scale_lengths(scale).map_err(|error| match error {
                     cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::LengthOverflow => {
-                        CodecError::NotImplemented("Creo scaled length must be finite".into())
+                        not_implemented_refusal(ctx, "Creo scaled length must be finite")
                     }
                     cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::InvalidLocalValue => {
-                        CodecError::malformed("invalid sketch constraint local arity or scalar value")
+                        malformed_refusal(ctx, "invalid sketch constraint local arity or scalar value")
                     }
                 })?;
             }
@@ -318,7 +316,7 @@ impl SourceUnitCarriers {
         if let (Some(scale), SurfaceGeometry::Solved(geometry)) =
             (self.length_scale_mm, &mut surface.geometry)
         {
-            crate::decode::build::units::scale_surface_geometry(geometry, scale).map_err(
+            crate::decode::build::units::scale_surface_geometry(ctx, geometry, scale).map_err(
                 |error| match error {
                     CodecError::Malformed(message) => CodecError::NotImplemented(message),
                     other => other,
@@ -349,7 +347,7 @@ impl SourceUnitCarriers {
         if let (Some(scale), SurfaceGeometry::Solved(solved)) =
             (self.length_scale_mm, &mut geometry)
         {
-            crate::decode::build::units::scale_surface_geometry(solved, scale).map_err(
+            crate::decode::build::units::scale_surface_geometry(ctx, solved, scale).map_err(
                 |error| match error {
                     CodecError::Malformed(message) => CodecError::NotImplemented(message),
                     other => other,
@@ -379,7 +377,7 @@ impl SourceUnitCarriers {
         if let (Some(scale), CurveGeometry::Solved(geometry)) =
             (self.length_scale_mm, &mut curve.geometry)
         {
-            crate::decode::build::units::scale_curve_geometry(geometry, scale).map_err(
+            crate::decode::build::units::scale_curve_geometry(ctx, geometry, scale).map_err(
                 |error| match error {
                     CodecError::Malformed(message) => CodecError::NotImplemented(message),
                     other => other,
@@ -413,7 +411,7 @@ impl SourceUnitCarriers {
         let source_geometry = geometry.copy_admitted(ctx, "creo replacement source curve geometry")?;
         if let (Some(scale), CurveGeometry::Solved(solved)) = (self.length_scale_mm, &mut geometry)
         {
-            crate::decode::build::units::scale_curve_geometry(solved, scale).map_err(|error| {
+            crate::decode::build::units::scale_curve_geometry(ctx, solved, scale).map_err(|error| {
                 match error {
                     CodecError::Malformed(message) => CodecError::NotImplemented(message),
                     other => other,
@@ -433,7 +431,7 @@ impl SourceUnitCarriers {
     ) -> Result<(), CodecError> {
         if let Some(scale) = self.length_scale_mm {
             let position = point.position().scaled(scale).ok_or_else(|| {
-                CodecError::NotImplemented("Creo scaled model point must be finite".into())
+                not_implemented_refusal(ctx, "Creo scaled model point must be finite")
             })?;
             point.set_position(position);
         }
@@ -442,12 +440,10 @@ impl SourceUnitCarriers {
         Ok(())
     }
 
-    fn scale_tolerance(&self, tolerance: &mut Option<PositiveReal>) -> Result<(), CodecError> {
+    fn scale_tolerance(&self, ctx: &DecodeContext<'_>, tolerance: &mut Option<PositiveReal>) -> Result<(), CodecError> {
         if let (Some(scale), Some(current)) = (self.length_scale_mm, tolerance) {
             *current = PositiveReal::new(current.get() * scale.get()).ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "scaled topology tolerance must be positive and finite".into(),
-                )
+                not_implemented_refusal(ctx, "scaled topology tolerance must be positive and finite")
             })?;
         }
         Ok(())
@@ -459,14 +455,14 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         mut vertex: Vertex,
     ) -> Result<(), CodecError> {
-        self.scale_tolerance(&mut vertex.tolerance)?;
+        self.scale_tolerance(ctx, &mut vertex.tolerance)?;
         ctx.try_reserve_items(&mut ir.model.vertices, 1, "creo model vertices")?;
         ir.model.vertices.push(vertex);
         Ok(())
     }
 
     pub(super) fn admit_face(&self, ctx: &DecodeContext<'_>, ir: &mut CadIr, mut face: Face) -> Result<(), CodecError> {
-        self.scale_tolerance(&mut face.tolerance)?;
+        self.scale_tolerance(ctx, &mut face.tolerance)?;
         ctx.try_reserve_items(&mut ir.model.faces, 1, "creo model faces")?;
         ir.model.faces.push(face);
         Ok(())
@@ -478,7 +474,7 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         mut edge: Edge,
     ) -> Result<(), CodecError> {
-        self.scale_tolerance(&mut edge.tolerance)?;
+        self.scale_tolerance(ctx, &mut edge.tolerance)?;
         let source_range = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get);
         if let (Some(scale), EdgeCarrier::Bounded(curve_id, interval)) =
             (self.length_scale_mm, &mut edge.carrier)
@@ -491,7 +487,7 @@ impl SourceUnitCarriers {
                 });
             if let Some(parameter_scale) = parameter_scale {
                 *interval = interval.scaled(parameter_scale).ok_or_else(|| {
-                    CodecError::NotImplemented("edge param_range must be finite and ordered".into())
+                    not_implemented_refusal(ctx, "edge param_range must be finite and ordered")
                 })?;
             }
         }
@@ -542,9 +538,7 @@ impl SourceUnitCarriers {
                     .parameter_range
                     .scaled(parameter_scale)
                     .ok_or_else(|| {
-                        CodecError::NotImplemented(
-                            "parameter_range must be finite and ordered".into(),
-                        )
+                        not_implemented_refusal(ctx, "parameter_range must be finite and ordered")
                     })?;
             }
         }
@@ -565,7 +559,7 @@ impl SourceUnitCarriers {
             .surfaces
             .iter()
             .find(|surface| &surface.id == surface_id)
-            .ok_or_else(|| CodecError::malformed("Creo pcurve has no owning surface"))?;
+            .ok_or_else(|| malformed_refusal(ctx, "Creo pcurve has no owning surface"))?;
         let scales = self.length_scale_mm.and_then(|scale| {
             self.surface_geometry(surface).solved().map(|geometry| {
                 crate::decode::build::units::surface_parameter_scales(geometry, scale.get())
@@ -618,7 +612,7 @@ impl SourceUnitCarriers {
         mut procedural: ProceduralSurface,
     ) -> Result<(), CodecError> {
         if let Some(scale) = self.length_scale_mm {
-            crate::decode::build::units::scale_procedural_surface(&mut procedural, scale)?;
+            crate::decode::build::units::scale_procedural_surface(ctx, &mut procedural, scale)?;
         }
         ir.model
             .add_procedural_surface_admitted(ctx, &owner, procedural)?;
@@ -633,7 +627,7 @@ impl SourceUnitCarriers {
         mut procedural: ProceduralCurve,
     ) -> Result<(), CodecError> {
         if let Some(scale) = self.length_scale_mm {
-            crate::decode::build::units::scale_procedural_curve(&mut procedural, scale)?;
+            crate::decode::build::units::scale_procedural_curve(ctx, &mut procedural, scale)?;
         }
         ir.model
             .add_procedural_curve_admitted(ctx, &owner, procedural)?;
