@@ -741,13 +741,13 @@ pub(crate) fn admit_subtype_references(
     table: &SubtypeTable,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for record in records {
-        ctx.charge_work(record.tokens.len() as u64, "scan ASM subtype references")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.tokens.len()), "scan ASM subtype references")?;
         let mut visited = std::collections::HashSet::new();
         let mut pending = Vec::new();
         let mut scratch = ctx.reserve_scoped(0, "walk ASM subtype references")?;
         let root = (subtype_refs(&record.tokens), None);
         ctx.charge_collection_items(1, "walk ASM subtype stack")?;
-        scratch.grow(std::mem::size_of_val(&root) as u64)?;
+        scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&root)))?;
         pending.try_reserve(1).map_err(|_| {
             cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -788,14 +788,14 @@ pub(crate) fn admit_subtype_references(
             let Some((tokens, _)) = table.defs.get(index) else {
                 continue;
             };
-            ctx.charge_work(tokens.len() as u64, "scan ASM subtype definition")?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(tokens.len()), "scan ASM subtype definition")?;
             let Some(target) = table.span(index) else {
                 continue;
             };
             let guard = ctx.enter_nested("follow ASM subtype reference")?;
             let frame = (subtype_refs(target.tokens()), Some(guard));
             ctx.charge_collection_items(1, "walk ASM subtype stack")?;
-            scratch.grow(std::mem::size_of_val(&frame) as u64)?;
+            scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&frame)))?;
             pending.try_reserve(1).map_err(|_| {
                 cadmpeg_core::CodecError::ResourceLimit(
                     cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -1051,7 +1051,7 @@ mod tests {
                 }
                 tokens.push(Token::SubtypeClose);
                 crate::sab::Record {
-                    index: index as usize,
+                    index: usize::try_from(index).expect("test value fits"),
                     name: "node".into(),
                     tokens: tokens.into(),
                     offset: 0,
@@ -1105,7 +1105,7 @@ mod tests {
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = records[0].tokens.len() as u64;
+        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(records[0].tokens.len());
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
         let error = super::admit_subtype_references(&ctx, &records, &table)
             .expect_err("following the reference exceeds scan work");
@@ -1411,7 +1411,7 @@ mod tests {
     fn subtype_table_walks_wide_strings_at_the_stream_ref_width() {
         fn t_ident(b: &mut Vec<u8>, s: &str) {
             b.push(0x0d);
-            b.push(s.len() as u8);
+            b.push(u8::try_from(s.len()).expect("test value fits"));
             b.extend_from_slice(s.as_bytes());
         }
 

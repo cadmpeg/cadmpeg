@@ -40,20 +40,20 @@ pub(super) fn decode_analytic_carriers(
                 if inward {
                     ctx.insert_hash_set(
                         &mut inward_normal_surfaces,
-                        r.index as i64,
+                        i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?,
                         "ASM topology inward_normal_surfaces",
                     )?;
                 }
                 ctx.insert_hash_map(
                     &mut surface_geo,
-                    r.index as i64,
+                    i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?,
                     SurfaceGeometry::Solved(geometry),
                     "ASM topology surface_geo",
                 )?;
             }
         } else if is_analytic_curve(r.head()) {
             if let Some(g) = decode_curve(ctx, r).transpose()? {
-                ctx.insert_hash_map(&mut curve_geo, r.index as i64, g, "ASM topology curve_geo")?;
+                ctx.insert_hash_map(&mut curve_geo, i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?, g, "ASM topology curve_geo")?;
             }
         }
     }
@@ -127,7 +127,7 @@ pub(super) fn keep_faces_and_carriers(
             )?;
             continue;
         };
-        ctx.insert_hash_set(kept_faces, r.index as i64, "ASM topology kept_faces")?;
+        ctx.insert_hash_set(kept_faces, i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?, "ASM topology kept_faces")?;
         if purpose == DecodePurpose::History {
             let native_kind = (surf_rec.head() == "spline")
                 .then(|| nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens))
@@ -260,7 +260,7 @@ pub(super) fn keep_faces_and_carriers(
                 if !out
                     .mesh_surface_sentinels
                     .iter()
-                    .any(|sentinel| sentinel.record_index == surf_rec.index as u32)
+                    .any(|sentinel| usize::try_from(sentinel.record_index).ok() == Some(surf_rec.index))
                 {
                     ctx.reserve_vec(
                         &mut out.mesh_surface_sentinels,
@@ -271,7 +271,7 @@ pub(super) fn keep_faces_and_carriers(
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format),
                         surface: SurfaceId::from(id(format, surf_ref)),
-                        record_index: surf_rec.index as u32,
+                        record_index: u32::try_from(surf_rec.index).map_err(|_| ctx.refuse_codec_limit("ASM native record index", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(surf_rec.index)))?,
                     });
                 }
                 out.stats.mesh_surface_faces += 1;
@@ -625,11 +625,11 @@ pub(super) fn collect_wire_topology(
     let mut free_vertices_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut saved_free_edges = Vec::new();
     if let Some(limit) = saved_entity_limit {
-        for edge in records.iter().filter(|record| {
-            let index = record.index as i64;
-            (1..limit).contains(&index) && is_edge_record(record)
-        }) {
-            let edge_index = edge.index as i64;
+        for edge in records {
+            let edge_index = i64::try_from(edge.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(edge.index)))?;
+            if !(1..limit).contains(&edge_index) || !is_edge_record(edge) {
+                continue;
+            }
             let already_owned = reach.edges.contains(&edge_index);
             keep_wire_edge(inputs, out, edge_index, carriers, reach)?;
             if !already_owned && reach.edges.contains(&edge_index) {
@@ -638,7 +638,7 @@ pub(super) fn collect_wire_topology(
         }
     }
     for shell in records.iter().filter(|record| record.head() == "shell") {
-        let shell_index = shell.index as i64;
+        let shell_index = i64::try_from(shell.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(shell.index)))?;
         let mut wire_guard = HashSet::new();
         for root in shell_wire_roots(ctx, shell, by_index)? {
             let mut wire_ref = Some(root);
@@ -733,7 +733,7 @@ pub(super) fn collect_wire_topology(
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format),
                         shell: ShellId::from(id(format, shell_index)),
-                        record_index: wire.index as u32,
+                        record_index: u32::try_from(wire.index).map_err(|_| ctx.refuse_codec_limit("ASM native record index", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(wire.index)))?,
                         members: match free_vertex {
                             Some(vertex) => WireMembers::Vertex(VertexId::from(id(format, vertex))),
                             None => WireMembers::Edges(
@@ -930,7 +930,7 @@ pub(super) fn classify_edge_curve_senses(
     let mut reversed_curve_refs: HashSet<i64> = HashSet::new();
     let mut forward_curve_refs: HashSet<i64> = HashSet::new();
     for r in records {
-        if !is_edge_record(r) || !kept_edges.contains(&(r.index as i64)) {
+        if !is_edge_record(r) || !kept_edges.contains(&(i64::try_from(r.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(r.index)))?)) {
             continue;
         }
         let Some(curve) = r.ref_at(8).filter(|c| kept_curves.contains(c)) else {
@@ -1045,7 +1045,7 @@ pub(super) fn subshell_ancestor_shells(
                 break;
             };
             if parent.head() == "shell" {
-                ctx.insert_hash_map(&mut out, record.index as i64, index, "ASM topology out")?;
+                ctx.insert_hash_map(&mut out, i64::try_from(record.index).map_err(|_| ctx.refuse_codec_limit("ASM record index", 9_223_372_036_854_775_807, cadmpeg_core::decode::u64_from_index(record.index)))?, index, "ASM topology out")?;
                 break;
             }
             if parent.head() != "subshell" {

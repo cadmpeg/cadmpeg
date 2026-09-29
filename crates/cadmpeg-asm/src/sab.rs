@@ -398,7 +398,7 @@ pub(crate) fn lex(
             p + 8,
         ),
         0x07 => {
-            let len = *bytes.get(p).ok_or_else(truncated)? as usize;
+            let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
             (Lexed::Str(string(p + 1, len)?), p + 1 + len)
         }
         0x08 => {
@@ -420,11 +420,11 @@ pub(crate) fn lex(
             (Lexed::Value(Token::Ref(v)), p + ref_width.bytes())
         }
         0x0d => {
-            let len = *bytes.get(p).ok_or_else(truncated)? as usize;
+            let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
             (Lexed::Ident(string(p + 1, len)?), p + 1 + len)
         }
         0x0e => {
-            let len = *bytes.get(p).ok_or_else(truncated)? as usize;
+            let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
             (Lexed::SubIdent(string(p + 1, len)?), p + 1 + len)
         }
         0x0f => (Lexed::Value(Token::SubtypeOpen), p),
@@ -1108,7 +1108,7 @@ mod tests {
             let mut bytes = vec![0x0d, 4];
             bytes.extend_from_slice(b"tspl");
             bytes.push(0x09);
-            bytes.extend_from_slice(&(text.len() as u64).to_le_bytes()[..ref_width.bytes()]);
+            bytes.extend_from_slice(&(cadmpeg_core::decode::u64_from_index(text.len())).to_le_bytes()[..ref_width.bytes()]);
             bytes.extend_from_slice(text.as_bytes());
             bytes.push(0x04);
             bytes.extend_from_slice(&7i64.to_le_bytes()[..ref_width.bytes()]);

@@ -780,7 +780,7 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     ];
     let by_index = attributes
         .iter()
-        .map(|attribute| (attribute.index as i64, attribute))
+        .map(|attribute| (i64::try_from(attribute.index).expect("test value fits"), attribute))
         .collect::<HashMap<_, _>>();
 
     let (carrier, decoded) = attribute_chain_color_carrier(&entity, by_index.len(), |index| {
@@ -981,7 +981,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     };
     let by_index = records
         .iter()
-        .map(|record| (record.index as i64, record))
+        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
         .collect();
     let reach = Reachable {
         loops: HashSet::from([4]),
@@ -1065,7 +1065,7 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     ];
     let by_index = records
         .iter()
-        .map(|record| (record.index as i64, record))
+        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
         .collect();
     let body_id = BodyId::mint(id(FORMAT, 1).into_string()).expect("identity grammar");
     let mut brep = AsmBrep {
@@ -1122,7 +1122,7 @@ fn lump_named_attributes_bind_to_their_owning_body() {
 
 fn ident(bytes: &mut Vec<u8>, name: &str) {
     bytes.push(0x0d);
-    bytes.push(name.len() as u8);
+    bytes.push(u8::try_from(name.len()).expect("test value fits"));
     bytes.extend_from_slice(name.as_bytes());
 }
 
@@ -1153,7 +1153,7 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
         .expect("generated subshell bytes must frame");
     let by_index = records
         .iter()
-        .map(|record| (record.index as i64, record))
+        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
         .collect::<HashMap<_, _>>();
     let kept = [4, 5].into_iter().collect::<HashSet<_>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -1189,7 +1189,7 @@ fn subshell_ancestor_shells_refuses_collection_limit() {
         .expect("generated subshell bytes must frame");
     let by_index = records
         .iter()
-        .map(|record| (record.index as i64, record))
+        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
         .collect();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -1257,7 +1257,7 @@ fn subshell_wires_project_onto_the_nearest_shell() {
         .expect("generated subshell-wire bytes must frame");
     let by_index = records
         .iter()
-        .map(|record| (record.index as i64, record))
+        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
         .collect::<HashMap<_, _>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -1338,7 +1338,7 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
     let records = [edge];
     let by_index = records
         .iter()
-        .map(|record| (record.index as i64, record))
+        .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
         .collect::<HashMap<_, _>>();
     let mut brep = AsmBrep::default();
     let reach = Reachable {
@@ -1408,7 +1408,7 @@ fn tolerant_edge_tail_admits_only_nonnegative_finite_source_tolerance() {
         let records = [edge];
         let by_index = records
             .iter()
-            .map(|record| (record.index as i64, record))
+            .map(|record| (i64::try_from(record.index).expect("test value fits"), record))
             .collect::<HashMap<_, _>>();
         let reach = Reachable {
             edges: HashSet::from([1]),

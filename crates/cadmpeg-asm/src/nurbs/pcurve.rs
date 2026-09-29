@@ -90,7 +90,7 @@ pub fn final_pcurve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<P
                 return None;
             }
             let (_knots, control_count, knot_layout) =
-                read_knots(record, &mut pos, unique as usize, degree, int_width)?;
+                read_knots(record, &mut pos, usize::try_from(unique).ok()?, degree, int_width)?;
             let control_start = pos;
             let components = if rational { 3 } else { 2 };
             for _ in 0..control_count * components {
@@ -133,7 +133,7 @@ pub(super) fn decode_pcurve_block_with_end(
         return None;
     }
     let (knots, n_poles, _knot_layout) =
-        read_knots(b, &mut pos, n_uniq as usize, degree, int_width)?;
+        read_knots(b, &mut pos, usize::try_from(n_uniq).ok()?, degree, int_width)?;
     // The record states a pole and its weight together, so the reader states
     // rows: there is no pole lane and no weight lane for a reader to pair.
     let mut points = Vec::new();
@@ -170,7 +170,7 @@ pub(super) fn decode_pcurve_block_with_end(
         PcurveNurbsPoles::Polynomial { points }
     };
     Some((
-        PcurveNurbs::new(degree as u32, knots, poles, is_periodic(closure)).ok()?,
+        PcurveNurbs::new(u32::try_from(degree).ok()?, knots, poles, is_periodic(closure)).ok()?,
         pos,
     ))
 }
@@ -213,7 +213,7 @@ pub(super) fn pcurve_block_with_end(
     if !(1..=1000).contains(&n_uniq) {
         return None;
     }
-    let (knots, n_poles) = match toks::take_knot_table(ctx, &mut cur, n_uniq as usize, degree)? {
+    let (knots, n_poles) = match toks::take_knot_table(ctx, &mut cur, usize::try_from(n_uniq).ok()?, degree)? {
         Ok(knots) => knots,
         Err(error) => return Some(Err(error)),
     };
@@ -249,7 +249,7 @@ pub(super) fn pcurve_block_with_end(
         PcurveNurbsPoles::Polynomial { points }
     };
     Some(Ok((
-        PcurveNurbs::new(degree as u32, knots, poles, is_periodic(closure)).ok()?,
+        PcurveNurbs::new(u32::try_from(degree).ok()?, knots, poles, is_periodic(closure)).ok()?,
         cur.pos(),
     )))
 }
