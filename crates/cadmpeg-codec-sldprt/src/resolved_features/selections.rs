@@ -28,7 +28,7 @@ use crate::records::{
     FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputEdgeSelection,
     FeatureInputLane, FeatureInputOperandKind, FeatureInputSurfaceSelection, SketchInputKind,
 };
-use cadmpeg_core::decode::{bounded_len, View};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
@@ -1207,35 +1207,45 @@ fn cosmetic_thread_component_edge_wrapper_at(payload: &[u8], body: usize) -> boo
 }
 
 pub(super) fn cosmetic_thread_cylinder_marker_reference(
+    ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
     object_start: usize,
     object_end: usize,
     cylinder_reference_tokens: &HashSet<u16>,
-) -> Vec<(usize, Option<Vec<FeatureInputComponentPathEntry>>)> {
+) -> Result<Vec<(usize, Option<Vec<FeatureInputComponentPathEntry>>)>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "collect SLDPRT cosmetic thread cylinder markers";
     let diameter_tail = cosmetic_thread_diameter_child_tail(feature, lane);
-    let mut markers = std::iter::once(object_start..object_end)
-        .chain(diameter_tail)
-        .flatten()
-        .filter(|offset| {
-            View::u16_le_at(&lane.native_payload, *offset)
-                .is_some_and(|token| cylinder_reference_tokens.contains(&token))
-        })
-        .filter_map(|body| {
-            cosmetic_thread_cylinder_reference_marker_layout_at(&lane.native_payload, body)
-        })
-        .collect::<Vec<_>>();
+    let mut markers = Vec::new();
+    for body in std::iter::once(object_start..object_end).chain(diameter_tail).flatten() {
+        ctx.charge_work(1, OPERATION)?;
+        if !View::u16_le_at(&lane.native_payload, body)
+            .is_some_and(|token| cylinder_reference_tokens.contains(&token))
+        {
+            continue;
+        }
+        let Some(marker) = cosmetic_thread_cylinder_reference_marker_layout_at(&lane.native_payload, body) else {
+            continue;
+        };
+        ctx.reserve_collection_vec(&mut markers, 1, OPERATION)?;
+        markers.push(marker);
+    }
+    let count = u64::try_from(markers.len())
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    let levels = if markers.len() > 1 { markers.len().ilog2() + 1 } else { 1 };
+    ctx.charge_work(count.checked_mul(u64::from(levels))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
     markers.sort_unstable();
     markers.dedup();
-    markers
-        .into_iter()
-        .map(|marker| {
-            let components = compact_sketch_surface_component_path_at(&lane.native_payload, marker)
-                .or_else(|| compact_termination_reference_path_at(&lane.native_payload, marker))
-                .or_else(|| compact_edge_component_path_at(&lane.native_payload, marker));
-            (marker, components)
-        })
-        .collect()
+    let mut references = Vec::new();
+    ctx.reserve_collection_vec(&mut references, markers.len(), OPERATION)?;
+    for marker in markers {
+        let components = compact_sketch_surface_component_path_at(&lane.native_payload, marker)
+            .or_else(|| compact_termination_reference_path_at(&lane.native_payload, marker))
+            .or_else(|| compact_edge_component_path_at(&lane.native_payload, marker));
+        references.push((marker, components));
+    }
+    Ok(references)
 }
 
 fn cosmetic_thread_diameter_child_tail(

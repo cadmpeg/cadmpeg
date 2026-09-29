@@ -2602,8 +2602,8 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     let lane_key = lane.id.rsplit_once('#')
                         .map_or(lane.id.as_str(), |(_, key)| key);
                     for (marker, components) in cosmetic_thread_cylinder_marker_reference(
-                        native_feature, lane, start, end, &cylinder_tokens,
-                    ) {
+                        ctx, native_feature, lane, start, end, &cylinder_tokens,
+                    )? {
                         let offset = u64::try_from(marker)
                             .map_err(|_| ctx.refuse_codec_limit(REFERENCE_OPERATION, u64::MAX - 1, u64::MAX))?;
                         let (key, reservation) = format_reference_key(lane_key, offset)?;
