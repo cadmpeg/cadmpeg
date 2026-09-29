@@ -3179,7 +3179,7 @@ pub(crate) fn project_hole_axes(
                     };
                     if frames.all(same_frame) {
                         if let Some(bore_placements) =
-                            plane_owned_bore_placements(frame.0, frame.1, radius, topology)
+                            plane_owned_bore_placements(ctx, frame.0, frame.1, radius, topology)?
                         {
                             *placements = Some(bore_placements);
                             break 'feature_edit;
@@ -3253,31 +3253,34 @@ pub(crate) fn project_hole_axes(
 }
 
 fn cylindrical_bore_axes(
+    ctx: &DecodeContext<'_>,
     radius: f64,
     topology: &HoleTopology<'_>,
-) -> Vec<(Point3, FeatureDirection3)> {
-    let surfaces = topology
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, surface))
-        .collect::<HashMap<_, _>>();
+) -> Result<Vec<(Point3, FeatureDirection3)>, CodecError> {
+    let surfaces = topology_index(ctx, topology.surfaces, |surface| &surface.id)?;
     let tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
-    let mut axes = topology
-        .faces
-        .iter()
-        .filter(|face| face.sense == Sense::Reversed)
-        .filter_map(|face| {
-            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-                surfaces.get(&face.surface)?.geometry
-            else {
-                return None;
-            };
-            let origin = cylinder_surface.origin().get();
-            let axis = FeatureDirection3::from(*cylinder_surface.frame().axis());
-            let candidate = cylinder_surface.radius().get();
-            ((candidate - radius).abs() <= tolerance).then_some((origin, axis))
-        })
-        .collect::<Vec<_>>();
+    let mut axes = Vec::new();
+    for face in topology.faces {
+        ctx.charge_work(1, "scan SLDPRT bore carrier faces")?;
+        if face.sense != Sense::Reversed {
+            continue;
+        }
+        let Some(surface) = surfaces.get(&face.surface) else {
+            continue;
+        };
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+            surface.geometry else {
+                continue;
+        };
+        let origin = cylinder_surface.origin().get();
+        let axis = FeatureDirection3::from(*cylinder_surface.frame().axis());
+        let candidate = cylinder_surface.radius().get();
+        if (candidate - radius).abs() <= tolerance {
+            ctx.reserve_collection_vec(&mut axes, 1, "collect SLDPRT bore carrier axes")?;
+            axes.push((origin, axis));
+        }
+    }
+    ctx.charge_work(u64_from_index(axes.len()), "sort SLDPRT bore carrier axes")?;
     axes.sort_by_key(|(origin, axis)| {
         [
             origin.x.to_bits(),
@@ -3289,54 +3292,58 @@ fn cylindrical_bore_axes(
         ]
     });
     axes.dedup();
-    axes
+    Ok(axes)
 }
 
 fn plane_owned_bore_placements(
+    ctx: &DecodeContext<'_>,
     plane_origin: Point3,
     plane_normal: Vector3,
     radius: f64,
     topology: &HoleTopology<'_>,
-) -> Option<Vec<HolePlacement>> {
+) -> Result<Option<Vec<HolePlacement>>, CodecError> {
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
+    const OPERATION: &str = "collect SLDPRT plane-owned bore axes";
     let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
-    let mut placements = cylindrical_bore_axes(radius, topology)
-        .into_iter()
-        .filter(|(_, axis)| axis.dot(plane_normal).abs() >= 1.0 - EPS_HOLE_GEOMETRY)
-        .map(|(origin, axis)| {
-            let station = Vector3::new(
-                plane_origin.x - origin.x,
-                plane_origin.y - origin.y,
-                plane_origin.z - origin.z,
-            )
-            .dot(axis.get());
-            Some((
-                FinitePoint3::new(Point3::new(
-                    origin.x + station * axis.x,
-                    origin.y + station * axis.y,
-                    origin.z + station * axis.z,
-                ))?,
-                FeatureDirection3::new(plane_normal)?,
-            ))
-        })
-        .try_fold(
-            HashMap::<[GridCoordinate; 3], (FinitePoint3, FeatureDirection3)>::new(),
-            |mut placements, placement| {
-                let (origin, axis) = placement?;
-                placements
-                    .entry([quantize(origin.x), quantize(origin.y), quantize(origin.z)])
-                    .or_insert((origin, axis));
-                Some(placements)
-            },
-        )?
-        .into_iter()
-        .collect::<Vec<_>>();
+    let mut by_position = HashMap::new();
+    for (origin, axis) in cylindrical_bore_axes(ctx, radius, topology)? {
+        ctx.charge_work(1, "scan SLDPRT plane-owned bore axes")?;
+        if axis.dot(plane_normal).abs() < 1.0 - EPS_HOLE_GEOMETRY {
+            continue;
+        }
+        let station = Vector3::new(
+            plane_origin.x - origin.x,
+            plane_origin.y - origin.y,
+            plane_origin.z - origin.z,
+        )
+        .dot(axis.get());
+        let Some(origin) = FinitePoint3::new(Point3::new(
+            origin.x + station * axis.x,
+            origin.y + station * axis.y,
+            origin.z + station * axis.z,
+        )) else {
+            return Ok(None);
+        };
+        let Some(axis) = FeatureDirection3::new(plane_normal) else {
+            return Ok(None);
+        };
+        let key = [quantize(origin.x), quantize(origin.y), quantize(origin.z)];
+        if !by_position.contains_key(&key) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            by_position.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+            by_position.insert(key, (origin, axis));
+        }
+    }
+    let mut placements = Vec::new();
+    ctx.reserve_collection_vec(&mut placements, by_position.len(), OPERATION)?;
+    placements.extend(by_position);
     placements.sort_by_key(|(key, _)| *key);
-    let placements = placements
-        .into_iter()
-        .map(|(_, (origin, axis))| HolePlacement::Axis { origin, axis })
-        .collect::<Vec<_>>();
-    (!placements.is_empty()).then_some(placements)
+    let mut axes = Vec::new();
+    ctx.reserve_collection_vec(&mut axes, placements.len(), OPERATION)?;
+    axes.extend(placements.into_iter().map(|(_, (origin, axis))| HolePlacement::Axis { origin, axis }));
+    Ok((!axes.is_empty()).then_some(axes))
 }
 
 fn bore_carrier_placements(
@@ -3344,7 +3351,7 @@ fn bore_carrier_placements(
     radius: f64,
     topology: &HoleTopology<'_>,
 ) -> Result<Option<Vec<HolePlacement>>, CodecError> {
-    carrier_placements(ctx, cylindrical_bore_axes(radius, topology))
+    carrier_placements(ctx, cylindrical_bore_axes(ctx, radius, topology)?)
 }
 
 fn cylindrical_surface_placements(
