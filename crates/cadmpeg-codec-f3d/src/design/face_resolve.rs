@@ -1575,48 +1575,54 @@ pub(crate) fn resolve_stable_bounded_face_history_set(
 /// complete boundary. A changed-face count alone is not sufficient: unrelated
 /// topology changes must not become a face selection.
 pub(crate) fn resolve_surface_delete_face_history_set(
+    ctx: Option<&DecodeContext<'_>>,
     operand: &DesignFaceOperand,
-) -> Option<Vec<i64>> {
-    counted_face_recipe_frame(operand)?;
-    let active_faces = unique_stable_face_slots(&operand.preceding_candidate_faces)?;
-    let changed_faces = unique_stable_face_slots(&operand.changed_candidate_faces)?;
+) -> Result<Option<Vec<i64>>, CodecError> {
+    if counted_face_recipe_frame(operand).is_none() { return Ok(None); }
+    let Some(active_faces) = unique_stable_face_slots(ctx, &operand.preceding_candidate_faces)? else { return Ok(None); };
+    let Some(changed_faces) = unique_stable_face_slots(ctx, &operand.changed_candidate_faces)? else { return Ok(None); };
     if active_faces.is_empty() || changed_faces != active_faces {
-        return None;
+        return Ok(None);
     }
     if operand.historical_support_contexts.len() != active_faces.len() {
-        return None;
+        return Ok(None);
     }
-    let mut covered = HashSet::with_capacity(active_faces.len());
+    let mut covered = HashSet::new();
     for context in &operand.historical_support_contexts {
         if !active_faces.contains(&context.active_face_slot)
-            || !covered.insert(context.active_face_slot)
             || context.preceding_face_slots != [context.active_face_slot]
             || context.changed_preceding_face_slots != [context.active_face_slot]
         {
-            return None;
+            return Ok(None);
         }
-        let boundaries = valid_preceding_face_boundaries(context)?;
+        if !insert_face_set(ctx, &mut covered, context.active_face_slot,
+            "f3d SurfaceDeleteFace covered face index")? { return Ok(None); }
+        let Some(boundaries) = valid_preceding_face_boundaries(context) else { return Ok(None); };
         let [boundary] = boundaries.as_slice() else {
-            return None;
+            return Ok(None);
         };
         if boundary.face_slot != context.active_face_slot {
-            return None;
+            return Ok(None);
         }
     }
-    (covered.len() == active_faces.len()).then_some(active_faces)
+    Ok((covered.len() == active_faces.len()).then_some(active_faces))
 }
 
-fn unique_stable_face_slots(faces: &[cadmpeg_ir::ids::FaceId]) -> Option<Vec<i64>> {
-    let mut slots = faces
-        .iter()
-        .map(|face| face.as_str().rsplit_once('#')?.1.parse::<i64>().ok())
-        .collect::<Option<Vec<_>>>()?;
+fn unique_stable_face_slots(
+    ctx: Option<&DecodeContext<'_>>,
+    faces: &[cadmpeg_ir::ids::FaceId],
+) -> Result<Option<Vec<i64>>, CodecError> {
+    let mut slots = Vec::new();
+    for face in faces {
+        let Some(slot) = face.as_str().rsplit_once('#').and_then(|(_, slot)| slot.parse::<i64>().ok()) else { return Ok(None); };
+        push_face_item(ctx, &mut slots, slot, "f3d stable face slot")?;
+    }
     if slots.iter().any(|slot| *slot < 0) {
-        return None;
+        return Ok(None);
     }
     slots.sort_unstable();
     let unique = slots.windows(2).all(|pair| pair[0] != pair[1]);
-    unique.then_some(slots)
+    Ok(unique.then_some(slots))
 }
 
 fn counted_face_recipe_frame(operand: &DesignFaceOperand) -> Option<usize> {
@@ -3317,8 +3323,7 @@ mod tests {
         assert_eq!(stable_face_support_set(&active_faces, &contexts), None);
     }
 
-    #[test]
-    fn surface_delete_face_history_set_requires_complete_changed_one_to_one_support() {
+    fn surface_delete_face_operand() -> DesignFaceOperand {
         let node = DesignFaceRecipeNode {
             byte_offset: 0,
             end_byte_offset: 12,
@@ -3370,20 +3375,57 @@ mod tests {
         for context in &mut operand.historical_support_contexts {
             context.changed_preceding_face_slots = vec![context.active_face_slot];
         }
+        operand
+    }
 
+    #[test]
+    fn surface_delete_face_history_set_requires_complete_changed_one_to_one_support() {
+        let mut operand = surface_delete_face_operand();
         assert_eq!(
-            resolve_surface_delete_face_history_set(&operand),
+            resolve_surface_delete_face_history_set(None, &operand).unwrap(),
             Some(vec![10, 11])
         );
 
         operand.historical_support_contexts[1]
             .changed_preceding_face_slots
             .clear();
-        assert_eq!(resolve_surface_delete_face_history_set(&operand), None);
+        assert_eq!(resolve_surface_delete_face_history_set(None, &operand).unwrap(), None);
 
         operand.historical_support_contexts[1].changed_preceding_face_slots = vec![11];
         operand.historical_support_contexts[1].preceding_face_slots = vec![10, 11];
-        assert_eq!(resolve_surface_delete_face_history_set(&operand), None);
+        assert_eq!(resolve_surface_delete_face_history_set(None, &operand).unwrap(), None);
+    }
+
+    #[test]
+    fn surface_delete_face_slots_refuse_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let operand = surface_delete_face_operand();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = resolve_surface_delete_face_history_set(Some(&ctx), &operand).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d stable face slot"));
+    }
+
+    #[test]
+    fn surface_delete_face_covered_index_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let operand = surface_delete_face_operand();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 5;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = resolve_surface_delete_face_history_set(Some(&ctx), &operand).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d SurfaceDeleteFace covered face index"));
     }
 
     #[test]
