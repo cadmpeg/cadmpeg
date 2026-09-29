@@ -27,6 +27,7 @@ fn assert_main_group_refusal(operation: &'static str, surface_patch: bool) {
         );
         let mut second = recipe_edge_operand(11, &[], &[]);
         second.resolved_edge_slot = Some(18);
+        second.surface_patch_recipe_structure = operands[0].surface_patch_recipe_structure.clone();
         operands.push(second);
     }
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#main-edge-group")
@@ -49,6 +50,21 @@ fn assert_main_group_refusal(operation: &'static str, surface_patch: bool) {
 #[test]
 fn generic_surface_patch_member_index_refuses_collection_limit() {
     assert_main_group_refusal("f3d generic surface patch member index", true);
+}
+
+#[test]
+fn generic_surface_patch_matched_operand_refuses_collection_limit() {
+    assert_main_group_refusal("f3d generic surface patch matched operand", true);
+}
+
+#[test]
+fn generic_surface_patch_resolved_slot_refuses_collection_limit() {
+    assert_main_group_refusal("f3d generic surface patch resolved slot", true);
+}
+
+#[test]
+fn generic_surface_patch_distinct_slot_refuses_collection_limit() {
+    assert_main_group_refusal("f3d generic surface patch distinct slot", true);
 }
 
 #[test]
