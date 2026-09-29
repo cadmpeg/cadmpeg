@@ -7,4 +7,4 @@
 use cadmpeg_codec_sldprt::fuzz::spline_curves;
 use libfuzzer_sys::fuzz_target;
 
-fuzz_target!(|data: &[u8]| spline_curves(data));
+fuzz_target!(|data: &[u8]| drop(spline_curves(data)));

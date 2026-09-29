@@ -793,6 +793,7 @@ pub(super) fn spatial_relation_marker_coordinates(payload: &[u8], offset: usize)
     Some(Point3::new(coordinate(0)?, coordinate(8)?, coordinate(16)?))
 }
 
+#[cfg(test)]
 pub(super) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<FinitePoint3> {
     spatial_vertex_offsets(payload)
         .into_iter()

@@ -16,56 +16,51 @@ pub fn container(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
 }
 
 /// Exercise embedded Parasolid stream extraction.
-pub fn parasolid(data: &[u8]) {
+pub fn parasolid(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let arena = DecodeArena::new();
-    let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service()) else {
-        return;
-    };
-    drop(crate::parasolid::extract_streams_with_offsets(data, &ctx));
+    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
+    drop(crate::parasolid::extract_streams_with_offsets(data, &ctx)?);
+    Ok(())
 }
 
 /// Exercise spline-curve carrier scanning.
-pub fn spline_curves(data: &[u8]) {
+pub fn spline_curves(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let arena = DecodeArena::new();
-    let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service()) else {
-        return;
-    };
+    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
     drop(crate::brep::spline::scan_curve_carriers(
         &ctx,
         data,
         &mut Vec::new(),
-    ));
+    )?);
+    Ok(())
 }
 
 /// Exercise spline-surface carrier scanning.
-pub fn spline_surfaces(data: &[u8]) {
+pub fn spline_surfaces(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let arena = DecodeArena::new();
-    let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service()) else {
-        return;
-    };
+    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
     drop(crate::brep::spline::scan_surface_carriers(
         &ctx,
         data,
         &mut Vec::new(),
-    ));
+    )?);
+    Ok(())
 }
 
 /// Exercise topology record scanning.
-pub fn topology(data: &[u8]) {
+pub fn topology(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let arena = DecodeArena::new();
-    let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service()) else {
-        return;
-    };
-    drop(crate::brep::topology::scan(&ctx, data));
+    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
+    drop(crate::brep::topology::scan(&ctx, data)?);
+    Ok(())
 }
 
 /// Exercise entity record scanning.
-pub fn entity(data: &[u8]) {
+pub fn entity(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let arena = DecodeArena::new();
-    let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service()) else {
-        return;
-    };
-    drop(crate::brep::entity::scan_metadata(&ctx, data, false));
+    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
+    drop(crate::brep::entity::scan_metadata(&ctx, data, false)?);
+    Ok(())
 }
 
 /// Exercise `PMISemanticDataDB` `MessagePack` parse/patch/reparse.
@@ -112,4 +107,28 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+
+    #[test]
+    fn parasolid_fuzz_wrapper_returns_declared_expansion_refusal() {
+        let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(b"x").expect("compressed frame fixture");
+        let member = encoder.finish().expect("finish compressed frame fixture");
+        let mut payload = vec![
+            0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2,
+            0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99,
+        ];
+        payload.extend_from_slice(&(512_u32 * 1024 * 1024 + 1).to_le_bytes());
+        payload.extend_from_slice(&u32::try_from(member.len()).expect("small compressed fixture").to_le_bytes());
+        payload.extend_from_slice(&member);
+        let error = super::parasolid(&payload).expect_err("declared expansion exceeds service policy");
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::DecompressedBytes
+        ));
+    }
 }
