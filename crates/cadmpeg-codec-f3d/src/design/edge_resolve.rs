@@ -865,7 +865,8 @@ fn resolved_edge_group_with_transition_chain(
             operand.resolved_edge_slot.is_some() || !operand.resolved_edge_slots.is_empty()
         }) {
             let mut seen = HashSet::new();
-            let edges = identity_matches
+            let mut edges = Vec::new();
+            for edge_slot in identity_matches
                 .iter()
                 .flat_map(|operand| {
                     operand
@@ -874,16 +875,23 @@ fn resolved_edge_group_with_transition_chain(
                         .copied()
                         .chain(operand.resolved_edge_slots.iter().copied())
                 })
-                .filter(|edge| seen.insert(*edge))
-                .map(|edge_slot| {
-                    ids::history_input_edge_id(
+            {
+                if insert_edge_set(ctx, &mut seen, edge_slot,
+                    "f3d identity edge slot index")? {
+                    let edge = ids::history_input_edge_id(
                         &ids::history_input_prefix(&feature_key, previous_state_id),
                         edge_slot,
-                    )
-                })
-                .collect();
-            return Ok(EdgeSelection::historical(state, edges, group.id.clone())
-                .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone())));
+                    );
+                    push_edge_item(ctx, &mut edges, edge,
+                        "f3d identity historical edge")?;
+                }
+            }
+            let native = copy_edge_text(ctx, &group.id,
+                "f3d identity historical group id")?;
+            return match EdgeSelection::historical(state, edges, native) {
+                Ok(selection) => Ok(selection),
+                Err(_) => native_edge_selection(group, ctx),
+            };
         }
         if let Some(edges) = identity_radius_slots.as_ref() {
             return Ok(EdgeSelection::historical(
