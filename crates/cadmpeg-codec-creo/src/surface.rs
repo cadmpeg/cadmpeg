@@ -5632,18 +5632,31 @@ fn decode_support_apex_cone_frame(
         });
     let (apex_coordinate, apex_start) = apex_candidates.next()?;
     apex_candidates.next().is_none().then_some(())?;
-    let support_candidates = (0..apex_start)
-        .filter_map(|start| {
-            let mut frame = body.get(start..apex_start)?.to_vec();
-            frame.extend_from_slice(&[0x18, 0x18, 0x18]);
-            let slots = scalar::decode_positional_plane_local_system_slots(&frame, cache)?.get();
-            (slots[9..12] == [0.0, 0.0, 0.0]).then_some(slots)
-        })
-        .collect::<Vec<_>>();
-    let [slots] = support_candidates.as_slice() else {
-        return None;
-    };
-    let [first, _, second, _] = local_system_lanes(*slots);
+    // Twelve scalar slots each consume at most nine bytes in this lane.
+    const MAX_SUPPORT_FRAME_BYTES: usize = 12 * 9;
+    let mut sole_slots = None;
+    for start in 0..apex_start {
+        let prefix = body.get(start..apex_start)?;
+        if prefix.len() > MAX_SUPPORT_FRAME_BYTES - 3 {
+            continue;
+        }
+        let mut frame = [0; MAX_SUPPORT_FRAME_BYTES];
+        frame[..prefix.len()].copy_from_slice(prefix);
+        frame[prefix.len()..prefix.len() + 3].copy_from_slice(&[0x18, 0x18, 0x18]);
+        let Some(slots) = scalar::decode_positional_plane_local_system_slots(
+            &frame[..prefix.len() + 3],
+            cache,
+        )
+        .map(|slots| slots.get())
+        .filter(|slots| slots[9..12] == [0.0, 0.0, 0.0])
+        else {
+            continue;
+        };
+        if sole_slots.replace(slots).is_some() {
+            return None;
+        }
+    }
+    let [first, _, second, _] = local_system_lanes(sole_slots?);
     let normalize = |vector: [f64; 3]| {
         let magnitude = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
         (magnitude.is_finite() && magnitude > 0.0).then(|| vector.map(|value| value / magnitude))
