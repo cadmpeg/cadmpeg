@@ -718,10 +718,11 @@ pub(in super::super) fn transfer_sketches(
             else {
                 continue;
             };
-            if !constraint
+            let reconciled = match constraint
                 .definition
                 .edit(|kind| {
                     reconcile_section_dimension_constraint(
+                        ctx,
                         kind,
                         definition,
                         &sketch_id,
@@ -730,8 +731,11 @@ pub(in super::super) fn transfer_sketches(
                         &available_parameter_ids,
                     )
                 })
-                .unwrap_or(false)
             {
+                Ok(result) => result?,
+                Err(_) => false,
+            };
+            if !reconciled {
                 continue;
             }
             annotate(

@@ -157,6 +157,26 @@ pub(in super::super) fn resolved_feature_dimension_parameter<'a>(
     ))
 }
 
+pub(in super::super) fn resolved_feature_dimension_parameter_admitted<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    sketch: &SketchId,
+    table: &'a crate::feature::definitions::FeatureDimensionTable,
+    ordinal: usize,
+) -> Result<Option<(&'a crate::feature::definitions::FeatureDimension, ParameterId)>, cadmpeg_core::CodecError> {
+    if !feature_dimension_table_complete(table) {
+        return Ok(None);
+    }
+    let Some(dimension) = table.rows.get(ordinal) else {
+        return Ok(None);
+    };
+    let unique = table.rows.iter().filter(|candidate| candidate.external_id == dimension.external_id).count() == 1;
+    if !unique {
+        return Ok(None);
+    }
+    Ok(feature_dimension_parameter_row_id_admitted(ctx, sketch, dimension.external_id, None)?
+        .map(|parameter| (dimension, parameter)))
+}
+
 pub(in super::super) fn planned_feature_dimension_parameter_ids(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,

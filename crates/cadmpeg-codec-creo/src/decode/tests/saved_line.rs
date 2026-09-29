@@ -488,11 +488,12 @@ fn saved_line_joins_through_order_table() {
         operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
     }));
     assert_eq!(
-        relation_incidence_entities(
+        crate::decode::with_test_decode_ctx(|ctx| relation_incidence_entities(
+            ctx,
             &constrained,
             &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
             7,
-        ),
+        )).expect("service incidence admission"),
         vec![
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
                 .expect("valid test fixture"),
@@ -984,12 +985,12 @@ fn saved_line_joins_through_order_table() {
         .header_mut()
         .expect("skamp header")
         .declared_count = 2;
-    assert!(relation_incidence_entities(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| relation_incidence_entities(
+        ctx,
         &duplicate_incidence,
         &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
         7,
-    )
-    .is_empty());
+    )).expect("service incidence admission").is_empty());
     constrained
         .relations
         .as_mut()
@@ -999,18 +1000,19 @@ fn saved_line_joins_through_order_table() {
         .expect("skamp table")
         .rows_mut()[0]
         .status = 34;
-    assert!(relation_incidence_entities(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| relation_incidence_entities(
+        ctx,
         &constrained,
         &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
         7,
-    )
-    .is_empty());
+    )).expect("service incidence admission").is_empty());
     assert_eq!(
-        joined_relation_incidence_entities(
+        crate::decode::with_test_decode_ctx(|ctx| joined_relation_incidence_entities(
+            ctx,
             &constrained,
             &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
             7,
-        ),
+        )).expect("service joined incidence admission"),
         vec![
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
                 .expect("valid test fixture"),
