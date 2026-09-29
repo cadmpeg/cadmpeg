@@ -1157,7 +1157,10 @@ pub(crate) fn project_relation_solved_line_geometry(
                         })
                 })
                 .flatten();
-            let point_position = point_marker.and_then(|marker| {
+            let point_position = (|| -> Result<Option<Point2>, cadmpeg_core::CodecError> {
+                let Some(marker) = point_marker else {
+                    return Ok(None);
+                };
                 let resolved = entities
                     .iter()
                     .find(|entity| {
@@ -1169,36 +1172,47 @@ pub(crate) fn project_relation_solved_line_geometry(
                         _ => None,
                     });
                 if resolved.is_some() {
-                    return resolved;
+                    return Ok(resolved);
                 }
-                let [u, v] = marker.coordinates_m?.get();
+                let Some([u, v]) = marker.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get)
+                else {
+                    return Ok(None);
+                };
                 let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-                let candidates = transforms
+                let mut unique_position = None;
+                let mut ambiguous = false;
+                for transform in transforms
                     .get(relation.feature_ref.as_str())
                     .into_iter()
                     .flatten()
-                    .filter_map(|transform| transform.apply(native))
-                    .collect::<HashSet<_>>();
-                let candidates = if candidates.len() == 1 {
-                    candidates
-                } else {
+                {
+                    ctx.charge_work(1, "scan SLDPRT solved-line point transforms")?;
+                    let Some(position) = transform.apply(native) else {
+                        continue;
+                    };
+                    if unique_position.is_some_and(|previous| previous != position) {
+                        ambiguous = true;
+                    } else if unique_position.is_none() {
+                        unique_position = Some(position);
+                    }
+                }
+                let position = if ambiguous || unique_position.is_none() {
                     sketches
                         .iter()
                         .find(|candidate| candidate.id == *sketch)
                         .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
                         .and_then(|transform| transform.apply(native))
-                        .map(|position| HashSet::from([position]))
-                        .unwrap_or(candidates)
+                } else {
+                    unique_position
                 };
-                let mut candidates = candidates.into_iter();
-                let (Some(position), None) = (candidates.next(), candidates.next()) else {
-                    return None;
+                let Some(position) = position else {
+                    return Ok(None);
                 };
-                Some(Point2::new(
+                Ok(Some(Point2::new(
                     position.0 as f64 * QUANTUM,
                     position.1 as f64 * QUANTUM,
-                ))
-            });
+                )))
+            })()?;
             let candidate = |start, end| {
                 Some(
                     SketchEntity::new(
