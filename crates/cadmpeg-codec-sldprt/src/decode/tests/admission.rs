@@ -96,6 +96,53 @@ fn collection_refusal_with_options(
     panic!("target collection charge was not reached");
 }
 
+fn work_refusal_with_options(
+    source: &[u8],
+    mut options: DecodeOptions,
+    operation: &str,
+) -> cadmpeg_core::decode::ResourceLimit {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    options.policy.limits.max_work_units = 0;
+    for _ in 0..4096 {
+        let error = SldprtCodec
+            .decode(&mut Cursor::new(source), &options)
+            .expect_err("work limit must refuse the decode");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error
+        else {
+            panic!("expected a work-unit refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        if limit.operation == operation {
+            options.policy.limits.max_work_units = limit.used + limit.additional - 1;
+            let repeated = SldprtCodec
+                .decode(&mut Cursor::new(source), &options)
+                .expect_err("one work unit below the target must refuse");
+            assert!(matches!(
+                repeated,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::WorkUnits
+                        && refusal.operation == operation
+            ));
+            return limit;
+        }
+        let next = limit.used + limit.additional;
+        assert!(next > options.policy.limits.max_work_units);
+        options.policy.limits.max_work_units = next;
+    }
+    panic!("target work charge was not reached");
+}
+
+fn custom_property_source() -> Vec<u8> {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords",
+        br#"<Keywords Name="Part"><CustomProperty Name="PartNumber">A-123</CustomProperty></Keywords>"#,
+    ));
+    source
+}
+
 #[test]
 fn decode_body_stream_selection_refuses_collection_limit() {
     let source = sldprt_with_body(&triangle_body());
@@ -312,6 +359,61 @@ fn metadata_history_text_refuses_retained_limit() {
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain SLDPRT feature name"
     ));
+}
+
+#[test]
+fn metadata_custom_property_projection_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = custom_property_source();
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let limit = collection_refusal_with_options(
+        &source,
+        options,
+        "project SLDPRT custom properties",
+    );
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn metadata_custom_property_projection_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = custom_property_source();
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(
+        &source,
+        &mut options,
+        "project SLDPRT custom properties",
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "project SLDPRT custom properties"
+    ));
+}
+
+#[test]
+fn metadata_custom_property_projection_refuses_work_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = custom_property_source();
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let limit = work_refusal_with_options(&source, options, "project SLDPRT custom properties");
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert!(limit.additional > 0);
 }
 
 #[test]
