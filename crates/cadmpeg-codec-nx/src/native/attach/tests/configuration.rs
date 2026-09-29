@@ -1251,6 +1251,11 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
 
 #[test]
 fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+
     use cadmpeg_ir::features::BooleanOp;
     use cadmpeg_ir::topology::BodyKind;
 
@@ -1292,7 +1297,7 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
     let prior = FeatureId::mint("synthetic:test:id#prior-offset-writer").expect("identity grammar");
     let offset_body = "store:block#7";
     let mut offset_history = BodyWriterHistory::default();
-    offset_history.record_writer(None, Some(offset_body), &[], &prior);
+    offset_history.record_writer(&ctx, None, Some(offset_body), &[], &prior).expect("admitted writer history");
     assert_eq!(
         extrude_boolean_op(&offset_history, None, Some(offset_body), &[BodyKind::Solid]),
         BooleanOp::Unresolved

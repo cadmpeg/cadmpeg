@@ -487,6 +487,11 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
 
 #[test]
 fn nx_boolean_writers_follow_selected_identity_namespace() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+
     use cadmpeg_ir::features::{
         BodySelection, BooleanKind, FeatureDefinition, FeatureId, FeatureOperation,
     };
@@ -525,9 +530,9 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
     let offset_prior =
         FeatureId::mint("synthetic:test:id#offset-prior".to_string()).expect("identity grammar");
     let mut history = BodyWriterHistory::default();
-    history.record_writer(Some(401), None, &[], &native_prior);
-    history.record_writer(None, Some(&blocks[&401]), &[], &offset_prior);
-    history.record_writer(None, Some(&blocks[&402]), &[], &offset_prior);
+    history.record_writer(&ctx, Some(401), None, &[], &native_prior).expect("admitted writer history");
+    history.record_writer(&ctx, None, Some(&blocks[&401]), &[], &offset_prior).expect("admitted writer history");
+    history.record_writer(&ctx, None, Some(&blocks[&402]), &[], &offset_prior).expect("admitted writer history");
 
     assert_eq!(
         boolean_participant_writer(target, 401, Some(&blocks), &BTreeMap::new(), &history,),
