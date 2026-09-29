@@ -4758,25 +4758,27 @@ fn recipe_dimension_candidate_entities(
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     let mut entities = Vec::new();
+    let mut add = |entity: &cadmpeg_ir::sketches::SketchEntityId| {
+        if !entities.contains(entity) {
+            entities.push(entity.clone());
+        }
+    };
     for candidate in candidates {
-        let candidate_entities = match candidate {
+        match candidate {
             Definition::Distance {
                 entities: candidate_entities,
                 ..
-            } => candidate_entities.clone(),
+            } => {
+                for entity in candidate_entities {
+                    add(entity);
+                }
+            }
             Definition::HorizontalDistance { first, second, .. }
             | Definition::VerticalDistance { first, second, .. } => {
-                vec![
-                    locus_entity_id(first).clone(),
-                    locus_entity_id(second).clone(),
-                ]
+                add(locus_entity_id(first));
+                add(locus_entity_id(second));
             }
-            _ => Vec::new(),
-        };
-        for entity in candidate_entities {
-            if !entities.contains(&entity) {
-                entities.push(entity);
-            }
+            _ => {}
         }
     }
     entities
@@ -4870,10 +4872,10 @@ fn recipe_extension_point_dimension(
             if matched.is_some() {
                 return None;
             }
-            matched = Some(candidate.clone());
+            matched = Some(candidate);
         }
     }
-    matched
+    matched.cloned()
 }
 
 fn parallel_line_separation(
