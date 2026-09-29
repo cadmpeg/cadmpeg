@@ -10146,11 +10146,8 @@ fn standard_spline_perpendicular_cylinders(
 
 fn standard_native_support_witness(native: &StandardEdgeSupport) -> Option<Point3> {
     let parameter = 0.5 * (native.parameter_range[0] + native.parameter_range[1]);
-    let lifted = native
-        .carriers
-        .iter()
-        .zip(&native.pcurves)
-        .map(|(carrier, pcurve)| {
+    let lift = |carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
+                pcurve: &PcurveGeometry| {
             let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) = carrier
             else {
                 return None;
@@ -10159,9 +10156,9 @@ fn standard_native_support_witness(native: &StandardEdgeSupport) -> Option<Point
             cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v)
                 .ok()
                 .map(cadmpeg_ir::features::FinitePoint3::get)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let [first, second] = <[Point3; 2]>::try_from(lifted).ok()?;
+        };
+    let first = lift(&native.carriers[0], &native.pcurves[0])?;
+    let second = lift(&native.carriers[1], &native.pcurves[1])?;
     (first.distance_squared(second).sqrt() <= SUPPORT_AGREEMENT_TOLERANCE).then_some(first)
 }
 
@@ -11431,11 +11428,8 @@ fn native_support_circle_param_range(
         0.5 * (support.parameter_range[0] + support.parameter_range[1]),
         support.parameter_range[1],
     ];
-    let lifted = support
-        .carriers
-        .iter()
-        .zip(&support.pcurves)
-        .map(|(carrier, pcurve)| {
+    let lift = |carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
+                pcurve: &PcurveGeometry| {
             let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) = carrier
             else {
                 return None;
@@ -11450,11 +11444,13 @@ fn native_support_circle_param_range(
                     Err(failure) => failure.non_finite(),
                 }
             }))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let [first, second] = <[[Option<Point3>; 3]; 2]>::try_from(lifted).ok()?;
-    let first = first.into_iter().collect::<Option<Vec<_>>>()?;
-    let second = second.into_iter().collect::<Option<Vec<_>>>()?;
+        };
+    let [first_start, first_middle, first_end] =
+        lift(&support.carriers[0], &support.pcurves[0])?;
+    let [second_start, second_middle, second_end] =
+        lift(&support.carriers[1], &support.pcurves[1])?;
+    let first = [first_start?, first_middle?, first_end?];
+    let second = [second_start?, second_middle?, second_end?];
     if first
         .iter()
         .zip(&second)
