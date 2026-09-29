@@ -2265,18 +2265,12 @@ fn attach_feature_operations(
     let initial_body_id =
         attach_initial_segment_bodies(ctx, ir, body_bindings, annotations, &stream)?;
     let base_ordinal = ir.model.features.len() as u64;
-    let booleans = last_record_index(
-        ctx,
-        booleans
+    let (booleans, _booleans_reservation) = ctx.collect_scoped_btree_map(booleans
             .iter()
-            .map(|operation| (operation.operation_label.as_str(), operation)),
-    )?;
-    let body_references_by_id = last_record_index(
-        ctx,
-        body_references
+            .map(|operation| (operation.operation_label.as_str(), operation)), "NX last-record index")?;
+    let (body_references_by_id, _body_references_by_id_reservation) = ctx.collect_scoped_btree_map(body_references
             .iter()
-            .map(|reference| (reference.id.as_str(), reference)),
-    )?;
+            .map(|reference| (reference.id.as_str(), reference)), "NX last-record index")?;
     let mut group_reservation = ctx.reserve_scoped(0, "NX feature operation group indexes")?;
     let mut body_segment_uses_by_reference =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBodySegmentUse>>::new();
@@ -2325,72 +2319,36 @@ fn attach_feature_operations(
     for input in input_blocks {
         ctx.push_scoped_btree_group(&mut group_reservation, &mut input_blocks_by_operation, input.operation_label.as_str(), || input, 0, "NX feature operation group index")?;
     }
-    let input_column_row_uses_by_operation =
-        records_by_operation(ctx, input_column_row_uses, |use_| &use_.operation_label)?;
-    let input_column_targets_by_operation =
-        records_by_operation(ctx, input_column_targets, |target| &target.operation_label)?;
-    let input_block_identity_group_by_input = last_record_index(
-        ctx,
-        input_block_identity_groups.iter().flat_map(|group| {
+    let (input_column_row_uses_by_operation, _input_column_row_uses_by_operation_reservation) = ctx.collect_scoped_btree_groups(input_column_row_uses.iter().map(|use_| (use_.operation_label.as_str(), use_)), "NX operation record index")?;
+    let (input_column_targets_by_operation, _input_column_targets_by_operation_reservation) = ctx.collect_scoped_btree_groups(input_column_targets.iter().map(|target| (target.operation_label.as_str(), target)), "NX operation record index")?;
+    let (input_block_identity_group_by_input, _input_block_identity_group_by_input_reservation) = ctx.collect_scoped_btree_map(input_block_identity_groups.iter().flat_map(|group| {
             group
                 .members
                 .iter()
                 .map(move |member| (member.input_block.as_str(), group.id.as_str()))
-        }),
-    )?;
-    let datum_csys_constructions_by_operation = last_record_index(
-        ctx,
-        datum_csys_constructions
+        }), "NX last-record index")?;
+    let (datum_csys_constructions_by_operation, _datum_csys_constructions_by_operation_reservation) = ctx.collect_scoped_btree_map(datum_csys_constructions
             .iter()
-            .map(|construction| (construction.operation_label.as_str(), construction)),
-    )?;
-    let datum_csys_payloads_by_operation =
-        records_by_operation(ctx, datum_csys_payloads, |payload| &payload.operation_label)?;
-    let datum_csys_payload_scalar_pairs_by_operation =
-        records_by_operation(ctx, datum_csys_payload_scalar_pairs, |pair| {
-            &pair.operation_label
-        })?;
-    let datum_csys_payload_fixed_pairs_by_operation =
-        records_by_operation(ctx, datum_csys_payload_fixed_pairs, |pair| {
-            &pair.operation_label
-        })?;
-    let datum_csys_payload_scalars_by_operation =
-        records_by_operation(ctx, datum_csys_payload_scalars, |scalar| {
-            &scalar.operation_label
-        })?;
-    let datum_csys_descriptors_by_operation =
-        records_by_operation(ctx, datum_csys_descriptors, |descriptor| {
-            &descriptor.operation_label
-        })?;
-    let datum_csys_column_row_uses_by_operation =
-        records_by_operation(ctx, datum_csys_column_row_uses, |use_| {
-            &use_.operation_label
-        })?;
+            .map(|construction| (construction.operation_label.as_str(), construction)), "NX last-record index")?;
+    let (datum_csys_payloads_by_operation, _datum_csys_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_csys_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
+    let (datum_csys_payload_scalar_pairs_by_operation, _datum_csys_payload_scalar_pairs_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_csys_payload_scalar_pairs.iter().map(|pair| (pair.operation_label.as_str(), pair)), "NX operation record index")?;
+    let (datum_csys_payload_fixed_pairs_by_operation, _datum_csys_payload_fixed_pairs_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_csys_payload_fixed_pairs.iter().map(|pair| (pair.operation_label.as_str(), pair)), "NX operation record index")?;
+    let (datum_csys_payload_scalars_by_operation, _datum_csys_payload_scalars_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_csys_payload_scalars.iter().map(|scalar| (scalar.operation_label.as_str(), scalar)), "NX operation record index")?;
+    let (datum_csys_descriptors_by_operation, _datum_csys_descriptors_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_csys_descriptors.iter().map(|descriptor| (descriptor.operation_label.as_str(), descriptor)), "NX operation record index")?;
+    let (datum_csys_column_row_uses_by_operation, _datum_csys_column_row_uses_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_csys_column_row_uses.iter().map(|use_| (use_.operation_label.as_str(), use_)), "NX operation record index")?;
     let mut datum_csys_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumCsysBlockUse>>::new();
     for block_use in datum_csys_block_uses {
         ctx.push_scoped_btree_group(&mut group_reservation, &mut datum_csys_uses_by_input_operation, block_use.input_operation_label.as_str(), || block_use, 0, "NX feature operation group index")?;
     }
-    let datum_plane_headers_by_operation = last_record_index(
-        ctx,
-        datum_plane_headers
+    let (datum_plane_headers_by_operation, _datum_plane_headers_by_operation_reservation) = ctx.collect_scoped_btree_map(datum_plane_headers
             .iter()
-            .map(|header| (header.operation_label.as_str(), header)),
-    )?;
-    let datum_plane_payloads_by_operation = last_record_index(
-        ctx,
-        datum_plane_payloads
+            .map(|header| (header.operation_label.as_str(), header)), "NX last-record index")?;
+    let (datum_plane_payloads_by_operation, _datum_plane_payloads_by_operation_reservation) = ctx.collect_scoped_btree_map(datum_plane_payloads
             .iter()
-            .map(|payload| (payload.operation_label.as_str(), payload)),
-    )?;
-    let datum_plane_payload_scalar_pairs_by_operation =
-        records_by_operation(ctx, datum_plane_payload_scalar_pairs, |pair| {
-            &pair.operation_label
-        })?;
-    let datum_plane_descriptors_by_operation =
-        records_by_operation(ctx, datum_plane_descriptors, |descriptor| {
-            &descriptor.operation_label
-        })?;
+            .map(|payload| (payload.operation_label.as_str(), payload)), "NX last-record index")?;
+    let (datum_plane_payload_scalar_pairs_by_operation, _datum_plane_payload_scalar_pairs_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_plane_payload_scalar_pairs.iter().map(|pair| (pair.operation_label.as_str(), pair)), "NX operation record index")?;
+    let (datum_plane_descriptors_by_operation, _datum_plane_descriptors_by_operation_reservation) = ctx.collect_scoped_btree_groups(datum_plane_descriptors.iter().map(|descriptor| (descriptor.operation_label.as_str(), descriptor)), "NX operation record index")?;
     let mut datum_plane_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneBlockUse>>::new();
     for block_use in datum_plane_block_uses {
@@ -2398,19 +2356,13 @@ fn attach_feature_operations(
     }
     let chronological_labels =
         crate::native::features::feature_operation_chronological_labels(ctx, labels)?;
-    let operation_positions = last_record_index(
-        ctx,
-        chronological_labels
+    let (operation_positions, _operation_positions_reservation) = ctx.collect_scoped_btree_map(chronological_labels
             .iter()
             .enumerate()
-            .map(|(position, label)| (label.id.as_str(), position)),
-    )?;
-    let sketch_datum_csys_dependencies = last_record_index(
-        ctx,
-        sketch_datum_csys_dependencies
+            .map(|(position, label)| (label.id.as_str(), position)), "NX last-record index")?;
+    let (sketch_datum_csys_dependencies, _sketch_datum_csys_dependencies_reservation) = ctx.collect_scoped_btree_map(sketch_datum_csys_dependencies
             .iter()
-            .map(|dependency| (dependency.datum_csys_operation_label.as_str(), dependency)),
-    )?;
+            .map(|dependency| (dependency.datum_csys_operation_label.as_str(), dependency)), "NX last-record index")?;
     let mut datum_identity_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneCsysIdentityUse>>::new();
     for identity_use in datum_plane_csys_identity_uses {
@@ -2422,128 +2374,41 @@ fn attach_feature_operations(
     for reference in sketch_references {
         ctx.push_scoped_btree_group(&mut group_reservation, &mut sketch_references_by_operation, reference.operation_label.as_str(), || reference, 0, "NX feature operation group index")?;
     }
-    let projected_curve_references_by_operation =
-        records_by_operation(ctx, projected_curve_references, |reference| {
-            &reference.operation_label
-        })?;
-    let projected_curve_construction_payloads_by_operation =
-        records_by_operation(ctx, projected_curve_construction_payloads, |payload| {
-            &payload.operation_label
-        })?;
-    let projected_curve_construction_strings_by_operation =
-        records_by_operation(ctx, projected_curve_construction_strings, |value| {
-            &value.operation_label
-        })?;
-    let fset_reference_graphs_by_operation =
-        records_by_operation(ctx, fset_reference_graphs, |graph| &graph.operation_label)?;
-    let fset_construction_payloads_by_operation =
-        records_by_operation(ctx, fset_construction_payloads, |payload| {
-            &payload.operation_label
-        })?;
-    let delete_reference_fields_by_operation =
-        records_by_operation(ctx, delete_reference_fields, |field| &field.operation_label)?;
-    let delete_construction_payloads_by_operation =
-        records_by_operation(ctx, delete_construction_payloads, |payload| {
-            &payload.operation_label
-        })?;
-    let pattern_references_by_operation =
-        records_by_operation(ctx, pattern_references, |reference| {
-            &reference.operation_label
-        })?;
-    let pattern_counted_reference_lanes_by_operation =
-        records_by_operation(ctx, pattern_counted_reference_lanes, |lane| {
-            &lane.operation_label
-        })?;
-    let pattern_construction_payloads_by_operation =
-        records_by_operation(ctx, pattern_construction_payloads, |payload| {
-            &payload.operation_label
-        })?;
-    let pattern_construction_strings_by_operation =
-        records_by_operation(ctx, pattern_construction_strings, |value| {
-            &value.operation_label
-        })?;
-    let pattern_construction_fixed_lanes_by_operation =
-        records_by_operation(ctx, pattern_construction_fixed_lanes, |lane| {
-            &lane.operation_label
-        })?;
-    let pattern_transform_lanes_by_operation =
-        records_by_operation(ctx, pattern_transform_lanes, |lane| &lane.operation_label)?;
-    let multi_instance_output_lanes_by_operation =
-        records_by_operation(ctx, multi_instance_output_lanes, |lane| {
-            &lane.operation_label
-        })?;
-    let identical_instance_output_lanes_by_operation =
-        records_by_operation(ctx, identical_instance_output_lanes, |lane| {
-            &lane.operation_label
-        })?;
-    let point_construction_headers_by_operation = last_record_index(
-        ctx,
-        point_construction_headers
+    let (projected_curve_references_by_operation, _projected_curve_references_by_operation_reservation) = ctx.collect_scoped_btree_groups(projected_curve_references.iter().map(|reference| (reference.operation_label.as_str(), reference)), "NX operation record index")?;
+    let (projected_curve_construction_payloads_by_operation, _projected_curve_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(projected_curve_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
+    let (projected_curve_construction_strings_by_operation, _projected_curve_construction_strings_by_operation_reservation) = ctx.collect_scoped_btree_groups(projected_curve_construction_strings.iter().map(|value| (value.operation_label.as_str(), value)), "NX operation record index")?;
+    let (fset_reference_graphs_by_operation, _fset_reference_graphs_by_operation_reservation) = ctx.collect_scoped_btree_groups(fset_reference_graphs.iter().map(|graph| (graph.operation_label.as_str(), graph)), "NX operation record index")?;
+    let (fset_construction_payloads_by_operation, _fset_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(fset_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
+    let (delete_reference_fields_by_operation, _delete_reference_fields_by_operation_reservation) = ctx.collect_scoped_btree_groups(delete_reference_fields.iter().map(|field| (field.operation_label.as_str(), field)), "NX operation record index")?;
+    let (delete_construction_payloads_by_operation, _delete_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(delete_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
+    let (pattern_references_by_operation, _pattern_references_by_operation_reservation) = ctx.collect_scoped_btree_groups(pattern_references.iter().map(|reference| (reference.operation_label.as_str(), reference)), "NX operation record index")?;
+    let (pattern_counted_reference_lanes_by_operation, _pattern_counted_reference_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(pattern_counted_reference_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
+    let (pattern_construction_payloads_by_operation, _pattern_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(pattern_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
+    let (pattern_construction_strings_by_operation, _pattern_construction_strings_by_operation_reservation) = ctx.collect_scoped_btree_groups(pattern_construction_strings.iter().map(|value| (value.operation_label.as_str(), value)), "NX operation record index")?;
+    let (pattern_construction_fixed_lanes_by_operation, _pattern_construction_fixed_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(pattern_construction_fixed_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
+    let (pattern_transform_lanes_by_operation, _pattern_transform_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(pattern_transform_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
+    let (multi_instance_output_lanes_by_operation, _multi_instance_output_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(multi_instance_output_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
+    let (identical_instance_output_lanes_by_operation, _identical_instance_output_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(identical_instance_output_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
+    let (point_construction_headers_by_operation, _point_construction_headers_by_operation_reservation) = ctx.collect_scoped_btree_map(point_construction_headers
             .iter()
-            .map(|header| (header.operation_label.as_str(), header)),
-    )?;
-    let point_construction_scalar_lanes_by_operation = last_record_index(
-        ctx,
-        point_construction_scalar_lanes
+            .map(|header| (header.operation_label.as_str(), header)), "NX last-record index")?;
+    let (point_construction_scalar_lanes_by_operation, _point_construction_scalar_lanes_by_operation_reservation) = ctx.collect_scoped_btree_map(point_construction_scalar_lanes
             .iter()
-            .map(|lane| (lane.operation_label.as_str(), lane)),
-    )?;
-    let draft_construction_references_by_operation =
-        records_by_operation(ctx, draft_construction_references, |reference| {
-            &reference.operation_label
-        })?;
-    let draft_construction_index_lanes_by_operation =
-        records_by_operation(ctx, draft_construction_index_lanes, |lane| {
-            &lane.operation_label
-        })?;
-    let draft_construction_payloads_by_operation =
-        records_by_operation(ctx, draft_construction_payloads, |payload| {
-            &payload.operation_label
-        })?;
-    let draft_construction_graph_payloads_by_operation =
-        records_by_operation(ctx, draft_construction_graph_payloads, |payload| {
-            &payload.operation_label
-        })?;
-    let draft_construction_fixed_lanes_by_operation =
-        records_by_operation(ctx, draft_construction_fixed_lanes, |lane| {
-            &lane.operation_label
-        })?;
-    let draft_construction_binary32_lanes_by_operation =
-        records_by_operation(ctx, draft_construction_binary32_lanes, |lane| {
-            &lane.operation_label
-        })?;
-    let draft_construction_graph_strings_by_operation =
-        records_by_operation(ctx, draft_construction_graph_strings, |value| {
-            &value.operation_label
-        })?;
-    let draft_construction_identity_frames_by_operation =
-        records_by_operation(ctx, draft_construction_identity_frames, |frame| {
-            &frame.operation_label
-        })?;
-    let draft_construction_terminal_lanes_by_operation =
-        records_by_operation(ctx, draft_construction_terminal_lanes, |lane| {
-            &lane.operation_label
-        })?;
-    let surface_construction_references_by_operation =
-        records_by_operation(ctx, surface_construction_references, |reference| {
-            &reference.operation_label
-        })?;
-    let surface_construction_payloads_by_operation =
-        records_by_operation(ctx, surface_construction_payloads, |payload| {
-            &payload.operation_label
-        })?;
-    let surface_construction_scalar_pairs_by_operation =
-        records_by_operation(ctx, surface_construction_scalar_pairs, |pair| {
-            &pair.operation_label
-        })?;
-    let surface_construction_strings_by_operation =
-        records_by_operation(ctx, surface_construction_strings, |value| {
-            &value.operation_label
-        })?;
-    let surface_construction_branches_by_operation =
-        records_by_operation(ctx, surface_construction_branches, |branch| {
-            &branch.operation_label
-        })?;
+            .map(|lane| (lane.operation_label.as_str(), lane)), "NX last-record index")?;
+    let (draft_construction_references_by_operation, _draft_construction_references_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_references.iter().map(|reference| (reference.operation_label.as_str(), reference)), "NX operation record index")?;
+    let (draft_construction_index_lanes_by_operation, _draft_construction_index_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_index_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
+    let (draft_construction_payloads_by_operation, _draft_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
+    let (draft_construction_graph_payloads_by_operation, _draft_construction_graph_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_graph_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
+    let (draft_construction_fixed_lanes_by_operation, _draft_construction_fixed_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_fixed_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
+    let (draft_construction_binary32_lanes_by_operation, _draft_construction_binary32_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_binary32_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
+    let (draft_construction_graph_strings_by_operation, _draft_construction_graph_strings_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_graph_strings.iter().map(|value| (value.operation_label.as_str(), value)), "NX operation record index")?;
+    let (draft_construction_identity_frames_by_operation, _draft_construction_identity_frames_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_identity_frames.iter().map(|frame| (frame.operation_label.as_str(), frame)), "NX operation record index")?;
+    let (draft_construction_terminal_lanes_by_operation, _draft_construction_terminal_lanes_by_operation_reservation) = ctx.collect_scoped_btree_groups(draft_construction_terminal_lanes.iter().map(|lane| (lane.operation_label.as_str(), lane)), "NX operation record index")?;
+    let (surface_construction_references_by_operation, _surface_construction_references_by_operation_reservation) = ctx.collect_scoped_btree_groups(surface_construction_references.iter().map(|reference| (reference.operation_label.as_str(), reference)), "NX operation record index")?;
+    let (surface_construction_payloads_by_operation, _surface_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(surface_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
+    let (surface_construction_scalar_pairs_by_operation, _surface_construction_scalar_pairs_by_operation_reservation) = ctx.collect_scoped_btree_groups(surface_construction_scalar_pairs.iter().map(|pair| (pair.operation_label.as_str(), pair)), "NX operation record index")?;
+    let (surface_construction_strings_by_operation, _surface_construction_strings_by_operation_reservation) = ctx.collect_scoped_btree_groups(surface_construction_strings.iter().map(|value| (value.operation_label.as_str(), value)), "NX operation record index")?;
+    let (surface_construction_branches_by_operation, _surface_construction_branches_by_operation_reservation) = ctx.collect_scoped_btree_groups(surface_construction_branches.iter().map(|branch| (branch.operation_label.as_str(), branch)), "NX operation record index")?;
     let mut sketch_named_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchNamedPointBlockUse>>::new();
     for block_use in sketch_named_point_block_uses {
@@ -2569,12 +2434,9 @@ fn attach_feature_operations(
     for reference in extrude_profile_references {
         ctx.push_scoped_btree_group(&mut group_reservation, &mut extrude_profile_references_by_operation, reference.operation_label.as_str(), || reference, 0, "NX feature operation group index")?;
     }
-    let extrude_construction_profiles_by_operation = last_record_index(
-        ctx,
-        extrude_construction_profiles
+    let (extrude_construction_profiles_by_operation, _extrude_construction_profiles_by_operation_reservation) = ctx.collect_scoped_btree_map(extrude_construction_profiles
             .iter()
-            .map(|profile| (profile.operation_label.as_str(), profile)),
-    )?;
+            .map(|profile| (profile.operation_label.as_str(), profile)), "NX last-record index")?;
     let mut operation_body_operands_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyOperand>>::new();
     for operand in operation_body_operands {
@@ -2588,18 +2450,11 @@ fn attach_feature_operations(
     {
         ctx.push_scoped_btree_group(&mut group_reservation, &mut segment_body_operands_by_operation, operand.operation_label.as_str(), || operand, 0, "NX feature operation group index")?;
     }
-    let sketch_construction_inputs_by_operation = last_record_index(
-        ctx,
-        sketch_construction_inputs
+    let (sketch_construction_inputs_by_operation, _sketch_construction_inputs_by_operation_reservation) = ctx.collect_scoped_btree_map(sketch_construction_inputs
             .iter()
-            .map(|inputs| (inputs.operation_label.as_str(), inputs)),
-    )?;
-    let sketch_records_by_operation =
-        records_by_operation(ctx, sketch_records, |record| &record.operation_label)?;
-    let sketch_construction_payloads_by_operation =
-        records_by_operation(ctx, sketch_construction_payloads, |payload| {
-            &payload.operation_label
-        })?;
+            .map(|inputs| (inputs.operation_label.as_str(), inputs)), "NX last-record index")?;
+    let (sketch_records_by_operation, _sketch_records_by_operation_reservation) = ctx.collect_scoped_btree_groups(sketch_records.iter().map(|record| (record.operation_label.as_str(), record)), "NX operation record index")?;
+    let (sketch_construction_payloads_by_operation, _sketch_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(sketch_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
     let mut sketch_coordinate_pairs_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeaturePayloadScalarPair>>::new();
     for pair in sketch_coordinate_pairs {
@@ -2625,22 +2480,13 @@ fn attach_feature_operations(
     for point in sketch_fixed_points {
         ctx.push_scoped_btree_group(&mut group_reservation, &mut sketch_fixed_points_by_operation, point.operation_label.as_str(), || point, 0, "NX feature operation group index")?;
     }
-    let block_constructions_by_operation = last_record_index(
-        ctx,
-        block_constructions
+    let (block_constructions_by_operation, _block_constructions_by_operation_reservation) = ctx.collect_scoped_btree_map(block_constructions
             .iter()
-            .map(|construction| (construction.operation_label.as_str(), construction)),
-    )?;
-    let block_construction_payloads_by_operation =
-        records_by_operation(ctx, block_construction_payloads, |payload| {
-            &payload.operation_label
-        })?;
-    let block_dimensions_by_operation = last_record_index(
-        ctx,
-        block_dimensions
+            .map(|construction| (construction.operation_label.as_str(), construction)), "NX last-record index")?;
+    let (block_construction_payloads_by_operation, _block_construction_payloads_by_operation_reservation) = ctx.collect_scoped_btree_groups(block_construction_payloads.iter().map(|payload| (payload.operation_label.as_str(), payload)), "NX operation record index")?;
+    let (block_dimensions_by_operation, _block_dimensions_by_operation_reservation) = ctx.collect_scoped_btree_map(block_dimensions
             .iter()
-            .map(|dimensions| (dimensions.operation_label.as_str(), dimensions)),
-    )?;
+            .map(|dimensions| (dimensions.operation_label.as_str(), dimensions)), "NX last-record index")?;
     let mut block_payload_points_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBlockPayloadPoint>>::new();
     for point in block_payload_points {
@@ -2651,28 +2497,16 @@ fn attach_feature_operations(
     for group in block_payload_point_groups {
         ctx.push_scoped_btree_group(&mut group_reservation, &mut block_payload_point_groups_by_operation, group.operation_label.as_str(), || group, 0, "NX feature operation group index")?;
     }
-    let extrude_32_constructions_by_operation = last_record_index(
-        ctx,
-        extrude_32_constructions
+    let (extrude_32_constructions_by_operation, _extrude_32_constructions_by_operation_reservation) = ctx.collect_scoped_btree_map(extrude_32_constructions
             .iter()
-            .map(|construction| (construction.operation_label.as_str(), construction)),
-    )?;
-    let extrude_payload_headers_by_operation = last_record_index(
-        ctx,
-        extrude_payload_headers
+            .map(|construction| (construction.operation_label.as_str(), construction)), "NX last-record index")?;
+    let (extrude_payload_headers_by_operation, _extrude_payload_headers_by_operation_reservation) = ctx.collect_scoped_btree_map(extrude_payload_headers
             .iter()
-            .map(|header| (header.operation_label.as_str(), header)),
-    )?;
-    let operation_terminal_discriminators_by_operation = last_record_index(
-        ctx,
-        operation_terminal_discriminators
+            .map(|header| (header.operation_label.as_str(), header)), "NX last-record index")?;
+    let (operation_terminal_discriminators_by_operation, _operation_terminal_discriminators_by_operation_reservation) = ctx.collect_scoped_btree_map(operation_terminal_discriminators
             .iter()
-            .map(|lane| (lane.operation_label.as_str(), lane)),
-    )?;
-    let extrude_payload_32_branches_by_operation =
-        records_by_operation(ctx, extrude_payload_32_branches, |branch| {
-            &branch.operation_label
-        })?;
+            .map(|lane| (lane.operation_label.as_str(), lane)), "NX last-record index")?;
+    let (extrude_payload_32_branches_by_operation, _extrude_payload_32_branches_by_operation_reservation) = ctx.collect_scoped_btree_groups(extrude_payload_32_branches.iter().map(|branch| (branch.operation_label.as_str(), branch)), "NX operation record index")?;
     let mut operation_body_scalar_triples_by_operation = BTreeMap::<
         &str,
         Vec<&crate::native::features::body_scalar_triple::FeatureOperationBodyScalarTriple>,
@@ -2890,12 +2724,9 @@ fn attach_feature_operations(
     for parameter_use in parameter_uses {
         ctx.push_scoped_btree_group(&mut group_reservation, &mut parameter_uses_by_operation, parameter_use.operation_label.as_str(), || parameter_use, 0, "NX feature operation group index")?;
     }
-    let operation_labels_by_record = last_record_index(
-        ctx,
-        operation_records
+    let (operation_labels_by_record, _operation_labels_by_record_reservation) = ctx.collect_scoped_btree_map(operation_records
             .iter()
-            .map(|record| (record.id.as_str(), record.operation_label.as_str())),
-    )?;
+            .map(|record| (record.id.as_str(), record.operation_label.as_str())), "NX last-record index")?;
     let mut body_writes_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyWrite>>::new();
     for (write, operation_label) in operation_body_writes
@@ -6354,46 +6185,11 @@ fn append_fixed_sketch_entities(
     Ok(true)
 }
 
-struct OperationRecords<'a, 'ctx, T> {
-    grouped: BTreeMap<&'a str, Vec<&'a T>>,
-    _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
-}
 
-struct ScopedIndex<'ctx, K, V> {
-    entries: BTreeMap<K, V>,
-    _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
-}
 
-impl<K: Ord, V> std::ops::Deref for ScopedIndex<'_, K, V> {
-    type Target = BTreeMap<K, V>;
 
-    fn deref(&self) -> &Self::Target {
-        &self.entries
-    }
-}
 
-fn last_record_index<'ctx, K: Ord + Copy, V: Copy>(
-    ctx: &'ctx DecodeContext<'_>,
-    records: impl IntoIterator<Item = (K, V)>,
-) -> Result<ScopedIndex<'ctx, K, V>, CodecError> {
-    let mut entries = BTreeMap::new();
-    let mut reservation = ctx.reserve_scoped(0, "NX last-record index")?;
-    for (key, value) in records {
-        ctx.charge_work(1, "NX last-record index")?;
-        if !entries.contains_key(&key) {
-            ctx.charge_collection_items(1, "NX last-record index")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                K,
-                V,
-            )>()))?;
-        }
-        entries.insert(key, value);
-    }
-    Ok(ScopedIndex {
-        entries,
-        _reservation: reservation,
-    })
-}
+
 
 struct SegmentBindingBodyIndexes<'a, 'ctx> {
     by_object: BTreeMap<u32, Vec<BodyId>>,
@@ -6505,44 +6301,7 @@ fn stream_prefix(ordinal: u32, body_marker: bool) -> ([u8; 20], usize) {
     (prefix, prefix_len)
 }
 
-impl<'a, T> std::ops::Deref for OperationRecords<'a, '_, T> {
-    type Target = BTreeMap<&'a str, Vec<&'a T>>;
 
-    fn deref(&self) -> &Self::Target {
-        &self.grouped
-    }
-}
-
-fn records_by_operation<'a, 'ctx, T>(
-    ctx: &'ctx DecodeContext<'_>,
-    records: &'a [T],
-    operation_label: impl Fn(&'a T) -> &'a str,
-) -> Result<OperationRecords<'a, 'ctx, T>, CodecError> {
-    let mut grouped = BTreeMap::new();
-    let mut reservation = ctx.reserve_scoped(0, "NX operation record index")?;
-    for record in records {
-        ctx.charge_work(1, "NX operation record index")?;
-        let label = operation_label(record);
-        if !grouped.contains_key(label) {
-            ctx.charge_collection_items(1, "NX operation record index keys")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                &str,
-                Vec<&T>,
-            )>()))?;
-        }
-        ctx.charge_collection_items(1, "NX operation record index members")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<&T>(),
-        ))?;
-        let members = grouped.entry(label).or_default();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(members, 1, "NX operation record index members")?;
-        members.push(record);
-    }
-    Ok(OperationRecords {
-        grouped,
-        _reservation: reservation,
-    })
-}
 
 fn operation_source_properties(
     ctx: &DecodeContext<'_>,

@@ -2,8 +2,6 @@
 
 use crate::native::attach::insert_source_property;
 use crate::native::attach::insert_source_property_reference;
-use crate::native::attach::last_record_index;
-use crate::native::attach::records_by_operation;
 use crate::native::attach::segment_binding_body_indexes;
 
 #[test]
@@ -189,7 +187,7 @@ fn last_record_with_limit(
     configure(&mut policy);
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let index = last_record_index(&ctx, records)?;
+    let (index, _reservation) = ctx.collect_scoped_btree_map(records, "NX last-record index")?;
     assert_eq!(index["operation"], 2);
     Ok(())
 }
@@ -239,7 +237,7 @@ fn grouped_records_with_limit(
     configure(&mut policy);
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let grouped = records_by_operation(&ctx, &records, |record| record.0.as_str())?;
+    let (grouped, _reservation) = ctx.collect_scoped_btree_groups(records.iter().map(|record| (record.0.as_str(), record)), "NX operation record index")?;
     assert_eq!(
         grouped["first"]
             .iter()
