@@ -33,6 +33,8 @@ use crate::loss::SldprtLossCode;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
+mod configuration_copies;
+
 use crate::container::configuration_index;
 use crate::container::contains_ascii_case_insensitive;
 
@@ -4703,51 +4705,24 @@ fn sync_active_configuration_resolutions(ctx: &DecodeContext<'_>, ir: &mut CadIr
     if active.next().is_some() {
         return Ok(());
     }
-    let resolved = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| feature.suppressed != Some(true))
-        .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Hole {
-                    placements,
-                    shape,
-
-                    extent,
-                    bottom,
-                    taper_angle,
-                    ..
-                },
-            ) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            let construction = shape.construction();
-            let diameter = shape.diameter();
-            Some((
-                feature.id.clone(),
-                placements.clone(),
-                construction.clone(),
-                diameter,
-                extent.clone(),
-                *bottom,
-                *taper_angle,
-            ))
-        })
-        .collect::<Vec<_>>();
-    let configuration = &mut ir.model.configurations[configuration_index];
-    for (
-        feature,
-        resolved_placements,
-        resolved_construction,
-        resolved_diameter,
-        resolved_extent,
-        resolved_bottom,
-        resolved_taper_angle,
-    ) in resolved
-    {
-        let Some(state) = configuration.feature_states.get_mut(&feature) else {
+    let (features, configurations) = (&ir.model.features, &mut ir.model.configurations);
+    let configuration = &mut configurations[configuration_index];
+    for feature in features.iter().filter(|feature| feature.suppressed != Some(true)) {
+        ctx.charge_work(1, "scan SLDPRT active configuration holes")?;
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Hole {
+                placements: resolved_placements,
+                shape: resolved_shape,
+                extent: resolved_extent,
+                bottom: resolved_bottom,
+                taper_angle: resolved_taper_angle,
+                ..
+            },
+        ) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let Some(state) = configuration.feature_states.get_mut(&feature.id) else {
             continue;
         };
         if state.evaluation.is_suppressed() {
@@ -4766,9 +4741,14 @@ fn sync_active_configuration_resolutions(ctx: &DecodeContext<'_>, ir: &mut CadIr
         else {
             continue;
         };
-        if placements.is_none() && resolved_placements.is_some() {
-            *placements = resolved_placements;
-        }
+        let copied_placements = if placements.is_none() {
+            resolved_placements
+                .as_deref()
+                .map(|source| configuration_copies::placements(ctx, source))
+                .transpose()?
+        } else {
+            None
+        };
         let incomplete = shape.diameter().is_none()
             || extent.as_ref().is_none_or(|extent| {
                 matches!(
@@ -4781,6 +4761,8 @@ fn sync_active_configuration_resolutions(ctx: &DecodeContext<'_>, ir: &mut CadIr
                 cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. }
                     if kind.is_unresolved()
             );
+        let resolved_construction = resolved_shape.construction();
+        let resolved_diameter = resolved_shape.diameter();
         let resolved_complete = resolved_diameter.is_some()
             && resolved_extent.as_ref().is_some_and(|extent| {
                 !matches!(
@@ -4789,7 +4771,7 @@ fn sync_active_configuration_resolutions(ctx: &DecodeContext<'_>, ir: &mut CadIr
                 )
             })
             && !matches!(
-                &resolved_construction,
+                resolved_construction,
                 cadmpeg_ir::features::holes::HoleConstruction::Form {
                     kind: cadmpeg_ir::features::holes::HoleKind::Unresolved(_)
                         | cadmpeg_ir::features::holes::HoleKind::PartialCounterbore(..)
@@ -4797,27 +4779,52 @@ fn sync_active_configuration_resolutions(ctx: &DecodeContext<'_>, ir: &mut CadIr
                     ..
                 }
             );
-        if incomplete && resolved_complete {
+        let apply_resolution = incomplete && resolved_complete;
+        let mut replacement = if apply_resolution
+            && !matches!(
+                (shape.construction(), resolved_construction),
+                (
+                    cadmpeg_ir::features::holes::HoleConstruction::Form { .. },
+                    cadmpeg_ir::features::holes::HoleConstruction::Form { .. }
+                )
+            )
+        {
+            Some(configuration_copies::construction(ctx, resolved_construction)?)
+        } else {
+            None
+        };
+        let copied_extent = if apply_resolution {
+            resolved_extent
+                .as_ref()
+                .map(|source| configuration_copies::termination(ctx, source))
+                .transpose()?
+        } else {
+            None
+        };
+        if let Some(copied_placements) = copied_placements {
+            *placements = Some(copied_placements);
+        }
+        if apply_resolution {
             shape
                 .try_edit(|construction, _, diameter| {
-                    match (&mut *construction, resolved_construction) {
-                        (
-                            cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. },
-                            cadmpeg_ir::features::holes::HoleConstruction::Form {
-                                kind: resolved_kind,
-                                ..
-                            },
-                        ) => *kind = resolved_kind,
-                        (construction, resolved_construction) => {
-                            *construction = resolved_construction;
-                        }
+                    if let Some(replacement) = replacement.take() {
+                        *construction = replacement;
+                    } else if let (
+                        cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. },
+                        cadmpeg_ir::features::holes::HoleConstruction::Form {
+                            kind: resolved_kind,
+                            ..
+                        },
+                    ) = (construction, resolved_construction)
+                    {
+                        *kind = *resolved_kind;
                     }
                     *diameter = resolved_diameter;
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            *extent = resolved_extent;
-            *bottom = resolved_bottom;
-            *taper_angle = resolved_taper_angle;
+            *extent = copied_extent;
+            *bottom = *resolved_bottom;
+            *taper_angle = *resolved_taper_angle;
         }
     }
     let (features, configurations) = (&ir.model.features, &mut ir.model.configurations);
