@@ -12,6 +12,8 @@ use crate::native::features::feature_extrude_payload_headers;
 use crate::native::features::feature_operation_terminal_discriminators;
 use crate::native::features::feature_operation_body_scalar_triples;
 use crate::native::features::feature_operation_body_members;
+use crate::native::features::feature_operation_body_11_continuations;
+use crate::native::features::feature_operation_body_reference_lanes;
 use crate::native::features::feature_surface_construction_references;
 use crate::native::features::feature_surface_construction_payloads;
 use crate::native::features::feature_thru_curve_construction_envelopes;
@@ -86,7 +88,7 @@ fn swp104_container() -> crate::container::Container<'static> {
 enum ExtrudeRoute { Profile, Header }
 
 #[derive(Clone, Copy)]
-enum OperationLaneRoute { Terminal, ScalarTriple, BodyMember }
+enum OperationLaneRoute { Terminal, ScalarTriple, BodyMember, Continuation, CompactReferences, ObjectReferences }
 
 fn operation_lane_refusal(
     route: OperationLaneRoute,
@@ -99,6 +101,12 @@ fn operation_lane_refusal(
             b"\x01\x02\x10\x42\xff\x1c\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\xaa\x01\x02\x10\x43\xff\x11\x30\x00\x00\x00\x00\x00\x00\x00\x00\x00".as_slice(), 2),
         OperationLaneRoute::BodyMember => ("SEW",
             b"\x01\x02\x10\x42\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\x01\x03\x2e\x7f\x00\x2e\x80\x01\x00".as_slice(), 2),
+        OperationLaneRoute::Continuation => ("TRIM BODY",
+            b"\x01\x02\x10\x72\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\x01\x02\x2e\x41\x00\x01\x02\x80\x43\x00\x00\x01\x72\x00\x00".as_slice(), 1),
+        OperationLaneRoute::CompactReferences => ("OFFSET",
+            b"\x01\x02\x10\x6e\xff\x1c\x00\x00\x00\x01\x03\x80\x0d\x69\x00\x00\x0b\x00".as_slice(), 1),
+        OperationLaneRoute::ObjectReferences => ("OFFSET",
+            b"\x01\x02\x10\x70\xff\x1c\x00\x00\x00\x01\x03\xf1\x02\x9e\xf0\x44\x00\x00\x0b\x00".as_slice(), 1),
     };
     let container = reference_container(label, bytes.to_vec());
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -109,6 +117,11 @@ fn operation_lane_refusal(
                 .map(|rows| rows.len()),
             OperationLaneRoute::BodyMember => feature_operation_body_members(ctx, &container)
                 .map(|rows| rows.len()),
+            OperationLaneRoute::Continuation => feature_operation_body_11_continuations(ctx, &container)
+                .map(|rows| rows.len()),
+            OperationLaneRoute::CompactReferences | OperationLaneRoute::ObjectReferences =>
+                feature_operation_body_reference_lanes(ctx, &container)
+                    .map(|rows| rows.len()),
         }
     };
     assert_eq!(crate::test_support::with_decode_context(|ctx| decode(ctx))
@@ -174,6 +187,27 @@ operation_lane_limit_tests!(
     operation_body_member_refuses_scoped_limit,
     operation_body_member_refuses_work_limit,
     OperationLaneRoute::BodyMember
+);
+operation_lane_limit_tests!(
+    operation_body_continuation_refuses_collection_limit,
+    operation_body_continuation_refuses_retained_limit,
+    operation_body_continuation_refuses_scoped_limit,
+    operation_body_continuation_refuses_work_limit,
+    OperationLaneRoute::Continuation
+);
+operation_lane_limit_tests!(
+    operation_compact_reference_refuses_collection_limit,
+    operation_compact_reference_refuses_retained_limit,
+    operation_compact_reference_refuses_scoped_limit,
+    operation_compact_reference_refuses_work_limit,
+    OperationLaneRoute::CompactReferences
+);
+operation_lane_limit_tests!(
+    operation_object_reference_refuses_collection_limit,
+    operation_object_reference_refuses_retained_limit,
+    operation_object_reference_refuses_scoped_limit,
+    operation_object_reference_refuses_work_limit,
+    OperationLaneRoute::ObjectReferences
 );
 
 fn extrude_route_refusal(
