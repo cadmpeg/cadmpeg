@@ -5182,47 +5182,54 @@ fn parasolid_topology_attribute_class_names<'a>(
     Ok(classes_by_reference)
 }
 
-fn parasolid_topology_attribute_targets(ir: &CadIr) -> BTreeMap<String, AttributeTarget> {
-    ir.model
-        .shells
-        .iter()
-        .map(|shell| {
-            (
-                shell.id.as_str().to_owned(),
-                AttributeTarget::Shell(shell.id.clone()),
-            )
-        })
-        .chain(ir.model.faces.iter().map(|face| {
-            (
-                face.id.as_str().to_owned(),
-                AttributeTarget::Face(face.id.clone()),
-            )
-        }))
-        .chain(ir.model.loops.iter().map(|loop_| {
-            (
-                loop_.id.as_str().to_owned(),
-                AttributeTarget::Loop(loop_.id.clone()),
-            )
-        }))
-        .chain(ir.model.edges.iter().map(|edge| {
-            (
-                edge.id.as_str().to_owned(),
-                AttributeTarget::Edge(edge.id.clone()),
-            )
-        }))
-        .chain(ir.model.coedges.iter().map(|coedge| {
-            (
-                coedge.id.as_str().to_owned(),
-                AttributeTarget::Coedge(coedge.id.clone()),
-            )
-        }))
-        .chain(ir.model.vertices.iter().map(|vertex| {
-            (
-                vertex.id.as_str().to_owned(),
-                AttributeTarget::Vertex(vertex.id.clone()),
-            )
-        }))
-        .collect()
+fn parasolid_topology_attribute_targets(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ir: &CadIr,
+) -> Result<BTreeMap<String, AttributeTarget>, CodecError> {
+    let mut targets = BTreeMap::new();
+    for shell in &ir.model.shells {
+        insert_parasolid_topology_target(ctx, reservation, &mut targets, shell.id.as_str(), || AttributeTarget::Shell(shell.id.clone()))?;
+    }
+    for face in &ir.model.faces {
+        insert_parasolid_topology_target(ctx, reservation, &mut targets, face.id.as_str(), || AttributeTarget::Face(face.id.clone()))?;
+    }
+    for loop_ in &ir.model.loops {
+        insert_parasolid_topology_target(ctx, reservation, &mut targets, loop_.id.as_str(), || AttributeTarget::Loop(loop_.id.clone()))?;
+    }
+    for edge in &ir.model.edges {
+        insert_parasolid_topology_target(ctx, reservation, &mut targets, edge.id.as_str(), || AttributeTarget::Edge(edge.id.clone()))?;
+    }
+    for coedge in &ir.model.coedges {
+        insert_parasolid_topology_target(ctx, reservation, &mut targets, coedge.id.as_str(), || AttributeTarget::Coedge(coedge.id.clone()))?;
+    }
+    for vertex in &ir.model.vertices {
+        insert_parasolid_topology_target(ctx, reservation, &mut targets, vertex.id.as_str(), || AttributeTarget::Vertex(vertex.id.clone()))?;
+    }
+    Ok(targets)
+}
+
+fn insert_parasolid_topology_target(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    targets: &mut BTreeMap<String, AttributeTarget>,
+    id: &str,
+    target: impl FnOnce() -> AttributeTarget,
+) -> Result<(), CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(targets.len()), "NX Parasolid topology target lookup")?;
+    let text_bytes = id.len().checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid topology target identity", 0, cadmpeg_core::decode::u64_from_index(id.len())))?;
+    let bytes = std::mem::size_of::<(String, AttributeTarget)>()
+        .checked_mul(4)
+        .and_then(|bytes| bytes.checked_add(text_bytes))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid topology target entry", 0, cadmpeg_core::decode::u64_from_index(text_bytes)))?;
+    ctx.charge_collection_items(1, "NX Parasolid topology targets")?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+    let mut key = String::new();
+    key.try_reserve(id.len()).map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid topology target key", 0, cadmpeg_core::decode::u64_from_index(id.len())))?;
+    key.push_str(id);
+    targets.insert(key, target());
+    Ok(())
 }
 
 struct ParasolidTopologyAttributeContext<'a> {
@@ -5263,17 +5270,19 @@ impl<'a, 'ctx> ParasolidTopologyAttributeIndex<'a, 'ctx> {
         Ok(Self {
             class_names,
             attribute_names,
-            contexts: parasolid_topology_attribute_contexts(ir, topology_references, class_uses),
+            contexts: parasolid_topology_attribute_contexts(ctx, &mut reservation, ir, topology_references, class_uses)?,
             _reservation: reservation,
         })
     }
 }
 
 fn parasolid_topology_attribute_contexts<'a>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ir: &CadIr,
     topology_references: &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
     class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
-) -> Vec<ParasolidTopologyAttributeContext<'a>> {
+) -> Result<Vec<ParasolidTopologyAttributeContext<'a>>, CodecError> {
     let mut entities_by_reference = BTreeMap::<&str, BTreeSet<&str>>::new();
     for class_use in class_uses {
         entities_by_reference
@@ -5292,8 +5301,8 @@ fn parasolid_topology_attribute_contexts<'a>(
             .or_default()
             .push(reference);
     }
-    let emitted_targets = parasolid_topology_attribute_targets(ir);
-    references_by_target
+    let emitted_targets = parasolid_topology_attribute_targets(ctx, reservation, ir)?;
+    Ok(references_by_target
         .into_iter()
         .flat_map(|(target_key, references)| {
             let Some(&reference) = references.first().filter(|_| references.len() == 1) else {
@@ -5322,7 +5331,7 @@ fn parasolid_topology_attribute_contexts<'a>(
                 })
                 .collect::<Vec<_>>()
         })
-        .collect()
+        .collect())
 }
 
 fn topology_attribute_id(

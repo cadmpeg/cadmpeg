@@ -2,6 +2,7 @@ use crate::native::attach::attach_parasolid_topology_numeric_attributes;
 use crate::native::attach::attach_parasolid_topology_structured_attributes;
 use crate::native::attach::insert_sole;
 use crate::native::attach::parasolid_topology_attribute_class_names;
+use crate::native::attach::parasolid_topology_attribute_targets;
 use crate::native::attach::ParasolidAttributeNameIndex;
 use crate::native::attach::ParasolidNumericAttributeSources;
 use crate::native::attach::ParasolidStructuredAttributeSources;
@@ -60,6 +61,41 @@ fn attribute_name_index_refuses_scoped_limit() {
 #[test]
 fn attribute_name_index_refuses_work_limit() {
     let error = attribute_name_index_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+fn topology_target_index_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let mut reservation = ctx.reserve_scoped(0, "test Parasolid topology targets")?;
+    let targets = parasolid_topology_attribute_targets(&ctx, &mut reservation, &ir)?;
+    assert!(!targets.is_empty());
+    Ok(())
+}
+
+#[test]
+fn topology_target_index_refuses_collection_limit() {
+    let error = topology_target_index_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn topology_target_index_refuses_scoped_limit() {
+    let error = topology_target_index_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn topology_target_index_refuses_work_limit() {
+    let error = topology_target_index_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
