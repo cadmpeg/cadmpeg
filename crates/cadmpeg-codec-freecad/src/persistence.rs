@@ -199,7 +199,7 @@ fn parse_document(
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, "FCStd dependency lookup")?;
             dependency_map.try_reserve(1).map_err(|_| {
-                crate::resource::collection_allocation_failed(ctx, 1, "FCStd dependency lookup")
+                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FCStd dependency lookup"))
             })?;
         }
         dependency_map.insert(
@@ -220,7 +220,7 @@ fn parse_document(
         charge_items(ctx, 1, "FCStd object data lookup")?;
         if let Some(ctx) = ctx {
             data_by_name.try_reserve(1).map_err(|_| {
-                crate::resource::collection_allocation_failed(ctx, 1, "FCStd object data lookup")
+                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FCStd object data lookup"))
             })?;
         }
         let name = retained_attr(ctx, node, "name", "FCStd object data name")?;
@@ -504,11 +504,7 @@ fn parse_document(
                 charge_items(ctx, 1, "FCStd extension name set")?;
                 if let Some(ctx) = ctx {
                     extension_names.try_reserve(1).map_err(|_| {
-                        crate::resource::collection_allocation_failed(
-                            ctx,
-                            1,
-                            "FCStd extension name set",
-                        )
+                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FCStd extension name set"))
                     })?;
                 }
                 extension_names.insert(copy_xml_text(ctx, &name, "FCStd extension name copy")?);
@@ -522,11 +518,7 @@ fn parse_document(
                 charge_items(ctx, 1, "FCStd extension type set")?;
                 if let Some(ctx) = ctx {
                     extension_types.try_reserve(1).map_err(|_| {
-                        crate::resource::collection_allocation_failed(
-                            ctx,
-                            1,
-                            "FCStd extension type set",
-                        )
+                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FCStd extension type set"))
                     })?;
                 }
                 extension_types.insert(copy_xml_text(
@@ -538,11 +530,7 @@ fn parse_document(
                 charge_items(ctx, 1, "FCStd extension identity lookup")?;
                 if let Some(ctx) = ctx {
                     extension_ids_by_start.try_reserve(1).map_err(|_| {
-                        crate::resource::collection_allocation_failed(
-                            ctx,
-                            1,
-                            "FCStd extension identity lookup",
-                        )
+                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FCStd extension identity lookup"))
                     })?;
                 }
                 extension_ids_by_start.insert(

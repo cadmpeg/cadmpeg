@@ -459,7 +459,7 @@ fn copy_nurbs(
     ctx.charge_retained(bytes, operation)?;
     source
         .try_clone()
-        .map_err(|_| crate::curves::allocation_failed(operation, bytes))
+        .map_err(|_| crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, u64::MAX, bytes, operation))))
 }
 
 fn exact_orientation(

@@ -7,7 +7,7 @@ use std::io::{self, Write};
 use std::ops::Range;
 
 use cadmpeg_core::decode::{
-    u64_from_index, DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, View,
+    u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -365,14 +365,7 @@ impl Write for SemanticJsonWriter<'_, '_> {
             .charge_retained(u64_from_index(chunk.len()), SEMANTIC_JSON_OPERATION)
             .and_then(|()| {
                 self.bytes.try_reserve(chunk.len()).map_err(|_| {
-                    CodecError::ResourceLimit(ResourceLimit {
-                        dimension: ResourceDimension::RetainedBytes,
-                        reason: ResourceFailure::AllocationFailed,
-                        limit: u64::MAX,
-                        used: 0,
-                        additional: u64_from_index(chunk.len()),
-                        operation: SEMANTIC_JSON_OPERATION,
-                    })
+                    CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::RetainedBytes, u64::MAX, u64_from_index(chunk.len()), SEMANTIC_JSON_OPERATION))
                 })
             });
         if let Err(error) = result {

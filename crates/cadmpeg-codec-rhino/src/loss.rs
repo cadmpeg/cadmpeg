@@ -135,11 +135,7 @@ impl Diagnostics {
         for diagnostic in &other.0 {
             self.0.push(RhinoDiagnostic {
                 code: diagnostic.code,
-                message: crate::wire::copy_retained_string(
-                    ctx,
-                    &diagnostic.message,
-                    "Rhino diagnostic copy text",
-                )?,
+                message: ctx.copy_retained_text(&diagnostic.message, "Rhino diagnostic copy text")?,
             });
         }
         Ok(())

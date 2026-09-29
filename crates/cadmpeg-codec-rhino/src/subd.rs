@@ -135,14 +135,7 @@ fn reserve_subd_vec<T>(
             },
         })?;
     values.try_reserve(additional).map_err(|_| {
-        SubdError::Resource(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: u64_from_index(additional),
-            operation,
-        })
+        SubdError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, u64_from_index(additional), operation))
     })
 }
 
@@ -170,14 +163,7 @@ fn charged_subd_map<K: Eq + std::hash::Hash, V>(
         })?;
     let mut values = HashMap::new();
     values.try_reserve(count).map_err(|_| {
-        SubdError::Resource(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: u64_from_index(count),
-            operation,
-        })
+        SubdError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, u64_from_index(count), operation))
     })?;
     Ok(values)
 }
@@ -196,14 +182,7 @@ fn charged_subd_set<T: Eq + std::hash::Hash>(
         })?;
     let mut values = HashSet::new();
     values.try_reserve(count).map_err(|_| {
-        SubdError::Resource(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: u64_from_index(count),
-            operation,
-        })
+        SubdError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, u64_from_index(count), operation))
     })?;
     Ok(values)
 }
@@ -236,14 +215,7 @@ fn reserve_subd_set<T: Eq + std::hash::Hash>(
             },
         })?;
     values.try_reserve(additional).map_err(|_| {
-        SubdError::Resource(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: u64_from_index(additional),
-            operation,
-        })
+        SubdError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, u64_from_index(additional), operation))
     })
 }
 

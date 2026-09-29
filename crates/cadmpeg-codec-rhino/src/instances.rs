@@ -1202,27 +1202,15 @@ fn apply_idef_alternative_path(
             LinkSource::Structured(reference) => {
                 if relative {
                     if reference.relative_path.is_empty() {
-                        reference.relative_path = crate::wire::copy_retained_string(
-                            ctx,
-                            path.as_str(),
-                            "Rhino instance relative path",
-                        )?;
+                        reference.relative_path = ctx.copy_retained_text(path.as_str(), "Rhino instance relative path")?;
                     }
                 } else if reference.full_path.is_empty() {
-                    reference.full_path = crate::wire::copy_retained_string(
-                        ctx,
-                        path.as_str(),
-                        "Rhino instance full path",
-                    )?;
+                    reference.full_path = ctx.copy_retained_text(path.as_str(), "Rhino instance full path")?;
                 }
             }
             LinkSource::LegacyFull(full_path) => {
                 if relative {
-                    let copied_full_path = crate::wire::copy_retained_string(
-                        ctx,
-                        full_path.as_str(),
-                        "Rhino instance full path",
-                    )?;
+                    let copied_full_path = ctx.copy_retained_text(full_path.as_str(), "Rhino instance full path")?;
                     let copied_full_path =
                         NonBlankString::new(copied_full_path).ok_or_else(|| {
                             FramingError::structural(

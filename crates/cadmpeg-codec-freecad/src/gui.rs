@@ -28,7 +28,7 @@ use crate::native::{
 };
 use crate::resource::{
     collection_vec, insert_hash_map, insert_hash_set, reserve_vec_items, reserved_vec,
-    retained_join, retained_string,
+    retained_join,
 };
 
 use schema::Admission as GuiSchemaAdmission;
@@ -738,11 +738,7 @@ fn transfer_schema_one(
                     appearance_id.as_str(),
                     "FCStd GUI binding appearance identity",
                 )?,
-                source_entity_id: Some(retained_string(
-                    ctx,
-                    object_id,
-                    "FCStd GUI binding source identity",
-                )?),
+                source_entity_id: Some(ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?),
                 object_type: Some("ViewProvider".into()),
                 visible: None,
                 channels: BTreeMap::new(),
@@ -862,18 +858,14 @@ fn gui_named_entries<'a>(
     let mut kept = BTreeMap::new();
     let mut refused = Vec::new();
     for (name, value) in entries {
-        let name = retained_string(ctx, name, "FCStd GUI presentation property name")?;
-        let value = retained_string(ctx, value, "FCStd GUI presentation property value")?;
+        let name = ctx.copy_retained_text(name, "FCStd GUI presentation property name")?;
+        let value = ctx.copy_retained_text(value, "FCStd GUI presentation property value")?;
         match NonBlankString::new(name) {
             Some(key) if kept.contains_key(&key) => {
                 reserve_vec_items(ctx, &mut refused, 1, "FCStd GUI refused property keys")?;
                 refused.push(NamedEntryError::Restated {
                     record: record()?,
-                    key: NonBlankString::new(retained_string(
-                        ctx,
-                        key.as_str(),
-                        "FCStd GUI restated property key",
-                    )?)
+                    key: NonBlankString::new(ctx.copy_retained_text(key.as_str(), "FCStd GUI restated property key")?)
                     .ok_or_else(|| {
                         CodecError::malformed("restated GUI property key became blank")
                     })?,
@@ -911,11 +903,7 @@ fn transfer_neutral_presentation(
             cadmpeg_ir::identity_key!("0"),
         ));
         presentation.schema_version = neutral_schema_version;
-        presentation.native_ref = Some(retained_string(
-            ctx,
-            &document.id,
-            "FCStd presentation document reference",
-        )?);
+        presentation.native_ref = Some(ctx.copy_retained_text(&document.id, "FCStd presentation document reference")?);
         let mut states = collection_vec(ctx, document.states.len(), "FCStd presentation states")?;
         for (order, state) in document.states.iter().enumerate() {
             let (attributes, refused) = gui_named_entries(
@@ -937,11 +925,7 @@ fn transfer_neutral_presentation(
             let kind = if state.kind == "Camera" {
                 PresentationStateKind::Camera(camera_state_value(ctx, state, &mut state_losses)?)
             } else {
-                PresentationStateKind::Native(retained_string(
-                    ctx,
-                    &state.kind,
-                    "FCStd presentation state kind",
-                )?)
+                PresentationStateKind::Native(ctx.copy_retained_text(&state.kind, "FCStd presentation state kind")?)
             };
             let mut assets =
                 collection_vec(ctx, state.side_entries.len(), "FCStd presentation assets")?;
@@ -1018,7 +1002,7 @@ fn transfer_neutral_presentation(
             .transpose()?;
         let (provider_properties, refused) = gui_named_entries(
             ctx,
-            || retained_string(ctx, &provider.id, "FCStd GUI provider record name"),
+            || ctx.copy_retained_text(&provider.id, "FCStd GUI provider record name"),
             owned.iter().map(|property| {
                 (
                     property.name.as_str(),
@@ -1045,25 +1029,21 @@ fn transfer_neutral_presentation(
             object: provider
                 .object
                 .as_ref()
-                .map(|object| retained_string(ctx, object.as_str(), "FCStd view object identity"))
+                .map(|object| ctx.copy_retained_text(object.as_str(), "FCStd view object identity"))
                 .transpose()?,
             order: provider.order as u32,
             expanded: provider.expanded,
             visible: property_value("Visibility", "App::PropertyBool").and_then(parse_bool),
             display_mode: property_value("DisplayMode", "App::PropertyEnumeration")
-                .map(|value| retained_string(ctx, value, "FCStd view display mode"))
+                .map(|value| ctx.copy_retained_text(value, "FCStd view display mode"))
                 .transpose()?,
             selection_style: property_value("SelectionStyle", "App::PropertyEnumeration")
-                .map(|value| retained_string(ctx, value, "FCStd view selection style"))
+                .map(|value| ctx.copy_retained_text(value, "FCStd view selection style"))
                 .transpose()?,
             line_width,
             point_size,
             properties: provider_properties,
-            native_ref: Some(retained_string(
-                ctx,
-                &provider.id,
-                "FCStd view native reference",
-            )?),
+            native_ref: Some(ctx.copy_retained_text(&provider.id, "FCStd view native reference")?),
         });
     }
     Ok(())
@@ -1453,11 +1433,7 @@ fn transfer_primitive_appearance(
                 appearance_id.as_str(),
                 "FCStd GUI binding appearance identity",
             )?,
-            source_entity_id: Some(retained_string(
-                ctx,
-                object_id,
-                "FCStd GUI binding source identity",
-            )?),
+            source_entity_id: Some(ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?),
             object_type: Some(object_type.into()),
             visible: None,
             channels: [(
@@ -1593,14 +1569,10 @@ fn append_native_provider(
     let id = crate::native::native_id_charged(ctx, "gui-view-provider", name)?;
     reserve_vec_items(ctx, providers, 1, "FCStd GUI provider records")?;
     providers.push(GuiViewProviderRecord {
-        id: retained_string(ctx, &id, "FCStd GUI provider record identity")?,
+        id: ctx.copy_retained_text(&id, "FCStd GUI provider record identity")?,
         object: object
             .map(|object| {
-                cadmpeg_core::text::NonBlankString::new(retained_string(
-                    ctx,
-                    object,
-                    "FCStd GUI provider object identity",
-                )?)
+                cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(object, "FCStd GUI provider object identity")?)
                 .ok_or_else(|| {
                     CodecError::Malformed("GUI provider object must not be empty".into())
                 })
@@ -4145,11 +4117,7 @@ fn validate_gui_list_payloads(
                 insert_hash_map(
                     ctx,
                     &mut material_lists,
-                    retained_string(
-                        ctx,
-                        &property.id,
-                        "FCStd GUI material list property identity",
-                    )?,
+                    ctx.copy_retained_text(&property.id, "FCStd GUI material list property identity")?,
                     parse_material_list(
                         ctx,
                         view,
@@ -4607,7 +4575,7 @@ fn transfer_shape_appearances(
                         cadmpeg_ir::stream_name!("GuiDocument.xml"),
                         property.xml.start(),
                     )
-                    .with_tag(retained_string(ctx, &property.id, "FCStd GUI material loss tag")?),
+                    .with_tag(ctx.copy_retained_text(&property.id, "FCStd GUI material loss tag")?),
                     "FCStd GUI material count losses", "FCStd GUI material count loss text")?;
                 continue;
             }
@@ -4658,11 +4626,7 @@ fn transfer_shape_appearances(
                             appearance_id.as_str(),
                             "FCStd GUI binding appearance identity",
                         )?,
-                        source_entity_id: Some(retained_string(
-                            ctx,
-                            object_id,
-                            "FCStd GUI binding source identity",
-                        )?),
+                        source_entity_id: Some(ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?),
                         object_type: Some("ViewProvider ShapeAppearance".into()),
                         visible: None,
                         channels: BTreeMap::new(),
@@ -4825,7 +4789,7 @@ fn material_appearance(
             "FCStd GUI appearance name",
         )?),
         asset_guid: (!material.uuid.is_empty())
-            .then(|| retained_string(ctx, &material.uuid, "FCStd GUI material asset GUID"))
+            .then(|| ctx.copy_retained_text(&material.uuid, "FCStd GUI material asset GUID"))
             .transpose()?,
         library_id: None,
         visual_guid: None,
@@ -4914,11 +4878,7 @@ fn bind_material_faces(
                 appearance_id.as_str(),
                 "FCStd GUI binding appearance identity",
             )?,
-            source_entity_id: Some(retained_string(
-                ctx,
-                object_id,
-                "FCStd GUI binding source identity",
-            )?),
+            source_entity_id: Some(ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?),
             object_type: Some("ViewProvider ShapeAppearance".into()),
             visible: None,
             channels: [(
@@ -5160,11 +5120,7 @@ fn transfer_topology_colors(
                     appearance_id.as_str(),
                     "FCStd GUI binding appearance identity",
                 )?,
-                source_entity_id: Some(retained_string(
-                    ctx,
-                    object_id,
-                    "FCStd GUI binding source identity",
-                )?),
+                source_entity_id: Some(ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?),
                 object_type: Some(format!("ViewProvider {}", kind.name())),
                 visible: None,
                 channels: [(
