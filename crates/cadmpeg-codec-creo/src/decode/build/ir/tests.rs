@@ -49,6 +49,37 @@ fn retained_boundary_sweep(
         "missing admission boundary: {expected:?} vs {observed:?}");
 }
 
+fn collection_boundary_sweep(
+    expected: &[&str],
+    mut run: impl for<'a> FnMut(&cadmpeg_core::decode::DecodeContext<'a>) -> Result<(), CodecError>,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut observed = std::collections::BTreeSet::new();
+    let mut exact_cap = None;
+    for limit in 0..128 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, ResourceDimension::CollectionItems);
+                observed.insert(resource.operation);
+            }
+            Ok(()) => {
+                exact_cap = Some(limit);
+                break;
+            }
+            Err(error) => panic!("unexpected transfer error: {error:?}"),
+        }
+    }
+    assert!(exact_cap.is_some(), "transfer did not fit within scanned cap");
+    assert!(expected.iter().all(|operation| observed.contains(operation)),
+        "missing admission boundary: {expected:?} vs {observed:?}");
+}
+
 #[test]
 fn reference_line_identity_and_count_refuse_below_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -269,6 +300,90 @@ fn display_tessellation_vertex_overflow_refuses_unrepresentable_ir() {
         assert!(matches!(error, CodecError::NotImplemented(_)));
         assert!(ir.model.tessellations.is_empty());
     });
+}
+
+#[test]
+fn display_strip_allocations_refuse_at_each_collection_boundary() {
+    let scan = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
+    retained_boundary_sweep(&["creo display tessellation identity"], |ctx| {
+        transfer_display_tessellations(ctx, &scan, &mut CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new())
+    });
+    collection_boundary_sweep(&[
+        "creo display tessellation positions",
+        "creo display tessellation strip rows",
+        "creo display tessellation strip vertices",
+        "creo model tessellations",
+    ], |ctx| {
+        transfer_display_tessellations(ctx, &scan, &mut CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new())
+    });
+    let mut shaded = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
+    shaded.primitives.triangle_strips[0].normals = Some(vec![
+        FiniteVector::new([0.0, 0.0, 1.0]).expect("finite normal"); 3
+    ]);
+    collection_boundary_sweep(&[
+        "creo display tessellation positions",
+        "creo display tessellation shaded rows",
+        "creo display tessellation strip rows",
+        "creo display tessellation strip vertices",
+        "creo model tessellations",
+    ], |ctx| {
+        transfer_display_tessellations(ctx, &shaded, &mut CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new())
+    });
+    let mut ir = CadIr::empty();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_display_tessellations(ctx, &shaded, &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new()).expect("shaded strip transfer");
+    });
+    assert!(matches!(ir.model.tessellations[0].mesh(),
+        cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { .. }));
+    assert_eq!(ir.model.tessellations[0].vertex_normals().len(), 3);
+}
+
+#[test]
+fn display_strip_error_text_refuses_below_retained_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut malformed = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
+    malformed.primitives.triangle_strips[0].strip_lengths = vec![2];
+    let overflow = inch_strip(vec![[f64::MAX, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
+    let arena = DecodeArena::new();
+    for (scan, operation, expected) in [
+        (&malformed, "creo display tessellation malformed text",
+            "SolidPrimdata display triangle strip at byte 0: 1 strip span(s) do not cut the vertex lane"),
+        (&overflow, "creo display tessellation overflow text",
+            "SolidPrimdata display triangle strip at byte 0 has a vertex that cannot be represented in millimeters"),
+    ] {
+        let mut observed = false;
+        let mut service_error = None;
+        for limit in 0..2048 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root admitted");
+            match transfer_display_tessellations(&ctx, scan, &mut CadIr::empty(),
+                &mut cadmpeg_ir::AnnotationBuilder::new()) {
+                Err(CodecError::ResourceLimit(resource)) => {
+                    assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
+                    observed |= resource.operation == operation;
+                }
+                Err(error) => {
+                    service_error = Some(error);
+                    break;
+                }
+                Ok(()) => panic!("invalid display strip was admitted"),
+            }
+        }
+        assert!(observed, "missing below-limit refusal for {operation}");
+        match service_error.expect("malformed strip fits within scanned cap") {
+            CodecError::Malformed(message) | CodecError::NotImplemented(message) => {
+                assert_eq!(message, expected);
+            }
+            error => panic!("unexpected display strip result: {error:?}"),
+        }
+    }
 }
 
 #[test]
