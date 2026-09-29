@@ -2400,28 +2400,39 @@ fn attach_feature_operations(
     {
         let payload_strings = payload_strings_by_operation
             .get(label.id.as_str())
-            .map_or([].as_slice(), Vec::as_slice)
-            .iter()
-            .map(|value| value.value.as_str())
-            .collect::<Vec<_>>();
+            .map_or([].as_slice(), Vec::as_slice);
         let order = annotation_base_order.and_then(|base| {
             id_from_index(annotation_ordinal).and_then(|ordinal| base.checked_add(ordinal))
         });
         let Some(order) = order else {
-            losses.push(NxLossCode::SemanticAnnotationOrderUnstatable.note(format!(
-                "NX TEXT label {} lies past the stated semantic-annotation order width, so it \
-                 states no order and is not projected.",
-                label.id
-            )));
+            const PREFIX: &str = "NX TEXT label ";
+            const SUFFIX: &str = " lies past the stated semantic-annotation order width, so it states no order and is not projected.";
+            let message_len = PREFIX.len().checked_add(label.id.len())
+                .and_then(|bytes| bytes.checked_add(SUFFIX.len()))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX TEXT annotation order loss", 0, cadmpeg_core::decode::u64_from_index(label.id.len())))?;
+            ctx.charge_collection_items(1, "NX TEXT annotation losses")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<LossNote>() + message_len), "NX TEXT annotation order loss")?;
+            losses.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX TEXT annotation losses", 0, 1))?;
+            let mut message = String::new();
+            message.try_reserve(message_len).map_err(|_| ctx.refuse_codec_limit("allocate NX TEXT annotation order loss", 0, cadmpeg_core::decode::u64_from_index(message_len)))?;
+            message.push_str(PREFIX);
+            message.push_str(&label.id);
+            message.push_str(SUFFIX);
+            losses.push(NxLossCode::SemanticAnnotationOrderUnstatable.note(message));
             continue;
         };
-        let Some(annotation) = text_semantic_annotation(&label.id, order, &payload_strings) else {
+        let [text, font_family] = payload_strings else {
+            continue;
+        };
+        let Some(annotation) = text_semantic_annotation(ctx, &label.id, order, &[text.value.as_str(), font_family.value.as_str()])? else {
             continue;
         };
         annotations
             .note(annotation.id.as_str(), &stream, label.source_offset)
             .tag("TEXT_SEMANTIC_ANNOTATION");
         annotations.exactness(annotation.id.as_str(), Exactness::Derived);
+        ir.model.semantic_annotations.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX semantic annotations", 0, 1))?;
         ir.model.semantic_annotations.push(annotation);
     }
     for (ordinal, label) in chronological_labels.into_iter().enumerate() {
@@ -5611,31 +5622,63 @@ fn projects_neutral_feature(label: &str) -> bool {
 }
 
 fn text_semantic_annotation(
+    ctx: &DecodeContext<'_>,
     native_ref: &str,
     order: u32,
     payload_strings: &[&str],
-) -> Option<SemanticAnnotation> {
+) -> Result<Option<SemanticAnnotation>, CodecError> {
     let [text, font_family] = payload_strings else {
-        return None;
+        return Ok(None);
     };
-    Some(SemanticAnnotation {
-        id: extended_id(native_ref, &cadmpeg_ir::identity_key!("semantic-text"))?,
-        object: native_ref.to_string(),
+    const FONT_KEY: &str = "font_family";
+    const ID_SUFFIX: &str = ":semantic-text";
+    let id_len = native_ref.len().checked_add(ID_SUFFIX.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX TEXT annotation identity", 0, cadmpeg_core::decode::u64_from_index(native_ref.len())))?;
+    let retained_bytes = std::mem::size_of::<SemanticAnnotation>()
+        .checked_add(std::mem::size_of::<String>())
+        .and_then(|bytes| bytes.checked_add(std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>()))
+        .and_then(|bytes| bytes.checked_add(id_len))
+        .and_then(|bytes| bytes.checked_add(native_ref.len().checked_mul(2)?))
+        .and_then(|bytes| bytes.checked_add(text.len()))
+        .and_then(|bytes| bytes.checked_add(font_family.len()))
+        .and_then(|bytes| bytes.checked_add(FONT_KEY.len()))
+        .and_then(|bytes| bytes.checked_add(4))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX TEXT annotation", 0, cadmpeg_core::decode::u64_from_index(id_len)))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(native_ref.len()), "NX TEXT annotation identity")?;
+    ctx.charge_collection_items(3, "NX TEXT annotation record, text and parameter")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(retained_bytes), "NX TEXT annotation")?;
+    let _identity_reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(id_len), "NX TEXT annotation identity assembly")?;
+    let Some(id) = extended_id(native_ref, &cadmpeg_ir::identity_key!("semantic-text")) else {
+        return Ok(None);
+    };
+    let copy = |source: &str| -> Result<String, CodecError> {
+        let mut owned = String::new();
+        owned.try_reserve(source.len()).map_err(|_| ctx.refuse_codec_limit("allocate NX TEXT annotation text", 0, cadmpeg_core::decode::u64_from_index(source.len())))?;
+        owned.push_str(source);
+        Ok(owned)
+    };
+    let mut text_values = Vec::new();
+    text_values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX TEXT annotation text list", 0, 1))?;
+    text_values.push(copy(text)?);
+    let key = cadmpeg_core::text::NonBlankString::new(copy(FONT_KEY)?)
+        .ok_or_else(|| CodecError::malformed("NX TEXT annotation font key is blank"))?;
+    let mut parameters = BTreeMap::new();
+    parameters.insert(key, copy(font_family)?);
+    Ok(Some(SemanticAnnotation {
+        id,
+        object: copy(native_ref)?,
         kind: SemanticAnnotationKind::Text,
-        runtime_type: "TEXT".to_string(),
+        runtime_type: copy("TEXT")?,
         order,
-        text: vec![(*text).to_string()],
+        text: text_values,
         references: BTreeMap::new(),
         value: None,
         format: None,
         position: None,
-        parameters: BTreeMap::from([(
-            cadmpeg_core::nonblank_literal!("font_family"),
-            (*font_family).to_string(),
-        )]),
+        parameters,
         assets: Vec::new(),
-        native_ref: native_ref.to_string(),
-    })
+        native_ref: copy(native_ref)?,
+    }))
 }
 
 pub(super) fn parameter_owner_dependencies(
