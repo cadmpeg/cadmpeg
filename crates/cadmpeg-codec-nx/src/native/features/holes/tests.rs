@@ -568,6 +568,62 @@ fn threaded_hole_template_route_refuses_work_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
+fn repeated_scalar_lane_container() -> crate::container::Container<'static> {
+    let mut scalar = 25.4f64.to_be_bytes();
+    scalar[0] -= 0x10;
+    let mut payload = scalar.to_vec();
+    payload.push(0x7f);
+    payload.extend_from_slice(&scalar);
+    payload.extend_from_slice(&[0x04, 0x08]);
+    payload.extend_from_slice(b"Hole_X\0");
+    let part = crate::test_support::test_om::composed_feature_history_payload(
+        &[(&[0xff; 4], "SIMPLE HOLE", payload)], &[],
+    );
+    let file = crate::test_support::test_prt::prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", part),
+    ]);
+    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
+        .expect("repeated scalar lane container")
+}
+
+fn repeated_scalar_lane_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = repeated_scalar_lane_container();
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(ctx, &container)
+    }).expect("admitted repeated scalar lane");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(&ctx, &container)
+        .expect_err("repeated scalar lane resource limit")
+}
+
+#[test]
+fn repeated_scalar_lane_route_refuses_collection_limit() {
+    let error = repeated_scalar_lane_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn repeated_scalar_lane_route_refuses_retained_limit() {
+    let error = repeated_scalar_lane_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn repeated_scalar_lane_route_refuses_work_limit() {
+    let error = repeated_scalar_lane_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 #[test]
 fn repeated_scalar_lane_preserves_parallel_wire_and_requires_complete_tokens() {
     check_lane_wire::<FeatureSimpleHoleRepeatedScalarLane>(

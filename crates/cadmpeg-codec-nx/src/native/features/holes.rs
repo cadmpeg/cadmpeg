@@ -967,13 +967,39 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lanes(
                     return;
                 }
             };
+            let id = match format_feature_history_id(
+                ctx, "simple-hole-repeated-scalar-lane", section_key, operation_ordinal, None,
+            ) {
+                Ok(id) => id,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
+            };
+            let operation_label = match format_feature_history_id(
+                ctx, "operation-label", section_key, operation_ordinal, None,
+            ) {
+                Ok(label) => label,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
+            };
+            if let Err(error) = ctx.charge_collection_items(1, "NX simple hole repeated scalar lanes")
+                .and_then(|()| ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSimpleHoleRepeatedScalarLane>()),
+                    "NX simple hole repeated scalar lanes",
+                ))
+                .and_then(|()| pairs.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("allocate NX simple hole repeated scalar lanes", 0, 1)
+                }))
+            {
+                failure = Some(error);
+                return;
+            }
             pairs.push(FeatureSimpleHoleRepeatedScalarLane {
-                id: format!(
-                    "nx:feature-history:simple-hole-repeated-scalar-lane#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
+                id,
+                operation_label,
                 values,
             });
         },
