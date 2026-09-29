@@ -548,16 +548,14 @@ fn plane_equation(
     model_planes: &[PlaneLocalSystem],
     outline_planes: &[OutlinePlane],
 ) -> Option<SignedPlaneEquation> {
-    let datums = datums
-        .iter()
-        .filter(|datum| datum.id == id)
-        .collect::<Vec<_>>();
-    let model_planes = model_planes
-        .iter()
-        .filter(|plane| plane.surface_id == id)
-        .collect::<Vec<_>>();
-    let model_equation = match model_planes.as_slice() {
-        [plane] => {
+    let mut matching_datums = datums.iter().filter(|datum| datum.id == id);
+    let datum = matching_datums.next();
+    let duplicate_datums = matching_datums.next().is_some();
+    let mut matching_model_planes = model_planes.iter().filter(|plane| plane.surface_id == id);
+    let model_plane = matching_model_planes.next();
+    let duplicate_model_planes = matching_model_planes.next().is_some();
+    let model_equation = match (model_plane, duplicate_model_planes) {
+        (Some(plane), false) => {
             let frame = plane.frame();
             frame
                 .normal()
@@ -569,35 +567,29 @@ fn plane_equation(
         }
         _ => None,
     };
-    let outline_planes = outline_planes
-        .iter()
-        .filter(|plane| plane.surface_id == id)
-        .collect::<Vec<_>>();
-    let outline_equation = match outline_planes.as_slice() {
-        [plane] => Some(SignedPlaneEquation {
+    let outline_equation =
+        exactly_one(outline_planes.iter().filter(|plane| plane.surface_id == id)).map(|plane| SignedPlaneEquation {
             normal: plane.normal(),
             offset: dot(plane.normal(), plane.origin),
-        }),
-        _ => None,
-    };
+        });
     // The datum-geometry and model-surface identifiers are separate namespaces;
     // a numeric collision supplies no rule for choosing between their equations.
-    if datums.len() == 1 && (model_equation.is_some() || outline_equation.is_some()) {
+    if datum.is_some() && !duplicate_datums && (model_equation.is_some() || outline_equation.is_some()) {
         return None;
     }
-    if let [datum] = datums.as_slice() {
+    if duplicate_datums {
+        return None;
+    }
+    if let Some(datum) = datum {
         return Some(SignedPlaneEquation {
             normal: datum.plane.normal(),
             offset: datum.plane.offset,
         });
     }
-    if !datums.is_empty() {
-        return None;
-    }
     if let Some(equation) = model_equation {
         return Some(equation);
     }
-    if model_planes.len() > 1 {
+    if duplicate_model_planes {
         return None;
     }
     outline_equation
@@ -894,25 +886,15 @@ fn generated_section_cap_plane_equation(
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
 ) -> Option<SignedPlaneEquation> {
-    let datum_tables = sources
-        .geometry_tables
-        .iter()
-        .filter(|table| {
-            table.feature_id == feature_id && table.kind.datum_ids() == Some(&[sketch_id])
-        })
-        .collect::<Vec<_>>();
-    let [_] = datum_tables.as_slice() else {
-        return None;
-    };
-    let equations = entity_tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id)
-        .filter_map(|table| generated_cap_pair_plane_equation(table, sources))
-        .collect::<Vec<_>>();
-    let [equation] = equations.as_slice() else {
-        return None;
-    };
-    Some(*equation)
+    exactly_one(sources.geometry_tables.iter().filter(|table| {
+        table.feature_id == feature_id && table.kind.datum_ids() == Some(&[sketch_id])
+    }))?;
+    exactly_one(
+        entity_tables
+            .iter()
+            .filter(|table| table.feature_id == feature_id)
+            .filter_map(|table| generated_cap_pair_plane_equation(table, sources)),
+    )
 }
 
 fn zero_offset_standard_section_plane_equation(
@@ -1010,7 +992,7 @@ fn circular_profile_aligned_origin(
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
 ) -> Option<[f64; 3]> {
-    let tables = entity_tables
+    let table = exactly_one(entity_tables
         .iter()
         .filter(|table| table.feature_id == feature_id)
         .filter(|table| {
@@ -1019,17 +1001,13 @@ fn circular_profile_aligned_origin(
                 .iter()
                 .map(crate::feature::entity::FeatureEntityTableEntry::class_id)
                 .eq([204, 203, 200, 200])
-        })
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
+        }))?;
     let profile_external_id = table.entries[2].source_entity_id()?;
     let profile_internal_id = definition
         .order_table
         .as_ref()?
         .internal_id(profile_external_id)?;
-    let circles = definition
+    let circle = exactly_one(definition
         .saved_section
         .iter()
         .flat_map(|section| &section.entities)
@@ -1040,11 +1018,7 @@ fn circular_profile_aligned_origin(
                 Some(circle)
             }
             _ => None,
-        })
-        .collect::<Vec<_>>();
-    let [circle] = circles.as_slice() else {
-        return None;
-    };
+        }))?;
     let [Some(center_u), Some(center_v), _] = circle.center else {
         return None;
     };
@@ -1052,39 +1026,32 @@ fn circular_profile_aligned_origin(
         .radius
         .filter(|radius| *radius > EPS_PLACEMENT_EXACT_GEOMETRY)?;
     let cap_id = table.entries[1].entity_id;
-    let envelopes = sources
+    let envelope = exactly_one(sources
         .plane_envelopes
         .iter()
-        .filter(|record| record.surface_id == cap_id)
-        .collect::<Vec<_>>();
-    let [envelope] = envelopes.as_slice() else {
-        return None;
-    };
+        .filter(|record| record.surface_id == cap_id))?;
     let corners = match &envelope.envelope {
         PlaneEnvelope::Standard { corners_3d, .. } | PlaneEnvelope::Compact { corners_3d, .. } => {
             corners_3d
         }
     };
-    let corners = corners
-        .iter()
-        .map(|corner| Some([corner[0]?, corner[1]?, corner[2]?]))
-        .collect::<Option<Vec<_>>>()?;
-    let [first, second] = corners.as_slice() else {
-        return None;
-    };
+    let decode_corner = |corner: &[Option<f64>; 3]| Some([corner[0]?, corner[1]?, corner[2]?]);
+    let first = decode_corner(&corners[0])?;
+    let second = decode_corner(&corners[1])?;
     let axis = (0..3).find(|axis| envelope.corner_coordinate_equal[*axis] == Some(true))?;
-    let radial = (0..3).filter(|index| *index != axis).collect::<Vec<_>>();
-    let spans = radial
-        .iter()
-        .map(|index| (second[*index] - first[*index]).abs())
-        .collect::<Vec<_>>();
+    let radial = match axis {
+        0 => [1, 2],
+        1 => [0, 2],
+        2 => [0, 1],
+        _ => return None,
+    };
+    let spans = radial.map(|index| (second[index] - first[index]).abs());
     let tolerance_scale = spans
         .iter()
         .chain(std::iter::once(&radius))
         .copied()
         .fold(1.0, f64::max);
-    (spans.len() == 2
-        && spans[0] > EPS_PLACEMENT_EXACT_GEOMETRY
+    (spans[0] > EPS_PLACEMENT_EXACT_GEOMETRY
         && (spans[0] - spans[1]).abs() <= EPS_PLACEMENT_GEOMETRY * tolerance_scale
         && (0.5 * spans[0] - radius).abs() <= EPS_PLACEMENT_GEOMETRY * tolerance_scale)
         .then_some(())?;
