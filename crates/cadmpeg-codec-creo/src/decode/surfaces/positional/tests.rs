@@ -11,6 +11,39 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::build_prt;
 use crate::CreoCodec;
 
+#[test]
+fn tabulated_cylinder_refusals_charge_text_and_loss_rows() {
+    let records = ["missing chart".to_string()];
+    for (retained_limit, item_limit, dimension, operation) in [
+        (0, u64::MAX, ResourceDimension::RetainedBytes, "creo tabulated cylinder refusal text"),
+        (u64::MAX, 0, ResourceDimension::CollectionItems, "creo tabulated cylinder losses"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = retained_limit;
+        policy.limits.max_collection_items = item_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = super::note_tabulated_cylinder_refusals(
+            &ctx, 7, 42, "directrix", &records, &mut Vec::new(),
+        )
+        .expect_err("one refusal exceeds the limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == dimension && resource.operation == operation));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service root admitted");
+    let mut losses = Vec::new();
+    super::note_tabulated_cylinder_refusals(
+        &ctx, 7, 42, "directrix", &records, &mut losses,
+    )
+    .expect("service refusal admitted");
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].message,
+        "VisibGeom surface row 7 states a tabulated-cylinder replay at offset 42 whose directrix lane forms no carrier: missing chart");
+}
+
 fn scan_with_tabulated_replay() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.curves

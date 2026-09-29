@@ -459,20 +459,25 @@ fn section_contains_offset(section: &crate::container::Section, offset: usize) -
 
 /// Report every refused tabulated-cylinder lane against the row that stated it.
 fn note_tabulated_cylinder_refusals(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface_id: u32,
     replay_offset: usize,
     lane: &str,
     refused: &[String],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for record in refused {
-        losses.push(
-            crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred.note(format!(
+        let message = ctx.format_retained(
+            format_args!(
                 "VisibGeom surface row {surface_id} states a tabulated-cylinder replay at offset \
                  {replay_offset} whose {lane} lane forms no carrier: {record}"
-            )),
-        );
+            ),
+            "creo tabulated cylinder refusal text",
+        )?;
+        ctx.try_reserve_items(losses, 1, "creo tabulated cylinder losses")?;
+        losses.push(crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred.note(message));
     }
+    Ok(())
 }
 
 fn unique_tabulated_cylinder_prototype<'a>(
@@ -546,12 +551,13 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         let refused = refusal.take_records_checked()?;
         let Some((directrix, sweep)) = directrix.filter(|_| refused.is_empty()) else {
             note_tabulated_cylinder_refusals(
+                ctx,
                 replay.surface_id,
                 replay.offset,
                 "directrix",
                 &refused,
                 losses,
-            );
+            )?;
             continue;
         };
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
@@ -568,12 +574,13 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         let refused = refusal.take_records_checked()?;
         let Some(surface) = surface.filter(|_| refused.is_empty()) else {
             note_tabulated_cylinder_refusals(
+                ctx,
                 replay.surface_id,
                 replay.offset,
                 "extrusion",
                 &refused,
                 losses,
-            );
+            )?;
             continue;
         };
         let curve_id = crate::identity::compose_checked::<CurveId>(
