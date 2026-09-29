@@ -100,7 +100,7 @@ fn decode_projects_owned_native_sketch_relation() {
             && operands[1].object_index == Some(2)
             && operands[1].native_ref.is_none()
     ));
-    let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).findings;
+    let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").findings;
     assert!(findings.is_empty(), "{findings:#?}");
     crate::test_support::plan_inherited_write(
         decoded.ir(),

@@ -48,7 +48,9 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
         )
         .unwrap();
         let samples = nurbs_curve_sample_parameters(&c, [0., d]).unwrap();
-        let (uv, error) = nurbs_degree_one_cache_lanes(&s, &c, [0., d]).unwrap();
+        let (uv, error) = nurbs_degree_one_cache_lanes(&s, &c, [0., d])
+            .expect("resource allocation did not fail")
+            .unwrap();
         let observed = Point3::new(0.5, 0.5, 0.5).distance(
             cadmpeg_ir::eval::nurbs_surface_point(&s, 0.5, 0.5)
                 .unwrap()

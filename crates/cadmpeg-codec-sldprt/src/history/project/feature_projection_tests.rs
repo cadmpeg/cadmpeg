@@ -60,6 +60,14 @@ use std::collections::HashMap;
 const EPS_PROJECTED_REVOLUTION_ANGLE: f64 = 1.0e-12;
 const EPS_BOUND_REVOLUTION_ANGLE: f64 = 1.0e-12;
 
+fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    run(&ctx)
+}
+
 #[test]
 fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
     let history = FeatureHistory {
@@ -104,7 +112,10 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
             native_ref: None,
         });
 
-    assert!(order_model_features_for_regeneration(&mut ir));
+    assert!(
+        with_test_ctx(|ctx| order_model_features_for_regeneration(ctx, &mut ir))
+            .expect("test feature ordering")
+    );
     let ordinals = ir
         .model
         .features

@@ -78,7 +78,7 @@ fn try_lossless_round_trip(
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(produced), &DecodeOptions::default())
         .unwrap_or_else(|e| panic!("{stem}: written file failed to decode: {e}"));
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{stem}: {:#?}", validation.findings);
     let d = cadmpeg_ir::diff::diff(original, round_trip.ir());
     assert!(d.is_empty(), "{stem}: no-loss export drifted: {d:#?}");
@@ -232,7 +232,7 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             source_point.distance(round_point) < EPS_LINE_REVOLUTION_ROUND_TRIP,
             "{version:?}"
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -354,7 +354,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             source_point.distance(round_point) < EPS_LINE_EXTRUSION_ROUND_TRIP,
             "{version:?}"
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -479,7 +479,7 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -543,7 +543,7 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (usize
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -699,7 +699,7 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -832,7 +832,7 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -890,7 +890,7 @@ fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",

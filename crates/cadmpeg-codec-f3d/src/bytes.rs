@@ -12,7 +12,8 @@
 use cadmpeg_asm::kernel_header::RefWidth;
 use std::ops::RangeInclusive;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
 /// Read a signed little-endian integer with a four- or eight-byte width.
@@ -81,6 +82,38 @@ pub(crate) fn lp_ascii_strict(
     Some((std::str::from_utf8(raw).ok()?.to_owned(), end))
 }
 
+/// Read a bounded strict-UTF-8 string after admitting its retained bytes.
+pub(crate) fn lp_ascii_strict_charged(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+) -> Result<Option<(String, usize)>, CodecError> {
+    let Some(length_u32) = View::u32_le_at(bytes, at) else {
+        return Ok(None);
+    };
+    let Ok(length) = usize::try_from(length_u32) else {
+        return Ok(None);
+    };
+    if !bounds.contains(&length) {
+        return Ok(None);
+    }
+    let Some((raw, end)) = lp_u32_bytes_at(bytes, at) else {
+        return Ok(None);
+    };
+    ctx.charge_work(u64::from(length_u32), "decode F3D ASCII string")?;
+    let Ok(value) = std::str::from_utf8(raw) else {
+        return Ok(None);
+    };
+    ctx.charge_retained(u64::from(length_u32), "retain F3D ASCII string")?;
+    let mut owned = String::new();
+    owned
+        .try_reserve(length)
+        .map_err(|_| ctx.refuse_codec_limit("retain F3D ASCII string", 0, u64::from(length_u32)))?;
+    owned.push_str(value);
+    Ok(Some((owned, end)))
+}
+
 /// Read a u32-length-prefixed ASCII string whose length lies in `bounds` and
 /// whose every byte satisfies `allowed`, decoding the payload lossily. Returns
 /// the string and the offset past it, or `None` when a byte is rejected.
@@ -115,10 +148,126 @@ pub(crate) fn lp_utf16_bounded(
     utf16le_at(bytes, at.checked_add(4)?, count)
 }
 
+/// Decode a length-prefixed UTF-16 string while admitting its retained UTF-8 bytes.
+pub(crate) fn lp_utf16_bounded_charged(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+) -> Result<Option<(String, usize)>, CodecError> {
+    let Some(count_u32) = View::u32_le_at(bytes, at) else {
+        return Ok(None);
+    };
+    let Ok(count) = usize::try_from(count_u32) else {
+        return Ok(None);
+    };
+    if !bounds.contains(&count) {
+        return Ok(None);
+    }
+    let Some(start) = at.checked_add(4) else {
+        return Ok(None);
+    };
+    let Some(end) = count
+        .checked_mul(2)
+        .and_then(|length| start.checked_add(length))
+    else {
+        return Ok(None);
+    };
+    let Some(raw) = bytes.get(start..end) else {
+        return Ok(None);
+    };
+    let units = || {
+        let mut view = View::over_retained(raw);
+        std::iter::from_fn(move || view.u16_le())
+    };
+    ctx.charge_work(u64::from(count_u32) * 2, "decode F3D UTF-16 string")?;
+    let mut utf8_len = 0usize;
+    for decoded in char::decode_utf16(units()) {
+        let Ok(character) = decoded else {
+            return Ok(None);
+        };
+        utf8_len = utf8_len
+            .checked_add(character.len_utf8())
+            .ok_or_else(|| ctx.refuse_codec_limit("decode F3D UTF-16 string", 0, u64::MAX))?;
+    }
+    let utf8_len_u64 = u64::try_from(utf8_len)
+        .map_err(|_| ctx.refuse_codec_limit("decode F3D UTF-16 string", 0, u64::MAX))?;
+    ctx.charge_retained(utf8_len_u64, "retain F3D UTF-16 string")?;
+    let mut value = String::new();
+    value
+        .try_reserve(utf8_len)
+        .map_err(|_| ctx.refuse_codec_limit("retain F3D UTF-16 string", 0, utf8_len_u64))?;
+    for decoded in char::decode_utf16(units()) {
+        let Ok(character) = decoded else {
+            return Ok(None);
+        };
+        value.push(character);
+    }
+    Ok(Some((value, end)))
+}
+
+#[cfg(test)]
+mod charged_string_tests {
+    use super::{lp_ascii_strict_charged, lp_utf16_bounded_charged};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    #[test]
+    fn bounded_utf16_string_refuses_retained_limit() {
+        let bytes = [2, 0, 0, 0, b'A', 0, b'B', 0];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let error = lp_utf16_bounded_charged(&ctx, &bytes, 0, 0..=1024).unwrap_err();
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "retain F3D UTF-16 string"
+        ));
+    }
+
+    #[test]
+    fn bounded_ascii_string_refuses_retained_limit() {
+        let bytes = [2, 0, 0, 0, b'A', b'B'];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let error = lp_ascii_strict_charged(&ctx, &bytes, 0, 0..=128).unwrap_err();
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "retain F3D ASCII string"
+        ));
+    }
+}
+
 /// Take a u32-length-prefixed strict-UTF-8 string, advancing `at` past it on
 /// success.
 pub(crate) fn take_lp_utf8(bytes: &[u8], at: &mut usize) -> Option<String> {
     String::from_utf8(take_lp_u32_bytes(bytes, at)?.to_vec()).ok()
+}
+
+pub(crate) fn take_lp_utf8_charged(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<Option<String>, CodecError> {
+    let Some(raw) = take_lp_u32_bytes(bytes, at) else {
+        return Ok(None);
+    };
+    let Ok(value) = std::str::from_utf8(raw) else {
+        return Ok(None);
+    };
+    let length = u64::try_from(raw.len())
+        .map_err(|_| ctx.refuse_codec_limit("retain F3D UTF-8 string", 0, u64::MAX))?;
+    ctx.charge_retained(length, "retain F3D UTF-8 string")?;
+    let mut owned = String::new();
+    owned
+        .try_reserve(raw.len())
+        .map_err(|_| ctx.refuse_codec_limit("retain F3D UTF-8 string", 0, length))?;
+    owned.push_str(value);
+    Ok(Some(owned))
 }
 
 /// Advance `at` past a u32-length-prefixed byte string, reading none of it.
@@ -310,6 +459,116 @@ pub(crate) fn take_reference(bytes: &[u8], at: &mut usize) -> Option<Reference> 
     Some(reference)
 }
 
+/// Take one reference with every retained text field admitted by the decode context.
+pub(crate) fn take_reference_charged(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<Option<Reference>, CodecError> {
+    macro_rules! some {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
+    let mut cursor = *at;
+    let present = some!(bytes.get(cursor)).to_owned();
+    cursor += 1;
+    if present == 0 {
+        *at = cursor;
+        return Ok(Some(Reference::Null));
+    }
+    if present != 1 {
+        return Ok(None);
+    }
+    let target = some!(View::u64_le_at(bytes, cursor));
+    cursor += 8;
+    let inline_type_guid = if View::u32_le_at(bytes, cursor) == Some(36) {
+        let (guid, end) = some!(lp_ascii_strict_charged(ctx, bytes, cursor, 36..=36)?);
+        if !is_guid_hyphenated(&guid) {
+            return Ok(None);
+        }
+        cursor = end;
+        Some(guid)
+    } else {
+        None
+    };
+    let reference = match *some!(bytes.get(cursor)) {
+        0 => {
+            cursor += 1;
+            match *some!(bytes.get(cursor)) {
+                0 => {
+                    cursor += 1;
+                    Reference::Local {
+                        target,
+                        inline_type_guid,
+                    }
+                }
+                1 => {
+                    let segment = some!(View::u32_le_at(bytes, cursor + 1));
+                    cursor += 5;
+                    Reference::CrossSegment {
+                        target,
+                        inline_type_guid,
+                        segment,
+                    }
+                }
+                _ => return Ok(None),
+            }
+        }
+        1 => {
+            cursor += 1;
+            let segment = some!(View::u32_le_at(bytes, cursor));
+            cursor += 4;
+            let (_, end) = some!(lp_utf16_bounded_charged(ctx, bytes, cursor, 0..=64)?);
+            cursor = end;
+            match *some!(bytes.get(cursor)) {
+                1 => {
+                    cursor += 1;
+                    Reference::CrossSegment {
+                        target,
+                        inline_type_guid,
+                        segment,
+                    }
+                }
+                0 => {
+                    cursor += 1;
+                    let (guid, end) = some!(lp_ascii_strict_charged(ctx, bytes, cursor, 36..=36)?);
+                    if !is_guid_hyphenated(&guid) {
+                        return Ok(None);
+                    }
+                    let (link_name, end) =
+                        some!(lp_utf16_bounded_charged(ctx, bytes, end, 0..=256)?);
+                    cursor = end;
+                    match *some!(bytes.get(cursor)) {
+                        0 => cursor += 1,
+                        1 => {
+                            let (_, end) =
+                                some!(lp_utf16_bounded_charged(ctx, bytes, cursor + 1, 36..=36)?);
+                            let (_, end) =
+                                some!(lp_utf16_bounded_charged(ctx, bytes, end, 0..=256)?);
+                            cursor = end;
+                        }
+                        _ => return Ok(None),
+                    }
+                    Reference::CrossDocument {
+                        target,
+                        inline_type_guid,
+                        segment,
+                        link_name,
+                    }
+                }
+                _ => return Ok(None),
+            }
+        }
+        _ => return Ok(None),
+    };
+    *at = cursor;
+    Ok(Some(reference))
+}
+
 /// Whether `value` is a 36-character hyphenated hexadecimal GUID.
 pub(crate) fn is_guid_hyphenated(value: &str) -> bool {
     value.len() == 36
@@ -350,4 +609,25 @@ pub(crate) fn lp_utf16_bytes(value: &str) -> Vec<u8> {
     let mut out = ((units.len() / 2) as u32).to_le_bytes().to_vec();
     out.extend(units);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn lp_utf8_string_refuses_retained_limit() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&4u32.to_le_bytes());
+        bytes.extend_from_slice(b"text");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 3;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        let error = super::take_lp_utf8_charged(&ctx, &bytes, &mut 0)
+            .expect_err("encoded string must exceed retained budget");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D UTF-8 string")
+        );
+    }
 }

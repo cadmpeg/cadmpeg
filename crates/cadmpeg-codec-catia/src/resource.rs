@@ -198,6 +198,19 @@ pub(crate) fn collect_options<T>(
     Ok(Some(collected))
 }
 
+pub(crate) fn collect_fallible_options<T>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = Result<Option<T>, cadmpeg_core::decode::ResourceLimit>>,
+    operation: &'static str,
+) -> Result<Option<Vec<T>>, CodecError> {
+    let mut collected = Vec::new();
+    for value in values {
+        let Some(value) = value? else { return Ok(None) };
+        push(ctx, &mut collected, value, operation)?;
+    }
+    Ok(Some(collected))
+}
+
 pub(crate) fn collect_set<T: Eq + Hash>(
     ctx: &DecodeContext<'_>,
     values: impl IntoIterator<Item = T>,
@@ -791,19 +804,7 @@ pub(crate) fn copy_nurbs_curve(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     operation: &'static str,
 ) -> Result<cadmpeg_ir::geometry::nurbs::NurbsCurve, CodecError> {
-    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
-
-    let knots = copy_knot_vector(ctx, curve.knots(), operation)?;
-    let poles = match curve.pole_rows() {
-        NurbsPoles3::Polynomial { points } => NurbsPoles3::Polynomial {
-            points: copy_retained_slice(ctx, points, operation)?,
-        },
-        NurbsPoles3::Rational { points } => NurbsPoles3::Rational {
-            points: copy_retained_slice(ctx, points, operation)?,
-        },
-    };
-    NurbsCurve::from_admitted_parts(curve.degree(), knots, poles, curve.periodic())
-        .map_err(CodecError::malformed)
+    curve.try_clone_for_decode(ctx, operation)
 }
 
 pub(crate) fn copy_pcurve_geometry(
@@ -828,7 +829,7 @@ pub(crate) fn copy_pcurve_geometry(
                 },
             };
             PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_admitted_parts(
+                nurbs: PcurveNurbs::from_admitted_rows(
                     nurbs.degree(),
                     knots,
                     poles,
@@ -968,59 +969,7 @@ pub(crate) fn copy_nurbs_surface(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     operation: &'static str,
 ) -> Result<cadmpeg_ir::geometry::nurbs::NurbsSurface, CodecError> {
-    use cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;
-
-    let knots = surface.u_knots().len().checked_add(surface.v_knots().len());
-    let (rows, poles, pole_bytes) = match surface.pole_grid() {
-        NurbsPoleGrid::Polynomial { rows } => (
-            rows.len(),
-            rows.iter()
-                .try_fold(0usize, |total, row| total.checked_add(row.len())),
-            std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>(),
-        ),
-        NurbsPoleGrid::Rational { rows } => (
-            rows.len(),
-            rows.iter()
-                .try_fold(0usize, |total, row| total.checked_add(row.len())),
-            std::mem::size_of::<
-                cadmpeg_ir::geometry::nurbs::WeightedPole3<cadmpeg_ir::features::FinitePoint3>,
-            >(),
-        ),
-    };
-    let Some((count, bytes)) = knots
-        .and_then(|knots| {
-            knots
-                .checked_add(rows)
-                .zip(knots.checked_mul(size_of::<f64>()))
-        })
-        .and_then(|(count, knot_bytes)| {
-            poles.and_then(|poles| {
-                count
-                    .checked_add(poles)
-                    .zip(
-                        rows.checked_mul(size_of::<Vec<usize>>())
-                            .and_then(|row_bytes| {
-                                poles.checked_mul(pole_bytes).and_then(|pole_bytes| {
-                                    knot_bytes.checked_add(row_bytes)?.checked_add(pole_bytes)
-                                })
-                            }),
-                    )
-            })
-        })
-        .and_then(|(count, bytes)| Some((u64::try_from(count).ok()?, u64::try_from(bytes).ok()?)))
-    else {
-        return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
-    };
-    ctx.charge_collection_items(count, operation)?;
-    ctx.charge_retained(bytes, operation)?;
-    surface.try_clone().map_err(|_| {
-        allocation_failed(
-            0,
-            0,
-            usize::try_from(count).unwrap_or(usize::MAX),
-            operation,
-        )
-    })
+    surface.try_clone_for_decode(ctx, operation)
 }
 
 #[cfg(test)]

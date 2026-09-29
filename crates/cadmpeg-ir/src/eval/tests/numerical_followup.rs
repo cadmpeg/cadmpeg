@@ -31,7 +31,7 @@ fn numerical_followup_surface_projection_is_independent_of_scale() {
         )
         .unwrap();
         let target = Point3::new(0.3 * scale, 0.4 * scale, 0.);
-        let uv = nurbs_surface_parameter_near_point(&surface, target, Some(Point2::new(0., 0.)))
+        let uv = nurbs_surface_parameter_near_point(&surface, target, Some(Point2::new(0., 0.))).expect("resource allocation did not fail")
             .unwrap();
         assert!((uv.u - 0.3).abs() <= 8.0 * f64::EPSILON);
         assert!((uv.v - 0.4).abs() <= 8.0 * f64::EPSILON);
@@ -49,7 +49,7 @@ fn numerical_followup_curve_search_rejects_a_nonzero_zero_tolerance_residual() {
     )
     .unwrap();
     assert_eq!(
-        nurbs_curve_parameter_near_point(&curve, Point3::new(0., 1e-200, 0.), 0., 0.),
+        nurbs_curve_parameter_near_point(&curve, Point3::new(0., 1e-200, 0.), 0., 0.).expect("resource allocation did not fail"),
         None
     );
 }
@@ -67,18 +67,19 @@ fn curve_search_admits_its_tolerance_before_the_search() {
     let point = Point3::new(0.25, 1e-3, 0.);
     for tolerance in [-1e-3, f64::NAN, f64::INFINITY] {
         assert_eq!(
-            nurbs_curve_parameter_near_point(&curve, point, tolerance, 0.5),
+            nurbs_curve_parameter_near_point(&curve, point, tolerance, 0.5).expect("resource allocation did not fail"),
             None
         );
     }
     let tolerance = crate::scalar::NonNegativeLength::new(2e-3).unwrap();
     let seed = crate::scalar::FiniteReal::new(0.5).unwrap();
     let parameter =
-        nurbs_curve_parameter_near_point_with_nonnegative_tolerance(&curve, point, tolerance, seed);
+        nurbs_curve_parameter_near_point_with_nonnegative_tolerance(&curve, point, tolerance, seed)
+            .expect("resource allocation did not fail");
     assert!(parameter.is_some());
     assert_eq!(
         parameter,
-        nurbs_curve_parameter_near_point(&curve, point, tolerance.get(), 0.5)
+        nurbs_curve_parameter_near_point(&curve, point, tolerance.get(), 0.5).expect("resource allocation did not fail")
     );
 }
 
@@ -100,7 +101,7 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
             Some(1.0)
         );
         assert_eq!(
-            nurbs_curve_parameter_near_point(&curve, poles[0], 0., 0.)
+            nurbs_curve_parameter_near_point(&curve, poles[0], 0., 0.).expect("resource allocation did not fail")
                 .map(crate::scalar::FiniteReal::get),
             Some(0.0)
         );
@@ -112,7 +113,7 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
                 Some(&[w, w]),
                 Point2::new(0.5, 0.),
                 0.
-            ),
+            ).expect("resource allocation did not fail"),
             Some(true)
         );
     }
@@ -136,12 +137,12 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
         nurbs_curve_speed_bound(&explicit)
     );
     assert_eq!(
-        nurbs_curve_parameter_near_point(&implicit, Point3::new(0.25, 0.0, 0.0), 0.0, 0.5),
-        nurbs_curve_parameter_near_point(&explicit, Point3::new(0.25, 0.0, 0.0), 0.0, 0.5)
+        nurbs_curve_parameter_near_point(&implicit, Point3::new(0.25, 0.0, 0.0), 0.0, 0.5).expect("resource allocation did not fail"),
+        nurbs_curve_parameter_near_point(&explicit, Point3::new(0.25, 0.0, 0.0), 0.0, 0.5).expect("resource allocation did not fail")
     );
     let controls = [Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
     assert_eq!(
-        nurbs_pcurve_contains_point(1, &[0.0, 0.0, 1.0, 1.0], &controls, None, controls[0], 0.0),
+        nurbs_pcurve_contains_point(1, &[0.0, 0.0, 1.0, 1.0], &controls, None, controls[0], 0.0).expect("resource allocation did not fail"),
         nurbs_pcurve_contains_point(
             1,
             &[0.0, 0.0, 1.0, 1.0],
@@ -149,7 +150,7 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
             Some(&[1.0, 1.0]),
             controls[0],
             0.0
-        )
+        ).expect("resource allocation did not fail")
     );
 }
 
@@ -158,8 +159,10 @@ fn low_degree_second_derivative_basis_borrows_zeros() {
     use std::borrow::Cow;
 
     let constant = super::super::bspline_basis_second_derivative(&[], 0, 0, 0.0)
+        .expect("resource allocation did not fail")
         .expect("degree-zero second derivative");
     let linear = super::super::bspline_basis_second_derivative(&[], 1, 0, 0.0)
+        .expect("resource allocation did not fail")
         .expect("degree-one second derivative");
     assert!(matches!(constant, Cow::Borrowed(_)));
     assert!(matches!(linear, Cow::Borrowed(_)));
@@ -242,7 +245,7 @@ fn analytic_line_search_preserves_subnormal_scale_residuals() {
             Point3::new(0., 1e-200, 0.),
             crate::scalar::FiniteReal::ZERO,
             crate::scalar::NonNegativeLength::ZERO,
-        ),
+        ).expect("resource allocation did not fail"),
         None
     );
 }

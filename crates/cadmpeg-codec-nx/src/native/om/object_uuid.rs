@@ -3,6 +3,8 @@
 
 use crate::container::Container;
 use crate::om::nonempty::NonEmpty;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Canonical UUID text spanning one or more contiguous bounded OM records.
@@ -43,81 +45,91 @@ fn deserialize_records<'de, D: Deserializer<'de>>(
 
 /// Decode canonical UUID frames across the contiguous storage of ID-bounded
 /// OM records. A value retains every physical record intersected by its frame.
-pub(in crate::native) fn object_uuid_values(container: &Container) -> Vec<ObjectUuidValue> {
+pub(in crate::native) fn object_uuid_values(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<ObjectUuidValue>, CodecError> {
     const FRAME_LEN: usize = 2 + 36 + 1;
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some(records) = section.as_fixed() else {
-                return Vec::new();
+    let mut values = Vec::new();
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    {
+        let Some(records) = section.as_fixed() else {
+            continue;
+        };
+        let Some(first) = records.first() else {
+            continue;
+        };
+        let Some(last) = records.last() else {
+            continue;
+        };
+        if records.windows(2).any(|window| {
+            window[0].offset.checked_add(window[0].bytes.len()) != Some(window[1].offset)
+        }) {
+            continue;
+        }
+        let Some(end) = last.offset.checked_add(last.bytes.len()) else {
+            continue;
+        };
+        let Some((entry_offset, _)) = entry.file_span() else {
+            continue;
+        };
+        let Ok(entry_offset_usize) = usize::try_from(entry_offset) else {
+            continue;
+        };
+        let Some(storage_start) = entry_offset_usize.checked_add(first.offset) else {
+            continue;
+        };
+        let Some(storage_end) = entry_offset_usize.checked_add(end) else {
+            continue;
+        };
+        let Some(storage) = container.data.get(storage_start..storage_end) else {
+            continue;
+        };
+        let section_ordinal_u32 = u32::try_from(section_ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("nx OM UUID section ordinal", 0, u64::MAX))?;
+        for value in crate::om::uuid_string_values(ctx, storage, first.offset)? {
+            let Some(frame_end) = value.offset.checked_add(FRAME_LEN) else {
+                continue;
             };
-            let Some(first) = records.first() else {
-                return Vec::new();
-            };
-            let Some(last) = records.last() else {
-                return Vec::new();
-            };
-            if records.windows(2).any(|window| {
-                window[0].offset.checked_add(window[0].bytes.len()) != Some(window[1].offset)
-            }) {
-                return Vec::new();
-            }
-            let Some(end) = last.offset.checked_add(last.bytes.len()) else {
-                return Vec::new();
-            };
-            let Some((entry_offset, _)) = entry.file_span() else {
-                return Vec::new();
-            };
-            let Ok(entry_offset_usize) = usize::try_from(entry_offset) else {
-                return Vec::new();
-            };
-            let Some(storage_start) = entry_offset_usize.checked_add(first.offset) else {
-                return Vec::new();
-            };
-            let Some(storage_end) = entry_offset_usize.checked_add(end) else {
-                return Vec::new();
-            };
-            let Some(storage) = container.data.get(storage_start..storage_end) else {
-                return Vec::new();
-            };
-            crate::om::uuid_string_values(storage, first.offset)
-                .into_iter()
-                .filter_map(|value| {
-                    let frame_end = value.offset.checked_add(FRAME_LEN)?;
-                    let records = NonEmpty::new(
-                        records
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, record)| {
-                                record.offset < frame_end
-                                    && record
-                                        .offset
-                                        .checked_add(record.bytes.len())
-                                        .is_some_and(|record_end| value.offset < record_end)
-                            })
-                            .map(|(record_ordinal, _)| {
-                                format!(
-                                "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"
-                            )
-                            }),
-                    )?;
-                    Some(ObjectUuidValue {
-                        id: format!(
-                            "nx:om-object-uuid-values-{section_ordinal}:value#{}",
-                            value.offset
-                        ),
-                        section_ordinal: section_ordinal as u32,
-                        uuid: value.value.into_owned(),
-                        records,
-                        source_entry: entry.name.clone(),
-                        source_offset: entry_offset + value.offset as u64,
+            let Some(records) = NonEmpty::new_charged(
+                ctx,
+                records
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, record)| {
+                        record.offset < frame_end
+                            && record
+                                .offset
+                                .checked_add(record.bytes.len())
+                                .is_some_and(|record_end| value.offset < record_end)
                     })
-                })
-                .collect()
-        })
-        .collect()
+                    .map(|(record_ordinal, _)| {
+                        format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}")
+                    }),
+            )?
+            else {
+                continue;
+            };
+            let Some(source_offset) =
+                entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(value.offset))
+            else {
+                continue;
+            };
+            values.push(ObjectUuidValue {
+                id: format!(
+                    "nx:om-object-uuid-values-{section_ordinal}:value#{}",
+                    value.offset
+                ),
+                section_ordinal: section_ordinal_u32,
+                uuid: value.value.into_owned(),
+                records,
+                source_entry: entry.name.clone(),
+                source_offset,
+            });
+        }
+    }
+    Ok(values)
 }
 
 #[cfg(test)]

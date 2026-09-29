@@ -10,6 +10,227 @@ use std::collections::BTreeMap;
 
 const GUID: &str = "01234567-89ab-cdef-0123-456789abcdef";
 
+#[test]
+fn act_guid_borrowed_wire_matches_owned_wire_bytes() {
+    let guid = ActGuid::new("f3d:native:act-guid#20".into(), 20, 3, GUID.into()).unwrap();
+    let owned = super::ActGuidWire::from(guid.clone());
+    assert_eq!(
+        serde_json::to_vec(&guid).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn act_guid_native_retained_limit_refuses_before_guid_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let guid = ActGuid::new("f3d:native:act-guid#20".into(), 20, 3, GUID.into()).unwrap();
+    let needed = serde_json::to_vec(&guid).unwrap().len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    super::ACT_GUID_CLONE_COUNT.with(|count| count.set(0));
+    let error = namespace
+        .set_arena(&limited, "act_guids", std::slice::from_ref(&guid))
+        .unwrap_err();
+    super::ACT_GUID_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    namespace
+        .set_arena(&service, "act_guids", std::slice::from_ref(&guid))
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&namespace.arenas()["act_guids"][0]).unwrap(),
+        serde_json::to_value(&guid).unwrap()
+    );
+}
+
+#[test]
+fn act_table_reference_borrowed_wire_matches_owned_wire_bytes() {
+    let reference =
+        ActTableReference::new("f3d:native:act-table-reference#20".into(), 3, 20, 7).unwrap();
+    let owned = super::ActTableReferenceWire::from(reference.clone());
+    assert_eq!(
+        serde_json::to_vec(&reference).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn act_table_reference_native_retained_limit_refuses_before_id_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let reference =
+        ActTableReference::new("f3d:native:act-table-reference#20".into(), 3, 20, 7).unwrap();
+    let needed = serde_json::to_vec(&reference).unwrap().len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    super::ACT_TABLE_REFERENCE_CLONE_COUNT.with(|count| count.set(0));
+    let error = namespace
+        .set_arena(
+            &limited,
+            "act_table_references",
+            std::slice::from_ref(&reference),
+        )
+        .unwrap_err();
+    super::ACT_TABLE_REFERENCE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    namespace
+        .set_arena(
+            &service,
+            "act_table_references",
+            std::slice::from_ref(&reference),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&namespace.arenas()["act_table_references"][0]).unwrap(),
+        serde_json::to_value(&reference).unwrap()
+    );
+}
+
+#[test]
+fn act_registry_channel_borrowed_wire_matches_owned_wire_bytes() {
+    let channel = ActRegistryChannel::new(
+        "f3d:native:act-registry-channel#20".into(),
+        3,
+        20,
+        "Appearance".into(),
+        GUID.into(),
+    )
+    .unwrap();
+    let owned = super::ActRegistryChannelWire::from(channel.clone());
+    assert_eq!(
+        serde_json::to_vec(&channel).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn act_registry_channel_native_retained_limit_refuses_before_name_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let channel = ActRegistryChannel::new(
+        "f3d:native:act-registry-channel#20".into(),
+        3,
+        20,
+        "Appearance".into(),
+        GUID.into(),
+    )
+    .unwrap();
+    let needed = serde_json::to_vec(&channel).unwrap().len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    super::ACT_REGISTRY_CHANNEL_CLONE_COUNT.with(|count| count.set(0));
+    let error = namespace
+        .set_arena(
+            &limited,
+            "act_registry_channels",
+            std::slice::from_ref(&channel),
+        )
+        .unwrap_err();
+    super::ACT_REGISTRY_CHANNEL_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    namespace
+        .set_arena(
+            &service,
+            "act_registry_channels",
+            std::slice::from_ref(&channel),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&namespace.arenas()["act_registry_channels"][0]).unwrap(),
+        serde_json::to_value(&channel).unwrap()
+    );
+}
+
+fn root_component_fixture() -> ActRootComponent {
+    ActRootComponent::try_new(
+        "f3d:native:act-root-component#20".into(),
+        1,
+        "261".to_owned().try_into().unwrap(),
+        2,
+        4,
+        ActRegistryFlag::Off,
+        ActRootLayout::new(20, "0_3".into(), "Root".into(), 1).unwrap(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn act_root_component_borrowed_wire_matches_owned_wire_bytes() {
+    let root = root_component_fixture();
+    let owned = super::ActRootComponentWire::from(root.clone());
+    assert_eq!(
+        serde_json::to_vec(&root).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn act_root_component_native_retained_limit_refuses_before_layout_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let root = root_component_fixture();
+    let needed = serde_json::to_vec(&root).unwrap().len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    super::ACT_ROOT_COMPONENT_CLONE_COUNT.with(|count| count.set(0));
+    let error = namespace
+        .set_arena(&limited, "act_root_components", std::slice::from_ref(&root))
+        .unwrap_err();
+    super::ACT_ROOT_COMPONENT_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    namespace
+        .set_arena(&service, "act_root_components", std::slice::from_ref(&root))
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&namespace.arenas()["act_root_components"][0]).unwrap(),
+        serde_json::to_value(&root).unwrap()
+    );
+}
+
 fn group() -> ActChannelGroup {
     ActChannelGroup::try_new(
         100,
@@ -25,6 +246,61 @@ fn group() -> ActChannelGroup {
         None,
     )
     .unwrap()
+}
+
+fn entity_fixture() -> ActEntity {
+    ActEntity::try_new(
+        "f3d:native:act-entity#7".into(),
+        7,
+        "0_1".into(),
+        None,
+        group(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn act_entity_borrowed_wire_matches_owned_wire_bytes() {
+    let entity = entity_fixture();
+    let owned = super::ActEntitySerde::from(entity.clone());
+    assert_eq!(
+        serde_json::to_vec(&entity).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn act_entity_native_retained_limit_refuses_before_channel_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let entity = entity_fixture();
+    let needed = serde_json::to_vec(&entity).unwrap().len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    super::ACT_ENTITY_CLONE_COUNT.with(|count| count.set(0));
+    let error = namespace
+        .set_arena(&limited, "act_entities", std::slice::from_ref(&entity))
+        .unwrap_err();
+    super::ACT_ENTITY_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    namespace
+        .set_arena(&service, "act_entities", std::slice::from_ref(&entity))
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&namespace.arenas()["act_entities"][0]).unwrap(),
+        serde_json::to_value(&entity).unwrap()
+    );
 }
 
 #[test]

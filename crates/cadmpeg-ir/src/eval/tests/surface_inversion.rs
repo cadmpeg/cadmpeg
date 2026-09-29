@@ -16,13 +16,13 @@ fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {
         point,
         None,
         &cadmpeg_core::decode::WorkBudget::new(crate::eval::DEFAULT_NURBS_SURFACE_INVERSION_WORK),
-    )
+    ).expect("resource allocation did not fail")
     .expect("closest surface parameter");
     assert!((closest.u - 0.3).abs() < 1.0e-12);
     assert!((closest.v - 0.7).abs() < 1.0e-12);
-    assert!(nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.19).is_none());
+    assert!(nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.19).expect("resource allocation did not fail").is_none());
     assert!(
-        nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.2 + 1.0e-12).is_some()
+        nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.2 + 1.0e-12).expect("resource allocation did not fail").is_some()
     );
 }
 
@@ -38,7 +38,7 @@ fn nurbs_surface_inverse_admits_its_tolerance_before_the_search() {
             None,
             tolerance,
             &budget(),
-        )
+        ).expect("resource allocation did not fail")
         .is_none());
     }
     let tolerance = crate::scalar::NonNegativeReal::new(0.2 + 1.0e-12).unwrap();
@@ -48,7 +48,7 @@ fn nurbs_surface_inverse_admits_its_tolerance_before_the_search() {
         None,
         tolerance,
         &budget(),
-    );
+    ).expect("resource allocation did not fail");
     assert!(parameters.is_some());
     assert_eq!(
         parameters,
@@ -58,7 +58,7 @@ fn nurbs_surface_inverse_admits_its_tolerance_before_the_search() {
             None,
             tolerance.get(),
             &budget(),
-        )
+        ).expect("resource allocation did not fail")
     );
 }
 
@@ -70,14 +70,14 @@ fn budgeted_nurbs_surface_inverse_stops_before_unbounded_patch_work() {
 
     assert!(nurbs_surface_parameter_within_tolerance_with_budget(
         &surface, point, None, 1.0e-10, &budget,
-    )
+    ).expect("resource allocation did not fail")
     .is_none());
     assert!(budget.exhausted());
 
     let budget = WorkBudget::new(10_000);
     let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
         &surface, point, None, 1.0e-10, &budget,
-    )
+    ).expect("resource allocation did not fail")
     .expect("a valid surface fits within a larger caller-owned budget");
     assert!((parameters.u - 0.3).abs() < 1.0e-12);
     assert!((parameters.v - 0.7).abs() < 1.0e-12);
@@ -97,7 +97,7 @@ fn budgeted_nurbs_surface_inverse_accepts_a_fit_qualified_seed_first() {
         Some(Point2::new(0.3, 0.7)),
         FIT_TOLERANCE,
         &budget,
-    )
+    ).expect("resource allocation did not fail")
     .expect("a fit-qualified continuation seed does not need global search");
 
     assert_eq!(parameters, Point2::new(0.3, 0.7));
@@ -118,7 +118,7 @@ fn budgeted_nurbs_surface_inverse_refines_an_approximate_seed_before_global_sear
         Some(Point2::new(0.29, 0.69)),
         FIT_TOLERANCE,
         &budget,
-    )
+    ).expect("resource allocation did not fail")
     .expect("a nearby seed should be refined before global patch search");
 
     assert!((parameters.u - 0.3).abs() <= PARAMETER_TOLERANCE);
@@ -130,7 +130,7 @@ fn budgeted_nurbs_surface_inverse_refines_an_approximate_seed_before_global_sear
 fn nurbs_surface_local_inverse_returns_a_forward_checked_candidate() {
     let surface = bilinear_surface();
     let point = Point3::new(0.3, 0.7, 0.2);
-    let parameters = nurbs_surface_parameter_near_point(&surface, point, None)
+    let parameters = nurbs_surface_parameter_near_point(&surface, point, None).expect("resource allocation did not fail")
         .expect("bounded local surface candidate");
     let mapped = nurbs_surface_point(&surface, parameters.u, parameters.v).expect("surface point");
     assert!(mapped.distance(point) <= 0.2 + f64::EPSILON * 1024.0);
@@ -156,7 +156,7 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
     )
     .unwrap();
     let point = nurbs_surface_point(&surface, 0.75, 0.4).expect("surface point");
-    let parameters = nurbs_surface_parameter_within_tolerance(&surface, point.get(), None, 1.0e-10)
+    let parameters = nurbs_surface_parameter_within_tolerance(&surface, point.get(), None, 1.0e-10).expect("resource allocation did not fail")
         .expect("rational multi-span inverse");
     assert!((parameters.u - 0.75).abs() < 1.0e-9);
     assert!((parameters.v - 0.4).abs() < 1.0e-9);

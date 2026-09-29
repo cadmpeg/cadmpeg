@@ -129,7 +129,8 @@ fn endpoint_lift_witness_refuses_a_pcurve_from_a_foreign_chart() {
             range,
             endpoints,
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE
-        ),
+        )
+        .expect("evaluator allocation succeeds"),
         "the recharted pcurve lifts onto the edge's vertex positions"
     );
     let naive = line_through(first, last);
@@ -140,7 +141,8 @@ fn endpoint_lift_witness_refuses_a_pcurve_from_a_foreign_chart() {
             range,
             endpoints,
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE
-        ),
+        )
+        .expect("evaluator allocation succeeds"),
         "a pcurve stored in a foreign chart has no witness on this carrier"
     );
     // The witness is independent of endpoint order.
@@ -150,7 +152,8 @@ fn endpoint_lift_witness_refuses_a_pcurve_from_a_foreign_chart() {
         range,
         [endpoints[1], endpoints[0]],
         cadmpeg_ir::units::COINCIDENCE_TOLERANCE
-    ));
+    )
+    .expect("evaluator allocation succeeds"));
     // A carrier with no geometry has no chart and admits no witness.
     assert!(!pcurve_lift_reaches_endpoints(
         &naive,
@@ -158,7 +161,8 @@ fn endpoint_lift_witness_refuses_a_pcurve_from_a_foreign_chart() {
         range,
         endpoints,
         cadmpeg_ir::units::COINCIDENCE_TOLERANCE
-    ));
+    )
+    .expect("evaluator allocation succeeds"));
 }
 
 #[test]
@@ -524,6 +528,7 @@ fn overflowing_cone_lift() -> (SurfaceGeometry, PcurveGeometry) {
 fn standard_carrier_endpoint_loci_keep_an_overflowing_lift() {
     let (cone, pcurve) = overflowing_cone_lift();
     let loci = super::super::standard_carrier_endpoint_loci(&pcurve, &cone, [0.0, 1.0])
+        .expect("evaluator allocation succeeds")
         .expect("both ends lift");
     assert!(!loci[0].is_finite());
     assert_eq!(loci[1], Point3::new(1.0, 0.0, 0.0));
@@ -538,7 +543,8 @@ fn a_pcurve_lift_with_an_overflowing_end_is_measured_at_its_finite_end() {
         [0.0, 1.0],
         [Point3::new(5.0, 5.0, 5.0), Point3::new(1.0, 0.0, 0.0)],
         cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
-    ));
+    )
+    .expect("evaluator allocation succeeds"));
 }
 
 /// The overflowing cone lift with the cone under the identity placement.
@@ -563,6 +569,7 @@ fn placed_overflowing_cone_lift() -> (SurfaceGeometry, PcurveGeometry) {
 fn standard_carrier_endpoint_loci_keep_an_overflowing_placed_lift() {
     let (cone, pcurve) = placed_overflowing_cone_lift();
     let loci = super::super::standard_carrier_endpoint_loci(&pcurve, &cone, [0.0, 1.0])
+        .expect("evaluator allocation succeeds")
         .expect("both ends lift");
     assert!(!loci[0].is_finite());
     assert_eq!(loci[1], Point3::new(1.0, 0.0, 0.0));
@@ -577,5 +584,6 @@ fn a_pcurve_lift_with_an_overflowing_placed_end_is_measured_at_its_finite_end() 
         [0.0, 1.0],
         [Point3::new(5.0, 5.0, 5.0), Point3::new(1.0, 0.0, 0.0)],
         cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
-    ));
+    )
+    .expect("evaluator allocation succeeds"));
 }

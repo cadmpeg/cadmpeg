@@ -27,6 +27,69 @@ use cadmpeg_ir::topology::Face;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
+fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    run(&ctx)
+}
+
+fn ordering_feature() -> cadmpeg_ir::features::Feature {
+    cadmpeg_ir::features::Feature {
+        id: FeatureId::mint("synthetic:test:id#ordering").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference: None,
+                distance: Length::ZERO,
+            }),
+        ),
+        native_ref: None,
+    }
+}
+
+#[test]
+fn feature_regeneration_adjacency_reports_collection_limit() {
+    let mut features = vec![ordering_feature()];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    let error = order_features_for_regeneration(&ctx, &mut features)
+        .expect_err("one adjacency row exceeds the collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "sldprt feature regeneration adjacency")
+    );
+}
+
+#[test]
+fn feature_regeneration_indegree_reports_collection_limit() {
+    let mut features = vec![ordering_feature()];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    let error = order_features_for_regeneration(&ctx, &mut features)
+        .expect_err("indegree row exceeds the remaining collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "sldprt feature regeneration indegree")
+    );
+}
+
 #[test]
 fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
     let mut reference = feature("sldprt:history:feature#0:0", None, 0);
@@ -851,7 +914,10 @@ fn explicit_offset_plane_reference_orders_a_later_serialized_principal_first() {
         projected[0].dependencies.as_slice(),
         [projected[1].id.clone()]
     );
-    assert!(order_features_for_regeneration(&mut projected));
+    assert!(
+        with_test_ctx(|ctx| order_features_for_regeneration(ctx, &mut projected))
+            .expect("test feature ordering")
+    );
     assert_eq!(projected[1].ordinal, 0);
     assert_eq!(projected[0].ordinal, 1);
 }
@@ -896,7 +962,10 @@ fn explicit_principal_reference_survives_a_coincident_result_frame() {
             distance: actual_distance,
         }) if (reference == &projected[1].id) && actual_distance.get() == 6.0
     ));
-    assert!(order_features_for_regeneration(&mut projected));
+    assert!(
+        with_test_ctx(|ctx| order_features_for_regeneration(ctx, &mut projected))
+            .expect("test feature ordering")
+    );
     assert_eq!(projected[1].ordinal, 0);
     assert_eq!(projected[0].ordinal, 1);
 }
@@ -1007,7 +1076,10 @@ fn explicit_offset_plane_reference_orders_a_later_derived_plane_first() {
             distance: actual_distance,
         }) if (reference == &projected[1].id) && actual_distance.get() == 6.0
     ));
-    assert!(order_features_for_regeneration(&mut projected));
+    assert!(
+        with_test_ctx(|ctx| order_features_for_regeneration(ctx, &mut projected))
+            .expect("test feature ordering")
+    );
     assert_eq!(projected[1].ordinal, 0);
     assert_eq!(projected[0].ordinal, 1);
 }

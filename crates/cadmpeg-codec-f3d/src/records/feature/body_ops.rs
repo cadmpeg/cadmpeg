@@ -3,6 +3,9 @@
 
 use crate::records::identity::Located;
 use crate::records::references::DesignClassTag;
+use crate::records::serde_column::SliceColumn;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +20,7 @@ cadmpeg_core::named_optional_field!(
     "center_position_offset"
 );
 /// Fixed construction carried by a uniform body-scale scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(
     try_from = "DesignScaleOperationWire",
     into = "DesignScaleOperationWire"
@@ -95,11 +98,8 @@ impl TryFrom<DesignScaleOperationWire> for DesignScaleOperation {
 }
 
 /// Source and copied Design body identities carried by `CopyPasteBodies`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignCopyPasteBodiesOperationWire",
-    into = "DesignCopyPasteBodiesOperationWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignCopyPasteBodiesOperationWire")]
 pub(crate) struct DesignCopyPasteBodiesOperation {
     bodies: Vec<DesignCopiedBody>,
     /// Counted body-selection group named by the scope prefix and reference table.
@@ -114,6 +114,27 @@ pub(crate) struct DesignCopyPasteBodiesOperation {
     pub(crate) relation_class_tag: DesignClassTag,
     /// Byte offset of the relation record's primary header.
     relation_byte_offset: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static COPY_PASTE_BODIES_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignCopyPasteBodiesOperation {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        COPY_PASTE_BODIES_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            bodies: self.bodies.clone(),
+            body_group_record_index: self.body_group_record_index,
+            body_group_class_tag: self.body_group_class_tag.clone(),
+            body_group_byte_offset: self.body_group_byte_offset,
+            relation_record_index: self.relation_record_index,
+            relation_class_tag: self.relation_class_tag.clone(),
+            relation_byte_offset: self.relation_byte_offset,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,6 +173,60 @@ struct DesignCopyPasteBodiesOperationWire {
     copied_body_entity_suffix_offsets: Vec<u64>,
 }
 
+#[derive(Serialize)]
+struct DesignCopyPasteBodiesOperationWireRef<'a> {
+    body_group_record_index: u32,
+    body_group_class_tag: &'a str,
+    body_group_byte_offset: u64,
+    body_operand_record_indices: SliceColumn<'a, DesignCopiedBody, u32>,
+    body_operand_record_offsets: SliceColumn<'a, DesignCopiedBody, u64>,
+    relation_record_index: u32,
+    relation_class_tag: &'a str,
+    relation_byte_offset: u64,
+    source_body_entity_suffixes: SliceColumn<'a, DesignCopiedBody, u32>,
+    source_body_entity_suffix_offsets: SliceColumn<'a, DesignCopiedBody, u64>,
+    copied_body_entity_suffixes: SliceColumn<'a, DesignCopiedBody, u32>,
+    copied_body_entity_suffix_offsets: SliceColumn<'a, DesignCopiedBody, u64>,
+}
+
+impl Serialize for DesignCopyPasteBodiesOperation {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let bodies = self.bodies.as_slice();
+        DesignCopyPasteBodiesOperationWireRef {
+            body_group_record_index: self.body_group_record_index,
+            body_group_class_tag: self.body_group_class_tag.as_str(),
+            body_group_byte_offset: self.body_group_byte_offset,
+            body_operand_record_indices: SliceColumn::new(bodies, |body| body.operand.value),
+            body_operand_record_offsets: SliceColumn::new(bodies, |body| body.operand.offset),
+            relation_record_index: self.relation_record_index,
+            relation_class_tag: self.relation_class_tag.as_str(),
+            relation_byte_offset: self.relation_byte_offset,
+            source_body_entity_suffixes: SliceColumn::new(bodies, |body| body.source.value),
+            source_body_entity_suffix_offsets: SliceColumn::new(bodies, |body| body.source.offset),
+            copied_body_entity_suffixes: SliceColumn::new(bodies, |body| body.copied.value),
+            copied_body_entity_suffix_offsets: SliceColumn::new(bodies, |body| body.copied.offset),
+        }
+        .serialize(serializer)
+    }
+}
+
+enum CopyPasteBodiesError {
+    Payload(String),
+    Resource(CodecError),
+}
+
+impl From<&'static str> for CopyPasteBodiesError {
+    fn from(message: &'static str) -> Self {
+        Self::Payload(message.into())
+    }
+}
+
+pub(crate) struct CopyPasteRecordLocation {
+    pub(crate) record_index: u32,
+    pub(crate) class_tag: DesignClassTag,
+    pub(crate) byte_offset: u64,
+}
+
 impl DesignCopyPasteBodiesOperation {
     pub(crate) fn try_new(
         bodies: Vec<DesignCopiedBody>,
@@ -162,6 +237,60 @@ impl DesignCopyPasteBodiesOperation {
         relation_class_tag: DesignClassTag,
         relation_byte_offset: u64,
     ) -> Result<Self, String> {
+        Self::try_new_inner(
+            None,
+            bodies,
+            CopyPasteRecordLocation {
+                record_index: body_group_record_index,
+                class_tag: body_group_class_tag,
+                byte_offset: body_group_byte_offset,
+            },
+            CopyPasteRecordLocation {
+                record_index: relation_record_index,
+                class_tag: relation_class_tag,
+                byte_offset: relation_byte_offset,
+            },
+        )
+        .map_err(|error| match error {
+            CopyPasteBodiesError::Payload(message) => message,
+            CopyPasteBodiesError::Resource(error) => error.to_string(),
+        })
+    }
+
+    pub(crate) fn try_new_charged(
+        ctx: &DecodeContext<'_>,
+        bodies: Vec<DesignCopiedBody>,
+        body_group: CopyPasteRecordLocation,
+        relation: CopyPasteRecordLocation,
+    ) -> Result<Self, CodecError> {
+        Self::try_new_inner(
+            Some(ctx),
+            bodies,
+            body_group,
+            relation,
+        )
+        .map_err(|error| match error {
+            CopyPasteBodiesError::Payload(message) => CodecError::Malformed(message),
+            CopyPasteBodiesError::Resource(error) => error,
+        })
+    }
+
+    fn try_new_inner(
+        ctx: Option<&DecodeContext<'_>>,
+        bodies: Vec<DesignCopiedBody>,
+        body_group: CopyPasteRecordLocation,
+        relation: CopyPasteRecordLocation,
+    ) -> Result<Self, CopyPasteBodiesError> {
+        let CopyPasteRecordLocation {
+            record_index: body_group_record_index,
+            class_tag: body_group_class_tag,
+            byte_offset: body_group_byte_offset,
+        } = body_group;
+        let CopyPasteRecordLocation {
+            record_index: relation_record_index,
+            class_tag: relation_class_tag,
+            byte_offset: relation_byte_offset,
+        } = relation;
         if bodies.is_empty() {
             return Err("bodies must not be empty".into());
         }
@@ -169,8 +298,19 @@ impl DesignCopyPasteBodiesOperation {
         let mut operand_offset = body_group_byte_offset.saturating_add(26);
         let mut source_offset = relation_byte_offset.saturating_add(25);
         for body in &bodies {
-            if !suffixes.insert(body.source.value) || !suffixes.insert(body.copied.value) {
-                return Err("source and copied body suffixes must be pairwise distinct".into());
+            for suffix in [body.source.value, body.copied.value] {
+                if suffixes.contains(&suffix) {
+                    return Err("source and copied body suffixes must be pairwise distinct".into());
+                }
+                if let Some(ctx) = ctx {
+                    let operation = "index F3D copied body suffixes";
+                    ctx.charge_collection_items(1, operation)
+                        .map_err(CopyPasteBodiesError::Resource)?;
+                    suffixes.try_reserve(1).map_err(|_| {
+                        CopyPasteBodiesError::Resource(ctx.refuse_codec_limit(operation, 0, 1))
+                    })?;
+                }
+                suffixes.insert(suffix);
             }
             if body.operand.offset != operand_offset
                 || body.source.offset != source_offset
@@ -276,6 +416,7 @@ impl TryFrom<DesignCopyPasteBodiesOperationWire> for DesignCopyPasteBodiesOperat
     }
 }
 
+#[cfg(test)]
 impl From<DesignCopyPasteBodiesOperation> for DesignCopyPasteBodiesOperationWire {
     fn from(value: DesignCopyPasteBodiesOperation) -> Self {
         Self {
@@ -316,5 +457,44 @@ impl From<DesignCopyPasteBodiesOperation> for DesignCopyPasteBodiesOperationWire
                 .map(|body| body.copied.offset)
                 .collect(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn operation() -> DesignCopyPasteBodiesOperation {
+        serde_json::from_str(r#"{"body_group_record_index":501,"body_group_class_tag":"264","body_group_byte_offset":100,"body_operand_record_indices":[502,504],"body_operand_record_offsets":[126,137],"relation_record_index":503,"relation_class_tag":"264","relation_byte_offset":200,"source_body_entity_suffixes":[11,13],"source_body_entity_suffix_offsets":[225,255],"copied_body_entity_suffixes":[12,14],"copied_body_entity_suffix_offsets":[240,270]}"#).unwrap()
+    }
+
+    #[test]
+    fn copy_paste_bodies_borrowed_wire_matches_owned_wire_bytes() {
+        let operation = operation();
+        let owned = DesignCopyPasteBodiesOperationWire::from(operation.clone());
+        assert_eq!(
+            serde_json::to_vec(&operation).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+
+    #[test]
+    fn copy_paste_bodies_native_retained_limit_refuses_before_clone() {
+        #[derive(Serialize)]
+        struct NestedRecord<'a> {
+            id: &'static str,
+            value: &'a DesignCopyPasteBodiesOperation,
+        }
+        let operation = operation();
+        let record = NestedRecord {
+            id: "f3d:native:copy-paste-bodies#0",
+            value: &operation,
+        };
+        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+            &record,
+            "design_parameter_scopes",
+            || COPY_PASTE_BODIES_CLONE_COUNT.with(|count| count.set(0)),
+            || COPY_PASTE_BODIES_CLONE_COUNT.with(std::cell::Cell::get),
+        );
     }
 }

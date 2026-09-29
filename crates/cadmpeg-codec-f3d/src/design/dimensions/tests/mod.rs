@@ -17,6 +17,7 @@ fn project_dimension_constraints(
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
     crate::design::dimensions::project_dimension_constraints(inputs, spatial_sketches, 1.0e-6)
+        .expect("resource allocation did not fail")
 }
 
 fn project_spatial_dimension_constraints(
@@ -29,7 +30,7 @@ fn project_spatial_dimension_constraints(
         spatial_sketches,
         spatial_entities,
         1.0e-6,
-    )
+    ).expect("resource allocation did not fail")
 }
 
 mod numerical_ranges;

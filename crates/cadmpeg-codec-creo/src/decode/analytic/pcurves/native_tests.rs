@@ -8,6 +8,7 @@ use crate::decode::analytic::pcurves::{
     directed_pcurve_points, linear_pcurve_carrier, mapped_pcurve_endpoints,
     oriented_native_pcurve_endpoints, planar_curve_pcurve, solve_pcurve_vertex_domains,
     solve_pcurve_vertex_domains_with_authoritative_points, unique_oriented_native_pcurve,
+    OrientedNativePcurve,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -45,7 +46,8 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
             &ir,
             [1, 2],
             [[[1.0, 2.0], [3.0, 4.0]], [[2.0, 1.0], [4.0, 3.0]]],
-        ),
+        )
+        .expect("evaluator allocation succeeds"),
         Some([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]])
     );
     assert!(mapped_pcurve_endpoints(
@@ -53,6 +55,7 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
         [1, 2],
         [[[1.0, 2.0], [3.0, 4.0]], [[2.0, 1.0], [5.0, 3.0]]],
     )
+    .expect("evaluator allocation succeeds")
     .is_none());
 }
 
@@ -368,7 +371,8 @@ fn assert_pcurve_matches_curve(
 fn orients_uv_endpoints_by_the_coedge_traversal() {
     let endpoints = [[2.0, 4.0], [5.0, 7.0]];
     assert_eq!(
-        oriented_native_pcurve_endpoints(&plane(), endpoints, [[5.0, 7.0, 3.0], [2.0, 4.0, 3.0]],),
+        oriented_native_pcurve_endpoints(&plane(), endpoints, [[5.0, 7.0, 3.0], [2.0, 4.0, 3.0]],)
+            .expect("evaluator allocation succeeds"),
         Some([endpoints[1], endpoints[0]])
     );
 }
@@ -380,7 +384,8 @@ fn withholds_uv_endpoints_that_do_not_map_to_the_edge() {
             &plane(),
             [[2.0, 4.0], [5.0, 7.0]],
             [[2.0, 4.0, 3.0], [9.0, 7.0, 3.0]],
-        ),
+        )
+        .expect("evaluator allocation succeeds"),
         None
     );
 }
@@ -394,16 +399,24 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
             &plane(),
             &[(endpoints, 20), ([endpoints[1], endpoints[0]], 10)],
             traversal,
-        ),
-        Some((endpoints, 10))
+        )
+        .expect("evaluator allocation succeeds"),
+        Some(OrientedNativePcurve {
+            endpoints,
+            offset: 10,
+        })
     );
     assert_eq!(
         unique_oriented_native_pcurve(
             &plane(),
             &[(endpoints, 20), ([[2.0, 4.0], [5.0, 8.0]], 10)],
             traversal,
-        ),
-        Some((endpoints, 20))
+        )
+        .expect("evaluator allocation succeeds"),
+        Some(OrientedNativePcurve {
+            endpoints,
+            offset: 20,
+        })
     );
 
     let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -429,7 +442,8 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
                 ),
             ],
             [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-        ),
+        )
+        .expect("evaluator allocation succeeds"),
         None
     );
 }

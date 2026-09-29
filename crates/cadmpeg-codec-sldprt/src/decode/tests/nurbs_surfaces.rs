@@ -100,7 +100,7 @@ fn faces_decode_compact_counted_nurbs_surface_arrays() {
     let poles = surface.poles();
     assert_eq!(poles.len(), 4);
     assert_eq!(poles[3].z, 500.0);
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -190,7 +190,7 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     )
     .expect("nested offset evaluation");
     assert!((point.z - 5.0).abs() < 1.0e-12);
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -244,7 +244,7 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
         loss.message
             .contains("1 untyped surface carrier(s) are retained as opaque hidden supports")
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -291,7 +291,7 @@ fn merged_sites_retain_procedural_surface_constructions() {
         loss.message
             .contains("2 untyped surface carrier(s) are retained as opaque hidden supports")
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -437,7 +437,7 @@ fn face_on_untyped_surface_keeps_topology() {
         .losses
         .iter()
         .any(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred));
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 

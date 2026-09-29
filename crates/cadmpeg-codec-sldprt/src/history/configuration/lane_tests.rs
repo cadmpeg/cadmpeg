@@ -445,7 +445,8 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     ];
 
     let mut annotations = cadmpeg_ir::Annotations::default();
-    project_configuration_sketch_states(&mut ir, &[history], &[lane], &mut annotations).unwrap();
+    project_configuration_sketch_states(None, &mut ir, &[history], &[lane], &mut annotations)
+        .unwrap();
 
     assert_eq!(ir.model.sketches.len(), 1);
     assert!(matches!(
@@ -671,7 +672,7 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
     ];
 
     let mut annotations = cadmpeg_ir::Annotations::default();
-    project_configuration_sketch_states(&mut ir, &[], &lanes, &mut annotations).unwrap();
+    project_configuration_sketch_states(None, &mut ir, &[], &lanes, &mut annotations).unwrap();
 
     assert!(ir.model.configurations.iter().all(|configuration| matches!(
         &configuration.feature_states[&feature_id].definition,
@@ -744,7 +745,7 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
 
     let lanes = [feature_input_lane("resolved-lane", Some("1"))];
     let mut annotations = cadmpeg_ir::Annotations::default();
-    project_configuration_sketch_states(&mut ir, &[], &lanes, &mut annotations).unwrap();
+    project_configuration_sketch_states(None, &mut ir, &[], &lanes, &mut annotations).unwrap();
 
     assert!(matches!(
         &ir.model.configurations[0].feature_states[&feature_id].definition,
@@ -1158,6 +1159,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
 
     let mut annotations = cadmpeg_ir::Annotations::default();
     project_configuration_sketch_states(
+        None,
         &mut ir,
         &[],
         &[feature_input_lane("lane", Some("0"))],

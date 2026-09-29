@@ -89,6 +89,7 @@ impl BaseTypeGuid {
         }
     }
 
+    #[cfg(test)]
     fn into_wire(self) -> (Option<String>, Option<u64>) {
         match self {
             Self::Absent => (None, None),
@@ -101,8 +102,9 @@ impl BaseTypeGuid {
 /// One type-table entry from a `MetaStream` segment header. The entry registers
 /// a record type and lists the entities whose sibling `BulkStream` records
 /// carry it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "SegmentTypeWire", into = "SegmentTypeWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "SegmentTypeWire")]
 pub(crate) struct SegmentType {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -128,10 +130,91 @@ pub(crate) struct SegmentType {
     pub(crate) entities: ReferenceRun<u64>,
 }
 
+#[cfg(test)]
+thread_local! {
+    static SEGMENT_TYPE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for SegmentType {
+    fn clone(&self) -> Self {
+        SEGMENT_TYPE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            byte_offset: self.byte_offset,
+            type_guid: self.type_guid.clone(),
+            type_guid_offset: self.type_guid_offset,
+            base_type_guid: self.base_type_guid.clone(),
+            version: self.version,
+            version_offset: self.version_offset,
+            module: self.module.clone(),
+            entities: self.entities.clone(),
+        }
+    }
+}
+
+struct SegmentValues<'a>(&'a ReferenceRun<u64>);
+
+impl Serialize for SegmentValues<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.values())
+    }
+}
+
+struct SegmentOffsets<'a>(&'a ReferenceRun<u64>);
+
+impl Serialize for SegmentOffsets<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.offsets())
+    }
+}
+
+#[derive(Serialize)]
+struct SegmentTypeWireRef<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    type_guid: &'a DesignRelaxedGuidText,
+    type_guid_offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base_type_guid: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base_type_guid_offset: Option<u64>,
+    version: u32,
+    version_offset: u64,
+    module: &'a str,
+    entity_ids: SegmentValues<'a>,
+    entity_id_offsets: SegmentOffsets<'a>,
+}
+
+impl Serialize for SegmentType {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let base_type_guid = match &self.base_type_guid {
+            BaseTypeGuid::Absent => None,
+            BaseTypeGuid::EmptyRoot { .. } => Some(""),
+            BaseTypeGuid::Guid { value, .. } => Some(value.as_str()),
+        };
+        SegmentTypeWireRef {
+            id: &self.id,
+            byte_offset: self.byte_offset,
+            type_guid: &self.type_guid,
+            type_guid_offset: self.type_guid_offset,
+            base_type_guid,
+            base_type_guid_offset: self.base_type_guid.offset(),
+            version: self.version,
+            version_offset: self.version_offset,
+            module: &self.module,
+            entity_ids: SegmentValues(&self.entities),
+            entity_id_offsets: SegmentOffsets(&self.entities),
+        }
+        .serialize(serializer)
+    }
+}
+
 /// One type-table entry from a `MetaStream` segment header. The entry registers
 /// a record type and lists the entities whose sibling `BulkStream` records
 /// carry it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct SegmentTypeWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -197,6 +280,7 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
     }
 }
 
+#[cfg(test)]
 impl From<SegmentType> for SegmentTypeWire {
     fn from(value: SegmentType) -> Self {
         let (entity_ids, entity_id_offsets) = value.entities.into_wire();
@@ -233,7 +317,7 @@ impl DesignTimelineFrame {
         frame_length: u64,
         context_record_index_offset: u64,
         item_count_offset: u64,
-        items: Vec<Located<u64>>,
+        mut items: Vec<Located<u64>>,
     ) -> Result<Self, String> {
         let end = byte_offset
             .checked_add(frame_length)
@@ -270,13 +354,13 @@ impl DesignTimelineFrame {
         {
             return Err("timeline.item_record_index_offsets overlap or exceed the frame".into());
         }
-        let mut unique = std::collections::HashSet::with_capacity(items.len());
-        if items
-            .iter()
-            .any(|item| item.value == 0 || !unique.insert(item.value))
+        items.sort_unstable_by_key(|item| item.value);
+        if items.first().is_some_and(|item| item.value == 0)
+            || items.windows(2).any(|pair| pair[0].value == pair[1].value)
         {
             return Err("timeline.item_record_indices must be nonzero and unique".into());
         }
+        items.sort_unstable_by_key(|item| item.offset);
         Ok(Self {
             byte_offset,
             frame_length,
@@ -318,11 +402,9 @@ impl DesignTimelineFrame {
 }
 
 /// Counted Design timeline-item list that carries authored feature order.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignFeatureTimelineWire",
-    into = "DesignFeatureTimelineWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignFeatureTimelineWire")]
 pub(crate) struct DesignFeatureTimeline {
     /// Globally unique deterministic identifier for this native record.
     id: NativeRecordId,
@@ -337,6 +419,27 @@ pub(crate) struct DesignFeatureTimeline {
     pub(crate) source_ordinal: u32,
     /// Same-segment context record referenced before the scope list.
     pub(crate) context_record_index: std::num::NonZeroU64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static TIMELINE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignFeatureTimeline {
+    fn clone(&self) -> Self {
+        TIMELINE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            segment_end: self.segment_end,
+            frame: self.frame.clone(),
+            class_tag: self.class_tag.clone(),
+            record_index: self.record_index,
+            source_ordinal: self.source_ordinal,
+            context_record_index: self.context_record_index,
+        }
+    }
 }
 
 impl DesignFeatureTimeline {
@@ -378,7 +481,58 @@ impl DesignFeatureTimeline {
 }
 
 /// Counted Design timeline-item list that carries authored feature order.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct TimelineValues<'a>(&'a [Located<u64>]);
+
+impl Serialize for TimelineValues<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|item| item.value))
+    }
+}
+
+struct TimelineOffsets<'a>(&'a [Located<u64>]);
+
+impl Serialize for TimelineOffsets<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|item| item.offset))
+    }
+}
+
+#[derive(Serialize)]
+struct DesignFeatureTimelineWireRef<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    class_tag: &'a str,
+    record_index: u64,
+    source_ordinal: u32,
+    frame_length: u64,
+    context_record_index: u64,
+    context_record_index_offset: u64,
+    item_count_offset: u64,
+    item_record_indices: TimelineValues<'a>,
+    item_record_index_offsets: TimelineOffsets<'a>,
+}
+
+impl Serialize for DesignFeatureTimeline {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignFeatureTimelineWireRef {
+            id: &self.id.text,
+            byte_offset: self.frame.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index.get(),
+            source_ordinal: self.source_ordinal,
+            frame_length: self.frame.frame_length,
+            context_record_index: self.context_record_index.get(),
+            context_record_index_offset: self.frame.context_record_index_offset,
+            item_count_offset: self.frame.item_count_offset,
+            item_record_indices: TimelineValues(&self.frame.items),
+            item_record_index_offsets: TimelineOffsets(&self.frame.items),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DesignFeatureTimelineWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -437,6 +591,7 @@ impl TryFrom<DesignFeatureTimelineWire> for DesignFeatureTimeline {
     }
 }
 
+#[cfg(test)]
 impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
     fn from(value: DesignFeatureTimeline) -> Self {
         let (item_record_indices, item_record_index_offsets) = value
@@ -462,8 +617,9 @@ impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
 }
 
 /// Self-validating entity-bound header in the Design `BulkStream`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DesignEntityHeaderWire", into = "DesignEntityHeaderWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignEntityHeaderWire")]
 pub(crate) struct DesignEntityHeader {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -477,6 +633,26 @@ pub(crate) struct DesignEntityHeader {
     pub(crate) optional_slot_present: bool,
     /// Module registration and its sketch-owned data.
     pub(crate) registration: DesignEntityRegistration,
+}
+
+#[cfg(test)]
+thread_local! {
+    static ENTITY_HEADER_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignEntityHeader {
+    fn clone(&self) -> Self {
+        ENTITY_HEADER_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            byte_offset: self.byte_offset,
+            entity_id: self.entity_id.clone(),
+            class_tag: self.class_tag.clone(),
+            optional_slot_present: self.optional_slot_present,
+            registration: self.registration.clone(),
+        }
+    }
 }
 
 /// A sketch header's located reference-list slot.
@@ -580,7 +756,109 @@ impl DesignEntityHeader {
 }
 
 /// Self-validating entity-bound header in the Design `BulkStream`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct HeaderReferenceValues<'a>(Option<&'a SketchHeaderReferences>);
+
+impl Serialize for HeaderReferenceValues<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(
+            self.0
+                .into_iter()
+                .flat_map(|list| list.references.iter().map(|item| item.value)),
+        )
+    }
+}
+
+struct HeaderReferenceOffsets<'a>(Option<&'a SketchHeaderReferences>);
+
+impl Serialize for HeaderReferenceOffsets<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(
+            self.0
+                .into_iter()
+                .flat_map(|list| list.references.iter().map(|item| item.offset)),
+        )
+    }
+}
+
+struct HeaderMemberValues<'a>(Option<&'a ReferenceRun<u32>>);
+
+impl HeaderMemberValues<'_> {
+    fn is_empty(&self) -> bool {
+        self.0.is_none_or(ReferenceRun::is_empty)
+    }
+}
+
+impl Serialize for HeaderMemberValues<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.into_iter().flat_map(ReferenceRun::values))
+    }
+}
+
+struct HeaderMemberOffsets<'a>(Option<&'a ReferenceRun<u32>>);
+
+impl HeaderMemberOffsets<'_> {
+    fn is_empty(&self) -> bool {
+        self.0.is_none_or(|members| members.offsets().len() == 0)
+    }
+}
+
+impl Serialize for HeaderMemberOffsets<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.into_iter().flat_map(ReferenceRun::offsets))
+    }
+}
+
+#[derive(Serialize)]
+struct DesignEntityHeaderWireRef<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    entity_id: &'a str,
+    class_tag: &'a str,
+    optional_slot_present: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    module: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    record_reference: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    record_reference_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    declared_reference_count: Option<usize>,
+    reference_indices: HeaderReferenceValues<'a>,
+    reference_offsets: HeaderReferenceOffsets<'a>,
+    #[serde(skip_serializing_if = "HeaderMemberValues::is_empty")]
+    member_indices: HeaderMemberValues<'a>,
+    #[serde(skip_serializing_if = "HeaderMemberOffsets::is_empty")]
+    member_offsets: HeaderMemberOffsets<'a>,
+}
+
+impl Serialize for DesignEntityHeader {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let references = self.sketch_references();
+        let members = match &self.registration.0 {
+            DesignEntityRegistrationKind::Other(_) => None,
+            DesignEntityRegistrationKind::Sketch { members, .. } => Some(members),
+        };
+        DesignEntityHeaderWireRef {
+            id: &self.id,
+            byte_offset: self.byte_offset,
+            entity_id: self.entity_id.as_str(),
+            class_tag: self.class_tag.as_str(),
+            optional_slot_present: self.optional_slot_present,
+            module: self.module(),
+            record_reference: references.and_then(|list| list.record_reference),
+            record_reference_offset: references.map(|list| list.record_reference_offset),
+            declared_reference_count: self.declared_reference_count(),
+            reference_indices: HeaderReferenceValues(references),
+            reference_offsets: HeaderReferenceOffsets(references),
+            member_indices: HeaderMemberValues(members),
+            member_offsets: HeaderMemberOffsets(members),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DesignEntityHeaderWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -678,6 +956,7 @@ impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
     }
 }
 
+#[cfg(test)]
 impl From<DesignEntityHeader> for DesignEntityHeaderWire {
     fn from(header: DesignEntityHeader) -> Self {
         let declared_reference_count = header.declared_reference_count();
@@ -725,3 +1004,6 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -240,34 +240,36 @@ pub(super) struct FastLoadComponentObjectGroup {
 
 /// Join fast-load occurrences and OM UUID frames only at the UUID group level.
 pub(super) fn fast_load_component_object_groups(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     uuids: &[FastLoadComponentUuid],
     occurrences: &[FastLoadComponentOccurrence],
     object_uuid_values: &[ObjectUuidValue],
-) -> Vec<FastLoadComponentObjectGroup> {
-    uuids
-        .iter()
-        .filter_map(|uuid| {
-            let uses = occurrences
-                .iter()
-                .filter(|occurrence| occurrence.component_uuid == uuid.id)
-                .map(|occurrence| occurrence.id.clone())
-                .collect::<Vec<_>>();
-            let values = object_uuid_values
-                .iter()
-                .filter(|value| value.uuid == uuid.uuid)
-                .map(|value| value.id.clone())
-                .collect::<Vec<_>>();
-            let members = UuidGroupMembers::new(uses, values).ok()?;
-            Some(FastLoadComponentObjectGroup {
-                id: format!("nx:fast-load:object-group#{}", uuid.ordinal),
-                component_uuid: uuid.id.clone(),
-                uuid: uuid.uuid.clone(),
-                members,
-                source_entry: uuid.source_entry.clone(),
-                source_offset: uuid.source_offset,
-            })
-        })
-        .collect()
+) -> Result<Vec<FastLoadComponentObjectGroup>, cadmpeg_core::CodecError> {
+    let mut groups = Vec::new();
+    for uuid in uuids {
+        let uses = occurrences
+            .iter()
+            .filter(|occurrence| occurrence.component_uuid == uuid.id)
+            .map(|occurrence| occurrence.id.clone())
+            .collect::<Vec<_>>();
+        let values = object_uuid_values
+            .iter()
+            .filter(|value| value.uuid == uuid.uuid)
+            .map(|value| value.id.clone())
+            .collect::<Vec<_>>();
+        let Some(members) = UuidGroupMembers::new_charged(ctx, uses, values)? else {
+            continue;
+        };
+        groups.push(FastLoadComponentObjectGroup {
+            id: format!("nx:fast-load:object-group#{}", uuid.ordinal),
+            component_uuid: uuid.id.clone(),
+            uuid: uuid.uuid.clone(),
+            members,
+            source_entry: uuid.source_entry.clone(),
+            source_offset: uuid.source_offset,
+        });
+    }
+    Ok(groups)
 }
 
 struct SourceOccurrence {
@@ -859,7 +861,10 @@ mod tests {
                 source_offset: 200 + ordinal,
             })
             .collect::<Vec<_>>();
-        let groups = fast_load_component_object_groups(&uuids, occurrences.as_slice(), &values);
+        let groups = crate::test_support::with_decode_context(|ctx| {
+            fast_load_component_object_groups(ctx, &uuids, occurrences.as_slice(), &values)
+        })
+        .unwrap();
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].members.occurrences().count(), 3);
         assert_eq!(groups[0].members.object_uuid_values().count(), 3);
@@ -869,8 +874,14 @@ mod tests {
         );
 
         assert!(
-            fast_load_component_object_groups(&uuids, occurrences.as_slice(), &values[..2])
-                .is_empty()
+            crate::test_support::with_decode_context(|ctx| fast_load_component_object_groups(
+                ctx,
+                &uuids,
+                occurrences.as_slice(),
+                &values[..2]
+            ))
+            .unwrap()
+            .is_empty()
         );
     }
 

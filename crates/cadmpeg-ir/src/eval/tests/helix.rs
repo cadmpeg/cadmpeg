@@ -209,7 +209,7 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
         &curve_id,
         target.get(),
         1.5,
-    )
+    ).expect("resource allocation did not fail")
     .expect("helix inverse")
     .get();
     assert!((0.25..=2.0).contains(&inverse));
@@ -230,6 +230,6 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
         &curve_id,
         target.get(),
         0.24
-    )
+    ).expect("resource allocation did not fail")
     .is_none());
 }

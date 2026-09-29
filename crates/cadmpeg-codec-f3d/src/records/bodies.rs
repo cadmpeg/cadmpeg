@@ -22,8 +22,9 @@ pub(crate) struct DesignBodyMember {
 }
 
 /// Triplicated axis-aligned body bounds cached in the Design stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DesignBodyBoundsWire", into = "DesignBodyBoundsWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignBodyBoundsWire")]
 pub(crate) struct DesignBodyBounds {
     /// Globally unique deterministic identifier for this native record set.
     pub(crate) id: String,
@@ -41,7 +42,63 @@ pub(crate) struct DesignBodyBounds {
     corners: DesignMeshSceneBounds,
 }
 
-#[derive(Serialize, Deserialize)]
+#[cfg(test)]
+std::thread_local! {
+    static BODY_BOUNDS_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignBodyBounds {
+    fn clone(&self) -> Self {
+        BODY_BOUNDS_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            entity_suffix: self.entity_suffix,
+            entity_byte_offset: self.entity_byte_offset,
+            record_byte_offsets: self.record_byte_offsets,
+            value_byte_offsets: self.value_byte_offsets,
+            body_binding_ids: self.body_binding_ids.clone(),
+            corners: self.corners,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct DesignBodyBoundsWireRef<'a> {
+    id: &'a str,
+    entity_suffix: u64,
+    entity_byte_offset: u64,
+    record_indices: [u32; 3],
+    record_byte_offsets: [u64; 3],
+    value_byte_offsets: [u64; 3],
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    body_binding_ids: &'a [String],
+    maximum: Point3,
+    minimum: Point3,
+}
+
+impl Serialize for DesignBodyBounds {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let [x, y, z] = self.corners.maximum();
+        let maximum = Point3::new(x, y, z);
+        let [x, y, z] = self.corners.minimum();
+        DesignBodyBoundsWireRef {
+            id: &self.id,
+            entity_suffix: self.entity_suffix(),
+            entity_byte_offset: self.entity_byte_offset,
+            record_indices: self.record_indices(),
+            record_byte_offsets: self.record_byte_offsets,
+            value_byte_offsets: self.value_byte_offsets,
+            body_binding_ids: &self.body_binding_ids,
+            maximum,
+            minimum: Point3::new(x, y, z),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 pub(crate) struct DesignBodyBoundsWire<P = Point3> {
     /// Globally unique deterministic identifier for this native record set.
     pub(crate) id: String,
@@ -145,6 +202,7 @@ impl DesignBodyBounds {
     }
 }
 
+#[cfg(test)]
 impl From<DesignBodyBounds> for DesignBodyBoundsWire {
     fn from(value: DesignBodyBounds) -> Self {
         let [x, y, z] = value.corners.maximum();
@@ -165,8 +223,9 @@ impl From<DesignBodyBounds> for DesignBodyBoundsWire {
 }
 
 /// One ordered pair in a Design `BulkStream` BREP body-map record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DesignBodyBindingWire", into = "DesignBodyBindingWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignBodyBindingWire")]
 pub(crate) struct DesignBodyBinding {
     /// Globally unique deterministic identifier for this native map entry.
     pub(crate) id: String,
@@ -191,7 +250,67 @@ pub(crate) struct DesignBodyBinding {
     pub(crate) body: Option<BodyId>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[cfg(test)]
+std::thread_local! {
+    static BODY_BINDING_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignBodyBinding {
+    fn clone(&self) -> Self {
+        BODY_BINDING_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            stream: self.stream.clone(),
+            pair_count: self.pair_count,
+            pair_ordinal: self.pair_ordinal,
+            asm_body_key: self.asm_body_key,
+            asm_body_key_offset: self.asm_body_key_offset,
+            entity_suffix: self.entity_suffix,
+            blob_name: self.blob_name.clone(),
+            blob_name_offset: self.blob_name_offset,
+            body: self.body.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct DesignBodyBindingWireRef<'a> {
+    id: &'a str,
+    stream: &'a str,
+    pair_count: u32,
+    pair_ordinal: u32,
+    asm_body_key: u64,
+    asm_body_key_offset: u64,
+    entity_suffix: u64,
+    entity_suffix_offset: u64,
+    blob_name: &'a str,
+    blob_name_offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body: Option<&'a BodyId>,
+}
+
+impl Serialize for DesignBodyBinding {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignBodyBindingWireRef {
+            id: &self.id,
+            stream: &self.stream,
+            pair_count: self.pair_count(),
+            pair_ordinal: self.pair_ordinal,
+            asm_body_key: self.asm_body_key,
+            asm_body_key_offset: self.asm_body_key_offset,
+            entity_suffix: self.entity_suffix,
+            entity_suffix_offset: self.entity_suffix_offset(),
+            blob_name: &self.blob_name,
+            blob_name_offset: self.blob_name_offset,
+            body: self.body.as_ref(),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 pub(crate) struct DesignBodyBindingWire {
     /// Globally unique deterministic identifier for this native map entry.
     pub(crate) id: String,
@@ -281,6 +400,7 @@ impl DesignBodyBinding {
     }
 }
 
+#[cfg(test)]
 impl From<DesignBodyBinding> for DesignBodyBindingWire {
     fn from(value: DesignBodyBinding) -> Self {
         Self {
@@ -318,4 +438,142 @@ pub(crate) struct BodyVisibility {
     pub(crate) entity_suffix: u64,
     /// Display visibility after inverting the native hidden flag.
     pub(crate) visible: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    use super::{DesignBodyBinding, DesignBodyBindingWire, DesignBodyBounds, DesignBodyBoundsWire};
+
+    fn bounds_fixture() -> DesignBodyBounds {
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:native:body_bounds#1",
+            "entity_suffix": 10,
+            "entity_byte_offset": 0,
+            "record_indices": [11, 12, 13],
+            "record_byte_offsets": [20, 40, 60],
+            "value_byte_offsets": [21, 41, 61],
+            "body_binding_ids": ["f3d:native:body_binding#1"],
+            "maximum": {"x": 1.0, "y": 0.0, "z": 0.0},
+            "minimum": {"x": 0.0, "y": 0.0, "z": 0.0}
+        }))
+        .unwrap()
+    }
+
+    fn binding_fixture() -> DesignBodyBinding {
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:native:body_binding#1",
+            "stream": "Design/BulkStream.dat",
+            "pair_count": 1,
+            "pair_ordinal": 0,
+            "asm_body_key": 0,
+            "asm_body_key_offset": 10,
+            "entity_suffix": 0,
+            "entity_suffix_offset": 18,
+            "blob_name": "BREP.",
+            "blob_name_offset": 19
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn body_bounds_borrowed_wire_matches_owned_wire_bytes() {
+        let bounds = bounds_fixture();
+        let owned = DesignBodyBoundsWire::from(bounds.clone());
+        assert_eq!(
+            serde_json::to_vec(&bounds).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+
+    #[test]
+    fn body_bounds_native_retained_limit_refuses_before_binding_ids_clone() {
+        let bounds = bounds_fixture();
+        let needed = serde_json::to_vec(&bounds).unwrap().len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        super::BODY_BOUNDS_CLONE_COUNT.with(|count| count.set(0));
+        let error = namespace
+            .set_arena(
+                &limited,
+                "design_body_bounds",
+                std::slice::from_ref(&bounds),
+            )
+            .unwrap_err();
+        super::BODY_BOUNDS_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+        assert!(matches!(
+            cadmpeg_core::CodecError::from(error),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "serialize native record"
+        ));
+
+        let (service, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        namespace
+            .set_arena(
+                &service,
+                "design_body_bounds",
+                std::slice::from_ref(&bounds),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&namespace.arenas()["design_body_bounds"][0]).unwrap(),
+            serde_json::to_value(&bounds).unwrap()
+        );
+    }
+
+    #[test]
+    fn body_binding_borrowed_wire_matches_owned_wire_bytes() {
+        let binding = binding_fixture();
+        let owned = DesignBodyBindingWire::from(binding.clone());
+        assert_eq!(
+            serde_json::to_vec(&binding).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+
+    #[test]
+    fn body_binding_native_retained_limit_refuses_before_stream_clone() {
+        let binding = binding_fixture();
+        let needed = serde_json::to_vec(&binding).unwrap().len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        super::BODY_BINDING_CLONE_COUNT.with(|count| count.set(0));
+        let error = namespace
+            .set_arena(
+                &limited,
+                "design_body_bindings",
+                std::slice::from_ref(&binding),
+            )
+            .unwrap_err();
+        super::BODY_BINDING_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+        assert!(matches!(
+            cadmpeg_core::CodecError::from(error),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "serialize native record"
+        ));
+
+        let (service, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        namespace
+            .set_arena(
+                &service,
+                "design_body_bindings",
+                std::slice::from_ref(&binding),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&namespace.arenas()["design_body_bindings"][0]).unwrap(),
+            serde_json::to_value(&binding).unwrap()
+        );
+    }
 }

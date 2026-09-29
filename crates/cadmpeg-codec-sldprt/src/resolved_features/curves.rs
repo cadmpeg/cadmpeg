@@ -16,7 +16,8 @@ use super::scalars::feature_object_name;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
-use cadmpeg_core::decode::{alloc_filled, bounded_len, View};
+use cadmpeg_core::decode::{alloc_filled, bounded_len, refuse_local_limit, DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
@@ -2023,6 +2024,7 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
 }
 
 fn ordered_compact_line_profile(
+    ctx: Option<&DecodeContext<'_>>,
     lines: &[(
         SketchEntityId,
         &SketchInputEntity,
@@ -2030,47 +2032,64 @@ fn ordered_compact_line_profile(
         Point2,
         Point2,
     )],
-) -> Option<Vec<SketchEntityUse>> {
+) -> Result<Option<Vec<SketchEntityUse>>, CodecError> {
     if lines.len() < 3 {
-        return None;
+        return Ok(None);
     }
-    let mut used = alloc_filled(lines.len(), false, "SLDPRT compact line profile usage").ok()?;
-    let mut profile = Vec::with_capacity(lines.len());
-    let first = lines.first()?;
-    used[0] = true;
-    profile.push(SketchEntityUse {
-        entity: first.0.clone(),
-        reversed: false,
-    });
-    let origin = first.3;
-    let mut current = first.4;
-    while profile.len() < lines.len() {
-        let mut candidates = lines.iter().enumerate().filter_map(|(index, line)| {
-            if used[index] {
-                None
-            } else if line.3 == current {
-                Some((index, false, line.4))
-            } else if line.4 == current {
-                Some((index, true, line.3))
-            } else {
-                None
-            }
-        });
-        let candidate = candidates.next()?;
-        if candidates.next().is_some() {
-            return None;
-        }
-        used[candidate.0] = true;
+    let mut used = match ctx {
+        Some(ctx) => ctx.alloc_filled(lines.len(), false, "SLDPRT compact line profile usage")?,
+        None => alloc_filled(lines.len(), false, "SLDPRT compact line profile usage")?,
+    };
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(lines.len() as u64, "SLDPRT compact line profile")?;
+    }
+    let mut profile = Vec::new();
+    profile.try_reserve_exact(lines.len()).map_err(|_| {
+        refuse_local_limit(
+            "SLDPRT compact line profile",
+            lines.len() as u64,
+            lines.len() as u64,
+        )
+    })?;
+    let profile = (|| {
+        let first = lines.first()?;
+        used[0] = true;
         profile.push(SketchEntityUse {
-            entity: lines[candidate.0].0.clone(),
-            reversed: candidate.1,
+            entity: first.0.clone(),
+            reversed: false,
         });
-        current = candidate.2;
-    }
-    (current == origin).then_some(profile)
+        let origin = first.3;
+        let mut current = first.4;
+        while profile.len() < lines.len() {
+            let mut candidates = lines.iter().enumerate().filter_map(|(index, line)| {
+                if used[index] {
+                    None
+                } else if line.3 == current {
+                    Some((index, false, line.4))
+                } else if line.4 == current {
+                    Some((index, true, line.3))
+                } else {
+                    None
+                }
+            });
+            let candidate = candidates.next()?;
+            if candidates.next().is_some() {
+                return None;
+            }
+            used[candidate.0] = true;
+            profile.push(SketchEntityUse {
+                entity: lines[candidate.0].0.clone(),
+                reversed: candidate.1,
+            });
+            current = candidate.2;
+        }
+        (current == origin).then_some(profile)
+    })();
+    Ok(profile)
 }
 
 pub(super) fn complete_ordered_compact_line_profile(
+    ctx: Option<&DecodeContext<'_>>,
     lines: &[(
         SketchEntityId,
         &SketchInputEntity,
@@ -2079,10 +2098,11 @@ pub(super) fn complete_ordered_compact_line_profile(
         Point2,
     )],
     marker_count: usize,
-) -> Option<Vec<SketchEntityUse>> {
-    (lines.len() == marker_count)
-        .then(|| ordered_compact_line_profile(lines))
-        .flatten()
+) -> Result<Option<Vec<SketchEntityUse>>, CodecError> {
+    if lines.len() != marker_count {
+        return Ok(None);
+    }
+    ordered_compact_line_profile(ctx, lines)
 }
 
 pub(super) fn compact_line_region_addresses(payload: &[u8]) -> Option<Vec<u16>> {

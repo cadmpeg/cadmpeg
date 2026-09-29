@@ -194,7 +194,7 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
             .expect("preserved entry");
         assert_eq!(output.data, source.data, "{}", source.name);
     }
-    assert!(crate::validate_native(round_trip.ir()).is_empty());
+    assert!(crate::test_support::validate_native(round_trip.ir()).is_empty());
 }
 
 #[test]
@@ -244,7 +244,7 @@ fn mutation_rejects_link_carrier_edits_without_changing_the_graph() {
         .links()
         .to_vec();
     assert_eq!(after, before);
-    assert!(crate::validate_native(&edited).is_empty());
+    assert!(crate::test_support::validate_native(&edited).is_empty());
 }
 
 #[test]

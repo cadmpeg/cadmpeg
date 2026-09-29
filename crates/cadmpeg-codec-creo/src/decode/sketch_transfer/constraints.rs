@@ -963,10 +963,11 @@ fn section_equation_dimension_parameter(
 }
 
 pub(in super::super) fn section_equation_function_six_distance_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<(SketchConstraint, usize)> {
-    let coordinates = resolved_section_coordinates(definition);
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+    let coordinates = resolved_section_coordinates(ctx, definition)?;
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
@@ -974,62 +975,65 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
     let dimension_parameters = section_equation_radius_dimension_parameters(definition, sketch);
-    section_equation_function_six_distance_rows(definition, &coordinates, &ambiguous_point_ids)
-        .into_iter()
-        .filter_map(|equation| {
-            let distance = equation.constraint_distance()?;
-            let first = section_point_locus(definition, sketch, equation.first)?;
-            let second = section_point_locus(definition, sketch, equation.second)?;
-            let parameter = section_equation_dimension_parameter(
-                &dimension_parameters,
-                equation.radius,
-                distance.get(),
-            );
-            Some((
-                SketchConstraint {
-                    id: sketch_constraint_id(
-                        sketch,
-                        format_args!("equation:{}", equation.equation_id),
-                    )?,
-                    sketch: sketch.clone(),
-                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                        SketchConstraintDefinitionInput::DistanceLociValue {
-                            first,
-                            second,
-                            distance: Length::from(distance),
-                            parameter,
-                        },
-                    )
-                    .ok()?,
-                    name: None,
-                    driving: None,
-                    active: Some(equation.active()),
-                    virtual_space: None,
-                    visible: None,
-                    orientation: None,
-                    label_distance: None,
-                    label_position: None,
-                    metadata: None,
-                    native_ref: Some(sketch_native_ref(sketch)),
-                },
-                equation.offset,
-            ))
-        })
-        .collect()
+    let constraints =
+        section_equation_function_six_distance_rows(definition, &coordinates, &ambiguous_point_ids)
+            .into_iter()
+            .filter_map(|equation| {
+                let distance = equation.constraint_distance()?;
+                let first = section_point_locus(definition, sketch, equation.first)?;
+                let second = section_point_locus(definition, sketch, equation.second)?;
+                let parameter = section_equation_dimension_parameter(
+                    &dimension_parameters,
+                    equation.radius,
+                    distance.get(),
+                );
+                Some((
+                    SketchConstraint {
+                        id: sketch_constraint_id(
+                            sketch,
+                            format_args!("equation:{}", equation.equation_id),
+                        )?,
+                        sketch: sketch.clone(),
+                        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                            SketchConstraintDefinitionInput::DistanceLociValue {
+                                first,
+                                second,
+                                distance: Length::from(distance),
+                                parameter,
+                            },
+                        )
+                        .ok()?,
+                        name: None,
+                        driving: None,
+                        active: Some(equation.active()),
+                        virtual_space: None,
+                        visible: None,
+                        orientation: None,
+                        label_distance: None,
+                        label_position: None,
+                        metadata: None,
+                        native_ref: Some(sketch_native_ref(sketch)),
+                    },
+                    equation.offset,
+                ))
+            })
+            .collect();
+    Ok(constraints)
 }
 
 pub(in super::super) fn section_equation_function_forty_two_midpoint_coordinate_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<(SketchConstraint, usize)> {
-    let coordinates = resolved_section_coordinates(definition);
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+    let coordinates = resolved_section_coordinates(ctx, definition)?;
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
-    section_equation_function_forty_two_midpoint_coordinate_rows(
+    let constraints = section_equation_function_forty_two_midpoint_coordinate_rows(
         definition,
         &coordinates,
         &ambiguous_point_ids,
@@ -1076,21 +1080,23 @@ pub(in super::super) fn section_equation_function_forty_two_midpoint_coordinate_
             equation.offset,
         ))
     })
-    .collect()
+    .collect();
+    Ok(constraints)
 }
 
 pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<(SketchConstraint, usize)> {
-    let coordinates = resolved_section_coordinates(definition);
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+    let coordinates = resolved_section_coordinates(ctx, definition)?;
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
-    section_equation_function_thirty_one_point_coordinate_rows(
+    let constraints = section_equation_function_thirty_one_point_coordinate_rows(
         definition,
         &coordinates,
         &ambiguous_point_ids,
@@ -1133,7 +1139,8 @@ pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_co
             equation.offset,
         ))
     })
-    .collect()
+    .collect();
+    Ok(constraints)
 }
 
 pub(super) fn section_equation_function_sixteen_angle_difference_constraints(
@@ -1219,10 +1226,11 @@ pub(super) fn section_equation_function_five_scalar_equality_constraints(
 }
 
 pub(in super::super) fn section_equation_polar_distance_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<(SketchConstraint, usize)> {
-    let coordinates = resolved_section_coordinates(definition);
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+    let coordinates = resolved_section_coordinates(ctx, definition)?;
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
@@ -1230,54 +1238,56 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
     let dimension_parameters = section_equation_radius_dimension_parameters(definition, sketch);
-    section_equation_radial_constraint_rows(definition, &coordinates, &ambiguous_point_ids)
-        .into_iter()
-        .filter_map(|equation| {
-            let distance = equation.radius_value?;
-            let angle = if distance.get() <= EPS_POLAR_ZERO {
-                None
-            } else {
-                Some(equation.angle_value?)
-            };
-            let first = section_point_locus(definition, sketch, equation.first)?;
-            let second = section_point_locus(definition, sketch, equation.second)?;
-            let distance_parameter = section_equation_dimension_parameter(
-                &dimension_parameters,
-                equation.radius,
-                distance.get(),
-            );
-            Some((
-                SketchConstraint {
-                    id: sketch_constraint_id(
-                        sketch,
-                        format_args!("equation:{}", equation.equation_id),
-                    )?,
-                    sketch: sketch.clone(),
-                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                        SketchConstraintDefinitionInput::PolarDistance {
-                            first,
-                            second,
-                            distance: distance.into(),
-                            angle,
-                            distance_parameter,
-                        },
-                    )
-                    .ok()?,
-                    name: None,
-                    driving: None,
-                    active: Some(equation.active),
-                    virtual_space: None,
-                    visible: None,
-                    orientation: None,
-                    label_distance: None,
-                    label_position: None,
-                    metadata: None,
-                    native_ref: Some(sketch_native_ref(sketch)),
-                },
-                equation.offset,
-            ))
-        })
-        .collect()
+    let constraints =
+        section_equation_radial_constraint_rows(definition, &coordinates, &ambiguous_point_ids)
+            .into_iter()
+            .filter_map(|equation| {
+                let distance = equation.radius_value?;
+                let angle = if distance.get() <= EPS_POLAR_ZERO {
+                    None
+                } else {
+                    Some(equation.angle_value?)
+                };
+                let first = section_point_locus(definition, sketch, equation.first)?;
+                let second = section_point_locus(definition, sketch, equation.second)?;
+                let distance_parameter = section_equation_dimension_parameter(
+                    &dimension_parameters,
+                    equation.radius,
+                    distance.get(),
+                );
+                Some((
+                    SketchConstraint {
+                        id: sketch_constraint_id(
+                            sketch,
+                            format_args!("equation:{}", equation.equation_id),
+                        )?,
+                        sketch: sketch.clone(),
+                        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                            SketchConstraintDefinitionInput::PolarDistance {
+                                first,
+                                second,
+                                distance: distance.into(),
+                                angle,
+                                distance_parameter,
+                            },
+                        )
+                        .ok()?,
+                        name: None,
+                        driving: None,
+                        active: Some(equation.active),
+                        virtual_space: None,
+                        visible: None,
+                        orientation: None,
+                        label_distance: None,
+                        label_position: None,
+                        metadata: None,
+                        native_ref: Some(sketch_native_ref(sketch)),
+                    },
+                    equation.offset,
+                ))
+            })
+            .collect();
+    Ok(constraints)
 }
 
 pub(in super::super) fn section_equation_native_constraints(
@@ -1548,11 +1558,12 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
 }
 
 pub(in super::super) fn section_equation_axis_distance_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<(SketchConstraint, usize)> {
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let Some(dimensions) = definition.dimensions.as_ref() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let ambiguous_point_ids = definition
         .variables
@@ -1560,9 +1571,9 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
         .filter(|variables| variables.is_complete())
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
-    section_equation_function_forty_three_axis_distance_rows(
+    let constraints = section_equation_function_forty_three_axis_distance_rows(
         definition,
-        &resolved_section_coordinates(definition),
+        &resolved_section_coordinates(ctx, definition)?,
         &ambiguous_point_ids,
     )
     .into_iter()
@@ -1619,7 +1630,8 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
             equation.offset,
         ))
     })
-    .collect()
+    .collect();
+    Ok(constraints)
 }
 
 pub(in super::super) fn section_equation_unsigned_distance_constraints(
@@ -1846,11 +1858,12 @@ pub(super) fn reconcile_section_dimension_constraint(
 }
 
 pub(in super::super) fn section_dimension_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<(SketchConstraint, usize)> {
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let Some(relations) = &definition.relations else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let segments = section_segment_rows(definition);
 
@@ -1861,10 +1874,10 @@ pub(in super::super) fn section_dimension_constraints(
         .filter(|variables| variables.is_complete())
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
-    let resolved_coordinates = resolved_section_coordinates(definition);
+    let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
     let saved_coordinate_witnesses =
         saved_section_coordinate_witnesses(definition, &ambiguous_point_ids);
-    relations
+    let constraints = relations
         .rows
         .iter()
         .filter_map(|relation| {
@@ -2161,7 +2174,8 @@ pub(in super::super) fn section_dimension_constraints(
                 )
             })
         })
-        .collect()
+        .collect();
+    Ok(constraints)
 }
 
 pub(in super::super) fn section_linear_distance_vectors(vectors: [[Option<u32>; 4]; 3]) -> bool {

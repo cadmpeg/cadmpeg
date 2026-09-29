@@ -47,6 +47,16 @@ fn parameter_records(payload: &[u8]) -> Vec<super::SurfaceParameterRecord> {
     with_decode_ctx(payload, |ctx| super::parameter_records(ctx, payload))
 }
 
+fn counted_parameter_scalar_slots(
+    body: &[u8],
+    count: usize,
+    cache: &crate::scalar::ScalarCache,
+) -> Option<Vec<super::ScalarTokenSlot>> {
+    with_decode_ctx(body, |ctx| {
+        super::counted_parameter_scalar_slots(ctx, body, count, cache)
+    })
+}
+
 fn cross_section_parameter_records(payload: &[u8]) -> Vec<super::SurfaceParameterRecord> {
     with_decode_ctx(payload, |ctx| {
         super::cross_section_parameter_records(ctx, payload)

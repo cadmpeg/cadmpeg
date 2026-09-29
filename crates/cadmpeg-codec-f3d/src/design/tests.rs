@@ -322,6 +322,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let mut points = [point("A"), point("B")];
     let mut relations = [relation("A"), relation("B")];
     bind_sketch_graph(
+        &cadmpeg_test_support::service_decode_context(),
         &[header("A"), header("B")],
         &mut points,
         &mut [],
@@ -348,6 +349,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     overflowing_header.entity_id =
         crate::records::identity::DesignEntityId::from_parts("A", u64::from(u32::MAX) + 101);
     assert!(bind_sketch_graph(
+        &cadmpeg_test_support::service_decode_context(),
         &[overflowing_header],
         &mut [point("A")],
         &mut [],
@@ -357,7 +359,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     .is_err());
 
     let (mut sketches, mut entities) =
-        project_sketch_design(&placements, &points, &[], &[], &[], 1.0e-6)
+        project_sketch_design(None, &placements, &points, &[], &[], &[], 1.0e-6)
             .expect("sketch lanes pair");
     let mut constraints =
         project_sketch_constraints(&placements, &[], &points, &[], &[], &relations, &entities);
@@ -456,6 +458,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     ir.model.sketch_entities = entities;
     ir.model.sketch_constraints = constraints;
     ir.finalize();
-    let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }

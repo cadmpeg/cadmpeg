@@ -13,7 +13,6 @@ use crate::legacy_feature::LegacyRoundRadius;
 use crate::surface::{SurfaceParameterRecord, Type24RoundEnvelope};
 use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
-use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
@@ -384,6 +383,7 @@ fn prototype_round_radius(
 }
 
 pub(in super::super) fn round_constant_radius(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
@@ -457,7 +457,8 @@ pub(in super::super) fn round_constant_radius(
             )
         })
     {
-        if let Some(radii) = mixed_round_radius_samples(scan, ir, source_carriers, &generated_rows)?
+        if let Some(radii) =
+            mixed_round_radius_samples(ctx, scan, ir, source_carriers, &generated_rows)?
         {
             return Ok(unique_positive_length(&radii).map(PositiveLength::get));
         }
@@ -584,6 +585,7 @@ fn complete_direct_placed_cylinder_radius_agreement(
 }
 
 fn mixed_round_radius_samples(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
@@ -610,7 +612,7 @@ fn mixed_round_radius_samples(
     else {
         return Ok(None);
     };
-    let Some(torus_radii) = mixed_torus_radius_samples(scan, &torus_rows)? else {
+    let Some(torus_radii) = mixed_torus_radius_samples(ctx, scan, &torus_rows)? else {
         return Ok(None);
     };
     Ok(Some(
@@ -619,6 +621,7 @@ fn mixed_round_radius_samples(
 }
 
 fn mixed_torus_radius_samples(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
@@ -647,8 +650,14 @@ fn mixed_torus_radius_samples(
     {
         return Ok(None);
     }
-    Ok(prototype_round_radius(scan, rows)?
-        .and_then(|radius| alloc_filled(rows.len(), radius, "creo_torus_radius_samples").ok()))
+    match prototype_round_radius(scan, rows)? {
+        Some(radius) => Ok(Some(ctx.alloc_filled(
+            rows.len(),
+            radius,
+            "creo_torus_radius_samples",
+        )?)),
+        None => Ok(None),
+    }
 }
 
 fn round_cylinder_radius(

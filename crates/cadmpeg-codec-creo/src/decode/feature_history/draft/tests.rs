@@ -46,14 +46,15 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         source_object: None,
     });
     assert!(matches!(
-        schema_feature_definition(
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5,
             Some(SchemaClass::DatumPlane),
             "Datum Plane"
-        )
+        ))
         .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane { .. })
     ));
@@ -72,14 +73,15 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         _ => panic!("transferred datum plane"),
     }
     assert_eq!(
-        schema_feature_definition(
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5,
             Some(SchemaClass::DatumPlane),
             "Datum Plane"
-        )
+        ))
         .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane
@@ -192,14 +194,15 @@ fn unbounded_plane_rejects_conflicting_carriers() {
     )
     .is_none());
     assert!(matches!(
-        schema_feature_definition(
+        crate::decode::with_test_decode_ctx(|ctx| schema_feature_definition(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5,
             None,
             "Unbounded Plane"
-        )
+        ))
         .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Native { .. })
     ));

@@ -410,7 +410,7 @@ fn surface_pcurve_midpoint_retains_periodic_path() {
         &cylinder,
         [[0.0, 0.0], [-3.0 * std::f64::consts::FRAC_PI_2, 0.0]],
         [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]],
-    )
+    ).expect("evaluator allocation succeeds")
     .expect("periodic midpoint");
     assert!((midpoint[0] + std::f64::consts::SQRT_2).abs() <= 1.0e-12);
     assert!((midpoint[1] + std::f64::consts::SQRT_2).abs() <= 1.0e-12);
@@ -454,7 +454,7 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
             &surfaces,
             points,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        ),
+        ).expect("evaluator allocation succeeds"),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
 
@@ -471,7 +471,7 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
             &surfaces,
             points,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        ),
+        ).expect("evaluator allocation succeeds"),
         None
     );
 }

@@ -50,15 +50,11 @@ use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids;
 use crate::ids::native_stream;
-use crate::records::entity_header::DesignEntityHeader;
 use crate::records::feature::assembly;
-use crate::records::feature::assembly_features::DesignComponentOccurrence;
 use crate::records::feature::coil;
 use crate::records::feature::direct_face;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
-use crate::records::parameters::DesignParameter;
-use crate::records::recipes::ConstructionRecipe;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -67,14 +63,16 @@ use std::collections::HashMap;
 /// Decode every canonical sketch or construction-operation scope, including
 /// scopes that own no parameters and therefore have no owner-frame backlink.
 pub(crate) fn decode_parameter_scopes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-    entities: &[DesignEntityHeader],
-    types: &[crate::records::entity_header::SegmentType],
-    parameters: &[DesignParameter],
-    parameter_owners: &[crate::records::parameters::DesignParameterOwner],
-    component_occurrences: &[DesignComponentOccurrence],
-    recipes: &[ConstructionRecipe],
+    native: &crate::native::F3dNative,
 ) -> Result<Vec<DesignParameterScope>, CodecError> {
+    let entities = &native.design_entity_headers;
+    let types = &native.design_types;
+    let parameters = &native.design_parameters;
+    let parameter_owners = &native.design_parameter_owners;
+    let component_occurrences = &native.design_component_occurrences;
+    let recipes = &native.construction_recipes;
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -415,7 +413,7 @@ pub(crate) fn decode_parameter_scopes(
             }
             bind_component_pattern_occurrences(&mut scope, component_occurrences);
             {
-                let construction = exact_copy_paste_bodies_operation(bytes, &records, &scope);
+                let construction = exact_copy_paste_bodies_operation(ctx, bytes, &records, &scope)?;
                 if let scope::DesignScopePayloadMut::CopyPasteBodies(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -443,6 +441,7 @@ pub(crate) fn decode_parameter_scopes(
 /// candidate resolves to a unique ASM state transition; an unresolved group
 /// remains an error so a duplicate cannot be selected by byte order.
 pub(crate) fn admit_history_bound_scope_variants(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scopes: &mut Vec<DesignParameterScope>,
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<(), CodecError> {
@@ -457,8 +456,7 @@ pub(crate) fn admit_history_bound_scope_variants(
             .push(index);
     }
 
-    let mut admitted =
-        cadmpeg_core::decode::alloc_filled(scopes.len(), true, "f3d scope admission")?;
+    let mut admitted = ctx.alloc_filled(scopes.len(), true, "f3d scope admission")?;
     for indices in groups.values() {
         let [first, following @ ..] = indices.as_slice() else {
             continue;

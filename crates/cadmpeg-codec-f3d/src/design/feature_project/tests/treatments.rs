@@ -803,6 +803,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     .unwrap();
     let project = |selection: &DesignEntitySelectionOperand| {
         crate::design::feature_project::project_parameter_design_with_edge_identities(
+            None,
             &crate::design::feature_project::ProjectInputs {
                 native: &[],
                 owners: &[],
@@ -1498,11 +1499,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
+            None,
             &patch_scope,
             std::slice::from_ref(&patch_group),
             &[],
             &[],
-        ),
+        ).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
@@ -1534,11 +1536,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
+            None,
             &patch_scope,
             &[patch_group.clone(), second_patch_group.clone()],
             &[],
             &[],
-        ),
+        ).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
@@ -1585,11 +1588,13 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     };
     let identities = vec![edge_identity(200, 100, 17), edge_identity(201, 101, 18)];
     let resolved = crate::design::feature_project::project_surface_patch(
+        None,
         &patch_scope,
         &[patch_group.clone(), second_patch_group],
         &[],
         &identities,
     )
+    .unwrap()
     .expect("resolved multi-group SurfacePatch path");
     let FeatureDefinition::Operation(FeatureOperation::FilledSurface {
         boundary:
@@ -1620,11 +1625,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
+            None,
             &patch_scope,
             std::slice::from_ref(&patch_group),
             &[],
             &[],
-        ),
+        ).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
@@ -1644,11 +1650,13 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         .unwrap();
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
+            None,
             &patch_scope,
             std::slice::from_ref(&patch_group),
             &[],
             &[],
-        ),
+        )
+        .unwrap(),
         Some(FeatureDefinition::Operation(
             FeatureOperation::FilledSurface { .. }
         ))
@@ -1668,11 +1676,13 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
+            None,
             &patch_scope,
             std::slice::from_ref(&patch_group),
             &[],
             &[],
-        ),
+        )
+        .unwrap(),
         Some(FeatureDefinition::Operation(
             FeatureOperation::FilledSurface { .. }
         ))
@@ -1687,11 +1697,13 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         })
         .unwrap();
     assert!(crate::design::feature_project::project_surface_patch(
+        None,
         &patch_scope,
         std::slice::from_ref(&patch_group),
         &[],
         &[],
     )
+    .unwrap()
     .is_none());
 
     patch_scope
@@ -1717,11 +1729,13 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         )
         .unwrap();
     let grouped_projection = crate::design::feature_project::project_surface_patch(
+        None,
         &patch_scope,
         std::slice::from_ref(&patch_group),
         &[],
         &[],
-    );
+    )
+    .unwrap();
     assert!(matches!(
         grouped_projection,
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
@@ -1943,6 +1957,7 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
         };
         assert!(matches!(
             crate::design::feature_project::project_fillet_arm(
+                None,
                 &inputs,
                 &scope,
                 &parameters,

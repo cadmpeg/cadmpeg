@@ -65,11 +65,11 @@ fn numerical_followup_parabola_bounds_use_transverse_length() {
         assert!(super::super::point_lies_on_sketch_geometry(
             Point2::new(0.25 * focal, focal),
             &geometry
-        ));
+        ).expect("resource allocation did not fail"));
         assert!(!super::super::point_lies_on_sketch_geometry(
             Point2::new(focal, 2. * focal),
             &geometry
-        ));
+        ).expect("resource allocation did not fail"));
     }
 }
 
@@ -85,9 +85,9 @@ fn numerical_followup_parabola_bounds_allow_reversed_orientation() {
     assert!(super::super::point_lies_on_sketch_geometry(
         Point2::new(0.5, 2.),
         &geometry
-    ));
+    ).expect("resource allocation did not fail"));
     assert!(!super::super::point_lies_on_sketch_geometry(
         Point2::new(2., 4.),
         &geometry
-    ));
+    ).expect("resource allocation did not fail"));
 }

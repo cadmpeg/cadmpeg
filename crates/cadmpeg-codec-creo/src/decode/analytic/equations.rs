@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Carrier equation types and vector/quadric/conic algebra.
 
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::planar::line_circle_intersections;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -760,23 +761,25 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
     roots
 }
 
-fn polynomial_product(first: &[f64], second: &[f64]) -> Vec<f64> {
+fn polynomial_product(
+    ctx: &DecodeContext<'_>,
+    first: &[f64],
+    second: &[f64],
+) -> Result<Vec<f64>, CodecError> {
     let Some(count) = first
         .len()
         .checked_add(second.len())
         .and_then(|len| len.checked_sub(1))
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let Ok(mut product) = alloc_filled(count, 0.0, "creo polynomial product") else {
-        return Vec::new();
-    };
+    let mut product = ctx.alloc_filled(count, 0.0, "creo polynomial product")?;
     for (first_power, first_coefficient) in first.iter().enumerate() {
         for (second_power, second_coefficient) in second.iter().enumerate() {
             product[first_power + second_power] += first_coefficient * second_coefficient;
         }
     }
-    product
+    Ok(product)
 }
 
 const QUARTIC_RESULTANT_PERMUTATIONS: [([usize; 4], f64); 24] = [
@@ -862,49 +865,60 @@ fn sylvester_matrix(
 /// length. For two plane conics that length is five, which
 /// `conic_resultant_is_a_quartic` pins.
 fn sylvester_polynomial(
+    ctx: &DecodeContext<'_>,
     matrix: &[[Option<Vec<f64>>; 4]; 4],
     sign: impl Fn(f64) -> f64,
-) -> Vec<f64> {
+) -> Result<Vec<f64>, CodecError> {
     let mut determinant = Vec::new();
     for (permutation, permutation_sign) in QUARTIC_RESULTANT_PERMUTATIONS {
-        let Some(term) = (0..4).try_fold(vec![1.0], |term, row| {
-            Some(polynomial_product(
-                &term,
-                matrix[row][permutation[row]].as_deref()?,
-            ))
-        }) else {
+        if (0..4).any(|row| matrix[row][permutation[row]].is_none()) {
             continue;
-        };
+        }
+        let mut term = ctx.alloc_filled(1, 1.0, "creo polynomial identity")?;
+        for factor in (0..4).filter_map(|row| matrix[row][permutation[row]].as_deref()) {
+            term = polynomial_product(ctx, &term, factor)?;
+        }
         if determinant.len() < term.len() {
+            ctx.charge_collection_items(
+                (term.len() - determinant.len()) as u64,
+                "creo polynomial determinant terms",
+            )?;
             determinant.resize(term.len(), 0.0);
         }
         for (entry, coefficient) in determinant.iter_mut().zip(term) {
             *entry += sign(permutation_sign) * coefficient;
         }
     }
-    determinant
+    Ok(determinant)
 }
 
 fn conic_resultant(
+    ctx: &DecodeContext<'_>,
     first: PlaneConicEquation,
     second: PlaneConicEquation,
-) -> Vec<BoundedCoefficient> {
+) -> Result<Vec<BoundedCoefficient>, CodecError> {
     let values = sylvester_polynomial(
+        ctx,
         &sylvester_matrix(first, second, Coefficient::stated),
         |sign| sign,
-    );
+    )?;
     let terms = sylvester_polynomial(
+        ctx,
         &sylvester_matrix(first, second, Coefficient::terms),
         f64::abs,
-    );
-    values
+    )?;
+    ctx.charge_collection_items(
+        values.len().min(terms.len()) as u64,
+        "creo conic resultant coefficients",
+    )?;
+    Ok(values
         .into_iter()
         .zip(terms)
         .map(|(value, terms)| BoundedCoefficient {
             value,
             bound: POLYNOMIAL_ERROR_FACTOR * cancellation_bound(terms),
         })
-        .collect()
+        .collect())
 }
 
 fn plane_conic_value(conic: PlaneConicEquation, u: f64, v: f64) -> f64 {
@@ -1210,10 +1224,11 @@ fn conic_v_roots(conic: PlaneConicEquation, u: f64) -> Vec<f64> {
 }
 
 pub(super) fn common_plane_conic_parameters(
+    ctx: &DecodeContext<'_>,
     first: PlaneConicEquation,
     second: PlaneConicEquation,
-) -> Vec<[f64; 2]> {
-    let resultant = conic_resultant(first, second);
+) -> Result<Vec<[f64; 2]>, CodecError> {
+    let resultant = conic_resultant(ctx, first, second)?;
     let mut parameters = Vec::<[f64; 2]>::new();
     for root in real_polynomial_roots(&resultant) {
         let u = root.value;
@@ -1246,20 +1261,22 @@ pub(super) fn common_plane_conic_parameters(
                         <= EPS_PARAM_UNIQUE * scale
                 })
             {
+                ctx.charge_collection_items(1, "creo conic intersection parameters")?;
                 parameters.push(candidate);
             }
         }
     }
-    parameters
+    Ok(parameters)
 }
 
 pub(in crate::decode) fn intersect_plane_with_two_quadrics(
+    ctx: &DecodeContext<'_>,
     plane: PlaneEquation,
     first: CarrierEquation,
     second: CarrierEquation,
-) -> Vec<[f64; 3]> {
+) -> Result<Vec<[f64; 3]>, CodecError> {
     let Some(normal) = normalize(plane.normal) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let reference_axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
     let magnitudes = reference_axes.map(|axis| dot(normal, axis).abs());
@@ -1272,24 +1289,26 @@ pub(in crate::decode) fn intersect_plane_with_two_quadrics(
     };
     let reference = reference_axes[index];
     let Some(u_axis) = normalize(cross(normal, reference)) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let v_axis = cross(normal, u_axis);
     let Some(first_quadric) = carrier_quadric(first) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(second_quadric) = carrier_quadric(second) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let first_conic = restrict_quadric_to_plane(first_quadric, plane.origin, u_axis, v_axis);
     let second_conic = restrict_quadric_to_plane(second_quadric, plane.origin, u_axis, v_axis);
-    common_plane_conic_parameters(first_conic, second_conic)
+    let parameters = common_plane_conic_parameters(ctx, first_conic, second_conic)?;
+    ctx.charge_collection_items(parameters.len() as u64, "creo plane-quadric intersections")?;
+    Ok(parameters
         .into_iter()
         .map(|[u, v]| {
             std::array::from_fn(|index| plane.origin[index] + u * u_axis[index] + v * v_axis[index])
         })
         .filter(|point| point_on_carrier(*point, first) && point_on_carrier(*point, second))
-        .collect()
+        .collect())
 }
 
 pub(in crate::decode) fn intersect_two_planes_with_torus(
@@ -1641,6 +1660,7 @@ mod tests {
         BoundedCoefficient, ConeEquation, PlaneConicEquation, PlaneEquation, TorusEquation,
     };
     use crate::decode::quadratic::Coefficient;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::scalar::PositiveLength;
     use std::f64::consts::FRAC_PI_2;
 
@@ -1664,6 +1684,23 @@ mod tests {
             v,
             constant,
         }
+    }
+
+    #[test]
+    fn polynomial_product_reports_collection_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+        let error = super::polynomial_product(&ctx, &[1.0, 2.0], &[3.0, 4.0])
+            .expect_err("three coefficients exceed the collection limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo polynomial product"
+        ));
     }
 
     #[test]
@@ -1826,10 +1863,14 @@ mod tests {
         // carries four structural zeros. Every permutation that avoids them has
         // total degree four, so the resultant has five coefficients however
         // dense the conics are.
-        let resultant = super::conic_resultant(
-            dense_conic([1.0, 2.0, 3.0, 5.0, 7.0, 11.0]),
-            dense_conic([13.0, -3.0, 2.0, -17.0, 4.0, -6.0]),
-        );
+        let resultant = crate::decode::with_test_decode_ctx(|ctx| {
+            super::conic_resultant(
+                ctx,
+                dense_conic([1.0, 2.0, 3.0, 5.0, 7.0, 11.0]),
+                dense_conic([13.0, -3.0, 2.0, -17.0, 4.0, -6.0]),
+            )
+        })
+        .expect("conic resultant");
 
         assert_eq!(resultant.len(), 5);
         assert!(resultant[4].value != 0.0);

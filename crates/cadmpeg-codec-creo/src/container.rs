@@ -1490,12 +1490,13 @@ fn curve_prototypes(sections: &[ScannedSection<'_>]) -> Vec<CurvePrototype> {
 }
 
 fn curve_expressions(
+    ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
     model_name: Option<&str>,
-) -> Vec<CurveExpressionRecord> {
-    collect_section_records(
+) -> Result<Vec<CurveExpressionRecord>, CodecError> {
+    collect_section_records_result(
         sections.iter(),
-        |bytes| curve::expression_records_with_model_name(bytes, model_name),
+        |bytes| curve::expression_records_with_model_name(ctx, bytes, model_name),
         |record, base| {
             record.offset += base;
             record.expression_offset += base;
@@ -1521,12 +1522,13 @@ fn curve_expressions(
 }
 
 fn curve_parameters(
+    ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
     face_ids: &BTreeSet<u32>,
-) -> Vec<CurveParameterRecord> {
-    collect_section_records(
+) -> Result<Vec<CurveParameterRecord>, CodecError> {
+    collect_section_records_result(
         sections.iter(),
-        |bytes| curve::parameter_records_with_face_ids(bytes, Some(face_ids)),
+        |bytes| curve::parameter_records_with_face_ids(ctx, bytes, Some(face_ids)),
         |record, base| {
             record.offset += base;
             record.body_offset += base;
@@ -1584,10 +1586,13 @@ fn curve_topology_rows(
     )
 }
 
-fn cross_section_curve_rows(sections: &[ScannedSection<'_>]) -> Vec<DepdbCurveRow> {
-    collect_section_records(
+fn cross_section_curve_rows(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<DepdbCurveRow>, CodecError> {
+    collect_section_records_result(
         cross_sections(sections),
-        curve::depdb_cross_section_rows,
+        |bytes| curve::depdb_cross_section_rows(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
     )
@@ -2367,19 +2372,20 @@ pub(crate) fn scan_bytes<'a>(
     let curve_prototypes = curve_prototypes(&model_geometry_sections);
     let cross_section_curve_prototypes = cross_section_curve_prototypes(&sections);
     let mut curve_expressions = curve_expressions(
+        ctx,
         &sections,
         model_name
             .as_ref()
             .and_then(|model| relation_model_name(&model.name)),
-    );
+    )?;
     let topology_face_ids = nonvisible_surface_rows
         .iter()
         .chain(surface_rows.iter())
         .map(|row| row.id)
         .collect::<BTreeSet<_>>();
     let nonvisible_curve_parameters =
-        curve_parameters(&nonvisible_geometry_sections, &topology_face_ids);
-    let curve_parameters = curve_parameters(&model_geometry_sections, &topology_face_ids);
+        curve_parameters(ctx, &nonvisible_geometry_sections, &topology_face_ids)?;
+    let curve_parameters = curve_parameters(ctx, &model_geometry_sections, &topology_face_ids)?;
     let nonvisible_curve_topology_rows =
         curve_topology_rows(&nonvisible_geometry_sections, &topology_face_ids);
     let mut curve_topology_rows = curve_topology_rows(&model_geometry_sections, &topology_face_ids);
@@ -2393,7 +2399,7 @@ pub(crate) fn scan_bytes<'a>(
     curve_topology_rows.extend(prototype_topology_rows);
     curve_topology_rows.sort_by_key(|row| row.offset);
     curve_topology_rows.dedup_by_key(|row| row.offset);
-    let cross_section_curve_rows = cross_section_curve_rows(&sections);
+    let cross_section_curve_rows = cross_section_curve_rows(ctx, &sections)?;
     let mut pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
     let two_chart_pcurves = two_chart_pcurves(&model_geometry_sections, &topology_face_ids);
     if matches!(layout, Layout::LegacyAscii(_)) {
@@ -2513,12 +2519,13 @@ pub(crate) fn scan_bytes<'a>(
         relation_dimension_symbols.observe(&format!("d{}", dimension.external_id), value);
     }
     curve::reevaluate_expression_records(
+        ctx,
         &mut curve_expressions,
         model_name
             .as_ref()
             .and_then(|model| relation_model_name(&model.name)),
         &relation_dimension_symbols,
-    );
+    )?;
     let mut feature_revolution_extents = feature::rows::revolution_extents(&feature_rows);
     feature_revolution_extents.extend(feature::definitions::definition_revolution_extents(
         &feature_definitions,

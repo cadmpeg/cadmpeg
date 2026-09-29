@@ -6,8 +6,17 @@ use crate::native::features::feature_block_constructions;
 use crate::native::features::feature_block_dimensions;
 use crate::native::features::feature_datum_csys_block_uses;
 use crate::native::features::feature_datum_plane_csys_identity_uses;
-use crate::native::features::feature_extrude_32_constructions;
 use crate::native::features::feature_extrude_construction_profiles;
+
+fn extrude_constructions_for_test(
+    references: &[crate::native::features::FeatureExtrudeProfileReference],
+    branches: &[crate::native::features::FeatureExtrudePayload32Branch],
+) -> Vec<crate::native::features::FeatureExtrude32Construction> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::feature_extrude_32_constructions(ctx, references, branches)
+    })
+    .unwrap()
+}
 use crate::native::features::feature_operation_body_operands;
 use crate::native::features::feature_sketch_construction_inputs;
 use crate::native::features::feature_sketch_datum_csys_dependencies;
@@ -766,7 +775,11 @@ fn decode_retains_role_scoped_om_record_area_header() {
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         }) if matches!((operands.target(), operands.tools(),), (cadmpeg_ir::features::BodySelection::Native(target), cadmpeg_ir::features::BodySelection::Native(tools),) if target == "nx:om-object-index#6466" && tools == "nx:om-object-indices#6476,127")));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1297,8 +1310,10 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     .is_empty());
 }
 
-#[test]
-fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
+fn extrude_32_fixture() -> (
+    FeatureExtrudeProfileReference,
+    crate::native::features::FeatureExtrudePayload32Branch,
+) {
     let reference = FeatureExtrudeProfileReference {
         id: "profile#0".to_string(),
         operation_label: "operation".to_string(),
@@ -1334,7 +1349,13 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
         )
         .unwrap(),
     };
-    let constructions = feature_extrude_32_constructions(
+    (reference, branch)
+}
+
+#[test]
+fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
+    let (reference, branch) = extrude_32_fixture();
+    let constructions = extrude_constructions_for_test(
         std::slice::from_ref(&reference),
         std::slice::from_ref(&branch),
     );
@@ -1362,7 +1383,7 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
     assert_eq!(constructions[0].first_data_blocks.as_slice(), ["block#2"]);
     assert_eq!(constructions[0].second_data_blocks.as_slice(), ["block#3"]);
 
-    assert!(feature_extrude_32_constructions(
+    assert!(extrude_constructions_for_test(
         std::slice::from_ref(&reference),
         &[branch.clone(), branch.clone()],
     )
@@ -1371,14 +1392,17 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
     let mut unresolved = reference;
     unresolved.data_block = None;
     assert!(
-        feature_extrude_32_constructions(&[unresolved], std::slice::from_ref(&branch),).is_empty()
+        extrude_constructions_for_test(&[unresolved], std::slice::from_ref(&branch),).is_empty()
     );
     let mut unresolved_lane = branch;
-    unresolved_lane.frame =
-        unresolved_lane
-            .frame
-            .map_bindings(|index, binding| if index == 2 { None } else { binding });
-    assert!(feature_extrude_32_constructions(
+    unresolved_lane.frame = crate::test_support::with_decode_context(|ctx| {
+        unresolved_lane.frame.map_bindings(
+            ctx,
+            |index, binding| if index == 2 { None } else { binding },
+        )
+    })
+    .unwrap();
+    assert!(extrude_constructions_for_test(
         &[FeatureExtrudeProfileReference {
             id: "profile#0".to_string(),
             operation_label: "operation".to_string(),
@@ -1393,6 +1417,35 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
         &[unresolved_lane],
     )
     .is_empty());
+}
+
+fn extrude_32_mapping_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let (reference, branch) = extrude_32_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    configure(&mut policy);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    crate::native::features::feature_extrude_32_constructions(&ctx, &[reference], &[branch])
+        .unwrap_err()
+}
+
+#[test]
+fn extrude_32_mapping_refuses_collection_limit() {
+    let error = extrude_32_mapping_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn extrude_32_mapping_refuses_retained_limit() {
+    let error = extrude_32_mapping_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
 }
 
 #[test]

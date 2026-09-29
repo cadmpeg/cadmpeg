@@ -93,7 +93,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ),
+         None).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
@@ -114,7 +114,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ),
+         None).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
@@ -158,7 +158,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ),
+         None).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             op: cadmpeg_ir::features::BooleanOp::Cut,
@@ -207,7 +207,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ),
+         None).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             op: cadmpeg_ir::features::BooleanOp::Cut,
@@ -222,7 +222,9 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ),
+            None
+        )
+        .unwrap(),
         None
     );
     {
@@ -252,7 +254,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ),
+         None).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
@@ -272,7 +274,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ),
+         None).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Centerline(
@@ -288,7 +290,16 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(3, DesignOperandRole::ROLE_0X7),
     ];
     assert_eq!(
-        crate::design::feature_project::project_fixed_loft(&loft_scope, &mixed, &[], &[], &[], &[],),
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &mixed,
+            &[],
+            &[],
+            &[],
+            &[],
+            None
+        )
+        .unwrap(),
         None
     );
     assert!(!crate::validate::loft_operand_roles_are_valid(
@@ -330,7 +341,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ),
+         None).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
@@ -441,7 +452,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ),
+         None).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
                 along_fraction: fraction_0,
@@ -480,7 +491,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ),
+         None).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             path: Some(cadmpeg_ir::features::PathRef::Native(path)),
             path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
@@ -525,7 +536,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
+         None).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             ..
         })) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },))));
@@ -537,7 +548,9 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ),
+            None
+        )
+        .unwrap(),
         None
     );
     {
@@ -643,7 +656,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[entity_selection],
             &[],
-        ), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
+         None).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             orientation: Some(cadmpeg_ir::features::SweepOrientation::GuideSurface {
                 faces: cadmpeg_ir::features::FaceSelection::Native(faces),
@@ -683,7 +696,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
             &[],
             &[],
-        ), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
+         None).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             ..
         })) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid {

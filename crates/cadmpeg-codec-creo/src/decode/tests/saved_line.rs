@@ -130,10 +130,12 @@ fn saved_line_joins_through_order_table() {
         BTreeSet::from([42])
     );
     assert_eq!(
-        materialized_saved_section_external_ids(
+        crate::decode::with_test_decode_ctx(|ctx| materialized_saved_section_external_ids(
+            ctx,
             &definition,
             &mut crate::lane_refusal::LaneRefusals::new()
-        ),
+        ))
+        .expect("test spline allocation"),
         BTreeSet::from([42])
     );
     let mut coordinate_definition = definition.clone();
@@ -168,7 +170,11 @@ fn saved_line_joins_through_order_table() {
         offset: 38,
     });
     assert_eq!(
-        resolved_section_points(&coordinate_definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+            ctx,
+            &coordinate_definition
+        ))
+        .expect("test section solve"),
         BTreeMap::from([(7, [-8.0, -0.85]), (9, [8.0, -0.85])])
     );
     coordinate_definition
@@ -178,7 +184,11 @@ fn saved_line_joins_through_order_table() {
         .rows[0]
         .value = ScalarLane::Value(7.0);
     assert_eq!(
-        resolved_section_coordinates(&coordinate_definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+            ctx,
+            &coordinate_definition
+        ))
+        .expect("test section solve"),
         BTreeMap::from([(7, [Some(7.0), Some(-0.85)]), (9, [Some(8.0), Some(-0.85)]),])
     );
     let mut incomplete = definition.clone();
@@ -203,11 +213,15 @@ fn saved_line_joins_through_order_table() {
         section_entity_external_ids(&incomplete),
         BTreeSet::from([42])
     );
-    assert!(materialized_saved_section_external_ids(
-        &incomplete,
-        &mut crate::lane_refusal::LaneRefusals::new()
-    )
-    .is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| materialized_saved_section_external_ids(
+            ctx,
+            &incomplete,
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ))
+        .expect("test spline allocation")
+        .is_empty()
+    );
     let (native_entity, offset) = unresolved_saved_section_entity(
         &incomplete,
         &SketchId::mint("creo:model:sketch#5").expect("valid test fixture"),
@@ -464,10 +478,14 @@ fn saved_line_joins_through_order_table() {
                 .expect("valid test fixture"),
         ]
     );
-    let dimension_constraints = section_dimension_constraints(
-        &constrained,
-        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-    );
+    let dimension_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+        section_dimension_constraints(
+            ctx,
+            &constrained,
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+        )
+    })
+    .expect("test section solve");
     assert!(
         matches!(
             dimension_constraints[0].0.definition.kind(),
@@ -482,10 +500,14 @@ fn saved_line_joins_through_order_table() {
     );
     let mut native_join = constrained.clone();
     native_join.relations.as_mut().expect("relations").rows[0].relation_type = 99;
-    let native_join_constraints = section_dimension_constraints(
-        &native_join,
-        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-    );
+    let native_join_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+        section_dimension_constraints(
+            ctx,
+            &native_join,
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+        )
+    })
+    .expect("test section solve");
     let SketchConstraintDefinitionInput::Native { operands, .. } =
         native_join_constraints[0].0.definition.kind()
     else {
@@ -520,10 +542,14 @@ fn saved_line_joins_through_order_table() {
         .header_mut()
         .expect("triples header")
         .declared_count = 2;
-    let ambiguous_join_constraints = section_dimension_constraints(
-        &native_join,
-        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-    );
+    let ambiguous_join_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+        section_dimension_constraints(
+            ctx,
+            &native_join,
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+        )
+    })
+    .expect("test section solve");
     let SketchConstraintDefinitionInput::Native { operands, .. } =
         ambiguous_join_constraints[0].0.definition.kind()
     else {
@@ -653,14 +679,16 @@ fn saved_line_joins_through_order_table() {
         ),
     )]);
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+            ctx,
             &solver_families,
             &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
             Some(&solver_geometry),
-        )[0]
-        .0
-        .definition
-        .kind(),
+        ))
+        .expect("test section solve")[0]
+            .0
+            .definition
+            .kind(),
         SketchConstraintDefinitionInput::Horizontal { .. }
     ));
     let unary = &mut solver_families
@@ -674,14 +702,16 @@ fn saved_line_joins_through_order_table() {
     unary.kind = 2;
     unary.status = 1;
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+            ctx,
             &solver_families,
             &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
             Some(&solver_geometry),
-        )[0]
-        .0
-        .definition
-        .kind(),
+        ))
+        .expect("test section solve")[0]
+            .0
+            .definition
+            .kind(),
         SketchConstraintDefinitionInput::Vertical { .. }
     ));
     let family_relations = solver_families.relations.as_mut().expect("relations");
@@ -736,11 +766,15 @@ fn saved_line_joins_through_order_table() {
             ),
         ),
     ]);
-    let solver_constraints = section_skamp_constraints_for_geometry(
-        &solver_families,
-        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-        Some(&solver_geometry),
-    );
+    let solver_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+        section_skamp_constraints_for_geometry(
+            ctx,
+            &solver_families,
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+            Some(&solver_geometry),
+        )
+    })
+    .expect("test section solve");
     let point_item = &solver_families
         .relations
         .as_ref()
@@ -1300,11 +1334,13 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
         Some(([2.0, -3.0], 4.5))
     );
     assert_eq!(
-        resolved_section_points(&definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+            .expect("test section solve"),
         BTreeMap::from([(11, [2.0, -3.0])])
     );
     assert_eq!(
-        resolved_section_radii(&definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+            .expect("test section solve"),
         BTreeMap::from([(12, 4.5)])
     );
     let mut conflicting_radius = definition.clone();
@@ -1326,11 +1362,16 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
 
             offset: 33,
         });
-    assert!(resolved_section_radii(&conflicting_radius).is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &conflicting_radius))
+            .expect("test section solve")
+            .is_empty()
+    );
     let mut conflicting = definition;
     conflicting.variables.as_mut().expect("variables").rows[0].value = ScalarLane::Value(3.0);
     assert_eq!(
-        resolved_section_coordinates(&conflicting),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &conflicting))
+            .expect("test section solve"),
         BTreeMap::from([(11, [Some(3.0), Some(-3.0)])])
     );
     let variables = conflicting.variables.as_mut().expect("variables");
@@ -1338,7 +1379,11 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
     duplicate.value = ScalarLane::Value(4.0);
     variables.rows.push(duplicate);
     variables.declared_count += 1;
-    assert!(resolved_section_coordinates(&conflicting).is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &conflicting))
+            .expect("test section solve")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -1384,10 +1429,14 @@ fn generated_saved_geometry_forms_closed_profiles() {
         ),
     ];
 
-    let profiles = saved_profile_chains(
-        &SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture"),
-        &geometries,
-    );
+    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+        saved_profile_chains(
+            ctx,
+            &SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture"),
+            &geometries,
+        )
+    })
+    .expect("saved profile chains");
 
     assert_eq!(profiles.len(), 2);
     assert_eq!(
@@ -1405,6 +1454,32 @@ fn generated_saved_geometry_forms_closed_profiles() {
         .iter()
         .flatten()
         .all(|entity| !entity.entity.as_str().ends_with(":20")));
+}
+
+#[test]
+fn saved_profile_mates_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(1.0, 0.0),
+    })
+    .expect("valid test geometry");
+    let geometries = [(1, geometry)];
+    let sketch = SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+    let error = saved_profile_chains(&ctx, &sketch, &geometries)
+        .expect_err("one endpoint row exceeds the collection limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo saved profile endpoint mates"
+    ));
 }
 
 #[test]
@@ -1511,7 +1586,11 @@ fn saved_arc_joins_through_order_table() {
         offset: 38,
     });
     assert_eq!(
-        resolved_section_points(&coordinate_definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+            ctx,
+            &coordinate_definition
+        ))
+        .expect("test section solve"),
         BTreeMap::from([(7, [0.0, -2.0]), (8, [0.0, 0.0]), (9, [-2.0, 0.0]),])
     );
     assert!(resolved_section_segment_geometry(
@@ -1664,7 +1743,15 @@ fn saved_arc_joins_through_order_table() {
         offset: 28,
     });
     assert_eq!(
-        resolved_trim_vertex_coordinates(&trimmed, &BTreeMap::new()),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &trimmed)?;
+            Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+                &trimmed,
+                &BTreeMap::new(),
+                &radii,
+            ))
+        })
+        .expect("test section geometry"),
         BTreeMap::from([(1, [0.0, -2.0]), (2, [-2.0, 0.0])])
     );
     let mut conflicting_vertex = trimmed.clone();
@@ -1694,7 +1781,16 @@ fn saved_arc_joins_through_order_table() {
         offset: 30,
     });
     assert_eq!(
-        resolved_trim_vertex_coordinates(&conflicting_vertex, &BTreeMap::new()),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            let radii =
+                crate::decode::sketch::radii::resolved_section_radii(ctx, &conflicting_vertex)?;
+            Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+                &conflicting_vertex,
+                &BTreeMap::new(),
+                &radii,
+            ))
+        })
+        .expect("test section geometry"),
         BTreeMap::from([(2, [-2.0, 0.0])])
     );
     if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut trimmed
@@ -1738,7 +1834,15 @@ fn saved_arc_joins_through_order_table() {
         panic!("test entity is an arc");
     }
     assert_eq!(
-        resolved_trim_vertex_coordinates(&trimmed, &BTreeMap::new()),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &trimmed)?;
+            Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+                &trimmed,
+                &BTreeMap::new(),
+                &radii,
+            ))
+        })
+        .expect("test section geometry"),
         BTreeMap::from([(2, [-2.0, 0.0])])
     );
     if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut trimmed
@@ -1761,7 +1865,8 @@ fn saved_arc_joins_through_order_table() {
     assert_eq!(
         section_segment_intersection_carrier(
             &trimmed,
-            &resolved_section_radii(&trimmed),
+            &crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &trimmed))
+                .expect("test section solve"),
             &BTreeMap::new(),
             segment,
         ),

@@ -3,16 +3,57 @@
 
 use crate::om::journal_group::JournalGroup;
 use crate::om::state_journal::JournalRow;
+use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "Wire", into = "Wire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "Wire")]
 pub(in crate::native) struct OmOperationStateJournalGroup {
     pub(in crate::native) id: String,
     pub(in crate::native) section_link: String,
     pub(in crate::native) ordinal: u32,
     pub(in crate::native) frame: JournalGroup,
     pub(in crate::native) source_entry: String,
+}
+
+struct JournalRows<'a>(&'a JournalGroup);
+
+impl Serialize for JournalRows<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut rows = serializer.serialize_seq(Some(self.0.rows().len()))?;
+        for row in self.0.rows().iter() {
+            rows.serialize_element(row)?;
+        }
+        rows.end()
+    }
+}
+
+#[derive(Serialize)]
+struct JournalGroupRef<'a> {
+    id: &'a str,
+    section_link: &'a str,
+    ordinal: u32,
+    selector: [u8; 2],
+    rows: JournalRows<'a>,
+    source_entry: &'a str,
+    source_offset: u64,
+    end_offset: u64,
+}
+
+impl Serialize for OmOperationStateJournalGroup {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        JournalGroupRef {
+            id: &self.id,
+            section_link: &self.section_link,
+            ordinal: self.ordinal,
+            selector: self.frame.selector(),
+            rows: JournalRows(&self.frame),
+            source_entry: &self.source_entry,
+            source_offset: self.frame.offset(),
+            end_offset: self.frame.end_offset(),
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -27,6 +68,7 @@ struct Wire {
     end_offset: u64,
 }
 
+#[cfg(test)]
 impl From<OmOperationStateJournalGroup> for Wire {
     fn from(group: OmOperationStateJournalGroup) -> Self {
         Self {
@@ -72,6 +114,10 @@ mod tests {
             );
             let group: OmOperationStateJournalGroup = serde_json::from_str(&json).unwrap();
             assert_eq!(serde_json::to_string(&group).unwrap(), json);
+            assert_eq!(
+                serde_json::to_vec(&group).unwrap(),
+                serde_json::to_vec(&super::Wire::from(group.clone())).unwrap()
+            );
             let wire: serde_json::Value = serde_json::from_str(&json).unwrap();
             let mut empty = wire.clone();
             empty["rows"] = serde_json::json!([]);
@@ -108,5 +154,15 @@ mod tests {
                 .to_string()
                 .contains("rows.source_offset"));
         }
+    }
+
+    #[test]
+    fn journal_group_native_limit_refuses_before_row_copy() {
+        let json = r#"{"id":"nx:om:state-journal-group#0","section_link":"section","ordinal":0,"selector":[1,2],"rows":[{"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"schema_id":0,"raw_schema_id":[0],"state_ordinal":0,"raw_state_ordinal":[0],"source_offset":4,"end_offset":15}],"source_entry":"om","source_offset":0,"end_offset":15}"#;
+        let group: OmOperationStateJournalGroup = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &group,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
     }
 }

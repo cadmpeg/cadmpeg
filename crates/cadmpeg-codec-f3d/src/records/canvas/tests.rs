@@ -96,8 +96,7 @@ fn canvas_geometry_payload_preserves_source_float_bits() {
     assert!(crate::records::canvas::DesignCanvasGeometryPayload::try_from(&bytes[..76]).is_err());
 }
 
-#[test]
-fn canvas_image_wire_derives_visibility_and_geometry_values() {
+fn canvas_wire_fixture() -> serde_json::Value {
     let mut payload = [0; 77];
     payload[..4].copy_from_slice(&0.75_f32.to_le_bytes());
     for (offset, value) in [
@@ -133,6 +132,60 @@ fn canvas_image_wire_derives_visibility_and_geometry_values() {
         "u_axis": {"x":1.0,"y":0.0,"z":0.0}, "v_axis": {"x":0.0,"y":0.0,"z":1.0},
         "geometry_payload": payload.as_slice()
     });
+    base
+}
+
+fn canvas_image_fixture() -> super::DesignCanvasImage {
+    let mut wire = canvas_wire_fixture();
+    wire["id"] = serde_json::json!("f3d:native:canvas#0");
+    serde_json::from_value(wire).unwrap()
+}
+
+#[test]
+fn canvas_image_borrowed_wire_matches_owned_wire_bytes() {
+    let image = canvas_image_fixture();
+    let owned = super::DesignCanvasImageWire::from(image.clone());
+    assert_eq!(
+        serde_json::to_vec(&image).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn canvas_image_native_retained_limit_refuses_before_record_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let image = canvas_image_fixture();
+    let arena_name = "design_canvas_images";
+    let needed = serde_json::to_vec(&image).unwrap().len() + arena_name.len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    super::CANVAS_IMAGE_CLONE_COUNT.with(|count| count.set(0));
+    let error = namespace
+        .set_arena(&limited, arena_name, std::slice::from_ref(&image))
+        .unwrap_err();
+    super::CANVAS_IMAGE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    namespace
+        .set_arena(&service, arena_name, std::slice::from_ref(&image))
+        .unwrap();
+    assert_eq!(namespace.arenas()[arena_name].len(), 1);
+}
+
+#[test]
+fn canvas_image_wire_derives_visibility_and_geometry_values() {
+    let base = canvas_wire_fixture();
     for first_flag in [0, 1] {
         for visible in [false, true] {
             let mut value = base.clone();

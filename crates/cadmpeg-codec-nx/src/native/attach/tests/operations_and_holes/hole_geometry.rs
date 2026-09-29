@@ -122,7 +122,8 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
 }
 
 #[test]
-fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
+fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_refuses_chamfer_allocation_limit(
+) {
     use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
     use crate::native::features::holes::FeatureSimpleHoleTemplate;
     use crate::native::features::holes::SimpleHoleEndTreatment;
@@ -140,6 +141,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
     use cadmpeg_ir::SourceObjectAssociation;
 
+    let default_arena = cadmpeg_core::decode::DecodeArena::new();
+    let default_policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (default_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &default_arena, &default_policy)
+            .unwrap();
     let operations = ["hole-a".to_string(), "hole-b".to_string()];
     let templates = operations
         .iter()
@@ -812,7 +818,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         }
     }
     assert_eq!(
-        simple_hole_chamfers(&chamfered, &templates, &outputs),
+        simple_hole_chamfers(&default_ctx, &chamfered, &templates, &outputs).unwrap(),
         std::collections::BTreeMap::from([
             (
                 "hole-a".into(),
@@ -832,13 +838,35 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             ),
         ])
     );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = simple_hole_chamfers(&ctx, &chamfered, &templates, &outputs)
+        .expect_err("two bore cone counters exceed one admitted collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
     assert_eq!(
-        simple_hole_chamfers(&chamfered, &templates, &std::collections::BTreeMap::new(),),
-        simple_hole_chamfers(&chamfered, &templates, &outputs)
+        simple_hole_chamfers(
+            &default_ctx,
+            &chamfered,
+            &templates,
+            &std::collections::BTreeMap::new()
+        )
+        .unwrap(),
+        simple_hole_chamfers(&default_ctx, &chamfered, &templates, &outputs).unwrap()
     );
     let mut sheet = chamfered.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
-    assert!(simple_hole_chamfers(&sheet, &templates, &outputs).is_empty());
+    assert!(
+        simple_hole_chamfers(&default_ctx, &sheet, &templates, &outputs)
+            .unwrap()
+            .is_empty()
+    );
     let mut unrelated = chamfered.clone();
     unrelated.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:entity#unrelated-cone").expect("identity grammar"),
@@ -869,8 +897,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         tolerance: None,
     });
     assert_eq!(
-        simple_hole_chamfers(&unrelated, &templates, &outputs),
-        simple_hole_chamfers(&chamfered, &templates, &outputs)
+        simple_hole_chamfers(&default_ctx, &unrelated, &templates, &outputs).unwrap(),
+        simple_hole_chamfers(&default_ctx, &chamfered, &templates, &outputs).unwrap()
     );
     let mut unequal_chamfers = chamfered;
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = &mut unequal_chamfers
@@ -891,7 +919,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     *circle_curve =
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, *axis, *ref_direction, radius)
             .unwrap();
-    assert!(simple_hole_chamfers(&unequal_chamfers, &templates, &outputs).is_empty());
+    assert!(
+        simple_hole_chamfers(&default_ctx, &unequal_chamfers, &templates, &outputs)
+            .unwrap()
+            .is_empty()
+    );
 
     let mut mismatched = ir;
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =

@@ -242,7 +242,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                     .contains("offset pair does not match its oriented distance")
         })
     };
-    assert!(!offset_mismatch(&validate_neutral(&ir, Vec::new())));
+    assert!(!offset_mismatch(&validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")));
 
     edit::replace(
         &mut ir.model.sketch_entities[result_ordinal].geometry,
@@ -271,7 +271,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         (reversed_distance - 2.0).abs() <= 1.0e-9,
         "reversed fitted offset distance {reversed_distance}"
     );
-    assert!(!offset_mismatch(&validate_neutral(&ir, Vec::new())));
+    assert!(!offset_mismatch(&validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")));
     edit::replace(
         &mut ir.model.sketch_entities[result_ordinal].geometry,
         |previous| {
@@ -299,7 +299,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         },
     )
     .unwrap();
-    assert!(offset_mismatch(&validate_neutral(&ir, Vec::new())));
+    assert!(offset_mismatch(&validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")));
 }
 
 #[test]
@@ -397,7 +397,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         native_ref: None,
     });
     ir.finalize();
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(first_sketch.as_str())
             && finding.message.contains("disconnected consecutive")
@@ -427,7 +427,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         definition.try_into()
     })
     .unwrap();
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(!report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(first_sketch.as_str())
             && finding.message.contains("disconnected consecutive")
@@ -598,7 +598,7 @@ fn midpoint_and_fixed_angle_constraints_refuse_an_entity_of_another_kind() {
     }
     ir.finalize();
 
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     for (name, _, refusal) in cases {
         let id = format!("synthetic:test:constraint#{name}");
         let kind_findings = report
@@ -669,7 +669,7 @@ fn sketch_constraint_native_ref_must_resolve() {
             native_ref: Some("native:missing-relation#0".into()),
         });
 
-    assert!(validate_neutral(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
@@ -677,7 +677,7 @@ fn sketch_constraint_native_ref_must_resolve() {
                 && finding.entity.as_deref() == Some(id.as_str())
                 && finding.message.contains("native:missing-relation#0")
         }));
-    assert!(validate_neutral(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
@@ -795,7 +795,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
             native_ref: None,
         });
     }
-    let findings = validate_neutral(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").findings;
     assert!(findings.iter().any(|finding| finding
         .message
         .contains("does not precede its profile consumer")));
@@ -887,7 +887,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         ),
     ));
 
-    let findings = validate_neutral(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").findings;
     assert!(findings.iter().any(|finding| {
         finding.message == "sketch profile indices are empty, repeated, or out of range"
     }));
@@ -936,13 +936,13 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         native_ref: None,
     });
 
-    assert!(validate_neutral(&ir, Vec::new()).findings.is_empty());
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").findings.is_empty());
     let mut duplicate = ir.model.features.last().expect("spatial owner").clone();
     duplicate.id = FeatureId::mint("synthetic:test:feature#duplicate-spatial-sketch")
         .expect("identity grammar");
     duplicate.ordinal = 1;
     ir.model.features.push(duplicate);
-    assert!(validate_neutral(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message.contains("has multiple owning features")));
@@ -1010,12 +1010,12 @@ fn spatial_distance_validation_rejects_overflowed_squared_norms() {
             .unwrap(),
             native_ref: None,
         });
-    let report = validate_neutral(&ir, vec![]);
+    let report = validate_neutral(&ir, vec![]).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| finding
         .message
         .contains("spatial point distance requires two points")));
     ir.model.parameters[0].value = Some(ParameterValue::Length(Length::new(1e200).unwrap()));
-    let report = validate_neutral(&ir, vec![]);
+    let report = validate_neutral(&ir, vec![]).expect("resource allocation did not fail");
     assert!(!report.findings.iter().any(|finding| finding
         .message
         .contains("spatial point distance requires two points")));

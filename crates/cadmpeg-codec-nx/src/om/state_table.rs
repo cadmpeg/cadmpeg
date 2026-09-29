@@ -85,6 +85,11 @@ fn operation_state_status_table(
     use super::state_slot_lane::StateSlotLane;
     use super::state_status::operation_state_status_row_at;
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("test state bytes fit the decode policy");
+
     if start >= end || end > bytes.len() {
         return None;
     }
@@ -95,7 +100,8 @@ fn operation_state_status_table(
             break;
         }
         if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
-            let lane = StateSlotLane::read(bytes, at, end, base_offset)?;
+            let lane = StateSlotLane::read(&ctx, bytes, at, end, base_offset)
+                .expect("test state slots fit the decode policy")?;
             at = lane.end_offset() - base_offset;
             entries.push(StateTableEntry::Slots(lane.into_slots()));
             continue;

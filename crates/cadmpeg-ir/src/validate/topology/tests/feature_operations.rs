@@ -35,7 +35,7 @@ fn feature_operation_geometry_is_validated() {
             native_ref: None,
         });
     }
-    let findings = validate_neutral(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").findings;
     assert!(!findings
         .iter()
         .any(|finding| { finding.entity.as_deref() == Some("synthetic:test:feature#invalid-0") }));

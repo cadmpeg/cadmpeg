@@ -43,7 +43,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     ir.model.edges[0].carrier =
         crate::topology::EdgeCarrier::new(ir.model.edges[0].curve().cloned(), Some([0.5, 2.5]))
             .unwrap();
-    assert!(!validate_neutral(&ir, Vec::new())
+    assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -53,7 +53,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         Some([0.5, 2.500_001]),
     )
     .unwrap();
-    assert!(validate_neutral(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -83,7 +83,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     ir.model.edges[0].carrier =
         crate::topology::EdgeCarrier::new(ir.model.edges[0].curve().cloned(), Some([0.5, 2.5]))
             .unwrap();
-    assert!(validate_neutral(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -181,7 +181,7 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
             Some(&weights),
             *interior.as_raw(),
             1.0e-9,
-        ),
+        ).expect("resource allocation did not fail"),
         Some(true)
     );
     assert_eq!(
@@ -192,7 +192,7 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
             Some(&weights),
             Point2::new(4.0, 4.0),
             1.0e-6,
-        ),
+        ).expect("resource allocation did not fail"),
         Some(false)
     );
 }

@@ -835,18 +835,24 @@ fn build_plan(
                         .copied(),
                 )
             });
-            orient_b5_supports_to_edge(
+            if let Err(limit) = orient_b5_supports_to_edge(
                 supports,
                 [start, end],
                 tolerances,
                 &surface_plan,
                 &pcurve_plan,
-            );
+            ) {
+                return Some(Err(limit.into()));
+            }
         }
         let mut exact_support_edges = HashSet::new();
-        for edge in edge_support_plan.iter().filter_map(|(&edge, supports)| {
-            let vertices = *graph.vertices.edges().get(&edge)?;
-            let [start, end] = graph.vertices.edge_points(edge)?;
+        for (&edge, supports) in &edge_support_plan {
+            let Some(&vertices) = graph.vertices.edges().get(&edge) else {
+                continue;
+            };
+            let Some([start, end]) = graph.vertices.edge_points(edge) else {
+                continue;
+            };
             let tolerances = vertices.map(|vertex| {
                 endpoint_gate_radius(
                     vertex_tolerances
@@ -854,38 +860,42 @@ fn build_plan(
                         .copied(),
                 )
             });
-            b5_supports_follow_edge(
+            let follows = match b5_supports_follow_edge(
                 supports,
                 [start, end],
                 tolerances,
                 &surface_plan,
                 &pcurve_plan,
-            )
-            .then_some(edge)
-        }) {
-            admitted!(crate::resource::insert_set(
-                ctx,
-                &mut exact_support_edges,
-                edge,
-                "catia_b5_exact_support_edges"
-            ));
+            ) {
+                Ok(follows) => follows,
+                Err(limit) => return Some(Err(limit.into())),
+            };
+            if follows {
+                admitted!(crate::resource::insert_set(
+                    ctx,
+                    &mut exact_support_edges,
+                    edge,
+                    "catia_b5_exact_support_edges"
+                ));
+            }
         }
         let mut exact_support_curves = HashSet::new();
-        for edge in edge_support_plan.iter().filter_map(|(&edge, supports)| {
-            edge_curve_plan
-                .get(&edge)
-                .map_or_else(
-                    || b5_supports_agree(supports, &surface_plan, &pcurve_plan),
-                    |plan| b5_supports_follow_curve(supports, plan, &surface_plan, &pcurve_plan),
-                )
-                .then_some(edge)
-        }) {
-            admitted!(crate::resource::insert_set(
-                ctx,
-                &mut exact_support_curves,
-                edge,
-                "catia_b5_exact_support_curves"
-            ));
+        for (&edge, supports) in &edge_support_plan {
+            let follows = match edge_curve_plan.get(&edge).map_or_else(
+                || b5_supports_agree(supports, &surface_plan, &pcurve_plan),
+                |plan| b5_supports_follow_curve(supports, plan, &surface_plan, &pcurve_plan),
+            ) {
+                Ok(follows) => follows,
+                Err(limit) => return Some(Err(limit.into())),
+            };
+            if follows {
+                admitted!(crate::resource::insert_set(
+                    ctx,
+                    &mut exact_support_curves,
+                    edge,
+                    "catia_b5_exact_support_curves"
+                ));
+            }
         }
 
         let mut used_vertices = HashSet::new();

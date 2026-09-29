@@ -8,6 +8,96 @@ use std::fmt::Write as _;
 use std::io::Cursor;
 
 #[test]
+fn application_records_refuse_on_collection_limit() {
+    let objects = [crate::native::ObjectRecord {
+        id: "fcstd:native:object#Owner".into(),
+        name: "Owner".into(),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within input policy");
+    assert!(matches!(super::wire_records(&ctx, &objects, &[], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD application records"));
+}
+
+#[test]
+fn application_identity_refuses_at_retained_limit() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Owner".into(),
+        name: "Owner".into(),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes =
+        crate::native::native_id("application", &object.name).len() as u64 - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::wire_records(&ctx, &[object], &[], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD native identity"));
+}
+
+#[test]
+fn application_property_identity_refuses_at_retained_limit() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Owner".into(),
+        name: "Owner".into(),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let property = crate::native::PropertyRecord {
+        id: "fcstd:native:property#Owner:Value".into(),
+        owner: object.id.clone(),
+        name: "Value".into(),
+        type_name: "App::PropertyString".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes =
+        crate::native::native_child_id("application-property", &object.id, &property.name).len()
+            as u64
+            - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(
+        matches!(super::wire_records(&ctx, &[object], &[property], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD native child identity")
+    );
+}
+
+#[test]
 fn censuses_application_domains_and_keeps_python_payloads_inert() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="5" Dependencies="1">
@@ -83,7 +173,7 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
             && record["byte_len"] == bytes(record).len() as u64
             && record["sha256"] == cadmpeg_ir::hash::sha256_hex(&bytes(record))
     }));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 
     let mut altered = records;
@@ -105,11 +195,13 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
             &altered,
         )
         .unwrap();
-    assert!(crate::validate_native(&edited).iter().any(|finding| {
-        finding
-            .message
-            .contains("application preservation records do not match authoritative bytes")
-    }));
+    assert!(crate::test_support::validate_native(&edited)
+        .iter()
+        .any(|finding| {
+            finding
+                .message
+                .contains("application preservation records do not match authoritative bytes")
+        }));
 }
 
 #[test]
@@ -144,7 +236,14 @@ fn absent_object_data_keeps_the_legacy_empty_wire_without_a_domain_sentinel() {
     assert_eq!(records[0]["byte_end"], 0);
     assert_eq!(records[0]["byte_len"], 0);
     assert_eq!(records[0]["sha256"], cadmpeg_ir::hash::sha256_hex(&[]));
-    assert!(super::matches_native(&namespace, &objects, &[], &[]).unwrap());
+    assert!(super::matches_native(
+        &cadmpeg_test_support::service_decode_context(),
+        &namespace,
+        &objects,
+        &[],
+        &[]
+    )
+    .unwrap());
 }
 
 #[test]
@@ -191,7 +290,7 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
     assert_eq!(span.classification.as_str(), "named_opaque");
     assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
     assert_eq!(entry.data, payload);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -320,5 +419,5 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
         assert_eq!(span.classification.as_str(), "named_opaque");
         assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
     }
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }

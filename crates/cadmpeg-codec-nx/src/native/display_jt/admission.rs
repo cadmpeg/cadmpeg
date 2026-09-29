@@ -2,9 +2,12 @@
 //! Admission of the JT document, segment, and element graph.
 
 use std::collections::BTreeMap;
+use std::io::Write;
+
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use super::{
     DisplayJtCompressedElement, DisplayJtCompressedElementSequence, DisplayJtDocument,
@@ -12,12 +15,13 @@ use super::{
 };
 
 /// A JT graph with resolved owners and consistent repeated segment fields.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DisplayJtGraphWire", into = "DisplayJtGraphWire")]
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(Deserialize))]
+#[cfg_attr(test, serde(try_from = "DisplayJtGraphWire"))]
 pub(crate) struct DisplayJtGraph(DisplayJtGraphWire);
 
 /// Raw JT arenas before aggregate admission.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub(in crate::native) struct DisplayJtGraphWire {
     #[serde(rename = "display_jt_documents")]
@@ -54,12 +58,90 @@ impl DisplayJtGraph {
     ) -> &[DisplayJtCompressedElementSequence] {
         &self.0.compressed_element_sequences
     }
-}
 
-impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
-    type Error = NativeConvertError;
+    pub(in crate::native) fn from_wire_with_context(
+        ctx: &DecodeContext<'_>,
+        wire: DisplayJtGraphWire,
+    ) -> Result<Self, NativeConvertError> {
+        let count = |length: usize| {
+            u64::try_from(length)
+                .map_err(|_| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))
+        };
+        let _documents = reserve_graph_index(
+            ctx,
+            count(wire.documents.len())?,
+            "index DisplayJT graph records",
+        )?;
+        let _segments = reserve_graph_index(
+            ctx,
+            count(wire.segments.len())?,
+            "index DisplayJT graph records",
+        )?;
+        let _elements = reserve_graph_index(
+            ctx,
+            count(wire.compressed_elements.len())?,
+            "index DisplayJT graph records",
+        )?;
+        let _shape_lods = reserve_graph_index(
+            ctx,
+            count(wire.shape_lod_elements.len())?,
+            "index DisplayJT graph records",
+        )?;
+        let _sequences = reserve_graph_index(
+            ctx,
+            count(wire.compressed_element_sequences.len())?,
+            "index DisplayJT graph records",
+        )?;
+        let toc_count = wire.documents.iter().try_fold(0_u64, |sum, document| {
+            count(document.toc_entries.len())?
+                .checked_add(sum)
+                .ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT TOC entries", 0, u64::MAX))
+        })?;
+        let _toc = reserve_graph_index(ctx, toc_count, "index DisplayJT TOC entries")?;
+        Self::from_wire(wire)
+    }
 
-    fn try_from(wire: DisplayJtGraphWire) -> Result<Self, Self::Error> {
+    pub(crate) fn from_namespace_with_context(
+        ctx: &DecodeContext<'_>,
+        namespace: &NativeNamespace,
+    ) -> Result<Self, NativeConvertError> {
+        Self::from_wire_with_context(
+            ctx,
+            DisplayJtGraphWire {
+                documents: arena_as_charged(ctx, namespace, "display_jt_documents")?,
+                segments: arena_as_charged(ctx, namespace, "display_jt_segments")?,
+                shape_lod_elements: arena_as_charged(
+                    ctx,
+                    namespace,
+                    "display_jt_shape_lod_elements",
+                )?,
+                compressed_elements: arena_as_charged(
+                    ctx,
+                    namespace,
+                    "display_jt_compressed_elements",
+                )?,
+                compressed_element_sequences: arena_as_charged(
+                    ctx,
+                    namespace,
+                    "display_jt_compressed_element_sequences",
+                )?,
+            },
+        )
+    }
+
+    #[cfg(test)]
+    fn from_namespace(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
+        Self::from_wire(DisplayJtGraphWire {
+            documents: namespace.arena_as("display_jt_documents")?,
+            segments: namespace.arena_as("display_jt_segments")?,
+            shape_lod_elements: namespace.arena_as("display_jt_shape_lod_elements")?,
+            compressed_elements: namespace.arena_as("display_jt_compressed_elements")?,
+            compressed_element_sequences: namespace
+                .arena_as("display_jt_compressed_element_sequences")?,
+        })
+    }
+
+    fn from_wire(wire: DisplayJtGraphWire) -> Result<Self, NativeConvertError> {
         let documents = by_id(&wire.documents, |item| item.id.as_str(), "documents")?;
         let segments = by_id(&wire.segments, |item| item.id.as_str(), "segments")?;
         let elements = by_id(
@@ -77,6 +159,12 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
             |item| item.id.as_str(),
             "compressed_element_sequences",
         )?;
+        wire.documents.iter().try_fold(0_u64, |sum, document| {
+            u64::try_from(document.toc_entries.len())
+                .ok()
+                .and_then(|count| sum.checked_add(count))
+                .ok_or_else(|| invalid(&document.id, "TOC count exceeds u64"))
+        })?;
         let mut toc_entries = BTreeMap::new();
         for document in &wire.documents {
             for entry in &document.toc_entries {
@@ -183,25 +271,28 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
     }
 }
 
-impl From<DisplayJtGraph> for DisplayJtGraphWire {
-    fn from(value: DisplayJtGraph) -> Self {
-        value.0
+#[cfg(test)]
+impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
+    type Error = NativeConvertError;
+
+    fn try_from(wire: DisplayJtGraphWire) -> Result<Self, Self::Error> {
+        Self::from_wire(wire)
     }
 }
 
+#[cfg(test)]
+impl Serialize for DisplayJtGraph {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl TryFrom<&NativeNamespace> for DisplayJtGraph {
     type Error = NativeConvertError;
 
     fn try_from(namespace: &NativeNamespace) -> Result<Self, Self::Error> {
-        DisplayJtGraphWire {
-            documents: namespace.arena_as("display_jt_documents")?,
-            segments: namespace.arena_as("display_jt_segments")?,
-            shape_lod_elements: namespace.arena_as("display_jt_shape_lod_elements")?,
-            compressed_elements: namespace.arena_as("display_jt_compressed_elements")?,
-            compressed_element_sequences: namespace
-                .arena_as("display_jt_compressed_element_sequences")?,
-        }
-        .try_into()
+        Self::from_namespace(namespace)
     }
 }
 
@@ -225,6 +316,75 @@ fn admit_compressed_owner(
         return Err(invalid(id, "source_offset disagrees with segment"));
     }
     Ok(())
+}
+
+fn reserve_graph_index<'a>(
+    ctx: &'a DecodeContext<'_>,
+    count: u64,
+    operation: &'static str,
+) -> Result<ScopedReservation<'a>, NativeConvertError> {
+    ctx.charge_collection_items(count, operation)?;
+    let bytes = count
+        .checked_mul(128)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    Ok(ctx.reserve_scoped(bytes, operation)?)
+}
+
+#[derive(Default)]
+struct JsonByteCount(u64);
+
+impl Write for JsonByteCount {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let size = u64::try_from(bytes.len()).map_err(std::io::Error::other)?;
+        self.0 = self
+            .0
+            .checked_add(size)
+            .ok_or_else(|| std::io::Error::other("DisplayJT JSON byte count exceeds u64"))?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn arena_as_charged<T: DeserializeOwned>(
+    ctx: &DecodeContext<'_>,
+    namespace: &NativeNamespace,
+    name: &'static str,
+) -> Result<Vec<T>, NativeConvertError> {
+    let records = namespace.arenas().get(name);
+    let count = records.map_or(0, Vec::len);
+    let count = u64::try_from(count)
+        .map_err(|_| ctx.refuse_codec_limit("decode DisplayJT native records", 0, u64::MAX))?;
+    let mut json_size = JsonByteCount::default();
+    if let Some(records) = records {
+        for record in records {
+            serde_json::to_writer(&mut json_size, record)?;
+        }
+    }
+    ctx.charge_work(json_size.0, "decode DisplayJT native records")?;
+    ctx.charge_collection_items(count, "decode DisplayJT native records")?;
+    let slot_bytes = count
+        .checked_mul(
+            u64::try_from(std::mem::size_of::<T>()).map_err(|_| {
+                ctx.refuse_codec_limit("retain DisplayJT native records", 0, u64::MAX)
+            })?,
+        )
+        .ok_or_else(|| ctx.refuse_codec_limit("retain DisplayJT native records", 0, u64::MAX))?;
+    let copied_bytes = json_size
+        .0
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("retain DisplayJT native records", 0, u64::MAX))?;
+    let retained = slot_bytes
+        .checked_add(copied_bytes)
+        .ok_or_else(|| ctx.refuse_codec_limit("retain DisplayJT native records", 0, u64::MAX))?;
+    ctx.charge_retained(retained, "retain DisplayJT native records")?;
+    let temporary = json_size.0.checked_mul(4).ok_or_else(|| {
+        ctx.refuse_codec_limit("materialize DisplayJT native records", 0, u64::MAX)
+    })?;
+    let _reservation = ctx.reserve_scoped(temporary, "materialize DisplayJT native records")?;
+    namespace.arena_as(name)
 }
 
 fn by_id<'a, T>(

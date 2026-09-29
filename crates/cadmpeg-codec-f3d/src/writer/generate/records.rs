@@ -122,6 +122,7 @@ pub(super) fn encode_design_bulkstream(
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
     let (_, projected_parameters) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
+            None,
             &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
                 owners: &native.design_parameter_owners,
@@ -731,7 +732,7 @@ fn encode_sketch_nurbs(
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
-    encode_f64_sequence(record, &knots);
+    encode_f64_sequence(record, knots);
     let weight_count = u32::try_from(poles.weights().len())
         .map_err(|_| CodecError::NotImplemented("sketch NURBS has too many weights".into()))?;
     record.extend_from_slice(&weight_count.to_le_bytes());

@@ -54,8 +54,8 @@ impl std::fmt::Display for HeaderSlot {
 // Five marker bytes, eight scalar bytes, and two ff bytes precede the slots.
 const FIXED_HEADER_LEN: usize = 5 + 8 + 2;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(try_from = "HeaderReferencesWire", into = "HeaderReferencesWire")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(try_from = "HeaderReferencesWire")]
 pub(crate) struct HeaderReferences(pub(crate) [Option<FeatureReferenceToken>; 4]);
 
 impl HeaderReferences {
@@ -100,14 +100,42 @@ impl HeaderReferences {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
 struct HeaderReferencesWire {
     object_indices: [Option<u32>; 4],
     raw_object_indices: [Vec<u8>; 4],
 }
 
+#[derive(serde::Serialize)]
+struct HeaderReferencesRef<'a> {
+    object_indices: [Option<u32>; 4],
+    raw_object_indices: [&'a [u8]; 4],
+}
+
+impl serde::Serialize for HeaderReferences {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        HeaderReferencesRef {
+            object_indices: self.values(),
+            raw_object_indices: self.0.each_ref().map(|token| {
+                token
+                    .as_ref()
+                    .map_or(&[0xff][..], FeatureReferenceToken::raw)
+            }),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static HEADER_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<HeaderReferences> for HeaderReferencesWire {
     fn from(value: HeaderReferences) -> Self {
+        HEADER_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             object_indices: value.values(),
             raw_object_indices: value
@@ -174,7 +202,37 @@ impl<O: Copy + std::ops::Add<Output = O> + From<u8>> OperationHeader<O> {
 
 #[cfg(test)]
 mod tests {
-    use super::{HeaderReferences, HeaderSlot, OperationHeader};
+    use super::{
+        HeaderReferences, HeaderReferencesWire, HeaderSlot, OperationHeader, HEADER_INTO_WIRE_COUNT,
+    };
+
+    #[test]
+    fn header_references_borrowed_wire_refuses_before_vec_conversion() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            objects: &'a HeaderReferences,
+        }
+
+        for bytes in [&[0xff; 4][..], &[0xff, 0, 0x80, 0, 0x90, 0, 0x03][..]] {
+            let objects = HeaderReferences::read(bytes).unwrap();
+            let old = HeaderReferencesWire::from(objects);
+            assert_eq!(
+                serde_json::to_vec(&objects).unwrap(),
+                serde_json::to_vec(&old).unwrap()
+            );
+            let record = Record {
+                id: "nx:test:header-references#1",
+                objects: &objects,
+            };
+            HEADER_INTO_WIRE_COUNT.with(|count| count.set(0));
+            cadmpeg_test_support::native_serialization::assert_native_limit(
+                &record,
+                serde_json::json!({"id": record.id, "objects": old}),
+            );
+            HEADER_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
+        }
+    }
 
     #[test]
     fn header_reference_widths_determine_every_position() {

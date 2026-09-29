@@ -77,6 +77,12 @@ pub enum CodecError {
     Io(#[from] std::io::Error),
 }
 
+impl From<ResourceLimit> for CodecError {
+    fn from(limit: ResourceLimit) -> Self {
+        Self::ResourceLimit(limit)
+    }
+}
+
 impl CodecError {
     /// Builds a malformed-container error from a displayable message.
     pub fn malformed(message: impl std::fmt::Display) -> Self {

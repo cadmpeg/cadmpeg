@@ -11,8 +11,9 @@ const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-8;
 const EPS_PCURVE_POINT_MATCH: f64 = 1.0e-12;
 
 use crate::decode::blend::{
-    closest_nurbs_curve_parameter, closest_pcurve_parameters, homogeneous_residual_distance,
-    real_polynomial_roots, surface_contact_direction, surface_offset_lineage,
+    closest_nurbs_curve_parameter_with_budget, closest_pcurve_parameters,
+    homogeneous_residual_distance, real_polynomial_roots, surface_contact_direction,
+    surface_offset_lineage,
 };
 use crate::decode::build::{
     rmfastload_selected_bodies, rmfastload_stream_indices, select_active_body,
@@ -88,7 +89,10 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
         (second, BTreeSet::from([8])),
     ]);
 
-    assert!(select_active_body(&mut ir, &body_node_ids, &[7]));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        select_active_body(ctx, &mut ir, &body_node_ids, &[7])
+    })
+    .unwrap());
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.bodies[0].id, first);
     assert_eq!(
@@ -109,12 +113,14 @@ fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
         (second, BTreeSet::from([8, 9])),
     ]);
 
-    let selected = rmfastload_selected_bodies(&body_node_ids, &[7, 8]);
-    assert_eq!(selected, BTreeSet::from([first]));
-    assert_eq!(
-        rmfastload_stream_indices(&selected),
-        Some(BTreeSet::from([3]))
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        let selected = rmfastload_selected_bodies(ctx, &body_node_ids, &[7, 8]).unwrap();
+        assert_eq!(selected, BTreeSet::from([first]));
+        assert_eq!(
+            rmfastload_stream_indices(ctx, &selected).unwrap(),
+            Some(BTreeSet::from([3]))
+        );
+    });
 }
 
 #[test]
@@ -353,9 +359,17 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
 
     let procedural_start = ir.model.procedural_curves.len();
     let mut annotations = AnnotationBuilder::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test context");
     let transfer_budget = WorkBudget::new(usize::MAX);
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(usize::MAX);
     crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
+        &ctx,
         &mut ir,
         &mut annotations,
         procedural_start,
@@ -371,6 +385,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     };
     assert!(parameterization.is_none());
     crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
+        &ctx,
         &mut ir,
         &mut annotations,
         0,
@@ -435,6 +450,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             point.get(),
             parameter,
         )
+        .expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("closed intersection inverts at parameter {parameter}"));
         assert!((inverse.get() - parameter).abs() < 1.0e-10);
     }
@@ -486,6 +502,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
         [0.0, 1.0],
         NonNegativeReal::new(1.0e-8).expect("nonnegative tolerance"),
     )
+    .expect("evaluator allocation succeeds")
     .is_none());
 
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -506,7 +523,8 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
             [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
             [0.0, 1.0],
             NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
-        ),
+        )
+        .expect("evaluator allocation succeeds"),
         Some(PcurveGeometry::Line(_))
     ));
 }
@@ -552,7 +570,8 @@ fn boundary_plane_pcurve_keeps_wide_finite_parameterization() {
         [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         [-f64::MAX, f64::MAX],
         NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
-    ) else {
+    )
+    .expect("evaluator allocation succeeds") else {
         panic!("finite NURBS boundary pcurve");
     };
     assert_eq!(
@@ -606,7 +625,8 @@ fn boundary_cylinder_generator_keeps_wide_finite_parameterization() {
         [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
         [-f64::MAX, f64::MAX],
         NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
-    ) else {
+    )
+    .expect("evaluator allocation succeeds") else {
         panic!("finite generator pcurve");
     };
     assert_eq!(
@@ -660,7 +680,8 @@ fn rational_generator_does_not_get_an_affine_boundary_certificate() {
         [&rational, &linear],
         [0.0, 1.0],
         NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
-    ));
+    )
+    .expect("evaluator allocation succeeds"));
 }
 
 #[test]
@@ -697,7 +718,7 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
             [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
             [0.0, 1.0],
             NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
-        ), Some(PcurveGeometry::Line(line_pcurve))
+        ).expect("evaluator allocation succeeds"), Some(PcurveGeometry::Line(line_pcurve))
                 if {
                     let origin = line_pcurve.origin().as_raw();
     let direction = line_pcurve.direction().as_raw();
@@ -738,7 +759,8 @@ fn boundary_nurbs_surface_keeps_wide_finite_affine_pcurve() {
         [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
         [-f64::MAX, f64::MAX],
         NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
-    ) else {
+    )
+    .expect("evaluator allocation succeeds") else {
         panic!("finite wide NURBS boundary pcurve");
     };
     assert_eq!(
@@ -892,6 +914,7 @@ fn adaptive_offset_certification_fails_closed_when_the_work_slice_is_empty() {
         crate::decode::offset::certified_curved_offset_cache_fit_with_budget(
             support, support, 0.01, 0.02, true, &budget,
         )
+        .expect("evaluator allocation succeeds")
         .is_none()
     );
     assert!(budget.exhausted());
@@ -905,7 +928,11 @@ fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
         controls: vec![-1.0, 1.0],
     };
 
-    assert!(crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget).is_none());
+    assert!(
+        crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget)
+            .expect("test work slice has no decode resource refusal")
+            .is_none()
+    );
     assert!(budget.exhausted());
 }
 
@@ -988,6 +1015,7 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
             None,
             &budget,
         )
+        .expect("evaluator allocation succeeds")
     );
     assert!(budget.exhausted());
 }
@@ -1246,13 +1274,23 @@ fn offset_cache_subdivision_uses_the_remaining_divisible_axis() {
     let u1 = f64::from_bits(u0.to_bits() + 1);
     let u = u0 + (u1 - u0) * 0.5;
     let mut rectangles = Vec::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test context");
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&ctx, 100);
 
     assert!(subdivide_offset_rectangle(
         &mut rectangles,
         [u0, u1, 0.0, 1.0],
         [u, 0.5],
         true,
-    ));
+        &geometry_budget,
+    )
+    .expect("subdivision allocation"));
     assert_eq!(rectangles, vec![[u0, u1, 0.0, 0.5], [u0, u1, 0.5, 1.0]]);
 }
 
@@ -1365,6 +1403,7 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
 
     let parameters =
         cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.01)
+            .expect("resource allocation did not fail")
             .unwrap();
     let mapped =
         cadmpeg_ir::eval::nurbs_surface_point(&surface, parameters.u, parameters.v).unwrap();
@@ -1385,9 +1424,12 @@ fn nurbs_blend_contact_requires_the_declared_radius_shell() {
     let center = Point3::new(1.2, 0.7, 2.0);
 
     let direction = surface_contact_direction(&ir, &surface, center, 2.0, 0)
+        .expect("evaluator allocation succeeds")
         .expect("the support contains one contact at the blend radius");
     assert!((direction - Vector3::new(0.0, 0.0, -1.0)).norm() < 1.0e-10);
-    assert!(surface_contact_direction(&ir, &surface, center, 1.0, 0).is_none());
+    assert!(surface_contact_direction(&ir, &surface, center, 1.0, 0)
+        .expect("evaluator allocation succeeds")
+        .is_none());
 }
 
 #[test]
@@ -1642,7 +1684,8 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
         [&pcurve, &pcurve],
         [0.0, 1.0],
         NonNegativeReal::new(0.1).expect("nonnegative tolerance"),
-    ));
+    )
+    .expect("evaluator allocation succeeds"));
 
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(second)) =
         &mut ir.model.surfaces[1].geometry
@@ -1665,7 +1708,8 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
         [&pcurve, &pcurve],
         [0.0, 1.0],
         NonNegativeReal::new(0.1).expect("nonnegative tolerance"),
-    ));
+    )
+    .expect("evaluator allocation succeeds"));
 }
 
 #[test]
@@ -1693,6 +1737,7 @@ fn rational_pcurve_incidence_isolates_close_branches() {
         .unwrap(),
     };
     let roots = closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(0.11))
+        .expect("evaluator allocation succeeds")
         .expect("complete homogeneous root isolation");
 
     assert_eq!(roots.len(), 4);
@@ -1726,6 +1771,7 @@ fn rational_pcurve_closest_search_retains_close_global_branches() {
         .unwrap(),
     };
     let parameters = closest_pcurve_parameters(&pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
+        .expect("evaluator allocation succeeds")
         .expect("complete global closest-point search");
 
     assert_eq!(parameters.len(), 4, "{parameters:?}");
@@ -1758,12 +1804,30 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
     .unwrap();
     let point = Point3::new(0.0, 1.0e-4, 0.0);
 
-    let first =
-        closest_nurbs_curve_parameter(&curve, point, Some(0.099)).expect("first close branch");
-    let second =
-        closest_nurbs_curve_parameter(&curve, point, Some(0.101)).expect("second close branch");
-    let remote =
-        closest_nurbs_curve_parameter(&curve, point, Some(0.69)).expect("remote global branch");
+    let first = closest_nurbs_curve_parameter_with_budget(
+        &curve,
+        point,
+        Some(0.099),
+        &crate::decode::geometry_work::GeometryWorkBudget::new(8_000_000),
+    )
+    .expect("evaluator allocation succeeds")
+    .expect("first close branch");
+    let second = closest_nurbs_curve_parameter_with_budget(
+        &curve,
+        point,
+        Some(0.101),
+        &crate::decode::geometry_work::GeometryWorkBudget::new(8_000_000),
+    )
+    .expect("evaluator allocation succeeds")
+    .expect("second close branch");
+    let remote = closest_nurbs_curve_parameter_with_budget(
+        &curve,
+        point,
+        Some(0.69),
+        &crate::decode::geometry_work::GeometryWorkBudget::new(8_000_000),
+    )
+    .expect("evaluator allocation succeeds")
+    .expect("remote global branch");
 
     assert!((first - 0.1).abs() < 1.0e-8);
     assert!((second - 0.1001).abs() < 1.0e-8);
@@ -1802,12 +1866,19 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
 
     assert_eq!(
         closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(4.1))
+            .expect("evaluator allocation succeeds")
             .expect("periodic pcurve phase"),
         [4.0]
     );
     assert_eq!(
-        closest_nurbs_curve_parameter(&curve, Point3::new(0.0, 0.0, 0.0), Some(4.1),)
-            .expect("periodic curve phase"),
+        closest_nurbs_curve_parameter_with_budget(
+            &curve,
+            Point3::new(0.0, 0.0, 0.0),
+            Some(4.1),
+            &crate::decode::geometry_work::GeometryWorkBudget::new(8_000_000)
+        )
+        .expect("evaluator allocation succeeds")
+        .expect("periodic curve phase"),
         4.0
     );
 }
@@ -1835,6 +1906,7 @@ fn coincident_pcurve_interval_retains_seed_and_boundaries() {
         .unwrap(),
     };
     let roots = closest_pcurve_parameters(&pcurve, Point2::new(2.0, -3.0), Some(0.3))
+        .expect("evaluator allocation succeeds")
         .expect("coincident interval");
 
     assert_eq!(roots, [0.3, 0.0, 1.0]);
@@ -1856,7 +1928,9 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
         .zip(weights)
         .map(|(point, weight)| [point.u * weight, point.v * weight, weight])
         .collect();
-    let spans = homogeneous_spans(2, &knots, controls).expect("valid Bézier extraction");
+    let spans = homogeneous_spans(2, &knots, controls)
+        .expect("resource allocation did not fail")
+        .expect("valid Bézier extraction");
 
     assert_eq!(spans.len(), 3);
     for span in spans {
@@ -1865,7 +1939,13 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
             let expected =
                 cadmpeg_ir::eval::nurbs_pcurve_uv(2, &knots, &points, Some(&weights), parameter)
                     .expect("source NURBS evaluation");
-            let actual = homogeneous_residual_distance(&span.controls, parameter, span.domain);
+            let actual = homogeneous_residual_distance(
+                &span.controls,
+                parameter,
+                span.domain,
+                &crate::decode::geometry_work::GeometryWorkBudget::new(100),
+            )
+            .expect("test solver allocation succeeds");
             let expected = expected.as_raw();
             assert!((actual - expected.u.hypot(expected.v)).abs() < 1.0e-12);
         }

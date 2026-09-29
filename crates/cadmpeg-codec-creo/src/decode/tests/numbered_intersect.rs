@@ -354,7 +354,8 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
     difference.add_point(2, SectionAxis::U, -1.0);
     difference.rhs = 2.0;
     assert_eq!(
-        solve_section_coordinate_equations(
+        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+            ctx,
             &[
                 sum,
                 difference,
@@ -362,20 +363,23 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
                 SectionCoordinateEquation::point_value(2, SectionAxis::V, 4.0),
             ],
             &BTreeMap::new(),
-        ),
+        ))
+        .expect("test section solve"),
         BTreeMap::from([(1, [Some(6.0), Some(3.0)]), (2, [Some(4.0), Some(4.0)]),])
     );
 
     let stored = BTreeMap::from([((1, SectionAxis::U), 1.0), ((1, SectionAxis::V), 3.0)]);
     assert_eq!(
-        solve_section_coordinate_equations(
+        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+            ctx,
             &[
                 SectionCoordinateEquation::point_value(1, SectionAxis::U, 1.0),
                 SectionCoordinateEquation::point_value(1, SectionAxis::U, 2.0),
                 SectionCoordinateEquation::point_value(1, SectionAxis::V, 3.0),
             ],
             &stored,
-        ),
+        ))
+        .expect("test section solve"),
         BTreeMap::from([(1, [Some(1.0), Some(3.0)])])
     );
     let stored = BTreeMap::from([
@@ -385,7 +389,8 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
         ((2, SectionAxis::V), 4.0),
     ]);
     assert_eq!(
-        solve_section_coordinate_equations(
+        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+            ctx,
             &[
                 SectionCoordinateEquation::point_value(1, SectionAxis::U, 1.0),
                 SectionCoordinateEquation::point_value(1, SectionAxis::V, 3.0),
@@ -396,7 +401,8 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
                 SectionCoordinateEquation::point_value(3, SectionAxis::V, 5.0),
             ],
             &stored,
-        ),
+        ))
+        .expect("test section solve"),
         BTreeMap::from([
             (1, [Some(1.0), Some(3.0)]),
             (2, [Some(2.0), Some(4.0)]),
@@ -404,24 +410,28 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
         ])
     );
     assert_eq!(
-        solve_section_coordinate_equations(
+        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+            ctx,
             &[
                 SectionCoordinateEquation::point_value(3, SectionAxis::U, 1.0e12),
                 SectionCoordinateEquation::point_value(3, SectionAxis::V, -1.0e12),
             ],
             &BTreeMap::new(),
-        ),
+        ))
+        .expect("test section solve"),
         BTreeMap::from([(3, [Some(1.0e12), Some(-1.0e12)])])
     );
     assert_eq!(
-        solve_section_coordinate_equations(
+        crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
+            ctx,
             &[SectionCoordinateEquation::point_value(
                 4,
                 SectionAxis::U,
                 7.0
             )],
             &BTreeMap::new(),
-        ),
+        ))
+        .expect("test section solve"),
         BTreeMap::from([(4, [Some(7.0), None])])
     );
 }
@@ -434,15 +444,18 @@ fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
     ];
     let stored = BTreeMap::from([((1, SectionAxis::U), 0.0), ((2, SectionAxis::U), 10.0)]);
     assert_eq!(
-        solve_unsigned_dimension_coordinates(
+        crate::decode::with_test_decode_ctx(|ctx| solve_unsigned_dimension_coordinates(
+            ctx,
             &equations,
             &stored,
             &[(1, 3, SectionAxis::U, 3.0), (3, 2, SectionAxis::U, 7.0)],
-        ),
+        ))
+        .expect("test section solve"),
         BTreeMap::from([((3, SectionAxis::U), 3.0)])
     );
     assert_eq!(
-        solve_unsigned_dimension_coordinates(
+        crate::decode::with_test_decode_ctx(|ctx| solve_unsigned_dimension_coordinates(
+            ctx,
             &[SectionCoordinateEquation::point_value(
                 1,
                 SectionAxis::U,
@@ -450,7 +463,8 @@ fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
             )],
             &BTreeMap::from([((1, SectionAxis::U), 0.0)]),
             &[(1, 2, SectionAxis::U, 3.0)],
-        ),
+        ))
+        .expect("test section solve"),
         BTreeMap::new()
     );
 }

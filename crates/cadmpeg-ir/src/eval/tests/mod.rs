@@ -440,7 +440,7 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
         &surface,
         [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
         [point, point],
-    )
+    ).expect("resource allocation did not fail")
     .expect("degree-zero surface bound");
     assert!(bound <= EPS_DEGREE_ZERO_SURFACE_BOUND, "{bound}");
 }
@@ -466,7 +466,7 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
             &surface,
             [Point2::new(range[0], 0.0), Point2::new(range[1], 1.0)],
             [pole, pole],
-        )
+        ).expect("resource allocation did not fail")
         .expect("degree-zero patch span bound");
         assert!(bound <= EPS_DEGREE_ZERO_SURFACE_BOUND, "{bound}");
     }
@@ -495,7 +495,7 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
             .expect("surface endpoint")
             .get()
     });
-    let bound = nurbs_surface_parameter_segment_chord_bound(&surface, parameters, endpoints)
+    let bound = nurbs_surface_parameter_segment_chord_bound(&surface, parameters, endpoints).expect("resource allocation did not fail")
         .expect("multi-span rational Bézier residual bound");
 
     for index in 0..=100 {
@@ -589,7 +589,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             &id,
             point.get(),
             parameter,
-        )
+        ).expect("resource allocation did not fail")
         .expect("direct analytic inverse")
         .get();
         assert!((inverse - parameter).abs() < 1.0e-12);
@@ -682,7 +682,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             &id,
             point,
             seed,
-        )
+        ).expect("resource allocation did not fail")
         .expect("polyline inverse")
         .get();
         assert!((inverse - expected).abs() < 1.0e-12);
@@ -706,10 +706,10 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
     });
     let index = crate::index::ModelIndex::new(&ir);
     let point = Point3::new(0.5, 0.005, 0.0);
-    assert!(super::model_curve_parameter_near_point_in_index(&index, &id, point, 0.5).is_none());
+    assert!(super::model_curve_parameter_near_point_in_index(&index, &id, point, 0.5).expect("resource allocation did not fail").is_none());
     let inverse = super::model_curve_parameter_near_point_in_index_with_tolerance(
         &index, &id, point, 0.5, 0.01,
-    )
+    ).expect("resource allocation did not fail")
     .expect("caller tolerance admits the bounded residual")
     .get();
     assert!((inverse - 0.5).abs() < 1.0e-12);
@@ -751,7 +751,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         &id,
         point.get(),
         parameter,
-    )
+    ).expect("resource allocation did not fail")
     .expect("transformed inverse")
     .get();
     assert!((inverse - parameter).abs() < 1.0e-10);
@@ -773,7 +773,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         &id,
         Point3::new(0.0, 0.0, 0.0),
         0.0
-    )
+    ).expect("resource allocation did not fail")
     .is_none());
 }
 
@@ -796,7 +796,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
             &id,
             point,
             seed
-        )
+        ).expect("resource allocation did not fail")
         .map(crate::scalar::FiniteReal::get),
         Some(seed)
     );
@@ -805,7 +805,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
         &id,
         Point3::new(2.0, 3.0, 5.0),
         seed
-    )
+    ).expect("resource allocation did not fail")
     .is_none());
 }
 
@@ -833,7 +833,7 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
         (IsolineDirection::ConstantU, 0.4, [-2.0, 0.75, 3.0]),
         (IsolineDirection::ConstantV, 1.25, [0.0, 0.6, 1.0]),
     ] {
-        let curve = nurbs_surface_isoline(&surface, direction, at).expect("isoline");
+        let curve = nurbs_surface_isoline(&surface, direction, at).expect("resource allocation did not fail").expect("isoline");
         for sample in samples {
             let (u, v) = match direction {
                 IsolineDirection::ConstantU => (at, sample),
@@ -1881,7 +1881,7 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
         (SurfaceParameterAxis::U, 0.25),
         (SurfaceParameterAxis::V, 0.75),
     ] {
-        let isocurve = nurbs_surface_isocurve(&surface, axis, fixed).expect("exact isocurve");
+        let isocurve = nurbs_surface_isocurve(&surface, axis, fixed).expect("resource allocation did not fail").expect("exact isocurve");
         let geometry = SolvedCurveGeometry::Nurbs(isocurve);
         for varying in [0.0, 0.2, 0.7, 1.0] {
             let expected = match axis {
@@ -1917,17 +1917,17 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
     .unwrap();
     let point = Point3::new(0.5, 0.0, 0.0);
     assert_eq!(
-        nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.1)
+        nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.1).expect("resource allocation did not fail")
             .map(crate::scalar::FiniteReal::get),
         Some(0.25)
     );
     assert_eq!(
-        nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.9)
+        nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.9).expect("resource allocation did not fail")
             .map(crate::scalar::FiniteReal::get),
         Some(0.75)
     );
     assert_eq!(
-        nurbs_curve_parameter_near_point(&curve, Point3::new(0.5, 1.0, 0.0), 1.0e-12, 0.5,),
+        nurbs_curve_parameter_near_point(&curve, Point3::new(0.5, 1.0, 0.0), 1.0e-12, 0.5,).expect("resource allocation did not fail"),
         None
     );
     assert!(nurbs_curve_speed_bound(&curve).is_some_and(|bound| bound.get() >= 2.0));
@@ -1939,7 +1939,7 @@ fn bounded_nurbs_interval_search_keeps_a_fixed_working_set() {
         .map(crate::scalar::FiniteReal::from_index)
         .collect::<Vec<_>>();
     let seed = crate::scalar::FiniteReal::new(5_000.5).expect("finite seed");
-    let intervals = super::bounded_nearest_intervals(&boundaries, seed);
+    let intervals = super::bounded_nearest_intervals(&boundaries, seed).expect("resource allocation did not fail");
 
     assert_eq!(intervals.len(), 512);
     assert!(intervals
@@ -1952,12 +1952,12 @@ fn bounded_nurbs_containment_search_keeps_the_final_valid_spans() {
     let boundaries = [0.0, 1.0, 1.0, 2.0, 3.0];
 
     assert_eq!(
-        super::bounded_tail_intervals(&boundaries),
+        super::bounded_tail_intervals(&boundaries).expect("resource allocation did not fail"),
         (vec![[0.0, 1.0], [1.0, 2.0], [2.0, 3.0]], false)
     );
 
     let many_boundaries = (0..=10_000).map(f64::from).collect::<Vec<_>>();
-    let (intervals, truncated) = super::bounded_tail_intervals(&many_boundaries);
+    let (intervals, truncated) = super::bounded_tail_intervals(&many_boundaries).expect("resource allocation did not fail");
     assert_eq!(intervals.len(), 512);
     assert!(truncated);
 }
@@ -1968,7 +1968,7 @@ fn bounded_nurbs_boundary_witness_preserves_seed_priority() {
     let seed = crate::scalar::FiniteReal::new(1.4).expect("finite seed");
 
     assert_eq!(
-        super::nearest_boundary_witness(&boundaries, seed, 0.0, |_| Some(0.0)),
+        super::nearest_boundary_witness(&boundaries, seed, 0.0, |_| Ok(Some(0.0))).expect("resource allocation did not fail"),
         super::BoundaryWitness::Found(crate::scalar::FiniteReal::ONE)
     );
 }

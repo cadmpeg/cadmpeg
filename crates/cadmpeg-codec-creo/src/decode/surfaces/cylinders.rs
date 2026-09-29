@@ -918,7 +918,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         .collect::<BTreeSet<_>>();
     let mut constant_round_radii = BTreeMap::new();
     for feature_id in round_feature_ids {
-        if let Some(radius) = round_constant_radius(scan, ir, source_carriers, feature_id)? {
+        if let Some(radius) = round_constant_radius(ctx, scan, ir, source_carriers, feature_id)? {
             constant_round_radii.insert(feature_id, radius);
         }
     }

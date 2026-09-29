@@ -28,6 +28,52 @@ use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
+fn with_docstruct_scan(
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeArena, &crate::container::ContainerScan<'_>),
+) {
+    let bytes = f3d_without_brep("part-design", "part.f3d", &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    f(&arena, &scan);
+}
+
+#[test]
+fn docstruct_type_attribute_refuses_collection_limit() {
+    with_docstruct_scan(|arena, scan| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 11;
+        let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
+            .unwrap()
+            .0;
+        let mut attributes = std::collections::BTreeMap::new();
+        let error = super::super::annotate_docstruct(&ctx, &mut attributes, scan).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "record F3D docstruct type")
+        );
+    });
+}
+
+#[test]
+fn docstruct_subtype_attribute_refuses_collection_limit() {
+    with_docstruct_scan(|arena, scan| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 12;
+        let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
+            .unwrap()
+            .0;
+        let mut attributes = std::collections::BTreeMap::new();
+        let error = super::super::annotate_docstruct(&ctx, &mut attributes, scan).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "record F3D docstruct subtype")
+        );
+    });
+}
+
 /// A document with no ASM BREP stream has no selected stream, so the geometry
 /// and topology losses must not name a decode failure of one. Stating a cause
 /// that was never reached misreports which carrier is missing.
@@ -433,14 +479,64 @@ fn decoded_text_brep_facts_keep_text_dialects_and_exclude_binary_routes() {
 }
 
 #[test]
+fn text_brep_parts_refuse_the_last_collection_item() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let stream = concat!(
+        "21800 0 2 3\n",
+        "16 Autodesk Neutron 23 ASM 218.0.1.400 Unknown 9 Synthetic\n",
+        "1 0.000001 0.0000000001\n",
+        "asmheader $-1 -1 @11 218.0.1.400 #\n",
+        "body $-1 -1 $-1 $2 $-1 $-1 #\n",
+        "lump $-1 -1 $-1 $-1 $3 $1 #\n",
+        "shell $-1 -1 $-1 $-1 $-1 $4 $-1 $2 #\n",
+        "face $-1 -1 $-1 $-1 $-1 $3 $-1 $5 forward single #\n",
+        "sphere-surface $-1 -1 $-1 0 0 0 25 1 0 0 0 0 1 forward_v I I I I #\n",
+        "End-of-ASM-data\n",
+    );
+    let bytes = f3d_with_text_brep_stream(
+        &["FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"],
+        stream.as_bytes(),
+    );
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let decode_with_limit = |limit| {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        crate::decode::try_decode_text_model(&limited, &scan)
+    };
+    let mut admitted = 10_000;
+    assert!(decode_with_limit(admitted).unwrap().is_some());
+    let mut refused = 0;
+    while admitted - refused > 1 {
+        let candidate = refused + (admitted - refused) / 2;
+        match decode_with_limit(candidate) {
+            Ok(Some(_)) => admitted = candidate,
+            Err(cadmpeg_core::CodecError::ResourceLimit(_)) => refused = candidate,
+            _ => panic!("unexpected text B-rep limit result"),
+        }
+    }
+    let Err(error) = decode_with_limit(refused) else {
+        panic!("the item below the admission boundary must be refused");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D text B-rep parts")
+    );
+}
+
+#[test]
 fn text_brep_framing_propagates_sat_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;
 
     let entry = "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat";
     let archive = f3d_with_text_brep(&[entry]);
     let mut options = DecodeOptions::default();
-    // Six ZIP entries charge five archive collections each; text framing charges one.
-    options.policy.limits.max_collection_items = 31;
+    // Archive admission and indexes consume 74 collection items before SAT framing.
+    options.policy.limits.max_collection_items = 74;
     let error = F3dCodec
         .decode(&mut Cursor::new(archive), &options)
         .expect_err("text B-rep framing must admit primitives");

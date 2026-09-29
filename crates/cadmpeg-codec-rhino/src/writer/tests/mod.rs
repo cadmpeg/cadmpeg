@@ -79,7 +79,7 @@ fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usi
             assert_eq!(actual.param_range(), expected.param_range(), "{version:?}");
         }
         assert!(
-            cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok(),
+            cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok(),
             "{version:?}"
         );
     }

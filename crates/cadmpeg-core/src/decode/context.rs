@@ -226,9 +226,35 @@ impl<'a> DecodeContext<'a> {
         self.budget.reserve_scoped(bytes, operation)
     }
 
+    /// Reserves temporary bytes and returns the typed resource refusal.
+    pub fn reserve_scoped_limit(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<ScopedReservation<'_>, ResourceLimit> {
+        self.budget.reserve_scoped_limit(bytes, operation)
+    }
+
     /// Charges bytes retained for the remainder of this session.
     pub fn charge_retained(&self, bytes: u64, operation: &'static str) -> Result<(), CodecError> {
         self.budget.charge_retained(bytes, operation)
+    }
+
+    /// Copies admitted text into retained storage with a typed resource refusal.
+    pub fn copy_retained_text_limit(
+        &self,
+        text: &str,
+        operation: &'static str,
+    ) -> Result<String, ResourceLimit> {
+        let bytes = super::u64_from_index(text.len());
+        self.budget.charge_retained_limit(bytes, operation)?;
+        let mut copy = String::new();
+        copy.try_reserve_exact(text.len()).map_err(|_| {
+            self.budget
+                .retained_allocation_failed_limit(bytes, operation)
+        })?;
+        copy.push_str(text);
+        Ok(copy)
     }
 
     /// Copies bytes into session-retained storage after charging and reserving safely.
@@ -291,6 +317,15 @@ impl<'a> DecodeContext<'a> {
         self.budget.charge_collection_items(count, operation)
     }
 
+    /// Charges collection items and returns the typed refusal for resource-only callers.
+    pub fn charge_collection_items_limit(
+        &self,
+        count: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        self.budget.charge_collection_items_limit(count, operation)
+    }
+
     /// Enters one recursive nesting level until the returned guard is dropped.
     pub fn enter_nested(&self, operation: &'static str) -> Result<DepthGuard<'_>, CodecError> {
         self.budget.enter_nested(operation)
@@ -299,6 +334,11 @@ impl<'a> DecodeContext<'a> {
     /// Charges session-global algorithm work, fusing on refusal.
     pub fn charge_work(&self, units: u64, operation: &'static str) -> Result<(), CodecError> {
         self.budget.charge_work(units, operation)
+    }
+
+    /// Returns the resource refusal that has fused this decode session.
+    pub fn resource_refusal(&self) -> Option<ResourceLimit> {
+        self.budget.fused()
     }
 
     /// Permanently refuses a codec-local resource request.

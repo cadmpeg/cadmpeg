@@ -55,7 +55,8 @@ fn base_face_with_polygon_loop_gets_an_inferred_plane() {
     assert_eq!(*normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(*origin, Point3::new(10.0 / 3.0, 10.0 / 3.0, 0.0));
     assert_eq!(*u_axis, Vector3::new(1.0, 0.0, 0.0));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -200,7 +201,8 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
             )
     }));
     let validation =
-        cadmpeg_ir::validate_neutral(reordered.ir(), reordered.report().losses.clone());
+        cadmpeg_ir::validate_neutral(reordered.ir(), reordered.report().losses.clone())
+            .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -285,7 +287,8 @@ fn complex_outer_face_bound_uses_inherited_attributes() {
         surface.geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
     ));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -319,7 +322,8 @@ fn implicit_face_plane_uses_all_coplanar_poly_loops() {
     let normal = *plane_surface.frame().axis().as_raw();
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(origin, Point3::new(17.0 / 6.0, 17.0 / 6.0, 0.0));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -355,9 +359,15 @@ fn implicit_face_plane_is_independent_of_coplanar_bound_set_order() {
     assert_eq!(first_surface.geometry, reordered_surface.geometry);
     assert_eq!(first.ir().model.bodies.len(), 1);
     assert_eq!(reordered.ir().model.bodies.len(), 1);
-    assert!(cadmpeg_ir::validate_neutral(first.ir(), first.report().losses.clone()).is_ok());
     assert!(
-        cadmpeg_ir::validate_neutral(reordered.ir(), reordered.report().losses.clone()).is_ok()
+        cadmpeg_ir::validate_neutral(first.ir(), first.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
+    assert!(
+        cadmpeg_ir::validate_neutral(reordered.ir(), reordered.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 
@@ -464,7 +474,8 @@ fn implicit_face_plane_keeps_base_orientation_across_oriented_face() {
         decoded.ir().model.faces[0].sense,
         cadmpeg_ir::topology::Sense::Forward
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -490,7 +501,8 @@ fn oriented_face_subtype_composes_face_orientation() {
         .coedges
         .iter()
         .all(|coedge| coedge.sense == cadmpeg_ir::topology::Sense::Reversed));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -519,7 +531,8 @@ fn nested_oriented_faces_compose_back_to_the_base_orientation() {
         .coedges
         .iter()
         .all(|coedge| coedge.sense == cadmpeg_ir::topology::Sense::Forward));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -539,7 +552,8 @@ fn subface_subtype_reuses_parent_surface_and_own_bounds() {
 
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(decoded.ir().model.faces.len(), 1);
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -565,7 +579,8 @@ fn complex_advanced_face_uses_its_explicit_surface_carrier() {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
             )
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -597,7 +612,8 @@ fn connected_face_sub_set_validates_and_uses_its_own_members() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("CONNECTED_FACE_SUB_SET #34")));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -853,6 +869,38 @@ fn advanced_face_name_transfers_through_inherited_representation_item() {
 }
 
 #[test]
+fn face_name_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = export(&unit_cube().expect("unit cube fixture is admitted"));
+    let named = source.replacen("ADVANCED_FACE('", "ADVANCED_FACE('budgeted face ", 1);
+    assert_ne!(named, source, "STEP export contains an advanced face");
+    let (exchange, _) = crate::parse::parse(named.as_bytes()).expect("valid named-face exchange");
+    let arena = DecodeArena::new();
+    let refused = (0..4096).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(named.as_bytes(), &arena, &policy)
+            .expect("root fits retained policy");
+        let result = (|| {
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            crate::reader::geometry::decode(&exchange, &mut ir, &ctx)?;
+            let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
+            super::super::decode(&exchange, &mut ir, &index, &ctx)?;
+            Ok::<(), CodecError>(())
+        })();
+        matches!(
+            result,
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_string_text"
+        )
+    });
+    assert!(refused, "no retained limit refused the advanced face name");
+}
+
+#[test]
 fn complex_advanced_face_name_uses_representation_item_partial() {
     let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
@@ -910,7 +958,8 @@ fn unsupported_mandatory_carriers_preserve_topology_as_unknown() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("conflicts with decoded topology")));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -940,6 +989,7 @@ fn unsupported_surface_carrier_on_face_surface_preserves_topology_as_unknown() {
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: Some(record) }))
             if record.as_str() == "step:data:unsupported_surface#28"
     ));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

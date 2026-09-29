@@ -250,7 +250,7 @@ pub(crate) fn reverse_pcurve_geometry(
             note_refusal(
                 ctx,
                 reversed_knots.admit().and_then(|knots| {
-                    PcurveNurbs::from_admitted_parts(nurbs.degree(), knots, poles, nurbs.periodic())
+                    PcurveNurbs::from_admitted_rows(nurbs.degree(), knots, poles, nurbs.periodic())
                 }),
                 refusal,
                 record,
@@ -402,7 +402,7 @@ pub(crate) fn reverse_nurbs_curve(
         Ok(knots) => knots,
         Err(error) => return Ok(Err(error)),
     };
-    Ok(NurbsCurve::from_admitted_parts(
+    Ok(NurbsCurve::new(
         curve.degree(),
         knots,
         poles,
@@ -1359,6 +1359,7 @@ mod tests {
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             tiny * 0.5,
         )
+        .expect("resource allocation did not fail")
         .expect("tiny rational surface isocurve");
         assert_eq!(
             curve.control_points(),
@@ -1404,6 +1405,7 @@ mod tests {
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5
         )
+        .expect("resource allocation did not fail")
         .is_none());
     }
 

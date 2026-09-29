@@ -194,8 +194,9 @@ impl ActChannelGroup {
 }
 
 /// One Fusion ACT change-version channel group and its optional inline table row.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "ActEntitySerde", into = "ActEntitySerde")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "ActEntitySerde")]
 pub(crate) struct ActEntity {
     /// Globally unique deterministic identifier for this native record.
     id: NativeRecordId,
@@ -204,6 +205,102 @@ pub(crate) struct ActEntity {
     entity_id: String,
     table_row: Option<ActTableRow>,
     channel_group: ActChannelGroup,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static ACT_ENTITY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ActEntity {
+    fn clone(&self) -> Self {
+        ACT_ENTITY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            record_index: self.record_index,
+            entity_id: self.entity_id.clone(),
+            table_row: self.table_row.clone(),
+            channel_group: self.channel_group.clone(),
+        }
+    }
+}
+
+struct ChannelValues<'a>(&'a BTreeMap<String, Located<DesignGuidText>>);
+
+impl Serialize for ChannelValues<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        for (name, guid) in self.0 {
+            map.serialize_entry(name, guid.value.as_str())?;
+        }
+        map.end()
+    }
+}
+
+struct ChannelOffsets<'a>(&'a BTreeMap<String, Located<DesignGuidText>>);
+
+impl Serialize for ChannelOffsets<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        for (name, guid) in self.0 {
+            map.serialize_entry(name, &guid.offset)?;
+        }
+        map.end()
+    }
+}
+
+#[derive(Serialize)]
+struct ActEntityWireRef<'a> {
+    id: &'a str,
+    record_index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    table_record_index_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    channel_record_index_offset: Option<u64>,
+    entity_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    table_entity_id_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    channel_entity_id_offset: Option<u64>,
+    in_table: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    channel_class_tag: Option<&'a str>,
+    channels: ChannelValues<'a>,
+    channel_guid_offsets: ChannelOffsets<'a>,
+    #[serde(skip_serializing_if = "<[u8]>::is_empty")]
+    channel_class_tail: &'a [u8],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    channel_class_tail_offset: Option<u64>,
+}
+
+impl Serialize for ActEntity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (channel_class_tail, channel_class_tail_offset) = match &self.channel_group.class_tail {
+            Some(tail) => (tail.bytes.as_slice(), Some(tail.offset)),
+            None => (&[][..], None),
+        };
+        ActEntityWireRef {
+            id: &self.id.text,
+            record_index: self.record_index,
+            table_record_index_offset: self.table_record_index_offset(),
+            channel_record_index_offset: Some(self.channel_record_index_offset()),
+            entity_id: &self.entity_id,
+            table_entity_id_offset: self.table_entity_id_offset(),
+            channel_entity_id_offset: self.channel_entity_id_offset(),
+            in_table: self.in_table(),
+            channel_class_tag: Some(self.channel_class_tag()),
+            channels: ChannelValues(&self.channel_group.channels),
+            channel_guid_offsets: ChannelOffsets(&self.channel_group.channels),
+            channel_class_tail,
+            channel_class_tail_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl ActEntity {
@@ -287,7 +384,8 @@ impl ActEntity {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct ActEntitySerde {
     id: String,
     record_index: u32,
@@ -427,6 +525,7 @@ impl TryFrom<ActEntitySerde> for ActEntity {
     }
 }
 
+#[cfg(test)]
 impl From<ActEntity> for ActEntitySerde {
     fn from(entity: ActEntity) -> Self {
         let in_table = entity.in_table();
@@ -469,8 +568,9 @@ impl From<ActEntity> for ActEntitySerde {
 }
 
 /// One GUID in the ordered ACT stream-wide asset/change-version pool.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "ActGuidWire", into = "ActGuidWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "ActGuidWire")]
 pub(crate) struct ActGuid {
     /// Globally unique deterministic identifier for this native record.
     id: NativeRecordId,
@@ -480,6 +580,46 @@ pub(crate) struct ActGuid {
     pub(crate) ordinal: u32,
     /// The pooled GUID string.
     pub(crate) guid: DesignGuidText,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static ACT_GUID_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ActGuid {
+    fn clone(&self) -> Self {
+        ACT_GUID_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            byte_offset: self.byte_offset,
+            ordinal: self.ordinal,
+            guid: self.guid.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ActGuidWireRef<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    guid_offset: u64,
+    ordinal: u32,
+    guid: &'a str,
+}
+
+impl Serialize for ActGuid {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ActGuidWireRef {
+            id: &self.id.text,
+            byte_offset: self.byte_offset,
+            guid_offset: self.guid_offset(),
+            ordinal: self.ordinal,
+            guid: self.guid.as_str(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl ActGuid {
@@ -518,7 +658,8 @@ impl ActGuid {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct ActGuidWire {
     id: String,
     byte_offset: u64,
@@ -539,6 +680,7 @@ impl TryFrom<ActGuidWire> for ActGuid {
     }
 }
 
+#[cfg(test)]
 impl From<ActGuid> for ActGuidWire {
     fn from(guid: ActGuid) -> Self {
         let guid_offset = guid.guid_offset();
@@ -553,8 +695,9 @@ impl From<ActGuid> for ActGuidWire {
 }
 
 /// One reference in the ACT table run between the GUID pool and channel registry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "ActTableReferenceWire", into = "ActTableReferenceWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "ActTableReferenceWire")]
 pub(crate) struct ActTableReference {
     /// Globally unique deterministic identifier for this native record.
     id: NativeRecordId,
@@ -564,6 +707,46 @@ pub(crate) struct ActTableReference {
     byte_offset: u64,
     /// Target ACT record index.
     pub(crate) target_record: u32,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static ACT_TABLE_REFERENCE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ActTableReference {
+    fn clone(&self) -> Self {
+        ACT_TABLE_REFERENCE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            ordinal: self.ordinal,
+            byte_offset: self.byte_offset,
+            target_record: self.target_record,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ActTableReferenceWireRef<'a> {
+    id: &'a str,
+    ordinal: u32,
+    byte_offset: u64,
+    target_record: u32,
+    target_record_offset: u64,
+}
+
+impl Serialize for ActTableReference {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ActTableReferenceWireRef {
+            id: &self.id.text,
+            ordinal: self.ordinal,
+            byte_offset: self.byte_offset,
+            target_record: self.target_record,
+            target_record_offset: self.target_record_offset(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl ActTableReference {
@@ -602,7 +785,8 @@ impl ActTableReference {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct ActTableReferenceWire {
     id: String,
     ordinal: u32,
@@ -623,6 +807,7 @@ impl TryFrom<ActTableReferenceWire> for ActTableReference {
     }
 }
 
+#[cfg(test)]
 impl From<ActTableReference> for ActTableReferenceWire {
     fn from(reference: ActTableReference) -> Self {
         let target_record_offset = reference.target_record_offset();
@@ -637,14 +822,60 @@ impl From<ActTableReference> for ActTableReferenceWire {
 }
 
 /// One named entry in the ACT table's stream-wide channel registry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "ActRegistryChannelWire", into = "ActRegistryChannelWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "ActRegistryChannelWire")]
 pub(crate) struct ActRegistryChannel {
     id: NativeRecordId,
     pub(crate) ordinal: u32,
     byte_offset: u64,
     name: String,
     pub(crate) guid: DesignGuidText,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static ACT_REGISTRY_CHANNEL_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ActRegistryChannel {
+    fn clone(&self) -> Self {
+        ACT_REGISTRY_CHANNEL_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            ordinal: self.ordinal,
+            byte_offset: self.byte_offset,
+            name: self.name.clone(),
+            guid: self.guid.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ActRegistryChannelWireRef<'a> {
+    id: &'a str,
+    ordinal: u32,
+    byte_offset: u64,
+    name: &'a str,
+    name_offset: u64,
+    guid: &'a str,
+    guid_offset: u64,
+}
+
+impl Serialize for ActRegistryChannel {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ActRegistryChannelWireRef {
+            id: &self.id.text,
+            ordinal: self.ordinal,
+            byte_offset: self.byte_offset,
+            name: &self.name,
+            name_offset: self.name_offset(),
+            guid: self.guid.as_str(),
+            guid_offset: self.guid_offset(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl ActRegistryChannel {
@@ -690,7 +921,8 @@ impl ActRegistryChannel {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct ActRegistryChannelWire {
     id: String,
     ordinal: u32,
@@ -718,6 +950,7 @@ impl TryFrom<ActRegistryChannelWire> for ActRegistryChannel {
     }
 }
 
+#[cfg(test)]
 impl From<ActRegistryChannel> for ActRegistryChannelWire {
     fn from(channel: ActRegistryChannel) -> Self {
         let name_offset = channel.name_offset();
@@ -735,8 +968,9 @@ impl From<ActRegistryChannel> for ActRegistryChannelWire {
 }
 
 /// ACT link from the document root entity to the instance/component registries.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "ActRootComponentWire", into = "ActRootComponentWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "ActRootComponentWire")]
 pub(crate) struct ActRootComponent {
     /// Globally unique deterministic identifier for this native record.
     id: NativeRecordId,
@@ -752,6 +986,73 @@ pub(crate) struct ActRootComponent {
     pub(crate) registry_flag: ActRegistryFlag,
     /// Checked source layout and the two variable-length strings.
     layout: ActRootLayout,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static ACT_ROOT_COMPONENT_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ActRootComponent {
+    fn clone(&self) -> Self {
+        ACT_ROOT_COMPONENT_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            record_index: self.record_index,
+            class_tag: self.class_tag.clone(),
+            instance_root_record: self.instance_root_record,
+            components_root_record: self.components_root_record,
+            registry_flag: self.registry_flag,
+            layout: self.layout.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ActRootComponentWireRef<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    record_index: u32,
+    record_index_offset: u64,
+    class_tag: &'a str,
+    instance_root_record: u32,
+    instance_root_record_offset: u64,
+    tracked_entity_record: u32,
+    tracked_entity_record_offset: u64,
+    components_root_record: u32,
+    components_root_record_offset: u64,
+    registry_flag: ActRegistryFlag,
+    registry_flag_offset: u64,
+    entity_id: &'a str,
+    entity_id_offset: u64,
+    display_name: &'a str,
+    display_name_offset: u64,
+}
+
+impl Serialize for ActRootComponent {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ActRootComponentWireRef {
+            id: &self.id.text,
+            byte_offset: self.layout.byte_offset(),
+            record_index: self.record_index,
+            record_index_offset: self.layout.record_index_offset(),
+            class_tag: self.class_tag.as_str(),
+            instance_root_record: self.instance_root_record,
+            instance_root_record_offset: self.layout.instance_root_record_offset(),
+            tracked_entity_record: 3,
+            tracked_entity_record_offset: self.layout.tracked_entity_record_offset(),
+            components_root_record: self.components_root_record,
+            components_root_record_offset: self.layout.components_root_record_offset(),
+            registry_flag: self.registry_flag,
+            registry_flag_offset: self.layout.registry_flag_offset(),
+            entity_id: self.layout.entity_id(),
+            entity_id_offset: self.layout.entity_id_offset(),
+            display_name: self.layout.display_name(),
+            display_name_offset: self.layout.display_name_offset(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl ActRootComponent {
@@ -799,7 +1100,8 @@ impl ActRootComponent {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct ActRootComponentWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -891,6 +1193,7 @@ impl TryFrom<ActRootComponentWire> for ActRootComponent {
     }
 }
 
+#[cfg(test)]
 impl From<ActRootComponent> for ActRootComponentWire {
     fn from(root: ActRootComponent) -> Self {
         Self {

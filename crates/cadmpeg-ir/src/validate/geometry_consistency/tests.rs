@@ -394,10 +394,10 @@ fn untrimmed_surface_curve() -> CadIr {
 #[test]
 fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&mapped_surface_curve([2.0, 3.0]), &mut findings);
+    check_procedural_support_consistency(&mapped_surface_curve([2.0, 3.0]), &mut findings).expect("resource allocation did not fail");
     assert!(findings.is_empty());
 
-    check_procedural_support_consistency(&mapped_surface_curve([3.0, 2.0]), &mut findings);
+    check_procedural_support_consistency(&mapped_surface_curve([3.0, 2.0]), &mut findings).expect("resource allocation did not fail");
     assert_eq!(findings.len(), 1);
     assert!(findings[0].message.contains("support side 0"));
 }
@@ -405,7 +405,7 @@ fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
 #[test]
 fn surface_offset_support_constrains_the_embedded_base_curve() {
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&mapped_surface_offset(), &mut findings);
+    check_procedural_support_consistency(&mapped_surface_offset(), &mut findings).expect("resource allocation did not fail");
     assert!(findings.is_empty());
 
     let mut context_first = mapped_surface_offset();
@@ -446,7 +446,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
             None => definition.clear_legacy_cache(),
         }
     });
-    check_procedural_support_consistency(&context_first, &mut findings);
+    check_procedural_support_consistency(&context_first, &mut findings).expect("resource allocation did not fail");
     assert!(findings.is_empty());
 
     let mut ir = mapped_surface_offset();
@@ -460,7 +460,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     origin.y = 2.0;
     let origin = crate::features::FinitePoint3::new(origin).unwrap();
     *line_curve = crate::geometry::analytic::LineCurve::new(origin, direction);
-    check_procedural_support_consistency(&ir, &mut findings);
+    check_procedural_support_consistency(&ir, &mut findings).expect("resource allocation did not fail");
     assert_eq!(findings.len(), 2);
     assert!(findings
         .iter()
@@ -474,7 +474,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
 fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
     let ir = untrimmed_surface_curve();
     let mut findings = Vec::new();
-    super::check_pcurve_surface_consistency(&ir, &mut findings);
+    super::check_pcurve_surface_consistency(&ir, &mut findings).expect("resource allocation did not fail");
     assert!(findings.is_empty(), "{findings:#?}");
 
     let mut mismatched = ir;
@@ -491,7 +491,7 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
         2.0,
     )
     .unwrap();
-    super::check_pcurve_surface_consistency(&mismatched, &mut findings);
+    super::check_pcurve_surface_consistency(&mismatched, &mut findings).expect("resource allocation did not fail");
     assert_eq!(findings.len(), 1);
     assert!(findings[0].message.contains("pcurve mapped through"));
 }
@@ -565,7 +565,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     .unwrap();
 
     let mut findings = Vec::new();
-    super::check_pcurve_surface_consistency(&ir, &mut findings);
+    super::check_pcurve_surface_consistency(&ir, &mut findings).expect("resource allocation did not fail");
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -587,7 +587,7 @@ fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
         .unwrap(),
     };
     let mut findings = Vec::new();
-    super::check_pcurve_surface_consistency(&ir, &mut findings);
+    super::check_pcurve_surface_consistency(&ir, &mut findings).expect("resource allocation did not fail");
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -617,7 +617,7 @@ fn stale_trimmed_pcurve_range_can_use_a_vertex_derived_interval() {
         .unwrap(),
     );
     let mut findings = Vec::new();
-    super::check_pcurve_surface_consistency(&ir, &mut findings);
+    super::check_pcurve_surface_consistency(&ir, &mut findings).expect("resource allocation did not fail");
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -748,6 +748,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         &pcurve,
         1.0e-12,
     )
+    .expect("resource allocation did not fail")
     .expect("finite NURBS surface domain should provide recovery seeds");
     assert!(
         ranges.iter().any(|[start, end]| {
@@ -776,7 +777,7 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "{:?}", report.findings);
 
     ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
@@ -784,7 +785,7 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
             .expect("valid identity"),
         cache: None,
     };
-    assert!(validate_neutral(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
@@ -808,7 +809,7 @@ fn procedural_curve_carrier_requires_its_exact_owner() {
         definition: ProceduralCurveDefinition::Helix(crate::geometry::HelixCurveConstruction::try_new([0.0, std::f64::consts::TAU], crate::geometry::HelixFrame { center: Point3::new(0.0, 0.0, 0.0), major: Vector3::new(1.0, 0.0, 0.0), minor: Vector3::new(0.0, 1.0, 0.0), pitch: Vector3::new(0.0, 0.0, 1.0), axis: Vector3::new(0.0, 0.0, 1.0) }, 0.0, None).unwrap()),
         cache_fit_tolerance: None,
     });
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "{:?}", report.findings);
 
     ir.model.curves[0].geometry = CurveGeometry::Procedural {
@@ -816,7 +817,7 @@ fn procedural_curve_carrier_requires_its_exact_owner() {
             .expect("valid identity"),
         cache: None,
     };
-    assert!(validate_neutral(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
@@ -848,7 +849,7 @@ fn self_referential_composite_curve_is_invalid() {
         source_object: None,
     });
 
-    assert!(validate_neutral(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ReferentialIntegrity));
@@ -857,7 +858,7 @@ fn self_referential_composite_curve_is_invalid() {
 #[test]
 fn edge_endpoint_mismatch_is_flagged() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(
         !report
             .findings
@@ -879,7 +880,7 @@ fn edge_endpoint_mismatch_is_flagged() {
     );
     source_tolerant.tolerances.linear =
         crate::scalar::PositiveLength::new(0.02).expect("positive finite tolerance");
-    let report = validate_neutral(&source_tolerant, Vec::new());
+    let report = validate_neutral(&source_tolerant, Vec::new()).expect("resource allocation did not fail");
     assert!(
         !report
             .findings
@@ -900,7 +901,7 @@ fn edge_endpoint_mismatch_is_flagged() {
         ))
         .expect("a finite position is a point"),
     );
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(
         report
             .findings
@@ -926,7 +927,7 @@ fn edge_endpoint_mismatch_is_flagged() {
         cache_fit_tolerance: Some(0.99),
     };
     ir.model.add_procedural_curve(curve, procedural).unwrap();
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(
         report
             .findings
@@ -939,7 +940,7 @@ fn edge_endpoint_mismatch_is_flagged() {
     ir.model.procedural_curves[0]
         .set_cache_fit_tolerance(Some(1.0))
         .unwrap();
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(
         !report
             .findings
@@ -994,7 +995,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             isoparametric: None,
             parameter_range: None,
         }];
-        validate_neutral(&ir, Vec::new())
+        validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
     };
 
     let consistent = checked(10.0, 0.0, None);
@@ -1088,7 +1089,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         .model
         .add_procedural_surface(surface, construction)
         .unwrap();
-    let procedural_report = validate_neutral(&procedural, Vec::new());
+    let procedural_report = validate_neutral(&procedural, Vec::new()).expect("resource allocation did not fail");
     assert!(
         !procedural_report
             .findings
@@ -1109,7 +1110,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             .unwrap(),
         );
     });
-    let exact_report = validate_neutral(&procedural, Vec::new());
+    let exact_report = validate_neutral(&procedural, Vec::new()).expect("resource allocation did not fail");
     assert!(
         !exact_report
             .findings
@@ -1156,7 +1157,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         parameter_range: Some(crate::geometry::DirectedParameterRange::new([-10.0, 0.0]).unwrap()),
     }];
     let ranged_coedge_id = coedge.id.clone();
-    let negative = validate_neutral(&negative_parameterization, Vec::new());
+    let negative = validate_neutral(&negative_parameterization, Vec::new()).expect("resource allocation did not fail");
     assert!(
         !negative
             .findings
@@ -1175,7 +1176,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         .pcurves[0];
     pcurve_use.parameter_range =
         Some(crate::geometry::DirectedParameterRange::new([-11.0, 0.0]).unwrap());
-    let invalid_range = validate_neutral(&negative_parameterization, Vec::new());
+    let invalid_range = validate_neutral(&negative_parameterization, Vec::new()).expect("resource allocation did not fail");
     assert!(invalid_range.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain && finding.message.contains("coedge pcurve range")
     }));
@@ -1297,7 +1298,7 @@ fn a_support_side_whose_points_overflow_misses_its_contract_by_nan() {
     let mut ir = mapped_surface_curve([1.0e300, 2.0e300]);
     ir.model.surfaces[0].geometry = overflowing_plane();
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&ir, &mut findings);
+    check_procedural_support_consistency(&ir, &mut findings).expect("resource allocation did not fail");
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(
         findings[0].message,
@@ -1344,7 +1345,7 @@ fn a_coedge_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_nan() {
     }];
     let coedge_id = coedge.id.as_str().to_owned();
     let mut findings = Vec::new();
-    check_pcurve_surface_consistency(&ir, &mut findings);
+    check_pcurve_surface_consistency(&ir, &mut findings).expect("resource allocation did not fail");
     assert!(
         findings.iter().any(|finding| {
             finding.entity.as_deref() == Some(coedge_id.as_str())
@@ -1401,6 +1402,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
     );
     let seed = crate::scalar::FiniteReal::new(1.0e152).expect("finite seed");
     let parameter = mapped_pcurve_parameter_near_point(&context, &parabola, target, seed, 1.0e300)
+        .expect("resource allocation did not fail")
         .expect("the halved step reaches the target")
         .get();
     assert!(
@@ -1449,7 +1451,7 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
             Point3::new(-1.0e308, 0.0, 0.0),
             seed,
             1.0
-        ),
+        ).expect("resource allocation did not fail"),
         None
     );
     assert_eq!(
@@ -1460,6 +1462,7 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
             seed,
             1.0
         )
+        .expect("resource allocation did not fail")
         .map(crate::scalar::FiniteReal::get),
         Some(-8.0e307)
     );
@@ -1510,7 +1513,7 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
             Point3::new(3.0, 0.5, 0.0),
             seed,
             0.0
-        ),
+        ).expect("resource allocation did not fail"),
         Some(seed)
     );
 }

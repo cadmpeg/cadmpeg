@@ -806,8 +806,8 @@ fn consolidated_analytic_circle_edge_runs(data: &[u8]) -> Vec<ConsolidatedAnalyt
     let records = consolidated_records(data);
     crate::test_support::with_service_context(|ctx| {
         consolidated_analytic_circle_edge_runs_from_records(ctx, data, &records)
-            .expect("service decode")
     })
+    .expect("service decode")
 }
 
 pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
@@ -1652,9 +1652,10 @@ fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeEdgeG
 /// A carrier binds only when record identity or chart geometry determines one
 /// solution. Ambiguous candidates, including matches from different analytic
 /// families, remain unresolved.
-#[must_use]
 #[cfg(test)]
-fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
+fn resolve_consolidated_edge_blocks(
+    data: &[u8],
+) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, CodecError> {
     let records = consolidated_records(data);
     crate::test_support::with_service_context(|ctx| {
         resolve_consolidated_edge_blocks_from_records(
@@ -1663,7 +1664,6 @@ fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdge
             &records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
-        .expect("service decode")
     })
 }
 
@@ -1745,9 +1745,11 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
             )?;
             let mut winners = Vec::new();
             for surface in &surfaces {
-                if let Some(offset) =
-                    nurbs_carrier_offset_surface(&surface.geometry, &partner_points, &anchor_points)
-                {
+                if let Some(offset) = nurbs_carrier_offset_surface(
+                    &surface.geometry,
+                    &partner_points,
+                    &anchor_points,
+                )? {
                     crate::resource::push(
                         ctx,
                         &mut winners,
@@ -1843,8 +1845,8 @@ fn resolve_side_support(
     }
     if let Some(value) = embedded.clone().next() {
         return Ok(pcurve_endpoints_match(pcurve, points, |uv| {
-            b2_cylinder_point(&value.cylinder, uv)
-        })
+            Ok(b2_cylinder_point(&value.cylinder, uv))
+        })?
         .then_some(ConsolidatedSupportBinding::EmbeddedCylinder {
             pos: value.pos,
             wrapper_pos: value.wrapper_pos,
@@ -1852,7 +1854,7 @@ fn resolve_side_support(
     }
     let mut winners = Vec::new();
     for cylinder in carriers.cylinders {
-        if pcurve_endpoints_match(pcurve, points, |uv| b2_cylinder_point(cylinder, uv)) {
+        if pcurve_endpoints_match(pcurve, points, |uv| Ok(b2_cylinder_point(cylinder, uv)))? {
             crate::resource::push(
                 ctx,
                 &mut winners,
@@ -1862,7 +1864,9 @@ fn resolve_side_support(
         }
     }
     for value in carriers.embedded_cylinders {
-        if pcurve_endpoints_match(pcurve, points, |uv| b2_cylinder_point(&value.cylinder, uv)) {
+        if pcurve_endpoints_match(pcurve, points, |uv| {
+            Ok(b2_cylinder_point(&value.cylinder, uv))
+        })? {
             crate::resource::push(
                 ctx,
                 &mut winners,
@@ -1885,7 +1889,7 @@ fn resolve_side_support(
         }
     }
     for cone in carriers.cones {
-        if pcurve_endpoints_match(pcurve, points, |uv| b2_cone_point(cone, uv)) {
+        if pcurve_endpoints_match(pcurve, points, |uv| Ok(b2_cone_point(cone, uv)))? {
             crate::resource::push(
                 ctx,
                 &mut winners,
@@ -1896,11 +1900,14 @@ fn resolve_side_support(
     }
     for sphere in carriers.spheres {
         let geometry = b2_sphere_geometry(sphere);
-        if pcurve_endpoints_match(pcurve, points, |[u, v]| {
-            cadmpeg_ir::eval::surface_point(&geometry, u, v)
-                .ok()
-                .map(FinitePoint3::get)
-        }) {
+        if pcurve_endpoints_match(
+            pcurve,
+            points,
+            |[u, v]| match cadmpeg_ir::eval::surface_point(&geometry, u, v) {
+                Ok(point) => Ok(Some(point.get())),
+                Err(failure) => failure.non_finite(),
+            },
+        )? {
             crate::resource::push(
                 ctx,
                 &mut winners,
@@ -1910,7 +1917,7 @@ fn resolve_side_support(
         }
     }
     for torus in carriers.tori {
-        if pcurve_endpoints_match(pcurve, points, |uv| b2_torus_point(torus, uv)) {
+        if pcurve_endpoints_match(pcurve, points, |uv| b2_torus_point(torus, uv))? {
             crate::resource::push(
                 ctx,
                 &mut winners,
@@ -1920,19 +1927,22 @@ fn resolve_side_support(
         }
     }
     for plane in carriers.planes {
-        if b2_plane_geometry(plane).is_some_and(|geometry| {
-            pcurve_endpoints_match(pcurve, points, |[u, v]| {
-                cadmpeg_ir::eval::surface_point(&geometry, u, v)
-                    .ok()
-                    .map(FinitePoint3::get)
-            })
-        }) {
-            crate::resource::push(
-                ctx,
-                &mut winners,
-                ConsolidatedSupportBinding::Plane { pos: plane.pos },
-                "catia_resolved_side_winners",
-            )?;
+        if let Some(geometry) = b2_plane_geometry(plane) {
+            if pcurve_endpoints_match(
+                pcurve,
+                points,
+                |[u, v]| match cadmpeg_ir::eval::surface_point(&geometry, u, v) {
+                    Ok(point) => Ok(Some(point.get())),
+                    Err(failure) => failure.non_finite(),
+                },
+            )? {
+                crate::resource::push(
+                    ctx,
+                    &mut winners,
+                    ConsolidatedSupportBinding::Plane { pos: plane.pos },
+                    "catia_resolved_side_winners",
+                )?;
+            }
         }
     }
     Ok(match winners.as_slice() {
@@ -2033,13 +2043,12 @@ fn support_points(
             let Some(carrier) = carriers.spheres.iter().find(|value| value.pos == *pos) else {
                 return Ok(None);
             };
-            crate::resource::collect_options(
+            crate::resource::collect_fallible_options(
                 ctx,
                 pcurve.sites.iter().map(|site| {
                     let [u, v] = site.point.get();
-                    // A non-finite site is compared as a finite one is.
                     match cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier), u, v) {
-                        Ok(point) => Some(point.get()),
+                        Ok(point) => Ok(Some(point.get())),
                         Err(failure) => failure.non_finite(),
                     }
                 }),
@@ -2050,7 +2059,7 @@ fn support_points(
             let Some(carrier) = carriers.tori.iter().find(|value| value.pos == *pos) else {
                 return Ok(None);
             };
-            crate::resource::collect_options(
+            crate::resource::collect_fallible_options(
                 ctx,
                 pcurve
                     .sites
@@ -2066,13 +2075,12 @@ fn support_points(
             let Some(geometry) = b2_plane_geometry(carrier) else {
                 return Ok(None);
             };
-            crate::resource::collect_options(
+            crate::resource::collect_fallible_options(
                 ctx,
                 pcurve.sites.iter().map(|site| {
                     let [u, v] = site.point.get();
-                    // A non-finite site is compared as a finite one is.
                     match cadmpeg_ir::eval::surface_point(&geometry, u, v) {
-                        Ok(point) => Some(point.get()),
+                        Ok(point) => Ok(Some(point.get())),
                         Err(failure) => failure.non_finite(),
                     }
                 }),
@@ -2088,17 +2096,22 @@ fn support_points(
             else {
                 return Ok(None);
             };
-            crate::resource::collect_options(
+            crate::resource::collect_fallible_options(
                 ctx,
                 pcurve.sites.iter().map(|site| {
                     let [u, v] = site.point.get();
-                    let partials = nurbs_surface_partials(surface, u, v).ok()?;
-                    let normal = partials.du.cross(partials.dv.get()).unit()?;
-                    Some(Point3::new(
+                    let partials = match nurbs_surface_partials(surface, u, v) {
+                        Ok(partials) => partials,
+                        Err(failure) => return failure.non_finite(),
+                    };
+                    let Some(normal) = partials.du.cross(partials.dv.get()).unit() else {
+                        return Ok(None);
+                    };
+                    Ok(Some(Point3::new(
                         partials.point.x + offset.get() * normal.x,
                         partials.point.y + offset.get() * normal.y,
                         partials.point.z + offset.get() * normal.z,
-                    ))
+                    )))
                 }),
                 "catia_resolved_support_points",
             )?
@@ -2111,13 +2124,16 @@ fn support_points(
 /// The torus point at stored site `[u, v]`. A non-finite point is returned
 /// as the evaluation reached it; the loci comparisons read it as a
 /// disagreement.
-fn b2_torus_point(torus: &B2Torus, [u, v]: [f64; 2]) -> Option<Point3> {
+fn b2_torus_point(
+    torus: &B2Torus,
+    [u, v]: [f64; 2],
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     match cadmpeg_ir::eval::surface_point(
         &b2_torus_geometry(torus),
         u / torus.major_scale.get(),
         v / torus.minor_scale.get(),
     ) {
-        Ok(point) => Some(point.get()),
+        Ok(point) => Ok(Some(point.get())),
         Err(failure) => failure.non_finite(),
     }
 }
@@ -2127,9 +2143,9 @@ fn nurbs_carrier_offset(
     geometry: &SurfaceGeometry,
     parameters: &[[f64; 2]],
     anchors: &[Point3],
-) -> Option<FiniteReal> {
+) -> Result<Option<FiniteReal>, cadmpeg_core::decode::ResourceLimit> {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = geometry else {
-        return None;
+        return Ok(None);
     };
     nurbs_carrier_offset_surface(surface, parameters, anchors)
 }
@@ -2138,26 +2154,32 @@ fn nurbs_carrier_offset_surface(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     parameters: &[[f64; 2]],
     anchors: &[Point3],
-) -> Option<FiniteReal> {
+) -> Result<Option<FiniteReal>, cadmpeg_core::decode::ResourceLimit> {
     if parameters.len() != anchors.len() || parameters.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut first = None::<FiniteReal>;
     for (&[u, v], &anchor) in parameters.iter().zip(anchors) {
-        let partials = nurbs_surface_partials(surface, u, v).ok()?;
+        let partials = match nurbs_surface_partials(surface, u, v) {
+            Ok(partials) => partials,
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+            Err(_) => return Ok(None),
+        };
         let point = partials.point;
         let residual = Vector3::new(anchor.x - point.x, anchor.y - point.y, anchor.z - point.z);
         if residual == Vector3::new(0.0, 0.0, 0.0) {
             if first
                 .is_some_and(|value| value.get().abs() > EPS_SAMPLE_AGREEMENT * value.get().abs())
             {
-                return None;
+                return Ok(None);
             }
             first.get_or_insert(FiniteReal::ZERO);
             continue;
         }
         let residual_length = residual.x.hypot(residual.y).hypot(residual.z);
-        let normal = partials.du.cross(partials.dv.get()).unit()?;
+        let Some(normal) = partials.du.cross(partials.dv.get()).unit() else {
+            return Ok(None);
+        };
         let distance = residual.x * normal.x + residual.y * normal.y + residual.z * normal.z;
         let transverse = Vector3::new(
             residual.x - normal.x * distance,
@@ -2165,24 +2187,26 @@ fn nurbs_carrier_offset_surface(
             residual.z - normal.z * distance,
         );
         let transverse_length = transverse.x.hypot(transverse.y).hypot(transverse.z);
-        let distance = FiniteReal::new(distance)?;
+        let Some(distance) = FiniteReal::new(distance) else {
+            return Ok(None);
+        };
         if !residual_length.is_finite()
             || !transverse_length.is_finite()
             || transverse_length > EPS_TRANSVERSE_RESIDUAL * residual_length
         {
-            return None;
+            return Ok(None);
         }
         if let Some(value) = first {
             if (distance.get() - value.get()).abs()
                 > EPS_SAMPLE_AGREEMENT * distance.get().abs().max(value.get().abs())
             {
-                return None;
+                return Ok(None);
             }
         } else {
             first = Some(distance);
         }
     }
-    first
+    Ok(first)
 }
 
 fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool {
@@ -2202,21 +2226,25 @@ fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool
 fn pcurve_endpoints_match(
     pcurve: &ConsolidatedPcurve,
     vertices: &[FinitePoint3],
-    evaluate: impl Fn([f64; 2]) -> Option<Point3>,
-) -> bool {
+    evaluate: impl Fn([f64; 2]) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit>,
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let (Some(first), Some(last)) = (
         pcurve.sites.first().map(|site| site.point.get()),
         pcurve.sites.last().map(|site| site.point.get()),
     ) else {
-        return false;
+        return Ok(false);
     };
-    [first, last].into_iter().all(|uv| {
-        evaluate(uv).is_some_and(|point| {
+    for uv in [first, last] {
+        let matches = evaluate(uv)?.is_some_and(|point| {
             vertices
                 .iter()
                 .any(|vertex| distance(point, vertex.get()) < 2e-3)
-        })
-    })
+        });
+        if !matches {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// Read `05 08 01` coordinate rows outside every length-closed consolidated
@@ -2337,6 +2365,7 @@ mod tests {
             &[[0.25, 0.25], [0.75, 0.75]],
             &[Point3::new(0.25, 0.25, tiny), Point3::new(0.75, 0.75, tiny)],
         )
+        .expect("evaluator allocation succeeds")
         .expect("constant normal offset");
         assert_eq!(offset.get(), tiny);
 
@@ -2348,11 +2377,13 @@ mod tests {
                     Point3::new(0.25, 0.25, tiny),
                     Point3::new(0.75, 0.75, 2.0 * tiny),
                 ],
-            ),
+            )
+            .expect("evaluator allocation succeeds"),
             None
         );
         assert_eq!(
-            nurbs_carrier_offset(&surface, &[[0.0, 0.0]], &[Point3::new(tiny, 0.0, tiny)],),
+            nurbs_carrier_offset(&surface, &[[0.0, 0.0]], &[Point3::new(tiny, 0.0, tiny)],)
+                .expect("evaluator allocation succeeds"),
             None
         );
         for invalid in [f64::NAN, f64::INFINITY] {
@@ -2364,7 +2395,8 @@ mod tests {
                         Point3::new(0.25, 0.25, tiny),
                         Point3::new(0.75, 0.75, invalid),
                     ],
-                ),
+                )
+                .expect("evaluator allocation succeeds"),
                 None
             );
         }

@@ -5,13 +5,32 @@
 pub mod bezier;
 /// Rational control-polygon speed bounds.
 pub mod bounds;
+pub(crate) mod scratch;
 
 use crate::features::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonZeroReal};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+fn copy_decode_grid<T: Copy>(
+    rows: &[Vec<T>],
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<Vec<Vec<T>>, CodecError> {
+    super::charge_decode_copy::<Vec<T>>(rows.len(), ctx, operation)?;
+    let mut copied = Vec::new();
+    copied
+        .try_reserve_exact(rows.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(rows.len())))?;
+    for row in rows {
+        copied.push(super::copy_decode_slice(row, ctx, operation)?);
+    }
+    Ok(copied)
+}
 
 /// Knot values that are finite and non-decreasing.
 ///
@@ -27,7 +46,7 @@ impl KnotVector {
     /// # Errors
     ///
     /// Refuses a non-finite knot, then a decreasing pair.
-    pub(crate) fn new(knots: Vec<f64>) -> Result<Self, NurbsError> {
+    pub fn new(knots: Vec<f64>) -> Result<Self, NurbsError> {
         require_nondecreasing_knots(&knots)?;
         Ok(Self(knots))
     }
@@ -39,6 +58,11 @@ impl KnotVector {
             return Err(NurbsError::Structure("knots must be non-decreasing".into()));
         }
         Ok(Self(knots))
+    }
+
+    /// Move the admitted knot storage into its owner without copying it.
+    pub fn into_values(self) -> Vec<f64> {
+        self.0
     }
 
     /// Borrow the knot values.
@@ -181,6 +205,16 @@ pub(super) fn non_finite_control_point() -> NurbsError {
 pub trait PoleValue<T>: Copy {
     /// The admitted value, absent when a raw value is not finite.
     fn admit(self) -> Option<T>;
+
+    /// Admit a curve pole lane, retaining its storage when the poles are admitted.
+    fn admit_curve_poles(poles: NurbsPoles3<Self>) -> Result<NurbsPoles3<T>, NurbsError> {
+        poles.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+    }
+
+    /// Admit a surface pole grid, retaining its rows when the poles are admitted.
+    fn admit_surface_poles(grid: NurbsPoleGrid<Self>) -> Result<NurbsPoleGrid<T>, NurbsError> {
+        grid.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+    }
 }
 
 impl PoleValue<FinitePoint3> for Point3 {
@@ -192,6 +226,18 @@ impl PoleValue<FinitePoint3> for Point3 {
 impl PoleValue<FinitePoint3> for FinitePoint3 {
     fn admit(self) -> Option<FinitePoint3> {
         Some(self)
+    }
+
+    fn admit_curve_poles(
+        poles: NurbsPoles3<Self>,
+    ) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
+        Ok(poles)
+    }
+
+    fn admit_surface_poles(
+        grid: NurbsPoleGrid<Self>,
+    ) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
+        Ok(grid)
     }
 }
 
@@ -247,7 +293,7 @@ impl<P: PoleValue<FinitePoint3>> NurbsPoles3<P> {
     ///
     /// Refuses a pole position with a non-finite coordinate.
     fn admit(self) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
-        self.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+        P::admit_curve_poles(self)
     }
 }
 
@@ -489,7 +535,7 @@ impl<P: PoleValue<FinitePoint3>> NurbsPoleGrid<P> {
     ///
     /// Refuses a pole position with a non-finite coordinate.
     fn admit(self) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
-        self.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+        P::admit_surface_poles(self)
     }
 }
 
@@ -997,106 +1043,70 @@ impl<P, W> NurbsSurfaceLanes<P, W> {
     }
 }
 
-impl NurbsSurface {
-    /// Build a surface from admitted finite poles and raw knot lanes without copying them.
-    ///
-    /// # Errors
-    ///
-    /// Refuses inconsistent pole rows, degrees, or knot lanes.
-    pub fn from_admitted(
-        u: NurbsSurfaceAxis<Vec<f64>>,
-        v: NurbsSurfaceAxis<Vec<f64>>,
-        poles: NurbsPoleGrid<FinitePoint3>,
-        normal_reversed: bool,
-    ) -> Result<Self, NurbsError> {
-        let NurbsSurfaceAxis {
-            degree: u_degree,
-            knots: u_knots,
-            periodic: u_periodic,
-        } = u;
-        let NurbsSurfaceAxis {
-            degree: v_degree,
-            knots: v_knots,
-            periodic: v_periodic,
-        } = v;
-        let u_count = poles.u_count();
-        let v_count = poles.v_count();
-        if u_count
-            <= usize::try_from(u_degree)
-                .map_err(|_| NurbsError::Structure("u degree exceeds platform width".into()))?
-        {
-            return Err(NurbsError::Structure(format!(
-                "u_count must exceed u_degree {u_degree}, found {u_count}"
-            )));
-        }
-        if v_count
-            <= usize::try_from(v_degree)
-                .map_err(|_| NurbsError::Structure("v degree exceeds platform width".into()))?
-        {
-            return Err(NurbsError::Structure(format!(
-                "v_count must exceed v_degree {v_degree}, found {v_count}"
-            )));
-        }
-        require_length(
-            "u_knots",
-            u_knots.len(),
-            checked_knot_count("u", u_count, u_degree)?,
-        )?;
-        require_length(
-            "v_knots",
-            v_knots.len(),
-            checked_knot_count("v", v_count, v_degree)?,
-        )?;
-        match &poles {
-            NurbsPoleGrid::Polynomial { rows } => require_rectangular_grid("control_points", rows)?,
-            NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,
-        }
-        let u_knots = KnotVector::new(u_knots)?;
-        let v_knots = KnotVector::new(v_knots)?;
-        Ok(Self {
-            u_degree,
-            v_degree,
-            u_knots,
-            v_knots,
-            poles,
-            normal_reversed,
-            u_periodic,
-            v_periodic,
-        })
+fn require_surface_shape<P, U: KnotValue, V: KnotValue>(
+    u_degree: u32,
+    u_knots: &U,
+    v_degree: u32,
+    v_knots: &V,
+    poles: &NurbsPoleGrid<P>,
+) -> Result<(), NurbsError> {
+    let u_count = poles.u_count();
+    let v_count = poles.v_count();
+    if u_count <= u_degree as usize {
+        return Err(NurbsError::Structure(format!(
+            "u_count must exceed u_degree {u_degree}, found {u_count}"
+        )));
     }
+    if v_count <= v_degree as usize {
+        return Err(NurbsError::Structure(format!(
+            "v_count must exceed v_degree {v_degree}, found {v_count}"
+        )));
+    }
+    require_length(
+        "u_knots",
+        u_knots.knot_count(),
+        checked_knot_count("u", u_count, u_degree)?,
+    )?;
+    require_length(
+        "v_knots",
+        v_knots.knot_count(),
+        checked_knot_count("v", v_count, v_degree)?,
+    )?;
+    match poles {
+        NurbsPoleGrid::Polynomial { rows } => require_rectangular_grid("control_points", rows)?,
+        NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,
+    }
+    Ok(())
+}
 
-    /// Copy the admitted surface with fallible reservations for each owned lane.
-    ///
-    /// # Errors
-    ///
-    /// Returns an allocation error if a lane cannot reserve its storage.
-    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
-        fn copy_rows<T: Clone>(
-            rows: &[Vec<T>],
-        ) -> Result<Vec<Vec<T>>, std::collections::TryReserveError> {
-            let mut copied = Vec::new();
-            copied.try_reserve_exact(rows.len())?;
-            for row in rows {
-                let mut copied_row = Vec::new();
-                copied_row.try_reserve_exact(row.len())?;
-                copied_row.extend_from_slice(row);
-                copied.push(copied_row);
-            }
-            Ok(copied)
-        }
+impl NurbsSurface {
+    /// Copy the admitted lanes through the decode collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        super::charge_decode_copy::<f64>(self.u_knots.len(), ctx, operation)?;
+        let u_knots = self.u_knots.try_clone().map_err(|_| {
+            ctx.refuse_codec_limit(operation, 0, u64_from_index(self.u_knots.len()))
+        })?;
+        super::charge_decode_copy::<f64>(self.v_knots.len(), ctx, operation)?;
+        let v_knots = self.v_knots.try_clone().map_err(|_| {
+            ctx.refuse_codec_limit(operation, 0, u64_from_index(self.v_knots.len()))
+        })?;
         let poles = match &self.poles {
             NurbsPoleGrid::Polynomial { rows } => NurbsPoleGrid::Polynomial {
-                rows: copy_rows(rows)?,
+                rows: copy_decode_grid(rows, ctx, operation)?,
             },
             NurbsPoleGrid::Rational { rows } => NurbsPoleGrid::Rational {
-                rows: copy_rows(rows)?,
+                rows: copy_decode_grid(rows, ctx, operation)?,
             },
         };
         Ok(Self {
             u_degree: self.u_degree,
             v_degree: self.v_degree,
-            u_knots: self.u_knots.try_clone()?,
-            v_knots: self.v_knots.try_clone()?,
+            u_knots,
+            v_knots,
             poles,
             normal_reversed: self.normal_reversed,
             u_periodic: self.u_periodic,
@@ -1131,32 +1141,7 @@ impl NurbsSurface {
             knots: v_knots,
             periodic: v_periodic,
         } = v;
-        let u_count = poles.u_count();
-        let v_count = poles.v_count();
-        if u_count <= u_degree as usize {
-            return Err(NurbsError::Structure(format!(
-                "u_count must exceed u_degree {u_degree}, found {u_count}"
-            )));
-        }
-        if v_count <= v_degree as usize {
-            return Err(NurbsError::Structure(format!(
-                "v_count must exceed v_degree {v_degree}, found {v_count}"
-            )));
-        }
-        require_length(
-            "u_knots",
-            u_knots.knot_count(),
-            checked_knot_count("u", u_count, u_degree)?,
-        )?;
-        require_length(
-            "v_knots",
-            v_knots.knot_count(),
-            checked_knot_count("v", v_count, v_degree)?,
-        )?;
-        match &poles {
-            NurbsPoleGrid::Polynomial { rows } => require_rectangular_grid("control_points", rows)?,
-            NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,
-        }
+        require_surface_shape(u_degree, &u_knots, v_degree, &v_knots, &poles)?;
         let poles = poles.admit()?;
         let u_knots = u_knots
             .admit()
@@ -1164,6 +1149,36 @@ impl NurbsSurface {
         let v_knots = v_knots
             .admit()
             .map_err(|error| NurbsError::Structure(format!("v_{error}")))?;
+        Ok(Self {
+            u_degree,
+            v_degree,
+            u_knots,
+            v_knots,
+            poles,
+            normal_reversed,
+            u_periodic,
+            v_periodic,
+        })
+    }
+
+    /// Build a surface from owned admitted knots and pole rows without copying them.
+    pub fn from_admitted_grid(
+        u: NurbsSurfaceAxis<KnotVector>,
+        v: NurbsSurfaceAxis<KnotVector>,
+        poles: NurbsPoleGrid<FinitePoint3>,
+        normal_reversed: bool,
+    ) -> Result<Self, NurbsError> {
+        let NurbsSurfaceAxis {
+            degree: u_degree,
+            knots: u_knots,
+            periodic: u_periodic,
+        } = u;
+        let NurbsSurfaceAxis {
+            degree: v_degree,
+            knots: v_knots,
+            periodic: v_periodic,
+        } = v;
+        require_surface_shape(u_degree, &u_knots, v_degree, &v_knots, &poles)?;
         Ok(Self {
             u_degree,
             v_degree,
@@ -1440,22 +1455,30 @@ pub struct NurbsCurve {
 }
 
 impl NurbsCurve {
-    /// Assemble admitted lanes without copying their allocations.
-    ///
-    /// # Errors
-    /// Refuses a degree or lane count that does not define a NURBS curve.
-    pub fn from_admitted_parts(
-        degree: u32,
-        knots: KnotVector,
-        poles: NurbsPoles3<FinitePoint3>,
-        periodic: bool,
-    ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+    /// Copy the admitted lanes through the decode collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        super::charge_decode_copy::<f64>(self.knots.len(), ctx, operation)?;
+        let knots = self
+            .knots
+            .try_clone()
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.knots.len())))?;
+        let poles = match &self.poles {
+            NurbsPoles3::Polynomial { points } => NurbsPoles3::Polynomial {
+                points: super::copy_decode_slice(points, ctx, operation)?,
+            },
+            NurbsPoles3::Rational { points } => NurbsPoles3::Rational {
+                points: super::copy_decode_slice(points, ctx, operation)?,
+            },
+        };
         Ok(Self {
-            degree,
+            degree: self.degree,
             knots,
             poles,
-            periodic,
+            periodic: self.periodic,
         })
     }
 
@@ -1496,12 +1519,34 @@ impl NurbsCurve {
         &self.knots
     }
 
+    /// Move the curve lanes to a caller that will rebuild a checked curve.
+    pub fn into_parts(self) -> (u32, KnotVector, NurbsPoles3<FinitePoint3>, bool) {
+        (self.degree, self.knots, self.poles, self.periodic)
+    }
+
     /// Atomically edit knot values and preserve their invariants.
     pub fn edit_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
         let mut values = self.knots.to_vec();
         edit(&mut values);
         self.knots = KnotVector::new(values)?;
         Ok(())
+    }
+
+    /// Replace the knot vector of an owned curve without copying its poles.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a knot count inconsistent with the degree and pole count, a
+    /// non-finite knot, or a decreasing pair.
+    pub fn with_knots(mut self, knots: Vec<f64>) -> Result<Self, NurbsError> {
+        require_curve_cardinality(
+            self.degree,
+            knots.len(),
+            self.poles.count(),
+            "control_points",
+        )?;
+        self.knots = KnotVector::new(knots)?;
+        Ok(self)
     }
 
     /// Build a NURBS curve from a source's pole lane and weight lane.
@@ -1556,6 +1601,35 @@ impl NurbsCurve {
         &self.poles
     }
 
+    /// Copy an admitted curve with fallible allocations for its knot and pole lanes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an allocation error when either lane cannot reserve its storage.
+    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
+        let knots = self.knots.try_clone()?;
+        let poles = match &self.poles {
+            NurbsPoles3::Polynomial { points } => {
+                let mut copy = Vec::new();
+                copy.try_reserve_exact(points.len())?;
+                copy.extend_from_slice(points);
+                NurbsPoles3::Polynomial { points: copy }
+            }
+            NurbsPoles3::Rational { points } => {
+                let mut copy = Vec::new();
+                copy.try_reserve_exact(points.len())?;
+                copy.extend_from_slice(points);
+                NurbsPoles3::Rational { points: copy }
+            }
+        };
+        Ok(Self {
+            degree: self.degree,
+            knots,
+            poles,
+            periodic: self.periodic,
+        })
+    }
+
     /// Control points in parameter order.
     #[must_use]
     pub fn control_points(&self) -> Vec<FinitePoint3> {
@@ -1589,6 +1663,26 @@ impl NurbsCurve {
     ) -> Result<(), NurbsError> {
         self.poles = self.poles.clone().try_map_points(map)?;
         Ok(())
+    }
+
+    /// Map the poles of an owned curve in place. An error discards the curve.
+    pub fn try_map_owned_control_points<E>(
+        mut self,
+        mut map: impl FnMut(FinitePoint3) -> Result<FinitePoint3, E>,
+    ) -> Result<Self, E> {
+        match &mut self.poles {
+            NurbsPoles3::Polynomial { points } => {
+                for point in points {
+                    *point = map(*point)?;
+                }
+            }
+            NurbsPoles3::Rational { points } => {
+                for pole in points {
+                    pole.point = map(pole.point)?;
+                }
+            }
+        }
+        Ok(self)
     }
 
     /// Rational weights in pole order.

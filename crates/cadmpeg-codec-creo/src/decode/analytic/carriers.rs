@@ -70,12 +70,13 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let carriers = placed_carriers(scan, ir, source_carriers);
     let solved_vertices = solved_topological_vertices(
+        ctx,
         scan,
         ir,
         &carriers,
         nurbs_endpoint_witnesses,
         source_carriers,
-    );
+    )?;
     let vertex_faces =
         crate::topology::vertex_incident_faces(&scan.topology.vertices, &scan.topology.half_edges);
     let unique_rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows);

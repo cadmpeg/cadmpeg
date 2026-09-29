@@ -144,7 +144,7 @@ fn blank_parameter_field_is_an_omitted_value() {
         .unwrap();
 
     assert_eq!(result.ir().model.points.len(), 1);
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 

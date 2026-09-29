@@ -1017,13 +1017,13 @@ pub(crate) fn enrich_feature_object_sources(
         .iter_mut()
         .filter(|feature| feature.source_id.is_none())
     {
-        let sources = lanes
+        let mut sources = lanes
             .iter()
-            .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value())
-            .collect::<HashSet<_>>();
-        let mut sources = sources.into_iter();
-        if let (Some(source), None) = (sources.next(), sources.next()) {
-            feature.source_id = FeatureSource::from_value(source);
+            .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value());
+        if let Some(source) = sources.next() {
+            if sources.all(|candidate| candidate == source) {
+                feature.source_id = FeatureSource::from_value(source);
+            }
         }
     }
 }

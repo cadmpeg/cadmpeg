@@ -2,6 +2,8 @@
 //! Resolved section point coordinates from variables, dimensions, and equations.
 
 use super::axis::SectionAxis;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -184,15 +186,17 @@ fn append_unique_auxiliary_coordinate_constraints(
 }
 
 fn solve_section_coordinates_with_derived_constraints(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     equations: &mut Vec<SectionCoordinateEquation>,
     stored_coordinates: &BTreeMap<(u32, SectionAxis), f64>,
-    point_on_line_constraints: &[(u32, u32, u32)],
-    equal_length_constraints: &[SectionEqualLengthConstraint],
+    geometric_constraints: (&[(u32, u32, u32)], &[SectionEqualLengthConstraint]),
     auxiliary_constraints: &SectionEquationAuxiliaryConstraints,
     auxiliary_scalar_values: &mut BTreeMap<SectionScalarVariable, Option<f64>>,
-) -> BTreeMap<u32, [Option<f64>; 2]> {
-    let mut solved_coordinates = solve_section_coordinate_equations(equations, stored_coordinates);
+) -> Result<BTreeMap<u32, [Option<f64>; 2]>, CodecError> {
+    let (point_on_line_constraints, equal_length_constraints) = geometric_constraints;
+    let mut solved_coordinates =
+        solve_section_coordinate_equations(ctx, equations, stored_coordinates)?;
     let max_passes = point_on_line_constraints
         .len()
         .saturating_add(equal_length_constraints.len())
@@ -204,7 +208,8 @@ fn solve_section_coordinates_with_derived_constraints(
         if append_point_on_line_equations(point_on_line_constraints, &solved_coordinates, equations)
         {
             appended = true;
-            solved_coordinates = solve_section_coordinate_equations(equations, stored_coordinates);
+            solved_coordinates =
+                solve_section_coordinate_equations(ctx, equations, stored_coordinates)?;
         }
         if append_equal_length_coordinate_values(
             equal_length_constraints,
@@ -212,7 +217,8 @@ fn solve_section_coordinates_with_derived_constraints(
             equations,
         ) {
             appended = true;
-            solved_coordinates = solve_section_coordinate_equations(equations, stored_coordinates);
+            solved_coordinates =
+                solve_section_coordinate_equations(ctx, equations, stored_coordinates)?;
         }
         let previous_scalar_values = auxiliary_scalar_values.clone();
         for (variable, value) in
@@ -230,18 +236,20 @@ fn solve_section_coordinates_with_derived_constraints(
             )
         {
             appended = true;
-            solved_coordinates = solve_section_coordinate_equations(equations, stored_coordinates);
+            solved_coordinates =
+                solve_section_coordinate_equations(ctx, equations, stored_coordinates)?;
         }
         if !appended {
             break;
         }
     }
-    solved_coordinates
+    Ok(solved_coordinates)
 }
 
 pub(in crate::decode) fn resolved_section_coordinates(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> BTreeMap<u32, [Option<f64>; 2]> {
+) -> Result<BTreeMap<u32, [Option<f64>; 2]>, CodecError> {
     let (points, ambiguous_point_ids) = match &definition.variables {
         Some(variables) if variables.is_complete() => variables.reconciled_points(),
         Some(_) => (BTreeMap::new(), BTreeSet::new()),
@@ -609,24 +617,25 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &mut equations,
     );
     let unsigned_coordinates = solve_unsigned_dimension_coordinates(
+        ctx,
         &equations,
         &stored_coordinates,
         &unsigned_dimension_candidates,
-    );
+    )?;
     for ((point, coordinate), value) in unsigned_coordinates {
         equations.push(SectionCoordinateEquation::point_value(
             point, coordinate, value,
         ));
     }
     let solved_coordinates = solve_section_coordinates_with_derived_constraints(
+        ctx,
         definition,
         &mut equations,
         &stored_coordinates,
-        &point_on_line_constraints,
-        &equal_length_constraints,
+        (&point_on_line_constraints, &equal_length_constraints),
         &auxiliary_constraints,
         &mut auxiliary_scalar_values,
-    );
+    )?;
     for constraint in section_equation_radial_constraints_with_scalar_values(
         definition,
         &solved_coordinates,
@@ -649,24 +658,25 @@ pub(in crate::decode) fn resolved_section_coordinates(
         }
     }
     let second_unsigned_coordinates = solve_unsigned_dimension_coordinates(
+        ctx,
         &equations,
         &stored_coordinates,
         &unsigned_dimension_candidates,
-    );
+    )?;
     for ((point, coordinate), value) in second_unsigned_coordinates {
         equations.push(SectionCoordinateEquation::point_value(
             point, coordinate, value,
         ));
     }
     let solved_coordinates = solve_section_coordinates_with_derived_constraints(
+        ctx,
         definition,
         &mut equations,
         &stored_coordinates,
-        &point_on_line_constraints,
-        &equal_length_constraints,
+        (&point_on_line_constraints, &equal_length_constraints),
         &auxiliary_constraints,
         &mut auxiliary_scalar_values,
-    );
+    )?;
     let arc_midpoint_constraints = active_complete_section_skamps(definition)
         .filter_map(|skamp| {
             section_skamp_arc_midpoint_source(definition, skamp, &solved_coordinates)
@@ -685,7 +695,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
             ));
         }
     }
-    solve_section_coordinate_equations(&equations, &stored_coordinates)
+    solve_section_coordinate_equations(ctx, &equations, &stored_coordinates)
 }
 
 pub(in crate::decode) fn section_linear_distance_coordinate(
@@ -807,12 +817,13 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
 }
 
 pub(in crate::decode) fn resolved_section_points(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> BTreeMap<u32, [f64; 2]> {
-    resolved_section_coordinates(definition)
+) -> Result<BTreeMap<u32, [f64; 2]>, CodecError> {
+    Ok(resolved_section_coordinates(ctx, definition)?
         .into_iter()
         .filter_map(|(point, [u, v])| Some((point, [u?, v?])))
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]
@@ -991,7 +1002,9 @@ mod tests {
     fn incomplete_unique_ordinary_rows_supply_coincidence_point_ids() {
         let definition = incomplete_segment_definition();
         assert_eq!(
-            resolved_section_points(&definition).get(&2),
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+                .expect("test section solve")
+                .get(&2),
             Some(&[2.0, 3.0])
         );
 
@@ -1016,7 +1029,14 @@ mod tests {
                     ..duplicate
                 },
             ));
-        assert!(!resolved_section_points(&duplicate_ordinary).contains_key(&2));
+        assert!(
+            !crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+                ctx,
+                &duplicate_ordinary
+            ))
+            .expect("test section solve")
+            .contains_key(&2)
+        );
 
         let mut duplicate_family = definition;
         duplicate_family
@@ -1031,7 +1051,14 @@ mod tests {
                     offset: 2,
                 },
             ));
-        assert!(!resolved_section_points(&duplicate_family).contains_key(&2));
+        assert!(
+            !crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+                ctx,
+                &duplicate_family
+            ))
+            .expect("test section solve")
+            .contains_key(&2)
+        );
     }
 
     #[test]
@@ -1238,7 +1265,9 @@ mod tests {
         };
 
         assert_eq!(
-            resolved_section_points(&definition).get(&30),
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+                .expect("test section solve")
+                .get(&30),
             Some(&[5.0, 5.0])
         );
     }
@@ -1326,7 +1355,9 @@ mod tests {
         };
 
         assert_eq!(
-            resolved_section_points(&definition).get(&30),
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+                .expect("test section solve")
+                .get(&30),
             Some(&[0.0, 4.0])
         );
     }
@@ -1415,7 +1446,9 @@ mod tests {
         };
 
         assert_eq!(
-            resolved_section_points(&definition).get(&40),
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+                .expect("test section solve")
+                .get(&40),
             Some(&[4.0, 0.0])
         );
     }
@@ -1485,7 +1518,9 @@ mod tests {
         };
 
         assert_eq!(
-            resolved_section_points(&definition).get(&30),
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+                .expect("test section solve")
+                .get(&30),
             Some(&[2.0, 3.0])
         );
     }
@@ -1562,7 +1597,9 @@ mod tests {
         };
 
         assert_eq!(
-            resolved_section_points(&definition).get(&40),
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+                .expect("test section solve")
+                .get(&40),
             Some(&[5.0, 1.0])
         );
     }
@@ -1649,7 +1686,9 @@ mod tests {
             crate::feature::definitions::ScalarLane::DimensionDriven;
 
         assert_eq!(
-            resolved_section_points(&definition).get(&40),
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+                .expect("test section solve")
+                .get(&40),
             Some(&[3.0, 1.0])
         );
     }
@@ -1747,12 +1786,18 @@ mod tests {
         };
 
         assert_eq!(
-            resolved_section_points(&definition).get(&40),
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+                .expect("test section solve")
+                .get(&40),
             Some(&[3.0, 1.0])
         );
         assert_eq!(
-            resolved_section_scalar_values(&definition)
-                .get(&(crate::feature::definitions::VariableType::Radius, 42)),
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+                ctx,
+                &definition
+            ))
+            .expect("test section solve")
+            .get(&(crate::feature::definitions::VariableType::Radius, 42)),
             Some(&2.0)
         );
     }

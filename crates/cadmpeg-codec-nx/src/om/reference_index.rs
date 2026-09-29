@@ -10,8 +10,8 @@ enum Encoding {
     PayloadWord([u8; 3]),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(try_from = "ReferenceIndexWire", into = "ReferenceIndexWire")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(try_from = "ReferenceIndexWire")]
 pub(crate) struct ReferenceIndexToken(Encoding);
 
 impl ReferenceIndexToken {
@@ -65,8 +65,8 @@ impl ReferenceIndexToken {
 }
 
 /// Required index restricted to the direct/compact/word feature grammar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(try_from = "ReferenceIndexWire", into = "ReferenceIndexWire")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(try_from = "ReferenceIndexWire")]
 pub(crate) struct FeatureReferenceToken(ReferenceIndexToken);
 
 impl FeatureReferenceToken {
@@ -100,8 +100,10 @@ impl FeatureReferenceToken {
     }
 }
 
+#[cfg(test)]
 impl From<FeatureReferenceToken> for ReferenceIndexWire {
     fn from(token: FeatureReferenceToken) -> Self {
+        TOKEN_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             object_index: token.value(),
             raw_object_index: token.raw().to_vec(),
@@ -149,8 +151,8 @@ impl CanonicalFeatureReferenceToken {
 }
 
 /// Required index restricted to the payload `f0`/`f1` grammar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(try_from = "ReferenceIndexWire", into = "ReferenceIndexWire")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(try_from = "ReferenceIndexWire")]
 pub(crate) struct PayloadIndexToken(ReferenceIndexToken);
 
 impl PayloadIndexToken {
@@ -174,14 +176,58 @@ impl PayloadIndexToken {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
 struct ReferenceIndexWire {
     object_index: u32,
     raw_object_index: Vec<u8>,
 }
 
+#[derive(serde::Serialize)]
+struct ReferenceIndexRef<'a> {
+    object_index: u32,
+    raw_object_index: &'a [u8],
+}
+
+impl serde::Serialize for ReferenceIndexToken {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ReferenceIndexRef {
+            object_index: self.value(),
+            raw_object_index: self.raw(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl serde::Serialize for FeatureReferenceToken {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ReferenceIndexRef {
+            object_index: self.value(),
+            raw_object_index: self.raw(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl serde::Serialize for PayloadIndexToken {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ReferenceIndexRef {
+            object_index: self.value(),
+            raw_object_index: self.raw(),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static TOKEN_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<ReferenceIndexToken> for ReferenceIndexWire {
     fn from(token: ReferenceIndexToken) -> Self {
+        TOKEN_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             object_index: token.value(),
             raw_object_index: token.raw().to_vec(),
@@ -197,8 +243,10 @@ impl TryFrom<ReferenceIndexWire> for ReferenceIndexToken {
     }
 }
 
+#[cfg(test)]
 impl From<PayloadIndexToken> for ReferenceIndexWire {
     fn from(token: PayloadIndexToken) -> Self {
+        TOKEN_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             object_index: token.value(),
             raw_object_index: token.raw().to_vec(),
@@ -215,7 +263,78 @@ impl TryFrom<ReferenceIndexWire> for PayloadIndexToken {
 
 #[cfg(test)]
 mod tests {
-    use super::ReferenceIndexToken;
+    use super::{
+        FeatureReferenceToken, PayloadIndexToken, ReferenceIndexToken, ReferenceIndexWire,
+        TOKEN_INTO_WIRE_COUNT,
+    };
+
+    fn assert_borrowed_token<T: serde::Serialize>(
+        token: &T,
+        old_wire: &ReferenceIndexWire,
+        id: &'static str,
+    ) {
+        #[derive(serde::Serialize)]
+        struct Record<'a, T> {
+            id: &'static str,
+            value: &'a T,
+        }
+
+        assert_eq!(
+            serde_json::to_vec(token).unwrap(),
+            serde_json::to_vec(&old_wire).unwrap()
+        );
+        let expected = serde_json::json!({"id": id, "value": old_wire});
+        TOKEN_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &Record { id, value: token },
+            expected,
+        );
+        TOKEN_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    }
+
+    #[test]
+    fn reference_index_token_borrowed_wire_refuses_before_vec_conversion() {
+        for (value, raw) in [
+            (0, &[0][..]),
+            (255, &[0xf0, 255][..]),
+            (256, &[0xf1, 1, 0][..]),
+        ] {
+            let token = ReferenceIndexToken::from_wire(value, raw).unwrap();
+            assert_borrowed_token(
+                &token,
+                &ReferenceIndexWire::from(token),
+                "nx:test:reference-index#1",
+            );
+        }
+    }
+
+    #[test]
+    fn feature_reference_token_borrowed_wire_refuses_before_vec_conversion() {
+        for (value, raw) in [(0, &[0][..]), (0, &[0x80, 0][..]), (256, &[0x90, 1, 0][..])] {
+            let token = FeatureReferenceToken::from_wire(value, raw).unwrap();
+            assert_borrowed_token(
+                &token,
+                &ReferenceIndexWire::from(token),
+                "nx:test:feature-reference#1",
+            );
+        }
+    }
+
+    #[test]
+    fn payload_reference_token_borrowed_wire_refuses_before_vec_conversion() {
+        for (value, raw) in [
+            (0, &[0xf0, 0][..]),
+            (255, &[0xf0, 255][..]),
+            (256, &[0xf1, 1, 0][..]),
+        ] {
+            let token = PayloadIndexToken::from_wire(value, raw).unwrap();
+            assert_borrowed_token(
+                &token,
+                &ReferenceIndexWire::from(token),
+                "nx:test:payload-reference#1",
+            );
+        }
+    }
 
     #[test]
     fn reference_grammars_preserve_marker_and_width() {

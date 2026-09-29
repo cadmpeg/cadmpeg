@@ -47,7 +47,7 @@ impl<T, O: Copy + Add<Output = O> + From<u16>> CountedLane<T, O> {
             offset: self.offset + O::from(COUNTED_PREFIX),
         }
     }
-    pub(crate) fn members(&self) -> impl Iterator<Item = PositionedIndex<'_, T, O>> {
+    pub(crate) fn members(&self) -> impl Iterator<Item = PositionedIndex<'_, T, O>> + Clone {
         let mut offset = self.anchor().offset + O::from(self.anchor.atom.raw().len() as u16);
         self.members.as_slice().iter().map(move |index| {
             let position = PositionedIndex {
@@ -72,6 +72,34 @@ impl<T> CountedLane<T, usize> {
 }
 
 impl<O> CountedLane<(), O> {
+    pub(crate) fn try_resolve_charged<T>(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut resolve: impl FnMut(CompactIndexAtom) -> Option<T>,
+    ) -> Result<Option<CountedLane<T, O>>, cadmpeg_core::CodecError> {
+        let Some(target) = resolve(self.anchor.atom) else {
+            return Ok(None);
+        };
+        let anchor = CompactIndexTarget {
+            atom: self.anchor.atom,
+            target,
+        };
+        let Some(members) = self.members.try_map_charged(ctx, |index| {
+            Some(CompactIndexTarget {
+                atom: index.atom,
+                target: resolve(index.atom)?,
+            })
+        })?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(CountedLane {
+            offset: self.offset,
+            anchor,
+            members,
+        }))
+    }
+    #[cfg(test)]
     pub(crate) fn try_resolve<T>(
         self,
         mut resolve: impl FnMut(CompactIndexAtom) -> Option<T>,

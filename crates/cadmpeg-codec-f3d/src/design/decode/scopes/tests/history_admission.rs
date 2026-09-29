@@ -7,6 +7,14 @@ use crate::history_records::{
 };
 use crate::records::feature::scope::DesignParameterScope;
 
+fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    run(&ctx)
+}
+
 fn history_state(state_id: i64, previous_state_id: Option<i64>) -> AsmDeltaState {
     AsmDeltaState {
         id: format!("history:state#{state_id}"),
@@ -72,6 +80,23 @@ fn scope(
 }
 
 #[test]
+fn history_bound_scope_admission_reports_collection_limit() {
+    let mut scopes = vec![scope(42, 100, 7, 6)];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    let error = admit_history_bound_scope_variants(&ctx, &mut scopes, &[])
+        .expect_err("one scope exceeds the collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "f3d scope admission")
+    );
+}
+
+#[test]
 fn retains_the_unique_history_bound_scope_envelope() {
     let mut scopes = vec![scope(42, 200, 9, 8), scope(42, 100, 7, 6)];
     let histories = [history(vec![
@@ -79,7 +104,8 @@ fn retains_the_unique_history_bound_scope_envelope() {
         history_state(6, None),
     ])];
 
-    admit_history_bound_scope_variants(&mut scopes, &histories).expect("unique envelope");
+    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut scopes, &histories))
+        .expect("unique envelope");
 
     assert_eq!(scopes.len(), 1);
     assert_eq!(scopes[0].byte_offset(), 100);
@@ -94,7 +120,10 @@ fn refuses_duplicate_scope_envelopes_without_one_history_binding() {
         history_state(9, Some(8)),
     ])];
 
-    assert!(admit_history_bound_scope_variants(&mut scopes, &histories).is_err());
+    assert!(
+        with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut scopes, &histories))
+            .is_err()
+    );
 }
 
 #[test]
@@ -162,7 +191,8 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
 
     let mut scopes = vec![older, newer];
-    admit_history_bound_scope_variants(&mut scopes, &[]).expect("equivalent envelope");
+    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut scopes, &[]))
+        .expect("equivalent envelope");
 
     assert_eq!(scopes.len(), 1);
     assert_eq!(scopes[0].byte_offset(), 200);
@@ -213,10 +243,13 @@ fn thicken_variants(first: f64, second: f64) -> Vec<DesignParameterScope> {
 #[test]
 fn scope_variants_that_differ_in_a_payload_float_are_not_equivalent() {
     let mut equivalent = thicken_variants(-1.0, -1.0);
-    admit_history_bound_scope_variants(&mut equivalent, &[]).expect("equivalent envelopes");
+    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut equivalent, &[]))
+        .expect("equivalent envelopes");
     assert_eq!(equivalent.len(), 1);
     assert_eq!(equivalent[0].byte_offset(), 200);
 
     let mut different = thicken_variants(-1.0, -1.0 - f64::EPSILON);
-    assert!(admit_history_bound_scope_variants(&mut different, &[]).is_err());
+    assert!(
+        with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut different, &[])).is_err()
+    );
 }

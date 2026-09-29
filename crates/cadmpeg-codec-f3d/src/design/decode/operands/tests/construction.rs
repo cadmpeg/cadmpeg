@@ -626,6 +626,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     )
     .unwrap();
     let (plane_features, _) = project_parameter_design_with_edge_identities(
+        None,
         &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],

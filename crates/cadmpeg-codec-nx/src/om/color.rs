@@ -22,12 +22,13 @@ impl PaletteIndex {
         u16::from(self.0)
     }
 
+    #[cfg(test)]
     pub(crate) fn definition_raw(self) -> Vec<u8> {
         let (bytes, width) = self.definition_token();
         bytes[..width].to_vec()
     }
 
-    pub(super) fn definition_token(self) -> ([u8; 2], usize) {
+    pub(crate) fn definition_token(self) -> ([u8; 2], usize) {
         if self.0 < 128 {
             ([self.0, 0], 1)
         } else {
@@ -43,12 +44,18 @@ impl PaletteIndex {
         }
     }
 
-    pub(crate) fn display_raw(self) -> Vec<u8> {
+    pub(crate) fn display_token(self) -> ([u8; 2], usize) {
         if self.0 < 128 {
-            vec![self.0]
+            ([self.0, 0], 1)
         } else {
-            vec![0x80, self.0]
+            ([0x80, self.0], 2)
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn display_raw(self) -> Vec<u8> {
+        let (raw, width) = self.display_token();
+        raw[..width].to_vec()
     }
 
     pub(super) fn read_display(raw: &[u8]) -> Option<Self> {

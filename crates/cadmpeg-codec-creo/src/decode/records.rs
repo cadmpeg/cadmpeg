@@ -2300,400 +2300,411 @@ pub(super) fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExp
         .collect()
 }
 
-pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
+pub(super) fn sketch_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<CreoSketchRecord>, cadmpeg_core::CodecError> {
     scan.features
         .definitions
         .iter()
         .filter(|definition| feature_definition_has_sketch_design(definition))
-        .map(|definition| CreoSketchRecord {
-            id: feature_sketch_record_id_in_scan(scan, definition),
-            definition_id: definition.identity.id(),
-            owner_feature_id: definition.identity.owner_feature_id(),
-            source_section: source_section(scan, definition.offset),
-            offset: definition.offset,
-            section_3d: definition
-                .section_3d
-                .as_ref()
-                .map(|section| CreoSketchSection3d {
-                    sketch_plane_entity_id: section.sketch_plane_entity_id,
-                    sketch_plane_flip: section.sketch_plane_flip.map(binary_flag_value),
-                    reference_planes: section.reference_planes.clone(),
-                    reference_plane_datum_geometry_id: section.reference_plane_datum_geometry_id,
-                    orientation: CreoSketchSectionOrientation {
-                        section_flip: section.orientation.section_flip.map(binary_flag_value),
-                        reference_type: section.orientation.reference_type,
-                        segment_id: section.orientation.segment_id,
-                        reference_flip: section.orientation.reference_flip.map(binary_flag_value),
-                    },
-                    dimension_ids: section.dimension_ids.clone(),
-                    offset: section.offset,
-                }),
-            table_headers: sketch_table_headers(definition),
-            section_points: sketch_section_point_records(definition),
-            solved_external_ids: definition
-                .trim_entities
-                .as_ref()
-                .map_or_else(Vec::new, |table| table.solved_external_ids.clone()),
-            variables: {
-                let resolved_coordinates = resolved_section_coordinates(definition);
-                let resolved_radii = resolved_section_radii(definition);
-                let resolved_scalars = resolved_section_scalar_values(definition);
-                definition
-                    .variables
+        .map(|definition| {
+            Ok(CreoSketchRecord {
+                id: feature_sketch_record_id_in_scan(scan, definition),
+                definition_id: definition.identity.id(),
+                owner_feature_id: definition.identity.owner_feature_id(),
+                source_section: source_section(scan, definition.offset),
+                offset: definition.offset,
+                section_3d: definition
+                    .section_3d
+                    .as_ref()
+                    .map(|section| CreoSketchSection3d {
+                        sketch_plane_entity_id: section.sketch_plane_entity_id,
+                        sketch_plane_flip: section.sketch_plane_flip.map(binary_flag_value),
+                        reference_planes: section.reference_planes.clone(),
+                        reference_plane_datum_geometry_id: section
+                            .reference_plane_datum_geometry_id,
+                        orientation: CreoSketchSectionOrientation {
+                            section_flip: section.orientation.section_flip.map(binary_flag_value),
+                            reference_type: section.orientation.reference_type,
+                            segment_id: section.orientation.segment_id,
+                            reference_flip: section
+                                .orientation
+                                .reference_flip
+                                .map(binary_flag_value),
+                        },
+                        dimension_ids: section.dimension_ids.clone(),
+                        offset: section.offset,
+                    }),
+                table_headers: sketch_table_headers(definition),
+                section_points: sketch_section_point_records(definition),
+                solved_external_ids: definition
+                    .trim_entities
+                    .as_ref()
+                    .map_or_else(Vec::new, |table| table.solved_external_ids.clone()),
+                variables: {
+                    let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
+                    let resolved_radii = resolved_section_radii(ctx, definition)?;
+                    let resolved_scalars = resolved_section_scalar_values(ctx, definition)?;
+                    definition
+                        .variables
+                        .iter()
+                        .flat_map(|table| &table.rows)
+                        .map(|row| CreoSketchVariable {
+                            variable_type: row.variable_type.code(),
+                            key: row.key,
+                            value: row.value,
+                            value_body: row.value_body.clone(),
+                            guess: row.guess,
+                            guess_body: row.guess_body.clone(),
+                            known: row.known,
+                            homogeneity: row.homogeneity,
+                            uvar_id: row.uvar_id,
+                            resolved_value: match row.variable_type {
+                                VariableType::U => resolved_coordinates
+                                    .get(&row.key)
+                                    .and_then(|point| point[0]),
+                                VariableType::V => resolved_coordinates
+                                    .get(&row.key)
+                                    .and_then(|point| point[1]),
+                                VariableType::Radius => resolved_radii.get(&row.key).copied(),
+                                _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
+                            },
+                            offset: row.offset,
+                        })
+                        .collect()
+                },
+                equations: crate::feature::definitions::equation_table(
+                    &definition.body,
+                    0,
+                    definition.body.len(),
+                )
+                .into_iter()
+                .flat_map(|table| table.rows)
+                .map(|equation| CreoSketchEquation {
+                    equation_id: equation.equation_id,
+                    function_id: equation.function_id,
+                    explicit_argument_count: equation.explicit_argument_count,
+                    arguments: equation.arguments,
+                    arguments_body: equation.arguments_body,
+                    auxiliary_body: equation.auxiliary_body,
+                    body: equation.body,
+                    offset: equation.offset,
+                })
+                .collect(),
+                segments: definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| table.rows.ordinary())
+                    .map(|segment| CreoSketchSegment {
+                        external_id: segment.external_id,
+                        kind: match segment.kind {
+                            crate::feature::definitions::FeatureSegmentKind::Line(_) => "line",
+                            crate::feature::definitions::FeatureSegmentKind::Arc(_) => "arc",
+                            crate::feature::definitions::FeatureSegmentKind::Point(_) => "point",
+                        },
+                        point_ids: segment.point_ids(),
+                        center_id: segment.center_id,
+                        directions: segment.directions,
+                        arc_orientation: segment.arc_orientation,
+                        vertical_horizontal_constraint: segment.vertical_horizontal,
+                        radius_dimension_id: segment.radius_ref,
+                        secondary_radius_dimension_id: segment.radius2_ref,
+                        body: segment.body.clone(),
+                        offset: segment.offset,
+                    })
+                    .collect(),
+                circle_segments: definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| table.rows.circles())
+                    .map(|segment| CreoSketchCircleSegment {
+                        external_id: segment.external_id,
+                        center_id: segment.center_id,
+                        radius_dimension_id: segment.radius_ref,
+                        offset: segment.offset,
+                    })
+                    .collect(),
+                point_segments: definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| table.rows.points())
+                    .map(|segment| CreoSketchPointSegment {
+                        external_id: segment.external_id,
+                        point_id: segment.point_id,
+                        offset: segment.offset,
+                    })
+                    .collect(),
+                centered_line_segments: definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| table.rows.centered_lines())
+                    .map(|segment| CreoSketchCenteredLineSegment {
+                        external_id: segment.external_id,
+                        center_id: segment.center_id,
+                        offset: segment.offset,
+                    })
+                    .collect(),
+                reference_line_segments: definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| table.rows.reference_lines())
+                    .map(|segment| CreoSketchReferenceLineSegment {
+                        external_id: segment.external_id,
+                        point_ids: segment.point_ids,
+                        directions: segment.directions,
+                        vertical_horizontal_constraint: segment.vertical_horizontal,
+                        offset: segment.offset,
+                    })
+                    .collect(),
+                bounded_curve_segments: definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| table.rows.bounded_curves())
+                    .map(|segment| CreoSketchBoundedCurveSegment {
+                        external_id: segment.external_id,
+                        point_ids: segment.point_ids,
+                        center_id: segment.center_id,
+                        directions: segment.directions,
+                        arc_orientation: segment.arc_orientation,
+                        vertical_horizontal_constraint: segment.vertical_horizontal,
+                        radius_dimension_id: segment.radius_ref,
+                        secondary_radius_dimension_id: segment.radius2_ref,
+                        offset: segment.offset,
+                    })
+                    .collect(),
+                conic_segments: definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| table.rows.conics())
+                    .map(|segment| CreoSketchConicSegment {
+                        external_id: segment.external_id,
+                        center_id: segment.center_id,
+                        first_coefficient_ref: segment.first_coefficient_ref,
+                        second_coefficient_ref: segment.second_coefficient_ref,
+                        offset: segment.offset,
+                    })
+                    .collect(),
+                opaque_segments: definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| table.rows.opaque())
+                    .map(|segment| CreoSketchOpaqueSegment {
+                        external_id: segment.external_id,
+                        kind: segment.kind,
+                        point_ids: segment.point_ids,
+                        center_id: segment.center_id,
+                        directions: segment.directions,
+                        arc_orientation: segment.arc_orientation,
+                        vertical_horizontal_constraint: segment.vertical_horizontal,
+                        radius_dimension_id: segment.radius_ref,
+                        secondary_radius_dimension_id: segment.radius2_ref,
+                        body: segment.body.clone(),
+                        offset: segment.offset,
+                    })
+                    .collect(),
+                trim_entities: definition
+                    .trim_entities
                     .iter()
                     .flat_map(|table| &table.rows)
-                    .map(|row| CreoSketchVariable {
-                        variable_type: row.variable_type.code(),
-                        key: row.key,
-                        value: row.value,
-                        value_body: row.value_body.clone(),
-                        guess: row.guess,
-                        guess_body: row.guess_body.clone(),
-                        known: row.known,
-                        homogeneity: row.homogeneity,
-                        uvar_id: row.uvar_id,
-                        resolved_value: match row.variable_type {
-                            VariableType::U => resolved_coordinates
-                                .get(&row.key)
-                                .and_then(|point| point[0]),
-                            VariableType::V => resolved_coordinates
-                                .get(&row.key)
-                                .and_then(|point| point[1]),
-                            VariableType::Radius => resolved_radii.get(&row.key).copied(),
-                            _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
+                    .map(|entity| CreoSketchTrimEntity {
+                        external_id: entity.external_id,
+                        mode: entity.mode,
+                        vertices: entity.vertices,
+                        center_vertex: entity.center_vertex(),
+                        kind: match entity.kind {
+                            crate::feature::definitions::TrimEntityKind::Line => "line",
+                            crate::feature::definitions::TrimEntityKind::Arc { .. } => "arc",
                         },
+                        offset: entity.offset,
+                    })
+                    .collect(),
+                trim_vertices: definition
+                    .trim_vertices
+                    .iter()
+                    .flat_map(|table| &table.rows)
+                    .map(|vertex| CreoSketchTrimVertex {
+                        vertex_id: vertex.vertex_id,
+                        entities: vertex.entities.clone(),
+                        section_coordinates: vertex.section_coordinates.map(|point| {
+                            let point = point.get();
+                            [point.u, point.v]
+                        }),
+                        offset: vertex.offset,
+                    })
+                    .collect(),
+                order_rows: definition
+                    .order_table
+                    .iter()
+                    .flat_map(|table| &table.rows)
+                    .map(|row| CreoSketchOrderRow {
+                        external_id: row.external_id,
+                        internal_id: row.internal_id,
+                        bitmask: row.bitmask,
                         offset: row.offset,
                     })
-                    .collect()
-            },
-            equations: crate::feature::definitions::equation_table(
-                &definition.body,
-                0,
-                definition.body.len(),
-            )
-            .into_iter()
-            .flat_map(|table| table.rows)
-            .map(|equation| CreoSketchEquation {
-                equation_id: equation.equation_id,
-                function_id: equation.function_id,
-                explicit_argument_count: equation.explicit_argument_count,
-                arguments: equation.arguments,
-                arguments_body: equation.arguments_body,
-                auxiliary_body: equation.auxiliary_body,
-                body: equation.body,
-                offset: equation.offset,
+                    .collect(),
+                saved_entities: definition
+                    .saved_section
+                    .iter()
+                    .flat_map(|section| &section.entities)
+                    .map(|entity| match entity {
+                        crate::feature::definitions::FeatureSavedEntity::Line(line) => {
+                            CreoSketchSavedEntity::Line {
+                                entity_id: line.entity_id,
+                                references: line.references.clone(),
+                                attributes: line.attributes.clone(),
+                                endpoints: line.endpoints,
+                                body: line.body.clone(),
+                                offset: line.offset,
+                            }
+                        }
+                        crate::feature::definitions::FeatureSavedEntity::Arc(arc) => {
+                            CreoSketchSavedEntity::Arc {
+                                entity_id: arc.entity_id,
+                                center: arc.center,
+                                radius: arc.radius,
+                                endpoints: arc.endpoints,
+                                parameters: arc.parameters,
+                                body: arc.body.clone(),
+                                offset: arc.offset,
+                            }
+                        }
+                        crate::feature::definitions::FeatureSavedEntity::Circle(circle) => {
+                            CreoSketchSavedEntity::Circle {
+                                entity_id: circle.entity_id,
+                                center: circle.center,
+                                radius: circle.radius,
+                                body: circle.body.clone(),
+                                offset: circle.offset,
+                            }
+                        }
+                        crate::feature::definitions::FeatureSavedEntity::Conic(conic) => {
+                            CreoSketchSavedEntity::Conic {
+                                entity_id: conic.entity_id,
+                                endpoints: conic.endpoints,
+                                parameters: conic.parameters,
+                                coefficients: conic.coefficients,
+                                local_system: conic
+                                    .local_system
+                                    .map(cadmpeg_ir::units::FiniteVector::get),
+                                body: conic.body.clone(),
+                                offset: conic.offset,
+                            }
+                        }
+                        crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
+                            CreoSketchSavedEntity::Spline {
+                                entity_id: spline.entity_id,
+                                declared_point_count: spline.declared_point_count,
+                                interpolation_points: spline.interpolation_points.clone(),
+                                interpolation_points_body: spline.interpolation_points_body.clone(),
+                                endpoint_tangents: crate::decode::native_records::SplineTangents(
+                                    spline.endpoint_tangents.clone(),
+                                ),
+                                parameters: crate::decode::native_records::SplineParameters(
+                                    spline.parameters.clone(),
+                                ),
+                                offset: spline.offset,
+                            }
+                        }
+                        crate::feature::definitions::FeatureSavedEntity::Dummy(dummy) => {
+                            CreoSketchSavedEntity::Dummy {
+                                entity_id: dummy.entity_id,
+                                body: dummy.body.clone(),
+                                offset: dummy.offset,
+                            }
+                        }
+                    })
+                    .collect(),
+                dimensions: definition
+                    .dimensions
+                    .iter()
+                    .flat_map(|table| &table.rows)
+                    .map(|dimension| CreoSketchDimension {
+                        external_id: dimension.external_id,
+                        dimension_type: dimension.dimension_type,
+                        value: dimension.value.clone(),
+                        value_body: dimension.value_body.clone(),
+                        unit: match dimension.unit() {
+                            crate::feature::definitions::DimensionUnit::Radians => "radians",
+                            crate::feature::definitions::DimensionUnit::Millimeters => {
+                                "millimeters"
+                            }
+                            crate::feature::definitions::DimensionUnit::SchemaDefined => {
+                                "schema_defined"
+                            }
+                        },
+                        direction_byte: dimension.direction_byte,
+                        auxiliary_value: dimension.auxiliary_value,
+                        auxiliary_body: dimension.auxiliary_body.clone(),
+                        references: dimension.references.as_ref().map(|table| {
+                            CreoSketchDimensionReferenceTable {
+                                declared_count: table.declared_count,
+                                entity_ref: table.entity_ref,
+                                rows: table
+                                    .rows
+                                    .iter()
+                                    .map(|reference| CreoSketchDimensionReference {
+                                        item_id: reference.item_id,
+                                        sense: reference.sense,
+                                        point: reference.point,
+                                        offset: reference.offset,
+                                    })
+                                    .collect(),
+                                offset: table.offset,
+                            }
+                        }),
+                        offset: dimension.offset,
+                    })
+                    .collect(),
+                relations: definition
+                    .relations
+                    .iter()
+                    .flat_map(|table| &table.rows)
+                    .map(|relation| CreoSketchRelation {
+                        relation_id: relation.relation_id,
+                        used: relation.used,
+                        operands: relation.operands.clone(),
+                        operand_vectors: relation.operand_vectors,
+                        sign: relation.sign,
+                        dimension_id: relation.dimension_id,
+                        relation_type: relation.relation_type,
+                        body: relation.body.clone(),
+                        offset: relation.offset,
+                    })
+                    .collect(),
+                skamps: definition
+                    .relations
+                    .iter()
+                    .flat_map(FeatureRelationTable::skamps)
+                    .map(|skamp| CreoSketchSkamp {
+                        id: skamp.id,
+                        kind: skamp.kind,
+                        flags: skamp.flags,
+                        status: skamp.status,
+                        items: skamp
+                            .items
+                            .iter()
+                            .map(|item| CreoSketchSkampItem {
+                                entity_id: item.entity_id,
+                                sense: item.sense,
+                            })
+                            .collect(),
+                        offset: skamp.offset,
+                    })
+                    .collect(),
+                relation_triples: definition
+                    .relations
+                    .iter()
+                    .flat_map(FeatureRelationTable::triples)
+                    .map(|triple| CreoSketchRelationTriple {
+                        relation: triple.relation_id,
+                        equation: triple.equation_id,
+                        skamp: triple.skamp_id,
+                        offset: triple.offset,
+                    })
+                    .collect(),
             })
-            .collect(),
-            segments: definition
-                .segments
-                .iter()
-                .flat_map(|table| table.rows.ordinary())
-                .map(|segment| CreoSketchSegment {
-                    external_id: segment.external_id,
-                    kind: match segment.kind {
-                        crate::feature::definitions::FeatureSegmentKind::Line(_) => "line",
-                        crate::feature::definitions::FeatureSegmentKind::Arc(_) => "arc",
-                        crate::feature::definitions::FeatureSegmentKind::Point(_) => "point",
-                    },
-                    point_ids: segment.point_ids(),
-                    center_id: segment.center_id,
-                    directions: segment.directions,
-                    arc_orientation: segment.arc_orientation,
-                    vertical_horizontal_constraint: segment.vertical_horizontal,
-                    radius_dimension_id: segment.radius_ref,
-                    secondary_radius_dimension_id: segment.radius2_ref,
-                    body: segment.body.clone(),
-                    offset: segment.offset,
-                })
-                .collect(),
-            circle_segments: definition
-                .segments
-                .iter()
-                .flat_map(|table| table.rows.circles())
-                .map(|segment| CreoSketchCircleSegment {
-                    external_id: segment.external_id,
-                    center_id: segment.center_id,
-                    radius_dimension_id: segment.radius_ref,
-                    offset: segment.offset,
-                })
-                .collect(),
-            point_segments: definition
-                .segments
-                .iter()
-                .flat_map(|table| table.rows.points())
-                .map(|segment| CreoSketchPointSegment {
-                    external_id: segment.external_id,
-                    point_id: segment.point_id,
-                    offset: segment.offset,
-                })
-                .collect(),
-            centered_line_segments: definition
-                .segments
-                .iter()
-                .flat_map(|table| table.rows.centered_lines())
-                .map(|segment| CreoSketchCenteredLineSegment {
-                    external_id: segment.external_id,
-                    center_id: segment.center_id,
-                    offset: segment.offset,
-                })
-                .collect(),
-            reference_line_segments: definition
-                .segments
-                .iter()
-                .flat_map(|table| table.rows.reference_lines())
-                .map(|segment| CreoSketchReferenceLineSegment {
-                    external_id: segment.external_id,
-                    point_ids: segment.point_ids,
-                    directions: segment.directions,
-                    vertical_horizontal_constraint: segment.vertical_horizontal,
-                    offset: segment.offset,
-                })
-                .collect(),
-            bounded_curve_segments: definition
-                .segments
-                .iter()
-                .flat_map(|table| table.rows.bounded_curves())
-                .map(|segment| CreoSketchBoundedCurveSegment {
-                    external_id: segment.external_id,
-                    point_ids: segment.point_ids,
-                    center_id: segment.center_id,
-                    directions: segment.directions,
-                    arc_orientation: segment.arc_orientation,
-                    vertical_horizontal_constraint: segment.vertical_horizontal,
-                    radius_dimension_id: segment.radius_ref,
-                    secondary_radius_dimension_id: segment.radius2_ref,
-                    offset: segment.offset,
-                })
-                .collect(),
-            conic_segments: definition
-                .segments
-                .iter()
-                .flat_map(|table| table.rows.conics())
-                .map(|segment| CreoSketchConicSegment {
-                    external_id: segment.external_id,
-                    center_id: segment.center_id,
-                    first_coefficient_ref: segment.first_coefficient_ref,
-                    second_coefficient_ref: segment.second_coefficient_ref,
-                    offset: segment.offset,
-                })
-                .collect(),
-            opaque_segments: definition
-                .segments
-                .iter()
-                .flat_map(|table| table.rows.opaque())
-                .map(|segment| CreoSketchOpaqueSegment {
-                    external_id: segment.external_id,
-                    kind: segment.kind,
-                    point_ids: segment.point_ids,
-                    center_id: segment.center_id,
-                    directions: segment.directions,
-                    arc_orientation: segment.arc_orientation,
-                    vertical_horizontal_constraint: segment.vertical_horizontal,
-                    radius_dimension_id: segment.radius_ref,
-                    secondary_radius_dimension_id: segment.radius2_ref,
-                    body: segment.body.clone(),
-                    offset: segment.offset,
-                })
-                .collect(),
-            trim_entities: definition
-                .trim_entities
-                .iter()
-                .flat_map(|table| &table.rows)
-                .map(|entity| CreoSketchTrimEntity {
-                    external_id: entity.external_id,
-                    mode: entity.mode,
-                    vertices: entity.vertices,
-                    center_vertex: entity.center_vertex(),
-                    kind: match entity.kind {
-                        crate::feature::definitions::TrimEntityKind::Line => "line",
-                        crate::feature::definitions::TrimEntityKind::Arc { .. } => "arc",
-                    },
-                    offset: entity.offset,
-                })
-                .collect(),
-            trim_vertices: definition
-                .trim_vertices
-                .iter()
-                .flat_map(|table| &table.rows)
-                .map(|vertex| CreoSketchTrimVertex {
-                    vertex_id: vertex.vertex_id,
-                    entities: vertex.entities.clone(),
-                    section_coordinates: vertex.section_coordinates.map(|point| {
-                        let point = point.get();
-                        [point.u, point.v]
-                    }),
-                    offset: vertex.offset,
-                })
-                .collect(),
-            order_rows: definition
-                .order_table
-                .iter()
-                .flat_map(|table| &table.rows)
-                .map(|row| CreoSketchOrderRow {
-                    external_id: row.external_id,
-                    internal_id: row.internal_id,
-                    bitmask: row.bitmask,
-                    offset: row.offset,
-                })
-                .collect(),
-            saved_entities: definition
-                .saved_section
-                .iter()
-                .flat_map(|section| &section.entities)
-                .map(|entity| match entity {
-                    crate::feature::definitions::FeatureSavedEntity::Line(line) => {
-                        CreoSketchSavedEntity::Line {
-                            entity_id: line.entity_id,
-                            references: line.references.clone(),
-                            attributes: line.attributes.clone(),
-                            endpoints: line.endpoints,
-                            body: line.body.clone(),
-                            offset: line.offset,
-                        }
-                    }
-                    crate::feature::definitions::FeatureSavedEntity::Arc(arc) => {
-                        CreoSketchSavedEntity::Arc {
-                            entity_id: arc.entity_id,
-                            center: arc.center,
-                            radius: arc.radius,
-                            endpoints: arc.endpoints,
-                            parameters: arc.parameters,
-                            body: arc.body.clone(),
-                            offset: arc.offset,
-                        }
-                    }
-                    crate::feature::definitions::FeatureSavedEntity::Circle(circle) => {
-                        CreoSketchSavedEntity::Circle {
-                            entity_id: circle.entity_id,
-                            center: circle.center,
-                            radius: circle.radius,
-                            body: circle.body.clone(),
-                            offset: circle.offset,
-                        }
-                    }
-                    crate::feature::definitions::FeatureSavedEntity::Conic(conic) => {
-                        CreoSketchSavedEntity::Conic {
-                            entity_id: conic.entity_id,
-                            endpoints: conic.endpoints,
-                            parameters: conic.parameters,
-                            coefficients: conic.coefficients,
-                            local_system: conic
-                                .local_system
-                                .map(cadmpeg_ir::units::FiniteVector::get),
-                            body: conic.body.clone(),
-                            offset: conic.offset,
-                        }
-                    }
-                    crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
-                        CreoSketchSavedEntity::Spline {
-                            entity_id: spline.entity_id,
-                            declared_point_count: spline.declared_point_count,
-                            interpolation_points: spline.interpolation_points.clone(),
-                            interpolation_points_body: spline.interpolation_points_body.clone(),
-                            endpoint_tangents: crate::decode::native_records::SplineTangents(
-                                spline.endpoint_tangents.clone(),
-                            ),
-                            parameters: crate::decode::native_records::SplineParameters(
-                                spline.parameters.clone(),
-                            ),
-                            offset: spline.offset,
-                        }
-                    }
-                    crate::feature::definitions::FeatureSavedEntity::Dummy(dummy) => {
-                        CreoSketchSavedEntity::Dummy {
-                            entity_id: dummy.entity_id,
-                            body: dummy.body.clone(),
-                            offset: dummy.offset,
-                        }
-                    }
-                })
-                .collect(),
-            dimensions: definition
-                .dimensions
-                .iter()
-                .flat_map(|table| &table.rows)
-                .map(|dimension| CreoSketchDimension {
-                    external_id: dimension.external_id,
-                    dimension_type: dimension.dimension_type,
-                    value: dimension.value.clone(),
-                    value_body: dimension.value_body.clone(),
-                    unit: match dimension.unit() {
-                        crate::feature::definitions::DimensionUnit::Radians => "radians",
-                        crate::feature::definitions::DimensionUnit::Millimeters => "millimeters",
-                        crate::feature::definitions::DimensionUnit::SchemaDefined => {
-                            "schema_defined"
-                        }
-                    },
-                    direction_byte: dimension.direction_byte,
-                    auxiliary_value: dimension.auxiliary_value,
-                    auxiliary_body: dimension.auxiliary_body.clone(),
-                    references: dimension.references.as_ref().map(|table| {
-                        CreoSketchDimensionReferenceTable {
-                            declared_count: table.declared_count,
-                            entity_ref: table.entity_ref,
-                            rows: table
-                                .rows
-                                .iter()
-                                .map(|reference| CreoSketchDimensionReference {
-                                    item_id: reference.item_id,
-                                    sense: reference.sense,
-                                    point: reference.point,
-                                    offset: reference.offset,
-                                })
-                                .collect(),
-                            offset: table.offset,
-                        }
-                    }),
-                    offset: dimension.offset,
-                })
-                .collect(),
-            relations: definition
-                .relations
-                .iter()
-                .flat_map(|table| &table.rows)
-                .map(|relation| CreoSketchRelation {
-                    relation_id: relation.relation_id,
-                    used: relation.used,
-                    operands: relation.operands.clone(),
-                    operand_vectors: relation.operand_vectors,
-                    sign: relation.sign,
-                    dimension_id: relation.dimension_id,
-                    relation_type: relation.relation_type,
-                    body: relation.body.clone(),
-                    offset: relation.offset,
-                })
-                .collect(),
-            skamps: definition
-                .relations
-                .iter()
-                .flat_map(FeatureRelationTable::skamps)
-                .map(|skamp| CreoSketchSkamp {
-                    id: skamp.id,
-                    kind: skamp.kind,
-                    flags: skamp.flags,
-                    status: skamp.status,
-                    items: skamp
-                        .items
-                        .iter()
-                        .map(|item| CreoSketchSkampItem {
-                            entity_id: item.entity_id,
-                            sense: item.sense,
-                        })
-                        .collect(),
-                    offset: skamp.offset,
-                })
-                .collect(),
-            relation_triples: definition
-                .relations
-                .iter()
-                .flat_map(FeatureRelationTable::triples)
-                .map(|triple| CreoSketchRelationTriple {
-                    relation: triple.relation_id,
-                    equation: triple.equation_id,
-                    skamp: triple.skamp_id,
-                    offset: triple.offset,
-                })
-                .collect(),
         })
         .collect()
 }

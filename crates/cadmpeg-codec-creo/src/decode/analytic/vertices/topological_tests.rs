@@ -33,7 +33,11 @@ fn incident_lines_define_one_validated_vertex() {
     let third = line([1.0, 2.0, -5.0], [0.0, 0.0, 4.0]);
 
     assert_eq!(
-        incident_analytic_vertex_domain(&[&first, &second, &third]),
+        crate::decode::with_test_decode_ctx(|ctx| incident_analytic_vertex_domain(
+            ctx,
+            &[&first, &second, &third]
+        ))
+        .expect("test carrier solve"),
         [[1.0, 2.0, 3.0]]
     );
 }
@@ -48,7 +52,14 @@ fn incident_lines_reject_skew_parallel_and_disagreeing_candidates() {
 
     assert_eq!(line_line_intersection(&x, &skew_y), None);
     assert_eq!(line_line_intersection(&x, &parallel), None);
-    assert!(incident_analytic_vertex_domain(&[&x, &crossing_y, &displaced_z]).is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| incident_analytic_vertex_domain(
+            ctx,
+            &[&x, &crossing_y, &displaced_z]
+        ))
+        .expect("test carrier solve")
+        .is_empty()
+    );
 }
 
 #[test]
@@ -157,21 +168,36 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
     let tangent = circle([4.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0);
     let transverse = circle([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 2.0);
 
-    assert!(conic_conic_intersections(&first, &first).is_empty());
     assert!(
-        conic_conic_intersections(&first, &circle([0.0, 0.0, 1.0], [0.0, 0.0, 1.0], 2.0),)
+        crate::decode::with_test_decode_ctx(|ctx| conic_conic_intersections(ctx, &first, &first))
+            .expect("test carrier solve")
             .is_empty()
     );
-    let secant_points = conic_conic_intersections(&first, &secant);
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| conic_conic_intersections(
+            ctx,
+            &first,
+            &circle([0.0, 0.0, 1.0], [0.0, 0.0, 1.0], 2.0),
+        ))
+        .expect("test carrier solve")
+        .is_empty()
+    );
+    let secant_points =
+        crate::decode::with_test_decode_ctx(|ctx| conic_conic_intersections(ctx, &first, &secant))
+            .expect("test carrier solve");
     assert_eq!(secant_points.len(), 2);
     assert!(secant_points.iter().all(|point| {
         agree(*point, [1.0, 3.0_f64.sqrt(), 0.0]) || agree(*point, [1.0, -3.0_f64.sqrt(), 0.0])
     }));
     assert_eq!(
-        conic_conic_intersections(&first, &tangent),
+        crate::decode::with_test_decode_ctx(|ctx| conic_conic_intersections(ctx, &first, &tangent))
+            .expect("test carrier solve"),
         [[2.0, 0.0, 0.0]]
     );
-    let transverse_points = conic_conic_intersections(&first, &transverse);
+    let transverse_points = crate::decode::with_test_decode_ctx(|ctx| {
+        conic_conic_intersections(ctx, &first, &transverse)
+    })
+    .expect("test carrier solve");
     assert_eq!(transverse_points.len(), 2);
     assert!(transverse_points
         .iter()
@@ -187,7 +213,9 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
         )
         .expect("valid EllipseCurve fixture"),
     ));
-    let ellipse_points = conic_conic_intersections(&first, &ellipse);
+    let ellipse_points =
+        crate::decode::with_test_decode_ctx(|ctx| conic_conic_intersections(ctx, &first, &ellipse))
+            .expect("test carrier solve");
     assert_eq!(ellipse_points.len(), 2);
     assert!(ellipse_points
         .iter()
@@ -205,7 +233,10 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
         .expect("valid EllipseCurve fixture"),
     ));
     let larger_circle = circle([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.5);
-    let diagonal_points = conic_conic_intersections(&larger_circle, &diagonal_ellipse);
+    let diagonal_points = crate::decode::with_test_decode_ctx(|ctx| {
+        conic_conic_intersections(ctx, &larger_circle, &diagonal_ellipse)
+    })
+    .expect("test carrier solve");
     assert_eq!(diagonal_points.len(), 4);
     assert!(diagonal_points.iter().all(|point| {
         curve_contains_points(&larger_circle, [*point, *point])
@@ -222,7 +253,10 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
         .expect("valid ParabolaCurve fixture"),
     ));
     let tangent_circle = circle([1.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0);
-    let tangent_points = conic_conic_intersections(&parabola, &tangent_circle);
+    let tangent_points = crate::decode::with_test_decode_ctx(|ctx| {
+        conic_conic_intersections(ctx, &parabola, &tangent_circle)
+    })
+    .expect("test carrier solve");
     assert_eq!(tangent_points.len(), 1);
     assert!(agree(tangent_points[0], [0.0, 0.0, 0.0]));
 }

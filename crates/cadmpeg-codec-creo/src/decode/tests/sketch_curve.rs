@@ -323,7 +323,8 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 3;
     assert_eq!(
-        resolved_section_radii(&definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+            .expect("test section solve"),
         BTreeMap::from([(0, 5.0)])
     );
     let radius = section_segment_radius_constraints(&definition, &sketch_917);
@@ -390,7 +391,8 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 4;
     assert_eq!(
-        resolved_section_radii(&definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+            .expect("test section solve"),
         BTreeMap::from([(0, 2.5)])
     );
     let diameter = section_segment_radius_constraints(&definition, &sketch_917);
@@ -431,7 +433,8 @@ fn dimension_identity_includes_its_feature_definition() {
         .expect("segment table")
         .declared_count = 2;
     assert_eq!(
-        resolved_section_radii(&definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+            .expect("test section solve"),
         BTreeMap::from([(0, 2.5)])
     );
     assert_eq!(
@@ -457,7 +460,11 @@ fn dimension_identity_includes_its_feature_definition() {
         .expect("dimension table")
         .rows[0]
         .dimension_type = 2;
-    assert!(resolved_section_radii(&definition).is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+            .expect("test section solve")
+            .is_empty()
+    );
     let unresolved_kind = section_segment_radius_constraints(&definition, &sketch_917);
     assert!(matches!(
         unresolved_kind[0].0.definition.kind(),
@@ -583,7 +590,8 @@ fn dimension_identity_includes_its_feature_definition() {
     assert_eq!(
         section_circle_geometry(
             &BTreeMap::from([(7, [1.0, 2.0])]),
-            &resolved_section_radii(&definition),
+            &crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+                .expect("test section solve"),
             &definition
                 .segments
                 .as_ref()

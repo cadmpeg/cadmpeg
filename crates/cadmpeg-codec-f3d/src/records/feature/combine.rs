@@ -50,11 +50,8 @@ pub(crate) struct DesignExternalVersion {
 }
 
 /// Cross-document persistent body identity carried by a `Combine` tool selector.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignCombineExternalBodyIdentityWire",
-    into = "DesignCombineExternalBodyIdentityWire"
-)]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DesignCombineExternalBodyIdentityWire")]
 pub(crate) struct DesignCombineExternalBodyIdentity {
     /// Asset GUID of the enclosing body selector.
     selector_asset_id: DesignRelaxedGuidText,
@@ -90,6 +87,104 @@ pub(crate) struct DesignCombineExternalBodyIdentity {
     /// Byte offsets of `tail_values` in source order.
     #[serde(default)]
     tail_value_offsets: [u64; 2],
+}
+
+#[cfg(test)]
+thread_local! {
+    static COMBINE_EXTERNAL_IDENTITY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignCombineExternalBodyIdentity {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        COMBINE_EXTERNAL_IDENTITY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            selector_asset_id: self.selector_asset_id.clone(),
+            selector_asset_id_offset: self.selector_asset_id_offset,
+            selector_context_id: self.selector_context_id.clone(),
+            selector_context_id_offset: self.selector_context_id_offset,
+            occurrence_reference: self.occurrence_reference,
+            occurrence_reference_offset: self.occurrence_reference_offset,
+            external_body_reference: self.external_body_reference,
+            external_body_reference_offset: self.external_body_reference_offset,
+            external_segment: self.external_segment,
+            external_segment_offset: self.external_segment_offset,
+            external_asset_id_offset: self.external_asset_id_offset,
+            external_link_name: self.external_link_name.clone(),
+            external_link_name_offset: self.external_link_name_offset,
+            external_version: self.external_version.clone(),
+            tail_values: self.tail_values,
+            tail_value_offsets: self.tail_value_offsets,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct DesignCombineExternalBodyIdentityRef<'a> {
+    selector_asset_id: &'a str,
+    selector_asset_id_offset: u64,
+    selector_context_id: &'a str,
+    selector_context_id_offset: u64,
+    occurrence_reference: u64,
+    occurrence_reference_offset: u64,
+    external_body_reference: u64,
+    external_body_reference_offset: u64,
+    external_segment: u32,
+    external_segment_offset: u64,
+    external_asset_id: &'a str,
+    external_asset_id_offset: u64,
+    external_link_name: &'a str,
+    external_link_name_offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    external_property_key: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    external_property_key_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    external_version_urn: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    external_version_urn_offset: Option<u64>,
+    tail_values: [u64; 2],
+    tail_value_offsets: [u64; 2],
+}
+
+impl Serialize for DesignCombineExternalBodyIdentity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignCombineExternalBodyIdentityRef {
+            selector_asset_id: self.selector_asset_id.as_str(),
+            selector_asset_id_offset: self.selector_asset_id_offset,
+            selector_context_id: self.selector_context_id.as_str(),
+            selector_context_id_offset: self.selector_context_id_offset,
+            occurrence_reference: self.occurrence_reference,
+            occurrence_reference_offset: self.occurrence_reference_offset,
+            external_body_reference: self.external_body_reference,
+            external_body_reference_offset: self.external_body_reference_offset,
+            external_segment: self.external_segment,
+            external_segment_offset: self.external_segment_offset,
+            external_asset_id: self.selector_asset_id.as_str(),
+            external_asset_id_offset: self.external_asset_id_offset,
+            external_link_name: &self.external_link_name,
+            external_link_name_offset: self.external_link_name_offset,
+            external_property_key: self
+                .external_version
+                .as_ref()
+                .map(|version| version.property_key.value.as_str()),
+            external_property_key_offset: self
+                .external_version
+                .as_ref()
+                .map(|version| version.property_key.offset),
+            external_version_urn: self
+                .external_version
+                .as_ref()
+                .map(|version| version.version_urn.value.as_str()),
+            external_version_urn_offset: self
+                .external_version
+                .as_ref()
+                .map(|version| version.version_urn.offset),
+            tail_values: self.tail_values,
+            tail_value_offsets: self.tail_value_offsets,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Wire fields for an external Combine body identity.
@@ -342,6 +437,7 @@ impl TryFrom<DesignCombineExternalBodyIdentityWire> for DesignCombineExternalBod
     }
 }
 
+#[cfg(test)]
 impl From<DesignCombineExternalBodyIdentity> for DesignCombineExternalBodyIdentityWire {
     fn from(record: DesignCombineExternalBodyIdentity) -> Self {
         Self {
@@ -396,11 +492,8 @@ pub(crate) struct DesignCombineBodySelection {
 }
 
 /// Exact Boolean construction carried by a `Combine` scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignCombineOperationWire",
-    into = "DesignCombineOperationWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignCombineOperationWire")]
 pub(crate) struct DesignCombineOperation {
     /// Serialized scope-prologue form.
     pub(crate) form: DesignCombineForm,
@@ -416,6 +509,64 @@ pub(crate) struct DesignCombineOperation {
     pub(crate) target_record_index: u32,
     /// Boolean tool body selectors in source order.
     pub(crate) tools: DesignCombineTools,
+}
+
+#[cfg(test)]
+thread_local! {
+    static COMBINE_OPERATION_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignCombineOperation {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        COMBINE_OPERATION_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            form: self.form,
+            operation: self.operation,
+            operation_offset: self.operation_offset,
+            keep_tools: self.keep_tools,
+            keep_tools_offset: self.keep_tools_offset,
+            target_record_index: self.target_record_index,
+            tools: self.tools.clone(),
+        }
+    }
+}
+
+struct DesignCombineToolsRef<'a>(&'a DesignCombineTools);
+
+impl Serialize for DesignCombineToolsRef<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter())
+    }
+}
+
+#[derive(Serialize)]
+struct DesignCombineOperationRef<'a> {
+    form: DesignCombineForm,
+    operation: cadmpeg_ir::features::BooleanKind,
+    operation_offset: u64,
+    keep_tools: bool,
+    keep_tools_offset: u64,
+    target: DesignCombineBodySelection,
+    tools: DesignCombineToolsRef<'a>,
+}
+
+impl Serialize for DesignCombineOperation {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignCombineOperationRef {
+            form: self.form,
+            operation: self.operation,
+            operation_offset: self.operation_offset,
+            keep_tools: self.keep_tools,
+            keep_tools_offset: self.keep_tools_offset,
+            target: DesignCombineBodySelection {
+                record_index: self.target_record_index,
+                external_identity: None,
+            },
+            tools: DesignCombineToolsRef(&self.tools),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Ordered nonempty tools of a Combine operation.
@@ -483,6 +634,7 @@ impl TryFrom<DesignCombineOperationWire> for DesignCombineOperation {
     }
 }
 
+#[cfg(test)]
 impl From<DesignCombineOperation> for DesignCombineOperationWire {
     fn from(operation: DesignCombineOperation) -> Self {
         Self {
@@ -499,5 +651,115 @@ impl From<DesignCombineOperation> for DesignCombineOperationWire {
                 .chain(operation.tools.additional)
                 .collect(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DesignCombineExternalBodyIdentity, DesignCombineExternalBodyIdentityWire,
+        DesignCombineOperation, DesignCombineOperationWire, COMBINE_EXTERNAL_IDENTITY_CLONE_COUNT,
+        COMBINE_OPERATION_CLONE_COUNT,
+    };
+
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a, T: serde::Serialize> {
+        id: &'static str,
+        value: &'a T,
+    }
+
+    fn external_identity(version: bool) -> DesignCombineExternalBodyIdentity {
+        let mut wire = serde_json::json!({
+            "selector_asset_id": "00000004-1111-4111-8111-111111111111",
+            "selector_asset_id_offset": 44,
+            "selector_context_id": "00000005-1111-4111-8111-111111111111",
+            "selector_context_id_offset": 120,
+            "occurrence_reference": 1,
+            "occurrence_reference_offset": 205,
+            "external_body_reference": 2,
+            "external_body_reference_offset": 220,
+            "external_segment": 1,
+            "external_segment_offset": 229,
+            "external_asset_id": "00000004-1111-4111-8111-111111111111",
+            "external_asset_id_offset": 237,
+            "external_link_name": "link",
+            "external_link_name_offset": 314,
+            "tail_values": [0, 0],
+            "tail_value_offsets": [329, 341]
+        });
+        if version {
+            wire["external_property_key"] =
+                serde_json::json!("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+            wire["external_property_key_offset"] = serde_json::json!(327);
+            wire["external_version_urn"] = serde_json::json!("urn");
+            wire["external_version_urn_offset"] = serde_json::json!(403);
+            wire["tail_value_offsets"] = serde_json::json!([415, 427]);
+        }
+        serde_json::from_value(wire).unwrap()
+    }
+
+    fn operation(version: bool) -> DesignCombineOperation {
+        serde_json::from_value(serde_json::json!({
+            "form": "standard",
+            "operation": "join",
+            "operation_offset": 20,
+            "keep_tools": false,
+            "keep_tools_offset": 25,
+            "target": {"record_index": 1},
+            "tools": [{"record_index": 2, "external_identity": external_identity(version)}]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn combine_external_identity_borrowed_wire_matches_owned_wire_bytes() {
+        for identity in [external_identity(false), external_identity(true)] {
+            let owned = DesignCombineExternalBodyIdentityWire::from(identity.clone());
+            assert_eq!(
+                serde_json::to_vec(&identity).unwrap(),
+                serde_json::to_vec(&owned).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn combine_external_identity_native_retained_limit_refuses_before_clone() {
+        let identity = external_identity(true);
+        let record = NestedRecord {
+            id: "f3d:native:combine-external-identity#0",
+            value: &identity,
+        };
+        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+            &record,
+            "design_parameter_scopes",
+            || COMBINE_EXTERNAL_IDENTITY_CLONE_COUNT.with(|count| count.set(0)),
+            || COMBINE_EXTERNAL_IDENTITY_CLONE_COUNT.with(std::cell::Cell::get),
+        );
+    }
+
+    #[test]
+    fn combine_operation_borrowed_wire_matches_owned_wire_bytes() {
+        for record in [operation(false), operation(true)] {
+            let owned = DesignCombineOperationWire::from(record.clone());
+            assert_eq!(
+                serde_json::to_vec(&record).unwrap(),
+                serde_json::to_vec(&owned).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn combine_operation_native_retained_limit_refuses_before_clone() {
+        let operation = operation(true);
+        let record = NestedRecord {
+            id: "f3d:native:combine-operation#0",
+            value: &operation,
+        };
+        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+            &record,
+            "design_parameter_scopes",
+            || COMBINE_OPERATION_CLONE_COUNT.with(|count| count.set(0)),
+            || COMBINE_OPERATION_CLONE_COUNT.with(std::cell::Cell::get),
+        );
     }
 }

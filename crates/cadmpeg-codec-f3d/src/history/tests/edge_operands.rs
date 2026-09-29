@@ -103,12 +103,14 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
     let scope_histories = HashMap::from([(scope.id.clone(), history.id.clone())]);
 
     bind_edge_operand_history_candidates(
+        None,
         std::slice::from_mut(&mut operand),
         std::slice::from_ref(&scope),
         &[],
         std::slice::from_ref(&history),
         &scope_histories,
-    );
+    )
+    .unwrap();
 
     assert_eq!(operand.recipe_state_id, Some(1));
     assert_eq!(operand.resolved_edge_slot, None);
