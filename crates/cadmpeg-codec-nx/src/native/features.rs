@@ -5663,87 +5663,107 @@ pub(super) fn feature_datum_csys_column_row_uses(
 
 /// Retain inputs having exactly one slot-zero use in one complete column table.
 pub(super) fn feature_input_column_targets(
+    ctx: &DecodeContext<'_>,
     inputs: &[FeatureInputBlock],
     uses: &[FeatureInputColumnRowUse],
     linked_rows: &[DataBlockLinkedIndexRow],
     target_rows: &[DataBlockTargetIndexRow],
-) -> Vec<FeatureInputColumnTarget> {
-    inputs
-        .iter()
-        .filter_map(|input| {
-            let targets = uses
-                .iter()
-                .filter(|use_| {
-                    use_.input_block == input.id
-                        && use_.row_slot == ColumnRowSlot::Zero
-                        && use_.row_kind != ColumnIndexRowKind::Index
-                })
-                .filter_map(|use_| Some((use_, use_.column_table.as_ref()?)))
-                .collect::<Vec<_>>();
-            let [(target, column_table)] = targets.as_slice() else {
-                return None;
+) -> Result<Vec<FeatureInputColumnTarget>, CodecError> {
+    let scan_width = uses.len().checked_add(linked_rows.len())
+        .and_then(|count| count.checked_add(target_rows.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("resolve NX input column targets", 0, 1))?;
+    let work = inputs.len().checked_mul(scan_width)
+        .ok_or_else(|| ctx.refuse_codec_limit("resolve NX input column targets", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work),
+        "resolve NX input column targets")?;
+    let mut output = Vec::new();
+    for input in inputs {
+        let mut targets = uses.iter().filter(|use_| {
+            use_.input_block == input.id && use_.row_slot == ColumnRowSlot::Zero
+                && use_.row_kind != ColumnIndexRowKind::Index
+                && use_.column_table.is_some()
+        });
+        let Some(target) = targets.next() else { continue; };
+        if targets.next().is_some() { continue; }
+        let Some(column_table) = target.column_table.as_ref() else { continue; };
+        let (row, field_indices, field_data_blocks, field_source_offsets, mode) =
+            match target.row_kind {
+                ColumnIndexRowKind::LinkedIndex => {
+                    let mut rows = linked_rows.iter().filter(|row| row.id == target.column_row);
+                    let Some(row) = rows.next() else { continue; };
+                    if rows.next().is_some() { continue; }
+                    let [first, second, third] = row.frame.indices().map(|token|
+                        copy_operation_text(ctx, &token.target,
+                            "NX input column target field data block"));
+                    (
+                        FeatureInputColumnTargetRow::Linked {
+                            leading_index: row.frame.first_index().atom.value(),
+                            leading_index_source_offset: row.frame.first_index().offset,
+                            discriminator: row.frame.discriminator(),
+                            flag: row.frame.flag(),
+                        },
+                        row.frame.indices().map(|token| token.atom.value()),
+                        [first?, second?, third?],
+                        row.frame.indices().map(|token| token.offset),
+                        row.frame.mode(),
+                    )
+                }
+                ColumnIndexRowKind::TargetIndex => {
+                    let mut rows = target_rows.iter().filter(|row| row.id == target.column_row);
+                    let Some(row) = rows.next() else { continue; };
+                    if rows.next().is_some() { continue; }
+                    let [first, second, third] = row.frame.indices().map(|token|
+                        copy_operation_text(ctx, &token.target,
+                            "NX input column target field data block"));
+                    (
+                        FeatureInputColumnTargetRow::Target,
+                        row.frame.indices().map(|token| token.atom.value()),
+                        [first?, second?, third?],
+                        row.frame.indices().map(|token| token.offset),
+                        row.frame.mode(),
+                    )
+                }
+                ColumnIndexRowKind::Index => continue,
             };
-            let (row, field_indices, field_data_blocks, field_source_offsets, mode) =
-                match target.row_kind {
-                    ColumnIndexRowKind::LinkedIndex => {
-                        let rows = linked_rows
-                            .iter()
-                            .filter(|row| row.id == target.column_row)
-                            .collect::<Vec<_>>();
-                        let [row] = rows.as_slice() else {
-                            return None;
-                        };
-                        (
-                            FeatureInputColumnTargetRow::Linked {
-                                leading_index: row.frame.first_index().atom.value(),
-                                leading_index_source_offset: row.frame.first_index().offset,
-                                discriminator: row.frame.discriminator(),
-                                flag: row.frame.flag(),
-                            },
-                            row.frame.indices().map(|token| token.atom.value()),
-                            row.frame.indices().map(|token| token.target.clone()),
-                            row.frame.indices().map(|token| token.offset),
-                            row.frame.mode(),
-                        )
-                    }
-                    ColumnIndexRowKind::TargetIndex => {
-                        let rows = target_rows
-                            .iter()
-                            .filter(|row| row.id == target.column_row)
-                            .collect::<Vec<_>>();
-                        let [row] = rows.as_slice() else {
-                            return None;
-                        };
-                        (
-                            FeatureInputColumnTargetRow::Target,
-                            row.frame.indices().map(|token| token.atom.value()),
-                            row.frame.indices().map(|token| token.target.clone()),
-                            row.frame.indices().map(|token| token.offset),
-                            row.frame.mode(),
-                        )
-                    }
-                    ColumnIndexRowKind::Index => return None,
-                };
-            Some(FeatureInputColumnTarget {
-                id: format!(
-                    "nx:feature-history:input-column-target#{}",
-                    input.id.rsplit_once('#').map_or("unknown", |(_, key)| key)
-                ),
-                input_block: input.id.clone(),
-                operation_label: input.operation_label.clone(),
-                input_slot: input.input_slot,
-                column_row: target.column_row.clone(),
-                row,
-                field_indices,
-                field_data_blocks,
-                field_source_offsets,
-                mode,
-                column_table: (*column_table).clone(),
-                data_block: input.data_block.clone(),
-                source_offset: target.source_offset,
-            })
-        })
-        .collect()
+        let key = input.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let prefix = "nx:feature-history:input-column-target#";
+        let id_len = prefix.len().checked_add(key.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX input column target identity", 0, 1))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_len),
+            "NX input column target identity")?;
+        let mut id = String::new();
+        id.try_reserve_exact(id_len).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX input column target identity", 0, 1))?;
+        id.push_str(prefix);
+        id.push_str(key);
+        ctx.charge_collection_items(1, "NX input column targets")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureInputColumnTarget>()),
+            "NX input column targets")?;
+        output.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX input column targets", 0, 1))?;
+        output.push(FeatureInputColumnTarget {
+            id,
+            input_block: copy_operation_text(ctx, &input.id,
+                "NX input column target input identity")?,
+            operation_label: copy_operation_text(ctx, &input.operation_label,
+                "NX input column target operation label")?,
+            input_slot: input.input_slot,
+            column_row: copy_operation_text(ctx, &target.column_row,
+                "NX input column target row identity")?,
+            row,
+            field_indices,
+            field_data_blocks,
+            field_source_offsets,
+            mode,
+            column_table: copy_operation_text(ctx, column_table,
+                "NX input column target table identity")?,
+            data_block: copy_operation_text(ctx, &input.data_block,
+                "NX input column target data block")?,
+            source_offset: target.source_offset,
+        });
+    }
+    Ok(output)
 }
 
 /// Decode and atomically resolve datum coordinate-system construction lanes
