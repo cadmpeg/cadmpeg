@@ -221,6 +221,29 @@ fn plane_envelope_reader_propagates_slot_refusal() {
 }
 
 #[test]
+fn named_surface_scalar_sequence_refuses_before_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let body = [0x0e];
+    let run = |limit| with_surface_limits(&body, limit, u64::MAX, |ctx| {
+        crate::surface::named_surface_value(
+            ctx,
+            &SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
+            "radius1",
+            &body,
+            &scalar::ScalarCache::default(),
+            &"named torus fixture",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+    });
+    assert_eq!(
+        run(1).expect("one scalar is admitted"),
+        crate::surface::SurfaceNamedValue::ScalarSequence(vec![0.5])
+    );
+    let error = run(0).expect_err("one scalar exceeds zero collection items");
+    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo named surface scalar sequence");
+}
+
+#[test]
 fn torus_scalar_refuses_outline_marker_vector() {
     use cadmpeg_core::decode::ResourceDimension;
     let body = [0x01, 0x12, 0x50, 0x50];
