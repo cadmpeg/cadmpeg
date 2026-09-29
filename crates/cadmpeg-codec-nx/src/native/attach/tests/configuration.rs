@@ -382,7 +382,7 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
     });
     let mut annotations = AnnotationBuilder::new();
 
-    attach_active_configuration_parameter_values(&mut ir, &mut annotations)
+    crate::test_support::with_decode_context(|ctx| attach_active_configuration_parameter_values(ctx, &mut ir, &mut annotations))
         .expect("valid exactness fields");
 
     assert_eq!(
@@ -398,6 +398,66 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
             ),
         ])
     );
+}
+
+fn configuration_parameter_value_result(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut ir = CadIr::empty();
+    ir.model.parameters.push(DesignParameter {
+        id: ParameterId::mint("synthetic:test:id#value").unwrap(),
+        owner: None,
+        ordinal: 0,
+        name: "Value".to_string(),
+        expression: "value".into(),
+        display: None,
+        value: Some(ParameterValue::String("text".to_string())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#active").unwrap(),
+        ordinal: 0,
+        active: true,
+        source_index: Some(0),
+        name: Some("Model".to_string()),
+        material: None,
+        properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    });
+    let mut annotations = AnnotationBuilder::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    attach_active_configuration_parameter_values(&ctx, &mut ir, &mut annotations)
+}
+
+#[test]
+fn configuration_parameter_values_refuse_collection_limit() {
+    let error = configuration_parameter_value_result(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn configuration_parameter_values_refuse_retained_limit() {
+    let error = configuration_parameter_value_result(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn configuration_parameter_values_refuse_work_limit() {
+    let error = configuration_parameter_value_result(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
@@ -477,7 +537,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         ir.model.parameters = std::mem::take(parameters);
         ir.model.configurations.push(configuration());
 
-        attach_active_configuration_parameter_values(&mut ir, &mut annotations)
+        crate::test_support::with_decode_context(|ctx| attach_active_configuration_parameter_values(ctx, &mut ir, &mut annotations))
             .expect("valid exactness fields");
 
         assert!(ir.model.configurations[0].parameter_values.is_empty());
