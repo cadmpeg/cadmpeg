@@ -147,46 +147,47 @@ fn relation_scope_end(
     }
 }
 
+#[cfg(test)]
 fn relation_declaration_candidates<'a>(
+    ctx: &DecodeContext<'_>,
     classes: &'a [FeatureInputClass],
     scalars: &'a [FeatureInputScalar],
     intervals: &[(u64, Option<u64>, String)],
-) -> Vec<(
-    &'a FeatureInputClass,
-    &'a FeatureInputScalar,
-    FeatureInputRelationFamily,
-)> {
-    relation_declaration_candidates_impl(classes, scalars, intervals, false)
-}
-
-fn relation_declaration_candidates_with_dynamic<'a>(
-    classes: &'a [FeatureInputClass],
-    scalars: &'a [FeatureInputScalar],
-    intervals: &[(u64, Option<u64>, String)],
-) -> Vec<(
-    &'a FeatureInputClass,
-    &'a FeatureInputScalar,
-    FeatureInputRelationFamily,
-)> {
-    relation_declaration_candidates_impl(classes, scalars, intervals, true)
+) -> Result<Vec<(&'a FeatureInputClass, &'a FeatureInputScalar, FeatureInputRelationFamily)>, CodecError> {
+    relation_declaration_candidates_impl(ctx, classes, scalars, intervals, false)
 }
 
 fn relation_declaration_candidates_impl<'a>(
+    ctx: &DecodeContext<'_>,
     classes: &'a [FeatureInputClass],
     scalars: &'a [FeatureInputScalar],
     intervals: &[(u64, Option<u64>, String)],
     allow_dynamic: bool,
-) -> Vec<(
-    &'a FeatureInputClass,
-    &'a FeatureInputScalar,
-    FeatureInputRelationFamily,
-)> {
-    classes
-        .iter()
-        .filter_map(|class| {
+) -> Result<Vec<(&'a FeatureInputClass, &'a FeatureInputScalar, FeatureInputRelationFamily)>, CodecError> {
+    let search_steps = classes
+        .len()
+        .checked_add(scalars.len())
+        .and_then(|step| step.checked_add(intervals.len()))
+        .and_then(|step| classes.len().checked_mul(step))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("match SLDPRT relation declarations", u64::MAX - 1, u64::MAX)
+        })?;
+    ctx.charge_work(
+        u64::try_from(search_steps).map_err(|_| {
+            ctx.refuse_codec_limit("match SLDPRT relation declarations", u64::MAX - 1, u64::MAX)
+        })?,
+        "match SLDPRT relation declarations",
+    )?;
+    let mut candidates = Vec::new();
+    for class in classes {
+        if let Some(candidate) =
             relation_declaration_candidate(class, classes, scalars, intervals, allow_dynamic)
-        })
-        .collect()
+        {
+            ctx.reserve_collection_vec(&mut candidates, 1, "collect SLDPRT relation candidates")?;
+            candidates.push(candidate);
+        }
+    }
+    Ok(candidates)
 }
 
 fn relation_declaration_candidate<'a>(
@@ -224,26 +225,6 @@ fn relation_declaration_candidate<'a>(
     Some((class, scalar, family))
 }
 
-pub(super) fn unique_relation_declaration_candidates<'a>(
-    classes: &'a [FeatureInputClass],
-    scalars: &'a [FeatureInputScalar],
-    intervals: &[(u64, Option<u64>, String)],
-) -> Vec<(
-    &'a FeatureInputClass,
-    &'a FeatureInputScalar,
-    FeatureInputRelationFamily,
-)> {
-    let candidates = relation_declaration_candidates(classes, scalars, intervals);
-    let mut counts = HashMap::<&str, usize>::new();
-    for (_, scalar, _) in &candidates {
-        *counts.entry(scalar.id.as_str()).or_default() += 1;
-    }
-    candidates
-        .into_iter()
-        .filter(|(_, scalar, _)| counts.get(scalar.id.as_str()) == Some(&1))
-        .collect()
-}
-
 pub(super) fn unique_relation_declaration_candidates_charged<'a>(
     ctx: &DecodeContext<'_>,
     classes: &'a [FeatureInputClass],
@@ -257,29 +238,7 @@ pub(super) fn unique_relation_declaration_candidates_charged<'a>(
     )>,
     CodecError,
 > {
-    let search_steps = classes
-        .len()
-        .checked_add(scalars.len())
-        .and_then(|step| step.checked_add(intervals.len()))
-        .and_then(|step| classes.len().checked_mul(step))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("match SLDPRT relation declarations", u64::MAX - 1, u64::MAX)
-        })?;
-    ctx.charge_work(
-        u64::try_from(search_steps).map_err(|_| {
-            ctx.refuse_codec_limit("match SLDPRT relation declarations", u64::MAX - 1, u64::MAX)
-        })?,
-        "match SLDPRT relation declarations",
-    )?;
-    let mut candidates = Vec::new();
-    for class in classes {
-        if let Some(candidate) =
-            relation_declaration_candidate(class, classes, scalars, intervals, false)
-        {
-            ctx.reserve_collection_vec(&mut candidates, 1, "collect SLDPRT relation candidates")?;
-            candidates.push(candidate);
-        }
-    }
+    let candidates = relation_declaration_candidates_impl(ctx, classes, scalars, intervals, false)?;
     let mut counts = HashMap::<&str, usize>::new();
     for (_, scalar, _) in &candidates {
         if let Some(count) = counts.get_mut(scalar.id.as_str()) {
@@ -325,7 +284,7 @@ pub(super) fn relation_instances(
         .collect::<HashSet<_>>();
     let intervals = feature_intervals(ctx, histories, lane)?;
     let declaration_candidates =
-        relation_declaration_candidates_with_dynamic(&lane.classes, &lane.scalars, &intervals);
+        relation_declaration_candidates_impl(ctx, &lane.classes, &lane.scalars, &intervals, true)?;
     let mut candidate_counts = HashMap::<&str, usize>::new();
     for (_, scalar, _) in &declaration_candidates {
         *candidate_counts.entry(scalar.id.as_str()).or_default() += 1;
@@ -822,21 +781,21 @@ mod relation_records_tests {
     fn a_class_whose_unknown_feature_span_is_unstatable_declares_no_relation() {
         let unstatable = class(u64::MAX - 100, "sgPntPntHorDist");
         let following = scalar(u64::MAX - 50, FeatureInputScalarRole::Driving);
-        assert!(relation_declaration_candidates(
+        assert!(relation_declaration_candidates(&cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&unstatable),
             std::slice::from_ref(&following),
             &[],
-        )
+        ).unwrap()
         .is_empty());
 
         let stated = class(1_000, "sgPntPntHorDist");
         let within = scalar(1_050, FeatureInputScalarRole::Driving);
         assert_eq!(
-            relation_declaration_candidates(
+            relation_declaration_candidates(&cadmpeg_test_support::service_decode_context(),
                 std::slice::from_ref(&stated),
                 std::slice::from_ref(&within),
                 &[],
-            )
+            ).unwrap()
             .len(),
             1
         );
@@ -1033,7 +992,7 @@ mod relation_records_tests {
         // 150 is past 10 + UNKNOWN_FEATURE_SPAN and inside the interval.
         assert!(relation_scalar.offset > 10 + UNKNOWN_FEATURE_SPAN);
         assert_eq!(
-            relation_declaration_candidates(&lane.classes, &lane.scalars, &intervals).len(),
+            relation_declaration_candidates(&cadmpeg_test_support::service_decode_context(), &lane.classes, &lane.scalars, &intervals).unwrap().len(),
             1
         );
     }
@@ -1060,7 +1019,7 @@ mod relation_records_tests {
 
         let intervals = feature_intervals(&cadmpeg_test_support::service_decode_context(), &history, &lane).unwrap();
         assert_eq!(
-            relation_declaration_candidates(&lane.classes, &lane.scalars, &intervals).len(),
+            relation_declaration_candidates(&cadmpeg_test_support::service_decode_context(), &lane.classes, &lane.scalars, &intervals).unwrap().len(),
             1,
             "the open last interval bounds no scalar offset"
         );

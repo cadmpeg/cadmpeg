@@ -16,7 +16,7 @@ use super::endpoints::{
 };
 use super::relation_loci::same_dimension_length;
 use super::relation_records::{
-    unique_relation_declaration_candidates, unique_relation_declaration_candidates_charged,
+    unique_relation_declaration_candidates_charged,
 };
 use super::scalars::{feature_object_name, operand_kind};
 use super::selections::{marker_local_links, operand_accepts_marker};
@@ -1294,22 +1294,24 @@ pub(super) fn current_geometry_locus_arc_handle_point(payload: &[u8], offset: us
     ordinary || terminal
 }
 
-pub(crate) fn relation_bindings(
-    parent: &str,
-    classes: &[FeatureInputClass],
-    scalars: &[FeatureInputScalar],
-) -> Vec<FeatureInputRelationBinding> {
-    relation_bindings_scoped(parent, classes, scalars, &[])
-}
-
 pub(crate) fn relation_bindings_charged(
     ctx: &DecodeContext<'_>,
     parent: &str,
     classes: &[FeatureInputClass],
     scalars: &[FeatureInputScalar],
 ) -> Result<Vec<FeatureInputRelationBinding>, CodecError> {
+    relation_bindings_scoped(ctx, parent, classes, scalars, &[])
+}
+
+pub(super) fn relation_bindings_scoped(
+    ctx: &DecodeContext<'_>,
+    parent: &str,
+    classes: &[FeatureInputClass],
+    scalars: &[FeatureInputScalar],
+    intervals: &[(u64, Option<u64>, String)],
+) -> Result<Vec<FeatureInputRelationBinding>, CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    let candidates = unique_relation_declaration_candidates_charged(ctx, classes, scalars, &[])?;
+    let candidates = unique_relation_declaration_candidates_charged(ctx, classes, scalars, intervals)?;
     let mut bindings = Vec::new();
     for (class, scalar, family) in candidates {
         let ordinal = u32::try_from(bindings.len()).map_err(|_| {
@@ -1340,34 +1342,6 @@ pub(crate) fn relation_bindings_charged(
         });
     }
     Ok(bindings)
-}
-
-pub(super) fn relation_bindings_scoped(
-    parent: &str,
-    classes: &[FeatureInputClass],
-    scalars: &[FeatureInputScalar],
-    intervals: &[(u64, Option<u64>, String)],
-) -> Vec<FeatureInputRelationBinding> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    unique_relation_declaration_candidates(classes, scalars, intervals)
-        .into_iter()
-        .enumerate()
-        .map(
-            |(ordinal, (class, scalar, family))| FeatureInputRelationBinding {
-                id: format!(
-                    "sldprt:feature-input:relation-binding#{lane_key}:{}",
-                    class.offset
-                ),
-                parent: parent.to_string(),
-                ordinal: ordinal as u32,
-                offset: class.offset,
-                class_ref: class.id.clone(),
-                family,
-                scalar_ref: scalar.id.clone(),
-                feature_ref: scalar.feature_ref.clone(),
-            },
-        )
-        .collect()
 }
 
 pub(crate) fn reference_cells(
