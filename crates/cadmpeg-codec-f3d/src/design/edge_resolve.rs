@@ -1006,10 +1006,16 @@ fn resolved_edge_group_with_transition_chain(
     };
     let state = feature_input_topology_id(feature_id, previous_state_id);
     let lost_selection = || unmatched_selection(Some(previous_state_id));
-    let mut exact_slots = matched_operands
-        .iter()
-        .map(|operand| resolved_edge_operand(operand))
-        .collect::<Option<Vec<_>>>();
+    let mut exact_slots = Some(Vec::new());
+    for operand in &matched_operands {
+        let Some(slot) = resolved_edge_operand(operand) else {
+            exact_slots = None;
+            break;
+        };
+        if let Some(slots) = exact_slots.as_mut() {
+            push_edge_item(ctx, slots, slot, "f3d exact edge group slot")?;
+        }
+    }
     if exact_slots.is_none() {
         exact_slots = unique_edge_group_assignment(&matched_operands, ctx)?;
     }

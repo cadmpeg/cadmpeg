@@ -78,6 +78,11 @@ fn matched_edge_group_operand_refuses_collection_limit() {
 }
 
 #[test]
+fn exact_edge_group_slot_refuses_collection_limit() {
+    assert_main_group_refusal("f3d exact edge group slot", false);
+}
+
+#[test]
 fn edge_group_matched_identity_refuses_collection_limit() {
     let group = group(2, 10);
     let operand = identity(10, &[]);
