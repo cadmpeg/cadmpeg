@@ -78,14 +78,15 @@ fn declared_draft_operands(
         .filter(|offset| lane.native_payload.get(*offset..*offset + 2) == Some(token.as_slice()))
         .filter_map(|offset| draft_plane_reference_at(&lane.native_payload, offset, end))
         .collect::<Vec<_>>();
-    let (_, neutral_plane, neutral_end) = records.first()?.clone();
+    let mut records = records.into_iter();
+    let (_, neutral_plane, neutral_end) = records.next()?;
     let pull_direction = unique_draft_direction(
         &lane.native_payload,
         neutral_end,
-        records.get(1).map_or(end, |record| record.0),
+        records.as_slice().first().map_or(end, |record| record.0),
     )?;
     let mut faces = Vec::<Vec<FeatureInputComponentPathEntry>>::new();
-    for path in records.into_iter().skip(1).map(|(_, path, _)| path) {
+    for path in records.map(|(_, path, _)| path) {
         if !faces
             .iter()
             .any(|existing| same_component_path_semantics(existing, &path))
