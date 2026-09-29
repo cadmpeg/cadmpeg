@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::transfer_resolved_revolution_breps;
+use super::{push_revolution_loss, revolution_identity, transfer_resolved_revolution_breps};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
@@ -307,3 +308,72 @@ revolution_collection_limit_test!(revolution_shells_refuse_limit, "creo model re
 revolution_collection_limit_test!(revolution_region_shell_ids_refuse_limit, "creo revolution region shell IDs");
 revolution_collection_limit_test!(revolution_regions_refuse_limit, "creo model revolution regions");
 revolution_collection_limit_test!(revolution_body_region_ids_refuse_limit, "creo revolution body region IDs");
+
+#[test]
+fn revolution_identity_and_copy_refuse_below_retained_limits() {
+    for operation in ["creo revolution identity", "creo revolution identity copy"] {
+        let mut reached = false;
+        for limit in 0..4096 {
+            let (scan, mut ir) = closed_off_axis_revolution();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = transfer_resolved_revolution_breps(
+                &ctx, &scan, &mut ir, &mut AnnotationBuilder::new(), &mut Vec::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            );
+            if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+                if resource.dimension == ResourceDimension::RetainedBytes
+                    && resource.operation == operation)
+            {
+                reached = true;
+                break;
+            }
+        }
+        assert!(reached, "{operation} was not reached");
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert_eq!(
+        revolution_identity::<BodyId>(&ctx, 40, "body").expect("identity"),
+        BodyId::compose(&crate::identity::FEATURE_REVOLUTION,
+            cadmpeg_ir::ids::IdentityKey::from(40).colon(cadmpeg_ir::identity_key!("body"))),
+    );
+}
+
+#[test]
+fn revolution_loss_text_and_slot_refuse_named_limits() {
+    let records = vec!["first".to_owned(), "second".to_owned()];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = push_revolution_loss(&ctx, &mut Vec::new(), 40,
+        "states no face sense; its B-rep was skipped", &records)
+        .err().expect("text refused");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo revolution rejection text"));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = push_revolution_loss(&ctx, &mut Vec::new(), 40,
+        "states no face sense; its B-rep was skipped", &records)
+        .err().expect("loss slot refused");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo revolution losses"));
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut losses = Vec::new();
+    push_revolution_loss(&ctx, &mut losses, 40,
+        "states no face sense; its B-rep was skipped", &records).expect("service loss");
+    assert_eq!(losses[0].message,
+        "Revolution feature 40 states no face sense; its B-rep was skipped: first; second");
+}
