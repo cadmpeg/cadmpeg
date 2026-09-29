@@ -1402,6 +1402,8 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
             companion_record_index: 42,
         },
     ).unwrap();
+    let document_alias = operation.starts_with("f3d document alias");
+    let owners = if document_alias { &[][..] } else { std::slice::from_ref(&owner) };
     let max_limit = if retained { 4096 } else { 128 };
     for limit in 0..max_limit {
         let arena = DecodeArena::new();
@@ -1413,7 +1415,7 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
             Some(&ctx),
             &crate::design::feature_project::ProjectInputs {
                 native: std::slice::from_ref(&parameter),
-                owners: std::slice::from_ref(&owner),
+                owners,
                 scopes: &scopes,
                 timelines: std::slice::from_ref(&timeline),
                 construction_groups: &[],
@@ -1513,6 +1515,96 @@ fn projected_parameter_native_ref_refuses_retained_limit() {
 #[test]
 fn projected_parameter_output_refuses_collection_limit() {
     assert_projected_feature_refusal("f3d projected parameter output", false);
+}
+
+#[test]
+fn parameter_scope_index_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d parameter scope index id", true);
+}
+
+#[test]
+fn parameter_scope_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d parameter scope index", false);
+}
+
+#[test]
+fn feature_alias_owner_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d feature alias owner id", true);
+}
+
+#[test]
+fn feature_alias_name_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d feature alias name", true);
+}
+
+#[test]
+fn feature_alias_parameter_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d feature alias parameter id", true);
+}
+
+#[test]
+fn feature_alias_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d feature alias index", false);
+}
+
+#[test]
+fn owned_alias_name_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d owned alias name", true);
+}
+
+#[test]
+fn owned_alias_parameter_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d owned alias parameter id", true);
+}
+
+#[test]
+fn owned_alias_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d owned alias index", false);
+}
+
+#[test]
+fn owned_alias_member_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d owned alias member", false);
+}
+
+#[test]
+fn document_alias_name_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d document alias name", true);
+}
+
+#[test]
+fn document_alias_parameter_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d document alias parameter id", true);
+}
+
+#[test]
+fn document_alias_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d document alias index", false);
+}
+
+#[test]
+fn parameter_owner_index_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d parameter owner index id", true);
+}
+
+#[test]
+fn parameter_owner_index_owner_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d parameter owner index owner id", true);
+}
+
+#[test]
+fn parameter_owner_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d parameter owner index", false);
+}
+
+#[test]
+fn feature_order_index_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d feature order index id", true);
+}
+
+#[test]
+fn feature_order_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d feature order index", false);
 }
 
 fn assert_history_dependency_refusal(operation: &'static str, retained: bool) {
