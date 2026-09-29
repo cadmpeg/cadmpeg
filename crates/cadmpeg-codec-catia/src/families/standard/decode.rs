@@ -1468,7 +1468,7 @@ fn emit_standard_extrusion_definition(
                     )),
                 },
             );
-            let _attached = ir.model.add_procedural_curve(owner, procedure);
+            let _attached = ir.model.add_procedural_curve_charged(ctx, owner, procedure)?;
         }
         crate::families::b5::transfer::ResolvedExtrusionDirectrix::SurfaceCurve {
             curve, ..
@@ -1595,7 +1595,7 @@ fn emit_standard_extrusion_definition(
                 CurveId::mint,
                 "catia_extrusion_offset_owner_id",
             )?;
-            let _attached = ir.model.add_procedural_curve(owner, ProceduralCurve::new(
+            let _attached = ir.model.add_procedural_curve_charged(ctx, owner, ProceduralCurve::new(
                     procedure_id,
                     ProceduralCurveDefinition::Offset(
                         cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::along_direction(
@@ -1606,7 +1606,7 @@ fn emit_standard_extrusion_definition(
                             source_parameter_range,
                         ),
                     ),
-                ));
+                ))?;
         }
     }
     let definition = cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
@@ -10570,7 +10570,9 @@ fn build_standard_edge_curve(
                         cache: None,
                     },
                 );
-                let _attached = ir.model.add_procedural_curve(id.clone(), procedural);
+                let _attached = ir.model.add_procedural_curve_charged(ctx,
+                    crate::resource::copy_id(ctx, id.as_str(), CurveId::mint,
+                        "catia_standard_edge_procedural_owner_id")?, procedural)?;
                 param_range = Some(curve_parameter_range);
             }
         }

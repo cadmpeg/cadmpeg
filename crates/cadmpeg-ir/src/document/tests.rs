@@ -5,7 +5,7 @@ use crate::document::{ArenaName, EntityRewrite, Model, SourceMeta};
 use crate::examples::unit_cube;
 use crate::geometry::{
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point3, Vector3};
@@ -16,6 +16,47 @@ use serde::{de::DeserializeOwned, Serialize};
 mod append;
 mod feature_parents;
 mod unknowns;
+
+#[test]
+fn charged_procedural_curve_attachment_refuses_before_construction_copy() {
+    let build = || {
+        let owner = CurveId::mint("test:model:curve#charged").expect("valid curve identity");
+        let mut model = Model::default();
+        model.curves.push(Curve {
+            id: owner.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        let procedural = ProceduralCurve::new(
+            ProceduralCurveId::mint("test:model:construction#charged")
+                .expect("valid construction identity"),
+            ProceduralCurveDefinition::Exact { cache: None },
+        );
+        (model, owner, procedural)
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("input admitted");
+    let (mut model, owner, procedural) = build();
+    let refused = model.add_procedural_curve_charged(&ctx, owner, procedural);
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "ir_procedural_curve_construction_id"));
+    assert!(matches!(model.curves[0].geometry, CurveGeometry::Solved(_)));
+    assert!(model.procedural_curves.is_empty());
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("input admitted");
+    let (mut model, owner, procedural) = build();
+    assert!(model.add_procedural_curve_charged(&ctx, owner, procedural)
+        .expect("service budget admits construction copy").is_ok());
+    assert!(matches!(model.curves[0].geometry,
+        CurveGeometry::Procedural { cache: Some(SolvedCurveGeometry::Unknown { record: None }), .. }));
+    assert_eq!(model.procedural_curves.len(), 1);
+}
 
 struct SerdeIdentity;
 

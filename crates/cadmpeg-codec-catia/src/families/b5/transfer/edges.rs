@@ -411,7 +411,7 @@ pub(super) fn emit_edges(
             let owner = crate::resource::copy_id(admission.context(), curve_id.as_str(),
                 CurveId::mint, "catia_b5_edge_procedural_owner_id")?;
             admission.reserve_entity(&mut ir.model.procedural_curves, "catia_b5_emit_procedural_curves")?;
-            let _attached = ir.model.add_procedural_curve(owner, procedural);
+            let _attached = ir.model.add_procedural_curve_charged(admission.context(), owner, procedural)?;
         }
         annotate(
             admission.context(),

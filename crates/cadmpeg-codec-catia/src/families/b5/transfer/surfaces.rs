@@ -985,9 +985,9 @@ fn emit_extrusion_procedure(
             admission.reserve_entity(&mut ir.model.procedural_curves, "catia_b5_emit_procedural_curves")?;
             let _attached = ir
                 .model
-                .add_procedural_curve(crate::resource::copy_id(admission.context(),
+                .add_procedural_curve_charged(admission.context(), crate::resource::copy_id(admission.context(),
                     directrix_id.as_str(), CurveId::mint,
-                    "catia_b5_extrusion_procedure_owner_id")?, procedure);
+                    "catia_b5_extrusion_procedure_owner_id")?, procedure)?;
         }
         super::ResolvedExtrusionDirectrix::SurfaceCurve { curve, .. } => {
             annotate(
@@ -1059,7 +1059,7 @@ fn emit_extrusion_procedure(
                 Exactness::ByteExact,
             )?;
             admission.reserve_entity(&mut ir.model.procedural_curves, "catia_b5_emit_procedural_curves")?;
-            let _attached = ir.model.add_procedural_curve(
+            let _attached = ir.model.add_procedural_curve_charged(admission.context(),
                 crate::resource::copy_id(admission.context(), directrix_id.as_str(),
                     CurveId::mint, "catia_b5_extrusion_procedure_owner_id")?,
                 ProceduralCurve::new(
@@ -1076,7 +1076,7 @@ fn emit_extrusion_procedure(
                         ),
                     ),
                 ),
-            );
+            )?;
         }
     }
     let procedure_id = crate::resource::compose_u32_id(admission.context(),
