@@ -229,7 +229,7 @@ mod tests {
                 0xff,
                 0xff,
                 1,
-                (count + 1) as u8,
+                u8::try_from(count + 1).expect("fixture value fits u8"),
             ];
             let mut positions = Vec::new();
             for slot in 0..count {
@@ -254,7 +254,7 @@ mod tests {
                     .collect::<Vec<_>>(),
                 positions
             );
-            let base = u64::MAX - 100 - bytes.len() as u64;
+            let base = u64::MAX - 100 - cadmpeg_core::decode::u64_from_index(bytes.len());
             let absolute = frame.clone().into_absolute(base).unwrap();
             assert_eq!(
                 absolute
@@ -263,7 +263,7 @@ mod tests {
                     .collect::<Vec<_>>(),
                 positions
                     .iter()
-                    .map(|offset| base + *offset as u64)
+                    .map(|offset| base + cadmpeg_core::decode::u64_from_index(*offset))
                     .collect::<Vec<_>>()
             );
             assert!(frame.clone().into_absolute(base + 1).is_none());

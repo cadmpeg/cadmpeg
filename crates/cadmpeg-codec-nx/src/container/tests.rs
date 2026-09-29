@@ -89,7 +89,7 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
     let payload = [1, 2, 3, 4, 5, 6];
     let container = Container {
         data: payload.as_slice().into(),
-        physical_size: payload.len() as u64,
+        physical_size: cadmpeg_core::decode::u64_from_index(payload.len()),
         layout: ContainerLayout::LegacyCfb { version: 0 },
         entries: vec![
             DirEntry {
@@ -120,14 +120,14 @@ fn container_cached_operation_labels_preserve_section_materialization() {
     let payload = size_framed_om_section_with_repeated_operations(2);
     let container = Container {
         data: payload.as_slice().into(),
-        physical_size: payload.len() as u64,
+        physical_size: cadmpeg_core::decode::u64_from_index(payload.len()),
         layout: test_modern_layout(0),
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,
             body: crate::container::DirEntryBody::File {
                 offset: 0,
-                len: payload.len() as u64,
+                len: cadmpeg_core::decode::u64_from_index(payload.len()),
             },
         }],
         fastload_table: None,
@@ -167,10 +167,10 @@ fn container_cached_operation_labels_preserve_section_materialization() {
 #[test]
 fn container_caches_owned_section_layouts() {
     let payload = size_framed_om_section_with_repeated_operations(2);
-    let payload_len = payload.len() as u64;
+    let payload_len = cadmpeg_core::decode::u64_from_index(payload.len());
     let mut file = vec![0xaa; 17];
     file.extend_from_slice(&payload);
-    let physical_size = file.len() as u64;
+    let physical_size = cadmpeg_core::decode::u64_from_index(file.len());
     let container = Container {
         data: file.into(),
         physical_size,
@@ -213,14 +213,14 @@ fn framed_section_cache_reader_refuses_collection_limit() {
     let payload = size_framed_om_section_with_repeated_operations(2);
     let container = Container {
         data: payload.as_slice().into(),
-        physical_size: payload.len() as u64,
+        physical_size: cadmpeg_core::decode::u64_from_index(payload.len()),
         layout: test_modern_layout(0),
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,
             body: crate::container::DirEntryBody::File {
                 offset: 0,
-                len: payload.len() as u64,
+                len: cadmpeg_core::decode::u64_from_index(payload.len()),
             },
         }],
         fastload_table: None,
@@ -397,7 +397,7 @@ fn header_directory_refuses_retained_name_limit_before_copy() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes =
-        (std::mem::size_of::<DirEntry>() + "/Root/UG_PART/UG_PART".len() - 1) as u64;
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DirEntry>() + "/Root/UG_PART/UG_PART".len() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
     let error =
         container::scan_bytes(&ctx, file.as_slice()).expect_err("name copy needs one more byte");
@@ -557,7 +557,7 @@ fn fastload_id_table_refuses_retained_limit_before_reserve() {
     let mut policy = DecodePolicy::default();
     let directory_bytes = std::mem::size_of::<DirEntry>() + "/Root/FastLoad/RMFastLoad".len();
     policy.limits.max_retained_bytes =
-        (directory_bytes + 50 * std::mem::size_of::<u32>() - 1) as u64;
+        cadmpeg_core::decode::u64_from_index(directory_bytes + 50 * std::mem::size_of::<u32>() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
     let error =
         container::scan_bytes(&ctx, file.as_slice()).expect_err("ID copy needs one more byte");
@@ -666,14 +666,14 @@ fn external_reference_paths_refuse_collection_limit() {
 fn external_reference_path_container(payload: &[u8]) -> Container<'_> {
     Container {
         data: payload.into(),
-        physical_size: payload.len() as u64,
+        physical_size: cadmpeg_core::decode::u64_from_index(payload.len()),
         layout: ContainerLayout::LegacyCfb { version: 0 },
         entries: vec![DirEntry {
             name: "/Root/ExternalReferences".into(),
             region: Region::Header,
             body: crate::container::DirEntryBody::File {
                 offset: 0,
-                len: payload.len() as u64,
+                len: cadmpeg_core::decode::u64_from_index(payload.len()),
             },
         }],
         fastload_table: None,

@@ -215,8 +215,8 @@ fn fixed_indexed_section_with_embedded_section(adjust_outer_bounds: bool) -> Vec
     if adjust_outer_bounds {
         for ordinal in 2..=3 {
             let offset = index_start + ordinal * 4;
-            let value = View::u32_le_at(&outer, offset).unwrap() as usize + inner.len();
-            bytes[offset..offset + 4].copy_from_slice(&(value as u32).to_le_bytes());
+            let value = cadmpeg_core::decode::index_from_u32(View::u32_le_at(&outer, offset).unwrap()) + inner.len();
+            bytes[offset..offset + 4].copy_from_slice(&(u32::try_from(value).expect("fixture value fits u32")).to_le_bytes());
         }
     }
     bytes

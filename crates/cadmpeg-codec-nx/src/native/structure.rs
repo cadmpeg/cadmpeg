@@ -935,7 +935,7 @@ mod tests {
                 .to_be_bytes(),
         );
         data.extend(payload);
-        let len = data.len() as u64;
+        let len = cadmpeg_core::decode::u64_from_index(data.len());
         Container {
             data: Cow::Owned(data),
             physical_size: len,

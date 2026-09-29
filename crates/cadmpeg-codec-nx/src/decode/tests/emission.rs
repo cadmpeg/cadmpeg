@@ -72,7 +72,7 @@ fn decode_keeps_stream_and_model_entity_admission_additive() {
     let decoded = NxCodec
         .decode(&mut Cursor::new(file.clone()), &DecodeOptions::default())
         .expect("decode topology partition");
-    let model_entities = decoded.ir().model.entity_count() as u64;
+    let model_entities = cadmpeg_core::decode::u64_from_index(decoded.ir().model.entity_count());
     assert!(model_entities > 1);
 
     let mut options = DecodeOptions::default();

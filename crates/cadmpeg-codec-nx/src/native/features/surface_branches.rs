@@ -77,7 +77,7 @@ impl From<FeatureSurfaceConstructionBranch> for SurfaceBranchWire {
             .enumerate()
             .map(
                 |(ordinal, ((token, data_block), source_offset))| SurfaceReferenceWire {
-                    ordinal: ordinal as u32,
+                    ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                     token: *token,
                     data_block: data_block.clone(),
                     source_offset,
@@ -95,7 +95,7 @@ impl From<FeatureSurfaceConstructionBranch> for SurfaceBranchWire {
             witnessed: branch.witnessed(),
             members,
             terminal: SurfaceReferenceWire {
-                ordinal: branch.members().len() as u32,
+                ordinal: u32::try_from(branch.members().len()).expect("fixture value fits u32"),
                 token: branch.terminal().0,
                 data_block: branch.terminal().1.clone(),
                 source_offset: branch.terminal_offset(),

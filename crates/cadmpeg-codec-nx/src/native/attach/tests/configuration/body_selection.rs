@@ -224,7 +224,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
         operation_label: operation_label.to_string(),
         body: crate::om::reference_index::FeatureReferenceToken::from_wire(
             body_object_index,
-            &[body_object_index as u8],
+            &[u8::try_from(body_object_index).expect("fixture value fits u8")],
         )
         .unwrap(),
         source_offset: 0,

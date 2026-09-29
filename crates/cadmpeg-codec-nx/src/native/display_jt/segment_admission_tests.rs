@@ -99,7 +99,7 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
     data.extend_from_slice(&16_u32.to_le_bytes());
     data.extend_from_slice(&[0xff; 16]);
     data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
-    let data_len = data.len() as u64;
+    let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = Container {
         data: data.into(),
         physical_size: data_len,

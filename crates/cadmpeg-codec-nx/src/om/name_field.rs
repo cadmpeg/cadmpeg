@@ -178,7 +178,7 @@ mod tests {
             };
             for length in [1, 253] {
                 let text = "A".repeat(length);
-                let byte_len = 4 + raw.len() as u64 + length as u64;
+                let byte_len = 4 + cadmpeg_core::decode::u64_from_index(raw.len()) + cadmpeg_core::decode::u64_from_index(length);
                 let last_offset = u64::MAX - byte_len;
                 let frame = NameField::new(text.clone(), last_offset, Some(code)).unwrap();
                 assert_eq!(frame.code().unwrap().offset, last_offset + 1);

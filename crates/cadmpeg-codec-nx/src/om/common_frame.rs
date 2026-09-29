@@ -217,7 +217,7 @@ impl<O, T> TerminalFrame<O, T> {
 }
 
 macro_rules! frame_positions {
-    ($offset:ty) => {
+    ($offset:ty, $widen:path) => {
         impl<T> CommonFrame<$offset, T> {
             pub(crate) fn new(
                 prefix: CommonFramePrefix,
@@ -231,14 +231,14 @@ macro_rules! frame_positions {
                     suffix,
                     offset,
                 };
-                offset.checked_add(frame.byte_len() as $offset)?;
+                offset.checked_add($widen(frame.byte_len()))?;
                 Some(frame)
             }
             pub(crate) fn offset(&self) -> $offset {
                 self.offset
             }
             pub(crate) fn state_offset(&self) -> $offset {
-                self.offset + self.prefix.byte_len() as $offset
+                self.offset + $widen(self.prefix.byte_len())
             }
             pub(crate) fn local_ordinal_offset(&self) -> $offset {
                 self.state_offset() + 8
@@ -246,7 +246,7 @@ macro_rules! frame_positions {
         }
         impl<T> TerminalFrame<$offset, T> {
             pub(crate) fn new(suffix: CommonFrameSuffix<T>, offset: $offset) -> Option<Self> {
-                offset.checked_add(suffix.byte_len() as $offset)?;
+                offset.checked_add($widen(suffix.byte_len()))?;
                 Some(Self { suffix, offset })
             }
             pub(crate) fn offset(&self) -> $offset {
@@ -255,8 +255,8 @@ macro_rules! frame_positions {
         }
     };
 }
-frame_positions!(usize);
-frame_positions!(u64);
+frame_positions!(usize, std::convert::identity);
+frame_positions!(u64, cadmpeg_core::decode::u64_from_index);
 
 impl<T> CommonFrame<usize, T> {
     pub(super) fn end_offset(&self) -> usize {

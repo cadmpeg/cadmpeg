@@ -309,16 +309,16 @@ mod tests {
         let mut store = offset_only_indexed_om_section();
         let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
         let end_at = index_start + 3 * 4;
-        let end = u32::from_le_bytes(
+        let end = cadmpeg_core::decode::index_from_u32(u32::from_le_bytes(
             store[end_at..end_at + 4]
                 .try_into()
                 .expect("required invariant"),
-        ) as usize;
+        ));
         let mut lane = vec![0x11, 0x02];
         lane.extend_from_slice(&[0xff; 15]);
         lane.extend_from_slice(&[0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03]);
         store.splice(end..end, lane.iter().copied());
-        store[end_at..end_at + 4].copy_from_slice(&((end + lane.len()) as u32).to_le_bytes());
+        store[end_at..end_at + 4].copy_from_slice(&(u32::try_from(end + lane.len()).expect("fixture value fits u32")).to_le_bytes());
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
         let container =
             crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))

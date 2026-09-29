@@ -341,7 +341,7 @@ mod tests {
         );
         assert_eq!(field.references().len(), 255);
         for (ordinal, (position, reference)) in field.into_positioned().enumerate() {
-            assert_eq!(position.ordinal(), ordinal as u32);
+            assert_eq!(position.ordinal(), u32::try_from(ordinal).expect("fixture value fits u32"));
             assert_eq!(
                 position.declared_count(),
                 SketchReferenceCount::from_count_byte(255)

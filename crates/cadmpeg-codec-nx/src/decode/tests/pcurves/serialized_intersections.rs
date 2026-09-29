@@ -75,7 +75,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         ir.model.points.push(Point::new(
             points[index].clone(),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                0.005 + 9.99 * index as f64,
+                0.005 + 9.99 * cadmpeg_core::convert::f64_from_index(index).expect("fixture integer is exactly representable"),
                 0.0,
                 0.0,
             ))

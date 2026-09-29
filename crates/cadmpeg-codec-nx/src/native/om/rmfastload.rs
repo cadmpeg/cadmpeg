@@ -21,7 +21,7 @@ fn value_identity_ignores_member_order() {
             .map(|(ordinal, value)| RmFastLoadObjectId {
                 id: format!("nx:test:rmfastload-object-id#{ordinal}"),
                 table: "nx:rmfastload:object-id-table#0".into(),
-                ordinal: ordinal as u32,
+                ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                 value: *value,
                 stable_identity: None,
                 source_offset: cadmpeg_core::decode::u64_from_index(ordinal),

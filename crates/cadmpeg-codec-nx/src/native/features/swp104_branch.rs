@@ -142,12 +142,12 @@ impl From<FeatureSwp104LeadingBranch> for FeatureSwp104LeadingBranchWire {
         let byte_len = value.byte_len();
         let mut at = value.source_offset + value.members_offset();
         let state_len = value.state_len();
-        let terminal_ordinal = value.members.len() as u32;
+        let terminal_ordinal = u32::try_from(value.members.len()).expect("fixture value fits u32");
         let members = value.members.map_indexed(|ordinal, reference| {
             let source_offset = at;
-            at += reference.token.raw().len() as u64;
+            at += cadmpeg_core::decode::u64_from_index(reference.token.raw().len());
             ReferenceWire {
-                ordinal: ordinal as u32,
+                ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                 token: reference.token,
                 data_block: reference.data_block,
                 source_offset,

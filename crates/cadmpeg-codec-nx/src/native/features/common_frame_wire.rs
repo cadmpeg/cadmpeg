@@ -194,7 +194,7 @@ impl From<FeatureOperationCommonFrame> for CommonFrameWire {
             object_index: frame.suffix().object_index(),
             raw_object_index: frame.suffix().raw_object_index().to_vec(),
             data_block: frame.suffix().target().cloned().flatten(),
-            byte_len: frame.byte_len() as u64,
+            byte_len: cadmpeg_core::decode::u64_from_index(frame.byte_len()),
             source_offset: frame.offset(),
             index_source_offsets: frame.index_offsets(),
             state_source_offset: frame.state_offset(),

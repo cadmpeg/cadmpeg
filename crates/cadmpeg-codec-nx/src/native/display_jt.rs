@@ -6425,7 +6425,7 @@ fn display_jt_tessellation_rows(
                         cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
                         16,
                         DISPLAY_JT_COLOR_CHANNEL,
-                        ((vertex_header.vertex_bindings >> 4) & 0x3) as u32,
+                        required!(u32::try_from((vertex_header.vertex_bindings >> 4) & 0x3).ok()),
                         color_data,
                     )
                     .ok()));
@@ -6441,8 +6441,7 @@ fn display_jt_tessellation_rows(
                         required!(u32::try_from(required!(component_count.checked_mul(4))).ok()),
                         required!(DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)),
                         u32::from(array.channel)
-                            | (((vertex_header.vertex_bindings >> (8 + 4 * array.channel)) & 0xf)
-                                as u32)
+                            | required!(u32::try_from((vertex_header.vertex_bindings >> (8 + 4 * array.channel)) & 0xf).ok())
                                 << 8,
                         data,
                     )

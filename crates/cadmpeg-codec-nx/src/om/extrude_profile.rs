@@ -178,7 +178,7 @@ mod tests {
         let rows: Vec<_> = relocated.references().collect();
         assert_eq!((rows[0].1, rows[0].2), (1105, Some(1115)));
         assert_eq!((rows[1].1, rows[1].2), (1107, Some(1117)));
-        let maximum_base = u64::MAX - 100 - bytes.len() as u64;
+        let maximum_base = u64::MAX - 100 - cadmpeg_core::decode::u64_from_index(bytes.len());
         assert!(field.clone().relocate(maximum_base).is_some());
         assert!(field.relocate(maximum_base + 1).is_none());
         let no_witness = extrude_profile_references_test(

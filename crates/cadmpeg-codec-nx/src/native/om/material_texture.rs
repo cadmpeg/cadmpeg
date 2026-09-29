@@ -285,14 +285,14 @@ mod tests {
     fn container() -> Container<'static> {
         Container {
             data: Cow::Borrowed(TIFF),
-            physical_size: TIFF.len() as u64,
+            physical_size: cadmpeg_core::decode::u64_from_index(TIFF.len()),
             layout: crate::container::test_modern_layout(6),
             entries: vec![DirEntry {
                 name: "/Root/materialsTif/Steel".to_owned(),
                 region: Region::Header,
                 body: DirEntryBody::File {
                     offset: 0,
-                    len: TIFF.len() as u64,
+                    len: cadmpeg_core::decode::u64_from_index(TIFF.len()),
                 },
             }],
             fastload_table: None,
