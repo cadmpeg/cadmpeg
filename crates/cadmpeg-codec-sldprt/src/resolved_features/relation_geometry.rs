@@ -1579,13 +1579,13 @@ pub(crate) fn project_relation_solved_point_geometry(
                     };
                     same_dimension_length(measured, distance.get())
                         .then_some(quantize(point, QUANTUM))
-                })
-                .collect::<Vec<_>>();
-            candidates.sort_unstable();
-            candidates.dedup();
-            let [point] = candidates.as_slice() else {
+                });
+            let Some(point) = candidates.next() else {
                 continue;
             };
+            if candidates.any(|candidate| candidate != point) {
+                continue;
+            }
             let geometry_ref = relation_operand_geometry_ref(relation, missing_index);
             if entities
                 .iter()
@@ -1662,17 +1662,17 @@ pub(super) fn implicit_circle_marker<'a>(
             let [ru, rv] = radial.coordinates_m?.get();
             let radius = (ru - cu).hypot(rv - cv) * 1000.0;
             same_dimension_length(radius, expected_radius).then_some((center, radius))
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by_key(|(center, _)| center.id());
-    candidates.dedup_by(|left, right| {
-        left.0.id() == right.0.id() && left.1.to_bits() == right.1.to_bits()
-    });
-    if let [candidate] = candidates.as_slice() {
-        return Some(*candidate);
+        });
+    if let Some(candidate) = candidates.next() {
+        if candidates.all(|other| {
+            other.0.id() == candidate.0.id() && other.1.to_bits() == candidate.1.to_bits()
+        }) {
+            return Some(candidate);
+        }
     }
 
-    let mut terminal_pairs = Vec::new();
+    let mut terminal_pair = None;
+    let mut terminal_ambiguous = false;
     for lane in lanes {
         let feature_markers = lane
             .sketch_entities
@@ -1700,17 +1700,21 @@ pub(super) fn implicit_circle_marker<'a>(
                 let [ru, rv] = radial.coordinates_m?.get();
                 let radius = (ru - cu).hypot(rv - cv) * 1000.0;
                 if same_dimension_length(radius, expected_radius) {
-                    terminal_pairs.push((center, radius));
+                    if terminal_pair.is_some_and(|(first, first_radius): (&SketchInputEntity, f64)| {
+                        first.id() != center.id() || first_radius.to_bits() != radius.to_bits()
+                    }) {
+                        terminal_ambiguous = true;
+                    } else if terminal_pair.is_none() {
+                        terminal_pair = Some((center, radius));
+                    }
                 }
             }
         }
     }
-    terminal_pairs.sort_by_key(|(center, _)| center.id());
-    terminal_pairs.dedup_by(|left, right| {
-        left.0.id() == right.0.id() && left.1.to_bits() == right.1.to_bits()
-    });
-    if let [candidate] = terminal_pairs.as_slice() {
-        return Some(*candidate);
+    if !terminal_ambiguous {
+        if let Some(candidate) = terminal_pair {
+            return Some(candidate);
+        }
     }
 
     // Only 83fe defines an ordered center/radial point roster. Other native
@@ -2805,15 +2809,13 @@ fn relation_parameter_by_driving_name<'a>(
         .chain(relation.scalar_refs().iter().map(String::as_str))
         .filter_map(|scalar| scalars.get(scalar))
         .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
-        .filter_map(|scalar| names.get(scalar.name.as_str()).copied())
-        .collect::<Vec<_>>();
-    driving_names.sort_unstable();
-    driving_names.dedup();
-    let [name] = driving_names.as_slice() else {
+        .filter_map(|scalar| names.get(scalar.name.as_str()).copied());
+    let name = driving_names.next()?;
+    if driving_names.any(|candidate| candidate != name) {
         return None;
-    };
+    }
     let mut matches = parameters.iter().filter(|parameter| {
-        parameter.owner.as_ref() == Some(&owner) && parameter.name.as_str() == *name
+        parameter.owner.as_ref() == Some(&owner) && parameter.name.as_str() == name
     });
     let parameter = matches.next()?;
     matches.next().is_none().then_some(parameter)
