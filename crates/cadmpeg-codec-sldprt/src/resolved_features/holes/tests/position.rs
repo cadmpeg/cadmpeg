@@ -1,6 +1,7 @@
 //! Hole position-sketch and spatial-locus tests.
 
 use super::{cylinder, lane, lane_with_position_reference, model_hole, native_history};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{holes::HolePlacement, FeatureDefinition, FeatureId, FeatureOperation};
@@ -1114,14 +1115,17 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     };
     let mut features = vec![hole, sketch_feature];
 
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     project_spatial_hole_position_sketches(
+        &ctx,
         &mut features,
         &[sketch],
         &[entity, same_axis_endpoint, construction_point],
         &[surface],
         &[history],
         &[lane],
-    );
+    ).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -1212,14 +1216,17 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         .collect::<Vec<_>>();
     let mut features = vec![hole, sketch_feature];
 
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     project_spatial_hole_position_sketches(
+        &ctx,
         &mut features,
         &[sketch],
         &entities,
         &[],
         &[history],
         &[lane],
-    );
+    ).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -1342,14 +1349,17 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
     };
     let mut features = vec![hole, sketch_feature];
 
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     project_spatial_hole_position_sketches(
+        &ctx,
         &mut features,
         &[sketch],
         &[entity],
         &[surface],
         &[history],
         &[lane],
-    );
+    ).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()

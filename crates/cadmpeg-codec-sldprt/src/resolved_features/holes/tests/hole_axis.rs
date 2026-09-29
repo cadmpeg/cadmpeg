@@ -190,6 +190,8 @@ fn cylindrical_support_point_defines_its_radial_axis() {
 
 #[test]
 fn position_plane_owns_only_reversed_normal_cylinders() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut surfaces = [cylinder(0, -5.0), cylinder(1, 5.0), cylinder(2, -5.0)];
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
         &mut surfaces[2].geometry
@@ -265,6 +267,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
     );
     assert_eq!(
         bore_carrier_placements(
+            &ctx,
             2.0,
             &HoleTopology {
                 surfaces: &surfaces,
@@ -275,7 +278,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
                 vertices: &[],
                 points: &[],
             },
-        ),
+        ).unwrap(),
         Some(vec![cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0)).unwrap(),
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
@@ -285,6 +288,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
     faces[1].sense = Sense::Reversed;
     assert_eq!(
         bore_carrier_placements(
+            &ctx,
             2.0,
             &HoleTopology {
                 surfaces: &surfaces,
@@ -295,7 +299,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
                 vertices: &[],
                 points: &[],
             },
-        ),
+        ).unwrap(),
         Some(vec![
             cadmpeg_ir::features::holes::HolePlacement::Axis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0))
@@ -1250,15 +1254,18 @@ fn unclaimed_seeded_bore_axes_refuse_collection_growth() {
 
 #[test]
 fn numerical_audit_hole_carriers_keep_distinct_large_coordinate_axes() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let axis = Vector3::new(0.0, 0.0, 1.0);
     for positions in [[1.0e12, 2.0e12], [-2.0e12, -1.0e12], [1.0e300, 2.0e300]] {
-        let placements = crate::resolved_features::holes::carrier_placements(positions.map(|x| {
+        let placements = crate::resolved_features::holes::carrier_placements(&ctx, positions.map(|x| {
             (
                 Point3::new(x, 0.0, 0.0),
                 cadmpeg_ir::features::FeatureDirection3::new(axis)
                     .expect("unit +Z axis is an admitted feature direction"),
             )
         }))
+        .unwrap()
         .unwrap();
         assert_eq!(placements.len(), 2);
         assert_ne!(hole_axis_key(&placements[0]), hole_axis_key(&placements[1]));

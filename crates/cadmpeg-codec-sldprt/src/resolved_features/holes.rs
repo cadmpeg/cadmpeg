@@ -1736,13 +1736,14 @@ pub(crate) fn hole_position_carrier_present(
 }
 
 pub(crate) fn project_spatial_hole_position_sketches(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     spatial_sketches: &[SpatialSketch],
     spatial_entities: &[SpatialSketchEntity],
     surfaces: &[Surface],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), CodecError> {
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -1864,7 +1865,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                         axes.push((point, axis));
                     }
                 }
-                let Some(axes) = carrier_placements(axes) else {
+                let Some(axes) = carrier_placements(ctx, axes)? else {
                     continue;
                 };
                 let [placement] = axes.as_slice() else {
@@ -1904,6 +1905,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
         }
         feature.evaluation.set_definition(definition);
     }
+    Ok(())
 }
 
 fn coplanar_spatial_position_placements(points: &[Point3]) -> Option<Vec<HolePlacement>> {
@@ -2179,9 +2181,10 @@ pub(crate) fn project_hole_topology_axes(
         let diameter = diameter.get();
 
         let Some(candidates) = counterbore_topology_candidates(
+            ctx,
             features[unresolved_index].evaluation.definition(),
             topology,
-        ) else {
+        )? else {
             continue;
         };
         if diameter_counts.get(&diameter.to_bits()) == Some(&1) {
@@ -2333,13 +2336,13 @@ fn project_flat_blind_topology_axes(
         let radius = diameter * 0.5;
         let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
         let length_tolerance = (length.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_POSITION);
-        let Some(placements) = carrier_placements(cylinders.iter().filter_map(
+        let Some(placements) = carrier_placements(ctx, cylinders.iter().filter_map(
             |(origin, axis, candidate_radius, candidate_span, _)| {
                 ((candidate_radius - radius).abs() <= radius_tolerance
                     && (candidate_span - length).abs() <= length_tolerance)
                     .then_some((*origin, *axis))
             },
-        )) else {
+        ))? else {
             continue;
         };
         set_hole_placements(&mut features[index], placements);
@@ -2462,13 +2465,13 @@ fn drilled_hole_topology_candidates(
     if cone_keys.is_empty() {
         return Ok(None);
     }
-    let Some(placements) = carrier_placements(cylinders.iter().filter_map(
+    let Some(placements) = carrier_placements(ctx, cylinders.iter().filter_map(
         |(origin, axis, candidate_radius, candidate_span, _)| {
             ((candidate_radius - radius).abs() <= radius_tolerance
                 && (candidate_span - length).abs() <= length_tolerance)
                 .then_some((*origin, *axis))
         },
-    )) else {
+    ))? else {
         return Ok(None);
     };
     let mut matched = Vec::new();
@@ -2599,7 +2602,7 @@ fn seeded_drilled_bore_candidates(
     diameter: f64,
     topology: &HoleTopology<'_>,
 ) -> Result<Option<Vec<HolePlacement>>, CodecError> {
-    let Some(candidates) = bore_carrier_placements(diameter * 0.5, topology) else {
+    let Some(candidates) = bore_carrier_placements(ctx, diameter * 0.5, topology)? else {
         return Ok(None);
     };
     unclaimed_seeded_hole_candidates(ctx, features, siblings, diameter, candidates)
@@ -2777,14 +2780,15 @@ fn hole_construction_is_unique(features: &[cadmpeg_ir::features::Feature], index
 }
 
 fn counterbore_topology_candidates(
+    ctx: &DecodeContext<'_>,
     definition: &FeatureDefinition,
     topology: &HoleTopology<'_>,
-) -> Option<Vec<HolePlacement>> {
+) -> Result<Option<Vec<HolePlacement>>, CodecError> {
     let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) = definition else {
-        return None;
+        return Ok(None);
     };
     let Some(diameter) = &shape.diameter() else {
-        return None;
+        return Ok(None);
     };
     let cadmpeg_ir::features::holes::HoleConstruction::Form {
         kind:
@@ -2799,26 +2803,45 @@ fn counterbore_topology_candidates(
         ..
     } = shape.construction()
     else {
-        return None;
+        return Ok(None);
     };
     let diameter = diameter.get();
     let counterbore_diameter = counterbore_diameter.get();
 
-    let primary = cylindrical_surface_placements(diameter * 0.5, topology.surfaces)?;
-    let counterbores =
-        cylindrical_surface_placements(counterbore_diameter * 0.5, topology.surfaces)?;
-    let primary_keys = primary
-        .iter()
-        .filter_map(hole_axis_key)
-        .collect::<HashSet<_>>();
-    let counterbore_keys = counterbores
-        .iter()
-        .filter_map(hole_axis_key)
-        .collect::<HashSet<_>>();
-    (primary_keys.len() == primary.len()
+    let Some(primary) = cylindrical_surface_placements(ctx, diameter * 0.5, topology.surfaces)? else {
+        return Ok(None);
+    };
+    let Some(counterbores) =
+        cylindrical_surface_placements(ctx, counterbore_diameter * 0.5, topology.surfaces)?
+    else {
+        return Ok(None);
+    };
+    let mut primary_keys = HashSet::new();
+    for key in primary.iter().filter_map(hole_axis_key) {
+        ctx.charge_work(1, "index SLDPRT counterbore primary axes")?;
+        if !primary_keys.contains(&key) {
+            ctx.charge_collection_items(1, "index SLDPRT counterbore primary axes")?;
+            primary_keys.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT counterbore primary axes", u64::MAX - 1, u64::MAX)
+            })?;
+            primary_keys.insert(key);
+        }
+    }
+    let mut counterbore_keys = HashSet::new();
+    for key in counterbores.iter().filter_map(hole_axis_key) {
+        ctx.charge_work(1, "index SLDPRT counterbore outer axes")?;
+        if !counterbore_keys.contains(&key) {
+            ctx.charge_collection_items(1, "index SLDPRT counterbore outer axes")?;
+            counterbore_keys.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT counterbore outer axes", u64::MAX - 1, u64::MAX)
+            })?;
+            counterbore_keys.insert(key);
+        }
+    }
+    Ok((primary_keys.len() == primary.len()
         && counterbore_keys.len() == counterbores.len()
         && primary_keys == counterbore_keys)
-        .then_some(primary)
+        .then_some(primary))
 }
 
 fn same_hole_construction(left: &FeatureDefinition, right: &FeatureDefinition) -> bool {
@@ -3163,7 +3186,7 @@ pub(crate) fn project_hole_axes(
                         }
                     }
                 }
-                if let Some(bore_placements) = bore_carrier_placements(radius, topology) {
+                if let Some(bore_placements) = bore_carrier_placements(ctx, radius, topology)? {
                     *placements = Some(bore_placements);
                     break 'feature_edit;
                 }
@@ -3316,13 +3339,21 @@ fn plane_owned_bore_placements(
     (!placements.is_empty()).then_some(placements)
 }
 
-fn bore_carrier_placements(radius: f64, topology: &HoleTopology<'_>) -> Option<Vec<HolePlacement>> {
-    carrier_placements(cylindrical_bore_axes(radius, topology))
+fn bore_carrier_placements(
+    ctx: &DecodeContext<'_>,
+    radius: f64,
+    topology: &HoleTopology<'_>,
+) -> Result<Option<Vec<HolePlacement>>, CodecError> {
+    carrier_placements(ctx, cylindrical_bore_axes(radius, topology))
 }
 
-fn cylindrical_surface_placements(radius: f64, surfaces: &[Surface]) -> Option<Vec<HolePlacement>> {
+fn cylindrical_surface_placements(
+    ctx: &DecodeContext<'_>,
+    radius: f64,
+    surfaces: &[Surface],
+) -> Result<Option<Vec<HolePlacement>>, CodecError> {
     let tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
-    carrier_placements(surfaces.iter().filter_map(|surface| {
+    carrier_placements(ctx, surfaces.iter().filter_map(|surface| {
         let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
         else {
             return None;
@@ -3335,44 +3366,49 @@ fn cylindrical_surface_placements(radius: f64, surfaces: &[Surface]) -> Option<V
 }
 
 fn carrier_placements(
+    ctx: &DecodeContext<'_>,
     axes: impl IntoIterator<Item = (Point3, FeatureDirection3)>,
-) -> Option<Vec<HolePlacement>> {
+) -> Result<Option<Vec<HolePlacement>>, CodecError> {
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
+    const OPERATION: &str = "collect SLDPRT hole carrier axes";
     let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
-    let mut carriers = axes
-        .into_iter()
-        .map(|(origin, axis)| {
-            let axis = canonical_direction(axis);
-            let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis.get());
-            let closest = Point3::new(
-                origin.x - station * axis.x,
-                origin.y - station * axis.y,
-                origin.z - station * axis.z,
-            );
-            Some((
-                [
-                    quantize(closest.x),
-                    quantize(closest.y),
-                    quantize(closest.z),
-                    quantize(axis.x),
-                    quantize(axis.y),
-                    quantize(axis.z),
-                ],
-                HolePlacement::Axis {
-                    origin: FinitePoint3::new(closest)?,
-                    axis,
-                },
-            ))
-        })
-        .collect::<Option<HashMap<_, _>>>()?
-        .into_iter()
-        .collect::<Vec<_>>();
+    let mut by_axis = HashMap::new();
+    for (origin, axis) in axes {
+        ctx.charge_work(1, "scan SLDPRT hole carrier axes")?;
+        let axis = canonical_direction(axis);
+        let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis.get());
+        let closest = Point3::new(
+            origin.x - station * axis.x,
+            origin.y - station * axis.y,
+            origin.z - station * axis.z,
+        );
+        let Some(origin) = FinitePoint3::new(closest) else {
+            return Ok(None);
+        };
+        let key = [
+            quantize(closest.x),
+            quantize(closest.y),
+            quantize(closest.z),
+            quantize(axis.x),
+            quantize(axis.y),
+            quantize(axis.z),
+        ];
+        if !by_axis.contains_key(&key) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            by_axis.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        by_axis.insert(key, HolePlacement::Axis { origin, axis });
+    }
+    let mut carriers = Vec::new();
+    ctx.reserve_collection_vec(&mut carriers, by_axis.len(), OPERATION)?;
+    carriers.extend(by_axis);
     carriers.sort_by_key(|(key, _)| *key);
-    let placements = carriers
-        .into_iter()
-        .map(|(_, placement)| placement)
-        .collect::<Vec<_>>();
-    (!placements.is_empty()).then_some(placements)
+    let mut placements = Vec::new();
+    ctx.reserve_collection_vec(&mut placements, carriers.len(), OPERATION)?;
+    placements.extend(carriers.into_iter().map(|(_, placement)| placement));
+    Ok((!placements.is_empty()).then_some(placements))
 }
 
 fn topology_index<'a, T, K: Eq + std::hash::Hash>(
