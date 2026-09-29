@@ -2612,6 +2612,15 @@ trait ExpressionValue: Clone {
         arguments: &[Self],
         context: RelationEvaluationContext<'_>,
     ) -> Option<Self>;
+    fn function_checked(
+        name: CreoMathFunction,
+        scope: Option<&str>,
+        arguments: &[Self],
+        context: RelationEvaluationContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(Self::function(name, scope, arguments, context))
+    }
     fn negate(self) -> Option<Self>;
     fn finite(&self) -> bool;
 }
@@ -4465,6 +4474,119 @@ impl ExpressionValue for CurveExpressionValue {
         evaluate_creo_relation_function(name, arguments, context)
     }
 
+    fn function_checked(
+        name: CreoMathFunction,
+        scope: Option<&str>,
+        arguments: &[Self],
+        context: RelationEvaluationContext<'_>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        use CurveExpressionValue::{Number, String};
+        if scope.is_some() {
+            return Ok(None);
+        }
+        match (name, arguments) {
+            (CreoMathFunction::Itos, [argument]) => {
+                let Some((value, _)) = quantity_parts_ref(argument) else {
+                    return Ok(None);
+                };
+                let rounded = value.round();
+                if rounded == 0.0 {
+                    return Ok(Some(String(std::string::String::new())));
+                }
+                Ok(Some(String(ctx.format_retained(
+                    format_args!("{rounded:.0}"),
+                    "creo relation integer text",
+                )?)))
+            }
+            (CreoMathFunction::Rtos, [argument, controls @ ..]) => {
+                let Some((value, _)) = quantity_parts_ref(argument) else {
+                    return Ok(None);
+                };
+                let (decimals, scientific) = match controls {
+                    [] => (None, false),
+                    [Number(decimals)] => {
+                        let Some(decimals) = relation_precision(*decimals) else {
+                            return Ok(None);
+                        };
+                        (Some(decimals), false)
+                    }
+                    [Number(decimals), Number(scientific)] => {
+                        let Some(decimals) = relation_precision(*decimals) else {
+                            return Ok(None);
+                        };
+                        (Some(decimals), *scientific != 0.0)
+                    }
+                    _ => return Ok(None),
+                };
+                Ok(format_relation_real_admitted(ctx, value, decimals, scientific)?.map(String))
+            }
+            (CreoMathFunction::RelModelName, []) => match context.model_name {
+                Some(name) => Ok(Some(String(ctx.copy_retained_text(
+                    name,
+                    "creo relation model name value",
+                )?))),
+                None => Ok(None),
+            },
+            (CreoMathFunction::RelModelType, []) => Ok(Some(String(ctx.copy_retained_text(
+                "part",
+                "creo relation model type value",
+            )?))),
+            (CreoMathFunction::Exists, [String(name)]) => {
+                let Some(symbols) = context.existing_symbols else {
+                    return Ok(None);
+                };
+                let (mut key, _reservation) =
+                    ctx.copy_scoped_text(name, "creo relation exists lookup key")?;
+                key.make_ascii_lowercase();
+                Ok(symbols.contains(&key).then_some(Number(1.0)))
+            }
+            (CreoMathFunction::Extract, [String(value), Number(position), Number(length)]) => {
+                if !position.is_finite()
+                    || !length.is_finite()
+                    || position.fract() != 0.0
+                    || length.fract() != 0.0
+                    || *position <= 0.0
+                    || *length < 0.0
+                {
+                    return Ok(None);
+                }
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(value.len()),
+                    "creo relation extract scan",
+                )?;
+                let character_count = value.chars().count();
+                if *position > character_count as f64 {
+                    return Ok(Some(String(std::string::String::new())));
+                }
+                let start = *position as usize - 1;
+                let remaining = character_count - start;
+                let length = if *length >= remaining as f64 {
+                    remaining
+                } else {
+                    *length as usize
+                };
+                let start_byte = value.char_indices().nth(start).map_or(value.len(), |(at, _)| at);
+                let end_byte = value[start_byte..]
+                    .char_indices()
+                    .nth(length)
+                    .map_or(value.len(), |(at, _)| start_byte + at);
+                Ok(Some(String(ctx.copy_retained_text(
+                    &value[start_byte..end_byte],
+                    "creo relation extracted text",
+                )?)))
+            }
+            (CreoMathFunction::If, [Number(condition), String(when_true), String(when_false)]) => {
+                let selected = if *condition == 0.0 { when_false } else { when_true };
+                Ok(Some(String(ctx.copy_retained_text(
+                    selected,
+                    "creo relation conditional string",
+                )?)))
+            }
+            _ => Ok(Self::function(name, scope, arguments, context)),
+        }
+    }
+
     fn negate(self) -> Option<Self> {
         match self {
             Self::Number(value) => Some(Self::Number(-value)),
@@ -4847,7 +4969,8 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         (self.source.get(self.cursor) == Some(&b')')).then_some(())?;
         self.cursor += 1;
         self.nesting -= 1;
-        V::function(function, scope, &arguments, self.context)
+        let result = V::function_checked(function, scope, &arguments, self.context, self.ctx);
+        self.admit(result)?
     }
 }
 
@@ -5336,6 +5459,50 @@ fn format_relation_real(value: f64, decimals: Option<usize>, scientific: bool) -
         if exponent < 0 { "-" } else { "" },
         magnitude = exponent.unsigned_abs()
     ))
+}
+
+fn format_relation_real_admitted(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: f64,
+    decimals: Option<usize>,
+    scientific: bool,
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    if !value.is_finite() {
+        return Ok(None);
+    }
+    if value == 0.0 {
+        return Ok(Some(String::new()));
+    }
+    let Some(decimals) = decimals else {
+        return Ok(Some(ctx.format_retained(
+            format_args!("{value}"),
+            "creo relation real text",
+        )?));
+    };
+    if !scientific {
+        return Ok(Some(ctx.format_retained(
+            format_args!("{value:.decimals$}"),
+            "creo relation real text",
+        )?));
+    }
+    let (formatted, _reservation) = ctx.format_scoped(
+        format_args!("{value:.decimals$e}"),
+        "creo relation scientific scratch",
+    )?;
+    let Some((mantissa, exponent)) = formatted.split_once('e') else {
+        return Ok(None);
+    };
+    let Ok(exponent) = exponent.parse::<i32>() else {
+        return Ok(None);
+    };
+    Ok(Some(ctx.format_retained(
+        format_args!(
+            "{mantissa}e{}{magnitude:02}",
+            if exponent < 0 { "-" } else { "" },
+            magnitude = exponent.unsigned_abs()
+        ),
+        "creo relation real text",
+    )?))
 }
 
 fn parse_relation_expression<V: ExpressionValue>(
