@@ -5331,34 +5331,46 @@ pub(super) fn feature_input_blocks(
 ) -> Result<Vec<FeatureInputBlock>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut inputs = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() { return; }
             let label = record.label();
             for (input_slot, object) in HeaderSlot::ALL.into_iter().zip(label.header.objects().0) {
                 let Some(object) = object else {
                     continue;
                 };
-                let Some(data_block) = unique_offset_data_block(&indexed, object.value()) else {
-                    continue;
-                };
-                let operation_label = format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                );
-                inputs.push(FeatureInputBlock {
-                    id: format!(
-                        "nx:feature-history:input-block#{section_key}-{operation_ordinal:010}-{input_slot:010}"
-                    ),
-                    operation_label,
-                    input_slot,
-                    object,
-                    data_block,
-                    source_offset: entry_offset + label.header.object_offsets()[input_slot.index()] as u64,
-                });
+                let result = (|| -> Result<(), CodecError> {
+                    let Some(data_block) = charged_unique_offset_data_block(ctx, &indexed,
+                        object.value())? else { return Ok(()); };
+                    let Some(source_offset) = u64::try_from(
+                        label.header.object_offsets()[input_slot.index()]).ok()
+                        .and_then(|offset| entry_offset.checked_add(offset)) else { return Ok(()); };
+                    ctx.charge_collection_items(1, "NX feature input blocks")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<FeatureInputBlock>()),
+                        "NX feature input blocks")?;
+                    inputs.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "allocate NX feature input blocks", 0, 1))?;
+                    inputs.push(FeatureInputBlock {
+                        id: format_feature_history_id(ctx, "input-block", section_key,
+                            operation_ordinal, Some(input_slot.index()))?,
+                        operation_label: format_feature_history_id(ctx, "operation-label", section_key,
+                            operation_ordinal, None)?,
+                        input_slot,
+                        object,
+                        data_block,
+                        source_offset,
+                    });
+                    Ok(())
+                })();
+                if let Err(error) = result { failure = Some(error); return; }
             }
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(inputs)
 }
 

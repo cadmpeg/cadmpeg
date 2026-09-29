@@ -3,6 +3,7 @@
 use crate::native::features::assign_operation_header_identities;
 use crate::native::features::body_history_partition_stream;
 use crate::native::features::feature_body_write_group_partition_uses;
+use crate::native::features::feature_input_blocks;
 use crate::native::features::feature_body_reference_occurrences;
 use crate::native::features::feature_body_references;
 use crate::native::features::feature_operation_body_identity_segment_uses;
@@ -802,6 +803,60 @@ fn feature_payload_reference_refusal(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty test root");
     route(&ctx).expect_err("feature payload resource limit")
+}
+
+fn input_block_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let store = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
+    let payload = composed_feature_history_payload(
+        &[(&[1, 0xff, 0xff, 0xff], "EXTRUDE", b"\x01\x02\x10\x07\xff".to_vec())],
+        &store,
+    );
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]))
+    }).expect("synthetic input-block container");
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_input_blocks(ctx, &container)
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted input block");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("input block resource limit")
+}
+
+#[test]
+fn input_block_route_refuses_collection_limit() {
+    let error = input_block_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn input_block_route_refuses_retained_limit() {
+    let error = input_block_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn input_block_route_refuses_scoped_limit() {
+    let error = input_block_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn input_block_route_refuses_work_limit() {
+    let error = input_block_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 macro_rules! feature_payload_reference_limit_tests {
