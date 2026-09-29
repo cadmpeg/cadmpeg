@@ -90,6 +90,10 @@ fn component_path_type_identities_name_ordered_features() {
         Some("other".into())
     );
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let owner = feature("mirror", "44");
     mixed.push(FeatureInputComponentPathEntry {
         instance: None,
@@ -104,8 +108,8 @@ fn component_path_type_identities_name_ordered_features() {
     let other = feature("other", "43");
     let history = [&producer, &other, &owner];
     let (component, preceding) =
-        component_path_feature(&mixed, &history, "mirror", ComponentPathEnd::Trailing)
-            .expect("required invariant");
+        component_path_feature(&ctx, &mixed, &history, "mirror", ComponentPathEnd::Trailing)
+            .unwrap().expect("required invariant");
     assert_eq!(preceding.id, "other");
     assert_eq!(component.local_id, Some(1));
 

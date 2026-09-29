@@ -126,37 +126,68 @@ pub(super) enum ComponentPathEnd {
 }
 
 pub(super) fn component_path_feature<'a>(
+    ctx: &DecodeContext<'_>,
     components: &'a [FeatureInputComponentPathEntry],
     features: &[&'a crate::records::Feature],
     owner_ref: &str,
     end: ComponentPathEnd,
-) -> Option<(
+) -> Result<Option<(
     &'a FeatureInputComponentPathEntry,
     &'a crate::records::Feature,
-)> {
-    let owner_source = features
-        .iter()
-        .find(|feature| feature.id == owner_ref)?
-        .source_value()?;
-    let mut by_source = HashMap::<u32, Option<&crate::records::Feature>>::new();
+)>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT component path feature";
+    let mut owner = None;
     for feature in features {
-        let Some(source_id) = feature.source_value() else {
-            continue;
-        };
-        by_source
-            .entry(source_id)
-            .and_modify(|candidate| *candidate = None)
-            .or_insert(Some(*feature));
+        let work = feature.id.len().checked_add(owner_ref.len()).and_then(|size| size.checked_add(1))
+            .and_then(|size| u64::try_from(size).ok())
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, OPERATION)?;
+        if feature.id == owner_ref {
+            owner = feature.source_value();
+            break;
+        }
     }
+    let Some(owner_source) = owner else {
+        return Ok(None);
+    };
     let candidate = |component: &'a FeatureInputComponentPathEntry| {
-        let source_id = View::u32_le_at(&component.type_signature, 4)?;
-        let feature = by_source.get(&source_id)?.as_ref()?;
-        (source_id < owner_source).then_some((component, *feature))
+        ctx.charge_work(1, OPERATION)?;
+        let Some(source_id) = View::u32_le_at(&component.type_signature, 4) else {
+            return Ok(None);
+        };
+        if source_id >= owner_source {
+            return Ok(None);
+        }
+        let mut found = None;
+        for feature in features {
+            ctx.charge_work(1, OPERATION)?;
+            if feature.source_value() != Some(source_id) {
+                continue;
+            }
+            if found.is_some() {
+                return Ok(None);
+            }
+            found = Some(*feature);
+        }
+        Ok::<_, CodecError>(found.map(|feature| (component, feature)))
     };
     match end {
-        ComponentPathEnd::Leading => components.iter().find_map(candidate),
-        ComponentPathEnd::Trailing => components.iter().rev().find_map(candidate),
+        ComponentPathEnd::Leading => {
+            for component in components {
+                if let Some(found) = candidate(component)? {
+                    return Ok(Some(found));
+                }
+            }
+        }
+        ComponentPathEnd::Trailing => {
+            for component in components.iter().rev() {
+                if let Some(found) = candidate(component)? {
+                    return Ok(Some(found));
+                }
+            }
+        }
     }
+    Ok(None)
 }
 
 pub(crate) fn project_adjacent_extrusion_profiles(
