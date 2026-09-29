@@ -1907,9 +1907,9 @@ fn attach_feature_operations(
             .push(input);
     }
     let input_column_row_uses_by_operation =
-        records_by_operation(input_column_row_uses, |use_| &use_.operation_label);
+        records_by_operation(ctx, input_column_row_uses, |use_| &use_.operation_label)?;
     let input_column_targets_by_operation =
-        records_by_operation(input_column_targets, |target| &target.operation_label);
+        records_by_operation(ctx, input_column_targets, |target| &target.operation_label)?;
     let input_block_identity_group_by_input = input_block_identity_groups
         .iter()
         .flat_map(|group| {
@@ -1924,21 +1924,21 @@ fn attach_feature_operations(
         .map(|construction| (construction.operation_label.as_str(), construction))
         .collect::<BTreeMap<_, _>>();
     let datum_csys_payloads_by_operation =
-        records_by_operation(datum_csys_payloads, |payload| &payload.operation_label);
+        records_by_operation(ctx, datum_csys_payloads, |payload| &payload.operation_label)?;
     let datum_csys_payload_scalar_pairs_by_operation =
-        records_by_operation(datum_csys_payload_scalar_pairs, |pair| {
+        records_by_operation(ctx, datum_csys_payload_scalar_pairs, |pair| {
             &pair.operation_label
-        });
+        })?;
     let datum_csys_payload_fixed_pairs_by_operation =
-        records_by_operation(datum_csys_payload_fixed_pairs, |pair| &pair.operation_label);
+        records_by_operation(ctx, datum_csys_payload_fixed_pairs, |pair| &pair.operation_label)?;
     let datum_csys_payload_scalars_by_operation =
-        records_by_operation(datum_csys_payload_scalars, |scalar| &scalar.operation_label);
+        records_by_operation(ctx, datum_csys_payload_scalars, |scalar| &scalar.operation_label)?;
     let datum_csys_descriptors_by_operation =
-        records_by_operation(datum_csys_descriptors, |descriptor| {
+        records_by_operation(ctx, datum_csys_descriptors, |descriptor| {
             &descriptor.operation_label
-        });
+        })?;
     let datum_csys_column_row_uses_by_operation =
-        records_by_operation(datum_csys_column_row_uses, |use_| &use_.operation_label);
+        records_by_operation(ctx, datum_csys_column_row_uses, |use_| &use_.operation_label)?;
     let mut datum_csys_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumCsysBlockUse>>::new();
     for block_use in datum_csys_block_uses {
@@ -1956,13 +1956,13 @@ fn attach_feature_operations(
         .map(|payload| (payload.operation_label.as_str(), payload))
         .collect::<BTreeMap<_, _>>();
     let datum_plane_payload_scalar_pairs_by_operation =
-        records_by_operation(datum_plane_payload_scalar_pairs, |pair| {
+        records_by_operation(ctx, datum_plane_payload_scalar_pairs, |pair| {
             &pair.operation_label
-        });
+        })?;
     let datum_plane_descriptors_by_operation =
-        records_by_operation(datum_plane_descriptors, |descriptor| {
+        records_by_operation(ctx, datum_plane_descriptors, |descriptor| {
             &descriptor.operation_label
-        });
+        })?;
     let mut datum_plane_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneBlockUse>>::new();
     for block_use in datum_plane_block_uses {
@@ -2003,53 +2003,53 @@ fn attach_feature_operations(
             .push(reference);
     }
     let projected_curve_references_by_operation =
-        records_by_operation(projected_curve_references, |reference| {
+        records_by_operation(ctx, projected_curve_references, |reference| {
             &reference.operation_label
-        });
+        })?;
     let projected_curve_construction_payloads_by_operation =
-        records_by_operation(projected_curve_construction_payloads, |payload| {
+        records_by_operation(ctx, projected_curve_construction_payloads, |payload| {
             &payload.operation_label
-        });
+        })?;
     let projected_curve_construction_strings_by_operation =
-        records_by_operation(projected_curve_construction_strings, |value| {
+        records_by_operation(ctx, projected_curve_construction_strings, |value| {
             &value.operation_label
-        });
+        })?;
     let fset_reference_graphs_by_operation =
-        records_by_operation(fset_reference_graphs, |graph| &graph.operation_label);
+        records_by_operation(ctx, fset_reference_graphs, |graph| &graph.operation_label)?;
     let fset_construction_payloads_by_operation =
-        records_by_operation(fset_construction_payloads, |payload| {
+        records_by_operation(ctx, fset_construction_payloads, |payload| {
             &payload.operation_label
-        });
+        })?;
     let delete_reference_fields_by_operation =
-        records_by_operation(delete_reference_fields, |field| &field.operation_label);
+        records_by_operation(ctx, delete_reference_fields, |field| &field.operation_label)?;
     let delete_construction_payloads_by_operation =
-        records_by_operation(delete_construction_payloads, |payload| {
+        records_by_operation(ctx, delete_construction_payloads, |payload| {
             &payload.operation_label
-        });
+        })?;
     let pattern_references_by_operation =
-        records_by_operation(pattern_references, |reference| &reference.operation_label);
+        records_by_operation(ctx, pattern_references, |reference| &reference.operation_label)?;
     let pattern_counted_reference_lanes_by_operation =
-        records_by_operation(pattern_counted_reference_lanes, |lane| {
+        records_by_operation(ctx, pattern_counted_reference_lanes, |lane| {
             &lane.operation_label
-        });
+        })?;
     let pattern_construction_payloads_by_operation =
-        records_by_operation(pattern_construction_payloads, |payload| {
+        records_by_operation(ctx, pattern_construction_payloads, |payload| {
             &payload.operation_label
-        });
+        })?;
     let pattern_construction_strings_by_operation =
-        records_by_operation(pattern_construction_strings, |value| &value.operation_label);
+        records_by_operation(ctx, pattern_construction_strings, |value| &value.operation_label)?;
     let pattern_construction_fixed_lanes_by_operation =
-        records_by_operation(pattern_construction_fixed_lanes, |lane| {
+        records_by_operation(ctx, pattern_construction_fixed_lanes, |lane| {
             &lane.operation_label
-        });
+        })?;
     let pattern_transform_lanes_by_operation =
-        records_by_operation(pattern_transform_lanes, |lane| &lane.operation_label);
+        records_by_operation(ctx, pattern_transform_lanes, |lane| &lane.operation_label)?;
     let multi_instance_output_lanes_by_operation =
-        records_by_operation(multi_instance_output_lanes, |lane| &lane.operation_label);
+        records_by_operation(ctx, multi_instance_output_lanes, |lane| &lane.operation_label)?;
     let identical_instance_output_lanes_by_operation =
-        records_by_operation(identical_instance_output_lanes, |lane| {
+        records_by_operation(ctx, identical_instance_output_lanes, |lane| {
             &lane.operation_label
-        });
+        })?;
     let point_construction_headers_by_operation = point_construction_headers
         .iter()
         .map(|header| (header.operation_label.as_str(), header))
@@ -2059,55 +2059,55 @@ fn attach_feature_operations(
         .map(|lane| (lane.operation_label.as_str(), lane))
         .collect::<BTreeMap<_, _>>();
     let draft_construction_references_by_operation =
-        records_by_operation(draft_construction_references, |reference| {
+        records_by_operation(ctx, draft_construction_references, |reference| {
             &reference.operation_label
-        });
+        })?;
     let draft_construction_index_lanes_by_operation =
-        records_by_operation(draft_construction_index_lanes, |lane| &lane.operation_label);
+        records_by_operation(ctx, draft_construction_index_lanes, |lane| &lane.operation_label)?;
     let draft_construction_payloads_by_operation =
-        records_by_operation(draft_construction_payloads, |payload| {
+        records_by_operation(ctx, draft_construction_payloads, |payload| {
             &payload.operation_label
-        });
+        })?;
     let draft_construction_graph_payloads_by_operation =
-        records_by_operation(draft_construction_graph_payloads, |payload| {
+        records_by_operation(ctx, draft_construction_graph_payloads, |payload| {
             &payload.operation_label
-        });
+        })?;
     let draft_construction_fixed_lanes_by_operation =
-        records_by_operation(draft_construction_fixed_lanes, |lane| &lane.operation_label);
+        records_by_operation(ctx, draft_construction_fixed_lanes, |lane| &lane.operation_label)?;
     let draft_construction_binary32_lanes_by_operation =
-        records_by_operation(draft_construction_binary32_lanes, |lane| {
+        records_by_operation(ctx, draft_construction_binary32_lanes, |lane| {
             &lane.operation_label
-        });
+        })?;
     let draft_construction_graph_strings_by_operation =
-        records_by_operation(draft_construction_graph_strings, |value| {
+        records_by_operation(ctx, draft_construction_graph_strings, |value| {
             &value.operation_label
-        });
+        })?;
     let draft_construction_identity_frames_by_operation =
-        records_by_operation(draft_construction_identity_frames, |frame| {
+        records_by_operation(ctx, draft_construction_identity_frames, |frame| {
             &frame.operation_label
-        });
+        })?;
     let draft_construction_terminal_lanes_by_operation =
-        records_by_operation(draft_construction_terminal_lanes, |lane| {
+        records_by_operation(ctx, draft_construction_terminal_lanes, |lane| {
             &lane.operation_label
-        });
+        })?;
     let surface_construction_references_by_operation =
-        records_by_operation(surface_construction_references, |reference| {
+        records_by_operation(ctx, surface_construction_references, |reference| {
             &reference.operation_label
-        });
+        })?;
     let surface_construction_payloads_by_operation =
-        records_by_operation(surface_construction_payloads, |payload| {
+        records_by_operation(ctx, surface_construction_payloads, |payload| {
             &payload.operation_label
-        });
+        })?;
     let surface_construction_scalar_pairs_by_operation =
-        records_by_operation(surface_construction_scalar_pairs, |pair| {
+        records_by_operation(ctx, surface_construction_scalar_pairs, |pair| {
             &pair.operation_label
-        });
+        })?;
     let surface_construction_strings_by_operation =
-        records_by_operation(surface_construction_strings, |value| &value.operation_label);
+        records_by_operation(ctx, surface_construction_strings, |value| &value.operation_label)?;
     let surface_construction_branches_by_operation =
-        records_by_operation(surface_construction_branches, |branch| {
+        records_by_operation(ctx, surface_construction_branches, |branch| {
             &branch.operation_label
-        });
+        })?;
     let mut sketch_named_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchNamedPointBlockUse>>::new();
     for block_use in sketch_named_point_block_uses {
@@ -2176,11 +2176,11 @@ fn attach_feature_operations(
         .map(|inputs| (inputs.operation_label.as_str(), inputs))
         .collect::<BTreeMap<_, _>>();
     let sketch_records_by_operation =
-        records_by_operation(sketch_records, |record| &record.operation_label);
+        records_by_operation(ctx, sketch_records, |record| &record.operation_label)?;
     let sketch_construction_payloads_by_operation =
-        records_by_operation(sketch_construction_payloads, |payload| {
+        records_by_operation(ctx, sketch_construction_payloads, |payload| {
             &payload.operation_label
-        });
+        })?;
     let mut sketch_coordinate_pairs_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeaturePayloadScalarPair>>::new();
     for pair in sketch_coordinate_pairs {
@@ -2226,9 +2226,9 @@ fn attach_feature_operations(
         .map(|construction| (construction.operation_label.as_str(), construction))
         .collect::<BTreeMap<_, _>>();
     let block_construction_payloads_by_operation =
-        records_by_operation(block_construction_payloads, |payload| {
+        records_by_operation(ctx, block_construction_payloads, |payload| {
             &payload.operation_label
-        });
+        })?;
     let block_dimensions_by_operation = block_dimensions
         .iter()
         .map(|dimensions| (dimensions.operation_label.as_str(), dimensions))
@@ -2262,9 +2262,9 @@ fn attach_feature_operations(
         .map(|lane| (lane.operation_label.as_str(), lane))
         .collect::<BTreeMap<_, _>>();
     let extrude_payload_32_branches_by_operation =
-        records_by_operation(extrude_payload_32_branches, |branch| {
+        records_by_operation(ctx, extrude_payload_32_branches, |branch| {
             &branch.operation_label
-        });
+        })?;
     let mut operation_body_scalar_triples_by_operation = BTreeMap::<
         &str,
         Vec<&crate::native::features::body_scalar_triple::FeatureOperationBodyScalarTriple>,
@@ -4861,18 +4861,40 @@ fn native_fixed_point_entities(
     Some(entities)
 }
 
-fn records_by_operation<'a, T>(
+struct OperationRecords<'a, 'ctx, T> {
+    grouped: BTreeMap<&'a str, Vec<&'a T>>,
+    _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'a, T> std::ops::Deref for OperationRecords<'a, '_, T> {
+    type Target = BTreeMap<&'a str, Vec<&'a T>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.grouped
+    }
+}
+
+fn records_by_operation<'a, 'ctx, T>(
+    ctx: &'ctx DecodeContext<'_>,
     records: &'a [T],
     operation_label: impl Fn(&'a T) -> &'a str,
-) -> BTreeMap<&'a str, Vec<&'a T>> {
+) -> Result<OperationRecords<'a, 'ctx, T>, CodecError> {
     let mut grouped = BTreeMap::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX operation record index")?;
     for record in records {
-        grouped
-            .entry(operation_label(record))
-            .or_insert_with(Vec::new)
-            .push(record);
+        ctx.charge_work(1, "NX operation record index")?;
+        let label = operation_label(record);
+        if !grouped.contains_key(label) {
+            ctx.charge_collection_items(1, "NX operation record index keys")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, Vec<&T>)>()))?;
+        }
+        ctx.charge_collection_items(1, "NX operation record index members")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&T>()))?;
+        let members = grouped.entry(label).or_default();
+        reserve_attach_vec(ctx, members, 1, "NX operation record index members")?;
+        members.push(record);
     }
-    grouped
+    Ok(OperationRecords { grouped, _reservation: reservation })
 }
 
 fn operation_source_properties(
