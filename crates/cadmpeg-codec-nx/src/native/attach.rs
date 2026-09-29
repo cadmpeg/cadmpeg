@@ -3869,11 +3869,12 @@ fn attach_feature_operations(
             }
         } else if !deletes_body {
             let result_body = native_result_body_identity(
+                ctx,
                 body_writer_references_by_operation
                     .get(label.id.as_str())
                     .copied(),
                 booleans.get(label.id.as_str()).copied(),
-            );
+            )?;
             if let Some((local_id, native_ref)) = result_body {
                 let key = label
                     .id
@@ -4036,15 +4037,36 @@ fn feature_result_group_members(
 /// A primary-body writer is canonical when both native forms are present. The
 /// Boolean target is independently sufficient when the primary form is absent.
 fn native_result_body_identity(
+    ctx: &DecodeContext<'_>,
     primary: Option<&crate::native::features::FeatureBodyReference>,
     boolean: Option<&crate::native::features::FeatureBooleanOperation>,
-) -> Option<(cadmpeg_core::text::NonBlankString, String)> {
-    primary
-        .map(|writer| (writer.id.clone(), writer.id.clone()))
-        .or_else(|| {
-            boolean.map(|operation| (format!("{}:target", operation.id), operation.id.clone()))
-        })
-        .and_then(|(local, native)| Some((cadmpeg_core::text::NonBlankString::new(local)?, native)))
+) -> Result<Option<(cadmpeg_core::text::NonBlankString, String)>, CodecError> {
+    let (native, suffix) = if let Some(primary) = primary {
+        (primary.id.as_str(), "")
+    } else if let Some(boolean) = boolean {
+        (boolean.id.as_str(), ":target")
+    } else {
+        return Ok(None);
+    };
+    let local_len = native.len().checked_add(suffix.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX result body local identity", 0, cadmpeg_core::decode::u64_from_index(native.len())))?;
+    let retained_bytes = std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>()
+        .checked_add(local_len)
+        .and_then(|bytes| bytes.checked_add(native.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX result body identity", 0, cadmpeg_core::decode::u64_from_index(local_len)))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(local_len), "NX result body identity formatting")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(retained_bytes), "NX result body identity")?;
+    let mut local = String::new();
+    local.try_reserve(local_len).map_err(|_| ctx.refuse_codec_limit("allocate NX result body local identity", 0, cadmpeg_core::decode::u64_from_index(local_len)))?;
+    local.push_str(native);
+    local.push_str(suffix);
+    let Some(local) = cadmpeg_core::text::NonBlankString::new(local) else {
+        return Ok(None);
+    };
+    let mut native_ref = String::new();
+    native_ref.try_reserve(native.len()).map_err(|_| ctx.refuse_codec_limit("allocate NX result body native identity", 0, cadmpeg_core::decode::u64_from_index(native.len())))?;
+    native_ref.push_str(native);
+    Ok(Some((local, native_ref)))
 }
 
 /// Return primary body fields that are proven to use the segment-object

@@ -1334,6 +1334,9 @@ fn nx_multi_instance_output_projects_as_an_unresolved_pattern() {
 
 #[test]
 fn boolean_target_is_an_independent_intermediate_result_writer() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     use crate::native::features::{
         FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation,
     };
@@ -1349,7 +1352,7 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
         source_offset: 0,
     };
     assert_eq!(
-        native_result_body_identity(None, Some(&boolean)),
+        native_result_body_identity(&ctx, None, Some(&boolean)).unwrap(),
         Some((
             cadmpeg_core::nonblank_literal!("nx:test:boolean#0:target"),
             "nx:test:boolean#0".into(),
@@ -1364,12 +1367,47 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
         source_offset: 3,
     };
     assert_eq!(
-        native_result_body_identity(Some(&primary), Some(&boolean)),
+        native_result_body_identity(&ctx, Some(&primary), Some(&boolean)).unwrap(),
         Some((
             cadmpeg_core::nonblank_literal!("nx:test:primary#0"),
             "nx:test:primary#0".into(),
         ))
     );
+}
+
+fn native_result_identity_with_limit(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    match dimension {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+        _ => return Err(cadmpeg_core::CodecError::InvalidInput("unsupported result identity test limit".to_string())),
+    }
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let primary = crate::native::features::FeatureBodyReference {
+        ordinal: None,
+        id: "nx:test:primary#0".into(),
+        operation_label: "nx:test:operation#0".into(),
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7]).unwrap(),
+        source_offset: 3,
+    };
+    let result = native_result_body_identity(&ctx, Some(&primary), None)?;
+    assert!(result.is_some());
+    Ok(())
+}
+
+#[test]
+fn native_result_identity_refuses_retained_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::RetainedBytes;
+    assert!(matches!(native_result_identity_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+}
+
+#[test]
+fn native_result_identity_refuses_work_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::WorkUnits;
+    assert!(matches!(native_result_identity_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
 }
 
 #[test]
