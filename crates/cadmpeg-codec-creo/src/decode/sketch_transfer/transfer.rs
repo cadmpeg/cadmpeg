@@ -297,12 +297,17 @@ pub(in super::super) fn transfer_sketches(
         let materialized_saved_section_external_ids =
             materialized_saved_section_external_ids(ctx, definition, &mut refusal)?;
         for record in refusal.take_records_checked()? {
-            losses.push(
-                crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
+            let message = ctx.format_retained(
+                format_args!(
                     "Feature {} states a saved section entity that materializes no sketch \
                      geometry: {record}",
                     definition.identity.id()
-                )),
+                ),
+                "creo unresolved saved section loss text",
+            )?;
+            ctx.try_reserve_items(losses, 1, "creo unresolved saved section losses")?;
+            losses.push(
+                crate::loss::CreoLossCode::SectionSplineUnresolved.note(message),
             );
         }
         coverage.record_resolved_geometry(resolved_segment_offsets.len());
@@ -521,22 +526,23 @@ pub(in super::super) fn transfer_sketches(
                 Exactness::ByteExact,
             );
             ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+            ctx.try_reserve_items(&mut entities, 1, "creo solver-only sketch entities")?;
+            let native_kind = match solver_only_section_entity_family(definition, external_id) {
+                Some(SectionEntityIncidenceFamily::Point) => "point",
+                Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
+                Some(SectionEntityIncidenceFamily::LineOrArc) => "line_or_arc",
+                Some(SectionEntityIncidenceFamily::Line) => "line",
+                Some(SectionEntityIncidenceFamily::Arc) => "arc",
+                Some(SectionEntityIncidenceFamily::Circular) => "circle",
+                None => "solver_only_section_entity",
+            };
             entities.push(
                 SketchEntity::new(
                     id,
-                    sketch_id.clone(),
+                    sketch_id.copy_admitted(ctx, "creo solver-only entity sketch identity")?,
                     SketchGeometry::native(
                         cadmpeg_core::text::NonBlankString::new(
-                            match solver_only_section_entity_family(definition, external_id) {
-                                Some(SectionEntityIncidenceFamily::Point) => "point",
-                                Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
-                                Some(SectionEntityIncidenceFamily::LineOrArc) => "line_or_arc",
-                                Some(SectionEntityIncidenceFamily::Line) => "line",
-                                Some(SectionEntityIncidenceFamily::Arc) => "arc",
-                                Some(SectionEntityIncidenceFamily::Circular) => "circle",
-                                None => "solver_only_section_entity",
-                            }
-                            .to_string(),
+                            ctx.copy_retained_text(native_kind, "creo solver-only native kind")?,
                         )
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed("native_kind must not be empty")
@@ -658,46 +664,46 @@ pub(in super::super) fn transfer_sketches(
                         ))
                     }),
             );
-        let mut constraints = verhor_definitions
-            .filter_map(|(suffix, mut constraint_definition, offset)| {
-                reconcile_constraint_entity_references(
-                    &mut constraint_definition,
-                    &emitted_entity_ids,
-                )
-                .then_some(())?;
-                let id = sketch_constraint_id(&sketch_id, format_args!("verhor:{suffix}"))?;
-                let definition = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                    constraint_definition,
-                )
-                .ok()?;
-                if let Err(error) = ctx.charge_entities(1, "admit Creo model sketch_constraints") {
-                    return Some(Err(error));
-                }
-                annotate(
-                    annotations,
-                    id.as_str(),
-                    "FeatDefs",
-                    offset as u64,
-                    "section_verhor_constraint",
-                    Exactness::ByteExact,
-                );
-                Some(Ok(SketchConstraint {
-                    id,
-                    sketch: sketch_id.clone(),
-                    definition,
-                    name: None,
-                    driving: None,
-                    active: None,
-                    virtual_space: None,
-                    visible: None,
-                    orientation: None,
-                    label_distance: None,
-                    label_position: None,
-                    metadata: None,
-                    native_ref: Some(sketch_native_ref(&sketch_id)),
-                }))
-            })
-            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
+        let mut constraints = Vec::new();
+        for (suffix, mut constraint_definition, offset) in verhor_definitions {
+            if !reconcile_constraint_entity_references(
+                &mut constraint_definition,
+                &emitted_entity_ids,
+            ) {
+                continue;
+            }
+            let Some(id) = sketch_constraint_id(&sketch_id, format_args!("verhor:{suffix}")) else {
+                continue;
+            };
+            let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                constraint_definition,
+            ) else {
+                continue;
+            };
+            annotate(
+                annotations,
+                id.as_str(),
+                "FeatDefs",
+                offset as u64,
+                "section_verhor_constraint",
+                Exactness::ByteExact,
+            );
+            admit_constraint_row(ctx, &mut constraints, SketchConstraint {
+                id,
+                sketch: sketch_id.copy_admitted(ctx, "creo constraint sketch identity")?,
+                definition,
+                name: None,
+                driving: None,
+                active: None,
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
+                native_ref: Some(sketch_native_ref(&sketch_id)),
+            })?;
+        }
         for (relation_index, (mut constraint, offset)) in
             section_dimension_constraints(ctx, definition, &sketch_id)?
                 .into_iter()
@@ -734,8 +740,7 @@ pub(in super::super) fn transfer_sketches(
                 "section_dimension_constraint",
                 Exactness::ByteExact,
             );
-            ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
-            constraints.push(constraint);
+            admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
         for (constraint, offset) in section_segment_radius_constraints_for_emitted(
             ctx,
@@ -752,8 +757,7 @@ pub(in super::super) fn transfer_sketches(
                 "section_segment_radius_constraint",
                 Exactness::ByteExact,
             );
-            ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
-            constraints.push(constraint);
+            admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
         let equation_constraints = crate::decode::collect_items(ctx,
             section_equation_axis_distance_constraints(ctx, definition, &sketch_id)?
@@ -837,8 +841,7 @@ pub(in super::super) fn transfer_sketches(
                 "section_equation_constraint",
                 Exactness::ByteExact,
             );
-            ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
-            constraints.push(constraint);
+            admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
         let typed_equation_offsets = collect_numeric_set(
             ctx,
@@ -857,8 +860,7 @@ pub(in super::super) fn transfer_sketches(
                 "section_native_equation_constraint",
                 Exactness::ByteExact,
             );
-            ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
-            constraints.push(constraint);
+            admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
         for (mut constraint, offset) in section_skamp_constraints_for_geometry(
             ctx,
@@ -881,8 +883,7 @@ pub(in super::super) fn transfer_sketches(
                 "section_solver_constraint",
                 Exactness::ByteExact,
             );
-            ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
-            constraints.push(constraint);
+            admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
         source_carriers.admit_sketch_entities(ctx, ir, entities)?;
         source_carriers.admit_sketch_constraints(ctx, ir, constraints)?;
@@ -904,7 +905,7 @@ pub(in super::super) fn transfer_sketches(
             ctx,
             ir,
             Sketch {
-                id: sketch_id.clone(),
+                id: sketch_id.copy_admitted(ctx, "creo model sketch identity copy")?,
                 name: None,
                 configuration: None,
                 visible: None,
@@ -933,14 +934,14 @@ pub(in super::super) fn transfer_sketches(
                 suppressed: Some(false),
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
-                source_tag: Some("section".to_string()),
+                source_tag: Some(ctx.copy_retained_text("section", "creo sketch feature source tag")?),
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                     IrFeatureDefinition::Operation(IrFeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                            sketch_id.clone(),
+                            sketch_id.copy_admitted(ctx, "creo sketch feature binding identity")?,
                         )),
                     }),
                 ),
@@ -968,6 +969,17 @@ fn emitted_entity_views(
         );
     }
     Ok((ids, geometry))
+}
+
+fn admit_constraint_row(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    rows: &mut Vec<SketchConstraint>,
+    constraint: SketchConstraint,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
+    ctx.try_reserve_items(rows, 1, "creo sketch constraint rows")?;
+    rows.push(constraint);
+    Ok(())
 }
 
 fn available_parameter_ids<'a>(

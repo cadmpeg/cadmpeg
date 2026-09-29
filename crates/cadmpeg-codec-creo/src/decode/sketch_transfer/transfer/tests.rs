@@ -1,12 +1,105 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{available_parameter_ids, emitted_entity_views, insert_set, insert_tree};
+use super::{admit_constraint_row, available_parameter_ids, emitted_entity_views, insert_set, insert_tree};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{
+    SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+    SketchConstraintId, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+};
 use cadmpeg_ir::features::ParameterId;
 use std::collections::BTreeSet;
+
+fn empty_section_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.definitions.push(crate::feature::definitions::FeatureDefinition {
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(7),
+            owner_feature_id: None,
+        },
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: Some(crate::feature::definitions::FeatureSavedSection {
+            entities: Vec::new(),
+            offset: 0,
+        }),
+        offset: 0,
+    });
+    scan
+}
+
+fn transfer_empty_section(policy: &DecodePolicy) -> Result<cadmpeg_ir::document::CadIr, CodecError> {
+    let scan = empty_section_scan();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    super::transfer_sketches(
+        &ctx,
+        &scan,
+        &mut ir,
+        &mut cadmpeg_ir::AnnotationBuilder::new(),
+        &mut Vec::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )?;
+    Ok(ir)
+}
+
+#[test]
+fn empty_section_transfer_preserves_sketch_and_feature() {
+    let ir = transfer_empty_section(&DecodePolicy::service()).expect("service section transfer");
+    assert_eq!(ir.model.sketches.len(), 1);
+    assert_eq!(ir.model.features.len(), 1);
+    assert_eq!(ir.model.features[0].source_tag.as_deref(), Some("section"));
+}
+
+fn disabled_constraint() -> SketchConstraint {
+    SketchConstraint {
+        id: SketchConstraintId::mint("creo:model:sketch_constraint#1").expect("constraint id"),
+        sketch: SketchId::mint("creo:model:sketch#1").expect("sketch id"),
+        definition: SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Disabled {},
+        ).expect("disabled constraint"),
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    }
+}
+
+#[test]
+fn sketch_constraint_rows_refuse_before_growth() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut rows = Vec::new();
+    let error = admit_constraint_row(&ctx, &mut rows, disabled_constraint())
+        .expect_err("one row exceeds zero items");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo sketch constraint rows"));
+    assert!(rows.is_empty());
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+    admit_constraint_row(&ctx, &mut rows, disabled_constraint()).expect("service row admitted");
+    assert_eq!(rows.len(), 1);
+}
 
 fn fixture() -> SketchEntity {
     let sketch = SketchId::mint("creo:model:sketch#1").expect("sketch id");
