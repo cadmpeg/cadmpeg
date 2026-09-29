@@ -693,7 +693,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         .expect("valid CircleCurve fixture"),
     ));
     assert!(
-        matches!(crate::decode::with_test_decode_ctx(|ctx| planar_curve_pcurve(ctx, &plane(), &circle, &"circle fixture", &mut crate::lane_refusal::LaneRefusals::new())), Some(PcurveGeometry::Circle(circle_pcurve))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| planar_curve_pcurve(ctx, &plane(), &circle, &"circle fixture", &mut crate::lane_refusal::LaneRefusals::new())).expect("service profile admits planar circle"), Some(PcurveGeometry::Circle(circle_pcurve))
                 if {
                     let center = circle_pcurve.center();
         let x_axis = circle_pcurve.x_axis();
@@ -717,7 +717,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         .expect("valid planar NURBS"),
     ));
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| planar_curve_pcurve(ctx, &plane(), &nurbs, &"nurbs fixture", &mut crate::lane_refusal::LaneRefusals::new())),
+        crate::decode::with_test_decode_ctx(|ctx| planar_curve_pcurve(ctx, &plane(), &nurbs, &"nurbs fixture", &mut crate::lane_refusal::LaneRefusals::new())).expect("service profile admits planar NURBS"),
         Some(PcurveGeometry::Nurbs { nurbs })
             if nurbs.degree() == 1
                 && nurbs.knots().as_slice() == [2.0, 2.0, 5.0, 5.0]
@@ -740,7 +740,92 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         &"off-plane fixture",
         &mut crate::lane_refusal::LaneRefusals::new()
     ))
+    .expect("service profile admits off-plane candidate")
     .is_none());
+}
+
+fn planar_nurbs_limit_error(max_collection_items: u64) -> cadmpeg_core::CodecError {
+    let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            1,
+            vec![2.0, 2.0, 5.0, 5.0],
+            vec![Point3::new(2.0, 4.0, 3.0), Point3::new(5.0, 7.0, 3.0)],
+            Some(vec![2.0, 1.0]),
+            false,
+        )
+        .expect("valid planar NURBS"),
+    ));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    planar_curve_pcurve(
+        &ctx,
+        &plane(),
+        &nurbs,
+        &"nurbs fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("planar NURBS copy exceeds limit")
+}
+
+#[test]
+fn planar_nurbs_projection_refuses_knot_copy() {
+    let error = planar_nurbs_limit_error(2);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo planar projected NURBS knots"));
+}
+
+#[test]
+fn planar_nurbs_projection_refuses_pole_copy() {
+    let error = planar_nurbs_limit_error(0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo planar projected NURBS poles"));
+}
+
+#[test]
+fn planar_nurbs_projection_refuses_nonfinite_reason_copy() {
+    let diagonal_plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(
+                std::f64::consts::FRAC_1_SQRT_2,
+                std::f64::consts::FRAC_1_SQRT_2,
+                0.0,
+            ),
+        )
+        .expect("valid diagonal plane"),
+    ));
+    let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(f64::MAX, f64::MAX, 3.0); 2],
+            None,
+            false,
+        )
+        .expect("finite source poles"),
+    ));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error = planar_curve_pcurve(
+        &ctx,
+        &diagonal_plane,
+        &nurbs,
+        &"nonfinite projection",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("nonfinite projection reason exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && resource.operation == "creo planar projected NURBS refusal text"));
 }
 
 #[test]
