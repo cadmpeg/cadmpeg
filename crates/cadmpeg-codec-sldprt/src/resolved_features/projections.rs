@@ -744,17 +744,17 @@ pub(crate) fn project_compact_edge_selections(
                 if let Some(radius_groups) =
                     variable_fillet_radius_groups(native_ref, histories, lanes, edge_selections)
                 {
-                    if matches!(&existing_edges, EdgeSelection::Unresolved)
+                    if matches!(existing_edges, EdgeSelection::Unresolved)
                         || radius_groups.len() == 1
                     {
                         definition = FeatureDefinition::Operation(FeatureOperation::Fillet {
                             groups: radius_groups
                                 .into_iter()
                                 .map(|(radius, selections)| FilletGroup {
-                                    edges: if matches!(&existing_edges, EdgeSelection::Unresolved) {
+                                    edges: if matches!(existing_edges, EdgeSelection::Unresolved) {
                                         projected_edges(&selections)
                                     } else {
-                                        existing_edges.clone()
+                                        (*existing_edges).clone()
                                     },
                                     radius,
                                     tangency_weight,
@@ -1665,7 +1665,7 @@ pub(crate) fn project_compact_surface_selections(
 /// The edges and tangency weight of a fillet whose one group has no radius.
 fn sole_unresolved_fillet_group(
     definition: &FeatureDefinition,
-) -> Option<(EdgeSelection, Option<cadmpeg_ir::scalar::FiniteReal>)> {
+) -> Option<(&EdgeSelection, Option<cadmpeg_ir::scalar::FiniteReal>)> {
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
         return None;
     };
@@ -1675,7 +1675,7 @@ fn sole_unresolved_fillet_group(
     group
         .radius
         .is_unresolved()
-        .then(|| (group.edges.clone(), group.tangency_weight))
+        .then_some((&group.edges, group.tangency_weight))
 }
 
 fn full_round_fillet_selection_triple<'a>(
