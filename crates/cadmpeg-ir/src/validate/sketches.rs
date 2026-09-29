@@ -33,7 +33,7 @@ const EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E9: f64 = EPS_SKETCH_VALIDATION
 fn spatial_oriented_endpoints(
     geometry: &SpatialSketchGeometry,
     reversed: bool,
-) -> Option<(crate::math::Point3, crate::math::Point3)> {
+) -> Result<Option<(crate::math::Point3, crate::math::Point3)>, cadmpeg_core::decode::ResourceLimit> {
     let endpoints = match geometry.definition() {
         SpatialSketchGeometryDefinition::Line { start, end } => (start.get(), end.get()),
         SpatialSketchGeometryDefinition::Arc {
@@ -69,18 +69,25 @@ fn spatial_oriented_endpoints(
         SpatialSketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let start = curve.knots()[curve.degree() as usize];
             let end = curve.knots()[curve.pole_count()];
-            (
-                crate::eval::nurbs_curve_point_at(curve, start).ok()?.get(),
-                crate::eval::nurbs_curve_point_at(curve, end).ok()?.get(),
-            )
+            let Some(start_point) = crate::eval::finite_or_refusal(
+                crate::eval::nurbs_curve_point_at(curve, start),
+            )? else {
+                return Ok(None);
+            };
+            let Some(end_point) = crate::eval::finite_or_refusal(
+                crate::eval::nurbs_curve_point_at(curve, end),
+            )? else {
+                return Ok(None);
+            };
+            (start_point.get(), end_point.get())
         }
-        _ => return None,
+        _ => return Ok(None),
     };
-    Some(if reversed {
+    Ok(Some(if reversed {
         (endpoints.1, endpoints.0)
     } else {
         endpoints
-    })
+    }))
 }
 
 const EPS_FULL_CIRCLE_OFFSET: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
@@ -448,7 +455,10 @@ fn spatial_length_parameter_matches(
     })
 }
 
-pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_sketches(
+    ir: &CadIr,
+    findings: &mut Vec<Finding>,
+) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
     let entity_geometry = ir
         .model
         .sketch_entities
@@ -527,18 +537,15 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 for index in 0..profile.boundary().len() {
                     let left = &profile.boundary()[index];
                     let right = &profile.boundary()[(index + 1) % profile.boundary().len()];
-                    let endpoints = spatial_geometry
-                        .get(&left.entity)
-                        .and_then(|(_, geometry)| {
-                            spatial_oriented_endpoints(geometry, left.reversed)
-                        })
-                        .zip(
-                            spatial_geometry
-                                .get(&right.entity)
-                                .and_then(|(_, geometry)| {
-                                    spatial_oriented_endpoints(geometry, right.reversed)
-                                }),
-                        );
+                    let left_endpoints = match spatial_geometry.get(&left.entity) {
+                        Some((_, geometry)) => spatial_oriented_endpoints(geometry, left.reversed)?,
+                        None => None,
+                    };
+                    let right_endpoints = match spatial_geometry.get(&right.entity) {
+                        Some((_, geometry)) => spatial_oriented_endpoints(geometry, right.reversed)?,
+                        None => None,
+                    };
+                    let endpoints = left_endpoints.zip(right_endpoints);
                     if endpoints.is_some_and(|(left, right)| {
                         (left.1.x - right.0.x)
                             .hypot(left.1.y - right.0.y)
@@ -1488,6 +1495,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
     }
+    Ok(())
 }
 
 /// Refuse a constraint whose restricted entity has a neutral geometry of a kind
