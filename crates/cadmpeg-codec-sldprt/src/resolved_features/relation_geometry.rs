@@ -101,20 +101,20 @@ fn ensure_spatial_relation_point(
     marker: &crate::records::SketchInputEntity,
     position: Point3,
 ) -> Option<SpatialSketchEntityId> {
-    let matches = entities
+    let mut matches = entities
         .iter()
         .filter(|entity| {
             entity.sketch == *sketch && entity.native_ref.as_deref() == Some(marker.id())
-        })
-        .collect::<Vec<_>>();
-    if matches.len() > 1 || matches.iter().any(|entity| {
+        });
+    let first = matches.next();
+    if matches.next().is_some() || first.is_some_and(|entity| {
         !matches!(*entity.geometry.definition(),
             SpatialSketchGeometryDefinition::Point { position: candidate } if candidate == position
         )
     }) {
         return None;
     }
-    if let [entity] = matches.as_slice() {
+    if let Some(entity) = first {
         return Some(entity.id().clone());
     }
     let id = SpatialSketchEntityId::mint(format!(
@@ -191,7 +191,7 @@ fn spatial_relation_point_line_entities(
         })
         .collect::<Vec<_>>();
     line_markers.sort_unstable_by_key(|(marker, _)| marker.offset());
-    let line_matches = line_markers
+    let mut line_matches = line_markers
         .chunks_exact(2)
         .filter_map(|pair| {
             let ((first_marker, first), (second_marker, second)) = (pair[0], pair[1]);
@@ -199,14 +199,14 @@ fn spatial_relation_point_line_entities(
                 && spatial_point_line_distance(point, first, second)
                     .is_some_and(|distance| same_dimension_length(distance, expected)))
             .then_some((first_marker, first, second_marker, second))
-        })
-        .collect::<Vec<_>>();
-    let [(start_marker, start, end_marker, end)] = line_matches.as_slice() else {
+        });
+    let (Some((start_marker, start, end_marker, end)), None) =
+        (line_matches.next(), line_matches.next()) else {
         return None;
     };
 
-    let start_id = ensure_spatial_relation_point(entities, sketch, start_marker, *start)?;
-    let end_id = ensure_spatial_relation_point(entities, sketch, end_marker, *end)?;
+    let start_id = ensure_spatial_relation_point(entities, sketch, start_marker, start)?;
+    let end_id = ensure_spatial_relation_point(entities, sketch, end_marker, end)?;
     let point_id = ensure_spatial_relation_point(entities, sketch, point_marker, point)?;
     let endpoint_refs = vec![start_id.as_str().to_owned(), end_id.as_str().to_owned()];
     let reverse_endpoint_refs = vec![end_id.as_str().to_owned(), start_id.as_str().to_owned()];
@@ -231,8 +231,8 @@ fn spatial_relation_point_line_entities(
                 id.clone(),
                 sketch.clone(),
                 SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
-                    start: *start,
-                    end: *end,
+                    start,
+                    end,
                 })
                 .ok()?,
             )
@@ -713,8 +713,8 @@ pub(crate) fn project_relation_point_geometry(
                     ))
                 })
                 .collect::<HashSet<_>>();
-            let candidates = candidates.into_iter().collect::<Vec<_>>();
-            let [(start, end)] = candidates.as_slice() else {
+            let mut candidates = candidates.into_iter();
+            let (Some((start, end)), None) = (candidates.next(), candidates.next()) else {
                 continue;
             };
             if start == end {
@@ -1010,8 +1010,8 @@ pub(crate) fn project_relation_solved_line_geometry(
                         .map(|position| HashSet::from([position]))
                         .unwrap_or(candidates)
                 };
-                let candidates = candidates.into_iter().collect::<Vec<_>>();
-                let [position] = candidates.as_slice() else {
+                let mut candidates = candidates.into_iter();
+                let (Some(position), None) = (candidates.next(), candidates.next()) else {
                     return None;
                 };
                 Some(Point2::new(
@@ -1491,13 +1491,13 @@ pub(crate) fn project_relation_solved_point_geometry(
                             transformed_positions = HashSet::from([position]);
                         }
                     }
-                    let transformed_positions =
-                        transformed_positions.into_iter().collect::<Vec<_>>();
-                    let [position] = transformed_positions.as_slice() else {
+                    let mut transformed_positions = transformed_positions.into_iter();
+                    let (Some(position), None) =
+                        (transformed_positions.next(), transformed_positions.next()) else {
                         resolved_positions.clear();
                         break;
                     };
-                    resolved_positions.push(Some(*position));
+                    resolved_positions.push(Some(position));
                 }
                 if resolved_positions.len() != relation.operands.len() {
                     continue;
