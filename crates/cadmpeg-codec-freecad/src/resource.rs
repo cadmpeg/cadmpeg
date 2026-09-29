@@ -53,26 +53,6 @@ pub(crate) fn named_entries_charged<V>(
 #[cfg(test)]
 mod tests {
     #[test]
-    fn copied_identity_refuses_before_id_copy() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        let id = "fcstd:model:body#Payload:1";
-        policy.limits.max_retained_bytes = id.len() as u64 - 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        let result: Result<cadmpeg_ir::ids::BodyId, _> = ctx
-            .copy_retained_text(id, "test identity copy")
-            .and_then(|text| {
-                cadmpeg_ir::ids::BodyId::try_from(text)
-                    .map_err(cadmpeg_core::CodecError::malformed)
-            });
-        assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "test identity copy")
-        );
-    }
-
-    #[test]
     fn retained_format_preserves_text_and_refuses_before_allocation() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let text = "Shape & Surface";

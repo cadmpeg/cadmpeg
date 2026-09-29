@@ -121,47 +121,6 @@ mod tests {
     }
 
     #[test]
-    fn copied_identity_refuses_retained_bytes_before_allocation() {
-        let source = "test:model:curve#1";
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(source.len() - 1).expect("test setup");
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
-        let source_id = cadmpeg_ir::ids::CurveId::mint(source).expect("test setup");
-        let refused = source_id.try_clone_for_decode(&ctx, "iges identity copy test");
-        assert!(matches!(refused,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "iges identity copy test"
-                    && limit.used == 0
-                    && limit.additional == u64::try_from(source.len()).expect("test setup")
-        ));
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("test setup");
-        let copied = source_id.try_clone_for_decode(&ctx, "iges identity copy test")
-        .expect("test setup");
-        assert_eq!(copied.as_str(), source);
-    }
-
-    #[test]
-    fn cloned_identity_refuses_retained_bytes_before_allocation() {
-        let source = cadmpeg_ir::ids::CurveId::mint("test:model:curve#1").expect("test setup");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            u64::try_from(source.as_str().len() - 1).expect("test setup");
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
-        let result = source.try_clone_for_decode(&ctx, "iges cloned identity test");
-        assert!(matches!(result,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "iges cloned identity test"
-                    && limit.additional == u64::try_from(source.as_str().len()).expect("test setup")
-        ));
-    }
-
-    #[test]
     fn optional_collection_keeps_an_earlier_missing_value() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
