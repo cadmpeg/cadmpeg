@@ -1758,3 +1758,5 @@ fn counted_offset_result_id_refuses_retained_limit() {
     assert_counted_offset_refusal("f3d counted offset result id", ResourceDimension::RetainedBytes,
         ("synthetic:test:id#offset-source".len() + "synthetic:test:id#offset-result".len()) as u64 - 1);
 }
+
+mod source_kind_limits;

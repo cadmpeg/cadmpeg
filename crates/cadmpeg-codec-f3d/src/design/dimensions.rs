@@ -179,6 +179,16 @@ fn copy_dimension_text(
         .map_err(|_| CodecError::malformed("validated dimension text is not UTF-8"))
 }
 
+fn copy_dimension_source_kind(
+    ctx: Option<&DecodeContext<'_>>,
+    parameter: &DesignParameter,
+    operation: &'static str,
+) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
+    let text = copy_dimension_text(ctx, parameter.source_kind(), operation)?;
+    cadmpeg_core::text::NonBlankString::new(text)
+        .ok_or_else(|| CodecError::malformed("validated dimension source kind is blank"))
+}
+
 fn copy_dimension_locus(
     ctx: Option<&DecodeContext<'_>>,
     locus: &cadmpeg_ir::sketches::SketchLocus,
@@ -1012,7 +1022,7 @@ fn project_all_dimension_constraints(
                     }
                     native_definition(
                         scope,
-                        parameter.source_kind_name(),
+                        copy_dimension_source_kind(ctx, parameter, "f3d group source kind")?,
                         Some(u64::from(group.state)),
                         &operands,
                         parameter_id,
@@ -1086,7 +1096,7 @@ linear_tolerance,
             } else {
                 native_definition(
                         scope,
-                        parameter.source_kind_name(),
+                        copy_dimension_source_kind(ctx, parameter, "f3d pair source kind")?,
                         None,
                         &[
                             (
@@ -1203,7 +1213,7 @@ linear_tolerance,
                         }
                     }
                     Ok(Definition::Native {
-                        native_kind: parameter.source_kind_name(),
+                        native_kind: copy_dimension_source_kind(ctx, parameter, "f3d annotation source kind")?,
                         native_state: None,
                         native_flags: None,
                         native_properties: std::collections::BTreeMap::new(),
@@ -1329,7 +1339,7 @@ linear_tolerance,
                 }
                 let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
                     Definition::Native {
-                        native_kind: parameter.source_kind_name(),
+                        native_kind: copy_dimension_source_kind(ctx, parameter, "f3d null pair source kind")?,
                         native_state: None,
                         native_flags: None,
                         native_properties: std::collections::BTreeMap::new(),
@@ -1470,7 +1480,7 @@ linear_tolerance,
                 }, "f3d recipe native operand")?;
             }
             Definition::Native {
-                native_kind: parameter.source_kind_name(),
+                native_kind: copy_dimension_source_kind(ctx, parameter, "f3d recipe source kind")?,
                 native_state: None,
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),
@@ -1681,7 +1691,7 @@ curves,
                 let native_ref = copy_dimension_text(ctx, companion.id(),
                     "f3d companion native operand reference")?;
                 Ok(Definition::Native {
-                native_kind: parameter.source_kind_name(),
+                native_kind: copy_dimension_source_kind(ctx, parameter, "f3d companion source kind")?,
                 native_state: None,
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),
@@ -3225,7 +3235,7 @@ spatial_sketches,
             "f3d missing spatial constraint native id")?;
         let definition = cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
             SpatialSketchConstraintDefinitionInput::Native {
-                native_kind: parameter.source_kind_name(),
+                native_kind: copy_dimension_source_kind(ctx, parameter, "f3d spatial companion source kind")?,
                 native_state: None,
                 parameter: Some(copy_dimension_parameter_id(ctx, parameter_id,
                     "f3d missing spatial output parameter id")?),
