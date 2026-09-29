@@ -74,10 +74,10 @@ pub(super) fn source_meta(
         }
     }
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
-        coverage.record(
+        coverage.record_admitted(ctx,
             crate::coverage::DECODED_LEGACY_PRINCIPAL_UNIT_COUNT,
             usize::from(scan.framing.principal_unit.is_some()),
-        );
+        )?;
         let mut object_arrows = 0usize;
         let mut object_inlines = 0usize;
         let mut object_nulls = 0usize;
