@@ -9471,22 +9471,70 @@ pub(super) fn feature_extrude_32_constructions(
     references: &[FeatureExtrudeProfileReference],
     branches: &[FeatureExtrudePayload32Branch],
 ) -> Result<Vec<FeatureExtrude32Construction>, cadmpeg_core::CodecError> {
-    let mut branches_by_operation = BTreeMap::<&str, Vec<&FeatureExtrudePayload32Branch>>::new();
+    fn copy_bindings<T>(
+        ctx: &DecodeContext<'_>,
+        items: &crate::om::branch_items::BranchItems<(T, Option<String>)>,
+        operation: &'static str,
+    ) -> Result<Option<crate::om::branch_items::BranchItems<String>>, CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(items.len()), operation)?;
+        if items.as_slice().iter().any(|(_, binding)| binding.is_none()) {
+            return Ok(None);
+        }
+        let mut copied = Vec::new();
+        for (_, binding) in items.as_slice() {
+            let Some(binding) = binding.as_deref() else {
+                return Ok(None);
+            };
+            let id = copy_operation_text(ctx, binding, operation)?;
+            ctx.charge_collection_items(1, operation)?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<String>()), operation)?;
+            copied.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            copied.push(id);
+        }
+        crate::om::branch_items::BranchItems::new(copied)
+            .map(Some).map_err(|error| CodecError::Malformed(error.into()))
+    }
+
+    let mut operations = BTreeSet::new();
+    let mut operation_reservation = ctx.reserve_scoped(0, "NX extrude 32 operations")?;
     for branch in branches {
-        branches_by_operation
-            .entry(branch.operation_label.as_str())
-            .or_default()
-            .push(branch);
+        ctx.charge_collection_items(1, "NX extrude 32 operations")?;
+        operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&str>() * 4))?;
+        operations.insert(branch.operation_label.as_str());
     }
     let mut constructions = Vec::new();
-    for (operation_label, operation_branches) in branches_by_operation {
-        let [branch] = operation_branches.as_slice() else {
+    for operation_label in operations {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(branches.len()),
+            "match NX extrude 32 branch")?;
+        let mut matching = branches.iter().filter(|branch| {
+            branch.operation_label == operation_label
+        });
+        let Some(branch) = matching.next() else {
             continue;
         };
-        let mut profile = references
-            .iter()
-            .filter(|reference| reference.operation_label == operation_label)
-            .collect::<Vec<_>>();
+        if matching.next().is_some() {
+            continue;
+        }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(references.len()),
+            "match NX extrude 32 profile")?;
+        let mut profile = Vec::new();
+        let mut profile_reservation = ctx.reserve_scoped(0, "NX extrude 32 profile order")?;
+        for reference in references.iter().filter(|reference| {
+            reference.operation_label == operation_label
+        }) {
+            ctx.charge_collection_items(1, "NX extrude 32 profile order")?;
+            profile_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<&FeatureExtrudeProfileReference>()))?;
+            profile.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX extrude 32 profile order", 0, 1))?;
+            profile.push(reference);
+        }
+        let sort_work = profile.len().checked_mul(profile.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("sort NX extrude 32 profiles", 0, 1))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sort_work),
+            "sort NX extrude 32 profiles")?;
         profile.sort_by_key(|reference| reference.ordinal);
         let Ok(profile) = crate::om::branch_items::BranchItems::new(profile) else {
             continue;
@@ -9495,54 +9543,52 @@ pub(super) fn feature_extrude_32_constructions(
             .as_slice()
             .iter()
             .enumerate()
-            .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
+            .any(|(ordinal, reference)| u32::try_from(ordinal) != Ok(reference.ordinal))
         {
             continue;
         }
-        let Some(profiles) = profile
-            .map_indexed_charged(ctx, |_, reference| {
-                Some(FeatureConstructionMember {
-                    reference: reference.id.clone(),
-                    data_block: reference.data_block.clone()?,
+        if profile.as_slice().iter().any(|reference| reference.data_block.is_none()) {
+            continue;
+        }
+        let profiles = profile
+            .try_map_indexed_charged(ctx, |_, reference| {
+                let Some(block) = reference.data_block.as_deref() else {
+                    return Err(ctx.refuse_codec_limit("NX extrude 32 profile block", 0, 1));
+                };
+                Ok(FeatureConstructionMember {
+                    reference: copy_operation_text(ctx, &reference.id,
+                        "NX extrude 32 profile reference")?,
+                    data_block: copy_operation_text(ctx, block,
+                        "NX extrude 32 profile block")?,
                 })
-            })?
-            .transpose_charged(ctx)?
-        else {
+            })?;
+        let Some(atom_data_blocks) = copy_bindings(ctx, branch.frame.atom_members(),
+            "NX extrude 32 atom blocks")? else {
             continue;
         };
-        let Some(atom_data_blocks) = branch
-            .frame
-            .atom_members()
-            .clone()
-            .map_indexed_charged(ctx, |_, (_, binding)| binding)?
-            .transpose_charged(ctx)?
-        else {
+        let Some(first_data_blocks) = copy_bindings(ctx, branch.frame.first_members(),
+            "NX extrude 32 first blocks")? else {
             continue;
         };
-        let Some(first_data_blocks) = branch
-            .frame
-            .first_members()
-            .clone()
-            .map_indexed_charged(ctx, |_, (_, binding)| binding)?
-            .transpose_charged(ctx)?
-        else {
+        let Some(second_data_blocks) = copy_bindings(ctx, branch.frame.second_members(),
+            "NX extrude 32 second blocks")? else {
             continue;
         };
-        let Some(second_data_blocks) = branch
-            .frame
-            .second_members()
-            .clone()
-            .map_indexed_charged(ctx, |_, (_, binding)| binding)?
-            .transpose_charged(ctx)?
-        else {
-            continue;
-        };
+        let id = replace_operation_text(ctx, &branch.id,
+            "extrude-payload-32-branch", "extrude-32-construction",
+            "NX extrude 32 construction identity")?;
+        let operation_label = copy_operation_text(ctx, &branch.operation_label,
+            "NX extrude 32 construction operation")?;
+        let branch_id = copy_operation_text(ctx, &branch.id,
+            "NX extrude 32 construction branch")?;
+        ctx.charge_collection_items(1, "NX extrude 32 constructions")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureExtrude32Construction>()),
+            "NX extrude 32 constructions")?;
+        constructions.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX extrude 32 constructions", 0, 1))?;
         constructions.push(FeatureExtrude32Construction {
-            id: branch
-                .id
-                .replacen("extrude-payload-32-branch", "extrude-32-construction", 1),
-            operation_label: branch.operation_label.clone(),
-            branch: branch.id.clone(),
+            id, operation_label, branch: branch_id,
             body_object_index: branch.frame.terminal().value(),
             profiles,
             atom_data_blocks,

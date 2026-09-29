@@ -1429,7 +1429,7 @@ fn nx_operation_body_operands_refuse_work_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
-fn extrude_32_fixture() -> (
+pub(super) fn extrude_32_fixture() -> (
     FeatureExtrudeProfileReference,
     crate::native::features::FeatureExtrudePayload32Branch,
 ) {

@@ -6,6 +6,7 @@ mod column_relation_limits;
 mod datum_csys_limits;
 mod datum_descriptor_limits;
 mod datum_payload_limits;
+mod extrude_32_limits;
 mod frame_admission;
 mod lane_wire;
 mod link_order;
