@@ -98,3 +98,39 @@ fn edge_group_matched_identity_refuses_collection_limit() {
     }
     panic!("no matched identity refusal");
 }
+
+fn assert_identity_transition_refusal(operation: &'static str) {
+    let group = group(2, 10);
+    let operand = identity(10, &[(17, 3.0), (18, 5.0)]);
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#transition-index")
+        .unwrap();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match resolved_edge_treatment_group_with_corners(&group,
+            std::slice::from_ref(&group), &[], std::slice::from_ref(&operand), &[], &[],
+            Some(7), &feature_id, None, Some(&ctx)) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            other => panic!("expected {operation} refusal: {other:?}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn single_identity_transition_slot_refuses_collection_limit() {
+    assert_identity_transition_refusal("f3d single identity transition slot");
+}
+
+#[test]
+fn group_identity_transition_slot_refuses_collection_limit() {
+    assert_identity_transition_refusal("f3d group identity transition slot");
+}
+
+#[test]
+fn compared_identity_transition_slot_refuses_collection_limit() {
+    assert_identity_transition_refusal("f3d compared identity transition slot");
+}
