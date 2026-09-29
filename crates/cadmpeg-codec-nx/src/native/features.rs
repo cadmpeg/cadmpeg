@@ -9886,45 +9886,87 @@ pub(super) fn feature_block_payload_names(
 
 /// Join complete `BLOCK` payload names to scalar fields in their intervals.
 pub(super) fn feature_block_payload_named_records(
+    ctx: &DecodeContext<'_>,
     payloads: &[FeatureConstructionPayload],
     names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
-) -> Vec<FeatureBlockPayloadNamedRecord> {
+) -> Result<Vec<FeatureBlockPayloadNamedRecord>, CodecError> {
     let mut records = Vec::new();
     for payload in payloads {
-        let mut payload_names = names
-            .iter()
-            .filter(|name| name.construction_payload == payload.id)
-            .collect::<Vec<_>>();
+        let mut payload_names = Vec::new();
+        let mut name_reservation = ctx.reserve_scoped(0, "NX block payload names for join")?;
+        for name in names.iter().filter(|name| name.construction_payload == payload.id) {
+            ctx.charge_collection_items(1, "NX block payload names for join")?;
+            name_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<&FeaturePayloadName>()))?;
+            payload_names.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX block payload names for join", 0, 1))?;
+            payload_names.push(name);
+        }
+        let name_sort_work = payload_names.len().checked_mul(payload_names.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("sort NX block payload names", 0, 1))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(name_sort_work),
+            "sort NX block payload names")?;
         payload_names.sort_by_key(|name| name.frame.offset());
         for (ordinal, name) in payload_names.iter().enumerate() {
             let end = payload_names
                 .get(ordinal + 1)
                 .map_or(payload.content.byte_len(), |next| next.frame.offset());
-            let mut scalar_fields = scalars
-                .iter()
-                .filter(|scalar| {
+            let mut scalar_fields = Vec::new();
+            let mut scalar_reservation = ctx.reserve_scoped(0, "NX block payload scalars for join")?;
+            for scalar in scalars.iter().filter(|scalar| {
                     scalar.payload.id() == payload.id
                         && scalar.payload_offset > name.frame.offset()
                         && scalar.payload_offset < end
-                })
-                .collect::<Vec<_>>();
+                }) {
+                ctx.charge_collection_items(1, "NX block payload scalars for join")?;
+                scalar_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<&FeaturePayloadScalar>()))?;
+                scalar_fields.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX block payload scalars for join", 0, 1))?;
+                scalar_fields.push(scalar);
+            }
+            let scalar_sort_work = scalar_fields.len().checked_mul(scalar_fields.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("sort NX block payload scalars", 0, 1))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(scalar_sort_work),
+                "sort NX block payload scalars")?;
             scalar_fields.sort_by_key(|scalar| scalar.payload_offset);
+            let id = format_charged_text(ctx,
+                format_args!("{}-record-{ordinal}", payload.id),
+                "NX block payload named record identity")?;
+            let operation_label = copy_operation_text(ctx, &payload.operation_label,
+                "NX block payload named record operation")?;
+            let construction_payload = copy_operation_text(ctx, &payload.id,
+                "NX block payload named record owner")?;
+            let name_field = copy_operation_text(ctx, &name.id,
+                "NX block payload named record name field")?;
+            let mut scalar_ids = Vec::new();
+            for scalar in scalar_fields {
+                let scalar_id = copy_operation_text(ctx, &scalar.id,
+                    "NX block payload named record scalar field")?;
+                ctx.charge_collection_items(1, "NX block payload named record scalar fields")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<String>()),
+                    "NX block payload named record scalar fields")?;
+                scalar_ids.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX block payload named record scalar fields", 0, 1))?;
+                scalar_ids.push(scalar_id);
+            }
+            ctx.charge_collection_items(1, "NX block payload named records")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureBlockPayloadNamedRecord>()),
+                "NX block payload named records")?;
+            records.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX block payload named records", 0, 1))?;
             records.push(FeatureBlockPayloadNamedRecord {
-                id: format!("{}-record-{ordinal}", payload.id),
-                operation_label: payload.operation_label.clone(),
-                construction_payload: payload.id.clone(),
-                name_field: name.id.clone(),
-                scalar_fields: scalar_fields
-                    .into_iter()
-                    .map(|scalar| scalar.id.clone())
-                    .collect(),
+                id, operation_label, construction_payload, name_field,
+                scalar_fields: scalar_ids,
                 payload_start_offset: name.frame.offset(),
                 payload_end_offset: end,
             });
         }
     }
-    records
+    Ok(records)
 }
 
 /// Type exact two-scalar `Point<positive decimal>` `BLOCK` payload intervals.
