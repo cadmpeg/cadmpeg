@@ -309,7 +309,7 @@ pub(in super::super) fn schema_feature_definition(
     kind: &str,
 ) -> Result<IrFeatureDefinition, cadmpeg_core::CodecError> {
     if numbered_feature_name_has_family(kind, "Fill") {
-        return Ok(filled_surface_feature_definition(scan, ir, feature_id));
+        return filled_surface_feature_definition(ctx, scan, ir, feature_id);
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
         return thicken_feature_definition(ctx, scan, ir, feature_id);
@@ -321,21 +321,27 @@ pub(in super::super) fn schema_feature_definition(
         return Ok(definition);
     }
     if schema_class == Some(SchemaClass::Section) {
-        let sketch =
-            section_definition_for_history_feature(scan, feature_id).and_then(|definition| {
-                let section = definition.section_3d.as_ref()?;
-                unique_feature_section_transform(
-                    &scan.features.section_transforms,
-                    definition.identity.id(),
-                    section.offset,
-                )?;
-                let sketch = model_sketch_id(scan, definition)?;
+        let definition = section_definition_for_history_feature(scan, feature_id).filter(
+            |definition| {
+                definition.section_3d.as_ref().is_some_and(|section| {
+                    unique_feature_section_transform(
+                        &scan.features.section_transforms,
+                        definition.identity.id(),
+                        section.offset,
+                    )
+                    .is_some()
+                })
+            },
+        );
+        let sketch = match definition {
+            Some(definition) => model_sketch_id(ctx, scan, definition)?.filter(|sketch| {
                 ir.model
                     .sketches
                     .iter()
-                    .any(|candidate| candidate.id == sketch)
-                    .then_some(sketch)
-            });
+                    .any(|candidate| candidate.id == *sketch)
+            }),
+            None => None,
+        };
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
         }));

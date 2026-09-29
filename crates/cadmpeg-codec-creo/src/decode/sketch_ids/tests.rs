@@ -2,7 +2,7 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-use super::{owning_feature_definition_ref, sketch_table_headers};
+use super::{model_sketch_id, owning_feature_definition_ref, sketch_table_headers};
 use crate::decode::native_records::CreoSketchTableKind;
 use crate::feature::definitions::{
     DefinitionIdentity, FeatureDefinition, FeatureTrimBucket, FeatureTrimEntityTable,
@@ -29,6 +29,37 @@ fn definition() -> FeatureDefinition {
         saved_section: None,
         offset: 0,
     }
+}
+
+#[test]
+fn model_sketch_identity_refuses_before_formatting_and_uniqueness_scan() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut source = definition();
+    source.offset = 9;
+    scan.features.definitions.push(source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = model_sketch_id(&ctx, &scan, &scan.features.definitions[0])
+        .expect_err("one definition needs one scan unit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo model sketch identity uniqueness"));
+    policy.limits.max_work_units = DecodePolicy::service().limits.max_work_units;
+    policy.limits.max_retained_bytes = "creo:model:sketch#offset:9".len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = model_sketch_id(&ctx, &scan, &scan.features.definitions[0])
+        .expect_err("identity text exceeds retained cap");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo model sketch identity"));
+    let id = crate::decode::with_test_decode_ctx(|ctx| {
+        model_sketch_id(ctx, &scan, &scan.features.definitions[0])
+    })
+    .expect("service identity admitted")
+    .expect("valid sketch identity");
+    assert_eq!(id.as_str(), "creo:model:sketch#offset:9");
 }
 
 #[test]

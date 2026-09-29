@@ -129,25 +129,52 @@ pub(in super::super) fn resolved_feature_dimension_parameter<'a>(
 }
 
 pub(in super::super) fn planned_feature_dimension_parameter_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-) -> BTreeSet<ParameterId> {
+) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
     let mut ids = BTreeSet::new();
     for definition in &scan.features.definitions {
         let Some(table) = &definition.dimensions else {
             continue;
         };
-        let Some(sketch) = model_sketch_id(scan, definition) else {
+        let Some(sketch) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
-        for (ordinal, _) in table.rows.iter().enumerate() {
-            if let Some((_, parameter)) =
-                resolved_feature_dimension_parameter(&sketch, table, ordinal)
+        if !feature_dimension_table_complete(table) {
+            continue;
+        }
+        for dimension in &table.rows {
+            let rows = u64::try_from(table.rows.len()).map_err(|_| {
+                cadmpeg_core::CodecError::malformed("Creo dimension row count exceeds u64")
+            })?;
+            ctx.charge_work(rows, "creo planned dimension identity uniqueness")?;
+            if table
+                .rows
+                .iter()
+                .filter(|candidate| candidate.external_id == dimension.external_id)
+                .count()
+                != 1
             {
-                ids.insert(parameter);
+                continue;
             }
+            let text = ctx.format_retained(
+                format_args!(
+                    "creo:featdefs:parameter#{}:{}",
+                    crate::decode::sketch_ids::sketch_identity_scope(&sketch),
+                    dimension.external_id,
+                ),
+                "creo planned dimension parameter identity",
+            )?;
+            let Ok(parameter) = ParameterId::try_from(text) else {
+                continue;
+            };
+            if !ids.contains(&parameter) {
+                ctx.charge_collection_items(1, "creo planned dimension parameter ID nodes")?;
+            }
+            ids.insert(parameter);
         }
     }
-    ids
+    Ok(ids)
 }
 
 pub(in super::super) fn feature_dimension_table_complete(
@@ -267,7 +294,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         .collect::<BTreeSet<_>>();
     let mut candidates = Vec::new();
     for definition in &scan.features.definitions {
-        let Some(sketch) = model_sketch_id(scan, definition) else {
+        let Some(sketch) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
         let Some(owner) = section_owner_feature_id(scan, definition.identity.id(), &sketch) else {

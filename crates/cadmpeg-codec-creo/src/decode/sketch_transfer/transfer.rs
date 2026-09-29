@@ -57,6 +57,7 @@ use crate::decode::sketch_transfer::profiles::{
 use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::Feature;
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::features::{
     FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
 };
@@ -80,13 +81,11 @@ pub(in super::super) fn transfer_sketches(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<SketchSegmentTransferCoverage, cadmpeg_core::CodecError> {
     let mut coverage = SketchSegmentTransferCoverage::default();
-    let mut available_parameter_ids = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| parameter.id.clone())
-        .collect::<BTreeSet<_>>();
-    available_parameter_ids.extend(planned_feature_dimension_parameter_ids(scan));
+    let available_parameter_ids = available_parameter_ids(
+        ctx,
+        ir.model.parameters.iter().map(|parameter| &parameter.id),
+        planned_feature_dimension_parameter_ids(ctx, scan)?,
+    )?;
     for definition in &scan.features.definitions {
         if !feature_definition_has_sketch_design(ctx, definition)? {
             continue;
@@ -107,7 +106,7 @@ pub(in super::super) fn transfer_sketches(
             .map_err(cadmpeg_core::CodecError::malformed)?,
             None => cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
         };
-        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+        let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
         let segments = section_segment_rows(ctx, definition)?;
@@ -973,6 +972,27 @@ fn emitted_entity_views(
         );
     }
     Ok((ids, geometry))
+}
+
+fn available_parameter_ids<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    existing: impl IntoIterator<Item = &'a ParameterId>,
+    planned: BTreeSet<ParameterId>,
+) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
+    let mut ids = BTreeSet::new();
+    for id in existing {
+        if !ids.contains(id) {
+            ctx.charge_collection_items(1, "creo available parameter ID nodes")?;
+            ids.insert(id.copy_admitted(ctx, "creo available parameter identities")?);
+        }
+    }
+    for id in planned {
+        if !ids.contains(&id) {
+            ctx.charge_collection_items(1, "creo available planned parameter ID nodes")?;
+            ids.insert(id);
+        }
+    }
+    Ok(ids)
 }
 
 #[cfg(test)]

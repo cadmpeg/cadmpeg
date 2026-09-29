@@ -30,17 +30,20 @@ const EPS_NORMAL_ALIGNMENT: f64 = 1.0e-9;
 const EPS_OFFSET_AGREEMENT: f64 = 1.0e-9;
 
 pub(in super::super) fn filled_surface_feature_definition(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-) -> IrFeatureDefinition {
-    let boundary = unique_feature_profile_definition(
+) -> Result<IrFeatureDefinition, CodecError> {
+    let sketch = match unique_feature_profile_definition(
         &scan.features.definitions,
         &scan.features.section_transforms,
         feature_id,
-    )
-    .and_then(|definition| model_sketch_id(scan, definition))
-    .filter(|sketch| {
+    ) {
+        Some(definition) => model_sketch_id(ctx, scan, definition)?,
+        None => None,
+    };
+    let boundary = sketch.filter(|sketch| {
         ir.model
             .sketches
             .iter()
@@ -50,14 +53,14 @@ pub(in super::super) fn filled_surface_feature_definition(
         SurfaceBoundary::Edges(EdgeSelection::Unresolved),
         |sketch| SurfaceBoundary::Path(PathRef::Sketch(sketch)),
     );
-    IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
+    Ok(IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
         boundary,
         support_faces: FaceSelection::Faces(Vec::new()),
         continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
             SurfaceContinuity::Contact,
         ),
         merge_result: Some(false),
-    })
+    }))
 }
 
 pub(in super::super) fn knit_class_100_operand_entity_ids(

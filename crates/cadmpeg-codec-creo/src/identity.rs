@@ -185,8 +185,6 @@ pub(crate) const MODEL_OCCURRENCE: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "model", "occurrence");
 pub(crate) const MODEL_PRODUCT_DEFINITION: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "model", "product_definition");
-pub(crate) const MODEL_SKETCH: IdentityNamespace =
-    cadmpeg_ir::identity_namespace!("creo", "model", "sketch");
 pub(crate) const MODEL_SKETCH_FEATURE: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "model", "sketch_feature");
 

@@ -143,7 +143,8 @@ fn closed_extrusion_reaches_brep_admission() {
     assert!(super::feature_is_first_material_operation(&scan, 7));
     let definition = &scan.features.definitions[0];
     let transform = &scan.features.section_transforms[0];
-    let sketch_id = super::model_sketch_id(&scan, definition).expect("sketch ID");
+    let sketch_id = crate::decode::with_test_decode_ctx(|ctx| super::model_sketch_id(ctx, &scan, definition))
+        .expect("sketch ID admitted").expect("sketch ID");
     crate::decode::with_test_decode_ctx(|ctx| {
         assert!(super::resolved_feature_extrusion_span(
             ctx, &scan, &ir,

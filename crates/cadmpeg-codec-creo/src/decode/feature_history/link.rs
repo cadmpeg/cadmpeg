@@ -38,7 +38,7 @@ pub(in super::super) fn link_feature_sketch_history(
         else {
             continue;
         };
-        let Some(sketch) = model_sketch_id(scan, definition) else {
+        let Some(sketch) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
         let Some(sketch_feature) =

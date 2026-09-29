@@ -1157,7 +1157,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         native_ref: Some("creo:featdefs:sketch#822".to_string()),
     });
     assert!(matches!(
-        filled_surface_feature_definition(&scan, &ir, 822),
+        crate::decode::with_test_decode_ctx(|ctx| filled_surface_feature_definition(ctx, &scan, &ir, 822)).expect("filled surface admitted"),
         IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
             boundary: SurfaceBoundary::Path(PathRef::Sketch(boundary)),
             ..
@@ -1168,7 +1168,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         .definitions
         .push(scan.features.definitions[0].clone());
     assert!(matches!(
-        filled_surface_feature_definition(&scan, &ir, 822),
+        crate::decode::with_test_decode_ctx(|ctx| filled_surface_feature_definition(ctx, &scan, &ir, 822)).expect("filled surface admitted"),
         IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
             boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
             ..

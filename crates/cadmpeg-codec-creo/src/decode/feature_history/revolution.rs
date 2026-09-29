@@ -115,7 +115,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         {
             insert_generating_segment_id(ctx, &mut generating_ids, id)?;
         }
-        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+        let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
         if let Some(sketch) = exactly_one(
@@ -528,7 +528,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         else {
             continue;
         };
-        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+        let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
         for (profile_index, vertices) in
@@ -630,7 +630,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
         else {
             continue;
         };
-        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+        let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
         for (profile_index, vertices) in

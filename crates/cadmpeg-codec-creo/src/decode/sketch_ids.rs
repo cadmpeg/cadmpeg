@@ -234,15 +234,34 @@ pub(super) fn feature_sketch_record_id_in_scan(
 }
 
 pub(super) fn model_sketch_id(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> Option<SketchId> {
-    let native_id = feature_sketch_record_id_in_scan(scan, definition);
-    let scope = native_id.strip_prefix("creo:featdefs:sketch#")?;
-    Some(SketchId::compose(
-        &crate::identity::MODEL_SKETCH,
-        IdentityKey::try_new(scope.to_owned()).ok()?,
-    ))
+) -> Result<Option<SketchId>, CodecError> {
+    let count = u64::try_from(scan.features.definitions.len())
+        .map_err(|_| CodecError::malformed("Creo feature definition count exceeds u64"))?;
+    ctx.charge_work(count, "creo model sketch identity uniqueness")?;
+    let ambiguous = scan
+        .features
+        .definitions
+        .iter()
+        .filter(|candidate| candidate.identity.id() == definition.identity.id())
+        .count()
+        != 1
+        || (definition.identity.schema_id().is_none()
+            && definition.identity.owner_feature_id().is_none());
+    let text = if ambiguous {
+        ctx.format_retained(
+            format_args!("creo:model:sketch#offset:{}", definition.offset),
+            "creo model sketch identity",
+        )?
+    } else {
+        ctx.format_retained(
+            format_args!("creo:model:sketch#{}", definition.identity.id()),
+            "creo model sketch identity",
+        )?
+    };
+    Ok(SketchId::try_from(text).ok())
 }
 
 pub(super) fn sketch_identity_scope(sketch: &SketchId) -> &str {
