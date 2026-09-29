@@ -484,7 +484,7 @@ fn local_reference_candidates(
     at: usize,
     allow_extra_zero: bool,
 ) -> Vec<LocalReferenceCandidate> {
-    let mut candidates = Vec::new();
+    let mut candidates = Vec::with_capacity(4);
     let mut end = at;
     if let Some(reference) = take_reference(bytes, &mut end) {
         if let Some((target, inline_type_guid)) = reference.into_local() {
