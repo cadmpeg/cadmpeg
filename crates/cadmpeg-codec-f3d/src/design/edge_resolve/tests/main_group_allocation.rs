@@ -3,7 +3,11 @@
 use super::*;
 use cadmpeg_core::CodecError;
 
-fn assert_main_group_refusal(operation: &'static str, surface_patch: bool) {
+fn assert_main_group_refusal_with_limit(
+    operation: &'static str,
+    surface_patch: bool,
+    retained: bool,
+) {
     let mut group = group(2, 10);
     let mut first = recipe_edge_operand(10, &[], &[]);
     first.resolved_edge_slot = Some(17);
@@ -35,7 +39,11 @@ fn assert_main_group_refusal(operation: &'static str, surface_patch: bool) {
     for limit in 0..128 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match resolved_edge_group(&group, std::slice::from_ref(&group), &operands,
             &[], Some(7), &feature_id, Some(&ctx)) {
@@ -45,6 +53,10 @@ fn assert_main_group_refusal(operation: &'static str, surface_patch: bool) {
         }
     }
     panic!("no {operation} refusal");
+}
+
+fn assert_main_group_refusal(operation: &'static str, surface_patch: bool) {
+    assert_main_group_refusal_with_limit(operation, surface_patch, false);
 }
 
 #[test]
@@ -65,6 +77,17 @@ fn generic_surface_patch_resolved_slot_refuses_collection_limit() {
 #[test]
 fn generic_surface_patch_distinct_slot_refuses_collection_limit() {
     assert_main_group_refusal("f3d generic surface patch distinct slot", true);
+}
+
+#[test]
+fn generic_surface_patch_historical_edge_refuses_collection_limit() {
+    assert_main_group_refusal("f3d generic surface patch historical edge", true);
+}
+
+#[test]
+fn generic_surface_patch_historical_group_id_refuses_retained_limit() {
+    assert_main_group_refusal_with_limit(
+        "f3d generic surface patch historical group id", true, true);
 }
 
 #[test]

@@ -664,20 +664,21 @@ fn resolved_edge_group_with_transition_chain(
         if resolved_edges.is_empty() {
             return unmatched_selection(Some(state_id));
         }
-        return Ok(EdgeSelection::historical(
-            feature_input_topology_id(feature_id, state_id),
-            resolved_edges
-                .into_iter()
-                .map(|edge_slot| {
-                    ids::history_input_edge_id(
-                        &ids::history_input_prefix(&feature_key, state_id),
-                        edge_slot,
-                    )
-                })
-                .collect(),
-            group.id.clone(),
-        )
-        .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone())));
+        let mut historical_edges = Vec::new();
+        for edge_slot in resolved_edges {
+            let edge = ids::history_input_edge_id(
+                &ids::history_input_prefix(&feature_key, state_id), edge_slot);
+            push_edge_item(ctx, &mut historical_edges, edge,
+                "f3d generic surface patch historical edge")?;
+        }
+        let native = copy_edge_text(ctx, &group.id,
+            "f3d generic surface patch historical group id")?;
+        return match EdgeSelection::historical(
+            feature_input_topology_id(feature_id, state_id), historical_edges, native,
+        ) {
+            Ok(selection) => Ok(selection),
+            Err(_) => native_edge_selection(group, ctx),
+        };
     }
     let mut identity_matches = Vec::new();
     let mut identities_complete = true;
