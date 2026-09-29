@@ -8219,16 +8219,32 @@ pub(super) fn feature_projected_curve_construction_strings(
             .into_iter()
             .enumerate()
         {
-            let payload_offset = value.offset as u64;
+            let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
+            let id = format_charged_text(ctx,
+                format_args!("{}-string-{ordinal:010}", payload.id),
+                "NX projected curve string identity")?;
+            let operation_label = copy_operation_text(ctx, &payload.operation_label,
+                "NX projected curve string operation")?;
+            let construction_payload = copy_operation_text(ctx, &payload.id,
+                "NX projected curve string payload")?;
+            let text = copy_operation_text(ctx, value.value.as_str(),
+                "NX projected curve string value")?;
+            let value = crate::printable_string::PrintableString::new(text)
+                .map_err(|error| CodecError::Malformed(error.into()))?;
+            ctx.charge_collection_items(1, "NX projected curve strings")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureProjectedCurveConstructionString>()),
+                "NX projected curve strings")?;
+            strings.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX projected curve strings", 0, 1))?;
             strings.push(FeatureProjectedCurveConstructionString {
-                id: format!("{}-string-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
-                construction_payload: payload.id.clone(),
-                ordinal: ordinal as u32,
-                value: value.value.into_owned(),
+                id, operation_label, construction_payload,
+                ordinal: u32::try_from(ordinal).map_err(|_| ctx.refuse_codec_limit(
+                    "NX projected curve string ordinal", 0, 1))?,
+                value,
                 payload_offset,
                 source_offset,
             });
