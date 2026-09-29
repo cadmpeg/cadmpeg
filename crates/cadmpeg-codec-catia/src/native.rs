@@ -2063,7 +2063,7 @@ impl CatiaRelationExpression {
 }
 
 #[derive(Serialize, Deserialize)]
-struct CatiaRelationExpressionWire {
+pub(super) struct CatiaRelationExpressionWire {
     framing: CatiaRelationExpressionFraming,
     expression: CatiaEntitySchemaValue,
     parameter_role: CatiaEntitySchemaValue,
@@ -2076,6 +2076,15 @@ struct CatiaRelationExpressionWire {
 impl From<CatiaRelationExpression> for CatiaRelationExpressionWire {
     fn from(value: CatiaRelationExpression) -> Self {
         let signature = value.signature();
+        Self::from_with_signature(value, signature)
+    }
+}
+
+impl CatiaRelationExpressionWire {
+    fn from_with_signature(
+        value: CatiaRelationExpression,
+        signature: Option<CatiaRelationTypeSignature>,
+    ) -> Self {
         Self {
             framing: value.framing,
             expression: value.expression,

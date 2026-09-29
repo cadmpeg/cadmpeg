@@ -6,7 +6,8 @@ use super::{
     CatiaDefinitionSchemaSelection, CatiaDefinitionValue, CatiaEntitySuffixFraming,
     CatiaEntitySuffixSchemaSelection, CatiaEntitySuffixValue, CatiaEntityValueSchemaSelection,
     CatiaFormulaRelation, CatiaParameterValue, CatiaRangeInterval, CatiaReferenceSignature,
-    CatiaRelationExpression, CatiaRelationProgramInstance, CatiaSchemaConfigurationRecord,
+    CatiaRelationExpression, CatiaRelationExpressionWire, CatiaRelationProgramInstance,
+    CatiaRelationTypeSignature, CatiaSchemaConfigurationRecord,
     CatiaSchemaConfigurationRowLink,
 };
 use crate::{entity_table, value_block};
@@ -397,7 +398,7 @@ pub(super) struct CatiaEntityRecordWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_relation_expression"
     )]
-    relation_expression: Option<CatiaRelationExpression>,
+    relation_expression: Option<CatiaRelationExpressionWire>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -498,7 +499,11 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
         };
         let value_fields = value_block::tokenize(payload);
         let value_packets = entity_table::value_packets(payload, &value_fields);
-        Self::from_with_views(value, value_fields, value_packets)
+        let signature = match value.value_production.as_ref() {
+            Some(CatiaEntityValueProduction::RelationExpression(expression)) => expression.signature(),
+            _ => None,
+        };
+        Self::from_with_views(value, value_fields, value_packets, signature)
     }
 }
 
@@ -513,13 +518,18 @@ impl CatiaEntityRecordWire {
         };
         let value_fields = value_block::tokenize_charged(ctx, payload)?;
         let value_packets = entity_table::value_packets_charged(ctx, payload, &value_fields)?;
-        Ok(Self::from_with_views(value, value_fields, value_packets))
+        let signature = match value.value_production.as_ref() {
+            Some(CatiaEntityValueProduction::RelationExpression(expression)) => expression.signature_charged(ctx)?,
+            _ => None,
+        };
+        Ok(Self::from_with_views(value, value_fields, value_packets, signature))
     }
 
     fn from_with_views(
         value: CatiaEntityRecord,
         value_fields: Vec<value_block::ValueField>,
         value_packets: Vec<entity_table::EntityValuePacket>,
+        signature: Option<CatiaRelationTypeSignature>,
     ) -> Self {
         let byte_len = value.byte_len();
         let (
@@ -623,7 +633,8 @@ impl CatiaEntityRecordWire {
             value_payload,
             value_fields,
             value_schema_selections: value.value_schema_selections,
-            relation_expression,
+            relation_expression: relation_expression.map(|expression|
+                CatiaRelationExpressionWire::from_with_signature(expression, signature)),
             parameter_value,
             range_interval: value.range_interval,
             constraint_range,
@@ -733,7 +744,7 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             wire.definition_chain_value,
         ) {
             (Some(value), None, None, None, None) => {
-                Some(CatiaEntityValueProduction::RelationExpression(value))
+                Some(CatiaEntityValueProduction::RelationExpression(value.into()))
             }
             (None, Some(value), None, None, None) => {
                 Some(CatiaEntityValueProduction::ParameterValue(value))
@@ -853,7 +864,7 @@ mod tests {
 cadmpeg_core::named_optional_field!(deserialize_inline_body, Vec<u8>, "inline_body");
 cadmpeg_core::named_optional_field!(
     deserialize_relation_expression,
-    CatiaRelationExpression,
+    CatiaRelationExpressionWire,
     "relation_expression"
 );
 cadmpeg_core::named_optional_field!(
