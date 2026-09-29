@@ -189,7 +189,7 @@ impl DraftIdentityFrame {
             return Err("identity must contain nonempty lowercase hexadecimal digits");
         }
         offset
-            .checked_add(parsed.byte_len() as u64)
+            .checked_add(cadmpeg_core::decode::u64_from_index(parsed.byte_len()))
             .ok_or("payload_offset overflows identity_payload_offset")?;
         Ok(Self {
             prefix: parsed,
@@ -215,7 +215,7 @@ impl DraftIdentityFrame {
         &self.identity
     }
     pub(crate) fn identity_offset(&self) -> u64 {
-        self.offset + self.prefix.byte_len() as u64
+        self.offset + cadmpeg_core::decode::u64_from_index(self.prefix.byte_len())
     }
 }
 

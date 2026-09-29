@@ -1091,7 +1091,7 @@ fn decode_bitlength(
             bit: 0,
         };
         let value_count =
-            cadmpeg_core::decode::bounded_len(value_count as u64, 1, MAX_ARITHMETIC_VALUES)?;
+            cadmpeg_core::decode::bounded_len(cadmpeg_core::decode::u64_from_index(value_count), 1, MAX_ARITHMETIC_VALUES)?;
         propagate_resource!(ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(value_count),
             "decode JT bitlength symbols",

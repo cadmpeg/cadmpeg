@@ -22,7 +22,7 @@ impl<B> DeleteReferences<B> {
             .iter()
             .map(|slot| {
                 slot.as_ref()
-                    .map_or(1, |(token, _)| token.raw().len() as u64)
+                    .map_or(1, |(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
             })
             .sum::<u64>();
         offset
@@ -50,7 +50,7 @@ impl<B> DeleteReferences<B> {
             let offset = at;
             at += slot
                 .as_ref()
-                .map_or(1, |(token, _)| token.raw().len() as u64);
+                .map_or(1, |(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()));
             offset
         })
     }
@@ -79,7 +79,7 @@ impl DeleteReferences<()> {
             return None;
         }
         Self::new(
-            record.payload_offset() as u64,
+            cadmpeg_core::decode::u64_from_index(record.payload_offset()),
             control,
             [first?, second?, third?, fourth?, fifth?],
         )

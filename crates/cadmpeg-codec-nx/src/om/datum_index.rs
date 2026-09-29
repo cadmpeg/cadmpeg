@@ -73,7 +73,7 @@ checked_origin!(u64);
 impl DatumIndexLane<usize> {
     pub(crate) fn into_u64(self) -> DatumIndexLane<u64> {
         DatumIndexLane {
-            offset: self.offset as u64,
+            offset: cadmpeg_core::decode::u64_from_index(self.offset),
             indices: self.indices,
             trailer: self.trailer,
         }

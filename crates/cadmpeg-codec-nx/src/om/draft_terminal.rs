@@ -64,7 +64,7 @@ impl DraftTerminalLane<usize> {
         DraftTerminalLane::<u64>::new(
             self.indices,
             self.tail,
-            base.checked_add(self.offset as u64)?,
+            base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset))?,
         )
     }
 }

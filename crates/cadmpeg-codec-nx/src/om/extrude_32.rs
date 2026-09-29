@@ -37,7 +37,7 @@ impl<B> Extrude32Frame<B> {
             terminal,
         };
         origin
-            .checked_add(frame.terminal_position() + frame.terminal.raw().len() as u64 + 2)
+            .checked_add(frame.terminal_position() + cadmpeg_core::decode::u64_from_index(frame.terminal.raw().len()) + 2)
             .ok_or("source_offset: extrusion branch end overflows")?;
         Ok(frame)
     }
@@ -64,7 +64,7 @@ impl<B> Extrude32Frame<B> {
     }
 
     fn first_position(&self) -> u64 {
-        15 + 4 * self.atoms.len() as u64
+        15 + 4 * cadmpeg_core::decode::u64_from_index(self.atoms.len())
     }
     fn second_position(&self) -> u64 {
         self.first_position()
@@ -72,7 +72,7 @@ impl<B> Extrude32Frame<B> {
                 .first
                 .as_slice()
                 .iter()
-                .map(|(token, _)| token.raw().len() as u64)
+                .map(|(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
                 .sum::<u64>()
             + 2
     }
@@ -82,7 +82,7 @@ impl<B> Extrude32Frame<B> {
                 .second
                 .as_slice()
                 .iter()
-                .map(|(token, _)| token.raw().len() as u64)
+                .map(|(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
                 .sum::<u64>()
             + 2
     }
@@ -92,7 +92,7 @@ impl<B> Extrude32Frame<B> {
             .as_slice()
             .iter()
             .enumerate()
-            .map(|(slot, (token, binding))| (*token, binding, self.origin + 13 + 4 * slot as u64))
+            .map(|(slot, (token, binding))| (*token, binding, self.origin + 13 + 4 * cadmpeg_core::decode::u64_from_index(slot)))
     }
     pub(crate) fn first_indices(
         &self,
@@ -149,7 +149,7 @@ fn compact_positions<B>(
 ) -> impl Iterator<Item = (CompactIndexAtom, &B, u64)> + Clone {
     members.as_slice().iter().map(move |(token, binding)| {
         let offset = at;
-        at += token.raw().len() as u64;
+        at += cadmpeg_core::decode::u64_from_index(token.raw().len());
         (*token, binding, offset)
     })
 }
@@ -213,7 +213,7 @@ pub(crate) fn extrude_payload_32_branch(
         return Ok(None);
     }
     Ok(Extrude32Frame::new(
-        (record.offset() + end + 1) as u64,
+        cadmpeg_core::decode::u64_from_index(record.offset() + end + 1),
         scalar,
         atoms,
         first,

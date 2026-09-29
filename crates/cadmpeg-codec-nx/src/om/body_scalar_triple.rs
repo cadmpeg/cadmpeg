@@ -16,7 +16,7 @@ impl ScalarTriple {
     pub(crate) fn new(origin: u64, atoms: [PayloadScalarAtom; 3]) -> Option<Self> {
         atoms
             .iter()
-            .try_fold(origin, |at, atom| at.checked_add(atom.raw().len() as u64))?;
+            .try_fold(origin, |at, atom| at.checked_add(cadmpeg_core::decode::u64_from_index(atom.raw().len())))?;
         Some(Self { origin, atoms })
     }
 
@@ -25,11 +25,11 @@ impl ScalarTriple {
     }
 
     pub(crate) fn source_offsets(self) -> [u64; 3] {
-        let second = self.origin + self.atoms[0].raw().len() as u64;
+        let second = self.origin + cadmpeg_core::decode::u64_from_index(self.atoms[0].raw().len());
         [
             self.origin,
             second,
-            second + self.atoms[1].raw().len() as u64,
+            second + cadmpeg_core::decode::u64_from_index(self.atoms[1].raw().len()),
         ]
     }
 
@@ -67,7 +67,7 @@ pub(crate) fn operation_body_scalar_triples(
             let end = token + reference.object_index.raw().len();
             let branch = *record.bytes().get(end + 1)?;
             let mut at = end + 2;
-            let origin = record.offset().checked_add(at)? as u64;
+            let origin = cadmpeg_core::decode::u64_from_index(record.offset().checked_add(at)?);
             let mut read = || {
                 let atom = PayloadScalarAtom::read(record.bytes().get(at..)?)?;
                 at += atom.raw().len();

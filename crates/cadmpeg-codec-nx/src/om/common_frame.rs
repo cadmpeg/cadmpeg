@@ -268,10 +268,10 @@ impl<T> CommonFrame<u64, T> {
     pub(crate) fn index_offsets(&self) -> [u64; 3] {
         self.prefix
             .index_offsets()
-            .map(|offset| self.offset + offset as u64)
+            .map(|offset| self.offset + cadmpeg_core::decode::u64_from_index(offset))
     }
     pub(crate) fn object_index_offset(&self) -> u64 {
-        self.local_ordinal_offset() + self.suffix.object_offset() as u64
+        self.local_ordinal_offset() + cadmpeg_core::decode::u64_from_index(self.suffix.object_offset())
     }
 }
 
@@ -283,7 +283,7 @@ impl<T> TerminalFrame<usize, T> {
 
 impl<T> TerminalFrame<u64, T> {
     pub(crate) fn object_index_offset(&self) -> u64 {
-        self.offset + self.suffix.object_offset() as u64
+        self.offset + cadmpeg_core::decode::u64_from_index(self.suffix.object_offset())
     }
 }
 

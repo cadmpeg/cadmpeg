@@ -93,7 +93,7 @@ impl<T, O: Copy + Add<Output = O> + From<u8>> IndexRow<T, O> {
 
 impl<T> IndexRow<T, usize> {
     pub(crate) fn into_absolute(self, base: u64) -> Option<IndexRow<T, u64>> {
-        let offset = base.checked_add(self.offset as u64)?;
+        let offset = base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset))?;
         IndexRow::<T, u64>::new(self.first_index, self.flag, self.indices, offset)
     }
 }
@@ -189,7 +189,7 @@ impl<T, O: Copy + Add<Output = O> + From<u8>> LinkedRow<T, O> {
 
 impl<T> LinkedRow<T, usize> {
     pub(crate) fn into_absolute(self, base: u64) -> Option<LinkedRow<T, u64>> {
-        let offset = base.checked_add(self.offset as u64)?;
+        let offset = base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset))?;
         LinkedRow::<T, u64>::new(
             self.first_index,
             self.discriminator,
@@ -274,7 +274,7 @@ impl<T, O: Copy + Add<Output = O> + From<u8>> TargetRow<T, O> {
 
 impl<T> TargetRow<T, usize> {
     pub(crate) fn into_absolute(self, base: u64) -> Option<TargetRow<T, u64>> {
-        let offset = base.checked_add(self.offset as u64)?;
+        let offset = base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset))?;
         TargetRow::<T, u64>::new(self.target_index, self.indices, self.mode, offset)
     }
 }

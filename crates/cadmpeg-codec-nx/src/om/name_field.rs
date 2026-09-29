@@ -61,7 +61,7 @@ impl<T> NameField<String, u64, T> {
             None if offset == 0 => Form::Leading,
             None => return Err("payload_offset: payload-leading name must start at zero"),
             Some(code) => {
-                let byte_len = 4 + code.atom.raw().len() as u64 + text.len() as u64;
+                let byte_len = 4 + cadmpeg_core::decode::u64_from_index(code.atom.raw().len()) + cadmpeg_core::decode::u64_from_index(text.len());
                 offset
                     .checked_add(byte_len)
                     .ok_or("payload_offset: name frame extent overflow")?;

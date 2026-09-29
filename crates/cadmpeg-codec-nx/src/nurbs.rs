@@ -162,12 +162,12 @@ fn decode_surfaces(
             .and_then(|poles| {
                 NurbsSurface::new(
                     NurbsSurfaceAxis::new(
-                        descriptor.u_degree as u32,
+                        u32::from(descriptor.u_degree),
                         full_u,
                         descriptor.u_periodic,
                     ),
                     NurbsSurfaceAxis::new(
-                        descriptor.v_degree as u32,
+                        u32::from(descriptor.v_degree),
                         full_v,
                         descriptor.v_periodic,
                     ),
@@ -267,7 +267,7 @@ fn decode_pcurves(
             )
             .and_then(|poles| {
                 cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
-                    descriptor.basis.degree as u32,
+                    u32::from(descriptor.basis.degree),
                     knots,
                     poles,
                     descriptor.basis.periodic,
@@ -370,7 +370,7 @@ fn decode_curves(
             )
             .and_then(|poles| {
                 NurbsCurve::new(
-                    descriptor.basis.degree as u32,
+                    u32::from(descriptor.basis.degree),
                     knots,
                     poles,
                     descriptor.basis.periodic,

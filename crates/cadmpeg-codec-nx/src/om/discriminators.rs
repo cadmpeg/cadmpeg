@@ -160,7 +160,7 @@ u8_discriminator! {
 impl super::scalar_run::ScalarFrame for DraftBinary32Branch {
     type Atom = super::scalar::ShiftedBinary32;
     fn prefix_len(self) -> u64 {
-        self.discriminator().len() as u64
+        cadmpeg_core::decode::u64_from_index(self.discriminator().len())
     }
 }
 

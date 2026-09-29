@@ -4385,11 +4385,11 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
         if let Some(node) = graph.get(NodeKind::Edge, xmt) {
             charge_annotation_note(ctx, curve_id.as_str(), "TOLERANT_EDGE_INTERSECTION")?;
             annotations
-                .note(&curve_id, source_stream, node.pos as u64)
+                .note(&curve_id, source_stream, cadmpeg_core::decode::u64_from_index(node.pos))
                 .tag("TOLERANT_EDGE_INTERSECTION");
             charge_annotation_note(ctx, procedural_id.as_str(), "TOLERANT_EDGE_INTERSECTION")?;
             annotations
-                .note(&procedural_id, source_stream, node.pos as u64)
+                .note(&procedural_id, source_stream, cadmpeg_core::decode::u64_from_index(node.pos))
                 .tag("TOLERANT_EDGE_INTERSECTION");
         }
         charge_derived_field(ctx, curve_id.as_str(), "geometry")?;
