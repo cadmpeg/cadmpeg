@@ -3133,7 +3133,8 @@ fn build_geometry_ir(
     crate::history::configuration::inherit_configuration_reference_plane_states(&mut ir);
     sync_active_configuration_resolutions(&mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
-    let pattern_hole_nominals = crate::swift::pattern_hole_nominal_context(&ir.model.features);
+    let pattern_hole_nominals =
+        crate::swift::pattern_hole_nominal_context(ctx, &ir.model.features)?;
     ir.model.pmi = crate::swift::annotations(
         scan,
         &mut annotations,

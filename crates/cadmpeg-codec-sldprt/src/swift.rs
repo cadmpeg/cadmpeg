@@ -279,14 +279,18 @@ pub(crate) fn annotations(
 /// name (`Hole PatternN`) and is populated only by one unambiguous native
 /// `LPatternN` whose sole seed is consumed by exactly one later Hole feature.
 pub(crate) fn pattern_hole_nominal_context(
+    ctx: &DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
-) -> BTreeMap<String, PositiveReal> {
-    let mut candidates = BTreeMap::<String, Vec<PositiveReal>>::new();
+) -> Result<BTreeMap<String, PositiveReal>, CodecError> {
+    let mut candidates = BTreeMap::<String, Option<PositiveReal>>::new();
     for pattern in features {
+        ctx.charge_work(1, "swift pattern hole candidates")?;
         let Some(name) = pattern.name.as_deref() else {
             continue;
         };
-        let Some(semantic_name) = semantic_pattern_name(name) else {
+        let Some(suffix) = name.strip_prefix("LPattern").filter(|suffix| {
+            !suffix.is_empty() && suffix.chars().all(|character| character.is_ascii_digit())
+        }) else {
             continue;
         };
         if !pattern
@@ -305,57 +309,71 @@ pub(crate) fn pattern_hole_nominal_context(
         let [cadmpeg_ir::features::patterns::PatternSeed::Feature(seed)] = seeds.as_slice() else {
             continue;
         };
-        if !features
-            .iter()
-            .any(|candidate| candidate.id == *seed && candidate.ordinal < pattern.ordinal)
-        {
+        let mut preceding_seed = false;
+        for candidate in features {
+            ctx.charge_work(1, "swift pattern seed search")?;
+            if candidate.id == *seed && candidate.ordinal < pattern.ordinal {
+                preceding_seed = true;
+                break;
+            }
+        }
+        if !preceding_seed {
             continue;
         }
-        let holes = features
-            .iter()
-            .filter(|candidate| candidate.ordinal > pattern.ordinal)
-            .filter(|candidate| {
-                candidate
-                    .dependencies
-                    .iter()
-                    .any(|dependency| dependency == seed)
-            })
-            .filter(|candidate| {
-                candidate
+        let mut hole_count = 0u8;
+        let mut diameter = None;
+        for candidate in features {
+            ctx.charge_work(1, "swift pattern hole search")?;
+            if candidate.ordinal <= pattern.ordinal {
+                continue;
+            }
+            ctx.charge_work(
+                candidate.dependencies.len() as u64,
+                "swift pattern hole dependencies",
+            )?;
+            if !candidate.dependencies.iter().any(|dependency| dependency == seed)
+                || !candidate
                     .native_ref
                     .as_deref()
                     .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
-            })
-            .filter_map(|candidate| {
-                let cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::Hole { shape, .. },
-                ) = candidate.evaluation.definition()
-                else {
-                    return None;
-                };
-                Some(shape.diameter().map(PositiveReal::from_assigned_length))
-            })
-            .collect::<Vec<_>>();
-        let [Some(diameter)] = holes.as_slice() else {
+            {
+                continue;
+            }
+            let cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Hole { shape, .. },
+            ) = candidate.evaluation.definition()
+            else {
+                continue;
+            };
+            if hole_count == 1 {
+                hole_count = 2;
+                break;
+            }
+            hole_count = 1;
+            diameter = shape.diameter().map(PositiveReal::from_assigned_length);
+        }
+        let (1, Some(diameter)) = (hole_count, diameter) else {
             continue;
         };
-        candidates.entry(semantic_name).or_default().push(*diameter);
+        let semantic_name = ctx.format_retained(
+            format_args!("Hole Pattern{suffix}"),
+            "swift pattern semantic name",
+        )?;
+        if let Some(value) = candidates.get_mut(&semantic_name) {
+            *value = None;
+        } else {
+            ctx.charge_collection_items(1, "swift pattern candidate")?;
+            candidates.insert(semantic_name, Some(diameter));
+        }
     }
-    candidates
-        .into_iter()
-        .filter_map(|(name, values)| {
-            let [value] = values.as_slice() else {
-                return None;
-            };
-            Some((name, *value))
-        })
-        .collect()
-}
-
-fn semantic_pattern_name(native_name: &str) -> Option<String> {
-    let suffix = native_name.strip_prefix("LPattern")?;
-    (!suffix.is_empty() && suffix.chars().all(|character| character.is_ascii_digit()))
-        .then(|| format!("Hole Pattern{suffix}"))
+    let mut nominals = BTreeMap::new();
+    for (name, value) in candidates {
+        if let Some(value) = value {
+            ctx.charge_collection_items(1, "swift pattern nominal")?;
+            nominals.insert(name, value);
+        }
+    }
+    Ok(nominals)
 }
 
 pub(crate) fn unsupported_annotation_classes(
