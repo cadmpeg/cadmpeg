@@ -852,6 +852,7 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
     };
     assert_eq!(
         terminal_edge_recipe_reference_faces(
+            None,
             &[
                 reference(
                     vec![FaceId::mint("test:model:face#face-c").expect("identity grammar")],
@@ -867,7 +868,7 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
                 ),
             ],
             None,
-        ),
+        ).unwrap(),
         vec![
             vec![FaceId::mint("test:model:face#face-c").expect("identity grammar")],
             vec![FaceId::mint("test:model:face#face-d").expect("identity grammar")],
@@ -875,6 +876,7 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
         ]
     );
     let reference_faces = terminal_edge_recipe_reference_faces(
+        None,
         &[
             reference(
                 vec![FaceId::mint("test:model:face#face-c").expect("identity grammar")],
@@ -890,7 +892,7 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
             ),
         ],
         Some(&[std::num::NonZeroU32::new(2).unwrap()]),
-    );
+    ).unwrap();
     assert_eq!(
         reference_faces,
         vec![vec![
@@ -899,12 +901,13 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
     );
     assert_eq!(
         terminal_edge_recipe_faces(
+            None,
             &[
                 FaceId::mint("test:model:face#face-b").expect("identity grammar"),
                 FaceId::mint("test:model:face#face-a").expect("identity grammar")
             ],
             &reference_faces,
-        ),
+        ).unwrap(),
         vec![
             FaceId::mint("test:model:face#face-a").expect("identity grammar"),
             FaceId::mint("test:model:face#face-b").expect("identity grammar"),
@@ -1511,13 +1514,14 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     );
     assert_eq!(
         faces_in_topology(
+            None,
             &[
                 FaceId::mint(id(4)).expect("identity grammar"),
                 FaceId::mint(id(99)).expect("identity grammar"),
                 FaceId::mint("test:model:face#foreign").expect("identity grammar")
             ],
             &topology,
-        ),
+        ).unwrap(),
         [FaceId::mint(id(4)).expect("identity grammar")]
     );
     let mut reference = crate::records::dimensions::DesignRecipeReference {
@@ -1533,6 +1537,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         alternate_selector_edges: Vec::new(),
     };
     let context = edge_recipe_reference_context(
+        None,
         2,
         &reference,
         &topology,
@@ -1540,7 +1545,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         &topology,
         &[7, 98],
         &HashSet::from([7]),
-    );
+    ).unwrap();
     assert_eq!(context.reference_ordinal, 2);
     assert_eq!(
         context.result_faces,
@@ -1573,6 +1578,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     reference.candidate_faces.clear();
     reference.alternate_selector_faces = vec![FaceId::mint(id(4)).expect("identity grammar")];
     let alternate_context = edge_recipe_reference_context(
+        None,
         2,
         &reference,
         &topology,
@@ -1580,7 +1586,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         &topology,
         &[7, 98],
         &HashSet::from([7]),
-    );
+    ).unwrap();
     assert_eq!(
         alternate_context.result_faces,
         [FaceId::mint(id(4)).expect("identity grammar")]
@@ -1591,6 +1597,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     );
     assert_eq!(alternate_context.changed_reference_edge_slots, [7]);
     let support_only_context = edge_recipe_reference_context(
+        None,
         2,
         &reference,
         &topology,
@@ -1598,7 +1605,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         &topology,
         &[98],
         &HashSet::from([7]),
-    );
+    ).unwrap();
     assert!(support_only_context.shared_edge_slots.is_empty());
     assert_eq!(support_only_context.changed_reference_edge_slots, [7]);
     let cyclic = AsmHistoricalTopology {

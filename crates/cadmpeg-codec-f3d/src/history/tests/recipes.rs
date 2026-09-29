@@ -485,7 +485,7 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         ..Default::default()
     };
     assert_eq!(
-        super::super::surface_patch_edge_operand_slot(Some(&structure), &references, &topology,),
+        super::super::surface_patch_edge_operand_slot(None, Some(&structure), &references, &topology,).unwrap(),
         Some(22)
     );
 
@@ -500,7 +500,7 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         radial_next: 13,
     });
     assert_eq!(
-        super::super::surface_patch_edge_operand_slot(Some(&structure), &references, &ambiguous,),
+        super::super::surface_patch_edge_operand_slot(None, Some(&structure), &references, &ambiguous,).unwrap(),
         None
     );
 }

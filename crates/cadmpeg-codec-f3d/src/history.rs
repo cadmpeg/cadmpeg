@@ -4973,7 +4973,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                 crate::design::face_resolve::historical_face_operand_candidates(operand);
             &fallback_candidates
         };
-        operand.preceding_candidate_faces = faces_in_topology(history_candidates, topology);
+        operand.preceding_candidate_faces = faces_in_topology(decode, history_candidates, topology)?;
         operand.changed_candidate_faces = collect_historical_face_ids(
             decode,
             operand.preceding_candidate_faces.iter().filter(|face| {
@@ -5103,7 +5103,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                 .collect();
         }
         if feature_family == Some(crate::design::DesignFeatureFamily::Split) {
-            operand.resolved_face_slots = resolve_split_tool_face(operand, topology)
+            operand.resolved_face_slots = resolve_split_tool_face(decode, operand, topology)?
                 .into_iter()
                 .collect();
         }
@@ -5402,25 +5402,26 @@ fn resolve_pattern_face_by_surface_radius(
 }
 
 fn resolve_split_tool_face(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     operand: &crate::records::topology::face::DesignFaceOperand,
     topology: &crate::history_records::AsmHistoricalTopology,
-) -> Option<i64> {
+) -> Result<Option<i64>, cadmpeg_core::CodecError> {
     if operand.group_record_index().is_some()
         || operand.group_member_ordinal().is_some()
         || operand.scope_reference_ordinal != 1
         || operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::Face
         || operand.recipe_program != [0, -1]
     {
-        return None;
+        return Ok(None);
     }
     let [reference] = operand.recipe_references.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    let candidates = faces_in_topology(&reference.candidate_faces, topology);
+    let candidates = faces_in_topology(decode, &reference.candidate_faces, topology)?;
     let [face] = candidates.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    stable_ref(face.as_str())
+    Ok(stable_ref(face.as_str()))
 }
 
 fn effective_faces(
@@ -5709,14 +5710,13 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         };
         for reference in operand.reference_bindings_mut() {
             *reference.preceding_candidate_faces = faces_in_topology(
-                &reference
+                decode,
+                reference
                     .candidate_faces
                     .iter()
-                    .filter(|face| active_brep_face_matches_source(face, source))
-                    .cloned()
-                    .collect::<Vec<_>>(),
+                    .filter(|face| active_brep_face_matches_source(face, source)),
                 topology,
-            );
+            )?;
             let face_slots = reference
                 .preceding_candidate_faces
                 .iter()
@@ -6546,6 +6546,24 @@ fn face_boundary_edges(
     edges
 }
 
+fn collect_reference_edge_sets(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    reference_faces: &[Vec<cadmpeg_ir::ids::FaceId>],
+    topology: &AsmHistoricalTopology,
+) -> Result<Vec<Vec<i64>>, cadmpeg_core::CodecError> {
+    let mut sets = Vec::new();
+    for faces in reference_faces {
+        let faces = faces_in_topology(decode, faces, topology)?;
+        let edges = face_boundary_edges(&faces, topology);
+        charge_history_item(decode, "collect F3D reference edge sets")?;
+        sets.try_reserve(1).map_err(|_| {
+            history_reserve_error(decode, "collect F3D reference edge sets")
+        })?;
+        sets.push(edges);
+    }
+    Ok(sets)
+}
+
 fn face_boundary_contexts(
     faces: &[cadmpeg_ir::ids::FaceId],
     topology: &AsmHistoricalTopology,
@@ -6746,6 +6764,7 @@ fn preceding_support_face_slots(
 }
 
 fn edge_recipe_reference_context(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     reference_ordinal: u32,
     reference: &crate::records::dimensions::DesignRecipeReference,
     result_topology: &AsmHistoricalTopology,
@@ -6753,13 +6772,13 @@ fn edge_recipe_reference_context(
     preceding_topology: &AsmHistoricalTopology,
     preceding_boundary_edges: &[i64],
     changed_edges: &HashSet<i64>,
-) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
+) -> Result<crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext, cadmpeg_core::CodecError> {
     let candidate_faces = if reference.candidate_faces.is_empty() {
         reference.alternate_selector_faces.as_slice()
     } else {
         reference.candidate_faces.as_slice()
     };
-    let result_faces = faces_in_topology(candidate_faces, result_topology);
+    let result_faces = faces_in_topology(decode, candidate_faces, result_topology)?;
     let result_face_boundaries = face_boundary_contexts(&result_faces, result_topology);
     let result_edges = face_boundary_edges(&result_faces, result_topology)
         .into_iter()
@@ -6769,7 +6788,7 @@ fn edge_recipe_reference_context(
         .copied()
         .filter(|edge| result_edges.contains(edge))
         .collect();
-    let preceding_faces = faces_in_topology(candidate_faces, preceding_topology);
+    let preceding_faces = faces_in_topology(decode, candidate_faces, preceding_topology)?;
     let preceding_face_boundaries = face_boundary_contexts(&preceding_faces, preceding_topology);
     let preceding_support_face_slots =
         preceding_support_face_slots(&result_faces, result_topology, preceding_topology);
@@ -6801,7 +6820,7 @@ fn edge_recipe_reference_context(
         .collect::<Vec<_>>();
     changed_reference_edge_slots.sort_unstable();
     changed_reference_edge_slots.dedup();
-    crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
+    Ok(crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
         reference_ordinal,
         result_faces,
         result_face_boundaries,
@@ -6813,7 +6832,7 @@ fn edge_recipe_reference_context(
         shared_edge_slots,
         changed_shared_edge_slots,
         changed_reference_edge_slots,
-    }
+    })
 }
 
 /// Resolve the unique candidate edge shared by the non-null face references
@@ -6923,12 +6942,12 @@ pub(crate) fn bind_edge_operand_history_candidates(
             continue;
         }
         let Some(state_id) = scope.history_state_id() else {
-            bind_active_edge_operand_for_scope(operand, scope, &terminal_topologies);
+            bind_active_edge_operand_for_scope(decode, operand, scope, &terminal_topologies)?;
             continue;
         };
         let Some(previous_state_id) = effective_scope_previous_history_state_id(scope, histories)
         else {
-            bind_active_edge_operand_for_scope(operand, scope, &terminal_topologies);
+            bind_active_edge_operand_for_scope(decode, operand, scope, &terminal_topologies)?;
             continue;
         };
         let Some((history, state, previous)) = bound_history_state_pair(
@@ -6991,10 +7010,10 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .collect::<Vec<_>>();
         operand.recipe_state_id = Some(previous_state_id);
         operand.result_candidate_faces =
-            faces_in_topology(&operand.candidate_faces, result_topology);
+            faces_in_topology(decode, &operand.candidate_faces, result_topology)?;
         operand.result_boundary_edge_slots =
             face_boundary_edges(&operand.result_candidate_faces, result_topology);
-        operand.preceding_candidate_faces = faces_in_topology(&operand.candidate_faces, topology);
+        operand.preceding_candidate_faces = faces_in_topology(decode, &operand.candidate_faces, topology)?;
         operand.changed_candidate_faces = operand
             .preceding_candidate_faces
             .iter()
@@ -7033,13 +7052,13 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .copied()
             .map(|edge| historical_edge_context(edge, topology))
             .collect();
-        operand.recipe_reference_contexts = operand
-            .recipe_references
-            .iter()
-            .enumerate()
-            .filter_map(|(ordinal, reference)| {
-                let reference_ordinal = u32::try_from(ordinal).ok()?;
-                Some(edge_recipe_reference_context(
+        let mut reference_contexts = Vec::new();
+        for (ordinal, reference) in operand.recipe_references.iter().enumerate() {
+            let Ok(reference_ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            let context = edge_recipe_reference_context(
+                    decode,
                     reference_ordinal,
                     reference,
                     result_topology,
@@ -7047,30 +7066,34 @@ pub(crate) fn bind_edge_operand_history_candidates(
                     topology,
                     &operand.preceding_boundary_edge_slots,
                     &changed_edges,
-                ))
-            })
-            .collect();
+                )?;
+            charge_history_item(decode, "collect F3D edge recipe contexts")?;
+            reference_contexts.try_reserve(1).map_err(|_| {
+                history_reserve_error(decode, "collect F3D edge recipe contexts")
+            })?;
+            reference_contexts.push(context);
+        }
+        operand.recipe_reference_contexts = reference_contexts;
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch
             && operand.surface_patch_recipe_structure.is_some()
         {
             operand.resolved_edge_slot = surface_patch_edge_operand_slot(
+                decode,
                 operand.surface_patch_recipe_structure.as_ref(),
                 &operand.recipe_references,
                 topology,
-            );
+            )?;
             continue;
         }
         if crate::design::design_feature_family(&scope.kind())
             == Some(crate::design::DesignFeatureFamily::Sweep)
         {
             let reference_faces = terminal_edge_recipe_reference_faces(
+                decode,
                 &operand.recipe_references,
                 operand.local_topology_references.as_deref(),
-            );
-            let reference_edge_sets = reference_faces
-                .iter()
-                .map(|faces| face_boundary_edges(&faces_in_topology(faces, topology), topology))
-                .collect::<Vec<_>>();
+            )?;
+            let reference_edge_sets = collect_reference_edge_sets(decode, &reference_faces, topology)?;
             let candidate_edges = reference_edge_sets
                 .iter()
                 .flatten()
@@ -7093,13 +7116,11 @@ pub(crate) fn bind_edge_operand_history_candidates(
             == Some(crate::design::DesignFeatureFamily::Revolve)
         {
             let reference_faces = terminal_edge_recipe_reference_faces(
+                decode,
                 &operand.recipe_references,
                 operand.local_topology_references.as_deref(),
-            );
-            let reference_edge_sets = reference_faces
-                .iter()
-                .map(|faces| face_boundary_edges(&faces_in_topology(faces, topology), topology))
-                .collect::<Vec<_>>();
+            )?;
+            let reference_edge_sets = collect_reference_edge_sets(decode, &reference_faces, topology)?;
             let candidate_edges = reference_edge_sets
                 .iter()
                 .flatten()
@@ -7191,28 +7212,35 @@ fn historical_edge_axis(
 }
 
 fn bind_active_edge_operand_for_scope(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     operand: &mut crate::records::topology::edge_identity::DesignEdgeOperand,
     scope: &crate::records::feature::scope::DesignParameterScope,
     terminal_topologies: &[(i64, &AsmHistoricalTopology)],
-) {
-    bind_active_edge_operand_candidates(operand, terminal_topologies);
+) -> Result<(), cadmpeg_core::CodecError> {
+    bind_active_edge_operand_candidates(decode, operand, terminal_topologies)?;
     if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch
         && operand.surface_patch_recipe_structure.is_some()
     {
         operand.recipe_state_id = None;
         operand.resolved_edge_slot = None;
-        let mut matches = terminal_topologies
-            .iter()
-            .filter_map(|(state_id, topology)| {
-                surface_patch_edge_operand_slot(
+        let mut matched = None;
+        let mut ambiguous = false;
+        for (state_id, topology) in terminal_topologies {
+            if let Some(edge) = surface_patch_edge_operand_slot(
+                    decode,
                     operand.surface_patch_recipe_structure.as_ref(),
                     &operand.recipe_references,
                     topology,
-                )
-                .map(|edge| (*state_id, edge))
-            });
-        if let Some((state_id, edge)) = matches.next() {
-            if matches.next().is_none() {
+                )? {
+                if matched.is_some() {
+                    ambiguous = true;
+                    break;
+                }
+                matched = Some((*state_id, edge));
+            }
+        }
+        if !ambiguous {
+            if let Some((state_id, edge)) = matched {
                 operand.recipe_state_id = Some(state_id);
                 operand.resolved_edge_slot = Some(edge);
             }
@@ -7236,46 +7264,65 @@ fn bind_active_edge_operand_for_scope(
             operand.resolved_axis = Some(axis);
         }
     }
+    Ok(())
 }
 
 fn surface_patch_edge_operand_slot(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     structure: Option<&crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure>,
     recipe_references: &[crate::records::dimensions::DesignRecipeReference],
     topology: &AsmHistoricalTopology,
-) -> Option<i64> {
-    let structure = structure?;
+) -> Result<Option<i64>, cadmpeg_core::CodecError> {
+    let Some(structure) = structure else {
+        return Ok(None);
+    };
     let [first, second] = &structure.clauses;
-    let common_edge_reference = common_surface_patch_reference(
+    let Some(common_edge_reference) = common_surface_patch_reference(
         first.edge_reference_ordinals,
         second.edge_reference_ordinals,
-    )?;
-    let common_face_reference = common_surface_patch_reference(
+    ) else {
+        return Ok(None);
+    };
+    let Some(common_face_reference) = common_surface_patch_reference(
         first.face_reference_ordinals,
         second.face_reference_ordinals,
-    )?;
-    let edge_reference = recipe_references.get(usize::try_from(common_edge_reference).ok()?)?;
-    let face_reference = recipe_references.get(usize::try_from(common_face_reference).ok()?)?;
+    ) else {
+        return Ok(None);
+    };
+    let Some(edge_reference) = usize::try_from(common_edge_reference).ok()
+        .and_then(|ordinal| recipe_references.get(ordinal))
+    else {
+        return Ok(None);
+    };
+    let Some(face_reference) = usize::try_from(common_face_reference).ok()
+        .and_then(|ordinal| recipe_references.get(ordinal))
+    else {
+        return Ok(None);
+    };
     if edge_reference.candidate_edges.is_empty() {
-        return None;
+        return Ok(None);
     }
     let face_candidates = if face_reference.candidate_faces.is_empty() {
         &face_reference.alternate_selector_faces
     } else {
         &face_reference.candidate_faces
     };
-    let face_boundary_edges =
-        face_boundary_edges(&faces_in_topology(face_candidates, topology), topology);
-    let mut candidates = edge_reference
+    let faces = faces_in_topology(decode, face_candidates, topology)?;
+    let face_boundary_edges = face_boundary_edges(&faces, topology);
+    let mut candidates = history_collect(
+        decode,
+        edge_reference
         .candidate_edges
         .iter()
         .filter_map(|edge| stable_ref(edge.as_str()))
-        .filter(|edge| face_boundary_edges.contains(edge))
-        .collect::<Vec<_>>();
+        .filter(|edge| face_boundary_edges.contains(edge)),
+        "collect F3D surface patch edge candidates",
+    )?;
     candidates.sort_unstable();
     candidates.dedup();
     match candidates.as_slice() {
-        [edge] => Some(*edge),
-        _ => None,
+        [edge] => Ok(Some(*edge)),
+        _ => Ok(None),
     }
 }
 
@@ -7291,41 +7338,41 @@ fn common_surface_patch_reference(left: [u32; 2], right: [u32; 2]) -> Option<u32
 }
 
 fn bind_active_edge_operand_candidates(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     operand: &mut crate::records::topology::edge_identity::DesignEdgeOperand,
     topologies: &[(i64, &AsmHistoricalTopology)],
-) {
-    let mut matches = topologies.iter().filter_map(|(state_id, topology)| {
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut unique = None;
+    for (state_id, topology) in topologies {
         let all_reference_faces =
-            terminal_edge_recipe_reference_faces(&operand.recipe_references, None);
+            terminal_edge_recipe_reference_faces(decode, &operand.recipe_references, None)?;
         let reference_faces = terminal_edge_recipe_reference_faces(
+            decode,
             &operand.recipe_references,
             operand.local_topology_references.as_deref(),
-        );
-        let terminal_faces = terminal_edge_recipe_faces(&operand.candidate_faces, &reference_faces);
-        let candidate_faces = faces_in_topology(&terminal_faces, topology);
+        )?;
+        let terminal_faces = terminal_edge_recipe_faces(decode, &operand.candidate_faces, &reference_faces)?;
+        let candidate_faces = faces_in_topology(decode, &terminal_faces, topology)?;
         if topologies.len() != 1 && candidate_faces.is_empty() {
-            return None;
+            continue;
         }
         let boundary_edges = face_boundary_edges(&candidate_faces, topology);
-        let contexts = boundary_edges
-            .iter()
-            .copied()
-            .map(|edge| historical_edge_context(edge, topology))
-            .collect::<Vec<_>>();
+        let contexts = history_collect(
+            decode,
+            boundary_edges.iter().copied().map(|edge| historical_edge_context(edge, topology)),
+            "collect F3D terminal edge contexts",
+        )?;
         let selectors = recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
-        let reference_edge_sets = reference_faces
-            .iter()
-            .map(|faces| face_boundary_edges(&faces_in_topology(faces, topology), topology))
-            .collect::<Vec<_>>();
-        let all_reference_edge_sets = all_reference_faces
-            .iter()
-            .map(|faces| face_boundary_edges(&faces_in_topology(faces, topology), topology))
-            .collect::<Vec<_>>();
+        let reference_edge_sets = collect_reference_edge_sets(decode, &reference_faces, topology)?;
+        let all_reference_edge_sets = collect_reference_edge_sets(decode, &all_reference_faces, topology)?;
         let edge = crate::design::edge_resolve::resolved_edge_candidate_intersection(
             &selectors,
             reference_edge_sets.iter().map(Vec::as_slice),
         );
-        Some((
+        if unique.is_some() {
+            return Ok(());
+        }
+        unique = Some((
             *state_id,
             edge,
             candidate_faces,
@@ -7333,8 +7380,8 @@ fn bind_active_edge_operand_candidates(
             contexts,
             all_reference_edge_sets,
             selectors,
-        ))
-    });
+        ));
+    }
     let Some((
         state_id,
         edge,
@@ -7343,13 +7390,10 @@ fn bind_active_edge_operand_candidates(
         contexts,
         all_reference_edge_sets,
         selectors,
-    )) = matches.next()
+    )) = unique
     else {
-        return;
+        return Ok(());
     };
-    if matches.next().is_some() {
-        return;
-    }
     operand.terminal_candidate_faces = candidate_faces;
     operand.terminal_boundary_edge_slots = boundary_edges;
     operand.terminal_boundary_edge_contexts = contexts;
@@ -7357,42 +7401,64 @@ fn bind_active_edge_operand_candidates(
     operand.recipe_selectors = selectors;
     operand.recipe_state_id = Some(state_id);
     operand.resolved_edge_slot = edge;
+    Ok(())
 }
 
 fn terminal_edge_recipe_faces(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     primary: &[cadmpeg_ir::ids::FaceId],
     reference_faces: &[Vec<cadmpeg_ir::ids::FaceId>],
-) -> Vec<cadmpeg_ir::ids::FaceId> {
-    let mut faces = primary.to_vec();
-    faces.extend(reference_faces.iter().flatten().cloned());
+) -> Result<Vec<cadmpeg_ir::ids::FaceId>, cadmpeg_core::CodecError> {
+    let mut faces = collect_historical_face_ids(
+        decode,
+        primary.iter().chain(reference_faces.iter().flatten()),
+        "collect F3D terminal edge recipe faces",
+    )?;
     faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     faces.dedup();
-    faces
+    Ok(faces)
 }
 
 fn terminal_edge_recipe_reference_faces(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     references: &[crate::records::dimensions::DesignRecipeReference],
     local_topology_references: Option<&[std::num::NonZeroU32]>,
-) -> Vec<Vec<cadmpeg_ir::ids::FaceId>> {
-    let selected_references = match local_topology_references {
-        Some(ordinals) => ordinals
-            .iter()
-            .filter_map(|ordinal| {
-                references.get(usize::try_from(ordinal.get()).ok()?.checked_sub(1)?)
-            })
-            .collect::<Vec<_>>(),
-        None => references.iter().collect(),
+) -> Result<Vec<Vec<cadmpeg_ir::ids::FaceId>>, cadmpeg_core::CodecError> {
+    let mut selected = Vec::new();
+    let mut append = |reference: &crate::records::dimensions::DesignRecipeReference| {
+        let faces = if reference.candidate_faces.is_empty() {
+            &reference.alternate_selector_faces
+        } else {
+            &reference.candidate_faces
+        };
+        let faces = collect_historical_face_ids(
+            decode,
+            faces,
+            "copy F3D terminal reference faces",
+        )?;
+        charge_history_item(decode, "collect F3D terminal reference groups")?;
+        selected.try_reserve(1).map_err(|_| {
+            history_reserve_error(decode, "collect F3D terminal reference groups")
+        })?;
+        selected.push(faces);
+        Ok::<(), cadmpeg_core::CodecError>(())
     };
-    selected_references
-        .into_iter()
-        .map(|reference| {
-            if reference.candidate_faces.is_empty() {
-                reference.alternate_selector_faces.clone()
-            } else {
-                reference.candidate_faces.clone()
+    if let Some(ordinals) = local_topology_references {
+        for ordinal in ordinals {
+            if let Some(reference) = usize::try_from(ordinal.get())
+                .ok()
+                .and_then(|ordinal| ordinal.checked_sub(1))
+                .and_then(|ordinal| references.get(ordinal))
+            {
+                append(reference)?;
             }
-        })
-        .collect()
+        }
+    } else {
+        for reference in references {
+            append(reference)?;
+        }
+    }
+    Ok(selected)
 }
 
 fn treatment_radius_candidates(
@@ -7949,16 +8015,22 @@ fn bind_body_recipe_face_selection(
     Ok(())
 }
 
-fn faces_in_topology(
-    candidates: &[cadmpeg_ir::ids::FaceId],
+fn faces_in_topology<'a>(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    candidates: impl IntoIterator<Item = &'a cadmpeg_ir::ids::FaceId>,
     topology: &AsmHistoricalTopology,
-) -> Vec<cadmpeg_ir::ids::FaceId> {
-    let faces = topology.faces.iter().copied().collect::<HashSet<_>>();
-    candidates
-        .iter()
-        .filter(|face| stable_ref(face.as_str()).is_some_and(|slot| faces.contains(&slot)))
-        .cloned()
-        .collect()
+) -> Result<Vec<cadmpeg_ir::ids::FaceId>, cadmpeg_core::CodecError> {
+    let mut faces = HashSet::new();
+    for face in &topology.faces {
+        history_hash_set_insert(decode, &mut faces, *face, "index F3D topology faces")?;
+    }
+    collect_historical_face_ids(
+        decode,
+        candidates
+            .into_iter()
+            .filter(|face| stable_ref(face.as_str()).is_some_and(|slot| faces.contains(&slot))),
+        "collect F3D faces in topology",
+    )
 }
 
 fn stable_ref(id: &str) -> Option<i64> {

@@ -7,6 +7,7 @@ use super::{
     AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, HashMap,
 };
 use crate::history::resolve_pattern_face_by_surface_radius;
+use crate::history::{collect_reference_edge_sets, faces_in_topology, terminal_edge_recipe_faces, terminal_edge_recipe_reference_faces};
 use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalSurfaceRadius};
 use std::collections::HashSet;
 
@@ -198,4 +199,115 @@ fn pattern_face_bound_index_refuses_collection_limit() {
     let error = pattern_face_limit_case(1).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D pattern bound faces"));
+}
+
+fn one_face_reference() -> crate::records::dimensions::DesignRecipeReference {
+    crate::records::dimensions::DesignRecipeReference {
+        selector: 0,
+        selector_offset: 0,
+        token: "face".into(),
+        token_offset: 0,
+        design_reference: 1,
+        design_reference_offset: 0,
+        candidate_faces: vec![crate::ids::brep_face_id(1)],
+        candidate_edges: Vec::new(),
+        alternate_selector_faces: Vec::new(),
+        alternate_selector_edges: Vec::new(),
+    }
+}
+
+#[test]
+fn topology_face_index_refuses_collection_limit() {
+    let topology = AsmHistoricalTopology {
+        faces: vec![1],
+        ..AsmHistoricalTopology::default()
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = faces_in_topology(Some(&ctx), &one_face_reference().candidate_faces, &topology)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D topology faces"));
+}
+
+#[test]
+fn topology_face_copy_refuses_collection_limit() {
+    let topology = AsmHistoricalTopology {
+        faces: vec![1],
+        ..AsmHistoricalTopology::default()
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = faces_in_topology(Some(&ctx), &one_face_reference().candidate_faces, &topology)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D faces in topology"));
+}
+
+#[test]
+fn terminal_edge_recipe_face_union_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = terminal_edge_recipe_faces(
+        Some(&ctx),
+        &one_face_reference().candidate_faces,
+        &[],
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D terminal edge recipe faces"));
+}
+
+#[test]
+fn terminal_reference_group_refuses_collection_limit() {
+    let mut reference = one_face_reference();
+    reference.candidate_faces.clear();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = terminal_edge_recipe_reference_faces(Some(&ctx), &[reference], None)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D terminal reference groups"));
+}
+
+#[test]
+fn terminal_reference_face_copy_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = terminal_edge_recipe_reference_faces(Some(&ctx), &[one_face_reference()], None)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D historical face identity"));
+}
+
+#[test]
+fn reference_edge_set_groups_refuse_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = collect_reference_edge_sets(
+        Some(&ctx),
+        &[Vec::new()],
+        &AsmHistoricalTopology::default(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D reference edge sets"));
 }
