@@ -626,21 +626,29 @@ pub(super) fn compact_surface_selections(
                 fillet_face_selection_candidates(lane, start, end)
             }
             NativeClassKind::Fillet => continue,
-            NativeClassKind::MirrorPattern => (start.saturating_add(12)
-                ..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
-                .filter(|marker| {
-                    lane.native_payload
-                        .get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
-                        == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-                })
-                .filter_map(|marker| {
-                    counted_surface_component_path_at(&lane.native_payload, marker)
-                        .map(|components| (marker, components))
-                })
-                .chain(mirror_surface_prefix.into_iter().flat_map(|prefix| {
-                    inline_mirror_surface_paths(&lane.native_payload, start, end, prefix)
-                }))
-                .collect(),
+            NativeClassKind::MirrorPattern => {
+                const OPERATION: &str = "decode SLDPRT mirror surface selections";
+                let mut candidates = Vec::new();
+                if let (Some(scan_start), Some(scan_end)) = (
+                    start.checked_add(12), end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()),
+                ) {
+                    for marker in scan_start..scan_end {
+                        ctx.charge_work(16, OPERATION)?;
+                        if lane.native_payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())
+                            != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice()) { continue; }
+                        if let Some(components) = counted_surface_component_path_at(&lane.native_payload, marker) {
+                            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                            candidates.push((marker, components));
+                        }
+                    }
+                }
+                if let Some(prefix) = mirror_surface_prefix {
+                    let inline = inline_mirror_surface_paths(ctx, &lane.native_payload, start, end, prefix)?;
+                    ctx.reserve_collection_vec(&mut candidates, inline.len(), OPERATION)?;
+                    candidates.extend(inline);
+                }
+                candidates
+            }
             NativeClassKind::ReferencePlane => {
                 face_reference_plane_selection_candidates(lane, start, end)
             }
@@ -1911,11 +1919,13 @@ fn mirror_surface_type_prefix(lane: &FeatureInputLane) -> Option<[u8; 4]> {
 }
 
 fn inline_mirror_surface_paths(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     prefix: [u8; 4],
-) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
+) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT inline mirror surface paths";
     let signature_at = |offset: usize| -> Option<[u8; 12]> {
         let signature: [u8; 12] = payload.get(offset..offset + 12)?.try_into().ok()?;
         let source = View::u32_le_at(&signature, 4)?;
@@ -1927,8 +1937,10 @@ fn inline_mirror_surface_paths(
         let instance = View::u16_le_at(bytes, 0)?;
         (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
-    let mut result = Vec::new();
-    for terminal in start..end.saturating_sub(16) {
+    let mut result = Vec::<(usize, Vec<FeatureInputComponentPathEntry>)>::new();
+    let Some(scan_end) = end.checked_sub(16) else { return Ok(result); };
+    'terminals: for terminal in start..scan_end {
+        ctx.charge_work(64, OPERATION)?;
         if signature_at(terminal).is_none() {
             continue;
         }
@@ -1947,7 +1959,9 @@ fn inline_mirror_surface_paths(
             continue;
         }
         let mut cursor = terminal;
-        while instance_before(cursor).is_some() {
+        loop {
+            ctx.charge_work(32, OPERATION)?;
+            if instance_before(cursor).is_none() { break; }
             let Some(previous) = cursor.checked_sub(16) else {
                 break;
             };
@@ -1957,14 +1971,30 @@ fn inline_mirror_surface_paths(
             cursor = previous;
         }
         let offset = cursor;
-        let Some(components) = inline_surface_reference_at(payload, offset) else {
-            continue;
-        };
-        if !result.iter().any(|(_, existing)| existing == &components) {
+        let Some(mut parsed_components) = inline_surface_components_at(payload, offset) else { continue; };
+        let mut components = Vec::new();
+        loop {
+            ctx.charge_work(32, OPERATION)?;
+            let Some(component) = parsed_components.next() else { break; };
+            let Some(component) = component else { continue 'terminals; };
+            ctx.reserve_collection_vec(&mut components, 1, OPERATION)?;
+            components.push(component);
+        }
+        let mut duplicate = false;
+        for (_, existing) in &result {
+            ctx.charge_work(u64_from_index(components.len()).checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            if existing == &components {
+                duplicate = true;
+                break;
+            }
+        }
+        if !duplicate {
+            ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
             result.push((offset, components));
         }
     }
-    result
+    Ok(result)
 }
 
 fn inline_surface_components_at(
