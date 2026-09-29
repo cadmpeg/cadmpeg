@@ -11,6 +11,7 @@ const PATTERN_TRANSFORM_PAYLOAD: &[u8] = b"\xaa\x01\x03\x60\x01\x00\x00\x50\x54\
 const MULTI_INSTANCE_OUTPUT_PAYLOAD: &[u8] = b"\x3a\x00\x00\x01\x00\x00\x00\x00\x25\x01\x02\x26\x27\x01\x02\x65\x01\x02\x07\x28\x02\x02\x00\x3b\x09\x01\x02";
 const IDENTICAL_INSTANCE_OUTPUT_PAYLOAD: &[u8] = b"\xaa\x34\x13\x01\x04\x14\x15\x01\x02\x16\x80\x20\x00\x02\x14\x15\x01\x02\x16\x0f\x00\x03\x14\x15\x01\x02\x16\x81\x23\x00\x04\x00\x05\xe0\x7f\xff\xff\xff\x00\x00\xbb";
 const PATTERN_REFERENCE_PAYLOAD: &[u8] = b"\x61\xf1\x1b\x08\xff\x00\xff\x01\xf1\x1b\x09\xf1\x1b\x0a\x61\xf1\x1b\x0b\xff\x00\xff\x01\xf1\x1b\x0c\xf1\x1b\x0d\xff\x62\xf1\x1b\x0e\xf1\x1b\x0f\xff\x00\x00\x01\xf1\x1b\x10\xff\xff\xff\x01";
+const PATTERN_COUNTED_PAYLOAD: &[u8] = b"\xaa\x01\x04\xf1\x06\xb1\xf1\x06\xb2\xf1\x06\xb3\x00\x00\x00\x37\xff\xff\x01\x00\x00\x00\x38\xff\x01\xff\xff\xff\xff\x01\xff";
 
 fn pattern_reference_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
@@ -156,6 +157,15 @@ pattern_output_lane_limit_tests!(
     "IDENTICAL INSTANCE OUTPUT",
     IDENTICAL_INSTANCE_OUTPUT_PAYLOAD,
     crate::native::features::pattern::feature_identical_instance_output_lanes
+);
+pattern_output_lane_limit_tests!(
+    pattern_counted_reference_route_refuses_collection_limit,
+    pattern_counted_reference_route_refuses_retained_limit,
+    pattern_counted_reference_route_refuses_scoped_limit,
+    pattern_counted_reference_route_refuses_work_limit,
+    "Pattern Feature",
+    PATTERN_COUNTED_PAYLOAD,
+    crate::native::features::pattern::feature_pattern_counted_reference_lanes
 );
 
 fn pattern_content_refusal<T>(

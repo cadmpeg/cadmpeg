@@ -127,14 +127,14 @@ impl CountedPatternReferences<()> {
         self,
         ctx: &DecodeContext<'_>,
         file_base: u64,
-        mut target: impl FnMut(PayloadIndexToken) -> B,
+        mut target: impl FnMut(PayloadIndexToken) -> Result<B, CodecError>,
     ) -> Result<Option<CountedPatternReferences<B>>, CodecError> {
         let Some(offset) = self.offset.checked_add(file_base) else {
             return Ok(None);
         };
         let entries = self
             .entries
-            .map_indexed_charged(ctx, |_, (token, ())| (token, target(token)))?;
+            .try_map_indexed_charged(ctx, |_, (token, ())| Ok((token, target(token)?)))?;
         Ok(CountedPatternReferences::new(offset, entries).ok())
     }
 }

@@ -43,7 +43,6 @@ use super::format_feature_history_id;
 use super::format_feature_child_id;
 use super::copy_operation_text;
 
-use super::unique_offset_data_block;
 use super::charged_unique_offset_data_block;
 use super::visit_feature_history_operation_records;
 
@@ -1015,7 +1014,7 @@ pub(in crate::native) fn feature_pattern_counted_reference_lanes(
                 }
             };
             let references = match lane.resolve(ctx, entry_offset, |token| {
-                unique_offset_data_block(&indexed, token.value())
+                charged_unique_offset_data_block(ctx, &indexed, token.value())
             }) {
                 Ok(Some(references)) => references,
                 Ok(None) => return,
@@ -1024,13 +1023,25 @@ pub(in crate::native) fn feature_pattern_counted_reference_lanes(
                     return;
                 }
             };
+            let id = match format_feature_history_id(
+                ctx, "pattern-counted-reference-lane", section_key, operation_ordinal, None,
+            ) {
+                Ok(id) => id,
+                Err(error) => { refusal = Some(error); return; }
+            };
+            let operation_label = match format_feature_history_id(
+                ctx, "operation-label", section_key, operation_ordinal, None,
+            ) {
+                Ok(label) => label,
+                Err(error) => { refusal = Some(error); return; }
+            };
+            if let Err(error) = reserve_pattern_output(ctx, &mut lanes, "NX counted pattern reference lanes") {
+                refusal = Some(error);
+                return;
+            }
             lanes.push(FeaturePatternCountedReferenceLane {
-                id: format!(
-                    "nx:feature-history:pattern-counted-reference-lane#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
+                id,
+                operation_label,
                 references,
             });
         },
