@@ -267,6 +267,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     let mut scopes = vec![extrude, work_point];
 
     super::super::bind_vertex_recipe_history(
+        None,
         &mut scopes,
         std::slice::from_ref(&timeline),
         std::slice::from_ref(&history),
@@ -307,6 +308,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         .candidate_faces
         .push(FaceId::mint(crate::ids::brep_entity_id(11)).expect("identity grammar"));
     super::super::bind_vertex_recipe_history(
+        None,
         &mut ambiguous,
         std::slice::from_ref(&timeline),
         std::slice::from_ref(&history),

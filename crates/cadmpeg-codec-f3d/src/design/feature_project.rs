@@ -65,6 +65,7 @@ use cadmpeg_core::decode::{alloc_filled, bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 const EPS_FEATURE_PROJECT_PROJECT_OFFSET_FACES_E9: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1.0e-12;
@@ -79,6 +80,36 @@ macro_rules! or_none {
             None => return Ok(None),
         }
     };
+}
+
+fn push_feature_item<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut Vec<T>,
+    item: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+        items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    items.push(item);
+    Ok(())
+}
+
+fn insert_feature_map<K: Eq + Hash, V>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut HashMap<K, V>,
+    key: K,
+    value: V,
+    operation: &'static str,
+) -> Result<Option<V>, CodecError> {
+    if !items.contains_key(&key) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+            items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        }
+    }
+    Ok(items.insert(key, value))
 }
 
 /// Design record slices projected together into the neutral construction
@@ -111,6 +142,7 @@ pub(crate) struct ProjectInputs<'a> {
 /// Authored construction ordinal of every parameter scope represented by a
 /// neutral top-level feature. All input scopes must share one Design stream.
 fn authored_scope_ordinals<'a>(
+    ctx: Option<&DecodeContext<'_>>,
     scopes: &'a [DesignParameterScope],
     timelines: &[DesignFeatureTimeline],
 ) -> Result<HashMap<(&'a str, u32), u64>, CodecError> {
@@ -126,25 +158,35 @@ fn authored_scope_ordinals<'a>(
             "independent Design scope streams have no shared authored timeline order".into(),
         ));
     }
-    authored_scope_ordinals_for_stream(&scopes.iter().collect::<Vec<_>>(), timelines)
+    let mut stream_scopes = Vec::new();
+    for scope in scopes {
+        push_feature_item(ctx, &mut stream_scopes, scope, "f3d authored stream scope")?;
+    }
+    authored_scope_ordinals_for_stream(ctx, &stream_scopes, timelines)
 }
 
 /// Authored scope ordinals evaluated independently for every Design stream.
 pub(crate) fn authored_scope_ordinals_per_stream<'a>(
+    ctx: Option<&DecodeContext<'_>>,
     scopes: &'a [DesignParameterScope],
     timelines: &[DesignFeatureTimeline],
 ) -> Result<HashMap<(&'a str, u32), u64>, CodecError> {
     let mut streams = HashMap::<&str, Vec<&DesignParameterScope>>::new();
     for scope in scopes {
-        streams
-            .entry(native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM))
-            .or_default()
-            .push(scope);
+        let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+        if !streams.contains_key(stream) {
+            insert_feature_map(ctx, &mut streams, stream, Vec::new(),
+                "f3d authored stream index")?;
+        }
+        push_feature_item(ctx, streams.get_mut(stream).ok_or_else(||
+            CodecError::malformed("authored stream index lost its key"))?, scope,
+            "f3d authored stream scope")?;
     }
-    let mut out = HashMap::with_capacity(scopes.len());
+    let mut out = HashMap::new();
     for stream_scopes in streams.into_values() {
-        for (key, ordinal) in authored_scope_ordinals_for_stream(&stream_scopes, timelines)? {
-            if out.insert(key, ordinal).is_some() {
+        for (key, ordinal) in authored_scope_ordinals_for_stream(ctx, &stream_scopes, timelines)? {
+            if insert_feature_map(ctx, &mut out, key, ordinal,
+                "f3d authored scope ordinal")?.is_some() {
                 return Err(CodecError::Malformed(
                     "Design scope record identity is not unique".into(),
                 ));
@@ -155,19 +197,19 @@ pub(crate) fn authored_scope_ordinals_per_stream<'a>(
 }
 
 fn authored_scope_ordinals_for_stream<'a>(
+    ctx: Option<&DecodeContext<'_>>,
     scopes: &[&'a DesignParameterScope],
     timelines: &[DesignFeatureTimeline],
 ) -> Result<HashMap<(&'a str, u32), u64>, CodecError> {
-    let mut out = HashMap::with_capacity(scopes.len());
+    let mut out = HashMap::new();
     let Some(first_scope) = scopes.first().copied() else {
         return Ok(out);
     };
     let stream = native_stream(&first_scope.id).unwrap_or(ids::DEFAULT_STREAM);
     let mut scopes_by_record = HashMap::<u32, &DesignParameterScope>::new();
     for scope in scopes {
-        if scopes_by_record
-            .insert(scope.record_index, *scope)
-            .is_some()
+        if insert_feature_map(ctx, &mut scopes_by_record, scope.record_index, *scope,
+            "f3d authored scope record index")?.is_some()
         {
             return Err(CodecError::Malformed(
                 "Design scope record identity is not unique".into(),
@@ -196,10 +238,13 @@ fn authored_scope_ordinals_for_stream<'a>(
         }
     }
 
-    let mut stream_timelines = timelines
-        .iter()
+    let mut stream_timelines = Vec::new();
+    for timeline in timelines.iter()
         .filter(|timeline| native_stream(timeline.id()).unwrap_or(ids::DEFAULT_STREAM) == stream)
-        .collect::<Vec<_>>();
+    {
+        push_feature_item(ctx, &mut stream_timelines, timeline,
+            "f3d authored stream timeline")?;
+    }
     stream_timelines.sort_by_key(|timeline| timeline.source_ordinal);
     if stream_timelines.is_empty() {
         let first_family = design_feature_family(&first_scope.kind());
@@ -209,7 +254,11 @@ fn authored_scope_ordinals_for_stream<'a>(
                 |family| design_feature_family(&scope.kind()) == Some(family),
             )
         });
-        let mut ordered = scopes.to_vec();
+        let mut ordered = Vec::new();
+        for &scope in scopes {
+            push_feature_item(ctx, &mut ordered, scope,
+                "f3d authored scope order")?;
+        }
         ordered.sort_by_key(|scope| scope.feature_ordinal);
         let complete_ordinals = ordered.iter().enumerate().all(|(ordinal, scope)| {
             u32::try_from(ordinal)
@@ -225,15 +274,9 @@ fn authored_scope_ordinals_for_stream<'a>(
         for (ordinal, scope) in ordered.into_iter().enumerate() {
             let ordinal = u64::try_from(ordinal)
                 .map_err(|_| CodecError::Malformed("Design feature ordinal exceeds u64".into()))?;
-            if out
-                .insert(
-                    (
-                        native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM),
-                        scope.record_index,
-                    ),
-                    ordinal,
-                )
-                .is_some()
+            if insert_feature_map(ctx, &mut out,
+                (native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM), scope.record_index),
+                ordinal, "f3d authored scope ordinal")?.is_some()
             {
                 return Err(CodecError::Malformed(
                     "Design scope record identity is not unique".into(),
@@ -266,7 +309,8 @@ fn authored_scope_ordinals_for_stream<'a>(
     let mut next_ordinal = 0_u64;
     for timeline in stream_timelines {
         for item in timeline.frame().items().iter().map(|item| item.value) {
-            if item_ordinals.insert(item, next_ordinal).is_some() {
+            if insert_feature_map(ctx, &mut item_ordinals, item, next_ordinal,
+                "f3d authored timeline item ordinal")?.is_some() {
                 return Err(CodecError::Malformed(
                     "Design timeline item identity is not unique".into(),
                 ));
@@ -278,7 +322,9 @@ fn authored_scope_ordinals_for_stream<'a>(
     }
     for scope in scopes {
         if let Some(ordinal) = item_ordinals.get(&u64::from(scope.record_index)).copied() {
-            out.insert((stream, scope.record_index), ordinal);
+            // discarded-value: each scope is visited once in this stream.
+            let _ = insert_feature_map(ctx, &mut out, (stream, scope.record_index), ordinal,
+                "f3d authored scope ordinal")?;
         }
     }
     for scope in scopes {
@@ -297,7 +343,8 @@ fn authored_scope_ordinals_for_stream<'a>(
         if item_ordinals.contains_key(&u64::from(target.record_index)) {
             continue;
         }
-        if out.insert(target_key, source_ordinal).is_some() {
+        if insert_feature_map(ctx, &mut out, target_key, source_ordinal,
+            "f3d authored scope ordinal")?.is_some() {
             return Err(CodecError::Malformed(
                 "Design JointOrigin target has multiple authored timeline positions".into(),
             ));
@@ -663,7 +710,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         ..
     } = inputs;
 
-    let source_ordinals = authored_scope_ordinals(scopes, timelines)?;
+    let source_ordinals = authored_scope_ordinals(ctx, scopes, timelines)?;
 
     let scope_ids = scopes
         .iter()

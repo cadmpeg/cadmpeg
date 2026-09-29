@@ -1154,6 +1154,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
 
     let mut scope_positions = HashMap::<&str, u64>::new();
     match crate::design::feature_project::authored_scope_ordinals_per_stream(
+        None,
         &native.design_parameter_scopes,
         &native.design_feature_timelines,
     ) {

@@ -40,7 +40,7 @@ fn design_projection_gaps_count_unresolved_body_map_pairs() {
     );
 
     assert_eq!(
-        design_projection_gaps(&ir, &native).unresolved_body_bindings,
+        design_projection_gaps(None, &ir, &native).unwrap().unresolved_body_bindings,
         1
     );
 }
@@ -79,7 +79,7 @@ fn design_projection_gaps_count_cosmetic_thread_faces() {
     }
 
     assert_eq!(
-        design_projection_gaps(&ir, &F3dNative::default()).face_selections,
+        design_projection_gaps(None, &ir, &F3dNative::default()).unwrap().face_selections,
         2
     );
 }
@@ -413,7 +413,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         .unwrap(),
     );
     assert_eq!(
-        design_projection_gaps(&ir, &native),
+        design_projection_gaps(None, &ir, &native).unwrap(),
         DesignProjectionGaps {
             unresolved_body_bindings: 0,
             incomplete_features: 6,
@@ -494,13 +494,13 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             .unwrap();
     });
     assert_eq!(
-        design_projection_gaps(&ir, &native).unrepaired_lost_edge_references,
+        design_projection_gaps(None, &ir, &native).unwrap().unrepaired_lost_edge_references,
         0
     );
 
     native.sketch_points[0].owner_reference = None;
     native.sketch_curve_identities[0].owner_reference = None;
-    let ownerless = design_projection_gaps(&ir, &native);
+    let ownerless = design_projection_gaps(None, &ir, &native).unwrap();
     assert_eq!(ownerless.unprojected_sketch_points, 0);
     assert_eq!(ownerless.unprojected_sketch_curves, 0);
     native.sketch_points[0].owner_reference = Some(1);
@@ -536,7 +536,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             .with_native_ref(Some(native_ref.into())),
         );
     }
-    let gaps = design_projection_gaps(&ir, &native);
+    let gaps = design_projection_gaps(None, &ir, &native).unwrap();
     assert_eq!(gaps.unprojected_sketch_placements, 0);
     assert_eq!(gaps.unprojected_sketch_points, 0);
     assert_eq!(gaps.unprojected_sketch_curves, 0);
@@ -552,7 +552,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         .expect("Design parameter"),
     );
     assert_eq!(
-        design_projection_gaps(&ir, &native).unprojected_parameters,
+        design_projection_gaps(None, &ir, &native).unwrap().unprojected_parameters,
         0
     );
 }
@@ -626,14 +626,14 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         })
         .collect();
 
-    let gaps = design_projection_gaps(&ir, &native);
+    let gaps = design_projection_gaps(None, &ir, &native).unwrap();
     assert_eq!(gaps.unprojected_feature_scopes, 0);
     assert_eq!(gaps.unprojected_history_dependencies, 1);
     assert_eq!(gaps.ambiguous_history_dependencies, 1);
 
     let predecessor = ir.model.features[0].id.clone();
     ir.model.features[1].dependencies.insert(predecessor);
-    let gaps = design_projection_gaps(&ir, &native);
+    let gaps = design_projection_gaps(None, &ir, &native).unwrap();
     assert_eq!(gaps.unprojected_history_dependencies, 0);
     assert_eq!(gaps.ambiguous_history_dependencies, 1);
 }
@@ -728,7 +728,7 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features = features;
 
-    let gaps = design_projection_gaps(&ir, &native);
+    let gaps = design_projection_gaps(None, &ir, &native).unwrap();
     assert_eq!(gaps.unprojected_feature_scopes, 0);
     assert_eq!(gaps.unprojected_history_dependencies, 0);
     assert_eq!(gaps.ambiguous_history_dependencies, 0);

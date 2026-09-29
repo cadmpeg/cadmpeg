@@ -69,7 +69,7 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         transfer_ledger: Default::default(),
     };
 
-    report_design_projection_gaps(&mut report, &ir, &native);
+    report_design_projection_gaps(None, &mut report, &ir, &native).unwrap();
 
     let loss = report
         .losses
@@ -295,7 +295,7 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
         ir.model.features[0].evaluation.definition()
     ));
     assert_eq!(
-        design_projection_gaps(&ir, &F3dNative::default()).incomplete_features,
+        design_projection_gaps(None, &ir, &F3dNative::default()).unwrap().incomplete_features,
         0
     );
 }
@@ -929,7 +929,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(native_target),
         native_ref: None,
     });
-    let gaps = design_projection_gaps(&ir, &F3dNative::default());
+    let gaps = design_projection_gaps(None, &ir, &F3dNative::default()).unwrap();
     assert_eq!(gaps.incomplete_features, 1);
     assert_eq!(gaps.body_selections, 1);
 
@@ -1029,7 +1029,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
         native_ref: None,
     });
 
-    let gaps = design_projection_gaps(&ir, &F3dNative::default());
+    let gaps = design_projection_gaps(None, &ir, &F3dNative::default()).unwrap();
     assert_eq!(gaps.incomplete_features, 1);
     assert_eq!(gaps.profile_selections, 1);
     assert_eq!(gaps.path_selections, 1);

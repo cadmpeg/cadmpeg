@@ -998,7 +998,11 @@ fn incomplete_feature_families(ir: &CadIr) -> std::collections::BTreeMap<&str, u
     families
 }
 
-fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGaps {
+fn design_projection_gaps(
+    ctx: Option<&DecodeContext<'_>>,
+    ir: &CadIr,
+    native: &F3dNative,
+) -> Result<DesignProjectionGaps, CodecError> {
     use cadmpeg_ir::features::{
         BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection, LinearTermination,
     };
@@ -1199,11 +1203,15 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         }
     }
 
-    let authored_scopes = crate::design::feature_project::authored_scope_ordinals_per_stream(
+    let authored_scopes = match crate::design::feature_project::authored_scope_ordinals_per_stream(
+        ctx,
         &native.design_parameter_scopes,
         &native.design_feature_timelines,
-    )
-    .ok();
+    ) {
+        Ok(scopes) => Some(scopes),
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => None,
+    };
     let mut gaps = DesignProjectionGaps {
         unresolved_body_bindings: native
             .design_body_bindings
@@ -1697,11 +1705,16 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         .iter()
         .filter(|reference| !repaired_lost_edge_reference_ids.contains(reference.id.as_str()))
         .count();
-    gaps
+    Ok(gaps)
 }
 
-fn report_design_projection_gaps(report: &mut DecodeBody, ir: &CadIr, native: &F3dNative) {
-    let gaps = design_projection_gaps(ir, native);
+fn report_design_projection_gaps(
+    ctx: Option<&DecodeContext<'_>>,
+    report: &mut DecodeBody,
+    ir: &CadIr,
+    native: &F3dNative,
+) -> Result<(), CodecError> {
+    let gaps = design_projection_gaps(ctx, ir, native)?;
     let incomplete_families = incomplete_feature_families(ir);
     let history_budget_skips = native
         .asm_histories
@@ -1970,6 +1983,7 @@ fn report_design_projection_gaps(report: &mut DecodeBody, ir: &CadIr, native: &F
             gaps.unresolved_edge_selections
         ),
     );
+    Ok(())
 }
 
 fn model_brep_candidates(
@@ -2927,7 +2941,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &self.native.design_parameter_scopes,
                     &mesh_projection,
                 )?;
-                report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
+                report_design_projection_gaps(Some(ctx), &mut self.report, &self.ir, &self.native)?;
                 ctx.admit_entities(
                     self.ir.model.entity_count() as u64,
                     &mut self.admitted_entities,
@@ -2978,7 +2992,7 @@ impl<'a> F3dDecodeSession<'a> {
             }
         };
 
-        report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
+        report_design_projection_gaps(Some(ctx), &mut self.report, &self.ir, &self.native)?;
         ctx.admit_entities(
             self.ir.model.entity_count() as u64,
             &mut self.admitted_entities,
@@ -4801,6 +4815,7 @@ fn extend_related_design_records(
         &native.persistent_subentity_tags,
     )?;
     crate::history::bind_vertex_recipe_history(
+        Some(ctx),
         &mut native.design_parameter_scopes,
         &native.design_feature_timelines,
         &native.asm_histories,
