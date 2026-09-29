@@ -996,13 +996,13 @@ fn result_face_support_maps_only_to_one_preceding_owner() {
         ..AsmHistoricalTopology::default()
     };
     assert_eq!(
-        preceding_support_face_slots(&result_faces, &result, &preceding),
+        preceding_support_face_slots(None, &result_faces, &result, &preceding).unwrap(),
         [4]
     );
 
     let mut ambiguous = preceding.clone();
     ambiguous.face_surfaces[1].carrier = 20;
-    assert!(preceding_support_face_slots(&result_faces, &result, &ambiguous).is_empty());
+    assert!(preceding_support_face_slots(None, &result_faces, &result, &ambiguous).unwrap().is_empty());
 
     let mut ambiguous_result = result.clone();
     ambiguous_result
@@ -1011,7 +1011,7 @@ fn result_face_support_maps_only_to_one_preceding_owner() {
             entity: 40,
             carrier: 21,
         });
-    assert!(preceding_support_face_slots(&result_faces, &ambiguous_result, &preceding).is_empty());
+    assert!(preceding_support_face_slots(None, &result_faces, &ambiguous_result, &preceding).unwrap().is_empty());
 }
 
 #[test]
@@ -1068,11 +1068,12 @@ fn active_face_support_retains_invariant_preceding_owners() {
     let changed_faces = HashSet::from([5]);
     assert_eq!(
         historical_face_support_contexts(
+            None,
             &[FaceId::mint("f3d:brep:entity#40").expect("identity grammar")],
             &history,
             &preceding,
             &changed_faces,
-        ),
+        ).unwrap(),
         [
             crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
                 active_face_slot: 40,
@@ -1088,11 +1089,12 @@ fn active_face_support_retains_invariant_preceding_owners() {
     variant.states[1].topology_mut().unwrap().face_surfaces[0].carrier = 21;
     assert_eq!(
         historical_face_support_contexts(
+            None,
             &[FaceId::mint("f3d:brep:entity#4").expect("identity grammar")],
             &variant,
             &preceding,
             &changed_faces,
-        ),
+        ).unwrap(),
         [
             crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
                 active_face_slot: 4,
@@ -1104,11 +1106,12 @@ fn active_face_support_retains_invariant_preceding_owners() {
         ]
     );
     assert!(historical_face_support_contexts(
+        None,
         &[FaceId::mint("f3d:brep:entity#40").expect("identity grammar")],
         &variant,
         &preceding,
         &changed_faces,
-    )
+    ).unwrap()
     .is_empty());
 }
 
@@ -1530,7 +1533,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
                 }
             })
             .collect();
-        match historical_loop_boundary(coedges, topology) {
+        match historical_loop_boundary(None, coedges, topology).unwrap() {
             crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Vertices(rows) => Some(
                 rows.into_iter()
                     .map(|row| row.vertex_slot)

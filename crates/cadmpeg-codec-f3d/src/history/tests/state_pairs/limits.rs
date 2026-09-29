@@ -7,8 +7,8 @@ use super::{
     AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, HashMap,
 };
 use crate::history::resolve_pattern_face_by_surface_radius;
-use crate::history::{boundary_edges_in_changes, collect_reference_edge_sets, face_boundary_edge_index, face_boundary_edges, faces_in_topology, recipe_selector_candidates, terminal_edge_recipe_faces, terminal_edge_recipe_reference_faces, treatment_edge_candidates, treatment_face_supports};
-use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalRelation, AsmHistoricalSurfaceRadius};
+use crate::history::{boundary_edges_in_changes, collect_reference_edge_sets, face_boundary_contexts_for_slots, face_boundary_edge_index, face_boundary_edges, faces_in_topology, historical_face_support_contexts, historical_loop_boundary, preceding_support_face_slots, recipe_selector_candidates, terminal_edge_recipe_faces, terminal_edge_recipe_reference_faces, treatment_edge_candidates, treatment_face_supports};
+use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalEdge, AsmHistoricalRelation, AsmHistoricalSurfaceRadius};
 use std::collections::HashSet;
 
 pub(super) fn change_state(state_id: i64) -> AsmDeltaState {
@@ -422,4 +422,83 @@ fn treatment_deleted_edge_index_refuses_collection_limit() {
     ).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D treatment deleted edges"));
+}
+
+#[test]
+fn historical_support_face_index_refuses_collection_limit() {
+    let preceding = AsmHistoricalTopology {
+        faces: vec![1],
+        ..AsmHistoricalTopology::default()
+    };
+    let history = AsmHistory {
+        id: "history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: Vec::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = historical_face_support_contexts(Some(&ctx), &[], &history, &preceding, &HashSet::new())
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D historical support faces"));
+}
+
+#[test]
+fn face_boundary_loop_contexts_refuse_collection_limit() {
+    let topology = AsmHistoricalTopology {
+        face_loops: vec![AsmHistoricalRelation { owner_ref: 1, member_refs: vec![2] }],
+        loop_coedges: vec![AsmHistoricalRelation { owner_ref: 2, member_refs: Vec::new() }],
+        ..AsmHistoricalTopology::default()
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = face_boundary_contexts_for_slots(Some(&ctx), &[1], &topology).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D face boundary loops"));
+}
+
+#[test]
+fn historical_loop_vertices_refuse_collection_limit() {
+    let topology = AsmHistoricalTopology {
+        edge_vertices: vec![AsmHistoricalEdge { edge: 2, start_vertex: 1, end_vertex: 1 }],
+        ..AsmHistoricalTopology::default()
+    };
+    let coedges = vec![crate::records::topology::historical_context::DesignHistoricalLoopCoedge {
+        coedge_slot: 3,
+        edge_slot: 2,
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = historical_loop_boundary(Some(&ctx), coedges, &topology).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D loop vertices"));
+}
+
+#[test]
+fn preceding_support_face_index_refuses_collection_limit() {
+    let preceding = AsmHistoricalTopology {
+        faces: vec![1],
+        ..AsmHistoricalTopology::default()
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = preceding_support_face_slots(
+        Some(&ctx), &[], &AsmHistoricalTopology::default(), &preceding,
+    ).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D preceding support faces"));
 }
