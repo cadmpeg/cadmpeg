@@ -858,22 +858,21 @@ fn project_all_dimension_constraints(
                     "f3d exact pair companion")?;
             }
     }
-    let parameterized_offset_companions = groups
-        .iter()
-        .filter_map(|group| {
-            let scope = native_stream(&group.id)?;
-            let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
-            match exact_group_definition(scope, group, parameter, parameter_id) {
-                Some(Ok(Definition::Offset { parameter: Some(_), .. })) => {
-                    Some(Ok((scope.to_owned(), group.companion_record_index)))
-                }
-                Some(Err(error)) => Some(Err(error)),
-                _ => None,
+    let mut parameterized_offset_companions = HashSet::new();
+    for group in groups {
+        let Some(scope) = native_stream(&group.id) else { continue; };
+        let Some((parameter, parameter_id)) = parameter_for(scope, group.companion_record_index)
+            else { continue; };
+        match exact_group_definition(scope, group, parameter, parameter_id) {
+            Some(Ok(Definition::Offset { parameter: Some(_), .. })) => {
+                insert_dimension_set(ctx, &mut parameterized_offset_companions,
+                    (scope, group.companion_record_index),
+                    "f3d parameterized offset companion")?;
             }
-        })
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .collect::<HashSet<_>>();
+            Some(Err(error)) => return Err(error),
+            _ => {},
+        }
+    }
     let mut projected_dimension_companions = HashSet::new();
     for pair in pairs {
         if let Some(scope) = native_stream(&pair.id) {
@@ -1205,7 +1204,7 @@ fn project_all_dimension_constraints(
         .chain(null_pairs.iter().filter_map(|pair| {
             let scope = native_stream(&pair.id)?;
             if parameterized_offset_companions
-                .contains(&(scope.to_owned(), pair.governing_companion_record_index))
+                .contains(&(scope, pair.governing_companion_record_index))
             {
                 return None;
             }
