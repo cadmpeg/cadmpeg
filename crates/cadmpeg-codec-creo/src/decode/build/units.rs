@@ -956,8 +956,9 @@ pub(in crate::decode) fn scale_surface_geometry(ctx: &DecodeContext<'_>,
     geometry: &mut SolvedSurfaceGeometry,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    *geometry = geometry
-        .scaled(scale)
+    let owned = std::mem::replace(geometry, SolvedSurfaceGeometry::Unknown { record: None });
+    *geometry = owned
+        .scaled_owned_admitted(ctx, scale)?
         .map_err(|refusal| scale_refusal(ctx, refusal, "surface", scale))?;
     Ok(())
 }
@@ -966,8 +967,9 @@ pub(in crate::decode) fn scale_curve_geometry(ctx: &DecodeContext<'_>,
     geometry: &mut SolvedCurveGeometry,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    *geometry = geometry
-        .scaled(scale)
+    let owned = std::mem::replace(geometry, SolvedCurveGeometry::Unknown { record: None });
+    *geometry = owned
+        .scaled_owned_admitted(ctx, scale)?
         .map_err(|refusal| scale_refusal(ctx, refusal, "curve", scale))?;
     Ok(())
 }

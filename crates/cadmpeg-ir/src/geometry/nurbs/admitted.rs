@@ -213,5 +213,41 @@ impl NurbsSurface {
     }
 }
 
+fn scale_points<'a>(ctx: &DecodeContext<'_>, points: impl Iterator<Item = &'a mut FinitePoint3>, scale: crate::scalar::PositiveReal)
+    -> Result<Result<(), NurbsError>, CodecError>
+{
+    for point in points {
+        ctx.charge_work(1, "IR NURBS unit scaling work")?;
+        let Some(scaled) = point.scaled(scale) else {
+            return Ok(Err(NurbsError::Structure(ctx.copy_retained_text(
+                "control_points contains a non-finite point", "IR NURBS refusal text")?)));
+        };
+        *point = scaled;
+    }
+    Ok(Ok(()))
+}
+
+impl NurbsCurve {
+    pub(crate) fn scale_points_admitted(&mut self, ctx: &DecodeContext<'_>, scale: crate::scalar::PositiveReal)
+        -> Result<Result<(), NurbsError>, CodecError>
+    {
+        match &mut self.poles {
+            NurbsPoles3::Polynomial { points } => scale_points(ctx, points.iter_mut(), scale),
+            NurbsPoles3::Rational { points } => scale_points(ctx, points.iter_mut().map(|pole| &mut pole.point), scale),
+        }
+    }
+}
+
+impl NurbsSurface {
+    pub(crate) fn scale_points_admitted(&mut self, ctx: &DecodeContext<'_>, scale: crate::scalar::PositiveReal)
+        -> Result<Result<(), NurbsError>, CodecError>
+    {
+        match &mut self.poles {
+            NurbsPoleGrid::Polynomial { rows } => scale_points(ctx, rows.iter_mut().flatten(), scale),
+            NurbsPoleGrid::Rational { rows } => scale_points(ctx, rows.iter_mut().flatten().map(|pole| &mut pole.point), scale),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;
