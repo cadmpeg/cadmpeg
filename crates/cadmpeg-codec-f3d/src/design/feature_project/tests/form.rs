@@ -1,10 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::feature_project::{
-    form_cage_objects, form_cage_serializers, form_cage_surface, form_class_325_cage_objects,
+    distinct_form_cage_ids, form_cage_objects, form_cage_serializers, form_cage_surface, form_class_325_cage_objects,
     form_class_325_cage_surface, form_class_328_envelope, legacy_form_cage_count,
     project_parameter_design,
 };
+
+#[test]
+fn form_cage_uniqueness_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(distinct_form_cage_ids(&ctx, &["one", "two"]),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d form cage uniqueness index"
+                && failure.dimension == ResourceDimension::CollectionItems));
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+    assert!(!distinct_form_cage_ids(&ctx, &["same", "same"]).unwrap());
+}
 
 fn indexed_frame(class: &[u8; 3], record_index: u32, length: usize) -> Vec<u8> {
     let mut frame = vec![0; length];
