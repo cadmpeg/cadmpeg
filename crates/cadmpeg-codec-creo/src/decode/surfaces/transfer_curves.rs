@@ -88,7 +88,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     let endpoint_evidence = pcurve_edge_endpoint_evidence(ctx, scan, ir, source_carriers)?;
     let edge_vertices =
         crate::topology::edge_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)?;
-    for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
+    for row in crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| row.id)? {
         let [Some(first_face), Some(second_face)] = row.faces else {
             continue;
         };
@@ -259,7 +259,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         extrusion_plane_section_generator_count: 0,
         shared_extrusion_generator_count: 0,
     };
-    for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
+    for row in crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| row.id)? {
         let [Some(first_face), Some(second_face)] = row.faces else {
             continue;
         };

@@ -25,7 +25,6 @@ use crate::surface::spline_replay_shape;
 use crate::surface::surface_body_compound_close;
 use crate::surface::unique_surface_parameter;
 use crate::surface::unique_surface_row;
-use crate::surface::uniquely_identified_rows;
 use crate::surface::ScalarBodyRefusal;
 use crate::surface::SurfaceBodyBoundary;
 use crate::surface::SurfaceKind;
@@ -716,7 +715,8 @@ fn unique_surface_projection_excludes_every_collided_identity() {
     let rows = [row(7, 10), row(8, 20), row(7, 30)];
 
     assert_eq!(
-        uniquely_identified_rows(&rows)
+        crate::decode::with_test_decode_ctx(|ctx| crate::identity::uniquely_identified_rows_checked(ctx, &rows, |row| row.id))
+            .expect("service unique surface projection")
             .iter()
             .map(|row| row.id)
             .collect::<Vec<_>>(),

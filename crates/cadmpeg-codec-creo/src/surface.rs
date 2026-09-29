@@ -165,11 +165,6 @@ pub(crate) fn unique_surface_row(rows: &[SurfaceRow], id: u32) -> Option<&Surfac
     matches.next().is_none().then_some(row)
 }
 
-/// Return rows whose native surface identifier occurs exactly once.
-pub(crate) fn uniquely_identified_rows(rows: &[SurfaceRow]) -> Vec<&SurfaceRow> {
-    crate::identity::uniquely_identified_rows(rows, |row| row.id)
-}
-
 /// Named `srf_prim_ptr(<kind>)` prototype family.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SurfacePrototypeFamily {

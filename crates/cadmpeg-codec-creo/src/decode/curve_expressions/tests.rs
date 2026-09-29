@@ -1,6 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
+fn curve_expression_source_section_refuses_before_retained_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01value=5\0".to_vec();
+    let data = crate::test_support::build_prt("c", &[("FeatDefs", payload)]);
+    let scan = crate::container::scan_bytes_ok(data);
+    let offset = scan.curves.expressions[0].offset;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 7;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = crate::decode::coverage::source_section(&ctx, &scan, offset)
+        .expect_err("eight source-section bytes exceed retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::RetainedBytes
+            && refusal.operation == "creo expression source section"));
+}
+
+#[test]
 fn curve_expression_frame_admits_only_finite_local_origin() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x02local_sys\0\xf9\x04\x03\xe4\x0f\x0f\x0f\x0f\x0f\x18\xe5\x0f\x0f\x0f\

@@ -258,7 +258,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             LegacySurfaceNamespace::NonVisible,
         ),
     ] {
-        for row in crate::surface::uniquely_identified_rows(rows) {
+        for row in crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)? {
             let identity_namespace = match namespace {
                 LegacySurfaceNamespace::Visible => &crate::identity::VISIBGEOM_SURFACE,
                 LegacySurfaceNamespace::NonVisible => &crate::identity::NOVISGEOM_SURFACE,
@@ -318,7 +318,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             )?;
         }
     }
-    for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
+    for row in crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| row.id)? {
         let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, row.id);
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;

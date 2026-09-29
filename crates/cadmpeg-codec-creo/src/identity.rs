@@ -44,20 +44,6 @@ where
         .map_err(|_| CodecError::malformed("copied Creo identity is invalid"))
 }
 
-/// Return the rows whose native identifier, read by `id`, occurs exactly once.
-///
-/// A repeated identifier names no single row, so the namespace identity it
-/// would carry is not established and the row is left out.
-pub(crate) fn uniquely_identified_rows<T>(rows: &[T], id: impl Fn(&T) -> u32) -> Vec<&T> {
-    let mut counts = BTreeMap::<u32, usize>::new();
-    for row in rows {
-        *counts.entry(id(row)).or_default() += 1;
-    }
-    rows.iter()
-        .filter(|row| counts.get(&id(row)) == Some(&1))
-        .collect()
-}
-
 /// Return unique native rows after admitting the count map and selected rows.
 pub(crate) fn uniquely_identified_rows_checked<'a, T>(
     ctx: &DecodeContext<'_>,
