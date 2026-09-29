@@ -585,6 +585,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
 fn edge_flange_to_object_fixture(
     ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     include_target_scope: bool,
+    two_sided_width: bool,
 ) -> Result<Option<(cadmpeg_ir::features::FeatureDefinition, crate::records::feature::scope::DesignParameterScope)>, cadmpeg_core::CodecError> {
     use crate::records::feature::{
         scope::DesignParameterScope,
@@ -613,18 +614,32 @@ fn edge_flange_to_object_fixture(
             height_datum: DesignSheetMetalHeightDatum::OuterFaces,
             bend_position: DesignBendPosition::Inside,
             selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
-                crate::records::feature::sheet_metal::DesignEdgeFlangeShape::FullEdge {
-                    edges: vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
+                if two_sided_width {
+                    crate::records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSidesPerEdge {
+                        edges: vec![crate::records::feature::sheet_metal::DesignFlangeEdgeWidth {
+                            edge: crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
+                                wrapper_record_index: 383,
+                                group_record_index: 385_u32.try_into().unwrap(),
+                                aggregate_operand_record_index: 407,
+                            },
+                            owners: [435, 438],
+                        }],
+                        source: crate::records::feature::sheet_metal::DesignEdgeFlangeWidthParameterSource::EdgeWidth,
+                    }
+                } else {
+                    crate::records::feature::sheet_metal::DesignEdgeFlangeShape::FullEdge {
+                        edges: vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
                         wrapper_record_index: 383,
                         group_record_index: 385_u32.try_into().unwrap(),
                         aggregate_operand_record_index: 407,
                     }],
-                    height: DesignEdgeFlangeHeightExtent::ToObject {
+                        height: DesignEdgeFlangeHeightExtent::ToObject {
                         target_group_record_index: 421,
                         target_operand_record_index: 424,
                         offset_owner_record_index: 430,
                         reference_record_indices: [469, 470],
                     },
+                    }
                 },
                 404,
             )
@@ -684,12 +699,18 @@ fn edge_flange_to_object_fixture(
         )
         .unwrap()
     };
-    let owners = [owner(399, 398), owner(402, 401), owner(430, 429)];
-    let parameters = [
+    let mut owners = vec![owner(399, 398), owner(402, 401), owner(430, 429)];
+    let mut parameters = vec![
         parameter(398, "FlangeHeight", "mm", 2.5),
         parameter(401, "FlangeAngle", "deg", std::f64::consts::FRAC_PI_2),
         parameter(429, "ToObjectOffset", "mm", 1.5),
     ];
+    if two_sided_width {
+        owners.push(owner(435, 434));
+        owners.push(owner(438, 437));
+        parameters.push(parameter(434, "EdgeWidth_1", "mm", 3.0));
+        parameters.push(parameter(437, "EdgeWidth_2", "mm", 1.5));
+    }
 
     let edge_group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
@@ -832,7 +853,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
-    let (definition, target_scope) = edge_flange_to_object_fixture(None, true)
+    let (definition, target_scope) = edge_flange_to_object_fixture(None, true, false)
         .unwrap().expect("typed to-object EdgeFlange definition");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { height, .. }) =
         definition
@@ -847,6 +868,48 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         SheetMetalFlangeHeightTarget::Feature(crate::ids::neutral_feature_id(&target_scope))
     );
     assert_eq!(offset.get(), 15.0);
+}
+
+#[test]
+fn edge_flange_native_height_target_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight,
+        SheetMetalFlangeHeightTarget};
+
+    let (definition, _) = edge_flange_to_object_fixture(None, false, false)
+        .unwrap().expect("unresolved to-object EdgeFlange");
+    let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
+        height: SheetMetalFlangeHeight::ToObject {
+            target: SheetMetalFlangeHeightTarget::Native(native), ..
+        }, ..
+    }) = definition else { panic!("native to-object target"); };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = u64::try_from(native.len() - 1).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = edge_flange_to_object_fixture(Some(&ctx), false, false);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+        if failure.operation == "f3d EdgeFlange native height target id"
+            && failure.dimension == ResourceDimension::RetainedBytes),
+        "expected native height target refusal, got {result:?}");
+}
+
+#[test]
+fn edge_flange_two_sided_edge_width_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    assert!(edge_flange_to_object_fixture(None, true, true).unwrap().is_some());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = edge_flange_to_object_fixture(Some(&ctx), true, true);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+        if failure.operation == "f3d EdgeFlange two-sided edge width"
+            && failure.dimension == ResourceDimension::CollectionItems),
+        "expected two-sided edge width refusal, got {result:?}");
 }
 
 #[test]
