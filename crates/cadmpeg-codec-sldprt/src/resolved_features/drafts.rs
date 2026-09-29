@@ -87,6 +87,7 @@ fn declared_draft_operands(
     };
     let mut records = Vec::new();
     for offset in object_start..=final_record_start {
+        ctx.charge_work(1, "scan SLDPRT declared draft references")?;
         if lane.native_payload.get(offset..offset + 2) != Some(token.as_slice()) {
             continue;
         }
@@ -142,6 +143,7 @@ fn compact_parting_line_draft_operands(
     };
     let mut records = Vec::new();
     for marker in first_marker..=final_marker {
+        ctx.charge_work(1, "scan SLDPRT compact draft records")?;
         if lane
             .native_payload
             .get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())
@@ -253,7 +255,11 @@ fn compact_draft_selection_at(
     }
     let mut cursor = header + compact_sel::LEN;
     let mut paths = Vec::new();
+    let candidate_trials = u64::try_from(MAX_PATH_CELLS).map_err(|_| {
+        ctx.refuse_codec_limit("scan SLDPRT compact draft path lengths", u64::MAX - 1, u64::MAX)
+    })?;
     loop {
+        ctx.charge_work(candidate_trials, "scan SLDPRT compact draft path lengths")?;
         let candidate = (1..=MAX_PATH_CELLS)
             .filter_map(|length| compact_mixed_component_path(payload, cursor, length, false))
             .filter(|(_, path_end)| {
@@ -413,8 +419,12 @@ pub(super) fn draft_operand_candidates(
             objects.push((name.offset, feature));
         }
     }
-    let sort_work = u64::try_from(objects.len())
+    let count = u64::try_from(objects.len())
         .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    let comparisons_per_item = u64::from(objects.len().checked_ilog2().unwrap_or(0)) + 1;
+    let sort_work = count
+        .checked_mul(comparisons_per_item)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(sort_work, OPERATION)?;
     objects.sort_unstable_by_key(|(offset, _)| *offset);
     let mut candidates = Vec::new();
@@ -655,6 +665,25 @@ mod tests {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect SLDPRT compact draft paths"));
+    }
+
+    #[test]
+    fn compact_draft_selection_refuses_path_scan_work_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let mut payload = vec![0; 64];
+        let marker = payload.len() + 12;
+        payload.extend(compact_selection(2, &[&[(0x8083, 80, 900, 1)]]));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+            .expect("test context");
+        let error = compact_draft_selection_at(&ctx, &payload, marker)
+            .expect_err("compact draft path scan exceeds work limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "scan SLDPRT compact draft path lengths"));
     }
 
     #[test]
