@@ -1122,28 +1122,34 @@ fn decode_inline_local_system_coordinates(
     cursor: usize,
     slot: usize,
     cache: &ScalarCache,
-) -> Vec<(f64, usize)> {
-    let mut candidates: Vec<(f64, usize)> = Vec::new();
+) -> impl Iterator<Item = (f64, usize)> {
+    // Four special forms and three scalar lanes are the complete candidate set.
+    let mut candidates = [None; 7];
+    let mut count = 0;
     // The inline local-system lane assigns the signed IEEE form to `0x28`.
     // The same byte is positive in the generic directrix lanes, so this
     // interpretation must be selected before those lane decoders run.
     if body.get(cursor) == Some(&0x28) {
         if let Some((value, next)) = ieee8(body, cursor, 0xbf) {
-            candidates.push((value, next));
+            candidates[count] = Some((value, next));
+            count += 1;
         }
     }
     // Named local-system records use the reflected sign for this third-frame
     // coordinate. Keep the same slot-specific rule for positional frames.
     if slot == 6 && body.get(cursor) == Some(&0x41) {
         if let Some((value, next)) = ieee8(body, cursor, 0xbf) {
-            candidates.push((value, next));
+            candidates[count] = Some((value, next));
+            count += 1;
         }
     }
     if matches!(body.get(cursor), Some(0x0f | 0x10 | 0xe6)) {
-        candidates.push((0.0, cursor + 1));
+        candidates[count] = Some((0.0, cursor + 1));
+        count += 1;
     }
     if body.get(cursor) == Some(&0x18) {
-        candidates.push((0.0, cursor + 1));
+        candidates[count] = Some((0.0, cursor + 1));
+        count += 1;
     }
     // Keep the candidate set within the slot's coordinate lane. A prefix can
     // still be ambiguous with the generic positional row lane (for example,
@@ -1160,14 +1166,15 @@ fn decode_inline_local_system_coordinates(
     .chain(decode_in_row_lane(body, cursor, cache));
     for candidate in decoded {
         if candidate.0.is_finite()
-            && !candidates.iter().any(|existing| {
+            && !candidates[..count].iter().flatten().any(|existing| {
                 existing.1 == candidate.1 && existing.0.to_bits() == candidate.0.to_bits()
             })
         {
-            candidates.push(candidate);
+            candidates[count] = Some(candidate);
+            count += 1;
         }
     }
-    candidates
+    candidates.into_iter().flatten()
 }
 
 /// Storage layout of a complete positional plane support frame.
@@ -1318,18 +1325,14 @@ fn plane_support_coordinate_variants(
     offset: usize,
     slot: usize,
     cache: &ScalarCache,
-) -> Vec<(f64, usize)> {
+) -> [Option<(f64, usize)>; 2] {
     if slot == 6 && body.get(offset) == Some(&0x4e) {
-        return decode_plane_support_coordinate(body, offset, slot, cache)
-            .into_iter()
-            .collect();
+        return [decode_plane_support_coordinate(body, offset, slot, cache), None];
     }
     if slot == 8 && body.get(offset) == Some(&0x50) {
-        return decode_plane_support_coordinate(body, offset, slot, cache)
-            .into_iter()
-            .collect();
+        return [decode_plane_support_coordinate(body, offset, slot, cache), None];
     }
-    let mut candidates = Vec::<(f64, usize)>::new();
+    let mut candidates: [Option<(f64, usize)>; 2] = [None; 2];
     for candidate in [
         decode_tabulated_cylinder_first_coordinate(body, offset, cache),
         decode_tabulated_cylinder_second_coordinate(body, offset, cache),
@@ -1340,9 +1343,12 @@ fn plane_support_coordinate_variants(
         if candidate.0.is_finite()
             && !candidates
                 .iter()
+                .flatten()
                 .any(|known| known.1 == candidate.1 && known.0.to_bits() == candidate.0.to_bits())
         {
-            candidates.push(candidate);
+            if let Some(slot) = candidates.iter_mut().find(|slot| slot.is_none()) {
+                *slot = Some(candidate);
+            }
         }
     }
     candidates
@@ -1414,7 +1420,9 @@ fn decode_plane_support_lane_variants(
         }
         if body.get(cursor) == Some(&0x18)
             && slot < 11
-            && !plane_support_coordinate_variants(body, cursor + 1, slot + 1, cache).is_empty()
+            && plane_support_coordinate_variants(body, cursor + 1, slot + 1, cache)
+                .iter()
+                .any(Option::is_some)
         {
             values.push(0.0);
             walk(body, cache, values, cursor + 1, true, results);
@@ -1441,21 +1449,17 @@ fn decode_plane_support_lane_variants(
         let candidates = if slot < 9 {
             plane_support_coordinate_variants(body, cursor, slot, cache)
         } else if body.get(cursor) == Some(&0x0e) {
-            vec![(0.5, cursor + 1)]
+            [Some((0.5, cursor + 1)), None]
         } else if matches!(body.get(cursor), Some(0x0f | 0x10 | 0x18 | 0xe6)) {
-            vec![(0.0, cursor + 1)]
+            [Some((0.0, cursor + 1)), None]
         } else if slot == 9 {
-            decode_in_row_lane(body, cursor, cache)
-                .or_else(|| decode_tabulated_cylinder_first_coordinate(body, cursor, cache))
-                .into_iter()
-                .collect()
+            [decode_in_row_lane(body, cursor, cache)
+                .or_else(|| decode_tabulated_cylinder_first_coordinate(body, cursor, cache)), None]
         } else {
-            decode_in_row_lane(body, cursor, cache)
-                .or_else(|| decode_tabulated_cylinder_second_coordinate(body, cursor, cache))
-                .into_iter()
-                .collect()
+            [decode_in_row_lane(body, cursor, cache)
+                .or_else(|| decode_tabulated_cylinder_second_coordinate(body, cursor, cache)), None]
         };
-        for (value, next) in candidates {
+        for (value, next) in candidates.into_iter().flatten() {
             values.push(value);
             walk(body, cache, values, next, saw_zero_slot_prefix, results);
             values.pop();
