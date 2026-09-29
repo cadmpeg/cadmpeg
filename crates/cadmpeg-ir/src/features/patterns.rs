@@ -709,5 +709,7 @@ cadmpeg_core::named_optional_field!(deserialize_path, PathRef, "path");
 
 selection_field_deserializer!(deserialize_local_occurrences, "occurrences");
 
+mod decode_clone;
+
 #[cfg(test)]
 mod tests;

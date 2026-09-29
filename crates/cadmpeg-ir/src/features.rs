@@ -35,6 +35,73 @@ macro_rules! selection_field_deserializer {
     };
 }
 
+macro_rules! clone_copy_for_decode {
+    ($type:ty) => {
+        impl crate::features::decode_clone::CloneForDecode for $type {
+            fn clone_for_decode(
+                &self,
+                _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                _operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                Ok(*self)
+            }
+        }
+    };
+}
+
+macro_rules! clone_record_for_decode {
+    ($type:ty $(, [$($generic:ident),+])?; { $($field:ident),* }) => {
+        impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
+            crate::features::decode_clone::CloneForDecode for $type {
+            fn clone_for_decode(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                clone_operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                let Self { $($field),* } = self;
+                Ok(Self { $($field: crate::features::decode_clone::CloneForDecode::clone_for_decode($field, ctx, clone_operation)?),* })
+            }
+        }
+    };
+    ($type:ty $(, [$($generic:ident),+])?; ( $($field:ident),* )) => {
+        impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
+            crate::features::decode_clone::CloneForDecode for $type {
+            fn clone_for_decode(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                clone_operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                let Self($($field),*) = self;
+                Ok(Self($(crate::features::decode_clone::CloneForDecode::clone_for_decode($field, ctx, clone_operation)?),*))
+            }
+        }
+    };
+}
+
+macro_rules! clone_enum_for_decode {
+    ($type:ty $(, [$($generic:ident),+])?; {
+        $($variant:ident $( ( $($tuple:ident),* ) )? $( { $($field:ident),* } )?),* $(,)?
+    }) => {
+        impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
+            crate::features::decode_clone::CloneForDecode for $type {
+            fn clone_for_decode(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                clone_operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                match self {
+                    $(Self::$variant $(($($tuple),*))? $({$($field),*})? => Ok(Self::$variant
+                        $(($(crate::features::decode_clone::CloneForDecode::clone_for_decode($tuple, ctx, clone_operation)?),*))?
+                        $({$($field: crate::features::decode_clone::CloneForDecode::clone_for_decode($field, ctx, clone_operation)?),*})?
+                    ),)*
+                }
+            }
+        }
+    };
+}
+
+mod decode_clone;
+
 pub mod edge_treatments;
 use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
 
@@ -4008,6 +4075,15 @@ impl FeatureOperation {
 }
 
 impl FeatureDefinition {
+    /// Copy the admitted definition after charging each owned field allocation.
+    pub fn clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        decode_clone::CloneForDecode::clone_for_decode(self, ctx, operation)
+    }
+
     /// The operation this definition performs, its post-processing layer aside.
     #[must_use]
     pub const fn operation(&self) -> &FeatureOperation {
