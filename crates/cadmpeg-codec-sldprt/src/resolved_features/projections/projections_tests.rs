@@ -27,6 +27,7 @@ use cadmpeg_ir::{
 use std::collections::BTreeMap;
 
 mod limits;
+mod patterns;
 
 fn with_projection_context<R>(test: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R) -> R {
     let arena = cadmpeg_core::decode::DecodeArena::new();
