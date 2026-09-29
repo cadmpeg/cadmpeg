@@ -1,8 +1,6 @@
 use crate::native::attach::attach_parasolid_topology_numeric_attributes;
 use crate::native::attach::attach_parasolid_topology_string_attributes;
 use crate::native::attach::attach_parasolid_topology_structured_attributes;
-use crate::native::attach::attribute_record_index;
-use crate::native::attach::attribute_uses_by_entity;
 use crate::native::attach::insert_sole;
 use crate::native::attach::parasolid_topology_attribute_class_names;
 use crate::native::attach::parasolid_topology_attribute_targets;
@@ -200,9 +198,9 @@ fn attribute_lookup_with_limit(
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     configure(&mut policy);
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let mut reservation = ctx.reserve_scoped(0, "test Parasolid attribute lookups")?;
-    let indexed = attribute_record_index(&ctx, &mut reservation, &records, |record| record.0)?;
-    let grouped = attribute_uses_by_entity(&ctx, &mut reservation, &records, |record| record.0)?;
+    
+    let (indexed, _index_reservation) = ctx.collect_scoped_btree_map(records.iter().map(|record| (record.0, record)), "NX Parasolid attribute record index")?;
+    let (grouped, _group_reservation) = ctx.collect_scoped_btree_groups(records.iter().map(|record| (record.0, record)), "NX Parasolid attribute use groups")?;
     assert_eq!(indexed.len(), 2);
     assert_eq!(grouped.len(), 2);
     Ok(())

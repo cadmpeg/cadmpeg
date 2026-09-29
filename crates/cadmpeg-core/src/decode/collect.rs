@@ -248,6 +248,14 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
+    /// Admits retained tree-record storage, owned bytes, one slot and one work unit.
+    pub fn admit_retained_btree_record<K, V>(&self, owned_bytes: usize, operation: &'static str) -> Result<(), CodecError> {
+        let bytes = std::mem::size_of::<(K, V)>().checked_add(owned_bytes).ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        self.charge_collection_items(1, operation)?;
+        self.charge_retained(u64_from_index(bytes), operation)?;
+        self.charge_work(1, operation)
+    }
+
     /// Collects scoped groups in input order within each key.
     pub fn collect_scoped_btree_groups<'ctx, K: Ord, V>(&'ctx self, values: impl IntoIterator<Item = (K, V)>, operation: &'static str) -> Result<(BTreeMap<K, Vec<V>>, ScopedReservation<'ctx>), CodecError> {
         let mut groups = BTreeMap::new();
@@ -2340,5 +2348,21 @@ fn operation_record_index_refuses_work_limit() {
         if limit.dimension == crate::decode::ResourceDimension::WorkUnits)
     );
 }
+
+    #[test]
+    fn admit_retained_btree_record_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = crate::decode::u64_from_index(std::mem::size_of::<(String, u16)>() + 3) - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(ctx.admit_retained_btree_record::<String, u16>(3, "test retained tree record"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn admit_retained_btree_record_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        ctx.admit_retained_btree_record::<String, u16>(3, "test retained tree record").unwrap();
+    }
 
 }

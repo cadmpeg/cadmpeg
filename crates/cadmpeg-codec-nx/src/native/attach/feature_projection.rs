@@ -2162,39 +2162,10 @@ pub(super) fn primary_hole_outputs(
         };
         let bodies =
             feature_body_outputs(ctx, *object_index, body_bindings, bodies_by_object_index)?;
-        charge_hole_map_entry::<Vec<BodyId>>(
-            ctx,
-            &template.operation_label,
-            0,
-            "NX primary hole output map",
-        )?;
+        ctx.admit_retained_btree_record::<String, Vec<BodyId>>(template.operation_label.len(), "NX primary hole output map")?;
         outputs.insert(template.operation_label.clone(), bodies);
     }
     Ok(outputs)
-}
-
-pub(super) fn push_hole_operation_label(
-    ctx: &DecodeContext<'_>,
-    operations: &mut Vec<String>,
-    label: &str,
-) -> Result<(), CodecError> {
-    let bytes = std::mem::size_of::<String>()
-        .checked_add(label.len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX hole operation labels",
-                0,
-                cadmpeg_core::decode::u64_from_index(label.len()),
-            )
-        })?;
-    ctx.charge_collection_items(1, "NX hole operation labels")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX hole operation labels",
-    )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(operations, 1, "NX hole operation labels")?;
-    operations.push(label.to_owned());
-    Ok(())
 }
 
 pub(super) fn charge_hole_sort_work(
@@ -2305,11 +2276,11 @@ pub(super) fn simple_hole_operations(
             return Ok(None);
         }
         for member in group.members.iter() {
-            push_hole_operation_label(ctx, &mut operations, &member.operation_label)?;
+            ctx.push_retained_vec(&mut operations, ctx.copy_retained_text(&member.operation_label, "NX hole operation labels")?, "NX hole operation labels")?;
         }
     } else {
         for template in ordered_templates {
-            push_hole_operation_label(ctx, &mut operations, &template.operation_label)?;
+            ctx.push_retained_vec(&mut operations, ctx.copy_retained_text(&template.operation_label, "NX hole operation labels")?, "NX hole operation labels")?;
         }
     }
     Ok(Some(operations))
@@ -2338,7 +2309,7 @@ pub(super) fn selected_hole_operations(
             .count()
             == 1
         {
-            push_hole_operation_label(ctx, &mut operations, &template.operation_label)?;
+            ctx.push_retained_vec(&mut operations, ctx.copy_retained_text(&template.operation_label, "NX hole operation labels")?, "NX hole operation labels")?;
         }
     }
     if operations.is_empty() || !hole_operations_are_unique(ctx, &operations)? {
@@ -2602,34 +2573,19 @@ pub(super) fn hole_package_projection(
                 .insert(member.operation_label.clone());
         }
         insert_hole_output_body(ctx, &mut projection.outputs, &use_.operation_label, body)?;
-        charge_hole_map_entry::<Length>(
-            ctx,
-            &use_.operation_label,
-            0,
-            "NX hole package diameter map",
-        )?;
+        ctx.admit_retained_btree_record::<String, Length>(use_.operation_label.len(), "NX hole package diameter map")?;
         projection
             .diameters
             .insert(use_.operation_label.clone(), diameter);
         if let Some(chamfer) = chamfer {
-            charge_hole_map_entry::<HoleKind>(
-                ctx,
-                &use_.operation_label,
-                0,
-                "NX hole package chamfer map",
-            )?;
+            ctx.admit_retained_btree_record::<String, HoleKind>(use_.operation_label.len(), "NX hole package chamfer map")?;
             projection
                 .chamfers
                 .insert(use_.operation_label.clone(), chamfer);
         }
         let placements = hole_axis_placements_for_body(ctx, ir, body)?;
         if placements.len() == group.members.len() {
-            charge_hole_map_entry::<Vec<HolePlacement>>(
-                ctx,
-                &use_.operation_label,
-                0,
-                "NX hole package placement map",
-            )?;
+            ctx.admit_retained_btree_record::<String, Vec<HolePlacement>>(use_.operation_label.len(), "NX hole package placement map")?;
             projection
                 .placements
                 .insert(use_.operation_label.clone(), placements);
@@ -2684,27 +2640,6 @@ pub(super) fn hole_operations_are_unique(
     Ok(true)
 }
 
-pub(super) fn charge_hole_map_entry<T>(
-    ctx: &DecodeContext<'_>,
-    key: &str,
-    nested_bytes: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let bytes = std::mem::size_of::<(String, T)>()
-        .checked_add(key.len())
-        .and_then(|bytes| bytes.checked_add(nested_bytes))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                operation,
-                0,
-                cadmpeg_core::decode::u64_from_index(key.len()),
-            )
-        })?;
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), operation)?;
-    ctx.charge_work(1, operation)
-}
-
 pub(super) fn insert_hole_output_body(
     ctx: &DecodeContext<'_>,
     outputs: &mut BTreeMap<String, Vec<BodyId>>,
@@ -2721,7 +2656,7 @@ pub(super) fn insert_hole_output_body(
             )
         })?;
     ctx.charge_collection_items(1, "NX hole output body")?;
-    charge_hole_map_entry::<Vec<BodyId>>(ctx, operation, nested_bytes, "NX hole output map")?;
+    ctx.admit_retained_btree_record::<String, Vec<BodyId>>(operation.len().checked_add(nested_bytes).ok_or_else(|| ctx.refuse_codec_limit("NX hole output map", u64::MAX, u64::MAX))?, "NX hole output map")?;
     let mut bodies = Vec::new();
     cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bodies, 1, "NX hole output body")?;
     bodies.push(body.clone());
@@ -2766,7 +2701,7 @@ pub(super) fn hole_body_projection(
             let Some(diameter) = Length::new(radius * 2.0) else {
                 return Ok(None);
             };
-            charge_hole_map_entry::<Length>(ctx, &operation, 0, "NX hole diameter map")?;
+            ctx.admit_retained_btree_record::<String, Length>(operation.len(), "NX hole diameter map")?;
             diameters.insert(operation, diameter);
         }
     }
@@ -2813,7 +2748,7 @@ pub(super) fn counterbore_body_projection(
         let Some(diameter) = Length::new(witness.bore_radius * 2.0) else {
             return Ok(None);
         };
-        charge_hole_map_entry::<Length>(ctx, operation, 0, "NX counterbore diameter map")?;
+        ctx.admit_retained_btree_record::<String, Length>(operation.len(), "NX counterbore diameter map")?;
         diameters.insert(operation.clone(), diameter);
         let (Some(diameter), Some(depth)) = (
             cadmpeg_ir::scalar::PositiveLength::new(witness.counterbore_radius * 2.0),
@@ -2821,12 +2756,7 @@ pub(super) fn counterbore_body_projection(
         ) else {
             return Ok(None);
         };
-        charge_hole_map_entry::<CounterboreDimensions>(
-            ctx,
-            operation,
-            0,
-            "NX counterbore dimension map",
-        )?;
+        ctx.admit_retained_btree_record::<String, CounterboreDimensions>(operation.len(), "NX counterbore dimension map")?;
         counterbores.insert(operation.clone(), CounterboreDimensions { diameter, depth });
     }
     Ok(Some(HoleBodyProjection {
@@ -2869,17 +2799,12 @@ pub(super) fn blind_hole_body_projection(
         let Some(diameter) = Length::new(witness.bore_radius * 2.0) else {
             return Ok(None);
         };
-        charge_hole_map_entry::<Length>(ctx, operation, 0, "NX blind hole diameter map")?;
+        ctx.admit_retained_btree_record::<String, Length>(operation.len(), "NX blind hole diameter map")?;
         diameters.insert(operation.clone(), diameter);
         let Some(depth) = cadmpeg_ir::scalar::NonZeroLength::new(witness.depth) else {
             return Ok(None);
         };
-        charge_hole_map_entry::<cadmpeg_ir::scalar::NonZeroLength>(
-            ctx,
-            operation,
-            0,
-            "NX blind hole depth map",
-        )?;
+        ctx.admit_retained_btree_record::<String, cadmpeg_ir::scalar::NonZeroLength>(operation.len(), "NX blind hole depth map")?;
         blind_depths.insert(operation.clone(), depth);
     }
     Ok(Some(HoleBodyProjection {
@@ -2916,7 +2841,7 @@ pub(super) fn hole_axis_placements_for_operations(
         if body_placements.len() != 1 {
             continue;
         }
-        charge_hole_map_entry::<HolePlacement>(ctx, operation, 0, "NX hole placement map")?;
+        ctx.admit_retained_btree_record::<String, HolePlacement>(operation.len(), "NX hole placement map")?;
         placements.insert(operation.clone(), body_placements.remove(0));
     }
     Ok(placements)
@@ -2954,7 +2879,7 @@ pub(super) fn counterbore_axis_placements_for_operations(
         ) else {
             return Ok(BTreeMap::new());
         };
-        charge_hole_map_entry::<HolePlacement>(ctx, operation, 0, "NX counterbore placement map")?;
+        ctx.admit_retained_btree_record::<String, HolePlacement>(operation.len(), "NX counterbore placement map")?;
         placements.insert(
             operation.clone(),
             HolePlacement::Axis {
@@ -2998,7 +2923,7 @@ pub(super) fn blind_hole_axis_placements_for_operations(
         ) else {
             return Ok(BTreeMap::new());
         };
-        charge_hole_map_entry::<HolePlacement>(ctx, operation, 0, "NX blind hole placement map")?;
+        ctx.admit_retained_btree_record::<String, HolePlacement>(operation.len(), "NX blind hole placement map")?;
         placements.insert(
             operation.clone(),
             HolePlacement::Directed {
@@ -3050,12 +2975,7 @@ pub(super) fn hole_axis_placements_for_body(
         ) else {
             return Ok(Vec::new());
         };
-        ctx.charge_collection_items(1, "NX hole axis placements")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<HolePlacement>()),
-            "NX hole axis placements",
-        )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut placements, 1, "NX hole axis placements")?;
+        ctx.reserve_retained_vec(&mut placements, 1, "NX hole axis placements")?;
         placements.push(HolePlacement::Axis { origin, axis });
     }
     placements.sort_by_key(hole_placement_key);
@@ -3638,25 +3558,7 @@ pub(super) fn counterbore_cylinders(
     if candidates.iter().any(|candidates| candidates.len() != 1) {
         return Ok(None);
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(cylinders.len() / 2),
-        "nx counterbore cylinder witnesses",
-    )?;
-    let witness_bytes = (cylinders.len() / 2)
-        .checked_mul(std::mem::size_of::<CounterboreCylinderWitness>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "nx counterbore cylinder witnesses",
-                0,
-                cadmpeg_core::decode::u64_from_index(cylinders.len() / 2),
-            )
-        })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(witness_bytes),
-        "nx counterbore cylinder witnesses",
-    )?;
-    let mut witnesses = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut witnesses, cylinders.len() / 2, "nx counterbore cylinder witnesses")?;
+    let mut witnesses = ctx.retained_vec(cylinders.len() / 2, "nx counterbore cylinder witnesses")?;
     let mut used = ctx.alloc_filled(
         cylinders.len(),
         false,
@@ -3794,13 +3696,7 @@ pub(super) fn blind_bore_cylinders(
     } else {
         Vector3::new(-cylinder.axis.x, -cylinder.axis.y, -cylinder.axis.z)
     };
-    ctx.charge_collection_items(1, "NX blind bore witness")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<BlindBoreCylinderWitness>()),
-        "NX blind bore witness",
-    )?;
-    let mut witnesses = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut witnesses, 1, "NX blind bore witness")?;
+    let mut witnesses = ctx.retained_vec(1, "NX blind bore witness")?;
     witnesses.push(BlindBoreCylinderWitness {
         position,
         direction,

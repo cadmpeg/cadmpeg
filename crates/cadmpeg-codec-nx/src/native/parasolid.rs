@@ -3861,16 +3861,7 @@ pub(super) fn parasolid_entity_value_records(
                 inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(values.unmaterialized.len()),
-            "NX Parasolid unmaterialized value records",
-        )?;
-        let unmaterialized_bytes = std::mem::size_of_val(values.unmaterialized.as_slice());
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(unmaterialized_bytes),
-            "retain NX Parasolid unmaterialized records",
-        )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut records.unmaterialized, values.unmaterialized.len(), "allocate NX Parasolid unmaterialized records")?;
+        ctx.reserve_retained_vec(&mut records.unmaterialized, values.unmaterialized.len(), "NX Parasolid unmaterialized value records")?;
         records.unmaterialized.extend(values.unmaterialized);
     }
     let sort_units = [

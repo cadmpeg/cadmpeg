@@ -1165,15 +1165,7 @@ fn chart_points(
     let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     if point_layout == ChartPointLayout::Xyz3 {
         let operation = "NX raw xyz3 chart points";
-        ctx.charge_collection_items(count_u64, operation)?;
-        let bytes = count_u64
-            .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                Point3,
-            >()))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-        let _reservation = ctx.reserve_scoped(bytes, operation)?;
-        let mut points = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut points, count, operation)?;
+        let (mut points, _reservation) = ctx.temporary_vec(count, operation)?;
         for index in 0..count {
             let Some(point) = point_m(stream, block + index * 24) else {
                 return Ok(None);

@@ -729,19 +729,8 @@ pub(in crate::native) fn feature_surface_construction_payloads(
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
             .count();
-        let graph_bytes = graph_count
-            .checked_mul(std::mem::size_of::<&FeatureSurfaceConstructionReference>())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX surface construction graph", 0, 1))?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(graph_count),
-            "NX surface construction graph",
-        )?;
-        let _graph_reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(graph_bytes),
-            "NX surface construction graph",
-        )?;
-        let mut graph = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut graph, graph_count, "allocate NX surface construction graph")?;
+        
+        let (mut graph, _graph_reservation) = ctx.temporary_vec(graph_count, "NX surface construction graph")?;
         graph.extend(
             references
                 .iter()

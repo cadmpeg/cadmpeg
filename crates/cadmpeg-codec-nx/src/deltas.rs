@@ -2314,18 +2314,7 @@ fn current_revision_scopes(
         .iter()
         .filter(|revision| u32::from(revision.xmt) == 3)
         .count();
-    ctx.charge_collection_items(u64_from_index(count), "NX snapshot revision indices")?;
-    let snapshot_bytes = count
-        .checked_mul(std::mem::size_of::<usize>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("NX snapshot revision indices", 0, u64_from_index(count))
-        })?;
-    let _snapshot_reservation = ctx.reserve_scoped(
-        u64_from_index(snapshot_bytes),
-        "NX snapshot revision indices",
-    )?;
-    let mut snapshot_revisions = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut snapshot_revisions, count, "NX snapshot revision indices")?;
+    let (mut snapshot_revisions, _snapshot_reservation) = ctx.temporary_vec(count, "NX snapshot revision indices")?;
     for (index, revision) in census.body_revisions.iter().enumerate() {
         if u32::from(revision.xmt) == 3 {
             snapshot_revisions.push(index);

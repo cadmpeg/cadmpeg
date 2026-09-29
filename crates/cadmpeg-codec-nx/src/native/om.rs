@@ -1662,37 +1662,16 @@ fn stable_object_record_identities(
     for bytes in records {
         ctx.reserve_scoped_vec(&mut reference_reservation, &mut references, 1, "NX object record graph reference lists")?;
         let parsed = crate::om::counted_record_references(ctx, bytes, 0, records.len())?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(parsed.len()),
-            "NX object record graph references",
-        )?;
-        let pair_bytes = parsed
-            .len()
-            .checked_mul(std::mem::size_of::<(usize, usize)>())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX object record graph references", 0, 1))?;
-        reference_reservation.grow(cadmpeg_core::decode::u64_from_index(pair_bytes))?;
         let mut pairs = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut pairs, parsed.len(), "allocate NX object record graph references")?;
+ctx.reserve_scoped_vec(&mut reference_reservation, &mut pairs, parsed.len(), "NX object record graph references")?;
         for reference in parsed {
             pairs.push((reference.offset, usize::from(reference.value)));
         }
         references.push(pairs);
     }
     let mut graph_work = MAX_GRAPH_WORK;
-    let output_bytes = records
-        .len()
-        .checked_mul(std::mem::size_of::<Option<String>>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX object record identities", 0, 1))?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(records.len()),
-        "NX object record identities",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(output_bytes),
-        "NX object record identities",
-    )?;
-    let mut identities = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut identities, records.len(), "allocate NX object record identities")?;
+    
+    let mut identities = ctx.retained_vec(records.len(), "NX object record identities")?;
     for root in 0..records.len() {
         let identity = if references[root].is_empty() {
             Some(stable_object_record_identity(
@@ -4192,20 +4171,8 @@ fn object_record_relation_ids(
     section_ordinal: usize,
 ) -> Result<Vec<String>, CodecError> {
     let related = relations.map_or(&[][..], Vec::as_slice);
-    let slots = related
-        .len()
-        .checked_mul(std::mem::size_of::<String>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX object record relation IDs", 0, 1))?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(related.len()),
-        "NX object record relation IDs",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(slots),
-        "NX object record relation IDs",
-    )?;
-    let mut ids = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ids, related.len(), "allocate NX object record relation IDs")?;
+    
+    let mut ids = ctx.retained_vec(related.len(), "NX object record relation IDs")?;
     for &ordinal in related {
         ids.push(retained_om_index_id(
             ctx,
