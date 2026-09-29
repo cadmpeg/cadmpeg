@@ -1511,7 +1511,7 @@ pub(crate) fn project_compact_surface_selections(
             };
             if unresolved_full_round {
                 let Some([center_faces, side_one_faces, side_two_faces]) =
-                    full_round_fillet_selection_triple(feature_selections)
+                    full_round_fillet_selection_triple(ctx, feature_selections)?
                 else {
                     break 'feature_edit;
                 };
@@ -1873,33 +1873,48 @@ fn sole_unresolved_fillet_group(
 }
 
 fn full_round_fillet_selection_triple<'a>(
+    ctx: &DecodeContext<'_>,
     selections: &[&'a FeatureInputSurfaceSelection],
-) -> Option<[&'a FeatureInputSurfaceSelection; 3]> {
+) -> Result<Option<[&'a FeatureInputSurfaceSelection; 3]>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "group SLDPRT full round fillet selections";
     let mut by_lane = HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new();
     for selection in selections {
-        by_lane
-            .entry(selection.parent.as_str())
-            .or_default()
-            .push(*selection);
+        ctx.charge_work(1, OPERATION)?;
+        if !by_lane.contains_key(selection.parent.as_str()) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            by_lane.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        let group = by_lane.entry(selection.parent.as_str()).or_default();
+        ctx.reserve_collection_vec(group, 1, OPERATION)?;
+        group.push(*selection);
     }
     let mut consensus: Option<[&'a FeatureInputSurfaceSelection; 3]> = None;
     for mut lane_selections in by_lane.into_values() {
+        let len = lane_selections.len();
+        let count = u64::try_from(len)
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        let levels = if len > 1 { len.ilog2() + 1 } else { 1 };
+        let work = count.checked_mul(u64::from(levels))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, OPERATION)?;
         lane_selections.sort_unstable_by_key(|selection| selection.offset);
         let [center, side_one, side_two] = lane_selections.as_slice() else {
-            return None;
+            return Ok(None);
         };
         if let Some([expected_center, expected_side_one, expected_side_two]) = consensus {
             if !same_surface_selection_semantics(expected_center, center)
                 || !same_surface_selection_semantics(expected_side_one, side_one)
                 || !same_surface_selection_semantics(expected_side_two, side_two)
             {
-                return None;
+                return Ok(None);
             }
         } else {
             consensus = Some([*center, *side_one, *side_two]);
         }
     }
-    consensus
+    Ok(consensus)
 }
 
 pub(crate) fn project_draft_operands(
