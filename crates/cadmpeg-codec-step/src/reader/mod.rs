@@ -193,7 +193,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             let loss = code.note(message).with_provenance(
                 cadmpeg_ir::SourceProvenance::root(
                     crate::dialect::FORMAT,
-                    diagnostic.offset as u64,
+                    u64_from_index(diagnostic.offset),
                 )
                 .with_tag(tag),
             );
@@ -633,7 +633,7 @@ fn decode_exchange_mode(
             .charge_work(u64_from_index(input.len()), "step_byte_accounting")?;
         let _reservation = session
             .ctx
-            .reserve_scoped(input.len() as u64, "step_byte_accounting")?;
+            .reserve_scoped(u64_from_index(input.len()), "step_byte_accounting")?;
         byte_accounting(input, exchange, &session.typed_records, session.ctx)?
     };
     if matches!(mode, DecodeMode::Decode(_)) {
@@ -675,7 +675,7 @@ fn decode_exchange_mode(
             }
             opaque.push(UnknownRecord::retained(
                 source.unknown_id,
-                source.span.start as u64,
+                u64_from_index(source.span.start),
                 bytes,
                 links,
             ));
@@ -692,7 +692,7 @@ fn decode_exchange_mode(
             *counts.entry("SIGNATURE".into()).or_default() += 1;
             opaque.push(UnknownRecord::retained(
                 ids::signature(index),
-                signature.start as u64,
+                u64_from_index(signature.start),
                 bytes,
                 Vec::new(),
             ));
@@ -1619,7 +1619,7 @@ impl ValueExt for Value {
     fn number(&self) -> Option<f64> {
         match self {
             Value::Real(value) => Some(*value),
-            Value::Integer(value) => Some(*value as f64),
+            Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             _ => None,
         }
     }

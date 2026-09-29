@@ -1783,7 +1783,13 @@ fn find_color(
                         .find(|partial| partial.name == "COLOUR_SPECIFICATION")
                         .and_then(|partial| partial.parameters.first())
                 };
-                let Some(color) = Color::new(r as f32, g as f32, b as f32, 1.0) else {
+                let Some((r, g, b)) = cadmpeg_core::convert::f32_from_f64(r)
+                    .zip(cadmpeg_core::convert::f32_from_f64(g))
+                    .zip(cadmpeg_core::convert::f32_from_f64(b))
+                    .map(|((r, g), b)| (r, g, b)) else {
+                    return Ok(None);
+                };
+                let Some(color) = Color::new(r, g, b, 1.0) else {
                     return Ok(None);
                 };
                 let name = name_value
@@ -1873,10 +1879,9 @@ fn find_color(
     if let Some(transparency) = transparency {
         match result.as_mut() {
             Some(ColorResolution::Candidate(candidate)) => {
-                candidate.color = candidate
-                    .color
-                    .with_alpha((1.0 - transparency.get()) as f32)
-                    .unwrap_or(candidate.color);
+                if let Some(alpha) = cadmpeg_core::convert::f32_from_f64(1.0 - transparency.get()) {
+                    candidate.color = candidate.color.with_alpha(alpha).unwrap_or(candidate.color);
+                }
             }
             Some(ColorResolution::Ambiguous { .. }) => {}
             None => {}

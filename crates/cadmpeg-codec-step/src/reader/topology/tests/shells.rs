@@ -310,7 +310,7 @@ fn oriented_shell_without_the_derived_slot_is_read_and_reported() {
             .as_ref()
             .expect("oriented shell provenance")
             .offset,
-        record_offset as u64
+        cadmpeg_core::decode::u64_from_index(record_offset)
     );
 }
 

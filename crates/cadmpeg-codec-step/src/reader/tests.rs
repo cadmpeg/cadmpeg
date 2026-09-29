@@ -5,13 +5,22 @@ use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use super::{
     byte_accounting, claim_trivia, decode_exchange_mode, implicit_face_plane_work,
-    semantic_input_work, ByteClass, Packaging, RecordExt,
+    semantic_input_work, ByteClass, Packaging, RecordExt, ValueExt,
 };
 use crate::loss::StepLossCode;
 use std::collections::HashSet;
 
 const REFERENCE_NOTE_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;@100=<part.step#width>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
 const DIAGNOSTIC_LOSS_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;9');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+
+#[test]
+fn step_integer_number_refuses_inexact_f64() {
+    assert_eq!(
+        crate::parse::Value::Integer(1_i64 << 53).number(),
+        Some(9_007_199_254_740_992.0)
+    );
+    assert_eq!(crate::parse::Value::Integer((1_i64 << 53) + 1).number(), None);
+}
 
 #[test]
 fn record_display_name_refuses_retained_byte_limit() {
@@ -364,7 +373,7 @@ pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
     assert_eq!(
         retained.data(),
         Some(
-            &bytes[retained.offset() as usize..(retained.offset() + retained.byte_len()) as usize],
+            &bytes[usize::try_from(retained.offset()).expect("retained offset fits memory")..usize::try_from(retained.offset() + retained.byte_len()).expect("retained end fits memory")],
         )
     );
     assert!(unknowns[0]
@@ -402,7 +411,7 @@ fn decode_retains_signature_opaque_without_verification_result() {
     assert_eq!(
         retained.data(),
         Some(
-            &bytes[retained.offset() as usize..(retained.offset() + retained.byte_len()) as usize],
+            &bytes[usize::try_from(retained.offset()).expect("retained offset fits memory")..usize::try_from(retained.offset() + retained.byte_len()).expect("retained end fits memory")],
         )
     );
     assert!(result.report().losses.iter().any(|loss| {
@@ -838,7 +847,7 @@ fn decode_charges_one_loss_for_an_out_of_range_schema_object_identifier() {
     assert_eq!(wire::field::<String>(&provenance, "format"), "step");
     assert_eq!(
         provenance.offset,
-        source.find("FILE_SCHEMA").unwrap() as u64
+        cadmpeg_core::decode::u64_from_index(source.find("FILE_SCHEMA").unwrap())
     );
     assert_eq!(provenance.tag.as_deref(), Some("schema_identifier"));
     assert_eq!(
@@ -883,7 +892,7 @@ fn decode_reports_the_substituted_grammar_for_an_unknown_implementation_level() 
     let provenance = losses[0].provenance.as_ref().expect("source provenance");
     assert_eq!(
         provenance.offset,
-        source.find("FILE_DESCRIPTION").unwrap() as u64
+        cadmpeg_core::decode::u64_from_index(source.find("FILE_DESCRIPTION").unwrap())
     );
     assert_eq!(provenance.tag.as_deref(), Some("implementation_level"));
 }
@@ -928,7 +937,7 @@ fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
     );
     assert_eq!(
         provenance.offset,
-        bytes.windows(2).position(|window| window == b"#1").unwrap() as u64
+        cadmpeg_core::decode::u64_from_index(bytes.windows(2).position(|window| window == b"#1").unwrap())
     );
     assert_eq!(provenance.tag.as_deref(), Some("complex_entity"));
     assert_eq!(result.ir().native_unknowns("step").unwrap().len(), 0);

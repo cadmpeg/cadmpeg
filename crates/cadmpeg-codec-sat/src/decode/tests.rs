@@ -135,7 +135,7 @@ fn known_sphere_record_retains_source_offset_tag_and_derived_fields() {
         .position(|window| window == b"sphere-surface")
         .expect("sphere record in source");
     assert_eq!(provenance.stream(), "sat:stream");
-    assert_eq!(provenance.offset, expected_offset as u64);
+    assert_eq!(provenance.offset, cadmpeg_core::decode::u64_from_index(expected_offset));
     assert_eq!(provenance.tag.as_deref(), Some("sphere-surface"));
     let fields = fidelity.annotations.exactness()[surface_id.as_str()].fields();
     assert_eq!(

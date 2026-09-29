@@ -84,7 +84,7 @@ impl Emitter {
     /// `type_` is also the entity-count key. Complex instances use their leading
     /// keyword as the key.
     pub(crate) fn emit(&mut self, type_: &'static str, params: &str) -> Ref {
-        let id = self.lines.len() as u64 + 1;
+        let id = cadmpeg_core::decode::u64_from_index(self.lines.len()) + 1;
         self.lines.push(format!("#{id} = {type_}({params});"));
         *self.counts.entry(type_).or_insert(0) += 1;
         Ref(id)
@@ -94,7 +94,7 @@ impl Emitter {
     ///
     /// `tally` supplies its entity-count key.
     pub(crate) fn emit_raw(&mut self, tally: &'static str, body: &str) -> Ref {
-        let id = self.lines.len() as u64 + 1;
+        let id = cadmpeg_core::decode::u64_from_index(self.lines.len()) + 1;
         self.lines.push(format!("#{id} = {body};"));
         *self.counts.entry(tally).or_insert(0) += 1;
         Ref(id)
