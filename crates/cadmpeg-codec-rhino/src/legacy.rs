@@ -719,17 +719,6 @@ fn v1_temporary_bytes<T>(count: usize) -> Result<u64, CodecError> {
     Ok(bytes)
 }
 
-fn v1_temporary_values<T>(
-    ctx: &DecodeContext<'_>,
-    workspace: &mut ScopedReservation<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let mut values = Vec::new();
-    ctx.reserve_scoped_vec(workspace, &mut values, count, operation)?;
-    Ok(values)
-}
-
 fn legacy_spline(
     ctx: &DecodeContext<'_>,
     data: &[u8],
@@ -904,7 +893,7 @@ fn legacy_curve_segments(
         ));
     }
     let mut segments =
-        v1_temporary_values::<NurbsCurve>(ctx, workspace, count, "Rhino V1 curve segments")?;
+        { let mut values = Vec::new(); ctx.reserve_scoped_vec::<NurbsCurve>(workspace, &mut values, count, "Rhino V1 curve segments")?; Ok::<_, CodecError>(values) }?;
     for _ in 0..count {
         let spline = chunk_at(
             data,
@@ -1777,18 +1766,8 @@ fn append_legacy_brep(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
         suffix_key.clone(),
     );
-    let mut trim_paths = v1_temporary_values::<(usize, usize, usize)>(
-        ctx,
-        &mut workspace,
-        trim_count,
-        "Rhino V1 Brep trim paths",
-    )?;
-    let mut face_trim_indices = v1_temporary_values::<Vec<usize>>(
-        ctx,
-        &mut workspace,
-        brep.faces.len(),
-        "Rhino V1 Brep face trim rows",
-    )?;
+    let mut trim_paths = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<(usize, usize, usize)>(&mut workspace, &mut values, trim_count, "Rhino V1 Brep trim paths")?; Ok::<_, CodecError>(values) }?;
+    let mut face_trim_indices = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<Vec<usize>>(&mut workspace, &mut values, brep.faces.len(), "Rhino V1 Brep face trim rows")?; Ok::<_, CodecError>(values) }?;
     for _ in 0..brep.faces.len() {
         face_trim_indices.push(Vec::new());
     }
@@ -1804,12 +1783,7 @@ fn append_legacy_brep(
                     "Rhino V1 Brep face trim count exceeds address space".to_string(),
                 )
             })?;
-        face_trim_indices[face_index] = v1_temporary_values::<usize>(
-            ctx,
-            &mut workspace,
-            face_trim_count,
-            "Rhino V1 Brep face trim indices",
-        )?;
+        face_trim_indices[face_index] = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut workspace, &mut values, face_trim_count, "Rhino V1 Brep face trim indices")?; Ok::<_, CodecError>(values) }?;
         for (loop_index, loop_record) in face.loops.iter().enumerate() {
             for trim_index in 0..loop_record.trims.len() {
                 let global = trim_paths.len();
@@ -1821,12 +1795,7 @@ fn append_legacy_brep(
     if trim_paths.is_empty() {
         return Err(CodecError::Malformed("V1 Brep has no trims".to_string()));
     }
-    let mut parents = v1_temporary_values::<usize>(
-        ctx,
-        &mut workspace,
-        trim_paths.len(),
-        "Rhino V1 Brep trim parents",
-    )?;
+    let mut parents = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut workspace, &mut values, trim_paths.len(), "Rhino V1 Brep trim parents")?; Ok::<_, CodecError>(values) }?;
     parents.extend(0..trim_paths.len());
     let has_edge = |index: usize| {
         let (face, loop_index, trim) = trim_paths[index];
@@ -1841,12 +1810,7 @@ fn append_legacy_brep(
     };
     for (face_index, face) in brep.faces.iter().enumerate() {
         let mut seam_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep seams")?;
-        let mut seams = v1_temporary_values::<usize>(
-            ctx,
-            &mut seam_workspace,
-            face_trim_indices[face_index].len(),
-            "Rhino V1 Brep seams",
-        )?;
+        let mut seams = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut seam_workspace, &mut values, face_trim_indices[face_index].len(), "Rhino V1 Brep seams")?; Ok::<_, CodecError>(values) }?;
         for index in face_trim_indices[face_index].iter().copied() {
             let (_, loop_index, trim_index) = trim_paths[index];
             if face.loops[loop_index].trims[trim_index].mate == Mate::Seam {
@@ -1861,12 +1825,7 @@ fn append_legacy_brep(
             }
         }
     }
-    let mut mates = v1_temporary_values::<usize>(
-        ctx,
-        &mut workspace,
-        trim_paths.len(),
-        "Rhino V1 Brep mated trims",
-    )?;
+    let mut mates = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut workspace, &mut values, trim_paths.len(), "Rhino V1 Brep mated trims")?; Ok::<_, CodecError>(values) }?;
     for (index, (face, loop_index, trim)) in trim_paths.iter().enumerate() {
         let record = &brep.faces[*face].loops[*loop_index].trims[*trim];
         if record.mate == Mate::Mated {
@@ -1880,21 +1839,11 @@ fn append_legacy_brep(
             }
         }
     }
-    let mut roots = v1_temporary_values::<usize>(
-        ctx,
-        &mut workspace,
-        trim_paths.len(),
-        "Rhino V1 Brep trim roots",
-    )?;
+    let mut roots = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut workspace, &mut values, trim_paths.len(), "Rhino V1 Brep trim roots")?; Ok::<_, CodecError>(values) }?;
     for index in 0..trim_paths.len() {
         roots.push(find_root(&mut parents, index));
     }
-    let mut group_roots = v1_temporary_values::<usize>(
-        ctx,
-        &mut workspace,
-        roots.len(),
-        "Rhino V1 Brep unique roots",
-    )?;
+    let mut group_roots = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut workspace, &mut values, roots.len(), "Rhino V1 Brep unique roots")?; Ok::<_, CodecError>(values) }?;
     group_roots.extend_from_slice(&roots);
     group_roots.sort_unstable();
     group_roots.dedup();
@@ -1962,12 +1911,7 @@ fn append_legacy_brep(
                 .find_map(|(global, path)| (*path == (face_index, loop_index, 0)).then_some(global))
                 .ok_or_else(|| CodecError::malformed("V1 loop has no indexed trim"))?;
             let mut globals_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep loop globals")?;
-            let mut globals = v1_temporary_values::<usize>(
-                ctx,
-                &mut globals_workspace,
-                loop_record.trims.len(),
-                "Rhino V1 Brep loop globals",
-            )?;
+            let mut globals = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut globals_workspace, &mut values, loop_record.trims.len(), "Rhino V1 Brep loop globals")?; Ok::<_, CodecError>(values) }?;
             globals.extend(start..start + loop_record.trims.len());
             for (position, global) in globals.iter().copied().enumerate() {
                 let root = roots[global];
@@ -2004,12 +1948,7 @@ fn append_legacy_brep(
     let endpoint_count = trim_paths.len().checked_mul(2).ok_or_else(|| {
         CodecError::NotImplemented("Rhino V1 Brep endpoint count exceeds address space".to_string())
     })?;
-    let mut endpoint_parents = v1_temporary_values::<usize>(
-        ctx,
-        &mut workspace,
-        endpoint_count,
-        "Rhino V1 Brep endpoint parents",
-    )?;
+    let mut endpoint_parents = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut workspace, &mut values, endpoint_count, "Rhino V1 Brep endpoint parents")?; Ok::<_, CodecError>(values) }?;
     endpoint_parents.extend(0..endpoint_count);
     for (face_index, face) in brep.faces.iter().enumerate() {
         for (loop_index, loop_record) in face.loops.iter().enumerate() {
@@ -2022,12 +1961,7 @@ fn append_legacy_brep(
                 .map(|position| face_trim_indices[face_index][position])
                 .ok_or_else(|| CodecError::Malformed("V1 loop has no indexed trim".to_string()))?;
             let mut globals_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep endpoint globals")?;
-            let mut globals = v1_temporary_values::<usize>(
-                ctx,
-                &mut globals_workspace,
-                loop_record.trims.len(),
-                "Rhino V1 Brep endpoint globals",
-            )?;
+            let mut globals = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut globals_workspace, &mut values, loop_record.trims.len(), "Rhino V1 Brep endpoint globals")?; Ok::<_, CodecError>(values) }?;
             globals.extend((0..loop_record.trims.len()).map(|offset| start + offset));
             for (position, global) in globals.iter().copied().enumerate() {
                 let next = globals[(position + 1) % globals.len()];
@@ -2613,7 +2547,7 @@ fn legacy_loop(
         ));
     }
     let mut trims =
-        v1_temporary_values::<LegacyTrim>(ctx, workspace, count, "Rhino V1 boundary trims")?;
+        { let mut values = Vec::new(); ctx.reserve_scoped_vec::<LegacyTrim>(workspace, &mut values, count, "Rhino V1 boundary trims")?; Ok::<_, CodecError>(values) }?;
     for _ in 0..count {
         let trim = nested_chunk(data, &mut reader, TCODE_LEGACY_TRM)?;
         trims.push(legacy_trim(ctx, workspace, data, trim.body(), scale)?);
@@ -2658,7 +2592,7 @@ fn legacy_face(
         ));
     }
     let mut seam_glue =
-        v1_temporary_values::<usize>(ctx, workspace, glue_count, "Rhino V1 face seam glue")?;
+        { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(workspace, &mut values, glue_count, "Rhino V1 face seam glue")?; Ok::<_, CodecError>(values) }?;
     for _ in 0..glue_count {
         seam_glue.push(usize::from(
             reader.u16().map_err(|error| malformed(&error))?,
@@ -2672,7 +2606,7 @@ fn legacy_face(
         ));
     }
     let mut loops =
-        v1_temporary_values::<LegacyLoop>(ctx, workspace, boundary_count, "Rhino V1 face loops")?;
+        { let mut values = Vec::new(); ctx.reserve_scoped_vec::<LegacyLoop>(workspace, &mut values, boundary_count, "Rhino V1 face loops")?; Ok::<_, CodecError>(values) }?;
     for _ in 0..boundary_count {
         let loop_chunk = nested_chunk(data, &mut reader, TCODE_LEGACY_BND)?;
         loops.push(legacy_loop(ctx, workspace, data, loop_chunk.body(), scale)?);
@@ -2695,7 +2629,7 @@ fn legacy_brep(
     if chunk.typecode == TCODE_LEGACY_FAC {
         let face = legacy_face(ctx, workspace, data, chunk.body().clone(), scale)?;
         let mut faces =
-            v1_temporary_values::<LegacyFace>(ctx, workspace, 1, "Rhino V1 Brep faces")?;
+            { let mut values = Vec::new(); ctx.reserve_scoped_vec::<LegacyFace>(workspace, &mut values, 1, "Rhino V1 Brep faces")?; Ok::<_, CodecError>(values) }?;
         faces.push(face);
         return Ok(LegacyBrep {
             shell_glue: Vec::new(),
@@ -2720,7 +2654,7 @@ fn legacy_brep(
         ));
     }
     let mut shell_glue =
-        v1_temporary_values::<usize>(ctx, workspace, glue_count, "Rhino V1 shell glue")?;
+        { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(workspace, &mut values, glue_count, "Rhino V1 shell glue")?; Ok::<_, CodecError>(values) }?;
     for _ in 0..glue_count {
         shell_glue.push(usize::from(
             reader.u16().map_err(|error| malformed(&error))?,
@@ -2732,7 +2666,7 @@ fn legacy_brep(
         ));
     }
     let mut faces =
-        v1_temporary_values::<LegacyFace>(ctx, workspace, face_count, "Rhino V1 Brep faces")?;
+        { let mut values = Vec::new(); ctx.reserve_scoped_vec::<LegacyFace>(workspace, &mut values, face_count, "Rhino V1 Brep faces")?; Ok::<_, CodecError>(values) }?;
     for _ in 0..face_count {
         let face = nested_chunk(data, &mut reader, TCODE_LEGACY_FAC)?;
         faces.push(legacy_face(ctx, workspace, data, face.body(), scale)?);

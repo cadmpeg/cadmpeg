@@ -16,14 +16,6 @@ use crate::loss::RhinoLossCode;
 use crate::settings::UnitBinding;
 use crate::wire::Uuid;
 
-fn reserve_map<K: Eq + std::hash::Hash, V>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    map: &mut HashMap<K, V>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.reserve_map(map, 1, operation)
-}
-
 #[derive(Debug, Serialize)]
 struct DefinitionRecord<'a> {
     id: String,
@@ -218,7 +210,7 @@ pub(crate) fn install(
     for (source_order, object) in scan.objects.iter().enumerate() {
         if let Some(identity) = object.identity() {
             if !object_records.contains_key(&identity.object_id) {
-                reserve_map(ctx, &mut object_records, "Rhino product object keys")?;
+                ctx.reserve_map(&mut object_records, 1, "Rhino product object keys")?;
             }
             let rows = object_records.entry(identity.object_id).or_default();
             ctx.reserve_vec(rows, 1, "Rhino product object positions")?;
@@ -304,7 +296,7 @@ pub(crate) fn install(
         definition_ids.insert(definition.id());
         for member in &definition.members {
             if !member_definitions.contains_key(member) {
-                reserve_map(ctx, &mut member_definitions, "Rhino product member keys")?;
+                ctx.reserve_map(&mut member_definitions, 1, "Rhino product member keys")?;
             }
             let parents = member_definitions.entry(*member).or_default();
             ctx.reserve_vec(parents, 1, "Rhino product member parents")?;

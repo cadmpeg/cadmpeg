@@ -53,9 +53,7 @@ pub(crate) fn admitted_json(
     let mut count = ByteCount(0);
     serde_json::to_writer(&mut count, value)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
-    ctx.charge_retained(u64_from_index(count.0), operation)?;
-    let mut bytes = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bytes, count.0, operation)?;
+    let mut bytes = ctx.retained_vec(count.0, operation)?;
     serde_json::to_writer(&mut bytes, value)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
     String::from_utf8(bytes).map_err(|error| CodecError::malformed(error.to_string()))
@@ -84,9 +82,7 @@ pub(crate) fn admitted_canonical_json(
     let mut count = ByteCount(0);
     serde_json::to_writer(&mut count, value)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
-    let _temporary = ctx.reserve_scoped(u64_from_index(count.0), operation)?;
-    let mut raw = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut raw, count.0, operation)?;
+    let (mut raw, _temporary) = ctx.temporary_vec(count.0, operation)?;
     serde_json::to_writer(&mut raw, value)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
     let _tree = ctx.reserve_scoped(u64_from_index(count.0), operation)?;
