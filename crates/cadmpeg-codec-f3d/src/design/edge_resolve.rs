@@ -2200,17 +2200,14 @@ fn primary_terminal_reference_shared_edge(operand: &DesignEdgeOperand) -> Option
         return None;
     }
 
-    let mut candidates = first
-        .iter()
-        .copied()
-        .filter(|candidate| second.contains(candidate))
-        .collect::<Vec<_>>();
-    candidates.sort_unstable();
-    candidates.dedup();
-    match candidates.as_slice() {
-        [candidate] if operand.terminal_boundary_edge_slots.contains(candidate) => Some(*candidate),
-        _ => None,
+    let mut candidate = None;
+    for edge in first.iter().copied().filter(|edge| second.contains(edge)) {
+        if candidate.is_some_and(|selected| selected != edge) {
+            return None;
+        }
+        candidate = Some(edge);
     }
+    candidate.filter(|edge| operand.terminal_boundary_edge_slots.contains(edge))
 }
 
 pub(super) fn edge_operand_reference_edge_sets(
