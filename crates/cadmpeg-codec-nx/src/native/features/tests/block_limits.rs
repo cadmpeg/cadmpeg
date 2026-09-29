@@ -156,6 +156,59 @@ block_field_limit_tests!(
     BlockFieldRoute::Name
 );
 
+fn block_named_record_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let bytes = b"\x03\x08Point1\0\x50\x59\x66\x64\x00\x30\x43\x0c\xcc\xcc\xcc\xcd\x72";
+    let (container, construction) = block_payload_input(bytes);
+    let (payloads, names, scalars) = crate::test_support::with_decode_context(|ctx| {
+        let payloads = crate::native::features::feature_block_construction_payloads(
+            ctx, &container, std::slice::from_ref(&construction))?;
+        let names = crate::native::features::feature_block_payload_names(ctx, &container, &payloads)?;
+        let scalars = crate::native::features::feature_block_payload_scalars(ctx, &container, &payloads)?;
+        Ok::<_, cadmpeg_core::CodecError>((payloads, names, scalars))
+    }).expect("block named record inputs");
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::native::features::feature_block_payload_named_records(ctx, &payloads, &names, &scalars)
+    };
+    assert_eq!(crate::test_support::with_decode_context(|ctx| decode(ctx))
+        .expect("admitted block named record").len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    decode(&ctx).expect_err("block named record resource limit")
+}
+
+#[test]
+fn block_named_record_refuses_collection_limit() {
+    let error = block_named_record_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn block_named_record_refuses_retained_limit() {
+    let error = block_named_record_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn block_named_record_refuses_scoped_limit() {
+    let error = block_named_record_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn block_named_record_refuses_work_limit() {
+    let error = block_named_record_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 #[test]
 fn block_payload_refuses_collection_limit() {
     let error = block_payload_refusal(|policy| policy.limits.max_collection_items = 0);

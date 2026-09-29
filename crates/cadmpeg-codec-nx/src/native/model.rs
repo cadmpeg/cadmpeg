@@ -1239,10 +1239,11 @@ impl NativeModel {
         let feature_block_payload_names =
             feature_block_payload_names(ctx, container, &feature_block_construction_payloads)?;
         let feature_block_payload_named_records = feature_block_payload_named_records(
+            ctx,
             &feature_block_construction_payloads,
             &feature_block_payload_names,
             &feature_block_payload_scalars,
-        );
+        )?;
         let feature_block_payload_points = feature_block_payload_points(
             &feature_block_payload_named_records,
             &feature_block_payload_names,
