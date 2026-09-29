@@ -807,25 +807,10 @@ fn variable_blend_value(
             if count > 100_000 {
                 return None;
             }
-            if let Err(error) = ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(count),
-                "decode variable blend interpolation points",
-            ) {
-                return Some(Err(error));
-            }
-            let mut points = Vec::new();
-            if points.try_reserve(count).is_err() {
-                return Some(Err(cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec(
-                            "reserve variable blend interpolation points",
-                        ),
-                        cadmpeg_core::decode::u64_from_index(count),
-                        cadmpeg_core::decode::u64_from_index(count),
-                        "reserve variable blend interpolation points",
-                    ),
-                )));
-            }
+            let mut points = match ctx.collection_vec(count, "decode variable blend interpolation points") {
+                Ok(points) => points,
+                Err(error) => return Some(Err(error)),
+            };
             for _ in 0..count {
                 let parameter = cur.take_f64()?;
                 let radius = cur.take_f64()? * LEN_TO_MM;

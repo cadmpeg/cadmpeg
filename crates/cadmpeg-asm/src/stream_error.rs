@@ -77,33 +77,7 @@ fn unsupported_message(
         StreamFormat::Text => "SAT parse",
         StreamFormat::Binary => "SAB framing",
     };
-    let offset = error.offset.to_string();
-    let length = prefix
-        .len()
-        .checked_add(" failed at byte ".len())
-        .and_then(|length| length.checked_add(offset.len()))
-        .and_then(|length| length.checked_add(": ".len()))
-        .and_then(|length| length.checked_add(error.reason.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("ASM stream error text", u64::MAX, u64::MAX))?;
-    let requested = cadmpeg_core::decode::u64_from_index(length);
-    ctx.charge_retained(requested, "ASM stream error text")?;
-    let mut message = String::new();
-    message.try_reserve(length).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("ASM stream error text"),
-                0,
-                requested,
-                "ASM stream error text",
-            ),
-        )
-    })?;
-    message.push_str(prefix);
-    message.push_str(" failed at byte ");
-    message.push_str(&offset);
-    message.push_str(": ");
-    message.push_str(&error.reason);
-    Ok(message)
+    ctx.format_retained(format_args!("{prefix} failed at byte {}: {}", error.offset, error.reason), "ASM stream error text")
 }
 
 impl From<StreamError> for StreamFailure {
