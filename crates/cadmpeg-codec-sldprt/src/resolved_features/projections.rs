@@ -2576,15 +2576,29 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     else {
                         continue;
                     };
-                    let cylinder_tokens = lane.classes.iter()
-                        .filter(|class| class.name == "moCylinderRef_w")
-                        .filter_map(|class| {
-                            let body = usize::try_from(class.offset).ok()?
-                                .checked_add(6 + class.name.len())?;
-                            let token = View::u16_le_at(&lane.native_payload, body)?;
-                            is_class_token(token).then_some(token)
-                        })
-                        .collect::<HashSet<_>>();
+                    const TOKEN_OPERATION: &str = "collect SLDPRT cosmetic thread cylinder tokens";
+                    let mut cylinder_tokens = HashSet::new();
+                    for class in &lane.classes {
+                        ctx.charge_work(1, TOKEN_OPERATION)?;
+                        if class.name != "moCylinderRef_w" {
+                            continue;
+                        }
+                        let token = usize::try_from(class.offset).ok()
+                            .and_then(|offset| class.name.len().checked_add(6)
+                                .and_then(|width| offset.checked_add(width)))
+                            .and_then(|body| View::u16_le_at(&lane.native_payload, body))
+                            .filter(|token| is_class_token(*token));
+                        let Some(token) = token else {
+                            continue;
+                        };
+                        if !cylinder_tokens.contains(&token) {
+                            ctx.charge_collection_items(1, TOKEN_OPERATION)?;
+                            cylinder_tokens.try_reserve(1).map_err(|_| {
+                                ctx.refuse_codec_limit(TOKEN_OPERATION, u64::MAX - 1, u64::MAX)
+                            })?;
+                        }
+                        cylinder_tokens.insert(token);
+                    }
                     let lane_key = lane.id.rsplit_once('#')
                         .map_or(lane.id.as_str(), |(_, key)| key);
                     for (marker, components) in cosmetic_thread_cylinder_marker_reference(
