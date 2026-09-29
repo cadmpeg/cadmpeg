@@ -2663,12 +2663,13 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.features,
         )?;
         crate::design::feature_project::bind_sketch_feature_geometry(
+            Some(self.ctx),
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.design_sketch_placements,
             &self.ir.model.sketches,
             &self.ir.model.spatial_sketches,
-        );
+        )?;
         self.ir.model.spatial_sketch_constraints =
             crate::design::sketch_project::project_spatial_sketch_constraints(
                 Some(self.ctx),
