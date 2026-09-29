@@ -807,3 +807,26 @@ fn mesh_coordinate_above_f32_max_refuses_round_down() {
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
+
+#[test]
+fn mesh_coordinate_below_negative_f32_max_refuses_round_up() {
+    let mesh = Tessellation::new(
+        cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#wide-coordinates")
+            .expect("valid identity"),
+        cadmpeg_ir::tessellation::TessellationMesh::List {
+            vertices: vec![
+                Point3::new((-f64::from(f32::MAX)).next_down(), 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(0.0, 0.0, 1.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+        },
+        Vec::new(),
+    )
+    .expect("finite coordinates are admitted by the IR");
+
+    let error = super::super::check_mesh(&mesh)
+        .expect_err("Rhino mesh coordinates use finite 32-bit floats");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+}
+
