@@ -2897,22 +2897,14 @@ fn stationary_rational_distance_candidates<const DIMENSION: usize>(
                     operation: "nx stationary parameters",
                 })?;
         let mut parameters = Vec::new();
-        let _reservation = geometry_budget.reserve_vec(
-            &mut parameters,
-            parameter_count,
-            "nx stationary parameters",
-        )?;
+        let _reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut parameters, parameter_count, "nx stationary parameters")?;
         parameters.extend([span.domain[0], span.domain[1]]);
         match roots {
             ScalarBezierRoots::Constant => parameters
                 .extend(seed.filter(|seed| (span.domain[0]..=span.domain[1]).contains(seed))),
             ScalarBezierRoots::Isolated(roots) => parameters.extend(roots),
         }
-        let _candidate_reservation = geometry_budget.reserve_vec(
-            &mut candidates,
-            parameter_count,
-            "nx stationary candidates",
-        )?;
+        let _candidate_reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut candidates, parameter_count, "nx stationary candidates")?;
         for parameter in parameters {
             let distance = homogeneous_residual_distance(
                 &span.controls,
@@ -2950,11 +2942,7 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
         return Ok(None);
     };
     let mut normalized_controls = Vec::new();
-    let _normalized_reservation = geometry_budget.reserve_vec(
-        &mut normalized_controls,
-        controls.len(),
-        "nx rational derivative normalized controls",
-    )?;
+    let _normalized_reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut normalized_controls, controls.len(), "nx rational derivative normalized controls")?;
     for control in controls {
         let mut normalized = *control;
         for value in &mut normalized {
@@ -2966,11 +2954,7 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
         normalized_controls.push(normalized);
     }
     let mut weight = Vec::new();
-    let _weight_reservation = geometry_budget.reserve_vec(
-        &mut weight,
-        controls.len(),
-        "nx rational derivative weights",
-    )?;
+    let _weight_reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut weight, controls.len(), "nx rational derivative weights")?;
     for control in &normalized_controls {
         weight.push(control[DIMENSION - 1]);
     }
@@ -2979,11 +2963,7 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
     let mut residual_derivative = None;
     for axis in 0..DIMENSION - 1 {
         let mut residual = Vec::new();
-        let _residual_reservation = geometry_budget.reserve_vec(
-            &mut residual,
-            controls.len(),
-            "nx rational derivative residuals",
-        )?;
+        let _residual_reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut residual, controls.len(), "nx rational derivative residuals")?;
         for control in &normalized_controls {
             residual.push(control[axis]);
         }
@@ -3032,11 +3012,7 @@ fn difference_controls(
     } else {
         values.len() - 1
     };
-    let _reservation = geometry_budget.reserve_vec(
-        &mut differences,
-        count,
-        "nx rational derivative differences",
-    )?;
+    let _reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut differences, count, "nx rational derivative differences")?;
     for pair in values.windows(2) {
         differences.push(pair[1] - pair[0]);
     }
@@ -3060,7 +3036,7 @@ fn bernstein_product(
         return Ok(None);
     };
     let mut product = Vec::new();
-    let _reservation = geometry_budget.reserve_vec(&mut product, count, "nx Bernstein product")?;
+    let _reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut product, count, "nx Bernstein product")?;
     for index in 0..=degree {
         let value = (|| {
             let denominator = binomial_coefficient(degree, index)?;
@@ -3151,7 +3127,7 @@ pub(super) fn scalar_bezier_roots_with_budget(
         .is_some_and(|value| value.abs() <= tolerance)
     {
         let _reservation =
-            geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
+            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut parameters, 1, "nx Bezier root parameters")?;
         parameters.push(span.domain[0]);
     }
     if span
@@ -3160,13 +3136,13 @@ pub(super) fn scalar_bezier_roots_with_budget(
         .is_some_and(|value| value.abs() <= tolerance)
     {
         let _reservation =
-            geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
+            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut parameters, 1, "nx Bezier root parameters")?;
         parameters.push(span.domain[1]);
     }
     let domain = span.domain;
     let mut intervals = Vec::new();
     let _interval_reservation =
-        geometry_budget.reserve_vec(&mut intervals, 1, "nx Bezier root intervals")?;
+        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut intervals, 1, "nx Bezier root intervals")?;
     intervals.push(span);
     while let Some(span) = intervals.pop() {
         if !geometry_budget.charge() {
@@ -3194,7 +3170,7 @@ pub(super) fn scalar_bezier_roots_with_budget(
             };
             if value <= tolerance {
                 let _reservation =
-                    geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
+                    cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut parameters, 1, "nx Bezier root parameters")?;
                 parameters.push(parameter);
             }
             continue;
@@ -3202,11 +3178,11 @@ pub(super) fn scalar_bezier_roots_with_budget(
         let (first, second) = subdivide_scalar_bezier_span(span, middle, geometry_budget)?;
         if first.controls.last().is_some_and(|value| *value == 0.0) {
             let _reservation =
-                geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
+                cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut parameters, 1, "nx Bezier root parameters")?;
             parameters.push(middle);
         }
         let _reservation =
-            geometry_budget.reserve_vec(&mut intervals, 2, "nx Bezier root intervals")?;
+            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut intervals, 2, "nx Bezier root intervals")?;
         intervals.push(second);
         intervals.push(first);
     }
@@ -3247,10 +3223,10 @@ fn subdivide_scalar_bezier_span(
     let mut levels = span.controls;
     let mut first = Vec::new();
     let _first_reservation =
-        geometry_budget.reserve_vec(&mut first, count, "nx first Bezier subdivision")?;
+        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut first, count, "nx first Bezier subdivision")?;
     let mut second = Vec::new();
     let _second_reservation =
-        geometry_budget.reserve_vec(&mut second, count, "nx second Bezier subdivision")?;
+        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut second, count, "nx second Bezier subdivision")?;
     for level in 0..count {
         first.push(levels[0]);
         second.push(levels[count - level - 1]);
@@ -3281,7 +3257,7 @@ fn scalar_bezier_value(
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
     let mut values = Vec::new();
     let _reservation =
-        geometry_budget.reserve_vec(&mut values, controls.len(), "nx scalar Bezier evaluation")?;
+        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut values, controls.len(), "nx scalar Bezier evaluation")?;
     values.extend_from_slice(controls);
     for level in 1..values.len() {
         for index in 0..values.len() - level {
@@ -3300,11 +3276,7 @@ pub(super) fn homogeneous_residual_distance<const DIMENSION: usize>(
     let fraction = cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
     let mut values = Vec::new();
-    let _reservation = geometry_budget.reserve_vec(
-        &mut values,
-        controls.len(),
-        "nx rational Bezier evaluation",
-    )?;
+    let _reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut values, controls.len(), "nx rational Bezier evaluation")?;
     values.extend_from_slice(controls);
     for level in 1..values.len() {
         for index in 0..values.len() - level {
@@ -3326,11 +3298,7 @@ fn closest_parameter_candidates(
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
     let mut candidates_copy = Vec::new();
     for candidate in candidates {
-        let _reservation = geometry_budget.reserve_vec(
-            &mut candidates_copy,
-            1,
-            "nx closest parameter candidates",
-        )?;
+        let _reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut candidates_copy, 1, "nx closest parameter candidates")?;
         candidates_copy.push(candidate);
     }
     let Some(minimum_distance) = candidates_copy
@@ -3349,7 +3317,7 @@ fn closest_parameter_candidates(
             .max(f64::MIN_POSITIVE);
         if (candidate.1 - minimum_distance).abs() <= 128.0 * f64::EPSILON * scale {
             let _reservation =
-                geometry_budget.reserve_vec(&mut nearest, 1, "nx closest parameter minima")?;
+                cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut nearest, 1, "nx closest parameter minima")?;
             nearest.push(candidate.0);
         }
     }
@@ -4451,7 +4419,7 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
             return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         }
         let _reservation =
-            geometry_budget.reserve_vec(&mut candidates, 1, "nx analytic inverse candidates")?;
+            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut candidates, 1, "nx analytic inverse candidates")?;
         candidates.push((
             parameter,
             (major_radius * parameter.cos() - x).hypot(minor_radius * parameter.sin() - y),
@@ -4621,7 +4589,7 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
     let mut weights = Vec::new();
     let _weight_reservation = if curve.pole_rows().weight_at(0).is_some() {
         let reservation =
-            geometry_budget.reserve_vec(&mut weights, count, "nx spine NURBS weights")?;
+            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut weights, count, "nx spine NURBS weights")?;
         for index in 0..count {
             let Some(weight) = curve.pole_rows().weight_at(index) else {
                 return Ok(None);
@@ -4643,7 +4611,7 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
     let mut residuals = Vec::new();
     let _residual_reservation =
-        geometry_budget.reserve_vec(&mut residuals, count, "nx spine NURBS residuals")?;
+        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut residuals, count, "nx spine NURBS residuals")?;
     for control in curve.control_points() {
         residuals.push(Point3::new(
             control.x - point.x,

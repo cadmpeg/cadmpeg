@@ -565,7 +565,7 @@ fn term_use_numeric_tails(
         let next_event =
             event_starts.get(event_starts.partition_point(|start| *start <= record.end));
         if next_event.is_none_or(|start| *start >= tail.end()) {
-            census::push_event(ctx, &mut tails, tail, "NX deltas term use numeric tails")?;
+            ctx.push_vec(&mut tails, tail, "NX deltas term use numeric tails")?;
         }
     }
     Ok(tails)
@@ -593,20 +593,15 @@ fn tagged_reference_lanes(
                 break;
             };
             at = next;
-            census::push_event(ctx, &mut references, (kind, xmt), "NX tagged references")?;
+            ctx.push_vec(&mut references, (kind, xmt), "NX tagged references")?;
         }
         if complete && at == end {
             if let Ok(references) = TaggedReferences::try_from(references) {
-                census::push_event(
-                    ctx,
-                    &mut lanes,
-                    TaggedReferenceLane {
+                ctx.push_vec(&mut lanes, TaggedReferenceLane {
                         references,
                         offset,
                         end,
-                    },
-                    "NX tagged reference lanes",
-                )?;
+                    }, "NX tagged reference lanes")?;
             }
         }
     }
@@ -651,7 +646,7 @@ fn reference_type_maps(
             }
         };
         if let Some(map) = map {
-            census::push_event(ctx, &mut maps, map, "NX reference type maps")?;
+            ctx.push_vec(&mut maps, map, "NX reference type maps")?;
         }
     }
     Ok(maps)
@@ -761,12 +756,7 @@ fn reference_type_map(
         if expected_end.is_some_and(|end| at > end) {
             return Ok(None);
         }
-        census::push_event(
-            ctx,
-            &mut entries,
-            (reference, kind),
-            "NX reference type map entries",
-        )?;
+        ctx.push_vec(&mut entries, (reference, kind), "NX reference type map entries")?;
     }
 }
 
@@ -780,7 +770,7 @@ fn reference_state_packets(
         let mut at = offset;
         while let Some(packet) = reference_state_packet(ctx, stream, at, gap_end)? {
             at = packet.end;
-            census::push_event(ctx, &mut packets, packet, "NX reference state packets")?;
+            ctx.push_vec(&mut packets, packet, "NX reference state packets")?;
         }
     }
     Ok(packets)
@@ -874,12 +864,7 @@ fn schema_reference_preambles(
         let mut at = offset;
         while let Some(preamble) = schema_reference_preamble(ctx, stream, at, gap_end)? {
             at = preamble.end;
-            census::push_event(
-                ctx,
-                &mut preambles,
-                preamble,
-                "NX schema reference preambles",
-            )?;
+            ctx.push_vec(&mut preambles, preamble, "NX schema reference preambles")?;
         }
     }
     Ok(preambles)
@@ -972,12 +957,7 @@ fn schema_reference_preamble(
             .ok()
             .map(|state| SchemaReferencePreamble { state, offset, end }));
         }
-        census::push_event(
-            ctx,
-            &mut entries,
-            (entry_kind, reference),
-            "NX schema reference entries",
-        )?;
+        ctx.push_vec(&mut entries, (entry_kind, reference), "NX schema reference entries")?;
     }
 }
 
@@ -989,7 +969,7 @@ fn reference_marker_packets(
     let mut packets = Vec::new();
     for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
         if let Some(packet) = reference_marker_packet(stream, offset, end) {
-            census::push_event(ctx, &mut packets, packet, "NX reference marker packets")?;
+            ctx.push_vec(&mut packets, packet, "NX reference marker packets")?;
         }
     }
     Ok(packets)
@@ -1055,12 +1035,7 @@ fn inline_schema_declarations(
                 break;
             };
             at = declaration.end;
-            census::push_event(
-                ctx,
-                &mut declarations,
-                declaration,
-                "NX inline schema declarations",
-            )?;
+            ctx.push_vec(&mut declarations, declaration, "NX inline schema declarations")?;
         }
     }
     Ok(declarations)
@@ -1443,7 +1418,7 @@ fn inline_body_states(
             continue;
         }
         if let Some(state) = inline_body_state(ctx, stream, offset, gap_end)? {
-            census::push_event(ctx, &mut states, state, "NX inline BODY states")?;
+            ctx.push_vec(&mut states, state, "NX inline BODY states")?;
         }
     }
     Ok(states)
@@ -1597,7 +1572,7 @@ fn type_150_state_packets(
     let mut packets = Vec::new();
     for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
         if let Some(packet) = type_150_state_packet(stream, offset, end) {
-            census::push_event(ctx, &mut packets, packet, "NX type 150 state packets")?;
+            ctx.push_vec(&mut packets, packet, "NX type 150 state packets")?;
         }
     }
     Ok(packets)

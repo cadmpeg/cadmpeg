@@ -162,22 +162,6 @@ type GeometryDecode = (
     Vec<UnknownRecord>,
 );
 
-fn reserve_unknown_pair(
-    ctx: &DecodeContext<'_>,
-    unknowns: &mut Vec<UnknownRecord>,
-    stream_unknowns: &mut Vec<(usize, usize)>,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "nx geometry unknown streams")?;
-    unknowns
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("nx geometry unknown streams", 0, 1))?;
-    ctx.charge_collection_items(1, "nx geometry unknown indices")?;
-    stream_unknowns
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("nx geometry unknown indices", 0, 1))?;
-    Ok(())
-}
-
 fn push_unknown_link(
     ctx: &DecodeContext<'_>,
     unknown: &mut UnknownRecord,
@@ -340,7 +324,7 @@ pub(super) fn try_decode_geometry(
             .is_some_and(|(_, selected, _)| !selected.contains(&si))
         {
             let unknown_index = unknowns.len();
-            reserve_unknown_pair(ctx, &mut unknowns, &mut stream_unknowns)?;
+            { ctx.reserve_vec(&mut unknowns, 1, "nx geometry unknown streams")?; ctx.reserve_vec(&mut stream_unknowns, 1, "nx geometry unknown indices") }?;
             let unknown = unknown_stream_metadata(ctx, si, stream)?;
             super::annotations::note(
                 ctx,
@@ -1469,7 +1453,7 @@ pub(super) fn try_decode_geometry(
         )?;
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
-        reserve_unknown_pair(ctx, &mut unknowns, &mut stream_unknowns)?;
+        { ctx.reserve_vec(&mut unknowns, 1, "nx geometry unknown streams")?; ctx.reserve_vec(&mut stream_unknowns, 1, "nx geometry unknown indices") }?;
         let mut unknown = unknown_stream_metadata(ctx, si, stream)?;
         for surface in &ir.model.surfaces[first_surface..] {
             push_unknown_link(ctx, &mut unknown, surface.id.as_str())?;

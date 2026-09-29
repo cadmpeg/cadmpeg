@@ -3881,21 +3881,6 @@ pub(super) fn parasolid_entity_51_records(
     Ok(records)
 }
 
-/// Decode value records from their retained deltas or attribute owners.
-fn reserve_native_value_record<T>(
-    ctx: &DecodeContext<'_>,
-    records: &mut Vec<T>,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "NX Parasolid value records")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
-        "retain NX Parasolid value records",
-    )?;
-    records
-        .try_reserve_exact(1)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid value records", 0, 1))
-}
-
 pub(super) fn parasolid_entity_value_records(
     ctx: &DecodeContext<'_>,
     streams: &[Stream],
@@ -3970,7 +3955,7 @@ pub(super) fn parasolid_entity_value_records(
         );
         drop(offsets_guard);
         for record in values.integers {
-            reserve_native_value_record(ctx, &mut records.integers)?;
+            ctx.reserve_retained_vec(&mut records.integers, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
                 stream_ordinal,
@@ -3988,7 +3973,7 @@ pub(super) fn parasolid_entity_value_records(
             });
         }
         for record in values.doubles {
-            reserve_native_value_record(ctx, &mut records.doubles)?;
+            ctx.reserve_retained_vec(&mut records.doubles, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
                 stream_ordinal,
@@ -4006,7 +3991,7 @@ pub(super) fn parasolid_entity_value_records(
             });
         }
         for record in values.strings {
-            reserve_native_value_record(ctx, &mut records.strings)?;
+            ctx.reserve_retained_vec(&mut records.strings, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
                 stream_ordinal,
@@ -4041,7 +4026,7 @@ pub(super) fn parasolid_entity_value_records(
                                  byte_len,
                                  values|
          -> Result<(), CodecError> {
-            reserve_native_value_record(ctx, &mut records.vectors)?;
+            ctx.reserve_retained_vec(&mut records.vectors, 1, "NX Parasolid value records")?;
             let id =
                 parasolid_offset_record_id(ctx, stream_ordinal, family, u32::from(xmt), offset)?;
             records.vectors.push(ParasolidEntityVectorRecord {
@@ -4086,7 +4071,7 @@ pub(super) fn parasolid_entity_value_records(
             )?;
         }
         for record in values.axes {
-            reserve_native_value_record(ctx, &mut records.axes)?;
+            ctx.reserve_retained_vec(&mut records.axes, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
                 stream_ordinal,
@@ -4104,7 +4089,7 @@ pub(super) fn parasolid_entity_value_records(
             });
         }
         for record in values.tags {
-            reserve_native_value_record(ctx, &mut records.tags)?;
+            ctx.reserve_retained_vec(&mut records.tags, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
                 stream_ordinal,
@@ -4122,7 +4107,7 @@ pub(super) fn parasolid_entity_value_records(
             });
         }
         for record in values.unicode {
-            reserve_native_value_record(ctx, &mut records.unicode)?;
+            ctx.reserve_retained_vec(&mut records.unicode, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
                 stream_ordinal,

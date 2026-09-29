@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::DecodeContext;
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -67,37 +67,17 @@ impl DisplayJtGraph {
             u64::try_from(length)
                 .map_err(|_| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))
         };
-        let _documents = reserve_graph_index(
-            ctx,
-            count(wire.documents.len())?,
-            "index DisplayJT graph records",
-        )?;
-        let _segments = reserve_graph_index(
-            ctx,
-            count(wire.segments.len())?,
-            "index DisplayJT graph records",
-        )?;
-        let _elements = reserve_graph_index(
-            ctx,
-            count(wire.compressed_elements.len())?,
-            "index DisplayJT graph records",
-        )?;
-        let _shape_lods = reserve_graph_index(
-            ctx,
-            count(wire.shape_lod_elements.len())?,
-            "index DisplayJT graph records",
-        )?;
-        let _sequences = reserve_graph_index(
-            ctx,
-            count(wire.compressed_element_sequences.len())?,
-            "index DisplayJT graph records",
-        )?;
+        let _documents = ctx.reserve_scoped(count(wire.documents.len())?.checked_mul(128).ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))?, "index DisplayJT graph records")?;
+        let _segments = ctx.reserve_scoped(count(wire.segments.len())?.checked_mul(128).ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))?, "index DisplayJT graph records")?;
+        let _elements = ctx.reserve_scoped(count(wire.compressed_elements.len())?.checked_mul(128).ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))?, "index DisplayJT graph records")?;
+        let _shape_lods = ctx.reserve_scoped(count(wire.shape_lod_elements.len())?.checked_mul(128).ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))?, "index DisplayJT graph records")?;
+        let _sequences = ctx.reserve_scoped(count(wire.compressed_element_sequences.len())?.checked_mul(128).ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))?, "index DisplayJT graph records")?;
         let toc_count = wire.documents.iter().try_fold(0_u64, |sum, document| {
             count(document.toc_entries.len())?
                 .checked_add(sum)
                 .ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT TOC entries", 0, u64::MAX))
         })?;
-        let _toc = reserve_graph_index(ctx, toc_count, "index DisplayJT TOC entries")?;
+        let _toc = ctx.reserve_scoped(toc_count.checked_mul(128).ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT TOC entries", 0, u64::MAX))?, "index DisplayJT TOC entries")?;
         Self::from_wire(ctx, wire)
     }
 
@@ -363,17 +343,6 @@ fn admit_compressed_owner(
         return Err(invalid(ctx, id, "source_offset disagrees with segment"));
     }
     Ok(())
-}
-
-fn reserve_graph_index<'a>(
-    ctx: &'a DecodeContext<'_>,
-    count: u64,
-    operation: &'static str,
-) -> Result<ScopedReservation<'a>, NativeConvertError> {
-    let bytes = count
-        .checked_mul(128)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    Ok(ctx.reserve_scoped(bytes, operation)?)
 }
 
 #[derive(Default)]

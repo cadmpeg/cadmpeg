@@ -136,7 +136,7 @@ pub(super) fn linear_knots(
                 operation: "nx linear knot count",
             })?;
     let mut knots = Vec::new();
-    let _reservation = geometry_budget.reserve_vec(&mut knots, count, "nx linear knots")?;
+    let _reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut knots, count, "nx linear knots")?;
     knots.extend(parameters.first().copied());
     knots.extend_from_slice(parameters);
     knots.extend(parameters.last().copied());
