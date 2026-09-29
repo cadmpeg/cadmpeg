@@ -3425,23 +3425,7 @@ fn reserve_group_vec<T>(
     additional: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let bytes = additional
-        .checked_mul(std::mem::size_of::<T>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                operation,
-                0,
-                cadmpeg_core::decode::u64_from_index(additional),
-            )
-        })?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), operation)?;
-    values.try_reserve_exact(additional).map_err(|_| {
-        ctx.refuse_codec_limit(
-            operation,
-            0,
-            cadmpeg_core::decode::u64_from_index(additional),
-        )
-    })
+    ctx.reserve_retained_admitted_vec(values, additional, operation)
 }
 
 /// Decode a complete bounded `m_rollForwardStates` group table.

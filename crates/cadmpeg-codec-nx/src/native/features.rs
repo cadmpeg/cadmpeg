@@ -3800,23 +3800,7 @@ fn copy_payload_source_blocks<'a>(
     blocks: impl IntoIterator<Item = &'a str>,
     operation: &'static str,
 ) -> Result<(Vec<String>, cadmpeg_core::decode::ScopedReservation<'a>), CodecError> {
-    let mut ids = Vec::new();
-    let mut reservation = ctx.reserve_scoped(0, operation)?;
-    for block in blocks {
-        let bytes = std::mem::size_of::<String>()
-            .checked_add(block.len())
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-        ctx.charge_collection_items(1, operation)?;
-        ids.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-        let mut id = String::new();
-        id.try_reserve_exact(block.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-        id.push_str(block);
-        ids.push(id);
-    }
-    Ok((ids, reservation))
+    ctx.collect_scoped_texts(blocks, operation)
 }
 
 fn format_charged_text(
@@ -3824,22 +3808,7 @@ fn format_charged_text(
     args: std::fmt::Arguments<'_>,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    struct CountBytes(usize);
-    impl std::fmt::Write for CountBytes {
-        fn write_str(&mut self, text: &str) -> std::fmt::Result {
-            self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
-            Ok(())
-        }
-    }
-    let mut count = CountBytes(0);
-    std::fmt::write(&mut count, args).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(count.0), operation)?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count.0), operation)?;
-    let mut text = String::new();
-    text.try_reserve_exact(count.0)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    std::fmt::write(&mut text, args).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(text)
+    ctx.format_retained_with_work(args, operation)
 }
 
 fn format_feature_history_id(
@@ -8043,30 +8012,7 @@ fn copy_sketch_record_ids<T>(
     references: &[&T],
     id: impl Fn(&T) -> &str,
 ) -> Result<Vec<String>, CodecError> {
-    let bytes = references
-        .len()
-        .checked_mul(std::mem::size_of::<String>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX sketch payload record IDs", 0, 1))?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(references.len()),
-        "NX sketch payload record IDs",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX sketch payload record ID slots",
-    )?;
-    let mut ids = Vec::new();
-    ids.try_reserve_exact(references.len()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "allocate NX sketch payload record IDs",
-            0,
-            cadmpeg_core::decode::u64_from_index(references.len()),
-        )
-    })?;
-    for reference in references {
-        ids.push(ctx.copy_retained_text(id(reference), "NX sketch payload record ID")?);
-    }
-    Ok(ids)
+    ctx.collect_retained_texts(references.iter().map(|reference| id(reference)), "NX sketch payload record IDs")
 }
 
 pub(super) fn feature_sketch_payload_named_records(

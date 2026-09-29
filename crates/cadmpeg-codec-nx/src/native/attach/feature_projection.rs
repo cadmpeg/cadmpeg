@@ -300,33 +300,7 @@ pub(super) fn selection_scoped_string(
     reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     args: std::fmt::Arguments<'_>,
 ) -> Result<String, CodecError> {
-    struct Length(usize);
-    impl std::fmt::Write for Length {
-        fn write_str(&mut self, text: &str) -> std::fmt::Result {
-            self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
-            Ok(())
-        }
-    }
-    let mut length = Length(0);
-    std::fmt::write(&mut length, args)
-        .map_err(|_| ctx.refuse_codec_limit("NX body selection text", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(length.0),
-        "NX body selection text",
-    )?;
-    reservation.grow(cadmpeg_core::decode::u64_from_index(length.0))?;
-    let mut text = String::new();
-    text.try_reserve(length.0).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "NX body selection text",
-            0,
-            cadmpeg_core::decode::u64_from_index(length.0),
-        )
-    })?;
-    std::fmt::write(&mut text, args).map_err(|_| {
-        CodecError::InvalidInput("NX body selection text formatting failed".to_string())
-    })?;
-    Ok(text)
+    ctx.format_scoped_text_with_work(reservation, args, "NX body selection text")
 }
 
 pub(super) fn selection_indices_native(

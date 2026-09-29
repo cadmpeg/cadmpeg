@@ -6747,17 +6747,8 @@ fn push_sketch_entity(
     Ok(())
 }
 
-fn try_copy_sketch_string(ctx: &DecodeContext<'_>, source: &str) -> Result<String, CodecError> {
-    let mut owned = String::new();
-    owned.try_reserve(source.len()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "allocate NX sketch text",
-            0,
-            cadmpeg_core::decode::u64_from_index(source.len()),
-        )
-    })?;
-    owned.push_str(source);
-    Ok(owned)
+fn try_copy_sketch_string(_ctx: &DecodeContext<'_>, source: &str) -> Result<String, CodecError> {
+    DecodeContext::copy_admitted_text(source, "allocate NX sketch text")
 }
 
 fn emit_sketch(

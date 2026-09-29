@@ -2,7 +2,7 @@
 //! Shared work accounting for adaptive geometry certification.
 
 use cadmpeg_core::decode::{
-    DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, ScopedReservation, WorkBudget,
+    DecodeContext, ResourceLimit, ScopedReservation, WorkBudget,
 };
 use std::cell::RefCell;
 use std::ops::Deref;
@@ -73,33 +73,8 @@ impl<'a> GeometryWorkBudget<'a> {
         count: usize,
         operation: &'static str,
     ) -> Result<Option<ScopedReservation<'_>>, ResourceLimit> {
-        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-        let invalid_size = || ResourceLimit {
-            dimension: ResourceDimension::Codec(operation),
-            reason: ResourceFailure::BudgetExceeded,
-            limit: u64::MAX,
-            used: 0,
-            additional: count_u64,
-            operation,
-        };
-        let item_bytes = u64::try_from(std::mem::size_of::<T>()).map_err(|_| invalid_size())?;
-        let bytes = count_u64.checked_mul(item_bytes).ok_or_else(invalid_size)?;
-        let reservation = if let Some(charges) = self.charges {
-            charges.charge_collection_items_limit(count_u64, operation)?;
-            Some(charges.reserve_scoped_limit(bytes, operation)?)
-        } else {
-            None
-        };
-        output.try_reserve_exact(count).map_err(|_| ResourceLimit {
-            dimension: ResourceDimension::Codec(operation),
-            reason: ResourceFailure::AllocationFailed,
-            limit: count_u64,
-            used: count_u64,
-            additional: 0,
-            operation,
-        })?;
-        Ok(reservation)
-    }
+    DecodeContext::reserve_temporary_vec_optional_limit(self.charges, output, count, operation)
+}
 
     pub(super) fn charge_collection_items(
         &self,
