@@ -823,31 +823,43 @@ fn mesh_texture_table_indexes_and_order_refuse_collection_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
-        let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap().0;
+        let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap()
+            .0;
         let error = crate::records::mesh::DesignMeshTextureTable::new_charged(
             &ctx,
             table.record.clone(),
             table.resources.clone(),
         )
         .unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-            if refusal.operation == operation));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            if refusal.operation == operation)
+        );
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap().0;
+    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap()
+        .0;
     let error = table.resources_in_flags_order(&ctx).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-        if refusal.operation == "order F3D mesh texture resources"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+        if refusal.operation == "order F3D mesh texture resources")
+    );
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
-    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap().0;
+    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap()
+        .0;
     let error = table.resources_in_flags_order(&ctx).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-        if refusal.operation == "order F3D mesh texture resources"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+        if refusal.operation == "order F3D mesh texture resources")
+    );
 }
 
 #[test]

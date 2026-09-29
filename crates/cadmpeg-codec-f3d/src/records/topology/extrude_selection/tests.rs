@@ -17,11 +17,15 @@ fn extrude_selection_member_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap().0;
+    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap()
+        .0;
     let error = super::DesignExtrudeSelectionGroup::from_wire_charged(&ctx, selection_group_wire())
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D extrude selection members"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D extrude selection members")
+    );
 }
 
 #[test]
@@ -31,11 +35,15 @@ fn extrude_selection_member_run_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 3;
-    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap().0;
+    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap()
+        .0;
     let error = super::DesignExtrudeSelectionGroup::from_wire_charged(&ctx, selection_group_wire())
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "admit F3D extrude selection members"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "admit F3D extrude selection members")
+    );
 }
 
 fn selection_member() -> super::DesignExtrudeSelectionMember {

@@ -41,10 +41,13 @@ fn body_link_error(
         cadmpeg_ir::attributes::AttributeTarget::Face(ir.model.faces[0].id.clone())
     };
     let mut native = crate::native::F3dNative::default();
-    native.persistent_design_links.push(body_link(target, ordinal));
+    native
+        .persistent_design_links
+        .push(body_link(target, ordinal));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = u64::try_from(ir.model.bodies.len()).unwrap() + extra_items;
+    policy.limits.max_collection_items =
+        u64::try_from(ir.model.bodies.len()).unwrap() + extra_items;
     policy.limits.max_retained_bytes = retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
@@ -66,10 +69,13 @@ fn subentity_tag_error(
         cadmpeg_ir::attributes::AttributeTarget::Body(ir.model.bodies[0].id.clone())
     };
     let mut native = crate::native::F3dNative::default();
-    native.persistent_subentity_tags.push(subentity_tag(target, ordinal));
+    native
+        .persistent_subentity_tags
+        .push(subentity_tag(target, ordinal));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = u64::try_from(ir.model.faces.len() + ir.model.edges.len()).unwrap() + extra_items;
+    policy.limits.max_collection_items =
+        u64::try_from(ir.model.faces.len() + ir.model.edges.len()).unwrap() + extra_items;
     policy.limits.max_retained_bytes = retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
@@ -89,50 +95,64 @@ fn persistent_body_target_index_refuses_collection_limit() {
     let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
     ctx.decode = Some(&decode);
     let error = super::super::validate_body_links(&ctx, &mut Vec::new()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D persistent body targets"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D persistent body targets")
+    );
 }
 
 #[test]
 fn persistent_body_group_index_refuses_collection_limit() {
     let error = body_link_error(true, 0, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D persistent body link groups"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D persistent body link groups")
+    );
 }
 
 #[test]
 fn persistent_body_group_member_refuses_collection_limit() {
     let error = body_link_error(true, 0, 1, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D persistent body link members"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D persistent body link members")
+    );
 }
 
 #[test]
 fn persistent_body_invalid_finding_refuses_collection_limit() {
     let error = body_link_error(false, 0, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings")
+    );
 }
 
 #[test]
 fn persistent_body_invalid_entity_refuses_retained_limit() {
     let error = body_link_error(false, 0, 0, 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity")
+    );
 }
 
 #[test]
 fn persistent_body_order_finding_refuses_collection_limit() {
     let error = body_link_error(true, 1, 2, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings")
+    );
 }
 
 #[test]
 fn persistent_face_target_index_refuses_collection_limit() {
     let error = subentity_target_index_error(0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D persistent face targets"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D persistent face targets")
+    );
 }
 
 fn subentity_target_index_error(max_items: u64) -> cadmpeg_core::CodecError {
@@ -152,41 +172,53 @@ fn subentity_target_index_error(max_items: u64) -> cadmpeg_core::CodecError {
 fn persistent_edge_target_index_refuses_collection_limit() {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let error = subentity_target_index_error(u64::try_from(ir.model.faces.len()).unwrap());
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D persistent edge targets"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D persistent edge targets")
+    );
 }
 
 #[test]
 fn persistent_subentity_group_index_refuses_collection_limit() {
     let error = subentity_tag_error(true, 0, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D persistent subentity tag groups"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D persistent subentity tag groups")
+    );
 }
 
 #[test]
 fn persistent_subentity_group_member_refuses_collection_limit() {
     let error = subentity_tag_error(true, 0, 1, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D persistent subentity tag members"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D persistent subentity tag members")
+    );
 }
 
 #[test]
 fn persistent_subentity_invalid_finding_refuses_collection_limit() {
     let error = subentity_tag_error(false, 0, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings")
+    );
 }
 
 #[test]
 fn persistent_subentity_invalid_entity_refuses_retained_limit() {
     let error = subentity_tag_error(false, 0, 0, 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity")
+    );
 }
 
 #[test]
 fn persistent_subentity_order_finding_refuses_collection_limit() {
     let error = subentity_tag_error(true, 1, 2, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings")
+    );
 }

@@ -26,7 +26,8 @@ fn push_note(
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "collect F3Z report notes";
     ctx.charge_collection_items(1, OPERATION)?;
-    notes.try_reserve(1)
+    notes
+        .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
     notes.push(crate::container::format_retained(
         ctx,
@@ -44,7 +45,8 @@ fn push_loss(
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "collect F3Z report losses";
     ctx.charge_collection_items(1, OPERATION)?;
-    losses.try_reserve(1)
+    losses
+        .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
     losses.push(code.note(crate::container::format_retained(
         ctx,
@@ -63,7 +65,8 @@ fn append_losses(
     let count = u64::try_from(incoming.len())
         .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
     ctx.charge_collection_items(count, OPERATION)?;
-    target.try_reserve(incoming.len())
+    target
+        .try_reserve(incoming.len())
         .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, count))?;
     target.append(&mut incoming);
     Ok(())
@@ -87,9 +90,11 @@ pub(crate) fn inspect<'a>(
         .filter(|entry| crate::container::is_f3d_name(&entry.name))
         .count();
     let mut notes = Vec::new();
-    push_note(ctx, &mut notes, format_args!(
-        "f3z archive: {member_count} document member(s); model root {model_root}"
-    ))?;
+    push_note(
+        ctx,
+        &mut notes,
+        format_args!("f3z archive: {member_count} document member(s); model root {model_root}"),
+    )?;
     Ok(ContainerSummary::classified(
         classified.layers,
         cadmpeg_ir::ContainerKind::Zip,
@@ -125,9 +130,11 @@ pub(crate) fn decode<'a>(
         .iter()
         .filter(|entry| crate::container::is_f3d_name(&entry.name))
         .count();
-    push_note(ctx, &mut report.notes, format_args!(
-        "f3z archive: {member_count} document member(s); root {model_root}"
-    ))?;
+    push_note(
+        ctx,
+        &mut report.notes,
+        format_args!("f3z archive: {member_count} document member(s); root {model_root}"),
+    )?;
     if ctx.container_only() {
         append_losses(ctx, &mut report.losses, outer.losses)?;
         return finalize_result(ctx, ir, source, report, fidelity);
@@ -148,9 +155,11 @@ pub(crate) fn decode<'a>(
             "{merged} merged component(s) retain occurrence-scoped model entities, native records, and source bytes"
         ))?;
     }
-    push_note(ctx, &mut report.notes, format_args!(
-        "merged {merged} external occurrence(s) from the f3z archive"
-    ))?;
+    push_note(
+        ctx,
+        &mut report.notes,
+        format_args!("merged {merged} external occurrence(s) from the f3z archive"),
+    )?;
     merge::make_sibling_ordinals_unique(ctx, &mut ir.model.occurrences)?;
     append_losses(ctx, &mut report.losses, outer.losses)?;
     finalize_result(ctx, ir, source, report, fidelity)

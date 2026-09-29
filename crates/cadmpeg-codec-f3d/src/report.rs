@@ -3,8 +3,8 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::SourceMeta;
 use cadmpeg_ir::report::loss::LossNote;
@@ -55,7 +55,8 @@ fn append_losses(
     let count = u64::try_from(incoming.len())
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_collection_items(count, operation)?;
-    target.try_reserve(incoming.len())
+    target
+        .try_reserve(incoming.len())
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
     target.append(&mut incoming);
     Ok(())
@@ -130,12 +131,13 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let incoming = vec![
-            crate::loss::F3dLossCode::DialectLayerCollision.note("duplicate layer"),
-        ];
+        let incoming =
+            vec![crate::loss::F3dLossCode::DialectLayerCollision.note("duplicate layer")];
         let error = super::append_losses(&ctx, &mut Vec::new(), incoming, operation).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == operation));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation)
+        );
     }
 
     #[test]
@@ -167,10 +169,16 @@ mod tests {
             &scan,
             cadmpeg_ir::report::decode::DecodeTransfer::full(true),
             Vec::new(),
-        ).unwrap();
-        let source =
-            classify_document(&ctx, &scan, ReportScope::Standalone, BTreeMap::new(), &mut report)
-                .unwrap();
+        )
+        .unwrap();
+        let source = classify_document(
+            &ctx,
+            &scan,
+            ReportScope::Standalone,
+            BTreeMap::new(),
+            &mut report,
+        )
+        .unwrap();
         assert!(source.dialects().is_some());
         assert!(report
             .losses
@@ -187,16 +195,17 @@ mod tests {
         let scan = crate::container::scan(&ctx, root).unwrap();
         let mut limited_policy = DecodePolicy::service();
         limited_policy.limits.max_collection_items = 0;
-        let (limited, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
         let error = crate::container::summary_notes(
             &limited,
             &scan,
             crate::container::SummaryScope::FullDecode,
         )
         .unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "collect F3D summary notes"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect F3D summary notes")
+        );
     }
 
     #[test]
@@ -208,16 +217,17 @@ mod tests {
         let scan = crate::container::scan(&ctx, root).unwrap();
         let mut limited_policy = DecodePolicy::service();
         limited_policy.limits.max_collection_items = 0;
-        let (limited, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
         let error = crate::container::summarize(
             &limited,
             &scan,
             cadmpeg_core::dialect::DialectLayers::of(scan.kind.dialect().clone()),
         )
         .unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "copy F3D summary entries"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "copy F3D summary entries")
+        );
     }
 
     #[test]
@@ -229,16 +239,17 @@ mod tests {
         let scan = crate::container::scan(&ctx, root).unwrap();
         let mut limited_policy = DecodePolicy::service();
         limited_policy.limits.max_collection_items = scan.entries.len() as u64;
-        let (limited, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
         let error = crate::container::summarize(
             &limited,
             &scan,
             cadmpeg_core::dialect::DialectLayers::of(scan.kind.dialect().clone()),
         )
         .unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "copy F3D summary attributes"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "copy F3D summary attributes")
+        );
     }
 
     #[test]
@@ -250,15 +261,16 @@ mod tests {
         let scan = crate::container::scan(&ctx, root).unwrap();
         let mut limited_policy = DecodePolicy::service();
         limited_policy.limits.max_retained_bytes = 0;
-        let (limited, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
         let error = crate::container::summary_notes(
             &limited,
             &scan,
             crate::container::SummaryScope::FullDecode,
         )
         .unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D summary note"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D summary note")
+        );
     }
 }

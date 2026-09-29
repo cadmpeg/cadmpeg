@@ -231,9 +231,9 @@ fn reserve_texture_index<T: Eq + std::hash::Hash>(
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(1, operation)
             .map_err(TextureTableError::Resource)?;
-        index.try_reserve(1).map_err(|_| {
-            TextureTableError::Resource(ctx.refuse_codec_limit(operation, 0, 1))
-        })?;
+        index
+            .try_reserve(1)
+            .map_err(|_| TextureTableError::Resource(ctx.refuse_codec_limit(operation, 0, 1)))?;
     }
     Ok(())
 }
@@ -283,7 +283,8 @@ impl DesignMeshTextureTable {
             if resource.ordinal >= count || flags.contains(&resource.ordinal) {
                 return Err("textures.ordinal must be a complete map permutation".into());
             }
-            if resource.filename_ordinal >= count || filenames.contains(&resource.filename_ordinal) {
+            if resource.filename_ordinal >= count || filenames.contains(&resource.filename_ordinal)
+            {
                 return Err("textures.filename_ordinal must be a complete map permutation".into());
             }
             let guid = resource.resource_guid.as_str().to_ascii_uppercase();

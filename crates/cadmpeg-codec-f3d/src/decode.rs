@@ -46,8 +46,8 @@ fn copy_decode_string(
     source: &str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let bytes = u64::try_from(source.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let bytes =
+        u64::try_from(source.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_retained(bytes, operation)?;
     let mut copy = String::new();
     copy.try_reserve(source.len())
@@ -201,7 +201,13 @@ fn insert_source_attribute_owned(
     key: &'static str,
     value: String,
 ) -> Result<(), CodecError> {
-    insert_btree_item(ctx, attributes, || key.to_owned(), value, "collect F3D source attributes")
+    insert_btree_item(
+        ctx,
+        attributes,
+        || key.to_owned(),
+        value,
+        "collect F3D source attributes",
+    )
 }
 
 fn insert_source_attribute_copy(
@@ -231,15 +237,14 @@ fn format_decode_string(
     let mut length = Length(0);
     std::fmt::write(&mut length, args)
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    let bytes = u64::try_from(length.0)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let bytes =
+        u64::try_from(length.0).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_retained(bytes, operation)?;
     let mut output = String::new();
     output
         .try_reserve(length.0)
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
-    std::fmt::write(&mut output, args)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    std::fmt::write(&mut output, args).map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
     Ok(output)
 }
 
@@ -248,13 +253,14 @@ fn join_text_brep_names(
     scan: &ContainerScan<'_>,
 ) -> Result<String, CodecError> {
     let count = container::text_brep_names(scan).count();
-    let length = container::text_brep_names(scan).try_fold(0usize, |length, name| {
-        length.checked_add(name.len())
-    }).and_then(|length| {
-        count.checked_sub(1).unwrap_or(0)
-            .checked_mul("`, `".len())
-            .and_then(|separators| length.checked_add(separators))
-    }).ok_or_else(|| ctx.refuse_codec_limit("join F3D text B-rep names", 0, u64::MAX))?;
+    let length = container::text_brep_names(scan)
+        .try_fold(0usize, |length, name| length.checked_add(name.len()))
+        .and_then(|length| {
+            (if count == 0 { 0 } else { count - 1 })
+                .checked_mul("`, `".len())
+                .and_then(|separators| length.checked_add(separators))
+        })
+        .ok_or_else(|| ctx.refuse_codec_limit("join F3D text B-rep names", 0, u64::MAX))?;
     let bytes = u64::try_from(length)
         .map_err(|_| ctx.refuse_codec_limit("join F3D text B-rep names", 0, u64::MAX))?;
     ctx.charge_retained(bytes, "join F3D text B-rep names")?;
@@ -284,30 +290,34 @@ fn container_only_dimension_parameters(
     );
     let container_only_index = collect_decode_set(
         ctx,
-        container_only.iter().map(|(stream, index)| (stream.as_str(), *index)),
+        container_only
+            .iter()
+            .map(|(stream, index)| (stream.as_str(), *index)),
         "index F3D container-only dimension companions",
     )?;
     let mut parameters_by_id = std::collections::HashSet::new();
     for owner in &native.design_parameter_owners {
-            let stream =
-                crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
-            if !container_only_index.contains(&(stream, owner.companion_record_index())) {
-                continue;
-            }
-            let mut parameters = native.design_parameters.iter().filter(|parameter| {
-                crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM)
-                    == stream
-                    && parameter.record_index == owner.parameter_record_index()
-                    && parameter.kind()
-                        == crate::records::parameters::DesignParameterKind::Dimension
-            });
-            let Some(parameter) = parameters.next() else {
-                continue;
-            };
-            if parameters.next().is_none() {
-                let id = crate::ids::neutral_parameter_id_charged(ctx, parameter)?;
-                insert_decode_set(ctx, &mut parameters_by_id, id, "collect F3D container-only dimension parameters")?;
-            }
+        let stream = crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
+        if !container_only_index.contains(&(stream, owner.companion_record_index())) {
+            continue;
+        }
+        let mut parameters = native.design_parameters.iter().filter(|parameter| {
+            crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM) == stream
+                && parameter.record_index == owner.parameter_record_index()
+                && parameter.kind() == crate::records::parameters::DesignParameterKind::Dimension
+        });
+        let Some(parameter) = parameters.next() else {
+            continue;
+        };
+        if parameters.next().is_none() {
+            let id = crate::ids::neutral_parameter_id_charged(ctx, parameter)?;
+            insert_decode_set(
+                ctx,
+                &mut parameters_by_id,
+                id,
+                "collect F3D container-only dimension parameters",
+            )?;
+        }
     }
     Ok(parameters_by_id)
 }
@@ -320,9 +330,8 @@ fn unresolved_dimension_companion_count(
     use std::collections::{HashMap, HashSet};
 
     ctx.charge_collection_items(
-        u64::try_from(native.design_parameters.len()).map_err(|_| {
-            ctx.refuse_codec_limit("index F3D dimension parameters", 0, u64::MAX)
-        })?,
+        u64::try_from(native.design_parameters.len())
+            .map_err(|_| ctx.refuse_codec_limit("index F3D dimension parameters", 0, u64::MAX))?,
         "index F3D dimension parameters",
     )?;
     let mut parameters = HashMap::new();
@@ -340,18 +349,17 @@ fn unresolved_dimension_companion_count(
     }
     let mut dimension_owners = HashSet::new();
     for owner in &native.design_parameter_owners {
-            let stream =
-                crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
-            if parameters.get(&(stream, owner.parameter_record_index()))
-                == Some(&crate::records::parameters::DesignParameterKind::Dimension)
-                && !dimension_owners.contains(&(stream, owner.record_index()))
-            {
-                ctx.charge_collection_items(1, "index F3D dimension owners")?;
-                dimension_owners
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("index F3D dimension owners", 0, 1))?;
-                dimension_owners.insert((stream, owner.record_index()));
-            }
+        let stream = crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
+        if parameters.get(&(stream, owner.parameter_record_index()))
+            == Some(&crate::records::parameters::DesignParameterKind::Dimension)
+            && !dimension_owners.contains(&(stream, owner.record_index()))
+        {
+            ctx.charge_collection_items(1, "index F3D dimension owners")?;
+            dimension_owners
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("index F3D dimension owners", 0, 1))?;
+            dimension_owners.insert((stream, owner.record_index()));
+        }
     }
     let mut typed = HashSet::new();
     let mut insert_typed = |key| -> Result<(), CodecError> {
@@ -1301,7 +1309,10 @@ fn design_projection_gaps(
 
     let source_lost_edge_reference_ids = collect_decode_set(
         ctx,
-        native.lost_edge_references.iter().map(|reference| reference.id.as_str()),
+        native
+            .lost_edge_references
+            .iter()
+            .map(|reference| reference.id.as_str()),
         "index F3D lost edge references",
     )?;
     let mut complete_edge_selection_native_ids = HashSet::<String>::new();
@@ -1463,7 +1474,10 @@ fn design_projection_gaps(
 
     let native_sketch_relation_ids = collect_decode_set(
         ctx,
-        native.sketch_relations.iter().map(|relation| relation.id.as_str()),
+        native
+            .sketch_relations
+            .iter()
+            .map(|relation| relation.id.as_str()),
         "index native F3D sketch relations",
     )?;
     let mut native_sketch_relations = 0;
@@ -2072,11 +2086,7 @@ fn push_loss_vec(
     losses
         .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit(collection_operation, 0, 1))?;
-    losses.push(code.note(format_decode_string(
-        ctx,
-        retained_operation,
-        args,
-    )?));
+    losses.push(code.note(format_decode_string(ctx, retained_operation, args)?));
     Ok(())
 }
 
@@ -2091,11 +2101,9 @@ fn push_decode_note(
         .notes
         .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
-    report.notes.push(format_decode_string(
-        ctx,
-        "retain F3D decode note",
-        args,
-    )?);
+    report
+        .notes
+        .push(format_decode_string(ctx, "retain F3D decode note", args)?);
     Ok(())
 }
 
@@ -2124,15 +2132,29 @@ fn report_design_projection_gaps(
         .flat_map(|state| &state.records)
         .filter_map(|record| record.framing_error())
     {
-        push_decode_loss(ctx, report, F3dLossCode::HistoryRecordFramingFailed, format_args!(
-            "An ASM history span remains opaque because record framing failed: {error}."
-        ), "collect F3D projection losses", "retain F3D projection loss")?;
+        push_decode_loss(
+            ctx,
+            report,
+            F3dLossCode::HistoryRecordFramingFailed,
+            format_args!(
+                "An ASM history span remains opaque because record framing failed: {error}."
+            ),
+            "collect F3D projection losses",
+            "retain F3D projection loss",
+        )?;
     }
     if gaps.unresolved_body_bindings != 0 {
-        push_decode_loss(ctx, report, F3dLossCode::DesignBodyBindingUnresolved, format_args!(
-            "{} Design body-map pair(s) do not resolve to a body in the named BREP blob.",
-            gaps.unresolved_body_bindings
-        ), "collect F3D projection losses", "retain F3D projection loss")?;
+        push_decode_loss(
+            ctx,
+            report,
+            F3dLossCode::DesignBodyBindingUnresolved,
+            format_args!(
+                "{} Design body-map pair(s) do not resolve to a body in the named BREP blob.",
+                gaps.unresolved_body_bindings
+            ),
+            "collect F3D projection losses",
+            "retain F3D projection loss",
+        )?;
     }
     if gaps.native_reference_images != 0 {
         push_decode_loss(ctx, report, F3dLossCode::ReferenceImageNativeRetained, format_args!(
@@ -2152,7 +2174,10 @@ fn report_design_projection_gaps(
             gaps.unrepaired_lost_edge_references
         ), "collect F3D projection losses", "retain F3D projection loss")?;
     }
-    let mut push = |code: F3dLossCode, count: usize, message: std::fmt::Arguments<'_>| -> Result<(), CodecError> {
+    let mut push = |code: F3dLossCode,
+                    count: usize,
+                    message: std::fmt::Arguments<'_>|
+     -> Result<(), CodecError> {
         if count != 0 {
             push_decode_loss(
                 ctx,
@@ -2615,7 +2640,12 @@ impl<'a> F3dDecodeSession<'a> {
         let (subds, subd_losses) = crate::tsm::decode(ctx, scan)?;
         ir.model.subds = subds;
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
-        append_decode_items(ctx, &mut report.losses, subd_losses, "append F3D T-spline losses")?;
+        append_decode_items(
+            ctx,
+            &mut report.losses,
+            subd_losses,
+            "append F3D T-spline losses",
+        )?;
         native.body_visibilities = body_visibilities;
         native.design_body_bindings = design_body_bindings;
         ctx.admit_entities(
@@ -3228,17 +3258,36 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     non_root_act_component_links,
                 )?;
-                report_unresolved_dimension_companions(self.ctx, &mut self.report, &self.native, &self.ir)?;
-                report_unresolved_configuration_rules(self.ctx, &mut self.report, &self.native, &self.ir)?;
+                report_unresolved_dimension_companions(
+                    self.ctx,
+                    &mut self.report,
+                    &self.native,
+                    &self.ir,
+                )?;
+                report_unresolved_configuration_rules(
+                    self.ctx,
+                    &mut self.report,
+                    &self.native,
+                    &self.ir,
+                )?;
                 report_untyped_material_distances(
                     self.ctx,
                     &mut self.report,
                     materials.untyped_distance_properties,
                 )?;
-                append_decode_items(self.ctx, &mut self.report.notes, materials.notes, "append F3D material notes")?;
+                append_decode_items(
+                    self.ctx,
+                    &mut self.report.notes,
+                    materials.notes,
+                    "append F3D material notes",
+                )?;
                 self.ir.model.appearances = materials.appearances;
                 self.ir.model.appearance_bindings = materials.bindings;
-                resolve_face_appearance_bindings(self.ctx, &mut self.ir, &materials.face_assignments)?;
+                resolve_face_appearance_bindings(
+                    self.ctx,
+                    &mut self.ir,
+                    &materials.face_assignments,
+                )?;
                 apply_appearance_base_colors(self.ctx, &mut self.ir)?;
                 self.ir
                     .model
@@ -3250,11 +3299,16 @@ impl<'a> F3dDecodeSession<'a> {
                     materials.has_topology_assignments,
                 );
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
-                match crate::xref::decode_with_scopes(self.ctx, scan, &self.native.design_parameter_scopes) {
+                match crate::xref::decode_with_scopes(
+                    self.ctx,
+                    scan,
+                    &self.native.design_parameter_scopes,
+                ) {
                     Ok(Some(table)) => {
                         report_xref_placement_failures(self.ctx, &mut self.report, &table)?;
                         report_xref_placement_overrides(self.ctx, &mut self.report, &table)?;
-                        self.ir.model.occurrences = crate::xref::project_occurrences(self.ctx, &table)?;
+                        self.ir.model.occurrences =
+                            crate::xref::project_occurrences(self.ctx, &table)?;
                         crate::xref::bind_component_insert_features(
                             &mut self.ir.model.features,
                             &self.native.design_parameter_scopes,
@@ -3276,7 +3330,12 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     decoded_materials.untyped_distance_properties,
                 )?;
-                append_decode_items(self.ctx, &mut self.report.notes, decoded_materials.notes, "append F3D material notes")?;
+                append_decode_items(
+                    self.ctx,
+                    &mut self.report.notes,
+                    decoded_materials.notes,
+                    "append F3D material notes",
+                )?;
                 self.ir.model.appearances = decoded_materials.appearances;
                 self.ir.model.appearance_bindings = decoded_materials.bindings;
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
@@ -3289,8 +3348,8 @@ impl<'a> F3dDecodeSession<'a> {
                     other => other,
                 };
                 if let Ok(Some(table)) = &xref_table {
-                        report_xref_placement_failures(self.ctx, &mut self.report, table)?;
-                        report_xref_placement_overrides(self.ctx, &mut self.report, table)?;
+                    report_xref_placement_failures(self.ctx, &mut self.report, table)?;
+                    report_xref_placement_overrides(self.ctx, &mut self.report, table)?;
                     self.ir.model.occurrences = crate::xref::project_occurrences(self.ctx, table)?;
                     crate::xref::bind_component_insert_features(
                         &mut self.ir.model.features,
@@ -3312,8 +3371,18 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_parameter_scopes,
             &self.native.design_component_occurrences,
         )?;
-        append_decode_items(self.ctx, &mut self.ir.model.product_definitions, components, "append F3D local components")?;
-        append_decode_items(self.ctx, &mut self.ir.model.occurrences, occurrences, "append F3D local occurrences")?;
+        append_decode_items(
+            self.ctx,
+            &mut self.ir.model.product_definitions,
+            components,
+            "append F3D local components",
+        )?;
+        append_decode_items(
+            self.ctx,
+            &mut self.ir.model.occurrences,
+            occurrences,
+            "append F3D local occurrences",
+        )?;
         crate::design::components::project_derived_instance_features(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
@@ -3372,7 +3441,12 @@ impl<'a> F3dDecodeSession<'a> {
                     populate_annotations(ctx, &self.ir, scan, &self.native, None, &self.unknowns)?;
                 let source_image = preserve_source_image(ctx, scan)?;
                 if mesh_projection.count > 0 {
-                    apply_mesh_body_classification(ctx, &mut self.report, scan, mesh_projection.count)?;
+                    apply_mesh_body_classification(
+                        ctx,
+                        &mut self.report,
+                        scan,
+                        mesh_projection.count,
+                    )?;
                 } else {
                     apply_bodyless_design_classification(
                         ctx,
@@ -3386,7 +3460,12 @@ impl<'a> F3dDecodeSession<'a> {
                         self.native.design_canvas_images.len(),
                     )?;
                 }
-                report_unresolved_dimension_companions(self.ctx, &mut self.report, &self.native, &self.ir)?;
+                report_unresolved_dimension_companions(
+                    self.ctx,
+                    &mut self.report,
+                    &self.native,
+                    &self.ir,
+                )?;
                 match inputs.xref {
                     Ok(Some(table)) => {
                         apply_assembly_classification(self.ctx, &mut self.report, scan, &table)?;
@@ -3501,7 +3580,8 @@ fn decode_scanned_document<'a>(
             unknowns,
         } = build_metadata_ir(ctx, scan)?;
         annotate_docstruct(ctx, &mut source_attributes, scan)?;
-        let annotations = populate_annotations(ctx, &ir, scan, &F3dNative::default(), None, &unknowns)?;
+        let annotations =
+            populate_annotations(ctx, &ir, scan, &F3dNative::default(), None, &unknowns)?;
         let source_image = preserve_source_image(ctx, scan)?;
         let mut report = crate::report::build_decode_report(
             ctx,
@@ -3513,7 +3593,7 @@ fn decode_scanned_document<'a>(
             Ok(Some(table)) => apply_assembly_classification(ctx, &mut report, scan, &table)?,
             Ok(None) => {}
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                    Err(error) => report_xref_parse_loss(ctx, &mut report, &error)?,
+            Err(error) => report_xref_parse_loss(ctx, &mut report, &error)?,
         }
         return decode_result(
             ctx,
@@ -3544,11 +3624,17 @@ fn decode_scanned_document<'a>(
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
         let mut decoded_brep_count = 0usize;
-        let all_body_visibility = crate::design::decode::body::decode_all_body_visibility(ctx, scan)?;
+        let all_body_visibility =
+            crate::design::decode::body::decode_all_body_visibility(ctx, scan)?;
         let mut selected_body_keys =
             std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();
         for binding in &unbound_body_bindings {
-            index_selected_body_key(ctx, &mut selected_body_keys, binding.blob_name(), binding.asm_body_key)?;
+            index_selected_body_key(
+                ctx,
+                &mut selected_body_keys,
+                binding.blob_name(),
+                binding.asm_body_key,
+            )?;
         }
         for &candidate in &model_breps {
             let Some(mut part) = try_decode_brep(ctx, scan, candidate)? else {
@@ -3565,7 +3651,9 @@ fn decode_scanned_document<'a>(
             for body in &mut part.asm.bodies {
                 if let Some(visibility) = body_selectors
                     .get(&body.id)
-                    .map(|selector| body_visibility_for(ctx, &all_body_visibility, blob_name, *selector))
+                    .map(|selector| {
+                        body_visibility_for(ctx, &all_body_visibility, blob_name, *selector)
+                    })
                     .transpose()?
                     .flatten()
                 {
@@ -3619,7 +3707,12 @@ fn decode_scanned_document<'a>(
                         entity_suffix: visibility.entity_suffix,
                         visible: visibility.visible,
                     };
-                    push_decode_item(ctx, &mut body_visibilities, visibility, "collect F3D body visibilities")?;
+                    push_decode_item(
+                        ctx,
+                        &mut body_visibilities,
+                        visibility,
+                        "collect F3D body visibilities",
+                    )?;
                 }
             }
             brep.append(ctx, part)?;
@@ -3763,24 +3856,27 @@ fn clone_mesh_texture_table(
 ) -> Result<Vec<(String, cadmpeg_ir::assets::AssetId)>, CodecError> {
     let mut copy = Vec::new();
     for (source_id, asset) in table {
-        let source_id = copy_decode_string(ctx, source_id, "copy F3D mesh texture table source ID")?;
+        let source_id =
+            copy_decode_string(ctx, source_id, "copy F3D mesh texture table source ID")?;
         let asset = cadmpeg_ir::assets::AssetId::mint(copy_decode_string(
             ctx,
             asset.as_str(),
             "copy F3D mesh texture table asset ID",
         )?)
         .map_err(CodecError::malformed)?;
-        push_decode_item(ctx, &mut copy, (source_id, asset), "copy F3D mesh texture table")?;
+        push_decode_item(
+            ctx,
+            &mut copy,
+            (source_id, asset),
+            "copy F3D mesh texture table",
+        )?;
     }
     Ok(copy)
 }
 
 fn insert_mesh_texture_table(
     ctx: &DecodeContext<'_>,
-    tables: &mut std::collections::HashMap<
-        String,
-        Vec<(String, cadmpeg_ir::assets::AssetId)>,
-    >,
+    tables: &mut std::collections::HashMap<String, Vec<(String, cadmpeg_ir::assets::AssetId)>>,
     tessellation_id: &str,
     table: &[(String, cadmpeg_ir::assets::AssetId)],
 ) -> Result<(), CodecError> {
@@ -3877,24 +3973,38 @@ fn project_mesh_bodies(
             })
             .map(str::to_owned);
         let asset = cadmpeg_ir::assets::Asset::try_new(
-                cadmpeg_ir::assets::AssetId::mint(copy_decode_string(
+            cadmpeg_ir::assets::AssetId::mint(copy_decode_string(
+                ctx,
+                texture.asset.as_str(),
+                "retain F3D mesh texture asset ID",
+            )?)
+            .map_err(CodecError::malformed)?,
+            Some(copy_decode_string(
+                ctx,
+                texture.file.filename(),
+                "retain F3D mesh texture filename",
+            )?),
+            media_type,
+            cadmpeg_ir::assets::AssetContent::Embedded {
+                data: cadmpeg_ir::assets::AssetData::new(mesh_texture_asset_bytes(
                     ctx,
-                    texture.asset.as_str(),
-                    "retain F3D mesh texture asset ID",
+                    scan,
+                    texture.file.archive_entry_name(),
                 )?)
-                .map_err(CodecError::malformed)?,
-                Some(copy_decode_string(ctx, texture.file.filename(), "retain F3D mesh texture filename")?),
-                media_type,
-                cadmpeg_ir::assets::AssetContent::Embedded {
-                    data: cadmpeg_ir::assets::AssetData::new(
-                        mesh_texture_asset_bytes(ctx, scan, texture.file.archive_entry_name())?,
-                    )
-                    .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
-                },
-                Some(crate::ids::native_scope_charged(ctx, texture.file.archive_entry_name())?),
-            )
-            .map_err(CodecError::Malformed)?;
-        push_decode_item(ctx, &mut texture_assets, asset, "collect F3D mesh texture assets")?;
+                .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
+            },
+            Some(crate::ids::native_scope_charged(
+                ctx,
+                texture.file.archive_entry_name(),
+            )?),
+        )
+        .map_err(CodecError::Malformed)?;
+        push_decode_item(
+            ctx,
+            &mut texture_assets,
+            asset,
+            "collect F3D mesh texture assets",
+        )?;
     }
     extend_unique_assets(ctx, &mut ir.model.assets, texture_assets)?;
     let mut texture_tables = std::collections::HashMap::new();
@@ -3921,7 +4031,12 @@ fn project_mesh_bodies(
         }
         for body in feature.bodies() {
             if let Some(tessellation_id) = &body.tessellation_id {
-                insert_mesh_texture_table(ctx, &mut texture_tables, tessellation_id, &texture_table)?;
+                insert_mesh_texture_table(
+                    ctx,
+                    &mut texture_tables,
+                    tessellation_id,
+                    &texture_table,
+                )?;
             }
         }
     }
@@ -3981,24 +4096,26 @@ fn project_mesh_bodies(
             None => None,
         };
         let mesh = cadmpeg_ir::tessellation::TessellationMesh::from_corner_lanes(
-                body.vertices,
-                body.triangles,
-                corner_normals,
-            )
-            .map_err(|error| {
-                CodecError::malformed(format_args!("paramesh body record {}: {error}", body.id))
-            })?;
-        let tessellation = cadmpeg_ir::tessellation::Tessellation::from_parts(
-            body.id,
-            mesh,
-            channels,
+            body.vertices,
+            body.triangles,
+            corner_normals,
         )
-        .map_err(|err| CodecError::Malformed(err.to_string()))?
-        .with_feature_edges(body.feature_edges)
-        .and_then(|mesh| mesh.with_triangle_groups(triangle_groups))
-        .and_then(|mesh| mesh.with_texture_assignments(texture_assignments))
-        .map_err(|err| CodecError::Malformed(err.to_string()))?;
-        push_decode_item(ctx, &mut ir.model.tessellations, tessellation, "collect F3D mesh tessellations")?;
+        .map_err(|error| {
+            CodecError::malformed(format_args!("paramesh body record {}: {error}", body.id))
+        })?;
+        let tessellation =
+            cadmpeg_ir::tessellation::Tessellation::from_parts(body.id, mesh, channels)
+                .map_err(|err| CodecError::Malformed(err.to_string()))?
+                .with_feature_edges(body.feature_edges)
+                .and_then(|mesh| mesh.with_triangle_groups(triangle_groups))
+                .and_then(|mesh| mesh.with_texture_assignments(texture_assignments))
+                .map_err(|err| CodecError::Malformed(err.to_string()))?;
+        push_decode_item(
+            ctx,
+            &mut ir.model.tessellations,
+            tessellation,
+            "collect F3D mesh tessellations",
+        )?;
     }
     if !texture_tables.is_empty() {
         return Err(CodecError::Malformed(
@@ -4006,8 +4123,7 @@ fn project_mesh_bodies(
         ));
     }
     for feature in &native.design_mesh_features {
-        let stream = crate::ids::native_stream(&feature.id)
-            .unwrap_or(crate::ids::DEFAULT_STREAM);
+        let stream = crate::ids::native_stream(&feature.id).unwrap_or(crate::ids::DEFAULT_STREAM);
         insert_mesh_scope_tessellations(
             ctx,
             &mut projection.tessellations_by_scope,
@@ -4097,8 +4213,8 @@ fn mesh_feature_tessellations<'a>(
     record_index: u32,
 ) -> Result<Option<&'a [String]>, CodecError> {
     let operation = "look up F3D mesh feature tessellations";
-    let bytes = u64::try_from(stream.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let bytes =
+        u64::try_from(stream.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     let _reservation = ctx.reserve_scoped(bytes, operation)?;
     let mut key = String::new();
     key.try_reserve(stream.len())
@@ -4127,7 +4243,9 @@ fn bind_mesh_feature_definitions(
             continue;
         };
         let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-        let Some(tessellations) = mesh_feature_tessellations(ctx, projection, stream, scope.record_index)? else {
+        let Some(tessellations) =
+            mesh_feature_tessellations(ctx, projection, stream, scope.record_index)?
+        else {
             continue;
         };
         if tessellations.is_empty() {
@@ -4135,8 +4253,14 @@ fn bind_mesh_feature_definitions(
         }
         let mut copies = Vec::new();
         for tessellation in tessellations {
-            let copy = copy_decode_string(ctx, tessellation, "retain F3D mesh feature tessellation ID")?;
-            push_decode_item(ctx, &mut copies, copy, "collect F3D mesh feature tessellations")?;
+            let copy =
+                copy_decode_string(ctx, tessellation, "retain F3D mesh feature tessellation ID")?;
+            push_decode_item(
+                ctx,
+                &mut copies,
+                copy,
+                "collect F3D mesh feature tessellations",
+            )?;
         }
         feature
             .evaluation
@@ -4185,7 +4309,9 @@ fn mesh_attribute_channels(
                 ) {
                     Ok(channel) => {
                         ctx.charge_collection_items(1, "collect F3D mesh channels")?;
-                        channels.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect F3D mesh channels", 0, 1))?;
+                        channels.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("collect F3D mesh channels", 0, 1)
+                        })?;
                         channels.push(channel);
                     }
                     Err(_) => *unresolved.entry(MeshAttributeDomain::Vertex).or_default() += 1,
@@ -4205,7 +4331,9 @@ fn mesh_attribute_channels(
                 ) {
                     Ok(channel) => {
                         ctx.charge_collection_items(1, "collect F3D mesh channels")?;
-                        channels.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect F3D mesh channels", 0, 1))?;
+                        channels.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("collect F3D mesh channels", 0, 1)
+                        })?;
                         channels.push(channel);
                     }
                     Err(_) => *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1,
@@ -4218,11 +4346,24 @@ fn mesh_attribute_channels(
                     *unresolved.entry(MeshAttributeDomain::Triangle).or_default() += 1;
                     continue;
                 }
-                ctx.charge_collection_items(u64::try_from(triangles.len()).map_err(|_| ctx.refuse_codec_limit("collect F3D mesh triangle selectors", 0, u64::MAX))?, "collect F3D mesh triangle selectors")?;
+                ctx.charge_collection_items(
+                    u64::try_from(triangles.len()).map_err(|_| {
+                        ctx.refuse_codec_limit("collect F3D mesh triangle selectors", 0, u64::MAX)
+                    })?,
+                    "collect F3D mesh triangle selectors",
+                )?;
                 let mut indices = Vec::new();
-                indices.try_reserve_exact(triangles.len()).map_err(|_| ctx.refuse_codec_limit("collect F3D mesh triangle selectors", 0, u64::try_from(triangles.len()).unwrap_or(u64::MAX)))?;
+                indices.try_reserve_exact(triangles.len()).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "collect F3D mesh triangle selectors",
+                        0,
+                        u64::try_from(triangles.len()).unwrap_or(u64::MAX),
+                    )
+                })?;
                 for index in 0..triangles.len() {
-                    indices.push(u32::try_from(index).map_err(|_| CodecError::Malformed("F3D mesh triangle selector exceeds u32".into()))?);
+                    indices.push(u32::try_from(index).map_err(|_| {
+                        CodecError::Malformed("F3D mesh triangle selector exceeds u32".into())
+                    })?);
                 }
                 match cadmpeg_ir::tessellation::TessellationChannel::new(
                     cadmpeg_ir::tessellation::ChannelAddressing::Triangle { indices },
@@ -4233,7 +4374,9 @@ fn mesh_attribute_channels(
                 ) {
                     Ok(channel) => {
                         ctx.charge_collection_items(1, "collect F3D mesh channels")?;
-                        channels.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect F3D mesh channels", 0, 1))?;
+                        channels.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("collect F3D mesh channels", 0, 1)
+                        })?;
                         channels.push(channel);
                     }
                     Err(_) => *unresolved.entry(MeshAttributeDomain::Triangle).or_default() += 1,
@@ -4334,11 +4477,18 @@ fn report_xref_placement_failures(
         else {
             continue;
         };
-        push_decode_loss(ctx, report, F3dLossCode::XrefPlacementUndecoded, format_args!(
+        push_decode_loss(
+            ctx,
+            report,
+            F3dLossCode::XrefPlacementUndecoded,
+            format_args!(
                 "external occurrence {} for role {} has a typed placement record that did not \
                  decode under its generation grammar; no valid placement carrier was available",
                 reference.relative_path, reference.neutron_role
-            ), "collect F3D xref placement losses", "retain F3D xref placement loss")?;
+            ),
+            "collect F3D xref placement losses",
+            "retain F3D xref placement loss",
+        )?;
     }
     Ok(())
 }
@@ -4416,6 +4566,7 @@ fn apply_bodyless_design_classification(
     sketch_entities: usize,
     reference_images: usize,
 ) -> Result<(), CodecError> {
+    const OPERATION: &str = "collect F3D bodyless classification losses";
     if brep_streams != 0
         || text_brep_streams != 0
         || declared_bodies != 0
@@ -4455,7 +4606,6 @@ fn apply_bodyless_design_classification(
             ),
         )?,
     };
-    const OPERATION: &str = "collect F3D bodyless classification losses";
     ctx.charge_collection_items(1, OPERATION)?;
     report
         .losses
@@ -4486,11 +4636,18 @@ fn apply_assembly_classification(
                 LossCategory::Geometry | LossCategory::Topology
             ))
     });
-    push_decode_loss(ctx, report, F3dLossCode::AssemblyComponentsExternal, format_args!(
+    push_decode_loss(
+        ctx,
+        report,
+        F3dLossCode::AssemblyComponentsExternal,
+        format_args!(
             "assembly document: geometry is defined by {} external reference(s); decode the \
          containing .f3z archive to resolve them",
             table.references.len()
-        ), "collect F3D assembly classification losses", "retain F3D assembly classification loss")?;
+        ),
+        "collect F3D assembly classification losses",
+        "retain F3D assembly classification loss",
+    )?;
     for reference in &table.references {
         let property_note = XrefPropertyNote(reference);
         match crate::xref::design_for(table, reference) {
@@ -4675,11 +4832,15 @@ fn populate_annotations(
     if let Some((stream_name, records)) = brep {
         let stream = annotation_stream(ctx, stream_name)?;
         for record in records {
-            annotations
-                .note_charged(ctx, &record.id, &stream, record.offset, record.tag.as_str())?;
+            annotations.note_charged(
+                ctx,
+                &record.id,
+                &stream,
+                record.offset,
+                record.tag.as_str(),
+            )?;
             for field in &record.derived_fields {
-                annotations
-                    .derived_charged(ctx, &record.id, field)?;
+                annotations.derived_charged(ctx, &record.id, field)?;
             }
         }
     }
@@ -4689,7 +4850,9 @@ fn populate_annotations(
         if let Some(native_ref) = constraint.native_ref.as_deref() {
             if !constraints_by_native.contains_key(native_ref) {
                 ctx.charge_collection_items(1, "index F3D annotation constraints")?;
-                constraints_by_native.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index F3D annotation constraints", 0, 1))?;
+                constraints_by_native.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index F3D annotation constraints", 0, 1)
+                })?;
                 constraints_by_native.insert(native_ref, constraint.id.as_str());
             }
         }
@@ -4699,7 +4862,9 @@ fn populate_annotations(
         if let Some(native_ref) = entity.native_ref.as_deref() {
             if !entities_by_native.contains_key(native_ref) {
                 ctx.charge_collection_items(1, "index F3D annotation entities")?;
-                entities_by_native.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index F3D annotation entities", 0, 1))?;
+                entities_by_native
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("index F3D annotation entities", 0, 1))?;
                 entities_by_native.insert(native_ref, entity.id().as_str());
             }
         }
@@ -4711,7 +4876,10 @@ fn populate_annotations(
     )?;
     let spatial_sketches = collect_decode_set(
         ctx,
-        ir.model.spatial_sketches.iter().map(|sketch| sketch.id.as_str()),
+        ir.model
+            .spatial_sketches
+            .iter()
+            .map(|sketch| sketch.id.as_str()),
         "index F3D annotation spatial sketches",
     )?;
 
@@ -4822,7 +4990,11 @@ fn populate_annotations(
         for entity in &native.sketch_relations {
             note!(&entity.id, "sketch_relation");
             if constraints_by_native.contains_key(entity.id.as_str()) {
-                let constraint = crate::ids::neutral_sketch_constraint_id_charged(ctx, &entity.id, entity.record_index)?;
+                let constraint = crate::ids::neutral_sketch_constraint_id_charged(
+                    ctx,
+                    &entity.id,
+                    entity.record_index,
+                )?;
                 note!(constraint.as_str(), "sketch_constraint");
             }
         }
@@ -4890,20 +5062,35 @@ fn populate_annotations(
         .transpose()?;
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
-            annotations
-                .note_charged(ctx, appearance.id.as_str(), &stream, 0, appearance.schema.as_deref().unwrap_or("appearance"))?;
+            annotations.note_charged(
+                ctx,
+                appearance.id.as_str(),
+                &stream,
+                0,
+                appearance.schema.as_deref().unwrap_or("appearance"),
+            )?;
         }
     }
     for binding in &ir.model.appearance_bindings {
-        annotations
-            .note_charged(ctx, binding.id.as_str(), &native_stream, 0, "appearance_binding")?;
+        annotations.note_charged(
+            ctx,
+            binding.id.as_str(),
+            &native_stream,
+            0,
+            "appearance_binding",
+        )?;
     }
     if brep.is_none() {
         if let Some(fallback) = container::select_fallback_brep(scan) {
             let stream = annotation_stream(ctx, &fallback.name)?;
             for unknown in unknowns {
-                annotations
-                    .note_charged(ctx, unknown.id().as_str(), &stream, unknown.offset(), "opaque_brep")?;
+                annotations.note_charged(
+                    ctx,
+                    unknown.id().as_str(),
+                    &stream,
+                    unknown.offset(),
+                    "opaque_brep",
+                )?;
             }
         }
     }
@@ -4939,7 +5126,12 @@ fn collect_related_indices<'a>(
     let mut collected = Vec::new();
     for (stream, index) in indices {
         let stream = copy_decode_string(ctx, stream, "retain F3D related record stream")?;
-        push_decode_item(ctx, &mut collected, (stream, index), "collect F3D related record indices")?;
+        push_decode_item(
+            ctx,
+            &mut collected,
+            (stream, index),
+            "collect F3D related record indices",
+        )?;
     }
     Ok(collected)
 }
@@ -4959,9 +5151,8 @@ fn append_related_record_headers(
     )?;
     let mut related = crate::design::decode::sketch::decode_related_record_headers(scan, indices)?;
     related.retain(|record| {
-        crate::ids::native_stream(&record.id).is_none_or(|stream| {
-            !existing.contains(&(stream, record.record_index))
-        })
+        crate::ids::native_stream(&record.id)
+            .is_none_or(|stream| !existing.contains(&(stream, record.record_index)))
     });
     drop(existing);
     append_decode_items(
@@ -4981,19 +5172,22 @@ fn extend_related_design_records(
 ) -> Result<(), CodecError> {
     let indices = collect_related_indices(
         ctx,
-        native.sketch_relations.iter().flat_map(|relation| {
-            let scope = crate::ids::native_stream(&relation.id)
-                .unwrap_or(crate::ids::DEFAULT_STREAM);
-            relation
-                .all_member_indices()
-                .map(move |record_index| (scope, record_index))
-        })
-        .chain(native.design_parameters.iter().filter_map(|parameter| {
-            Some((
-                crate::ids::native_stream(&parameter.id)?,
-                parameter.owner_record_index()?,
-            ))
-        })),
+        native
+            .sketch_relations
+            .iter()
+            .flat_map(|relation| {
+                let scope =
+                    crate::ids::native_stream(&relation.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+                relation
+                    .all_member_indices()
+                    .map(move |record_index| (scope, record_index))
+            })
+            .chain(native.design_parameters.iter().filter_map(|parameter| {
+                Some((
+                    crate::ids::native_stream(&parameter.id)?,
+                    parameter.owner_record_index()?,
+                ))
+            })),
     )?;
     append_related_record_headers(ctx, scan, native, &indices)?;
     native.design_parameter_owners = crate::design::decode::parameters::decode_parameter_owners(
@@ -5004,8 +5198,7 @@ fn extend_related_design_records(
     let indices = collect_related_indices(
         ctx,
         native.design_parameter_owners.iter().flat_map(|owner| {
-            let scope = crate::ids::native_stream(owner.id())
-                .unwrap_or(crate::ids::DEFAULT_STREAM);
+            let scope = crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
             [
                 owner.scope_record_index(),
                 owner.parameter_record_index(),
@@ -5027,12 +5220,7 @@ fn extend_related_design_records(
         crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
             ctx,
             scan,
-            &native.design_entity_headers,
-            &native.design_types,
-            &native.design_parameters,
-            &native.design_parameter_owners,
-            &native.design_component_occurrences,
-            &native.construction_recipes,
+            native,
         )?;
     native.design_surface_trim_operations =
         crate::design::decode::surface_trim::decode_surface_trim_operations(
@@ -5084,12 +5272,17 @@ fn extend_related_design_records(
                 "retain F3D scope record header ID",
                 format_args!("{stream}:design-record-header#{}", scope.byte_offset()),
             )?;
-            push_decode_item(ctx, &mut scope_headers, crate::records::decal::DesignRecordHeader {
-                id,
-                record_index: scope.record_index,
-                class_tag: scope.class_tag.clone(),
-                byte_offset: scope.byte_offset(),
-            }, "collect F3D scope record headers")?;
+            push_decode_item(
+                ctx,
+                &mut scope_headers,
+                crate::records::decal::DesignRecordHeader {
+                    id,
+                    record_index: scope.record_index,
+                    class_tag: scope.class_tag.clone(),
+                    byte_offset: scope.byte_offset(),
+                },
+                "collect F3D scope record headers",
+            )?;
         }
         if let Some(operation) = scope.copy_paste_bodies_operation() {
             if !existing.contains(&(stream, operation.relation_record_index)) {
@@ -5102,24 +5295,36 @@ fn extend_related_design_records(
                 let id = format_decode_string(
                     ctx,
                     "retain F3D scope record header ID",
-                    format_args!("{stream}:design-record-header#{}", operation.relation_byte_offset()),
+                    format_args!(
+                        "{stream}:design-record-header#{}",
+                        operation.relation_byte_offset()
+                    ),
                 )?;
-                push_decode_item(ctx, &mut scope_headers, crate::records::decal::DesignRecordHeader {
-                    id,
-                    record_index: operation.relation_record_index,
-                    class_tag: operation.relation_class_tag.clone(),
-                    byte_offset: operation.relation_byte_offset(),
-                }, "collect F3D scope record headers")?;
+                push_decode_item(
+                    ctx,
+                    &mut scope_headers,
+                    crate::records::decal::DesignRecordHeader {
+                        id,
+                        record_index: operation.relation_record_index,
+                        class_tag: operation.relation_class_tag.clone(),
+                        byte_offset: operation.relation_byte_offset(),
+                    },
+                    "collect F3D scope record headers",
+                )?;
             }
         }
     }
     drop(existing);
-    append_decode_items(ctx, &mut native.design_record_headers, scope_headers, "append F3D scope record headers")?;
+    append_decode_items(
+        ctx,
+        &mut native.design_record_headers,
+        scope_headers,
+        "append F3D scope record headers",
+    )?;
     let indices = collect_related_indices(
         ctx,
         native.design_parameter_scopes.iter().flat_map(|scope| {
-            let stream = crate::ids::native_stream(&scope.id)
-                .unwrap_or(crate::ids::DEFAULT_STREAM);
+            let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
             scope
                 .reference_members()
                 .values()
@@ -5162,49 +5367,56 @@ fn extend_related_design_records(
         )?;
     let indices = collect_related_indices(
         ctx,
-        native.design_extrude_selection_groups.iter().flat_map(|group| {
-            let stream = crate::ids::native_stream(&group.id)
-                .unwrap_or(crate::ids::DEFAULT_STREAM);
-            group
-                .members()
-                .iter()
-                .map(move |record_index| (stream, record_index.value))
-        }).chain(
-            native.design_construction_operand_groups.iter().flat_map(|group| {
-                let stream = crate::ids::native_stream(&group.id)
-                    .unwrap_or(crate::ids::DEFAULT_STREAM);
+        native
+            .design_extrude_selection_groups
+            .iter()
+            .flat_map(|group| {
+                let stream =
+                    crate::ids::native_stream(&group.id).unwrap_or(crate::ids::DEFAULT_STREAM);
                 group
                     .members()
                     .iter()
-                    .map(|member| member.value)
-                    .chain(
+                    .map(move |record_index| (stream, record_index.value))
+            })
+            .chain(
+                native
+                    .design_construction_operand_groups
+                    .iter()
+                    .flat_map(|group| {
+                        let stream = crate::ids::native_stream(&group.id)
+                            .unwrap_or(crate::ids::DEFAULT_STREAM);
                         group
-                            .frame
-                            .trailing_records()
+                            .members()
                             .iter()
-                            .map(|record| &record.value)
-                            .flat_map(|record_index| {
-                                std::iter::once(*record_index)
-                                    .chain(record_index.checked_add(1))
-                                    .chain(record_index.checked_add(2))
-                                    .chain(record_index.checked_add(3))
-                            }),
-                    )
-                    .chain(
-                        group
-                            .frame
-                            .auxiliary_records
-                            .iter()
-                            .map(|record| &record.value)
-                            .flat_map(|record_index| {
-                                std::iter::once(*record_index)
-                                    .chain(record_index.checked_add(1))
-                                    .chain(record_index.checked_add(2))
-                            }),
-                    )
-                    .map(move |record_index| (stream, record_index))
-            }),
-        ),
+                            .map(|member| member.value)
+                            .chain(
+                                group
+                                    .frame
+                                    .trailing_records()
+                                    .iter()
+                                    .map(|record| &record.value)
+                                    .flat_map(|record_index| {
+                                        std::iter::once(*record_index)
+                                            .chain(record_index.checked_add(1))
+                                            .chain(record_index.checked_add(2))
+                                            .chain(record_index.checked_add(3))
+                                    }),
+                            )
+                            .chain(
+                                group
+                                    .frame
+                                    .auxiliary_records
+                                    .iter()
+                                    .map(|record| &record.value)
+                                    .flat_map(|record_index| {
+                                        std::iter::once(*record_index)
+                                            .chain(record_index.checked_add(1))
+                                            .chain(record_index.checked_add(2))
+                                    }),
+                            )
+                            .map(move |record_index| (stream, record_index))
+                    }),
+            ),
     )?;
     append_related_record_headers(ctx, scan, native, &indices)?;
     crate::design::decode::operands::bind_construction_operand_trailing_records(
@@ -5226,15 +5438,24 @@ fn extend_related_design_records(
     let scopes = collect_decode_map(
         ctx,
         native.design_parameter_scopes.iter().filter_map(|scope| {
-            Some(((crate::ids::native_stream(&scope.id)?, scope.record_index), scope.kind()))
+            Some((
+                (crate::ids::native_stream(&scope.id)?, scope.record_index),
+                scope.kind(),
+            ))
         }),
         "index F3D related parameter scopes",
     )?;
     let identified_groups = collect_decode_set(
         ctx,
-        native.design_construction_operand_identities.iter().filter_map(|identity| {
-            Some((crate::ids::native_stream(&identity.id)?, identity.group_record_index))
-        }),
+        native
+            .design_construction_operand_identities
+            .iter()
+            .filter_map(|identity| {
+                Some((
+                    crate::ids::native_stream(&identity.id)?,
+                    identity.group_record_index,
+                ))
+            }),
         "index F3D identified construction groups",
     )?;
     native.design_edge_identity_operands =
@@ -5246,9 +5467,15 @@ fn extend_related_design_records(
         )?;
     let identity_member_groups = collect_decode_set(
         ctx,
-        native.design_edge_identity_operands.iter().filter_map(|operand| {
-            Some((crate::ids::native_stream(&operand.id)?, operand.group_record_index))
-        }),
+        native
+            .design_edge_identity_operands
+            .iter()
+            .filter_map(|operand| {
+                Some((
+                    crate::ids::native_stream(&operand.id)?,
+                    operand.group_record_index,
+                ))
+            }),
         "index F3D edge identity groups",
     )?;
     native.design_construction_operand_groups.retain(|group| {
@@ -5276,22 +5503,35 @@ fn extend_related_design_records(
     )?;
     let indices = collect_related_indices(
         ctx,
-        native.design_construction_operand_identities.iter().flat_map(|identity| {
-            let stream = crate::ids::native_stream(&identity.id)
-                .unwrap_or(crate::ids::DEFAULT_STREAM);
-            identity
-                .wrappers()
-                .iter()
-                .map(|wrapper| wrapper.record_index)
-                .chain(std::iter::once(identity.following_record_index()))
-                .map(move |record_index| (stream, record_index))
-        }).chain(
-            native.design_construction_operand_groups.iter().filter_map(|group| {
-                let stream = crate::ids::native_stream(&group.id)?;
-                Some(group.members().iter().map(|member| member.value)
-                    .map(move |record_index| (stream, record_index)))
-            }).flatten(),
-        ),
+        native
+            .design_construction_operand_identities
+            .iter()
+            .flat_map(|identity| {
+                let stream =
+                    crate::ids::native_stream(&identity.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+                identity
+                    .wrappers()
+                    .iter()
+                    .map(|wrapper| wrapper.record_index)
+                    .chain(std::iter::once(identity.following_record_index()))
+                    .map(move |record_index| (stream, record_index))
+            })
+            .chain(
+                native
+                    .design_construction_operand_groups
+                    .iter()
+                    .filter_map(|group| {
+                        let stream = crate::ids::native_stream(&group.id)?;
+                        Some(
+                            group
+                                .members()
+                                .iter()
+                                .map(|member| member.value)
+                                .map(move |record_index| (stream, record_index)),
+                        )
+                    })
+                    .flatten(),
+            ),
     )?;
     append_related_record_headers(ctx, scan, native, &indices)?;
     native.design_extrude_selection_members =
@@ -5306,13 +5546,13 @@ fn extend_related_design_records(
             &native.design_construction_operand_groups,
             &native.design_record_headers,
         )?;
-    crate::history::bind_entity_selection_history(
+    crate::history::selection::bind_entity_selection_history(
         Some(ctx),
         &mut native.design_entity_selection_operands,
         &native.design_parameter_scopes,
         &native.asm_histories,
     )?;
-    crate::history::bind_hole_selection_history(
+    crate::history::selection::bind_hole_selection_history(
         Some(ctx),
         &mut native.design_parameter_scopes,
         &native.asm_histories,
@@ -5342,7 +5582,7 @@ fn extend_related_design_records(
         &mut native.design_extrude_selection_members,
         &native.design_construction_operand_identities,
     );
-    crate::history::bind_extrude_selection_history(
+    crate::history::selection::bind_extrude_selection_history(
         Some(ctx),
         &mut native.design_extrude_selection_members,
         &native.design_component_naming_spaces,
@@ -5356,13 +5596,13 @@ fn extend_related_design_records(
         &native.design_body_recipe_operands,
         &native.asm_histories,
     )?;
-    crate::history::bind_circular_pattern_axes(
+    crate::history::selection::bind_circular_pattern_axes(
         Some(ctx),
         &mut native.design_parameter_scopes,
         &native.asm_histories,
         &scope_histories,
     )?;
-    crate::history::bind_edge_identity_history(
+    crate::history::selection::bind_edge_identity_history(
         Some(ctx),
         &mut native.design_edge_identity_operands,
         &native.design_construction_operand_identities,
@@ -5448,7 +5688,7 @@ fn extend_related_design_records(
         &native.asm_histories,
         &scope_histories,
     )?;
-    crate::history::bind_mirror_selection_planes(
+    crate::history::selection::bind_mirror_selection_planes(
         Some(ctx),
         &mut native.design_parameter_scopes,
         &native.design_construction_operand_groups,
@@ -5457,7 +5697,7 @@ fn extend_related_design_records(
         &native.design_construction_operand_identities,
         &native.asm_histories,
     )?;
-    crate::history::bind_edge_identity_bounded_face_rules(
+    crate::history::selection::bind_edge_identity_bounded_face_rules(
         Some(ctx),
         &mut native.design_edge_identity_operands,
         &native.design_face_operands,
@@ -5469,12 +5709,18 @@ fn extend_related_design_records(
         &native.design_entity_headers,
     )?;
     let mut stream_lengths = std::collections::HashMap::new();
-    for entry in scan.entries.iter().filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream)) {
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = crate::ids::native_scope_charged(ctx, &entry.name)?;
         if !stream_lengths.contains_key(&stream) {
             ctx.charge_collection_items(1, "index F3D design stream lengths")?;
-            stream_lengths.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index F3D design stream lengths", 0, 1))?;
+            stream_lengths
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("index F3D design stream lengths", 0, 1))?;
         }
         stream_lengths.insert(stream, bytes.len());
     }
@@ -5624,9 +5870,24 @@ fn source_attributes_and_tolerances(
     if let Some(folder) = scan.design_asset_folder() {
         insert_source_attribute_copy(ctx, &mut attributes, "asset_folder", folder)?;
     }
-    insert_source_attribute_owned(ctx, &mut attributes, "zip_entry_count", scan.entries.len().to_string())?;
-    insert_source_attribute_copy(ctx, &mut attributes, "active_brep", &primary_model_brep.name)?;
-    insert_source_attribute_copy(ctx, &mut attributes, "active_brep_sha256", primary_model_brep.sha256.as_str())?;
+    insert_source_attribute_owned(
+        ctx,
+        &mut attributes,
+        "zip_entry_count",
+        scan.entries.len().to_string(),
+    )?;
+    insert_source_attribute_copy(
+        ctx,
+        &mut attributes,
+        "active_brep",
+        &primary_model_brep.name,
+    )?;
+    insert_source_attribute_copy(
+        ctx,
+        &mut attributes,
+        "active_brep_sha256",
+        primary_model_brep.sha256.as_str(),
+    )?;
     if let Some(off) = primary_model_brep
         .kernel
         .as_ref()
@@ -5684,18 +5945,32 @@ fn geometry_losses(
     let mut losses = Vec::new();
 
     if s.nurbs_surfaces > 0 {
-        push_loss_vec(ctx, &mut losses, F3dLossCode::NurbsSurfaceCarrier, format_args!(
-            "{} spline surface record(s) were decoded into NURBS carriers from their inline \
+        push_loss_vec(
+            ctx,
+            &mut losses,
+            F3dLossCode::NurbsSurfaceCarrier,
+            format_args!(
+                "{} spline surface record(s) were decoded into NURBS carriers from their inline \
              cached B-spline block.",
-            s.nurbs_surfaces
-        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
+                s.nurbs_surfaces
+            ),
+            "collect F3D geometry losses",
+            "retain F3D geometry loss",
+        )?;
     }
     if s.nurbs_curves > 0 {
-        push_loss_vec(ctx, &mut losses, F3dLossCode::NurbsCurveCarrier, format_args!(
-            "{} procedural curve record(s) were decoded into NURBS carriers from their inline \
+        push_loss_vec(
+            ctx,
+            &mut losses,
+            F3dLossCode::NurbsCurveCarrier,
+            format_args!(
+                "{} procedural curve record(s) were decoded into NURBS carriers from their inline \
              cached 3D B-spline block.",
-            s.nurbs_curves
-        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
+                s.nurbs_curves
+            ),
+            "collect F3D geometry losses",
+            "retain F3D geometry loss",
+        )?;
     }
     if s.missing_face_surfaces() > 0 {
         push_loss_vec(ctx, &mut losses, F3dLossCode::FaceSurfaceReferenceDangling, format_args!(
@@ -5705,16 +5980,23 @@ fn geometry_losses(
         ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
     if s.unknown_surface_faces() > 0 {
-        push_loss_vec(ctx, &mut losses, F3dLossCode::SurfaceShapeNotDecoded, format_args!(
-            "{} face(s) rest on spline/procedural surfaces whose shape was not decoded into a \
+        push_loss_vec(
+            ctx,
+            &mut losses,
+            F3dLossCode::SurfaceShapeNotDecoded,
+            format_args!(
+                "{} face(s) rest on spline/procedural surfaces whose shape was not decoded into a \
              typed carrier (no inline cached B-spline block: the cache is reached through a \
              subtype reference, or the record is a procedural form this codec does not \
              evaluate); the face, its loops, and trims are emitted with an unknown-geometry \
              surface linking to the preserved record bytes. Topology is transferred; the \
              underlying surface shape is not. Native kinds: {}.",
-            s.unknown_surface_faces(),
-            KindCounts(&s.unknown_surface_kinds)
-        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
+                s.unknown_surface_faces(),
+                KindCounts(&s.unknown_surface_kinds)
+            ),
+            "collect F3D geometry losses",
+            "retain F3D geometry loss",
+        )?;
     }
     if s.mesh_surface_faces > 0 {
         push_loss_vec(ctx, &mut losses, F3dLossCode::MeshSurfaceSentinel, format_args!(
@@ -5723,22 +6005,36 @@ fn geometry_losses(
         ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
     if s.procedural_curve_edges() > 0 {
-        push_loss_vec(ctx, &mut losses, F3dLossCode::ProceduralCurveUndecoded, format_args!(
+        push_loss_vec(
+            ctx,
+            &mut losses,
+            F3dLossCode::ProceduralCurveUndecoded,
+            format_args!(
             "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable inline \
              B-spline cache; the edge was emitted with its vertices and parameter range but no \
              attributed curve carrier. Native kinds: {}.",
             s.procedural_curve_edges(),
             KindCounts(&s.procedural_curve_kinds)
-        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
+        ),
+            "collect F3D geometry losses",
+            "retain F3D geometry loss",
+        )?;
     }
     if s.undecoded_pcurve_refs() > 0 {
-        push_loss_vec(ctx, &mut losses, F3dLossCode::PcurveUndecoded, format_args!(
-            "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
+        push_loss_vec(
+            ctx,
+            &mut losses,
+            F3dLossCode::PcurveUndecoded,
+            format_args!(
+                "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
              carrier on the face surface's parameterization; those coedges were emitted \
              without a pcurve. Native kinds: {}.",
-            s.undecoded_pcurve_refs(),
-            KindCounts(&s.undecoded_pcurve_kinds)
-        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
+                s.undecoded_pcurve_refs(),
+                KindCounts(&s.undecoded_pcurve_kinds)
+            ),
+            "collect F3D geometry losses",
+            "retain F3D geometry loss",
+        )?;
     }
     if s.partial_procedural_supports > 0 {
         push_loss_vec(ctx, &mut losses, F3dLossCode::BlendSupportPartial, format_args!(
@@ -5747,11 +6043,18 @@ fn geometry_losses(
         ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
     if s.other_records() > 0 {
-        push_loss_vec(ctx, &mut losses, F3dLossCode::SolvedRecordUntyped, format_args!(
-            "{} solved-record application/refinement record(s) were not transferred: {}.",
-            s.other_records(),
-            KindCounts(&s.other_record_kinds)
-        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
+        push_loss_vec(
+            ctx,
+            &mut losses,
+            F3dLossCode::SolvedRecordUntyped,
+            format_args!(
+                "{} solved-record application/refinement record(s) were not transferred: {}.",
+                s.other_records(),
+                KindCounts(&s.other_record_kinds)
+            ),
+            "collect F3D geometry losses",
+            "retain F3D geometry loss",
+        )?;
     }
     push_loss_vec(
         ctx,
@@ -5779,17 +6082,18 @@ fn append_metadata_unknown(
     brep: &BrepFacts,
 ) -> Result<(), CodecError> {
     let id = UnknownId::mint(crate::ids::native_scoped_id_charged(
-        ctx,
-        &brep.name,
-        "unknown",
-        0_u64,
+        ctx, &brep.name, "unknown", 0_u64,
     )?)
     .map_err(|error| {
         CodecError::malformed(format_args!(
             "F3D BREP name cannot form an unknown-record identity: {error}"
         ))
     })?;
-    let digest = copy_decode_string(ctx, brep.sha256.as_str(), "retain F3D unavailable BREP digest")?;
+    let digest = copy_decode_string(
+        ctx,
+        brep.sha256.as_str(),
+        "retain F3D unavailable BREP digest",
+    )?;
     push_decode_item(
         ctx,
         unknowns,
@@ -5798,7 +6102,10 @@ fn append_metadata_unknown(
     )
 }
 
-fn build_metadata_ir(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
+fn build_metadata_ir(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<MetadataIr, CodecError> {
     let mut ir = CadIr::empty();
     let mut unknowns = Vec::new();
 
@@ -5806,20 +6113,35 @@ fn build_metadata_ir(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<Me
     if let Some(folder) = scan.design_asset_folder() {
         insert_source_attribute_copy(ctx, &mut attributes, "asset_folder", folder)?;
     }
-    insert_source_attribute_owned(ctx, &mut attributes, "zip_entry_count", scan.entries.len().to_string())?;
+    insert_source_attribute_owned(
+        ctx,
+        &mut attributes,
+        "zip_entry_count",
+        scan.entries.len().to_string(),
+    )?;
     if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
         insert_source_attribute_owned(ctx, &mut attributes, "modeling_length_unit", unit)?;
     }
 
     if let Some(brep) = container::select_fallback_brep(scan) {
         insert_source_attribute_copy(ctx, &mut attributes, "active_brep", &brep.name)?;
-        insert_source_attribute_copy(ctx, &mut attributes, "active_brep_sha256", brep.sha256.as_str())?;
+        insert_source_attribute_copy(
+            ctx,
+            &mut attributes,
+            "active_brep_sha256",
+            brep.sha256.as_str(),
+        )?;
         if let Some(off) = brep
             .kernel
             .as_ref()
             .and_then(crate::container::KernelFraming::solved_record_limit)
         {
-            insert_source_attribute_owned(ctx, &mut attributes, "solved_record_len", off.to_string())?;
+            insert_source_attribute_owned(
+                ctx,
+                &mut attributes,
+                "solved_record_len",
+                off.to_string(),
+            )?;
         }
         if let Some(h) = brep
             .kernel
@@ -5867,19 +6189,25 @@ fn container_losses(
         (0, _) if text_count != 0 => {
             let text_names = join_text_brep_names(ctx, scan)?;
             (
-            format_decode_string(ctx, "report F3D text geometry loss", format_args!(
+                format_decode_string(
+                    ctx,
+                    "report F3D text geometry loss",
+                    format_args!(
                 "ASM BREP geometry was not transferred: the document's only geometry carrier is \
-                 the text-encoded ASM stream(s) `{}`, and their decode produced no surfaces, \
-                 curves, or points.",
-                text_names
-            ))?,
-            format_decode_string(ctx, "report F3D text topology loss", format_args!(
+                 the text-encoded ASM stream(s) `{text_names}`, and their decode produced no surfaces, \
+                 curves, or points."
+            ),
+                )?,
+                format_decode_string(
+                    ctx,
+                    "report F3D text topology loss",
+                    format_args!(
                 "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
-                 built from the text-encoded carrier(s) `{}`.",
-                text_names
-            ))?,
+                 built from the text-encoded carrier(s) `{text_names}`."
+            ),
+                )?,
             )
-        },
+        }
         (0, _) => (
             "ASM BREP geometry was not transferred: the container declares no ASM BREP stream, so \
              no surfaces, curves, or points were produced."
@@ -5889,17 +6217,25 @@ fn container_losses(
                 .to_string(),
         ),
         (_, Some(brep)) => (
-            format_decode_string(ctx, "report F3D selected geometry loss", format_args!(
-                "ASM BREP geometry was not transferred: the selected stream `{}` is not a \
+            format_decode_string(
+                ctx,
+                "report F3D selected geometry loss",
+                format_args!(
+                    "ASM BREP geometry was not transferred: the selected stream `{}` is not a \
                  decodable BinaryFile4/BinaryFile8 SAB (or its framing failed). {brep_count} BREP \
                  stream(s) were located, but no surfaces, curves, or points were produced.",
-                brep.name
-            ))?,
-            format_decode_string(ctx, "report F3D selected topology loss", format_args!(
+                    brep.name
+                ),
+            )?,
+            format_decode_string(
+                ctx,
+                "report F3D selected topology loss",
+                format_args!(
                 "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
                  built for the selected stream `{}`.",
                 brep.name
-            ))?,
+            ),
+            )?,
         ),
         (_, None) => (
             format!(
@@ -5928,9 +6264,8 @@ fn container_losses(
         losses.push(F3dLossCode::MissingGeometryStream.note(
             if brep_count == 0 && text_count != 0 {
                 format!(
-                    "{} ASM BREP stream(s) are present in the text encoding (.sat/.smt) and \
-                     produced no geometry; no binary stream (.smb/.smbh) was found",
-                    text_count
+                    "{text_count} ASM BREP stream(s) are present in the text encoding (.sat/.smt) and \
+                     produced no geometry; no binary stream (.smb/.smbh) was found"
                 )
             } else if brep_count == 0 {
                 "no ASM BREP stream (.smb/.smbh) was found in the container".to_string()
@@ -5989,13 +6324,13 @@ pub(crate) fn resolve_face_appearance_bindings(
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
     use std::collections::btree_map::Entry;
 
-    if face_assignments.is_empty() {
-        return Ok(());
-    }
-
     struct Assignment<'a> {
         visual_guid: &'a crate::records::references::DesignVisualToken,
         color: Option<cadmpeg_ir::topology::Color>,
+    }
+
+    if face_assignments.is_empty() {
+        return Ok(());
     }
 
     let mut assignments_by_guid = std::collections::BTreeMap::new();
@@ -6003,7 +6338,10 @@ pub(crate) fn resolve_face_appearance_bindings(
         match assignments_by_guid.entry(assignment.face_guid.as_str()) {
             Entry::Vacant(entry) => {
                 ctx.charge_collection_items(1, "index F3D face appearance assignments")?;
-                entry.insert(Assignment { visual_guid: &assignment.visual_guid, color: assignment.color });
+                entry.insert(Assignment {
+                    visual_guid: &assignment.visual_guid,
+                    color: assignment.color,
+                });
             }
             Entry::Occupied(mut entry) => {
                 let existing = entry.get_mut();
@@ -6034,10 +6372,12 @@ pub(crate) fn resolve_face_appearance_bindings(
         let AttributeTarget::Face(face) = &attribute.target else {
             continue;
         };
-        let strings = || attribute.values.iter().filter_map(|value| match value {
-            AttributeValue::String(value) => Some(value.as_str()),
-            _ => None,
-        });
+        let strings = || {
+            attribute.values.iter().filter_map(|value| match value {
+                AttributeValue::String(value) => Some(value.as_str()),
+                _ => None,
+            })
+        };
         let material_name_count = strings()
             .filter(|value| *value == "NEUTRON_Material_attrib_def")
             .count();
@@ -6091,7 +6431,9 @@ pub(crate) fn resolve_face_appearance_bindings(
     let mut bound_faces = collect_decode_map(
         ctx,
         ir.model.appearance_bindings.iter().filter_map(|binding| {
-            let AppearanceTarget::Face(face) = &binding.target else { return None; };
+            let AppearanceTarget::Face(face) = &binding.target else {
+                return None;
+            };
             Some((face, &binding.appearance))
         }),
         "index F3D bound appearance faces",
@@ -6101,7 +6443,9 @@ pub(crate) fn resolve_face_appearance_bindings(
         let id = copy_decode_string(ctx, face.id.as_str(), "retain F3D face index ID")?;
         if !face_indices.contains_key(&id) {
             ctx.charge_collection_items(1, "index F3D appearance faces")?;
-            face_indices.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index F3D appearance faces", 0, 1))?;
+            face_indices
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("index F3D appearance faces", 0, 1))?;
         }
         face_indices.insert(id, index);
     }
@@ -6136,34 +6480,56 @@ pub(crate) fn resolve_face_appearance_bindings(
                 continue;
             }
             ctx.charge_collection_items(1, "index F3D new appearance faces")?;
-            bound_faces.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index F3D new appearance faces", 0, 1))?;
+            bound_faces
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("index F3D new appearance faces", 0, 1))?;
             bound_faces.insert(*face, &appearance.id);
             let target = AppearanceTarget::Face(
-                cadmpeg_ir::ids::FaceId::mint(copy_decode_string(ctx, face.as_str(), "retain F3D appearance target face")?)
-                    .map_err(CodecError::malformed)?,
+                cadmpeg_ir::ids::FaceId::mint(copy_decode_string(
+                    ctx,
+                    face.as_str(),
+                    "retain F3D appearance target face",
+                )?)
+                .map_err(CodecError::malformed)?,
             );
-            let appearance_id = cadmpeg_ir::ids::AppearanceId::mint(
-                copy_decode_string(ctx, appearance.id.as_str(), "retain F3D face appearance ID")?
-            ).map_err(CodecError::malformed)?;
+            let appearance_id = cadmpeg_ir::ids::AppearanceId::mint(copy_decode_string(
+                ctx,
+                appearance.id.as_str(),
+                "retain F3D face appearance ID",
+            )?)
+            .map_err(CodecError::malformed)?;
             let id = crate::ids::face_appearance_binding_id_charged(
-                ctx, face_guid, assignment.visual_guid, face,
+                ctx,
+                face_guid,
+                assignment.visual_guid,
+                face,
             )?;
-            push_decode_item(ctx, &mut new_bindings, AppearanceBinding {
-                // The face id completes the key: one appearance attribute GUID
-                // reaches every face carrying it, so the assignment pair alone
-                // repeats across those faces.
-                id,
-                target,
-                appearance: appearance_id,
-                source_entity_id: None,
-                object_type: None,
-                visible: None,
-                channels: std::collections::BTreeMap::new(),
-            }, "collect F3D face appearance bindings")?;
+            push_decode_item(
+                ctx,
+                &mut new_bindings,
+                AppearanceBinding {
+                    // The face id completes the key: one appearance attribute GUID
+                    // reaches every face carrying it, so the assignment pair alone
+                    // repeats across those faces.
+                    id,
+                    target,
+                    appearance: appearance_id,
+                    source_entity_id: None,
+                    object_type: None,
+                    visible: None,
+                    channels: std::collections::BTreeMap::new(),
+                },
+                "collect F3D face appearance bindings",
+            )?;
         }
     }
     drop(bound_faces);
-    append_decode_items(ctx, &mut ir.model.appearance_bindings, new_bindings, "append F3D face appearance bindings")?;
+    append_decode_items(
+        ctx,
+        &mut ir.model.appearance_bindings,
+        new_bindings,
+        "append F3D face appearance bindings",
+    )?;
     Ok(())
 }
 
@@ -6180,7 +6546,9 @@ fn insert_appearance_color<'a, K: Eq + std::hash::Hash>(
         *existing = None;
     } else {
         ctx.charge_collection_items(1, operation)?;
-        colors.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        colors
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
         colors.insert(id, Some(color));
     }
     Ok(())
@@ -6191,9 +6559,10 @@ fn apply_appearance_base_colors(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Resu
 
     let colors = collect_decode_map(
         ctx,
-        ir.model.appearances.iter().filter_map(|appearance| {
-            Some((&appearance.id, appearance.base_color?))
-        }),
+        ir.model
+            .appearances
+            .iter()
+            .filter_map(|appearance| Some((&appearance.id, appearance.base_color?))),
         "index F3D appearance colors",
     )?;
     let mut body_colors = std::collections::HashMap::new();
@@ -6203,8 +6572,20 @@ fn apply_appearance_base_colors(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Resu
             continue;
         };
         match &binding.target {
-            AppearanceTarget::Body(id) => insert_appearance_color(ctx, &mut body_colors, id, color, "index F3D body appearance colors")?,
-            AppearanceTarget::Face(id) => insert_appearance_color(ctx, &mut face_colors, id, color, "index F3D face appearance colors")?,
+            AppearanceTarget::Body(id) => insert_appearance_color(
+                ctx,
+                &mut body_colors,
+                id,
+                color,
+                "index F3D body appearance colors",
+            )?,
+            AppearanceTarget::Face(id) => insert_appearance_color(
+                ctx,
+                &mut face_colors,
+                id,
+                color,
+                "index F3D face appearance colors",
+            )?,
             _ => {}
         }
     }

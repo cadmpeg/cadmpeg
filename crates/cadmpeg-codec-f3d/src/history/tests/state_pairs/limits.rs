@@ -2,15 +2,25 @@
 //! Admission limits for historical state indexes and change chains.
 
 use super::{
-    edge_changes_across_state_chain, face_changes_across_state_chain,
-    history_state_index, historical_identity_edge, HistoricalIdentityIndex, AsmDeltaState, AsmHistoricalTopology, AsmHistoricalEntityDelta,
+    edge_changes_across_state_chain, face_changes_across_state_chain, historical_identity_edge,
+    history_state_index, AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalTopology,
     AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, HashMap,
+    HistoricalIdentityIndex,
 };
 use crate::history::resolve_pattern_face_by_surface_radius;
-use crate::history::{boundary_edges_in_changes, collect_reference_edge_sets, face_boundary_contexts_for_slots, face_boundary_edge_index, face_boundary_edges, faces_in_topology, historical_edge_context, historical_edge_axis, historical_face_support_contexts, historical_loop_boundary, preceding_support_face_slots, recipe_selector_candidates, terminal_edge_recipe_faces, terminal_edge_recipe_reference_faces, treatment_edge_candidates, treatment_face_supports};
-use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalEdge, AsmHistoricalRelation, AsmHistoricalSurfaceRadius};
-use std::collections::HashSet;
+use crate::history::{
+    selection::boundary_edges_in_changes, collect_reference_edge_sets, face_boundary_contexts_for_slots,
+    face_boundary_edge_index, face_boundary_edges, selection::faces_in_topology, historical_edge_axis,
+    selection::historical_edge_context, historical_face_support_contexts, historical_loop_boundary,
+    preceding_support_face_slots, selection::recipe_selector_candidates, terminal_edge_recipe_faces,
+    terminal_edge_recipe_reference_faces, treatment_edge_candidates, treatment_face_supports,
+};
+use crate::history_records::{
+    AsmHistoricalCarrierBinding, AsmHistoricalEdge, AsmHistoricalRelation,
+    AsmHistoricalSurfaceRadius,
+};
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
+use std::collections::HashSet;
 
 #[test]
 fn identity_index_refuses_history_collection_limit() {
@@ -24,10 +34,15 @@ fn identity_index_refuses_history_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = HistoricalIdentityIndex::build(Some(&ctx), &[history], [1]).err().expect("limit refusal");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D identity histories"));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = HistoricalIdentityIndex::build(Some(&ctx), &[history], [1])
+        .err()
+        .expect("limit refusal");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D identity histories")
+    );
 }
 
 #[test]
@@ -39,21 +54,42 @@ fn identity_edges_refuse_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = historical_identity_edge(Some(&ctx), AsmHistoricalEntityKind::Edge, 7, &topology).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D identity edges"));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = historical_identity_edge(Some(&ctx), AsmHistoricalEntityKind::Edge, 7, &topology)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D identity edges")
+    );
 }
 
 fn edge_context_topology() -> AsmHistoricalTopology {
-    use crate::history_records::{AsmHistoricalCoedge, AsmHistoricalCarrierBinding, AsmHistoricalRelation, AsmHistoricalSurfaceAxis};
+    use crate::history_records::{
+        AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalRelation,
+        AsmHistoricalSurfaceAxis,
+    };
     AsmHistoricalTopology {
         coedge_topology: vec![AsmHistoricalCoedge {
-            coedge: 6, owner_loop: 5, edge: 7, next: 6, previous: 6, radial_next: 6,
+            coedge: 6,
+            owner_loop: 5,
+            edge: 7,
+            next: 6,
+            previous: 6,
+            radial_next: 6,
         }],
-        loop_coedges: vec![AsmHistoricalRelation { owner_ref: 5, member_refs: vec![6] }],
-        face_loops: vec![AsmHistoricalRelation { owner_ref: 4, member_refs: vec![5] }],
-        face_surfaces: vec![AsmHistoricalCarrierBinding { entity: 4, carrier: 8 }],
+        loop_coedges: vec![AsmHistoricalRelation {
+            owner_ref: 5,
+            member_refs: vec![6],
+        }],
+        face_loops: vec![AsmHistoricalRelation {
+            owner_ref: 4,
+            member_refs: vec![5],
+        }],
+        face_surfaces: vec![AsmHistoricalCarrierBinding {
+            entity: 4,
+            carrier: 8,
+        }],
         surface_axes: vec![AsmHistoricalSurfaceAxis {
             surface: 8,
             origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -68,10 +104,13 @@ fn historical_edge_context_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = historical_edge_context(Some(&ctx), 7, &edge_context_topology()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D historical incident loops"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D historical incident loops")
+    );
 }
 
 #[test]
@@ -79,10 +118,13 @@ fn historical_edge_axis_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = historical_edge_axis(Some(&ctx), 7, &edge_context_topology()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D historical incident loops"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D historical incident loops")
+    );
 }
 
 pub(super) fn change_state(state_id: i64) -> AsmDeltaState {
@@ -120,11 +162,13 @@ fn history_state_index_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = history_state_index(Some(&ctx), &history).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D history states"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D history states")
+    );
 }
 
 #[test]
@@ -140,11 +184,13 @@ fn face_change_chain_refuses_visited_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = face_changes_across_state_chain(Some(&ctx), &result, 1, &states).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "track F3D face change state chain"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "track F3D face change state chain")
+    );
 }
 
 #[test]
@@ -162,11 +208,13 @@ fn face_change_chain_refuses_changed_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = face_changes_across_state_chain(Some(&ctx), &result, 1, &states).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D changed faces"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D changed faces")
+    );
 }
 
 #[test]
@@ -182,11 +230,13 @@ fn edge_change_chain_refuses_visited_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = edge_changes_across_state_chain(Some(&ctx), &result, 1, &states).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "track F3D edge change state chain"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "track F3D edge change state chain")
+    );
 }
 
 #[test]
@@ -204,11 +254,13 @@ fn edge_change_chain_refuses_deleted_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = edge_changes_across_state_chain(Some(&ctx), &result, 1, &states).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D deleted edges"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D deleted edges")
+    );
 }
 
 #[test]
@@ -226,11 +278,13 @@ fn edge_change_chain_refuses_updated_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = edge_changes_across_state_chain(Some(&ctx), &result, 1, &states).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D updated edges"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D updated edges")
+    );
 }
 
 fn pattern_face_limit_case(max_items: u64) -> Result<Option<i64>, cadmpeg_core::CodecError> {
@@ -250,8 +304,8 @@ fn pattern_face_limit_case(max_items: u64) -> Result<Option<i64>, cadmpeg_core::
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     resolve_pattern_face_by_surface_radius(
         Some(&ctx),
         &[candidate],
@@ -264,15 +318,19 @@ fn pattern_face_limit_case(max_items: u64) -> Result<Option<i64>, cadmpeg_core::
 #[test]
 fn pattern_face_candidate_index_refuses_collection_limit() {
     let error = pattern_face_limit_case(0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D pattern face candidates"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D pattern face candidates")
+    );
 }
 
 #[test]
 fn pattern_face_bound_index_refuses_collection_limit() {
     let error = pattern_face_limit_case(1).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D pattern bound faces"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D pattern bound faces")
+    );
 }
 
 fn one_face_reference() -> crate::records::dimensions::DesignRecipeReference {
@@ -299,12 +357,14 @@ fn topology_face_index_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = faces_in_topology(Some(&ctx), &one_face_reference().candidate_faces, &topology)
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D topology faces"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D topology faces")
+    );
 }
 
 #[test]
@@ -316,12 +376,14 @@ fn topology_face_copy_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = faces_in_topology(Some(&ctx), &one_face_reference().candidate_faces, &topology)
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D faces in topology"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D faces in topology")
+    );
 }
 
 #[test]
@@ -329,16 +391,14 @@ fn terminal_edge_recipe_face_union_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
-    let error = terminal_edge_recipe_faces(
-        Some(&ctx),
-        &one_face_reference().candidate_faces,
-        &[],
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D terminal edge recipe faces"));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = terminal_edge_recipe_faces(Some(&ctx), &one_face_reference().candidate_faces, &[])
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D terminal edge recipe faces")
+    );
 }
 
 #[test]
@@ -348,12 +408,13 @@ fn terminal_reference_group_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
-    let error = terminal_edge_recipe_reference_faces(Some(&ctx), &[reference], None)
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D terminal reference groups"));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = terminal_edge_recipe_reference_faces(Some(&ctx), &[reference], None).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D terminal reference groups")
+    );
 }
 
 #[test]
@@ -361,12 +422,14 @@ fn terminal_reference_face_copy_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = terminal_edge_recipe_reference_faces(Some(&ctx), &[one_face_reference()], None)
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D historical face identity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D historical face identity")
+    );
 }
 
 #[test]
@@ -374,16 +437,15 @@ fn reference_edge_set_groups_refuse_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
-    let error = collect_reference_edge_sets(
-        Some(&ctx),
-        &[Vec::new()],
-        &AsmHistoricalTopology::default(),
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D reference edge sets"));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        collect_reference_edge_sets(Some(&ctx), &[Vec::new()], &AsmHistoricalTopology::default())
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D reference edge sets")
+    );
 }
 
 #[test]
@@ -391,16 +453,18 @@ fn boundary_face_index_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = face_boundary_edges(
         Some(&ctx),
         &one_face_reference().candidate_faces,
         &AsmHistoricalTopology::default(),
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D boundary faces"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D boundary faces")
+    );
 }
 
 #[test]
@@ -408,11 +472,13 @@ fn boundary_change_slots_refuse_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = boundary_edges_in_changes(Some(&ctx), &[3], &[3]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D boundary edges in changes"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D boundary edges in changes")
+    );
 }
 
 #[test]
@@ -442,27 +508,34 @@ fn edge_recipe_selector_index_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = recipe_selector_candidates(Some(&ctx), Some(&structure), &[]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D edge recipe selectors"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D edge recipe selectors")
+    );
 }
 
 #[test]
 fn treatment_boundary_relation_index_refuses_collection_limit() {
     let topology = AsmHistoricalTopology {
-        face_loops: vec![AsmHistoricalRelation { owner_ref: 1, member_refs: vec![2] }],
+        face_loops: vec![AsmHistoricalRelation {
+            owner_ref: 1,
+            member_refs: vec![2],
+        }],
         ..AsmHistoricalTopology::default()
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = face_boundary_edge_index(Some(&ctx), &topology).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D boundary relations"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D boundary relations")
+    );
 }
 
 #[test]
@@ -474,13 +547,20 @@ fn treatment_preceding_face_index_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = treatment_face_supports(
-        Some(&ctx), &[], &AsmHistoricalTopology::default(), &preceding, &HashMap::new(),
-    ).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D treatment preceding faces"));
+        Some(&ctx),
+        &[],
+        &AsmHistoricalTopology::default(),
+        &preceding,
+        &HashMap::new(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D treatment preceding faces")
+    );
 }
 
 #[test]
@@ -488,14 +568,21 @@ fn treatment_deleted_edge_index_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = treatment_edge_candidates(
-        Some(&ctx), None, &[], &AsmHistoricalTopology::default(),
-        &AsmHistoricalTopology::default(), &[1],
-    ).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D treatment deleted edges"));
+        Some(&ctx),
+        None,
+        &[],
+        &AsmHistoricalTopology::default(),
+        &AsmHistoricalTopology::default(),
+        &[1],
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D treatment deleted edges")
+    );
 }
 
 #[test]
@@ -514,49 +601,68 @@ fn historical_support_face_index_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
-    let error = historical_face_support_contexts(Some(&ctx), &[], &history, &preceding, &HashSet::new())
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D historical support faces"));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        historical_face_support_contexts(Some(&ctx), &[], &history, &preceding, &HashSet::new())
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D historical support faces")
+    );
 }
 
 #[test]
 fn face_boundary_loop_contexts_refuse_collection_limit() {
     let topology = AsmHistoricalTopology {
-        face_loops: vec![AsmHistoricalRelation { owner_ref: 1, member_refs: vec![2] }],
-        loop_coedges: vec![AsmHistoricalRelation { owner_ref: 2, member_refs: Vec::new() }],
+        face_loops: vec![AsmHistoricalRelation {
+            owner_ref: 1,
+            member_refs: vec![2],
+        }],
+        loop_coedges: vec![AsmHistoricalRelation {
+            owner_ref: 2,
+            member_refs: Vec::new(),
+        }],
         ..AsmHistoricalTopology::default()
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = face_boundary_contexts_for_slots(Some(&ctx), &[1], &topology).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D face boundary loops"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D face boundary loops")
+    );
 }
 
 #[test]
 fn historical_loop_vertices_refuse_collection_limit() {
     let topology = AsmHistoricalTopology {
-        edge_vertices: vec![AsmHistoricalEdge { edge: 2, start_vertex: 1, end_vertex: 1 }],
+        edge_vertices: vec![AsmHistoricalEdge {
+            edge: 2,
+            start_vertex: 1,
+            end_vertex: 1,
+        }],
         ..AsmHistoricalTopology::default()
     };
-    let coedges = vec![crate::records::topology::historical_context::DesignHistoricalLoopCoedge {
-        coedge_slot: 3,
-        edge_slot: 2,
-    }];
+    let coedges = vec![
+        crate::records::topology::historical_context::DesignHistoricalLoopCoedge {
+            coedge_slot: 3,
+            edge_slot: 2,
+        },
+    ];
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = historical_loop_boundary(Some(&ctx), coedges, &topology).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D loop vertices"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D loop vertices")
+    );
 }
 
 #[test]
@@ -568,11 +674,17 @@ fn preceding_support_face_index_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = preceding_support_face_slots(
-        Some(&ctx), &[], &AsmHistoricalTopology::default(), &preceding,
-    ).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D preceding support faces"));
+        Some(&ctx),
+        &[],
+        &AsmHistoricalTopology::default(),
+        &preceding,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D preceding support faces")
+    );
 }

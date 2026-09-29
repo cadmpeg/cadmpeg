@@ -606,9 +606,7 @@ fn preceding_lp_utf16(bytes: &[u8], start: usize, marker_at: usize) -> Option<(u
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        bare_presentation_material, BodyPresentationOwner,
-    };
+    use super::{bare_presentation_material, BodyPresentationOwner};
     use crate::bytes::lp_utf16_bytes;
     use crate::design::presentation::{
         APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_BASE_TYPE_GUID,
@@ -626,7 +624,9 @@ mod tests {
         bytes: &[u8],
         meta: &crate::metastream::MetaStream,
     ) -> Result<Vec<super::BrowserNodeRecord>, cadmpeg_core::CodecError> {
-        crate::test_support::with_decode_context(|ctx| super::browser_node_records(ctx, bytes, meta))
+        crate::test_support::with_decode_context(|ctx| {
+            super::browser_node_records(ctx, bytes, meta)
+        })
     }
 
     fn body_presentations(

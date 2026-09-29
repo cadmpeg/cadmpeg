@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode limits for body revision history chains.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use crate::history_records::{
-    AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalTopology,
-    AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, AsmTopologyCache,
+    AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
+    AsmHistoricalTransition, AsmHistory, AsmTopologyCache,
 };
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn history_fixture() -> AsmHistory {
     let state = |state_id, transition| AsmDeltaState {
@@ -37,11 +37,14 @@ fn history_fixture() -> AsmHistory {
         preamble: None,
         record_table_binding_budget_exceeded: false,
         states: vec![
-            state(11, Some(AsmHistoricalTransition {
-                previous_state_id: Some(10),
-                records: AsmHistoricalEntityDelta::default(),
-                topology: delta,
-            })),
+            state(
+                11,
+                Some(AsmHistoricalTransition {
+                    previous_state_id: Some(10),
+                    records: AsmHistoricalEntityDelta::default(),
+                    topology: delta,
+                }),
+            ),
             state(10, None),
         ],
     }
@@ -58,44 +61,78 @@ fn with_limit<T>(max_items: u64, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T
 #[test]
 fn feature_history_state_index_refuses_collection_limit() {
     let history = history_fixture();
-    let error = with_limit(0, |ctx| super::super::unique_feature_history_states(ctx, &history))
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D feature history states"));
+    let error = with_limit(0, |ctx| {
+        super::super::unique_feature_history_states(ctx, &history)
+    })
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D feature history states")
+    );
 }
 
 #[test]
 fn revised_body_chain_visit_refuses_collection_limit() {
     let history = history_fixture();
     let states = std::collections::HashMap::from([
-        (10, Some(&history.states[1])), (11, Some(&history.states[0])),
+        (10, Some(&history.states[1])),
+        (11, Some(&history.states[0])),
     ]);
-    let error = with_limit(0, |ctx| super::super::singleton_revised_input_body_across_state_chain(
-        ctx, &history.states[0], 10, &states)).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "visit F3D revised input body states"));
+    let error = with_limit(0, |ctx| {
+        super::super::singleton_revised_input_body_across_state_chain(
+            ctx,
+            &history.states[0],
+            10,
+            &states,
+        )
+    })
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "visit F3D revised input body states")
+    );
 }
 
 #[test]
 fn revised_body_index_refuses_collection_limit() {
     let history = history_fixture();
     let states = std::collections::HashMap::from([
-        (10, Some(&history.states[1])), (11, Some(&history.states[0])),
+        (10, Some(&history.states[1])),
+        (11, Some(&history.states[0])),
     ]);
-    let error = with_limit(1, |ctx| super::super::singleton_revised_input_body_across_state_chain(
-        ctx, &history.states[0], 10, &states)).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D revised input bodies"));
+    let error = with_limit(1, |ctx| {
+        super::super::singleton_revised_input_body_across_state_chain(
+            ctx,
+            &history.states[0],
+            10,
+            &states,
+        )
+    })
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D revised input bodies")
+    );
 }
 
 #[test]
 fn stable_body_chain_visit_refuses_collection_limit() {
     let history = history_fixture();
     let states = std::collections::HashMap::from([
-        (10, Some(&history.states[1])), (11, Some(&history.states[0])),
+        (10, Some(&history.states[1])),
+        (11, Some(&history.states[0])),
     ]);
-    let error = with_limit(0, |ctx| super::super::singleton_body_revision_across_state_chain(
-        ctx, &history.states[0], 10, &states)).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "visit F3D stable body revision states"));
+    let error = with_limit(0, |ctx| {
+        super::super::singleton_body_revision_across_state_chain(
+            ctx,
+            &history.states[0],
+            10,
+            &states,
+        )
+    })
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "visit F3D stable body revision states")
+    );
 }

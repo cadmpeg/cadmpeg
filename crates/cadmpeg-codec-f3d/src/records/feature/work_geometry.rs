@@ -1041,7 +1041,9 @@ fn take_work_point_inputs<const N: usize>(
         .map_err(|_| "WorkPoint input arity changed during admission".into())
 }
 
-fn take_one_work_point_input(inputs: Vec<DesignWorkPointInput>) -> Result<DesignWorkPointInput, String> {
+fn take_one_work_point_input(
+    inputs: Vec<DesignWorkPointInput>,
+) -> Result<DesignWorkPointInput, String> {
     let [input] = take_work_point_inputs(inputs)?;
     Ok(input)
 }

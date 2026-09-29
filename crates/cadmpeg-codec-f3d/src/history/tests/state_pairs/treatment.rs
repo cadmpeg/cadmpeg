@@ -88,7 +88,8 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
         &result,
         &preceding,
         &[17],
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].edge_slot, 17);
     assert_eq!(candidates[0].radius.get(), 3.0);
@@ -106,9 +107,14 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
         &result,
         &existing_carrier,
         &[17],
-    ).unwrap()
+    )
+    .unwrap()
     .is_empty());
-    assert!(treatment_transition_edge_candidates(&[20], &result, &preceding, &[18]).unwrap().is_empty());
+    assert!(
+        treatment_transition_edge_candidates(&[20], &result, &preceding, &[18])
+            .unwrap()
+            .is_empty()
+    );
     assert!(treatment_radius_candidates(
         None,
         Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
@@ -116,7 +122,7 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
         &result,
         &preceding,
         &[18],
-    ).unwrap()
+    )
+    .unwrap()
     .is_empty());
 }
-

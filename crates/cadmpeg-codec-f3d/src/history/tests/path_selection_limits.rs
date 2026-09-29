@@ -33,29 +33,36 @@ fn path_fixture() -> (
         record_index: 100,
         byte_offset: 0,
         class_tag: "282".to_owned().try_into().unwrap(),
-        members: vec![crate::records::identity::Located { value: 200, offset: 0 }],
+        members: vec![crate::records::identity::Located {
+            value: 200,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
-        frame: DesignConstructionOperandGroupFrame::try_from(DesignConstructionOperandGroupFrameDraft {
-            member_count_offset: 0,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 1,
-            opaque_index_offset: 18,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 22,
-            variant: false,
-        }).unwrap(),
+        frame: DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 0,
+                auxiliary_records: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: 18,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 22,
+                variant: false,
+            },
+        )
+        .unwrap(),
         operand_role: DesignConstructionOperandRole::Other(
             crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5,
         ),
         role_offset: 0,
         paired_class_tag: "261".to_owned().try_into().unwrap(),
         paired_byte_offset: 0,
-    }).unwrap();
+    })
+    .unwrap();
     let operand = DesignEntitySelectionOperand::try_new(DesignEntitySelectionOperandDraft {
         id: format!("{stream}:design-entity-selection-operand#200"),
         scope_record_index: 42,
@@ -64,9 +71,15 @@ fn path_fixture() -> (
         record_index: 200,
         byte_offset: 0,
         class_tag: "377".to_owned().try_into().unwrap(),
-        asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned().try_into().unwrap(),
+        asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+            .to_owned()
+            .try_into()
+            .unwrap(),
         asset_id_offset: 0,
-        context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned().try_into().unwrap(),
+        context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+            .to_owned()
+            .try_into()
+            .unwrap(),
         context_id_offset: 0,
         identity_record_index: 203,
         identity_record_offset: 0,
@@ -78,11 +91,15 @@ fn path_fixture() -> (
         resolved_edge_slot: Some(7),
         next_record_index: 202,
         next_byte_offset: 29,
-    }).unwrap();
+    })
+    .unwrap();
     (scope, vec![group], vec![operand], PathRef::Native(group_id))
 }
 
-fn bind_with_limits(max_items: u64, max_retained_bytes: u64) -> Result<PathRef, cadmpeg_core::CodecError> {
+fn bind_with_limits(
+    max_items: u64,
+    max_retained_bytes: u64,
+) -> Result<PathRef, cadmpeg_core::CodecError> {
     let (scope, groups, operands, mut path) = path_fixture();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
@@ -99,32 +116,43 @@ fn bind_with_limits(max_items: u64, max_retained_bytes: u64) -> Result<PathRef, 
 #[test]
 fn path_edge_slots_refuse_collection_limit() {
     let error = bind_with_limits(0, u64::MAX).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D path edge slots"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D path edge slots")
+    );
 }
 
 #[test]
 fn path_edge_ids_refuse_collection_limit() {
     let error = bind_with_limits(1, u64::MAX).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D path edge identities"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D path edge identities")
+    );
 }
 
 #[test]
 fn path_edge_identity_refuses_retained_limit() {
     let error = bind_with_limits(u64::MAX, 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D history input identity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D history input identity")
+    );
 }
 
 #[test]
 fn path_edge_validation_refuses_collection_limit() {
     let error = bind_with_limits(2, u64::MAX).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "validate F3D path edge identities"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "validate F3D path edge identities")
+    );
 }
 
 #[test]
 fn path_edges_keep_historical_identity() {
-    assert!(matches!(bind_with_limits(3, u64::MAX).unwrap(), PathRef::HistoricalEdges { .. }));
+    assert!(matches!(
+        bind_with_limits(3, u64::MAX).unwrap(),
+        PathRef::HistoricalEdges { .. }
+    ));
 }

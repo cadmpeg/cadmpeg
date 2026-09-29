@@ -10,8 +10,14 @@ use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use std::collections::HashMap;
 
-fn split_face_case(max_items: u64) -> Result<
-    (Vec<cadmpeg_ir::features::Feature>, cadmpeg_ir::ids::FaceId, String),
+fn split_face_case(
+    max_items: u64,
+) -> Result<
+    (
+        Vec<cadmpeg_ir::features::Feature>,
+        cadmpeg_ir::ids::FaceId,
+        String,
+    ),
     cadmpeg_core::CodecError,
 > {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
@@ -208,7 +214,10 @@ fn split_face_case(max_items: u64) -> Result<
 #[test]
 fn split_face_binding_refuses_collection_limit() {
     let result = split_face_case(0);
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
+    ));
 }
 
 #[test]
@@ -427,7 +436,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &[],
         std::slice::from_ref(&history),
         &HashMap::new(),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(operands[0].preceding_candidate_faces, [face(7), face(8)]);
     assert_eq!(operands[0].changed_candidate_faces, [face(7)]);
     assert_eq!(operands[0].resolved_face_slots, [7]);
@@ -495,7 +505,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &[],
         std::slice::from_ref(&cylinder_history),
         &HashMap::new(),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(cylinder_operands[0].resolved_face_slots, [7]);
 
     let mut stale_active_operand = cylinder_operands[0].clone();
@@ -511,7 +522,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &[],
         std::slice::from_ref(&cylinder_history),
         &HashMap::new(),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(stale_active_operands[0].resolved_face_slots, [7]);
 
     let mut ambiguous_geometry_history = cylinder_history;
@@ -537,7 +549,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &[],
         &[ambiguous_geometry_history],
         &HashMap::new(),
-    ).unwrap();
+    )
+    .unwrap();
     assert!(ambiguous_geometry_operands[0]
         .resolved_face_slots
         .is_empty());
@@ -556,7 +569,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &[],
         &[history],
         &HashMap::new(),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(rejected[0].preceding_candidate_faces, [face(9), face(10)]);
     assert!(rejected[0].changed_candidate_faces.is_empty());
     assert!(rejected[0].resolved_face_slots.is_empty());
@@ -707,8 +721,10 @@ fn sweep_body_kind_index_refuses_collection_limit() {
         visible: None,
     };
     let error = bind_sweep_result_modes(&ctx, &mut [], &[body]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D sweep body kinds"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sweep body kinds")
+    );
 }
 
 #[test]
@@ -769,8 +785,10 @@ fn solid_sweep_section_conversion_refuses_collection_limit() {
         native_ref: None,
     };
     let error = bind_sweep_result_modes(&ctx, &mut [feature], &[body]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "convert F3D solid sweep sections"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "convert F3D solid sweep sections")
+    );
 }
 
 #[test]
@@ -841,7 +859,9 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
     );
 }
 
-fn hole_face_case(max_items: u64) -> Result<
+fn hole_face_case(
+    max_items: u64,
+) -> Result<
     (
         cadmpeg_ir::features::Feature,
         Vec<cadmpeg_ir::features::FeatureInputTopology>,
@@ -1042,7 +1062,10 @@ fn hole_face_case(max_items: u64) -> Result<
 #[test]
 fn hole_face_binding_refuses_collection_limit() {
     let result = hole_face_case(0);
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
+    ));
 }
 
 #[test]

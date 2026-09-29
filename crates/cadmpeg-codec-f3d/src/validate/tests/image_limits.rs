@@ -4,14 +4,20 @@ fn design_type(module: &str) -> crate::records::entity_header::SegmentType {
     crate::records::entity_header::SegmentType {
         id: "f3d:Design/MetaStream.dat:design-type#1".into(),
         byte_offset: 0,
-        type_guid: "11111111-2222-3333-4444-555555555555".to_owned().try_into().unwrap(),
+        type_guid: "11111111-2222-3333-4444-555555555555"
+            .to_owned()
+            .try_into()
+            .unwrap(),
         type_guid_offset: 4,
         base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
         version: 1,
         version_offset: 44,
         module: module.into(),
         entities: crate::records::identity::ReferenceRun::located(vec![
-            crate::records::identity::Located { value: 17, offset: 100 },
+            crate::records::identity::Located {
+                value: 17,
+                offset: 100,
+            },
         ]),
     }
 }
@@ -39,8 +45,15 @@ fn canvas_image() -> crate::records::canvas::DesignCanvasImage {
     let mut payload = [0; 77];
     payload[..4].copy_from_slice(&0.75_f32.to_le_bytes());
     for (offset, value) in [
-        (5, 1.0_f64), (13, 2.0), (21, 3.0), (29, 1.0),
-        (37, 0.0), (45, 0.0), (53, 0.0), (61, 0.0), (69, 1.0),
+        (5, 1.0_f64),
+        (13, 2.0),
+        (21, 3.0),
+        (29, 1.0),
+        (37, 0.0),
+        (45, 0.0),
+        (53, 0.0),
+        (61, 0.0),
+        (69, 1.0),
     ] {
         payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
@@ -67,7 +80,8 @@ fn canvas_image() -> crate::records::canvas::DesignCanvasImage {
         "u_axis": {"x":1.0,"y":0.0,"z":0.0},
         "v_axis": {"x":0.0,"y":0.0,"z":1.0},
         "geometry_payload": payload.as_slice()
-    })).unwrap()
+    }))
+    .unwrap()
 }
 
 fn decal_image() -> crate::records::decal::DesignDecalImage {
@@ -82,37 +96,46 @@ fn decal_image() -> crate::records::decal::DesignDecalImage {
         "name_class_tag": "279", "name_record_index": 18,
         "name_byte_offset": 130, "name_frame_length": 41,
         "asset_name": "mark.png", "asset_name_offset": 155
-    })).unwrap()
+    }))
+    .unwrap()
 }
 
-fn scope(kind: crate::records::feature::scope::DesignScopePayload, record_index: u32)
-    -> crate::records::feature::scope::DesignParameterScope
-{
+fn scope(
+    kind: crate::records::feature::scope::DesignScopePayload,
+    record_index: u32,
+) -> crate::records::feature::scope::DesignParameterScope {
     use crate::records::feature::scope::{DesignParameterScope, DesignParameterScopeDraft};
-    DesignParameterScope::try_new(DesignParameterScopeDraft {
-        id: format!("f3d:Design/BulkStream.dat:scope#{record_index}"),
-        byte_offset: 100,
-        class_tag: "301".to_owned().try_into().unwrap(),
-        record_index,
-        frame_length: 200,
-        kind_offset: 0,
-        payload: kind,
-        feature_ordinal: std::num::NonZeroU32::MIN,
-        feature_ordinal_offset: 0,
-        history_state_id: None,
-        previous_history_state_id: None,
-        previous_history_state_id_offset: None,
-        reference_count_offset: 150,
-        reference_members: crate::records::identity::ReferenceRun::unlocated(vec![17]),
-        unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "261".to_owned().try_into().unwrap(),
-        paired_byte_offset: 0,
-    }.with_fixture_layout()).unwrap()
+    DesignParameterScope::try_new(
+        DesignParameterScopeDraft {
+            id: format!("f3d:Design/BulkStream.dat:scope#{record_index}"),
+            byte_offset: 100,
+            class_tag: "301".to_owned().try_into().unwrap(),
+            record_index,
+            frame_length: 200,
+            kind_offset: 0,
+            payload: kind,
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: None,
+            reference_count_offset: 150,
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![17]),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: "261".to_owned().try_into().unwrap(),
+            paired_byte_offset: 0,
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap()
 }
 
-fn image_record_error(canvas: bool, with_scope: bool, max_items: u64, max_retained: u64)
-    -> cadmpeg_core::CodecError
-{
+fn image_record_error(
+    canvas: bool,
+    with_scope: bool,
+    max_items: u64,
+    max_retained: u64,
+) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let mut native = crate::native::F3dNative::default();
@@ -120,13 +143,17 @@ fn image_record_error(canvas: bool, with_scope: bool, max_items: u64, max_retain
         native.design_canvas_images.push(canvas_image());
         if with_scope {
             native.design_parameter_scopes.push(scope(
-                crate::records::feature::scope::DesignScopePayload::Canvas, 103));
+                crate::records::feature::scope::DesignScopePayload::Canvas,
+                103,
+            ));
         }
     } else {
         native.design_decal_images.push(decal_image());
         if with_scope {
             native.design_parameter_scopes.push(scope(
-                crate::records::feature::scope::DesignScopePayload::Decal, 23));
+                crate::records::feature::scope::DesignScopePayload::Decal,
+                23,
+            ));
         }
     }
     let arena = DecodeArena::new();
@@ -146,76 +173,98 @@ fn image_record_error(canvas: bool, with_scope: bool, max_items: u64, max_retain
 #[test]
 fn canvas_geometry_entity_index_refuses_collection_limit() {
     let error = image_index_error(crate::records::entity_header::DESIGN_MODULE_BODY, true);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D Canvas geometry entities"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D Canvas geometry entities")
+    );
 }
 
 #[test]
 fn canvas_component_entity_index_refuses_collection_limit() {
     let error = image_index_error(crate::records::entity_header::DESIGN_MODULE_COMPONENT, true);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D Canvas component entities"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D Canvas component entities")
+    );
 }
 
 #[test]
 fn decal_fusion_entity_index_refuses_collection_limit() {
     let error = image_index_error(crate::records::entity_header::DESIGN_MODULE_FUSION, false);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D Decal fusion entities"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D Decal fusion entities")
+    );
 }
 
 #[test]
 fn canvas_scope_index_refuses_collection_limit() {
     let error = image_record_error(true, true, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D Canvas scopes"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D Canvas scopes")
+    );
 }
 
 #[test]
 fn canvas_geometry_record_index_refuses_collection_limit() {
     let error = image_record_error(true, true, 1, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D Canvas geometry records"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D Canvas geometry records")
+    );
 }
 
 #[test]
 fn canvas_invalid_finding_refuses_collection_limit() {
     let error = image_record_error(true, false, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings")
+    );
 }
 
 #[test]
 fn canvas_invalid_entity_refuses_retained_limit() {
     let error = image_record_error(true, false, u64::MAX, 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity")
+    );
 }
 
 #[test]
 fn decal_scope_index_refuses_collection_limit() {
     let error = image_record_error(false, true, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D Decal scopes"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D Decal scopes")
+    );
 }
 
 #[test]
 fn decal_asset_index_refuses_collection_limit() {
     let error = image_record_error(false, true, 1, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D Decal assets"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D Decal assets")
+    );
 }
 
 #[test]
 fn decal_invalid_finding_refuses_collection_limit() {
     let error = image_record_error(false, false, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings")
+    );
 }
 
 #[test]
 fn decal_invalid_entity_refuses_retained_limit() {
     let error = image_record_error(false, false, u64::MAX, 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity")
+    );
 }

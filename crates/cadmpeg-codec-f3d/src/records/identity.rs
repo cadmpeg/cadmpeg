@@ -408,7 +408,6 @@ impl NativeRecordId {
         kind: &str,
         key: impl std::fmt::Display,
     ) -> Result<Self, String> {
-        let stream = crate::ids::native_stream(&text).ok_or("id must contain a native stream")?;
         struct MatchText<'a>(&'a str);
         impl std::fmt::Write for MatchText<'_> {
             fn write_str(&mut self, value: &str) -> std::fmt::Result {
@@ -416,6 +415,7 @@ impl NativeRecordId {
                 Ok(())
             }
         }
+        let stream = crate::ids::native_stream(&text).ok_or("id must contain a native stream")?;
         let expected_key = text
             .strip_prefix(stream)
             .and_then(|suffix| suffix.strip_prefix(':'))
@@ -443,18 +443,12 @@ mod native_record_id_tests {
 
     #[test]
     fn native_record_id_matches_scoped_kind_and_key_without_copying_the_scope() {
-        let id = NativeRecordId::try_new(
-            "f3d:Design%2Fmain:act-guid#42".into(),
-            "act-guid",
-            42,
-        )
-        .unwrap();
+        let id = NativeRecordId::try_new("f3d:Design%2Fmain:act-guid#42".into(), "act-guid", 42)
+            .unwrap();
         assert_eq!(id.stream(), "f3d:Design%2Fmain");
-        assert!(NativeRecordId::try_new(
-            "f3d:Design%2Fmain:act-guid#43".into(),
-            "act-guid",
-            42,
-        )
-        .is_err());
+        assert!(
+            NativeRecordId::try_new("f3d:Design%2Fmain:act-guid#43".into(), "act-guid", 42,)
+                .is_err()
+        );
     }
 }

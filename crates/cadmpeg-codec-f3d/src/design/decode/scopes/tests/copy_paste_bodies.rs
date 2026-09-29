@@ -100,7 +100,9 @@ fn copy_paste_bodies_decode_allocations_refuse_collection_limit() {
                 &ctx, &bytes, &records, &scope,
             )
             .expect_err("operation collection limit");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-            if refusal.operation == operation));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            if refusal.operation == operation)
+        );
     }
 }

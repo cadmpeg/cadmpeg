@@ -24,32 +24,32 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
+mod act_limits;
+mod body_recipe_limits;
+mod construction_group_limits;
+mod construction_identity_limits;
+mod dimension_validation_limits;
+mod edge_identity_limits;
+mod edge_operand_limits;
+mod edge_treatment_limits;
+mod edge_treatment_vertex_limits;
 mod entity_limits;
 mod extrude_group_limits;
 mod extrude_member_limits;
-mod construction_group_limits;
-mod construction_identity_limits;
-mod edge_identity_limits;
-mod timeline_limits;
-mod parameter_scope_limits;
-mod parameter_scope_collection_limits;
-mod path_feature_limits;
 mod extrude_parameter_limits;
-mod mesh_feature_limits;
-mod dimension_validation_limits;
-mod body_recipe_limits;
-mod edge_operand_limits;
-mod edge_treatment_vertex_limits;
-mod face_operand_limits;
-mod operand_group_carrier_limits;
 mod face_group_limits;
+mod face_operand_limits;
 mod face_source_limits;
-mod edge_treatment_limits;
 mod fillet_group_limits;
-mod act_limits;
 mod image_limits;
 mod link_limits;
+mod mesh_feature_limits;
+mod operand_group_carrier_limits;
+mod parameter_scope_collection_limits;
+mod parameter_scope_limits;
+mod path_feature_limits;
 mod resource_limits;
+mod timeline_limits;
 
 #[test]
 fn native_validation_refuses_decode_collection_limit() {

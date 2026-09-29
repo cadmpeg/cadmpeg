@@ -648,8 +648,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         .0;
         let error = parse_extrude_selection_group(&limit_ctx, &group_bytes, &scope, 0, &record)
             .expect_err("member run exceeds collection limit");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-            if refusal.operation == operation));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            if refusal.operation == operation)
+        );
     }
 
     let arena = cadmpeg_core::decode::DecodeArena::new();

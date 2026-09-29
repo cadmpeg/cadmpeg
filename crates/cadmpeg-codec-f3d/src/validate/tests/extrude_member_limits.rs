@@ -4,7 +4,9 @@ fn native(valid: bool) -> crate::native::F3dNative {
     use crate::records::{
         mesh::DesignRelaxedGuidText,
         references::DesignClassTag,
-        topology::extrude_selection::{DesignExtrudeSelectionMember, DesignExtrudeSelectionMemberDraft},
+        topology::extrude_selection::{
+            DesignExtrudeSelectionMember, DesignExtrudeSelectionMemberDraft,
+        },
     };
     let mut native = super::extrude_group_limits::native(valid, false);
     native.design_extrude_selection_members.push(
@@ -63,35 +65,40 @@ fn with_matching_identity(native: &mut crate::native::F3dNative) {
             following_byte_offset: 1_000,
             following_class_tag: DesignClassTag::try_from("277".to_owned()).unwrap(),
             tracking_path: None,
-            persistent_identity: Some(DesignConstructionPersistentIdentity::try_new(
-                DesignConstructionPersistentIdentityDraft {
-                    local_id: 42,
-                    local_id_offset: 1_021,
-                    asset_id: DesignRelaxedGuidText::try_from(
-                        "11111111-2222-4333-8444-555555555555".to_owned(),
-                    )
-                    .unwrap(),
-                    asset_id_offset: 1_033,
-                    context_id: DesignRelaxedGuidText::try_from(
-                        "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb".to_owned(),
-                    )
-                    .unwrap(),
-                    context_id_offset: 1_105,
-                    tail_slot_present: false,
-                    tail_slot_offset: 1_181,
-                    next_record_index: 11,
-                    next_byte_offset: 1_190,
-                },
-            )
-            .unwrap()),
+            persistent_identity: Some(
+                DesignConstructionPersistentIdentity::try_new(
+                    DesignConstructionPersistentIdentityDraft {
+                        local_id: 42,
+                        local_id_offset: 1_021,
+                        asset_id: DesignRelaxedGuidText::try_from(
+                            "11111111-2222-4333-8444-555555555555".to_owned(),
+                        )
+                        .unwrap(),
+                        asset_id_offset: 1_033,
+                        context_id: DesignRelaxedGuidText::try_from(
+                            "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb".to_owned(),
+                        )
+                        .unwrap(),
+                        context_id_offset: 1_105,
+                        tail_slot_present: false,
+                        tail_slot_offset: 1_181,
+                        next_record_index: 11,
+                        next_byte_offset: 1_190,
+                    },
+                )
+                .unwrap(),
+            ),
         })
         .unwrap(),
     );
 }
 
-fn member_error(valid: bool, identity: bool, max_items: u64, max_retained: u64)
-    -> cadmpeg_core::CodecError
-{
+fn member_error(
+    valid: bool,
+    identity: bool,
+    max_items: u64,
+    max_retained: u64,
+) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let mut native = native(valid);
@@ -110,11 +117,11 @@ fn member_error(valid: bool, identity: bool, max_items: u64, max_retained: u64)
 
 #[test]
 fn extrude_member_history_states_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::{
         history_records::{AsmDeltaState, AsmHistory, AsmTopologyCache},
         records::topology::{body_recipe::AsmHistoricalEntityKind, fillet::HistoricalBinding},
     };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let mut native = native(true);
     native.design_extrude_selection_members[0].historical = Some(HistoricalBinding {
@@ -148,48 +155,61 @@ fn extrude_member_history_states_refuse_collection_limit() {
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = 4;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
     ctx.decode = Some(&decode);
-    let error = super::super::validate_extrude_selection_members(&ctx, &mut Vec::new()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D Extrude selection history states"));
+    let error =
+        super::super::validate_extrude_selection_members(&ctx, &mut Vec::new()).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D Extrude selection history states")
+    );
 }
 
 #[test]
 fn extrude_member_identity_index_refuses_collection_limit() {
     let error = member_error(true, true, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D Extrude selection identities"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D Extrude selection identities")
+    );
 }
 
 #[test]
 fn extrude_member_slot_refuses_collection_limit() {
-    let error = member_error(true, false, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D Extrude selection member slots"));
+    let error = member_error(true, false, 2, u64::MAX);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D Extrude selection member slots")
+    );
 }
 
 #[test]
 fn extrude_member_record_refuses_collection_limit() {
-    let error = member_error(true, false, 1, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D Extrude selection member records"));
+    let error = member_error(true, false, 3, u64::MAX);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D Extrude selection member records")
+    );
 }
 
 #[test]
 fn extrude_member_invalid_finding_refuses_collection_limit() {
-    let error = member_error(false, false, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings"));
+    let error = member_error(false, false, 2, u64::MAX);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings")
+    );
 }
 
 #[test]
 fn extrude_member_invalid_entity_refuses_retained_limit() {
     let error = member_error(false, false, u64::MAX, 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity")
+    );
 }
 
 #[test]

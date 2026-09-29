@@ -174,8 +174,8 @@ fn reparent_component_root_refuses_retained_identity_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     let parent = OccurrenceId::mint("f3d:model:occurrence#xref-0-0").unwrap();
     policy.limits.max_retained_bytes = u64::try_from(parent.as_str().len() - 1).unwrap();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut occurrences = vec![Occurrence {
         id: OccurrenceId::mint("f3d:model:occurrence#child").unwrap(),
         prototype: PrototypeReference::Unresolved {},
@@ -191,8 +191,10 @@ fn reparent_component_root_refuses_retained_identity_limit() {
     }];
 
     let error = reparent_component_roots(&ctx, &mut occurrences, &parent).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3Z parent occurrence identity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3Z parent occurrence identity")
+    );
     assert!(matches!(occurrences[0].parent, OccurrenceParent::Root {}));
 }
 
@@ -272,8 +274,8 @@ fn occurrence_model_identity_rescope_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let body = Body {
         id: BodyId::mint("f3d:model:body#source").unwrap(),
         kind: BodyKind::Solid,
@@ -289,26 +291,27 @@ fn occurrence_model_identity_rescope_refuses_retained_limit() {
     }
     .rewrite(body)
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "rescope F3Z identity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "rescope F3Z identity")
+    );
 }
 
 #[test]
 fn occurrence_native_identity_rescope_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let record = cadmpeg_ir::NativeRecord::new(
-        "f3d:model:native#source",
-        serde_json::Map::new(),
-    )
-    .unwrap();
-    policy.limits.max_retained_bytes = u64::try_from(serde_json::to_vec(&record).unwrap().len())
-        .unwrap();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let record =
+        cadmpeg_ir::NativeRecord::new("f3d:model:native#source", serde_json::Map::new()).unwrap();
+    policy.limits.max_retained_bytes =
+        u64::try_from(serde_json::to_vec(&record).unwrap().len()).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = rescope_record(&ctx, &record, "unknowns", "component-0").unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "rescope F3Z identity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "rescope F3Z identity")
+    );
 }
 
 #[test]
@@ -316,14 +319,16 @@ fn occurrence_native_field_clone_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut fields = serde_json::Map::new();
     fields.insert("links".into(), serde_json::json!(["f3d:model:body#source"]));
     let record = cadmpeg_ir::NativeRecord::new("f3d:model:native#source", fields).unwrap();
     let error = rescope_record(&ctx, &record, "unknowns", "component-0").unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "load typed native record"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "load typed native record")
+    );
 }
 
 #[test]
@@ -400,13 +405,15 @@ fn occurrence_merge_refuses_native_record_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut root = Native::default();
 
     let error = extend_native(&ctx, &mut root, component, "component-0").unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "append F3Z native records"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "append F3Z native records")
+    );
 }
 
 #[test]
@@ -548,8 +555,8 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
 fn occurrence_key_separates_fallback_and_authored_roles() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let reference = |role: &str, ordinal: u32| XrefReference {
         id: "f3d:xref:reference#1".into(),
         ordinal,
@@ -561,7 +568,10 @@ fn occurrence_key_separates_fallback_and_authored_roles() {
         transform: None,
     };
 
-    assert_eq!(occurrence_key(&ctx, &reference("", 7)).unwrap(), "ordinal-7/occurrence-0");
+    assert_eq!(
+        occurrence_key(&ctx, &reference("", 7)).unwrap(),
+        "ordinal-7/occurrence-0"
+    );
     assert_eq!(
         occurrence_key(&ctx, &reference("ordinal-7", 7)).unwrap(),
         "role-ordinal-7/reference-7/occurrence-0"
@@ -579,8 +589,8 @@ fn occurrence_key_separates_fallback_and_authored_roles() {
 fn occurrence_key_separates_same_role_references_with_reset_ordinals() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let reference = |ordinal| XrefReference {
         id: format!("f3d:xref:reference#{ordinal}"),
         ordinal,
@@ -604,8 +614,8 @@ fn occurrence_key_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let reference = XrefReference {
         id: "f3d:xref:reference#1".into(),
         ordinal: 1,
@@ -617,6 +627,8 @@ fn occurrence_key_refuses_retained_limit() {
         transform: None,
     };
     let error = occurrence_key(&ctx, &reference).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3Z occurrence key"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3Z occurrence key")
+    );
 }

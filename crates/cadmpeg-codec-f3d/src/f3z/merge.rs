@@ -57,9 +57,7 @@ pub(super) fn make_sibling_ordinals_unique(
         ctx.charge_work(1, "index F3Z sibling ordinals")?;
         let parent = match &occurrence.parent {
             cadmpeg_ir::products::OccurrenceParent::Root {} => None,
-            cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } => {
-                Some(occurrence)
-            }
+            cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } => Some(occurrence),
         };
         if !used.contains_key(&parent) {
             ctx.charge_collection_items(1, "index F3Z sibling parents")?;
@@ -98,9 +96,6 @@ fn xref_table_from_ir(
     ctx: &DecodeContext<'_>,
     ir: &cadmpeg_ir::CadIr,
 ) -> Result<XrefTable, CodecError> {
-    let Some(namespace) = ir.native.namespace("f3d") else {
-        return Ok(XrefTable::default());
-    };
     fn load_arena<T: DeserializeOwned>(
         ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::NativeNamespace,
@@ -110,17 +105,20 @@ fn xref_table_from_ir(
             Ok(records) => Ok(records),
             Err(error) => match CodecError::from(error) {
                 error @ CodecError::ResourceLimit(_) => Err(error),
-                CodecError::Malformed(message) => Err(CodecError::Malformed(
-                    crate::container::format_retained(
+                CodecError::Malformed(message) => {
+                    Err(CodecError::Malformed(crate::container::format_retained(
                         ctx,
                         "report invalid F3D native data",
                         format_args!("invalid F3D native data: {message}"),
-                    )?,
-                )),
+                    )?))
+                }
                 error => Err(error),
             },
         }
     }
+    let Some(namespace) = ir.native.namespace("f3d") else {
+        return Ok(XrefTable::default());
+    };
     Ok(XrefTable {
         designs: load_arena(ctx, namespace, "xref_designs")?,
         references: load_arena(ctx, namespace, "xref_references")?,
@@ -150,7 +148,9 @@ impl MergeSession<'_, '_> {
         for reference in &table.references {
             let occurrence = occurrence_key(self.ctx, reference)?;
             let label = xref::design_for(table, reference)
-                .map_or(reference.relative_path.as_str(), |design| design.display_name.as_str());
+                .map_or(reference.relative_path.as_str(), |design| {
+                    design.display_name.as_str()
+                });
             if self.stack.contains(&reference.relative_path) {
                 super::push_loss(
                     self.ctx,
@@ -219,7 +219,8 @@ impl MergeSession<'_, '_> {
                 body: mut component_report,
                 source_fidelity: mut component_fidelity,
             } = component;
-            self.ctx.charge_collection_items(1, "grow F3Z merge stack")?;
+            self.ctx
+                .charge_collection_items(1, "grow F3Z merge stack")?;
             self.stack
                 .try_reserve(1)
                 .map_err(|_| self.ctx.refuse_codec_limit("grow F3Z merge stack", 0, 1))?;
@@ -255,7 +256,12 @@ impl MergeSession<'_, '_> {
                     reference.occurrence_ordinal,
                 ),
             )?;
-            extend_native(self.ctx, &mut parent_ir.native, component_ir.native, &occurrence)?;
+            extend_native(
+                self.ctx,
+                &mut parent_ir.native,
+                component_ir.native,
+                &occurrence,
+            )?;
             parent_fidelity.append_charged(
                 self.ctx,
                 rescope_fidelity(self.ctx, component_fidelity, &occurrence)?,
@@ -355,15 +361,13 @@ fn rescope_fidelity(
     occurrence: &str,
 ) -> Result<SourceFidelity, CodecError> {
     let (mut annotations, records) = source.into_parts();
-    annotations.map_ids_charged(ctx, |id| {
-        match rescope_charged(ctx, id, occurrence)? {
-            Some(id) => Ok(id),
-            None => crate::container::format_retained(
-                ctx,
-                "copy F3Z annotation identity",
-                format_args!("{id}"),
-            ),
-        }
+    annotations.map_ids_charged(ctx, |id| match rescope_charged(ctx, id, occurrence)? {
+        Some(id) => Ok(id),
+        None => crate::container::format_retained(
+            ctx,
+            "copy F3Z annotation identity",
+            format_args!("{id}"),
+        ),
     })?;
     // The occurrence is one owner component. Escape its separators so two
     // different occurrences cannot share an owner by shifting a path boundary.
@@ -402,8 +406,7 @@ fn rescope_fidelity(
                 format_args!("{id}"),
             )?,
         };
-        let id = UnknownId::mint(id_text)
-        .map_err(|error| {
+        let id = UnknownId::mint(id_text).map_err(|error| {
             CodecError::malformed(format_args!("F3Z retained record {id}: {error}"))
         })?;
         let stream = cadmpeg_ir::StreamName::try_from(crate::container::format_retained(
@@ -615,7 +618,13 @@ fn rescope_record(
     let mut fields = typed_fields(ctx, record, arena, occurrence)?;
     rescope_native_reference_fields(ctx, arena, &mut fields, occurrence)?;
     let id = rescope_charged(ctx, record.id(), occurrence)?.map_or_else(
-        || crate::container::format_retained(ctx, "copy F3Z native identity", format_args!("{}", record.id())),
+        || {
+            crate::container::format_retained(
+                ctx,
+                "copy F3Z native identity",
+                format_args!("{}", record.id()),
+            )
+        },
         Ok,
     )?;
     NativeRecord::new(id, fields).map_err(CodecError::from)
@@ -647,14 +656,19 @@ fn typed_fields(
         ($type:path) => {{
             let mut value = Value::Object(record.fields_charged(ctx)?);
             let Value::Object(fields) = &mut value else {
-                return Err(CodecError::malformed("F3Z native record fields are not an object"));
+                return Err(CodecError::malformed(
+                    "F3Z native record fields are not an object",
+                ));
             };
             ctx.charge_collection_items(1, "insert F3Z typed native identity field")?;
-            fields.insert("id".into(), Value::String(crate::container::format_retained(
-                ctx,
-                "copy F3Z typed native identity",
-                format_args!("{}", record.id()),
-            )?));
+            fields.insert(
+                "id".into(),
+                Value::String(crate::container::format_retained(
+                    ctx,
+                    "copy F3Z typed native identity",
+                    format_args!("{}", record.id()),
+                )?),
+            );
             let typed: $type = serde_json::from_value(value).map_err(typed_error)?;
             let refusal = std::cell::RefCell::new(None);
             let rewritten = cadmpeg_ir::schema::rewrite::identities(&typed, |id| {
@@ -664,9 +678,10 @@ fn typed_fields(
             if let Some(error) = refusal.into_inner() {
                 return Err(error);
             }
-            let Value::Object(mut fields) = value.map_err(typed_error)?
-            else {
-                return Err(CodecError::malformed("F3Z typed native record is not an object"));
+            let Value::Object(mut fields) = value.map_err(typed_error)? else {
+                return Err(CodecError::malformed(
+                    "F3Z typed native record is not an object",
+                ));
             };
             fields.remove("id");
             fields
@@ -859,8 +874,8 @@ mod tests {
     mod occurrence;
 
     use super::{
-        apply_occurrence_transform, compose_transforms, make_sibling_ordinals_unique, merge_archive,
-        xref_table_from_ir,
+        apply_occurrence_transform, compose_transforms, make_sibling_ordinals_unique,
+        merge_archive, xref_table_from_ir,
     };
     use cadmpeg_ir::document::Model;
 
@@ -913,8 +928,10 @@ mod tests {
             &mut fidelity,
         )
         .unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "seed F3Z merge stack"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "seed F3Z merge stack")
+        );
     }
 
     #[test]
@@ -926,8 +943,10 @@ mod tests {
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut occurrences = [root_occurrence("f3d:model:occurrence#0", 0)];
         let error = make_sibling_ordinals_unique(&ctx, &mut occurrences).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "index F3Z sibling parents"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3Z sibling parents")
+        );
     }
 
     #[test]
@@ -939,8 +958,10 @@ mod tests {
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut occurrences = [root_occurrence("f3d:model:occurrence#0", 0)];
         let error = make_sibling_ordinals_unique(&ctx, &mut occurrences).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "index F3Z sibling ordinals"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3Z sibling ordinals")
+        );
     }
 
     #[test]
@@ -955,39 +976,47 @@ mod tests {
             root_occurrence("f3d:model:occurrence#1", 0),
         ];
         let error = make_sibling_ordinals_unique(&ctx, &mut occurrences).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "find F3Z sibling ordinal"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "find F3Z sibling ordinal")
+        );
     }
 
     #[test]
     fn f3z_xref_native_reload_refuses_collection_limit() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let normal_policy = cadmpeg_core::decode::DecodePolicy::default();
-        let normal = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &normal_policy,
-        ).unwrap().0;
+        let normal =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &normal_policy)
+                .unwrap()
+                .0;
         let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.native.namespace_mut("f3d").set_arena(
-            &normal,
-            "xref_designs",
-            &[crate::records::xref::XrefDesign {
-                id: "f3d:xref:design#0".into(),
-                ordinal: 0,
-                file_version: 1,
-                target_file_name: "part.f3d".into(),
-                display_name: "Part".into(),
-                lineage_urn: "lineage".into(),
-                version_urn: "version".into(),
-            }],
-        ).unwrap();
+        ir.native
+            .namespace_mut("f3d")
+            .set_arena(
+                &normal,
+                "xref_designs",
+                &[crate::records::xref::XrefDesign {
+                    id: "f3d:xref:design#0".into(),
+                    ordinal: 0,
+                    file_version: 1,
+                    target_file_name: "part.f3d".into(),
+                    display_name: "Part".into(),
+                    lineage_urn: "lineage".into(),
+                    version_urn: "version".into(),
+                }],
+            )
+            .unwrap();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let limited = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &policy,
-        ).unwrap().0;
+        let limited = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap()
+            .0;
         let error = xref_table_from_ir(&limited, &ir).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "load typed native record"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "load typed native record")
+        );
     }
 
     #[test]

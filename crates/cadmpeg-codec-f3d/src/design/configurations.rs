@@ -106,7 +106,13 @@ pub(crate) fn decode_configurations(
             } else {
                 Vec::new()
             };
-            DesignConfiguration::try_new_charged(ctx, entry.name.clone(), kind, variant_order, payload)
+            DesignConfiguration::try_new_charged(
+                ctx,
+                entry.name.clone(),
+                kind,
+                variant_order,
+                payload,
+            )
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut names = HashSet::new();
@@ -500,7 +506,8 @@ mod tests {
             pmi: None,
             native_ref: None,
         };
-        let mut projected = project_configurations(None, &[table]).expect("ordered configuration table");
+        let mut projected =
+            project_configurations(None, &[table]).expect("ordered configuration table");
         bind_configuration_parameter_overrides(&mut projected, std::slice::from_ref(&parameter));
         assert_eq!(projected[0].parameter_overrides[&parameter.id], "25 mm");
         assert!(projected[0].properties.is_empty());
@@ -513,18 +520,21 @@ mod tests {
             id: ParameterId::mint("f3d:model:parameter#other-width").expect("identity grammar"),
             ..parameter.clone()
         };
-        let mut ambiguous = project_configurations(None, &[DesignConfiguration::try_new(
-            "other.dsgcfg".into(),
-            DesignConfigurationKind::Table,
-            vec!["wide".into()],
-            (serde_json::json!({
-                "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
-            }))
-            .as_object()
-            .unwrap()
-            .clone(),
+        let mut ambiguous = project_configurations(
+            None,
+            &[DesignConfiguration::try_new(
+                "other.dsgcfg".into(),
+                DesignConfigurationKind::Table,
+                vec!["wide".into()],
+                (serde_json::json!({
+                    "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
+                }))
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
+            .unwrap()],
         )
-        .unwrap()])
         .expect("ordered configuration table");
         bind_configuration_parameter_overrides(&mut ambiguous, &[parameter, duplicate]);
         assert!(ambiguous[0].parameter_overrides.is_empty());
@@ -567,7 +577,8 @@ mod tests {
             ),
             native_ref: None,
         };
-        let mut projected = project_configurations(None, &[table]).expect("ordered configuration table");
+        let mut projected =
+            project_configurations(None, &[table]).expect("ordered configuration table");
         bind_configuration_suppressed_features(&mut projected, std::slice::from_ref(&feature));
         assert_eq!(
             projected[0].suppressed_features().collect::<Vec<_>>(),
@@ -583,18 +594,21 @@ mod tests {
             id: FeatureId::mint("f3d:model:feature#other-fillet-1").expect("identity grammar"),
             ..feature.clone()
         };
-        let mut ambiguous = project_configurations(None, &[DesignConfiguration::try_new(
-            "other.dsgcfg".into(),
-            DesignConfigurationKind::Table,
-            vec!["alternate".into()],
-            (serde_json::json!({
-                "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
-            }))
-            .as_object()
-            .unwrap()
-            .clone(),
+        let mut ambiguous = project_configurations(
+            None,
+            &[DesignConfiguration::try_new(
+                "other.dsgcfg".into(),
+                DesignConfigurationKind::Table,
+                vec!["alternate".into()],
+                (serde_json::json!({
+                    "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
+                }))
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
+            .unwrap()],
         )
-        .unwrap()])
         .expect("ordered configuration table");
         bind_configuration_suppressed_features(&mut ambiguous, &[feature, duplicate]);
         assert!(ambiguous[0].suppressed_features().next().is_none());

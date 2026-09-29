@@ -686,7 +686,9 @@ fn collect_annotation_run<T>(
                 .map_err(AnnotationFrameBuildError::Resource)?;
         }
         collected.try_reserve(1).map_err(|_| match ctx {
-            Some(ctx) => AnnotationFrameBuildError::Resource(ctx.refuse_codec_limit(operation, 0, 1)),
+            Some(ctx) => {
+                AnnotationFrameBuildError::Resource(ctx.refuse_codec_limit(operation, 0, 1))
+            }
             None => AnnotationFrameBuildError::Invalid("annotation run allocation failed".into()),
         })?;
         collected.push(value);
@@ -709,7 +711,9 @@ impl DesignDimensionAnnotationFrame {
         draft: DesignDimensionAnnotationFrameDraft,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Self::try_new_inner(Some(ctx), draft).map_err(|error| match error {
-            AnnotationFrameBuildError::Invalid(message) => cadmpeg_core::CodecError::malformed(message),
+            AnnotationFrameBuildError::Invalid(message) => {
+                cadmpeg_core::CodecError::malformed(message)
+            }
             AnnotationFrameBuildError::Resource(error) => error,
         })
     }
@@ -777,7 +781,10 @@ impl DesignDimensionAnnotationFrame {
         }
         let mut operand_members = collect_annotation_run(
             ctx,
-            draft.operands.iter().filter_map(|operand| operand.geometry_record_index),
+            draft
+                .operands
+                .iter()
+                .filter_map(|operand| operand.geometry_record_index),
             "index F3D annotation operands",
         )?;
         let mut return_members = collect_annotation_run(
@@ -798,20 +805,25 @@ impl DesignDimensionAnnotationFrame {
             class_tag: draft.class_tag,
             record_index: draft.record_index,
             frame_length: draft.frame_length,
-            operands: collect_annotation_run(ctx, draft
-                .operands
-                .into_iter()
-                .map(|operand| DesignDimensionAnnotationLocus {
-                    geometry_record_index: operand.geometry_record_index,
-                    role: operand.role,
-                }), "retain F3D annotation operands")?,
+            operands: collect_annotation_run(
+                ctx,
+                draft
+                    .operands
+                    .into_iter()
+                    .map(|operand| DesignDimensionAnnotationLocus {
+                        geometry_record_index: operand.geometry_record_index,
+                        role: operand.role,
+                    }),
+                "retain F3D annotation operands",
+            )?,
             entity_genesis: draft.entity_genesis,
             annotation_bytes: draft.annotation_bytes,
             governing_owner_record_index: draft.governing_owner_record_index,
-            return_members: collect_annotation_run(ctx, draft
-                .return_members
-                .into_iter()
-                .map(|member| member.value), "retain F3D annotation return members")?,
+            return_members: collect_annotation_run(
+                ctx,
+                draft.return_members.into_iter().map(|member| member.value),
+                "retain F3D annotation return members",
+            )?,
             paired_class_tag: draft.paired_class_tag,
             owner_reference: draft.owner_reference,
         })

@@ -707,9 +707,10 @@ fn smb_only_is_an_explicit_geometry_fallback_without_history() {
         assert!(container::select_history_brep(scan).is_none());
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .unwrap();
-        let notes = container::summary_notes(&ctx, scan, container::SummaryScope::FullDecode).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let notes =
+            container::summary_notes(&ctx, scan, container::SummaryScope::FullDecode).unwrap();
         assert!(notes
             .iter()
             .any(|note| note.contains("no BREP header declares a history partition")));

@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn limited_context(max_items: u64, max_retained: u64) -> cadmpeg_core::decode::DecodeContext<'static> {
+fn limited_context(
+    max_items: u64,
+    max_retained: u64,
+) -> cadmpeg_core::decode::DecodeContext<'static> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = Box::leak(Box::new(DecodeArena::new()));
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let policy = Box::leak(Box::new(policy));
-    DecodeContext::from_root_bytes(&[], arena, policy).unwrap().0
+    DecodeContext::from_root_bytes(&[], arena, policy)
+        .unwrap()
+        .0
 }
 
 fn body_brep(with_region: bool) -> cadmpeg_asm::brep::AsmBrep {
@@ -27,31 +32,40 @@ fn body_brep(with_region: bool) -> cadmpeg_asm::brep::AsmBrep {
         color: None,
         visible: None,
     };
-    cadmpeg_asm::brep::AsmBrep { bodies: vec![body], ..Default::default() }
+    cadmpeg_asm::brep::AsmBrep {
+        bodies: vec![body],
+        ..Default::default()
+    }
 }
 
 #[test]
 fn historical_topology_references_refuse_collection_limit() {
     let ctx = limited_context(0, u64::MAX);
     let error = super::super::historical_topology(&ctx, &body_brep(false)).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D historical topology references"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D historical topology references")
+    );
 }
 
 #[test]
 fn historical_topology_relation_members_refuse_collection_limit() {
     let ctx = limited_context(1, u64::MAX);
     let error = super::super::historical_topology(&ctx, &body_brep(true)).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D historical topology references"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D historical topology references")
+    );
 }
 
 #[test]
 fn historical_topology_relation_rows_refuse_collection_limit() {
     let ctx = limited_context(1, u64::MAX);
     let error = super::super::historical_topology(&ctx, &body_brep(false)).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D historical topology relations"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D historical topology relations")
+    );
 }
 
 fn tagged_brep() -> crate::brep::Brep {
@@ -74,22 +88,28 @@ fn tagged_brep() -> crate::brep::Brep {
 fn historical_tag_references_refuse_collection_limit() {
     let ctx = limited_context(0, u64::MAX);
     let error = super::super::historical_topology_with_tags(&ctx, &tagged_brep()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D historical tag design references"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D historical tag design references")
+    );
 }
 
 #[test]
 fn historical_tag_token_refuses_retained_limit() {
     let ctx = limited_context(u64::MAX, 0);
     let error = super::super::historical_topology_with_tags(&ctx, &tagged_brep()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D historical tag token"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D historical tag token")
+    );
 }
 
 #[test]
 fn historical_tags_refuse_collection_limit() {
     let ctx = limited_context(1, u64::MAX);
     let error = super::super::historical_topology_with_tags(&ctx, &tagged_brep()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D historical persistent tags"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D historical persistent tags")
+    );
 }

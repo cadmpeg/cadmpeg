@@ -1047,8 +1047,13 @@ where
 {
     let stream = ids::native_scope(source_entry_name);
     let records = IndexedRecordOffsets::build(bytes);
-    let collection_frames =
-        typed_primary_frames(ctx, bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
+    let collection_frames = typed_primary_frames(
+        ctx,
+        bytes,
+        meta,
+        MESH_COLLECTION_TYPE_GUID,
+        "mesh-collection",
+    )?;
     if collection_frames.is_empty() {
         return Ok(Vec::new());
     }
@@ -1063,10 +1068,16 @@ where
         return Ok(Vec::new());
     }
     let mut entry_names = unique_record_map(
-        typed_primary_frames(ctx, bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
-            .into_iter()
-            .map(|frame| parse_mesh_entry_name_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        typed_primary_frames(
+            ctx,
+            bytes,
+            meta,
+            MESH_ENTRY_NAME_TYPE_GUID,
+            "mesh-entry-name",
+        )?
+        .into_iter()
+        .map(|frame| parse_mesh_entry_name_record(bytes, frame))
+        .collect::<Result<Vec<_>, _>>()?,
         |record| record.entry.record().record_index(),
         "mesh-entry-name",
     )?;
@@ -1127,10 +1138,16 @@ where
         "mesh-feature-scope",
     )?;
     let mut states = unique_record_map(
-        typed_primary_frames(ctx, bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?
-            .into_iter()
-            .map(|frame| parse_mesh_scene_state_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        typed_primary_frames(
+            ctx,
+            bytes,
+            meta,
+            MESH_SCENE_STATE_TYPE_GUID,
+            "mesh-scene-state",
+        )?
+        .into_iter()
+        .map(|frame| parse_mesh_scene_state_record(bytes, frame))
+        .collect::<Result<Vec<_>, _>>()?,
         |record| record.record().record_index(),
         "mesh-scene-state",
     )?;
@@ -1181,7 +1198,13 @@ where
         "mesh-collection-owner",
     )?;
     let body_owner_frames = typed_frame_map(
-        typed_primary_frames(ctx, bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?,
+        typed_primary_frames(
+            ctx,
+            bytes,
+            meta,
+            MESH_BODY_OWNER_TYPE_GUID,
+            "mesh-body-owner",
+        )?,
         "mesh-body-owner",
     )?;
 
@@ -1533,12 +1556,12 @@ pub(crate) fn decode_mesh_bodies(
 #[cfg(test)]
 mod tests {
     use super::{
-        mesh_body_transform, parse_mesh_collection_owner_record,
-        parse_mesh_scene_state_record, parse_mesh_texture_table_record, parse_mesh_wrapper_record,
-        parse_scene_node_record, resolve_mesh_body, MeshBody, COMMON_DATA_MODULE,
-        DATA_MODEL_MODULE, FUSION_MODULE, MATRIX_BYTES, MESH_BODY_BASE_TYPE_GUID,
-        MESH_BODY_OWNER_BASE_TYPE_GUID, MESH_BODY_OWNER_TYPE_GUID, MESH_BODY_OWNER_TYPE_VERSION,
-        MESH_BODY_TYPE_GUID, MESH_BODY_TYPE_VERSION, MESH_COLLECTION_BASE_BASE_TYPE_GUID,
+        mesh_body_transform, parse_mesh_collection_owner_record, parse_mesh_scene_state_record,
+        parse_mesh_texture_table_record, parse_mesh_wrapper_record, parse_scene_node_record,
+        resolve_mesh_body, MeshBody, COMMON_DATA_MODULE, DATA_MODEL_MODULE, FUSION_MODULE,
+        MATRIX_BYTES, MESH_BODY_BASE_TYPE_GUID, MESH_BODY_OWNER_BASE_TYPE_GUID,
+        MESH_BODY_OWNER_TYPE_GUID, MESH_BODY_OWNER_TYPE_VERSION, MESH_BODY_TYPE_GUID,
+        MESH_BODY_TYPE_VERSION, MESH_COLLECTION_BASE_BASE_TYPE_GUID,
         MESH_COLLECTION_BASE_TYPE_GUID, MESH_COLLECTION_BASE_TYPE_VERSION,
         MESH_COLLECTION_OWNER_BASE_TYPE_GUID, MESH_COLLECTION_OWNER_TYPE_GUID,
         MESH_COLLECTION_OWNER_TYPE_VERSIONS, MESH_COLLECTION_TYPE_GUID,
@@ -1581,7 +1604,11 @@ mod tests {
     ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
         crate::test_support::with_decode_context(|ctx| {
             crate::design::decode::meta::typed_primary_frames(
-                ctx, bytes, meta, type_guid, record_kind,
+                ctx,
+                bytes,
+                meta,
+                type_guid,
+                record_kind,
             )
         })
     }
@@ -1597,7 +1624,11 @@ mod tests {
     {
         crate::test_support::with_decode_context(|ctx| {
             super::parse_mesh_design_records(
-                ctx, bytes, meta, source_entry_name, asset_for_filename,
+                ctx,
+                bytes,
+                meta,
+                source_entry_name,
+                asset_for_filename,
             )
         })
     }

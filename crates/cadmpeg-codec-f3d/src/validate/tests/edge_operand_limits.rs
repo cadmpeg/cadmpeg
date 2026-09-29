@@ -20,7 +20,8 @@ fn operand() -> crate::records::topology::edge_identity::DesignEdgeOperand {
         "recipe_program": [],
         "next_record_index": 6,
         "next_byte_offset": 100
-    })).unwrap()
+    }))
+    .unwrap()
 }
 
 fn native(valid: bool) -> crate::native::F3dNative {
@@ -38,14 +39,18 @@ fn native(valid: bool) -> crate::native::F3dNative {
     if valid {
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#1",
-            DesignFeatureKind::Fillet, 1);
-        scope.try_edit(|draft| {
-            draft.reference_members = ReferenceRun::unlocated(vec![2]);
-            draft.layout_fixture_references();
-            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.layout_fixture_tail();
-        }).unwrap();
+            DesignFeatureKind::Fillet,
+            1,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.reference_members = ReferenceRun::unlocated(vec![2]);
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
         native.design_parameter_scopes.push(scope);
         native.design_record_headers.push(DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:design-record-header#2".into(),
@@ -59,7 +64,10 @@ fn native(valid: bool) -> crate::native::F3dNative {
             kind: ConstructionRecipeKind::Edge,
             design: None,
             recipe_index: 0,
-            record_index: Some(RecordedValue { value: 5, offset: 0 }),
+            record_index: Some(RecordedValue {
+                value: 5,
+                offset: 0,
+            }),
         });
     }
     native
@@ -67,32 +75,41 @@ fn native(valid: bool) -> crate::native::F3dNative {
 
 fn nested_items(value: &serde_json::Value) -> u64 {
     match value {
-        serde_json::Value::Array(values) =>
-            u64::try_from(values.len()).unwrap() + values.iter().map(nested_items).sum::<u64>(),
-        serde_json::Value::Object(values) =>
-            u64::try_from(values.len()).unwrap() + values.values().map(nested_items).sum::<u64>(),
+        serde_json::Value::Array(values) => {
+            u64::try_from(values.len()).unwrap() + values.iter().map(nested_items).sum::<u64>()
+        }
+        serde_json::Value::Object(values) => {
+            u64::try_from(values.len()).unwrap() + values.values().map(nested_items).sum::<u64>()
+        }
         _ => 0,
     }
 }
 
 fn reload_items(ir: &cadmpeg_ir::CadIr) -> u64 {
-    let record = &ir.native.namespace("f3d").unwrap()
-        .arenas().get("design_edge_operands").unwrap()[0];
+    let record = &ir
+        .native
+        .namespace("f3d")
+        .unwrap()
+        .arenas()
+        .get("design_edge_operands")
+        .unwrap()[0];
     let fields = record.fields();
     1 + u64::try_from(fields.len()).unwrap() + fields.values().map(nested_items).sum::<u64>()
 }
 
-fn edge_error(valid: bool, after_reload_items: u64, max_retained: u64)
-    -> cadmpeg_core::CodecError
-{
+fn edge_error(valid: bool, after_reload_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = native(valid);
     if valid {
-        ir.native.namespace_mut("f3d").set_arena(
-            &cadmpeg_test_support::service_decode_context(),
-            "design_edge_operands", &native.design_edge_operands,
-        ).unwrap();
+        ir.native
+            .namespace_mut("f3d")
+            .set_arena(
+                &cadmpeg_test_support::service_decode_context(),
+                "design_edge_operands",
+                &native.design_edge_operands,
+            )
+            .unwrap();
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -110,35 +127,45 @@ fn edge_error(valid: bool, after_reload_items: u64, max_retained: u64)
 
 #[test]
 fn edge_operand_expected_index_refuses_collection_limit() {
-    let error = edge_error(true, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D expected edge operands"));
+    let error = edge_error(true, 1, u64::MAX);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D expected edge operands")
+    );
 }
 
 #[test]
 fn edge_operand_slot_refuses_collection_limit() {
-    let error = edge_error(true, 1, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D edge operand slots"));
+    let error = edge_error(true, 2, u64::MAX);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D edge operand slots")
+    );
 }
 
 #[test]
 fn edge_operand_record_refuses_collection_limit() {
-    let error = edge_error(true, 2, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D edge operand records"));
+    let error = edge_error(true, 3, u64::MAX);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D edge operand records")
+    );
 }
 
 #[test]
 fn edge_operand_invalid_finding_refuses_collection_limit() {
     let error = edge_error(false, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings")
+    );
 }
 
 #[test]
 fn edge_operand_invalid_entity_refuses_retained_limit() {
     let error = edge_error(false, u64::MAX, 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity")
+    );
 }

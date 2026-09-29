@@ -2,7 +2,10 @@
 
 fn complete_body_topology() -> crate::history_records::AsmHistoricalTopology {
     use crate::history_records::{AsmHistoricalRelation, AsmHistoricalTopology};
-    let relation = |owner_ref, member_refs| AsmHistoricalRelation { owner_ref, member_refs };
+    let relation = |owner_ref, member_refs| AsmHistoricalRelation {
+        owner_ref,
+        member_refs,
+    };
     AsmHistoricalTopology {
         bodies: vec![1],
         regions: vec![2],
@@ -27,48 +30,62 @@ fn complete_body_error(max_items: u64) -> cadmpeg_core::CodecError {
 #[test]
 fn complete_body_entity_counts_refuse_collection_limit() {
     let error = complete_body_error(0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D complete body entity counts"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D complete body entity counts")
+    );
 }
 
 #[test]
 fn complete_body_relation_owners_refuse_collection_limit() {
     let error = complete_body_error(4);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D complete body relation owners"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D complete body relation owners")
+    );
 }
 
 #[test]
 fn complete_body_relation_members_refuse_collection_limit() {
     let error = complete_body_error(5);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D complete body relation members"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D complete body relation members")
+    );
 }
 
 #[test]
 fn complete_body_regions_refuse_collection_limit() {
     let error = complete_body_error(10);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D complete body regions"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D complete body regions")
+    );
 }
 
 #[test]
 fn complete_body_shells_refuse_collection_limit() {
     let error = complete_body_error(11);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D complete body shells"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D complete body shells")
+    );
 }
 
 #[test]
 fn complete_body_faces_refuse_collection_limit() {
     let error = complete_body_error(12);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D complete body faces"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D complete body faces")
+    );
 }
 
 #[test]
 fn complete_body_face_slots_refuse_collection_limit() {
     let error = complete_body_error(13);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D complete body face slots"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D complete body face slots")
+    );
 }

@@ -471,7 +471,9 @@ impl DialectLayers {
         for layer in &self.extra {
             let layer = layer.clone_charged(ctx, operation)?;
             if copy.insert_charged(ctx, layer, operation)?.is_err() {
-                return Err(crate::CodecError::malformed("duplicate dialect layer during copy"));
+                return Err(crate::CodecError::malformed(
+                    "duplicate dialect layer during copy",
+                ));
             }
         }
         Ok(copy)
@@ -597,8 +599,8 @@ fn copy_charged_text(
     value: &str,
     operation: &'static str,
 ) -> Result<String, crate::CodecError> {
-    let length = u64::try_from(value.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let length =
+        u64::try_from(value.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_retained(length, operation)?;
     let mut copy = String::new();
     copy.try_reserve(value.len())
@@ -629,10 +631,14 @@ impl DialectMatch {
                 .ok_or_else(|| crate::CodecError::malformed("blank dialect declaration key"))?;
             let value = copy_charged_text(ctx, value, operation)?;
             if declared.insert(key, value).is_some() {
-                return Err(crate::CodecError::malformed("duplicate dialect declaration during copy"));
+                return Err(crate::CodecError::malformed(
+                    "duplicate dialect declaration during copy",
+                ));
             }
         }
-        let instance = self.instance.as_ref()
+        let instance = self
+            .instance
+            .as_ref()
             .map(|value| copy_charged_text(ctx, value, operation))
             .transpose()?;
         let admission = match &self.admission {
@@ -643,7 +649,12 @@ impl DialectMatch {
             Admission::Residual => Admission::Residual,
             Admission::Refused => Admission::Refused,
         };
-        Ok(Self { dialect, declared, instance, admission })
+        Ok(Self {
+            dialect,
+            declared,
+            instance,
+            admission,
+        })
     }
 
     fn with_admission(dialect: DialectId, admission: Admission) -> Self {

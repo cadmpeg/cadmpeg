@@ -82,7 +82,6 @@ impl ConfigurationScalar {
     }
 
     pub(crate) fn text_charged(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
-        let operation = "project F3D configuration scalar text";
         struct ScalarText<'a>(&'a ConfigurationScalar);
         impl std::fmt::Display for ScalarText<'_> {
             fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -101,13 +100,14 @@ impl ConfigurationScalar {
                 Ok(())
             }
         }
+        let operation = "project F3D configuration scalar text";
         let display = ScalarText(self);
         let args = format_args!("{display}");
         let mut length = Length(0);
         std::fmt::write(&mut length, args)
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-        let bytes = u64::try_from(length.0)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+        let bytes =
+            u64::try_from(length.0).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
         ctx.charge_retained(bytes, operation)?;
         let mut text = String::new();
         text.try_reserve(length.0)

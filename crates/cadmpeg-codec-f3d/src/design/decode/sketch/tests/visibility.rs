@@ -12,7 +12,13 @@ const ENTITY_SUFFIX: u64 = 201;
 fn decode_sketch_visibilities_in_stream(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
-) -> Result<Vec<(u64, crate::records::sketch_placement::DesignSketchVisibility)>, cadmpeg_core::CodecError> {
+) -> Result<
+    Vec<(
+        u64,
+        crate::records::sketch_placement::DesignSketchVisibility,
+    )>,
+    cadmpeg_core::CodecError,
+> {
     crate::test_support::with_decode_context(|ctx| {
         crate::design::decode::sketch::decode_sketch_visibilities_in_stream(ctx, bytes, meta)
     })

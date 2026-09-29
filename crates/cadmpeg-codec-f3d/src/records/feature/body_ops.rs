@@ -221,6 +221,12 @@ impl From<&'static str> for CopyPasteBodiesError {
     }
 }
 
+pub(crate) struct CopyPasteRecordLocation {
+    pub(crate) record_index: u32,
+    pub(crate) class_tag: DesignClassTag,
+    pub(crate) byte_offset: u64,
+}
+
 impl DesignCopyPasteBodiesOperation {
     pub(crate) fn try_new(
         bodies: Vec<DesignCopiedBody>,
@@ -232,10 +238,20 @@ impl DesignCopyPasteBodiesOperation {
         relation_byte_offset: u64,
     ) -> Result<Self, String> {
         Self::try_new_inner(
-            None, bodies, body_group_record_index, body_group_class_tag,
-            body_group_byte_offset, relation_record_index, relation_class_tag,
-            relation_byte_offset,
-        ).map_err(|error| match error {
+            None,
+            bodies,
+            CopyPasteRecordLocation {
+                record_index: body_group_record_index,
+                class_tag: body_group_class_tag,
+                byte_offset: body_group_byte_offset,
+            },
+            CopyPasteRecordLocation {
+                record_index: relation_record_index,
+                class_tag: relation_class_tag,
+                byte_offset: relation_byte_offset,
+            },
+        )
+        .map_err(|error| match error {
             CopyPasteBodiesError::Payload(message) => message,
             CopyPasteBodiesError::Resource(error) => error.to_string(),
         })
@@ -244,18 +260,16 @@ impl DesignCopyPasteBodiesOperation {
     pub(crate) fn try_new_charged(
         ctx: &DecodeContext<'_>,
         bodies: Vec<DesignCopiedBody>,
-        body_group_record_index: u32,
-        body_group_class_tag: DesignClassTag,
-        body_group_byte_offset: u64,
-        relation_record_index: u32,
-        relation_class_tag: DesignClassTag,
-        relation_byte_offset: u64,
+        body_group: CopyPasteRecordLocation,
+        relation: CopyPasteRecordLocation,
     ) -> Result<Self, CodecError> {
         Self::try_new_inner(
-            Some(ctx), bodies, body_group_record_index, body_group_class_tag,
-            body_group_byte_offset, relation_record_index, relation_class_tag,
-            relation_byte_offset,
-        ).map_err(|error| match error {
+            Some(ctx),
+            bodies,
+            body_group,
+            relation,
+        )
+        .map_err(|error| match error {
             CopyPasteBodiesError::Payload(message) => CodecError::Malformed(message),
             CopyPasteBodiesError::Resource(error) => error,
         })
@@ -264,13 +278,19 @@ impl DesignCopyPasteBodiesOperation {
     fn try_new_inner(
         ctx: Option<&DecodeContext<'_>>,
         bodies: Vec<DesignCopiedBody>,
-        body_group_record_index: u32,
-        body_group_class_tag: DesignClassTag,
-        body_group_byte_offset: u64,
-        relation_record_index: u32,
-        relation_class_tag: DesignClassTag,
-        relation_byte_offset: u64,
+        body_group: CopyPasteRecordLocation,
+        relation: CopyPasteRecordLocation,
     ) -> Result<Self, CopyPasteBodiesError> {
+        let CopyPasteRecordLocation {
+            record_index: body_group_record_index,
+            class_tag: body_group_class_tag,
+            byte_offset: body_group_byte_offset,
+        } = body_group;
+        let CopyPasteRecordLocation {
+            record_index: relation_record_index,
+            class_tag: relation_class_tag,
+            byte_offset: relation_byte_offset,
+        } = relation;
         if bodies.is_empty() {
             return Err("bodies must not be empty".into());
         }

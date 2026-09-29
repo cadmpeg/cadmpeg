@@ -9,11 +9,13 @@ fn sketch_relation_member_constructor_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::SketchRelationMembers::from_indices(&ctx, [(7, 1, 0)]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "admit F3D sketch relation members"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "admit F3D sketch relation members")
+    );
 }
 
 #[test]
@@ -21,11 +23,13 @@ fn sketch_relation_return_member_constructor_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::SketchRelationReturnMembers::from_indices(&ctx, [(7, 1)]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "admit F3D sketch relation return members"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "admit F3D sketch relation return members")
+    );
 }
 
 #[test]
@@ -37,13 +41,17 @@ fn sketch_relation_member_resolution_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = members
-        .resolve(&ctx, |record_index| super::SketchRelationOperand::Record { record_index })
+        .resolve(&ctx, |record_index| super::SketchRelationOperand::Record {
+            record_index,
+        })
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "resolve F3D sketch relation members"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "resolve F3D sketch relation members")
+    );
     assert_eq!(members, unchanged);
 }
 
@@ -56,13 +64,17 @@ fn sketch_relation_return_member_resolution_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = members
-        .resolve(&ctx, |record_index| super::SketchRelationOperand::Record { record_index })
+        .resolve(&ctx, |record_index| super::SketchRelationOperand::Record {
+            record_index,
+        })
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "resolve F3D sketch relation return members"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "resolve F3D sketch relation return members")
+    );
     assert_eq!(members, unchanged);
 }
 

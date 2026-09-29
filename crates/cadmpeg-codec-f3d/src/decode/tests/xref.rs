@@ -40,8 +40,8 @@ fn superseded_xref_placements_have_a_distinct_loss_note() {
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     report_xref_placement_overrides(&ctx, &mut report, &table).unwrap();
 
     let loss = report
@@ -57,14 +57,16 @@ fn xref_placement_override_loss_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut report = cadmpeg_ir::codec::DecodeBody::new(
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
     );
     let error = report_xref_placement_overrides(&ctx, &mut report, &placement_table()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D xref placement losses"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D xref placement losses")
+    );
 }
 
 #[test]
@@ -72,16 +74,18 @@ fn xref_placement_failure_loss_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut table = placement_table();
     table.placement_failures.push(4);
     let mut report = cadmpeg_ir::codec::DecodeBody::new(
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
     );
     let error = report_xref_placement_failures(&ctx, &mut report, &table).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D xref placement losses"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D xref placement losses")
+    );
 }
 
 #[test]
@@ -89,8 +93,8 @@ fn xref_parse_loss_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut report = cadmpeg_ir::codec::DecodeBody::new(
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
     );
@@ -100,8 +104,10 @@ fn xref_parse_loss_refuses_retained_limit() {
         &cadmpeg_core::CodecError::malformed("invalid xref"),
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D xref parse loss"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D xref parse loss")
+    );
 }
 
 #[test]
@@ -118,8 +124,8 @@ fn assembly_note_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut report = cadmpeg_ir::codec::DecodeBody::new(
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
     );
@@ -127,9 +133,14 @@ fn assembly_note_refuses_collection_limit() {
     let error = super::super::push_decode_note(
         &ctx,
         &mut report,
-        format_args!("xref {}", super::super::XrefPropertyNote(&table.references[0])),
+        format_args!(
+            "xref {}",
+            super::super::XrefPropertyNote(&table.references[0])
+        ),
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D decode notes"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D decode notes")
+    );
 }

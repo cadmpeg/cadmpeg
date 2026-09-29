@@ -133,6 +133,7 @@ impl Clone for PersistentDesignLink {
 /// The active persistent design link of every target: the highest-ordinal link
 /// of that target's ordered run. Every other link of the run is a superseded
 /// historical id retained for provenance.
+#[cfg(test)]
 pub(crate) fn current_persistent_design_links(
     links: &[PersistentDesignLink],
 ) -> std::collections::BTreeMap<&AttributeTarget, &PersistentDesignLink> {

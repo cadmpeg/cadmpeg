@@ -127,8 +127,10 @@ fn assert_annotation_collection_limit(limit: u64, operation: &'static str) {
     policy.limits.max_collection_items = limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = Frame::try_new_charged(&ctx, draft(100)).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == operation));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation)
+    );
 }
 
 #[test]

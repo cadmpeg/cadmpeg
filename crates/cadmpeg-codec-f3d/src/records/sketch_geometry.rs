@@ -1087,9 +1087,14 @@ impl SketchPoint {
         ctx: &DecodeContext<'_>,
         draft: SketchPointDraft,
     ) -> Result<Self, CodecError> {
-        let coordinates = FinitePoint2::new(draft.coordinates)
-            .ok_or_else(|| CodecError::Malformed("sketch point coordinates must be finite".into()))?;
-        let record_form = draft.record_form.clone().try_checked().map_err(CodecError::Malformed)?;
+        let coordinates = FinitePoint2::new(draft.coordinates).ok_or_else(|| {
+            CodecError::Malformed("sketch point coordinates must be finite".into())
+        })?;
+        let record_form = draft
+            .record_form
+            .clone()
+            .try_checked()
+            .map_err(CodecError::Malformed)?;
         draft.companion.validate_charged(ctx)?;
         Ok(Self::from_validated(draft, coordinates, record_form))
     }
@@ -2451,10 +2456,14 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 1;
-        let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap().0;
+        let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap()
+            .0;
         let error = SketchPoint::try_from_charged(&ctx, draft).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "index F3D sketch point incident curves"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D sketch point incident curves")
+        );
     }
 
     fn native_surface_wire() -> serde_json::Value {
@@ -2629,8 +2638,7 @@ mod tests {
 
     #[test]
     fn sketch_nurbs_knot_copy_refuses_collection_limit() {
-        let geometry: SketchCurveGeometry =
-            serde_json::from_value(native_nurbs_wire(&[])).unwrap();
+        let geometry: SketchCurveGeometry = serde_json::from_value(native_nurbs_wire(&[])).unwrap();
         let SketchCurveGeometry::Nurbs { geometry, .. } = geometry else {
             panic!("fixture must contain a NURBS curve");
         };
@@ -2641,8 +2649,10 @@ mod tests {
             .unwrap()
             .0;
         let error = geometry.knots_copy(Some(&ctx)).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-            if refusal.operation == "copy F3D sketch NURBS knots"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            if refusal.operation == "copy F3D sketch NURBS knots")
+        );
     }
 
     #[test]

@@ -7,8 +7,8 @@ use super::super::feature_definition_is_incomplete;
 fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut report = cadmpeg_ir::codec::DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
@@ -33,15 +33,16 @@ fn untyped_material_distance_loss_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut report = cadmpeg_ir::codec::DecodeBody::new(
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
     );
-    let error = super::super::report_untyped_material_distances(&ctx, &mut report, 1)
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D decode losses"));
+    let error = super::super::report_untyped_material_distances(&ctx, &mut report, 1).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D decode losses")
+    );
 }
 
 #[test]
@@ -49,15 +50,17 @@ fn act_component_link_loss_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut report = cadmpeg_ir::codec::DecodeBody::new(
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
     );
-    let error = super::super::report_unretained_act_component_links(&ctx, &mut report, 1)
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D decode losses"));
+    let error =
+        super::super::report_unretained_act_component_links(&ctx, &mut report, 1).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D decode losses")
+    );
 }
 
 #[test]
@@ -77,20 +80,18 @@ fn configuration_member_loss_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut report = cadmpeg_ir::codec::DecodeBody::new(
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
     );
-    let error = super::super::report_unresolved_configuration_rules(
-        &ctx,
-        &mut report,
-        &native,
-        &ir,
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D decode losses"));
+    let error =
+        super::super::report_unresolved_configuration_rules(&ctx, &mut report, &native, &ir)
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D decode losses")
+    );
 }
 
 #[test]

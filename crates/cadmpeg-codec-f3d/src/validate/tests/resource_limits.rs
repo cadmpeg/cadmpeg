@@ -1,9 +1,11 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-fn limited_context<'a>(arena: &'a DecodeArena) -> DecodeContext<'a> {
+fn limited_context(arena: &DecodeArena) -> DecodeContext<'_> {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    DecodeContext::from_root_bytes(&[], arena, &policy).unwrap().0
+    DecodeContext::from_root_bytes(&[], arena, &policy)
+        .unwrap()
+        .0
 }
 
 #[test]
@@ -29,16 +31,18 @@ fn validation_native_arena_reload_refuses_collection_limit() {
     let ctx = limited_context(&arena);
     let result: Result<Vec<crate::history_records::AsmBulletinBoard>, _> =
         super::super::reload_native_arena(Some(&ctx), &ir, "asm_bulletin_boards");
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "load typed native record"));
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "load typed native record")
+    );
 }
 
 #[test]
 fn validation_map_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = limited_context(&arena);
-    let error = super::super::collect_index(Some(&ctx), [("key", 1)], "index F3D test map")
-        .unwrap_err();
+    let error =
+        super::super::collect_index(Some(&ctx), [("key", 1)], "index F3D test map").unwrap_err();
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -50,8 +54,8 @@ fn validation_map_index_refuses_collection_limit() {
 fn validation_set_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = limited_context(&arena);
-    let error = super::super::collect_index_set(Some(&ctx), ["key"], "index F3D test set")
-        .unwrap_err();
+    let error =
+        super::super::collect_index_set(Some(&ctx), ["key"], "index F3D test set").unwrap_err();
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -94,8 +98,10 @@ fn validation_typed_sketch_index_refuses_collection_limit() {
         "index F3D typed sketch records",
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D typed sketch records"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D typed sketch records")
+    );
 }
 
 #[test]
@@ -108,8 +114,10 @@ fn validation_sketch_operand_index_refuses_collection_limit() {
         "index F3D sketch operands",
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D sketch operands"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sketch operands")
+    );
 }
 
 #[test]
@@ -124,8 +132,10 @@ fn validation_sketch_relation_owner_index_refuses_collection_limit() {
         2,
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D sketch relation owners"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sketch relation owners")
+    );
 }
 
 #[test]
@@ -140,8 +150,10 @@ fn validation_sketch_owner_finding_refuses_collection_limit() {
         "conflicting owner",
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D sketch owner findings"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D sketch owner findings")
+    );
 }
 
 #[test]
@@ -158,8 +170,10 @@ fn validation_sketch_owner_finding_id_refuses_retained_limit() {
         "conflicting owner",
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D sketch owner finding ID"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D sketch owner finding ID")
+    );
 }
 
 #[test]
@@ -172,8 +186,10 @@ fn validation_profile_face_group_index_refuses_collection_limit() {
         "index F3D decoded profile face groups",
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D decoded profile face groups"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D decoded profile face groups")
+    );
 }
 
 #[test]
@@ -186,8 +202,10 @@ fn validation_face_group_member_index_refuses_collection_limit() {
         "index F3D face group members",
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D face group members"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D face group members")
+    );
 }
 
 #[test]
@@ -210,8 +228,10 @@ fn native_configuration_name_index_refuses_collection_limit() {
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let ctx = super::super::Ctx::new(&ir, &native, Some(&decode)).unwrap();
     let error = super::super::validate_configurations(&ctx, &mut Vec::new()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D configuration entry names"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D configuration entry names")
+    );
 }
 
 #[test]
@@ -235,8 +255,10 @@ fn native_duplicate_configuration_id_refuses_retained_limit() {
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let ctx = super::super::Ctx::new(&ir, &native, Some(&decode)).unwrap();
     let error = super::super::validate_configurations(&ctx, &mut Vec::new()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D configuration entry ID"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D configuration entry ID")
+    );
 }
 
 #[test]
@@ -260,8 +282,10 @@ fn native_duplicate_configuration_finding_refuses_collection_limit() {
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let ctx = super::super::Ctx::new(&ir, &native, Some(&decode)).unwrap();
     let error = super::super::validate_configurations(&ctx, &mut Vec::new()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings")
+    );
 }
 
 fn validation_parameter() -> crate::records::parameters::DesignParameter {
@@ -310,8 +334,10 @@ fn native_parameter_validator_index_refuses_collection_limit() {
     let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
     ctx.decode = Some(&decode);
     let error = super::super::validate_parameters(&ctx, &mut Vec::new()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D validation parameters"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D validation parameters")
+    );
 }
 
 #[test]
@@ -330,8 +356,10 @@ fn native_parameter_validator_finding_refuses_collection_limit() {
     let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
     ctx.decode = Some(&decode);
     let error = super::super::validate_parameters(&ctx, &mut Vec::new()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings")
+    );
 }
 
 #[test]
@@ -350,7 +378,8 @@ fn native_parameter_validator_entity_refuses_retained_limit() {
     let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
     ctx.decode = Some(&decode);
     let error = super::super::validate_parameters(&ctx, &mut Vec::new()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D parameter finding entity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D parameter finding entity")
+    );
 }
-

@@ -15,7 +15,6 @@ enum Case {
 }
 
 fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::records::{
         decal::DesignRecordHeader,
         feature::scope::{DesignFeatureKind, DesignParameterScope},
@@ -25,6 +24,7 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
         sketch_links::PersistentSubentityTag,
         topology::face::{DesignFaceOperand, DesignFaceOperandDraft},
     };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let stream = "f3d:Design/BulkStream.dat";
@@ -40,8 +40,9 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
             prefix.extend_from_slice(&word.to_le_bytes());
         }
         assert_eq!(
-            crate::design::decode::dimension_frames::decode_recipe_references(
-                &prefix, 1_043).len(), 1);
+            crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_043).len(),
+            1
+        );
     }
     let prefix_len = u64::try_from(prefix.len()).unwrap();
     let program_offset = 1_063 + prefix_len;
@@ -66,7 +67,8 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
         recipe_id: recipe_id.clone(),
         recipe_prefix_offset: 1_043,
         recipe_references: crate::design::decode::dimension_frames::decode_recipe_references(
-            &prefix, 1_043),
+            &prefix, 1_043,
+        ),
         recipe_prefix_bytes: prefix,
         recipe_kind: ConstructionRecipeKind::Face,
         recipe_program_offset: program_offset,
@@ -82,7 +84,8 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
         resolved_active_face: None,
         next_record_index: 105,
         next_byte_offset,
-    }).unwrap();
+    })
+    .unwrap();
     let mut native = crate::native::F3dNative {
         design_face_operands: vec![operand.clone()],
         ..Default::default()
@@ -95,14 +98,18 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
     if case == Case::Record {
         let mut scope = DesignParameterScope::empty(
             &format!("{stream}:design-parameter-scope#10"),
-            DesignFeatureKind::OffsetFaces, 10);
-        scope.try_edit(|draft| {
-            draft.reference_members = ReferenceRun::unlocated(vec![1, 2, 100]);
-            draft.layout_fixture_references();
-            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.layout_fixture_tail();
-        }).unwrap();
+            DesignFeatureKind::OffsetFaces,
+            10,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.reference_members = ReferenceRun::unlocated(vec![1, 2, 100]);
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
         native.design_parameter_scopes.push(scope);
         native.design_record_headers.push(DesignRecordHeader {
             id: format!("{stream}:design-record-header#100"),
@@ -111,8 +118,10 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
             byte_offset: 1_000,
         });
     }
-    if matches!(case, Case::Faces | Case::Unreferenced
-        | Case::Referenced | Case::Alternate | Case::Record) {
+    if matches!(
+        case,
+        Case::Faces | Case::Unreferenced | Case::Referenced | Case::Alternate | Case::Record
+    ) {
         native.construction_recipes.push(ConstructionRecipe {
             id: recipe_id,
             byte_offset: 1_047 + prefix_len,
@@ -122,31 +131,47 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
             record_index: if case == Case::Record {
                 None
             } else {
-                Some(RecordedValue { value: 1, offset: 0 })
+                Some(RecordedValue {
+                    value: 1,
+                    offset: 0,
+                })
             },
         });
     }
-    if matches!(case, Case::Faces | Case::Unreferenced
-        | Case::Referenced | Case::Alternate) {
-        native.persistent_subentity_tags.push(PersistentSubentityTag {
-            id: format!("{stream}:persistent-subentity-tag#1"),
-            target: cadmpeg_ir::attributes::AttributeTarget::Face(ir.model.faces[0].id.clone()),
-            selector: 1,
-            token: cadmpeg_core::text::NonBlankString::new(
-                if matches!(case, Case::Referenced | Case::Alternate) { "13" } else { "1" }
-            ).unwrap(),
-            design_references: vec![1],
-            ordinal: 0,
-        });
-        if case == Case::Alternate {
-            native.persistent_subentity_tags.push(PersistentSubentityTag {
-                id: format!("{stream}:persistent-subentity-tag#2"),
-                target: cadmpeg_ir::attributes::AttributeTarget::Face(ir.model.faces[1].id.clone()),
-                selector: 2,
-                token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
+    if matches!(
+        case,
+        Case::Faces | Case::Unreferenced | Case::Referenced | Case::Alternate
+    ) {
+        native
+            .persistent_subentity_tags
+            .push(PersistentSubentityTag {
+                id: format!("{stream}:persistent-subentity-tag#1"),
+                target: cadmpeg_ir::attributes::AttributeTarget::Face(ir.model.faces[0].id.clone()),
+                selector: 1,
+                token: cadmpeg_core::text::NonBlankString::new(
+                    if matches!(case, Case::Referenced | Case::Alternate) {
+                        "13"
+                    } else {
+                        "1"
+                    },
+                )
+                .unwrap(),
                 design_references: vec![1],
-                ordinal: 1,
+                ordinal: 0,
             });
+        if case == Case::Alternate {
+            native
+                .persistent_subentity_tags
+                .push(PersistentSubentityTag {
+                    id: format!("{stream}:persistent-subentity-tag#2"),
+                    target: cadmpeg_ir::attributes::AttributeTarget::Face(
+                        ir.model.faces[1].id.clone(),
+                    ),
+                    selector: 2,
+                    token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
+                    design_references: vec![1],
+                    ordinal: 1,
+                });
         }
     }
     let expected = if matches!(case, Case::Expected | Case::Record) {
@@ -175,30 +200,72 @@ macro_rules! refuse_items {
     };
 }
 
-refuse_items!(face_operand_group_index_refuses_collection_limit,
-    Case::Group, 0, "index F3D face operand groups");
-refuse_items!(face_operand_expected_index_refuses_collection_limit,
-    Case::Expected, 0, "index F3D expected face operands");
-refuse_items!(face_operand_expected_faces_refuse_collection_limit,
-    Case::Faces, 0, "collect F3D expected operand faces");
-refuse_items!(face_operand_unreferenced_faces_refuse_collection_limit,
-    Case::Unreferenced, 1, "collect F3D unreferenced operand faces");
-refuse_items!(face_operand_referenced_faces_refuse_collection_limit,
-    Case::Referenced, 1, "index F3D referenced operand faces");
-refuse_items!(face_operand_alternate_faces_refuse_collection_limit,
-    Case::Alternate, 4, "collect F3D alternate selector operand faces");
-refuse_items!(face_operand_node_offsets_refuse_collection_limit,
-    Case::NodeOffsets, 0, "collect F3D face recipe node offsets");
-refuse_items!(face_operand_nodes_refuse_collection_limit,
-    Case::Nodes, 1, "collect F3D face recipe nodes");
-refuse_items!(face_operand_record_refuses_collection_limit,
-    Case::Record, 1, "index F3D face operand records");
-refuse_items!(face_operand_invalid_finding_refuses_collection_limit,
-    Case::Invalid, 0, "collect F3D native validation findings");
+refuse_items!(
+    face_operand_group_index_refuses_collection_limit,
+    Case::Group,
+    0,
+    "index F3D face operand groups"
+);
+refuse_items!(
+    face_operand_expected_index_refuses_collection_limit,
+    Case::Expected,
+    0,
+    "index F3D expected face operands"
+);
+refuse_items!(
+    face_operand_expected_faces_refuse_collection_limit,
+    Case::Faces,
+    0,
+    "collect F3D expected operand faces"
+);
+refuse_items!(
+    face_operand_unreferenced_faces_refuse_collection_limit,
+    Case::Unreferenced,
+    1,
+    "collect F3D unreferenced operand faces"
+);
+refuse_items!(
+    face_operand_referenced_faces_refuse_collection_limit,
+    Case::Referenced,
+    1,
+    "index F3D referenced operand faces"
+);
+refuse_items!(
+    face_operand_alternate_faces_refuse_collection_limit,
+    Case::Alternate,
+    4,
+    "collect F3D alternate selector operand faces"
+);
+refuse_items!(
+    face_operand_node_offsets_refuse_collection_limit,
+    Case::NodeOffsets,
+    0,
+    "collect F3D face recipe node offsets"
+);
+refuse_items!(
+    face_operand_nodes_refuse_collection_limit,
+    Case::Nodes,
+    1,
+    "collect F3D face recipe nodes"
+);
+refuse_items!(
+    face_operand_record_refuses_collection_limit,
+    Case::Record,
+    1,
+    "index F3D face operand records"
+);
+refuse_items!(
+    face_operand_invalid_finding_refuses_collection_limit,
+    Case::Invalid,
+    0,
+    "collect F3D native validation findings"
+);
 
 #[test]
 fn face_operand_invalid_entity_refuses_retained_limit() {
     let error = face_error(Case::Invalid, u64::MAX, 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity")
+    );
 }

@@ -142,10 +142,8 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         let mut bulk = vec![0xaa, 0xbb];
         let marker = bulk.len();
         binding(&mut bulk, 17, reserved_len, CONTEXT_UUID);
-        let decoded = with_scan(&archive(&bulk), |scan| {
-            decode_component_naming_spaces(scan)
-        })
-        .expect("component naming space");
+        let decoded = with_scan(&archive(&bulk), decode_component_naming_spaces)
+            .expect("component naming space");
         let [space] = decoded.as_slice() else {
             panic!("expected one component naming space");
         };

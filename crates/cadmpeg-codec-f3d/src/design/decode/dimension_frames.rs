@@ -1368,7 +1368,8 @@ fn parse_dimension_annotation_draft(
     if !sketch_entities.contains(&owner_reference) {
         return None;
     }
-    Some(crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
+    Some(
+        crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
             id: String::new(),
             companion_record_index,
             governing_companion_record_index: *governing_companion_record_index,
@@ -1387,7 +1388,8 @@ fn parse_dimension_annotation_draft(
             paired_byte_offset: paired_byte_offset as u64,
             owner_reference,
             owner_reference_offset: (paired_byte_offset + 20) as u64,
-    })
+        },
+    )
 }
 
 #[cfg(test)]

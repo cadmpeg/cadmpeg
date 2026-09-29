@@ -1022,14 +1022,12 @@ pub(crate) fn decode_design_body_bindings(
             let pair_count = u32::try_from(record.bindings.len())
                 .map_err(|_| CodecError::malformed("F3D Design body map exceeds u32::MAX pairs"))?;
             for (ordinal, binding) in (0..pair_count).zip(&record.bindings) {
-                let source_bodies = body_keys
-                    .iter()
-                    .filter(|key| {
-                        key.source_brep.as_deref().map_or_else(
-                            || active_basename == Some(record.blob_name.as_str()),
-                            |source| source == record.blob_name,
-                        )
-                    });
+                let source_bodies = body_keys.iter().filter(|key| {
+                    key.source_brep.as_deref().map_or_else(
+                        || active_basename == Some(record.blob_name.as_str()),
+                        |source| source == record.blob_name,
+                    )
+                });
                 let body = crate::brep::resolve_body_selector(source_bodies, binding.asm_key)?
                     .map(|id| crate::brep::copy_body_id(ctx, id))
                     .transpose()?;
@@ -1207,9 +1205,9 @@ pub(crate) fn scanned_browser_node_entities(
             }
         } else {
             ctx.charge_collection_items(1, "index F3D browser node entities")?;
-            entities.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index F3D browser node entities", 0, 1)
-            })?;
+            entities
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("index F3D browser node entities", 0, 1))?;
             entities.insert(key, record.entity_suffix);
         }
     }
@@ -1273,9 +1271,7 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        body_bound_candidates, parse_body_map_frame,
-    };
+    use super::{body_bound_candidates, parse_body_map_frame};
     use crate::bytes::lp_utf16_bytes;
     use crate::bytes::take_reference;
     use crate::design::presentation::{
@@ -1309,7 +1305,10 @@ mod tests {
     fn typed_browser_node_hidden_flags(
         bytes: &[u8],
         meta: &crate::metastream::MetaStream,
-    ) -> Result<std::collections::HashMap<u64, super::BrowserNodeVisibility>, cadmpeg_core::CodecError> {
+    ) -> Result<
+        std::collections::HashMap<u64, super::BrowserNodeVisibility>,
+        cadmpeg_core::CodecError,
+    > {
         crate::test_support::with_decode_context(|ctx| {
             super::typed_browser_node_hidden_flags(ctx, bytes, meta)
         })

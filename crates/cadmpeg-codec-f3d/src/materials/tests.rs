@@ -202,8 +202,8 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
     let [frame] = frames.as_slice() else {
         panic!("marker-shaped length prefix must remain inside one logical record")
     };
-    let decoded = decode_definition_catalog_record(frame.bytes())
-        .expect("decode framed definition record");
+    let decoded =
+        decode_definition_catalog_record(frame.bytes()).expect("decode framed definition record");
     assert_eq!(decoded.schema, "GenericSchema");
     assert_eq!(decoded.asset_id, "Prism-001");
     assert_eq!(decoded.category.as_deref(), Some(category.as_str()));
@@ -220,8 +220,10 @@ fn definition_catalog_schema_refuses_retained_limit() {
         .expect("test decode context");
     let error = super::decode_definition_catalog_record(&ctx, &record)
         .expect_err("catalog schema must exceed retained budget");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D UTF-8 string"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D UTF-8 string")
+    );
 }
 
 fn catalog_field_refusal(retained_before: u64) -> cadmpeg_core::CodecError {
@@ -276,8 +278,10 @@ fn fixed_material_schema_refuses_retained_limit() {
         .expect("test decode context");
     let error = super::decode_fixed_record(&ctx, &record)
         .expect_err("fixed material schema must exceed retained budget");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D UTF-8 string"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D UTF-8 string")
+    );
 }
 
 fn fixed_material_field_refusal(retained_before: u64) -> cadmpeg_core::CodecError {
@@ -324,8 +328,8 @@ fn definition_catalog_version_one_omits_category() {
     lp_ascii(&mut logical, "opaque");
     logical.extend_from_slice(&0_u32.to_le_bytes());
 
-    let decoded = decode_definition_catalog_record(&logical)
-        .expect("decode version-one definition record");
+    let decoded =
+        decode_definition_catalog_record(&logical).expect("decode version-one definition record");
     assert_eq!(decoded.schema, "PrismOpaqueSchema");
     assert_eq!(decoded.asset_id, "Opaque(246,246,243)");
     assert_eq!(decoded.category, None);
@@ -346,8 +350,8 @@ fn definition_catalog_version_zero_omits_category_and_group() {
     logical.extend_from_slice(&1_u32.to_le_bytes());
     lp_ascii(&mut logical, "Maps/UnifiedBitmap/UnifiedBitmap.png");
 
-    let decoded = decode_definition_catalog_record(&logical)
-        .expect("decode version-zero definition record");
+    let decoded =
+        decode_definition_catalog_record(&logical).expect("decode version-zero definition record");
     assert_eq!(decoded.category, None);
     assert_eq!(decoded.schema, "UnifiedBitmapSchema");
     assert_eq!(decoded.asset_id, "Metal-045_metal_pattern_shader");
@@ -367,8 +371,8 @@ fn definition_catalog_version_three_adds_subgroup() {
     logical.extend_from_slice(&0_u32.to_le_bytes());
     logical.extend_from_slice(&0_u32.to_le_bytes());
 
-    let decoded = decode_definition_catalog_record(&logical)
-        .expect("decode version-three definition record");
+    let decoded =
+        decode_definition_catalog_record(&logical).expect("decode version-three definition record");
     assert_eq!(decoded.category.as_deref(), Some("Metal"));
     assert_eq!(decoded.schema, "GenericSchema");
     assert_eq!(decoded.asset_id, "InvGen-063");
@@ -386,11 +390,26 @@ fn definition_catalog_uses_asset_and_schema_identity() {
 
     crate::test_support::with_decode_context(|ctx| {
         let mut definitions = std::collections::HashMap::new();
-        merge_definition_catalog_record(ctx, &mut definitions, definition("Prism-256", "Metal/Steel")).unwrap();
-        merge_definition_catalog_record(ctx, &mut definitions, definition("Prism-256", "Metal/Steel")).unwrap();
+        merge_definition_catalog_record(
+            ctx,
+            &mut definitions,
+            definition("Prism-256", "Metal/Steel"),
+        )
+        .unwrap();
+        merge_definition_catalog_record(
+            ctx,
+            &mut definitions,
+            definition("Prism-256", "Metal/Steel"),
+        )
+        .unwrap();
         assert_eq!(definitions.len(), 1);
 
-        merge_definition_catalog_record(ctx, &mut definitions, definition("Prism-256", "Metal/Stainless")).unwrap();
+        merge_definition_catalog_record(
+            ctx,
+            &mut definitions,
+            definition("Prism-256", "Metal/Stainless"),
+        )
+        .unwrap();
         let key = ("Prism-256".to_owned(), "PrismMetalSchema".to_owned());
         assert_eq!(definitions[&key].category, None);
 
@@ -1026,8 +1045,12 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
     };
 
     let mut ir = make_ir();
-    crate::decode::resolve_face_appearance_bindings(&cadmpeg_test_support::service_decode_context(), &mut ir, std::slice::from_ref(&assignment))
-        .expect("legacy face assignment");
+    crate::decode::resolve_face_appearance_bindings(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir,
+        std::slice::from_ref(&assignment),
+    )
+    .expect("legacy face assignment");
     assert_eq!(ir.model.faces[0].color, Some(assignment_color));
     assert_eq!(ir.model.appearance_bindings.len(), 1);
 
@@ -1476,7 +1499,8 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
         .count();
     assert_eq!(paired, 2);
 
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
     assert_eq!(result.ir().model.surfaces.len(), 2);
 }
@@ -1552,8 +1576,10 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     with_scan(&bytes, |scan| {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let visibility = crate::design::decode::body::decode_all_body_visibility(&ctx, scan).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let visibility =
+            crate::design::decode::body::decode_all_body_visibility(&ctx, scan).unwrap();
         assert_eq!(
             visibility
                 .get(&("BREP.synthetic.smbh".into(), 3))
@@ -1658,7 +1684,8 @@ fn browser_body_appearance_scan_rejects_binary_utf16_length_candidates() {
 
     assert!(crate::test_support::with_decode_context(|ctx| {
         super::lp_utf16_strings(ctx, &bytes).unwrap()
-    }).is_empty());
+    })
+    .is_empty());
 }
 
 #[test]
@@ -1894,18 +1921,19 @@ fn a_body_node_candidate_reads_the_strings_between_the_marker_and_the_visual_tok
         ("node-a".to_string(), 7u64),
         ("node-b".to_string(), 9u64),
     ]);
+    let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        crate::materials::body_node_candidate(&strings, 3, &nodes),
+        crate::materials::body_node_candidate(&ctx, &strings, 3, &nodes).unwrap(),
         Some(7),
         "the window ends before the visual token"
     );
     assert_eq!(
-        crate::materials::body_node_candidate(&strings, 2, &nodes),
+        crate::materials::body_node_candidate(&ctx, &strings, 2, &nodes).unwrap(),
         None,
         "a window with no candidate names no entity"
     );
     assert_eq!(
-        crate::materials::body_node_candidate(&strings, 4, &nodes),
+        crate::materials::body_node_candidate(&ctx, &strings, 4, &nodes).unwrap(),
         None,
         "two candidates that disagree name no entity"
     );

@@ -413,6 +413,7 @@ impl DesignAssemblyAlignment {
     }
 
     /// Return both occurrence paths when every operand uses that qualifier form.
+    #[cfg(test)]
     pub(crate) fn operand_paths(&self) -> Option<[DesignAssemblyOperandPath; 2]> {
         self.operand_path_refs()
             .map(|paths| paths.map(Clone::clone))
