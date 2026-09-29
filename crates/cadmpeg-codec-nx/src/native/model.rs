@@ -862,14 +862,16 @@ impl NativeModel {
             feature_unlabeled_operation_body_writes(ctx, container)?;
         let feature_operation_body_writes = feature_operation_body_writes(ctx, container)?;
         let feature_operation_body_image_segment_uses = feature_operation_body_image_segment_uses(
+            ctx,
             &feature_operation_body_writes,
             &segment_body_bindings,
-        );
+        )?;
         let feature_operation_body_identity_segment_uses =
             feature_operation_body_identity_segment_uses(
+                ctx,
                 &feature_operation_body_writes,
                 &segment_body_bindings,
-            );
+            )?;
         let feature_operation_body_partition_uses = feature_operation_body_partition_uses(
             &feature_operation_body_writes,
             &feature_operation_body_image_segment_uses,

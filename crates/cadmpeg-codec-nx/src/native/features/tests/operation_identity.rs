@@ -24,6 +24,110 @@ use crate::test_support::test_om::composed_feature_history_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use std::collections::BTreeMap;
 
+fn image_segment_uses_for_test(
+    writes: &[FeatureOperationBodyWrite],
+    bindings: &[SegmentBodyBinding],
+) -> Vec<crate::native::features::FeatureOperationBodyImageSegmentUse> {
+    crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_image_segment_uses(ctx, writes, bindings)
+    }).expect("admitted body-image segment uses")
+}
+
+fn identity_segment_uses_for_test(
+    writes: &[FeatureOperationBodyWrite],
+    bindings: &[SegmentBodyBinding],
+) -> Vec<crate::native::features::FeatureOperationBodyIdentitySegmentUse> {
+    crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_identity_segment_uses(ctx, writes, bindings)
+    }).expect("admitted body-identity segment uses")
+}
+
+fn body_segment_join_refusal<T>(
+    route: for<'ctx> fn(
+        &cadmpeg_core::decode::DecodeContext<'ctx>,
+        &[FeatureOperationBodyWrite],
+        &[SegmentBodyBinding],
+    ) -> Result<Vec<T>, cadmpeg_core::CodecError>,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let write = FeatureOperationBodyWrite {
+        id: "nx:operation-body-write#0".to_string(),
+        operation_label: Some("operation#0".to_string()),
+        operation_record: "record#0".to_string(),
+        ordinal: 0,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
+            11,
+            crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).expect("group token"),
+            crate::om::body_write::BodyImageTag::Form12,
+            crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).expect("image token"),
+            0,
+        ).expect("body-write frame"),
+        body_image_data_block: Some("block#2".to_string()),
+    };
+    let binding = SegmentBodyBinding {
+        id: "binding#0".to_string(),
+        stream_link: "stream#0".to_string(),
+        stream_ordinal: 0,
+        stream_kind: crate::parasolid::StreamKind::Plain,
+        body_object_index: 10,
+        body_alias_object_index: 11,
+        stream_role: 16,
+        source_offset: 0,
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        route(ctx, std::slice::from_ref(&write), std::slice::from_ref(&binding))
+    }).expect("admitted body segment use");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx, &[write], &[binding]).err()
+        .expect("body segment use resource limit")
+}
+
+macro_rules! body_segment_join_limit_tests {
+    ($collection:ident, $retained:ident, $work:ident, $route:path) => {
+        #[test]
+        fn $collection() {
+            let error = body_segment_join_refusal($route,
+                |policy| policy.limits.max_collection_items = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        }
+
+        #[test]
+        fn $retained() {
+            let error = body_segment_join_refusal($route,
+                |policy| policy.limits.max_retained_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        }
+
+        #[test]
+        fn $work() {
+            let error = body_segment_join_refusal($route,
+                |policy| policy.limits.max_work_units = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        }
+    };
+}
+
+body_segment_join_limit_tests!(
+    body_image_join_refuses_collection_limit,
+    body_image_join_refuses_retained_limit,
+    body_image_join_refuses_work_limit,
+    feature_operation_body_image_segment_uses
+);
+body_segment_join_limit_tests!(
+    body_identity_join_refuses_collection_limit,
+    body_identity_join_refuses_retained_limit,
+    body_identity_join_refuses_work_limit,
+    feature_operation_body_identity_segment_uses
+);
+
 fn label(ordinal: u32, object_indices: [Option<u32>; 4]) -> FeatureOperationLabel {
     FeatureOperationLabel {
         id: format!("operation#{ordinal}"),
@@ -544,7 +648,7 @@ fn body_image_segment_use_requires_one_plain_alias() {
         source_offset: 100,
     };
 
-    let uses = feature_operation_body_image_segment_uses(
+    let uses = image_segment_uses_for_test(
         &writes,
         &[
             binding("plain", crate::parasolid::StreamKind::Plain),
@@ -559,7 +663,7 @@ fn body_image_segment_use_requires_one_plain_alias() {
         "nx:om-data-blocks-0:block#65"
     );
     assert_eq!(uses[0].segment_body_binding, "plain");
-    assert!(feature_operation_body_image_segment_uses(
+    assert!(image_segment_uses_for_test(
         &writes,
         &[
             binding("first", crate::parasolid::StreamKind::Plain),
@@ -597,7 +701,7 @@ fn body_identity_segment_use_does_not_require_an_image_block() {
         source_offset: 100,
     };
 
-    let uses = feature_operation_body_identity_segment_uses(
+    let uses = identity_segment_uses_for_test(
         std::slice::from_ref(&write),
         &[
             binding("plain", crate::parasolid::StreamKind::Plain),
@@ -610,7 +714,7 @@ fn body_identity_segment_use_does_not_require_an_image_block() {
     assert_eq!(uses[0].segment_body_binding, "plain");
 
     write.body_image_data_block = Some("irrelevant".into());
-    assert!(feature_operation_body_identity_segment_uses(
+    assert!(identity_segment_uses_for_test(
         &[write],
         &[
             binding("first", crate::parasolid::StreamKind::Plain),
@@ -651,7 +755,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
             source_offset: 100,
         };
     let bindings = [binding("plain-0", 0, 11, 10), binding("plain-1", 1, 12, 16)];
-    let image_uses = feature_operation_body_image_segment_uses(&writes, &bindings);
+    let image_uses = image_segment_uses_for_test(&writes, &bindings);
     let stream = |subtype| crate::parasolid::Stream {
         file_offset: 0,
         consumed: 0,
