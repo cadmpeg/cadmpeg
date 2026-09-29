@@ -252,7 +252,10 @@ pub(crate) fn project_sketch_constraints(
             } else {
                 None
             };
-            loci.or_else(|| exact_atomic_constraint(kind, &semantic_entities))
+            match loci {
+                Some(loci) => Some(loci),
+                None => exact_atomic_constraint(kind, &semantic_entities, ctx)?,
+            }
         } else {
             None
         };

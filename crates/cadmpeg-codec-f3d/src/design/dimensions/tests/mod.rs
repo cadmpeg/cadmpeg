@@ -7,6 +7,7 @@
 )]
 
 mod linear;
+mod atomic_limits;
 mod frame_relations;
 mod limits;
 mod offset;

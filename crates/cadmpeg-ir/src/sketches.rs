@@ -3009,6 +3009,29 @@ impl SketchPolygon {
         Ok(Self { entities })
     }
 
+    /// Admit decoded polygon members after charging the uniqueness index.
+    pub fn try_new_charged(
+        entities: Vec<SketchEntityId>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        if entities.len() < 3 {
+            return Ok(Err("entities requires at least three distinct polygon members"));
+        }
+        let count = u64::try_from(entities.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        ctx.charge_collection_items(count, operation)?;
+        let mut unique = std::collections::HashSet::new();
+        unique.try_reserve(entities.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        for entity in &entities {
+            if !unique.insert(entity) {
+                return Ok(Err("entities requires at least three distinct polygon members"));
+            }
+        }
+        Ok(Ok(Self { entities }))
+    }
+
     /// Returns the ordered polygon members.
     pub fn entities(&self) -> &[SketchEntityId] {
         &self.entities
