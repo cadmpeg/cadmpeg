@@ -561,9 +561,9 @@ mod tests {
 
     fn stream(members: &[&str], trailer: [u8; 4]) -> Vec<u8> {
         let mut bytes = vec![1];
-        bytes.extend_from_slice(&(members.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(u32::try_from(members.len()).expect("fixture value fits u32")).to_le_bytes());
         for member in members {
-            bytes.extend_from_slice(&(member.len() as u16).to_le_bytes());
+            bytes.extend_from_slice(&(u16::try_from(member.len()).expect("fixture value fits u16")).to_le_bytes());
             bytes.extend_from_slice(member.as_bytes());
         }
         bytes.extend_from_slice(&trailer);
@@ -784,7 +784,7 @@ mod tests {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = std::mem::size_of::<super::SavedToggleEntry>() as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::SavedToggleEntry>());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
         assert!(
@@ -833,7 +833,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes =
-            std::mem::size_of::<super::SavedToggleEntry>() as u64 - 1;
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::SavedToggleEntry>()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
         assert!(
@@ -849,9 +849,9 @@ mod tests {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = std::mem::size_of::<super::SavedToggleEntry>() as u64
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::SavedToggleEntry>())
             + 32
-            + "nx:saved-toggle:entry#0".len() as u64
+            + cadmpeg_core::decode::u64_from_index("nx:saved-toggle:entry#0".len())
             - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
@@ -869,7 +869,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes =
-            (std::mem::size_of::<(&super::ToggleId, usize)>() * 4 - 1) as u64;
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&super::ToggleId, usize)>() * 4 - 1);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
         assert!(
@@ -885,10 +885,10 @@ mod tests {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = std::mem::size_of::<super::SavedToggleEntry>() as u64
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::SavedToggleEntry>())
             + 32
-            + "nx:saved-toggle:entry#0".len() as u64
-            + "nx:saved-toggle:identity#0123456789abcdef0123456789abcdef".len() as u64
+            + cadmpeg_core::decode::u64_from_index("nx:saved-toggle:entry#0".len())
+            + cadmpeg_core::decode::u64_from_index("nx:saved-toggle:identity#0123456789abcdef0123456789abcdef".len())
             - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();

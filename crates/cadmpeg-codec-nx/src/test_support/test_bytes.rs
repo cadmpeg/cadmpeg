@@ -93,13 +93,13 @@ pub(crate) fn put_ref(rec: &mut [u8], at: usize, value: u16) {
 
 pub(crate) fn encoded_xmt(value: u32) -> Vec<u8> {
     if i16::try_from(value).is_ok() {
-        return (value as u16).to_be_bytes().to_vec();
+        return (u16::try_from(value).expect("fixture value fits u16")).to_be_bytes().to_vec();
     }
     let quotient = value / 32_767;
     let remainder = value % 32_767;
     assert!(remainder > 0 && i16::try_from(remainder).is_ok());
-    let mut out = (-(remainder as i16)).to_be_bytes().to_vec();
-    out.extend_from_slice(&(quotient as u16).to_be_bytes());
+    let mut out = (-(i16::try_from(remainder).expect("fixture value fits i16"))).to_be_bytes().to_vec();
+    out.extend_from_slice(&(u16::try_from(quotient).expect("fixture value fits u16")).to_be_bytes());
     out
 }
 

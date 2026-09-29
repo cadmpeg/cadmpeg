@@ -56,7 +56,7 @@ fn om_numeric_expression_types_only_canonical_parameter_names() {
     for name in ["p12foo", "p12_", "p4294967296_radius"] {
         let text = format!("(Number [mm]) {name}: 5; ");
         let mut bytes = b"hostglobalvariables".to_vec();
-        bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+        bytes.extend_from_slice(&[0x99, 0x04, u8::try_from(text.len() + 2).expect("fixture value fits u8")]);
         bytes.extend_from_slice(text.as_bytes());
         bytes.push(0);
 
@@ -78,7 +78,7 @@ fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let text = b"(Number [mm]) p9: (193.94 - 6) / 2 + 1.5e1; ";
     let mut bytes = b"hostglobalvariables".to_vec();
-    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(&[0x99, 0x04, u8::try_from(text.len() + 2).expect("fixture value fits u8")]);
     bytes.extend_from_slice(text);
     bytes.push(0);
 
@@ -107,7 +107,7 @@ fn om_numeric_expression_accepts_inches_and_terminal_comments() {
     ];
     let mut bytes = b"hostglobalvariables".to_vec();
     for text in texts {
-        bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+        bytes.extend_from_slice(&[0x99, 0x04, u8::try_from(text.len() + 2).expect("fixture value fits u8")]);
         bytes.extend_from_slice(text);
         bytes.push(0);
     }
@@ -143,7 +143,7 @@ fn om_numeric_expression_accepts_inches_and_terminal_comments() {
 fn om_numeric_expressions_refuse_collection_limit() {
     let text = b"(Number [mm]) p1: 2; ";
     let mut bytes = b"hostglobalvariables".to_vec();
-    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(&[0x99, 0x04, u8::try_from(text.len() + 2).expect("fixture value fits u8")]);
     bytes.extend_from_slice(text);
     bytes.push(0);
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -162,7 +162,7 @@ fn om_numeric_expressions_refuse_collection_limit() {
 fn om_numeric_expressions_refuse_retained_limit() {
     let text = b"(Number [mm]) p1: 2; ";
     let mut bytes = b"hostglobalvariables".to_vec();
-    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(&[0x99, 0x04, u8::try_from(text.len() + 2).expect("fixture value fits u8")]);
     bytes.extend_from_slice(text);
     bytes.push(0);
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -181,7 +181,7 @@ fn om_numeric_expressions_refuse_retained_limit() {
 fn om_numeric_expressions_refuse_work_limit() {
     let text = b"(Number [mm]) p1: 2; ";
     let mut bytes = b"hostglobalvariables".to_vec();
-    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(&[0x99, 0x04, u8::try_from(text.len() + 2).expect("fixture value fits u8")]);
     bytes.extend_from_slice(text);
     bytes.push(0);
     let arena = cadmpeg_core::decode::DecodeArena::new();

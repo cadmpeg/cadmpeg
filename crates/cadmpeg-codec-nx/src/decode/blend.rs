@@ -353,7 +353,7 @@ mod tests {
             SurfaceId::mint("test:model:entity#synthetic:seed-offset").expect("identity grammar");
         let mut cache = BlendContactSeedCache::default();
         for parameter in 0..(MAX_BLEND_CONTACT_SEEDS + 4) {
-            let parameter = parameter as f64;
+            let parameter = cadmpeg_core::convert::f64_from_index(parameter).expect("fixture integer is exactly representable");
             cache
                 .remember(
                     BlendContactSeed {

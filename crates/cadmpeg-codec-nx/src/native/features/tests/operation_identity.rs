@@ -321,7 +321,7 @@ fn unlabeled_history_fixture() -> crate::container::Container<'static> {
     unlabeled.extend_from_slice(&[0xff; 4]);
     unlabeled.extend_from_slice(b"unlabeled");
     section.splice(second_header..second_header, unlabeled);
-    let payload_len = (section.len() - 16) as u32;
+    let payload_len = u32::try_from(section.len() - 16).expect("fixture value fits u32");
     section[8..12].copy_from_slice(&payload_len.to_be_bytes());
     let mut payload = Vec::new();
     for word in [32u32, 9, 11, 1, 1, 24] {
@@ -1600,12 +1600,12 @@ fn journal_row(state_ordinal: u32, source_offset: u64) -> JournalRow {
         source_offset,
         1_700_000_000,
         crate::om::state_tagged_value::StateTaggedValue::read_at(
-            &[0xe0, 0, 0, 0, state_ordinal as u8],
+            &[0xe0, 0, 0, 0, u8::try_from(state_ordinal).expect("fixture value fits u8")],
             0,
         )
         .unwrap(),
         crate::om::state_index::StateIndexToken::read_at(&[12], 0).unwrap(),
-        crate::om::state_index::StateIndexToken::read_at(&[state_ordinal as u8], 0).unwrap(),
+        crate::om::state_index::StateIndexToken::read_at(&[u8::try_from(state_ordinal).expect("fixture value fits u8")], 0).unwrap(),
     )
     .unwrap()
 }
@@ -1646,7 +1646,7 @@ fn terminal_frame(operation_record: &str, local_ordinal: u32) -> FeatureOperatio
         frame: crate::om::common_frame::TerminalFrame::<u64, Option<String>>::new(
             crate::om::common_frame::CommonFrameSuffix::from_wire(
                 local_ordinal,
-                &[local_ordinal as u8],
+                &[u8::try_from(local_ordinal).expect("fixture value fits u8")],
                 None,
                 &[0xff],
             )

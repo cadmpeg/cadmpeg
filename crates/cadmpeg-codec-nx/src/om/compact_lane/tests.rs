@@ -29,9 +29,9 @@ fn counted_lane_positions_follow_every_encoded_width() {
                     offsets
                 );
                 assert_eq!(lane.declared_count(), count);
-                let base = u64::MAX - bytes.len() as u64;
+                let base = u64::MAX - cadmpeg_core::decode::u64_from_index(bytes.len());
                 let absolute = lane.clone().into_absolute(base).unwrap();
-                assert_eq!(absolute.anchor().offset, base + anchor_offset as u64);
+                assert_eq!(absolute.anchor().offset, base + cadmpeg_core::decode::u64_from_index(anchor_offset));
                 assert_eq!(
                     absolute
                         .members()
@@ -39,7 +39,7 @@ fn counted_lane_positions_follow_every_encoded_width() {
                         .collect::<Vec<_>>(),
                     offsets
                         .iter()
-                        .map(|offset| base + *offset as u64)
+                        .map(|offset| base + cadmpeg_core::decode::u64_from_index(*offset))
                         .collect::<Vec<_>>()
                 );
                 assert!(lane.clone().into_absolute(base + 1).is_none());
@@ -70,11 +70,11 @@ fn abr_lane_positions_include_null_and_extended_widths() {
                 .try_into()
                 .unwrap();
         assert_eq!(lane.slots().map(|slot| slot.offset), offsets);
-        let base = u64::MAX - bytes.len() as u64;
+        let base = u64::MAX - cadmpeg_core::decode::u64_from_index(bytes.len());
         let absolute = lane.clone().into_absolute(base).unwrap();
         assert_eq!(
             absolute.slots().map(|slot| slot.offset),
-            offsets.map(|offset| base + offset as u64)
+            offsets.map(|offset| base + cadmpeg_core::decode::u64_from_index(offset))
         );
         assert!(lane.clone().into_absolute(base + 1).is_none());
         let resolved = lane

@@ -178,7 +178,7 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
             .unwrap(),
             token: crate::om::reference_index::ReferenceIndexToken::from_wire(
                 10 + ordinal,
-                &[0xf0, (10 + ordinal) as u8],
+                &[0xf0, u8::try_from(10 + ordinal).expect("fixture value fits u8")],
             )
             .unwrap(),
             data_block: block.map(str::to_string),
@@ -215,7 +215,7 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
         .unwrap(),
         token: crate::om::reference_index::ReferenceIndexToken::from_wire(
             12 + ordinal,
-            &[0xf0, (12 + ordinal) as u8],
+            &[0xf0, u8::try_from(12 + ordinal).expect("fixture value fits u8")],
         )
         .unwrap(),
         data_block: block.map(str::to_string),

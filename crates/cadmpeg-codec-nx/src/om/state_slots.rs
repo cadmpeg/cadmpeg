@@ -63,7 +63,7 @@ mod tests {
     #[test]
     #[cfg(target_pointer_width = "64")]
     fn slot_count_bounds_the_last_ordinal_without_allocating_elements() {
-        let maximum_count = u32::MAX as usize + 1;
+        let maximum_count = cadmpeg_core::decode::index_from_u32(u32::MAX) + 1;
         let maximum = StateSlots::new(vec![(); maximum_count]).unwrap();
         assert_eq!(maximum.len(), maximum_count);
         assert!(StateSlots::new(vec![(); maximum_count + 1]).is_err());

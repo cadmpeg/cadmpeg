@@ -127,7 +127,7 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
         for true_offset in [false, true] {
             let mut stream = offset_surface_topology_partition_stream();
             let offset_record = stream.len() - 31;
-            stream[offset_record + 19] = discriminator as u8;
+            stream[offset_record + 19] = u8::try_from(discriminator).expect("fixture value fits u8");
             stream[offset_record + 20] = u8::from(true_offset);
             let mut cur = Cursor::new(prt_with_partition(&stream));
             let result = NxCodec

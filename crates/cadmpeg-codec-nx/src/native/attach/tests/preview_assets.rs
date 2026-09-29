@@ -44,7 +44,7 @@ fn preview_attachment_refuses_asset_collection_limit() {
 #[test]
 fn preview_attachment_refuses_asset_retained_limit() {
     let error =
-        preview_attachment_result(|policy| policy.limits.max_retained_bytes = PREVIEW.len() as u64)
+        preview_attachment_result(|policy| policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(PREVIEW.len()))
             .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes

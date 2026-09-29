@@ -26,13 +26,13 @@ fn legacy_stream_boundaries_require_complete_transmit_headers() {
     let first = bytes.len();
     let first_description = b": TRANSMIT FILE (partition) created by test";
     bytes.extend_from_slice(b"PS");
-    bytes.extend_from_slice(&(first_description.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(&(u32::try_from(first_description.len()).expect("fixture value fits u32")).to_be_bytes());
     bytes.extend_from_slice(first_description);
     bytes.extend_from_slice(b"payload PS\x00\x00not a header");
     let second = bytes.len();
     let second_description = b": TRANSMIT FILE (deltas) created by test";
     bytes.extend_from_slice(b"PS");
-    bytes.extend_from_slice(&(second_description.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(&(u32::try_from(second_description.len()).expect("fixture value fits u32")).to_be_bytes());
     bytes.extend_from_slice(second_description);
 
     assert_eq!(super::legacy_stream_start(&bytes, 0), Some(first));
@@ -45,12 +45,12 @@ fn legacy_short_sections_are_bounded_by_complete_transmit_headers() {
     let mut bytes = Vec::new();
     let first_description = b": TRANSMIT FILE (partition)";
     bytes.extend_from_slice(b"PS");
-    bytes.extend_from_slice(&(first_description.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(&(u32::try_from(first_description.len()).expect("fixture value fits u32")).to_be_bytes());
     bytes.extend_from_slice(first_description);
     let second = bytes.len();
     let second_description = b": TRANSMIT FILE (deltas)";
     bytes.extend_from_slice(b"PS");
-    bytes.extend_from_slice(&(second_description.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(&(u32::try_from(second_description.len()).expect("fixture value fits u32")).to_be_bytes());
     bytes.extend_from_slice(second_description);
     bytes.extend_from_slice(&[0; 64]);
 
@@ -120,13 +120,13 @@ fn parasolid_entity_51_reference_count_is_five_plus_flags() {
         direct.extend_from_slice(&2u32.to_be_bytes());
         direct.extend_from_slice(&0x21u16.to_be_bytes());
         for reference in 0..flags + 5 {
-            direct.extend_from_slice(&(reference as u16 + 3).to_be_bytes());
+            direct.extend_from_slice(&(u16::try_from(reference).expect("fixture value fits u16") + 3).to_be_bytes());
         }
         direct.extend_from_slice(&[0xaa, 0xbb]);
 
         let record = crate::parasolid::entity_51_record_at(&direct, 0).unwrap();
         assert_eq!(record.leading_references.len(), 5);
-        assert_eq!(record.trailing_references.values().len(), flags as usize);
+        assert_eq!(record.trailing_references.values().len(), usize::try_from(flags).expect("fixture value fits usize"));
         assert_eq!(record.byte_len, direct.len() - 2);
         assert!(crate::parasolid::entity_51_record_at(&direct[..direct.len() - 3], 0).is_none());
 
@@ -137,14 +137,14 @@ fn parasolid_entity_51_reference_count_is_five_plus_flags() {
         prefixed.extend_from_slice(&0x21u16.to_be_bytes());
         for reference in 0..flags + 5 {
             prefixed.push(u8::from(reference % 2 == 0));
-            prefixed.extend_from_slice(&(reference as u16 + 3).to_be_bytes());
+            prefixed.extend_from_slice(&(u16::try_from(reference).expect("fixture value fits u16") + 3).to_be_bytes());
         }
         prefixed.push(0);
         prefixed.extend_from_slice(&[0xaa, 0xbb]);
 
         let record = crate::parasolid::entity_51_record_at(&prefixed, 0).unwrap();
         assert_eq!(record.leading_references.len(), 5);
-        assert_eq!(record.trailing_references.values().len(), flags as usize);
+        assert_eq!(record.trailing_references.values().len(), usize::try_from(flags).expect("fixture value fits usize"));
         assert_eq!(record.byte_len, prefixed.len() - 2);
         assert!(
             crate::parasolid::entity_51_record_at(&prefixed[..prefixed.len() - 3], 0).is_none()
@@ -495,7 +495,7 @@ fn a_packed_member_reporting_fewer_bytes_than_a_zlib_member_holds_is_refused_by_
     // The shortest member a decompressor can report is admitted, and the scan
     // advances by exactly the bytes the member consumed.
     assert_eq!(
-        packed_member_advance(4096, MIN_ZLIB_MEMBER_LEN as u64).expect("the shortest zlib member"),
+        packed_member_advance(4096, cadmpeg_core::decode::u64_from_index(MIN_ZLIB_MEMBER_LEN)).expect("the shortest zlib member"),
         MIN_ZLIB_MEMBER_LEN
     );
     assert_eq!(

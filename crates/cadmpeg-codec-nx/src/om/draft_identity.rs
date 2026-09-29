@@ -253,7 +253,7 @@ mod tests {
             )
             .unwrap();
             assert_eq!(frame.prefix(), prefix);
-            assert_eq!(frame.identity_offset(), 10 + prefix.len() as u64);
+            assert_eq!(frame.identity_offset(), 10 + cadmpeg_core::decode::u64_from_index(prefix.len()));
             let mut bytes = prefix.to_vec();
             bytes.extend_from_slice(b"0af?");
             let parsed = crate::test_support::with_decode_context(|ctx| {
@@ -263,7 +263,7 @@ mod tests {
             .unwrap();
             assert_eq!(parsed.prefix(), prefix);
             assert_eq!(parsed.form(), frame.form());
-            let limit = u64::MAX - prefix.len() as u64;
+            let limit = u64::MAX - cadmpeg_core::decode::u64_from_index(prefix.len());
             assert_eq!(
                 DraftIdentityFrame::from_wire(prefix, frame.form(), "0".into(), limit)
                     .unwrap()

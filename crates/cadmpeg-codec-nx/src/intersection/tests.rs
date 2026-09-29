@@ -589,11 +589,11 @@ fn intersection_chart_accepts_one_matching_parameter_complement() {
 fn intersection_chart_accepts_encoded_count_without_arbitrary_ceiling() {
     let count = 1025usize;
     let mut chart = record(40, 60 + count * 24);
-    chart[2..6].copy_from_slice(&(count as u32).to_be_bytes());
+    chart[2..6].copy_from_slice(&(u32::try_from(count).expect("fixture value fits u32")).to_be_bytes());
     put_ref(&mut chart, 6, 20);
     put_f64(&mut chart, 8, 0.0);
     put_f64(&mut chart, 16, 1.0);
-    chart[24..28].copy_from_slice(&(count as u32).to_be_bytes());
+    chart[24..28].copy_from_slice(&(u32::try_from(count).expect("fixture value fits u32")).to_be_bytes());
     put_f64(&mut chart, 28, 0.00001);
     put_f64(&mut chart, 36, 0.001);
     put_f64(&mut chart, 44, -31_415_800_000_000.0);
@@ -602,7 +602,7 @@ fn intersection_chart_accepts_encoded_count_without_arbitrary_ceiling() {
         put_vec3(
             &mut chart,
             60 + index * 24,
-            [index as f64 * 0.001, 0.0, 0.0],
+            [cadmpeg_core::convert::f64_from_index(index).expect("fixture integer is exactly representable") * 0.001, 0.0, 0.0],
         );
     }
 
@@ -616,7 +616,7 @@ fn intersection_chart_accepts_encoded_count_without_arbitrary_ceiling() {
     .unwrap()
     .try_into()
     .expect("one wide chart");
-    assert_eq!(chart.data.count(), count as u32);
+    assert_eq!(chart.data.count(), u32::try_from(count).expect("fixture value fits u32"));
     assert_eq!(chart.data.points().len(), count);
 }
 
@@ -637,11 +637,11 @@ fn intersection_chart_scan_does_not_admit_nested_counted_candidates() {
 
     let count = 5;
     let mut outer = record(40, 60 + count * 24);
-    outer[2..6].copy_from_slice(&(count as u32).to_be_bytes());
+    outer[2..6].copy_from_slice(&(u32::try_from(count).expect("fixture value fits u32")).to_be_bytes());
     put_ref(&mut outer, 6, 21);
     put_f64(&mut outer, 8, 0.0);
     put_f64(&mut outer, 16, 1.0);
-    outer[24..28].copy_from_slice(&(count as u32).to_be_bytes());
+    outer[24..28].copy_from_slice(&(u32::try_from(count).expect("fixture value fits u32")).to_be_bytes());
     put_f64(&mut outer, 28, 0.000_01);
     put_f64(&mut outer, 36, 0.001);
     put_f64(&mut outer, 44, -31_415_800_000_000.0);

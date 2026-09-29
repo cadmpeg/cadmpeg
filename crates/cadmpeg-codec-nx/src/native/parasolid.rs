@@ -2605,7 +2605,7 @@ struct ParasolidAttributeDefinitionWire {
 impl From<ParasolidAttributeDefinition> for ParasolidAttributeDefinitionWire {
     fn from(value: ParasolidAttributeDefinition) -> Self {
         Self {
-            legal_owner_flag_count: value.legal_owner_flags.as_slice().len() as u8,
+            legal_owner_flag_count: u8::try_from(value.legal_owner_flags.as_slice().len()).expect("fixture value fits u8"),
             legal_owner_flags: value.legal_owner_flags.padded(),
             field_count: value.field_codes.len(),
             id: value.id,

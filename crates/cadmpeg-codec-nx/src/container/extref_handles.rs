@@ -76,7 +76,7 @@ impl From<ExtrefHandles> for HandlesWire {
         Self {
             handles: value.values().to_vec(),
             closing_duplicate: value.closing_duplicate(),
-            prefix_byte_len: value.prefix_byte_len() as u64,
+            prefix_byte_len: cadmpeg_core::decode::u64_from_index(value.prefix_byte_len()),
         }
     }
 }

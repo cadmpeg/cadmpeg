@@ -135,7 +135,7 @@ fn preceding_named_point_refusal(
         .expect("sketch position"),
         token: crate::om::reference_index::ReferenceIndexToken::from_wire(
             12 + ordinal,
-            &[0xf0, (12 + ordinal) as u8],
+            &[0xf0, u8::try_from(12 + ordinal).expect("fixture value fits u8")],
         )
         .expect("reference token"),
         data_block: Some(block.into()),

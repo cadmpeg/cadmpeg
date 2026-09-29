@@ -131,7 +131,7 @@ fn operation_state_group_table_handles_a_long_adjacent_group_run_and_refuses_col
     assert!(table.trailing_bytes().is_empty());
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = (GROUP_COUNT - 1) as u64;
+    policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(GROUP_COUNT - 1);
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let error = operation_state_group_table_before_counter_map(&ctx, &bytes, map_start, 0)

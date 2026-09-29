@@ -212,8 +212,8 @@ fn parasolid_entity_value_records_dispatches_all_value_families() {
     let mut unicode = vec![0x00, 0x62];
     unicode.extend_from_slice(&2u32.to_be_bytes());
     unicode.extend_from_slice(&18u16.to_be_bytes());
-    unicode.extend_from_slice(&(b'N' as u16).to_be_bytes());
-    unicode.extend_from_slice(&(b'X' as u16).to_be_bytes());
+    unicode.extend_from_slice(&(u16::from(b'N')).to_be_bytes());
+    unicode.extend_from_slice(&(u16::from(b'X')).to_be_bytes());
     bytes.extend(unicode);
 
     let records = crate::parasolid::value_records::entity_value_records(&bytes);
@@ -266,7 +266,7 @@ fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
             .is_empty()
     );
 
-    let code_units = [b'N' as u16, b'X' as u16, 0xd83d, 0xde80];
+    let code_units = [u16::from(b'N'), u16::from(b'X'), 0xd83d, 0xde80];
     let mut unicode = vec![0x00, 0x62, 0xff];
     unicode.extend_from_slice(&4u32.to_be_bytes());
     unicode.extend_from_slice(&[0xff, 0xff, 0x00, 0x01]);

@@ -812,7 +812,7 @@ fn decode_assembly_reports_external_dependency() {
 }
 
 fn directory_retained_bytes(name: &str) -> u64 {
-    (std::mem::size_of::<crate::container::DirEntry>() + name.len()) as u64
+    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<crate::container::DirEntry>() + name.len())
 }
 
 #[test]
@@ -822,7 +822,7 @@ fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
     let file = prt_with_partition(&stream);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes =
-        directory_retained_bytes("/Root/UG_PART/UG_PART") + (stream.len() * 2) as u64 + 4096;
+        directory_retained_bytes("/Root/UG_PART/UG_PART") + cadmpeg_core::decode::u64_from_index(stream.len() * 2) + 4096;
 
     let result = NxCodec
         .decode(&mut Cursor::new(file), &options)
@@ -840,7 +840,7 @@ fn metadata_fallback_old_retained_limit_refuses_inflated_stream_after_directory(
     stream.resize(64, b'.');
     let file = prt_with_partition(&stream);
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = (stream.len() * 2) as u64;
+    options.policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(stream.len() * 2);
     let error = NxCodec
         .decode(&mut Cursor::new(file), &options)
         .expect_err("directory bytes use part of the retained allowance");
@@ -1199,10 +1199,10 @@ fn decode_retains_unsupported_named_stream_payloads() {
             .map(cadmpeg_ir::RetainedSourceRecord::byte_len)
             .collect::<Vec<_>>(),
         vec![
-            structure.len() as u64,
-            fast_load_jt.len() as u64,
-            toggle.len() as u64,
-            vendor.len() as u64
+            cadmpeg_core::decode::u64_from_index(structure.len()),
+            cadmpeg_core::decode::u64_from_index(fast_load_jt.len()),
+            cadmpeg_core::decode::u64_from_index(toggle.len()),
+            cadmpeg_core::decode::u64_from_index(vendor.len())
         ]
     );
     assert!(unknowns.iter().all(|unknown| {
@@ -1235,7 +1235,7 @@ fn decode_typed_saved_toggle_stream_is_not_retained_as_opaque() {
     let member = b"0123456789abcdef0123456789abcdef:Off";
     let mut toggle = vec![1];
     toggle.extend_from_slice(&1_u32.to_le_bytes());
-    toggle.extend_from_slice(&(member.len() as u16).to_le_bytes());
+    toggle.extend_from_slice(&(u16::try_from(member.len()).expect("fixture value fits u16")).to_le_bytes());
     toggle.extend_from_slice(member);
     toggle.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
     let file = prt_with_named_payloads(&[("/Root/UG_PART/LastSavedToggleInfoStream", toggle)]);
@@ -1268,10 +1268,10 @@ fn container_only_retains_typed_saved_toggle_payload() {
     let member = b"0123456789abcdef0123456789abcdef:On";
     let mut toggle = vec![1];
     toggle.extend_from_slice(&1_u32.to_le_bytes());
-    toggle.extend_from_slice(&(member.len() as u16).to_le_bytes());
+    toggle.extend_from_slice(&(u16::try_from(member.len()).expect("fixture value fits u16")).to_le_bytes());
     toggle.extend_from_slice(member);
     toggle.extend_from_slice(&[1, 2, 3, 4]);
-    let toggle_len = toggle.len() as u64;
+    let toggle_len = cadmpeg_core::decode::u64_from_index(toggle.len());
     let file = prt_with_named_payloads(&[("/Root/UG_PART/LastSavedToggleInfoStream", toggle)]);
 
     let result = EditableDecodeResult::from(
@@ -1312,7 +1312,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     for (ordinal, kind) in ["DELETE", "DELETE"].into_iter().enumerate() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("test:test:feature#{ordinal}")).expect("identity grammar"),
-            ordinal: ordinal as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: None,
             dependencies: Default::default(),
@@ -1390,7 +1390,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("test:test:feature#unresolved-{ordinal}"))
                 .expect("identity grammar"),
-            ordinal: ordinal as u64 + 4,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal) + 4,
             name: None,
             suppressed: None,
             dependencies: Default::default(),

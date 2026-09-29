@@ -48,7 +48,7 @@ impl From<ParasolidDeltasTerminalNullReferences> for NullTailWire {
             id: value.id,
             stream_ordinal: value.stream_ordinal,
             references: value.form.references().to_vec(),
-            byte_len: value.form.raw().len() as u64,
+            byte_len: cadmpeg_core::decode::u64_from_index(value.form.raw().len()),
             sha256: crate::native::hex::Sha256Hex::digest(value.form.raw()),
             inflated_offset: value.inflated_offset,
         }
@@ -118,7 +118,7 @@ impl Serialize for ParasolidDeltasTermUseNumericTail {
 #[cfg(test)]
 impl From<ParasolidDeltasTermUseNumericTail> for NumericTailWire {
     fn from(value: ParasolidDeltasTermUseNumericTail) -> Self {
-        let byte_len = value.values.byte_len() as u64;
+        let byte_len = cadmpeg_core::decode::u64_from_index(value.values.byte_len());
         let sha256 = crate::native::hex::Sha256Hex::digest(&value.values.bytes());
         Self {
             id: value.id,

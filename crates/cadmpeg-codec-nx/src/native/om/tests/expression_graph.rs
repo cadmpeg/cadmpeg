@@ -1055,7 +1055,7 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
         ordinal,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(
             201 + ordinal,
-            &[0x80, (201 + ordinal) as u8],
+            &[0x80, u8::try_from(201 + ordinal).expect("fixture value fits u8")],
         )
         .unwrap(),
         target_record: Some(format!("nx:om-record-directory-0:entry#{ordinal}")),

@@ -125,15 +125,15 @@ mod tests {
         assert_eq!(lane.end_offset(), 112);
         assert_eq!(StateSlotLane::end_at(&bytes, 0, bytes.len()), Some(12));
         let native =
-            StateSlotLane::new(200 + lane.offset() as u64, lane.clone().into_slots()).unwrap();
+            StateSlotLane::new(200 + cadmpeg_core::decode::u64_from_index(lane.offset()), lane.clone().into_slots()).unwrap();
         assert_eq!((native.offset(), native.end_offset()), (300, 312));
         assert!(StateSlotLane::new(
-            u64::MAX - 112 + lane.offset() as u64,
+            u64::MAX - 112 + cadmpeg_core::decode::u64_from_index(lane.offset()),
             lane.clone().into_slots()
         )
         .is_ok());
         assert!(
-            StateSlotLane::new(u64::MAX - 111 + lane.offset() as u64, lane.into_slots()).is_err()
+            StateSlotLane::new(u64::MAX - 111 + cadmpeg_core::decode::u64_from_index(lane.offset()), lane.into_slots()).is_err()
         );
         assert!(
             StateSlotLane::read(&ctx, &bytes, 0, bytes.len(), usize::MAX - 11)

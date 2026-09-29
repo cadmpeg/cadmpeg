@@ -80,20 +80,20 @@ impl From<FeatureThruCurveConstructionBranchGroup> for GroupWire {
                     .zip(branch.member_positions())
                     .enumerate()
                     .map(|(ordinal, ((token, data_block), position))| ReferenceWire {
-                        ordinal: ordinal as u32,
+                        ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                         token: *token,
                         data_block: data_block.clone(),
                         source_offset: source_offset + position,
                     })
                     .collect();
                 BranchWire {
-                    ordinal: ordinal as u32,
+                    ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                     mode: branch.mode,
                     declared_count: branch.members.declared_count(),
                     state_lane: branch.members.state_lane(),
                     members,
                     terminal: ReferenceWire {
-                        ordinal: branch.members.len() as u32,
+                        ordinal: u32::try_from(branch.members.len()).expect("fixture value fits u32"),
                         token: branch.terminal.0,
                         data_block: branch.terminal.1.clone(),
                         source_offset: source_offset + branch.terminal_position(),
