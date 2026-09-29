@@ -24,52 +24,48 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::Point2;
 use std::collections::BTreeMap;
 
-fn blend_bound_limit_error(
-    policy: &cadmpeg_core::decode::DecodePolicy,
-) -> cadmpeg_core::CodecError {
+fn blend_bound_limit_error(adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
     let stream = blend_bound_charted_intersection_curve_stream();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, policy).unwrap();
-    crate::intersection::blend_bounds(&ctx, &stream).expect_err("blend-bound resource refusal")
+    
+    crate::test_support::with_decode_context_over(&stream, adjust, |ctx| {
+
+    crate::intersection::blend_bounds(ctx, &stream).expect_err("blend-bound resource refusal")
+
+})
 }
 
 #[test]
 fn intersection_blend_bound_route_refuses_collection_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 0; };
     assert!(
-        matches!(blend_bound_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        matches!(blend_bound_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
     );
 }
 
 #[test]
 fn intersection_blend_bound_route_refuses_retained_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_retained_bytes = 0; };
     assert!(
-        matches!(blend_bound_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        matches!(blend_bound_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
     );
 }
 
 #[test]
 fn intersection_blend_bound_route_refuses_scoped_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 0;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_materialized_bytes = 0; };
     assert!(
-        matches!(blend_bound_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        matches!(blend_bound_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
     );
 }
 
 #[test]
 fn intersection_blend_bound_route_refuses_work_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_work_units = 0;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_work_units = 0; };
     assert!(
-        matches!(blend_bound_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        matches!(blend_bound_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
@@ -77,31 +73,35 @@ fn intersection_blend_bound_route_refuses_work_limit() {
 #[test]
 fn intersection_chart_route_refuses_scoped_limit() {
     let stream = ext11_charted_intersection_curve_stream();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 0;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&stream, |policy| { policy.limits.max_materialized_bytes = 0; }, |ctx| {
+
     assert!(
-        matches!(crate::intersection::curves(&ctx, &stream, crate::intersection::ChartPointLayout::Ext11),
+        matches!(crate::intersection::curves(ctx, &stream, crate::intersection::ChartPointLayout::Ext11),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
     );
+
+})
 }
 
 #[test]
 fn intersection_solved_route_refuses_retained_limit() {
     let stream = charted_intersection_curve_topology_partition_stream();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&stream, |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
     assert!(
-        matches!(crate::intersection::curves(&ctx, &stream, crate::intersection::ChartPointLayout::Xyz3),
+        matches!(crate::intersection::curves(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
     );
+
+})
 }
 
 #[test]
@@ -700,13 +700,9 @@ fn intersection_support_uv_scan_does_not_admit_nested_counted_candidates() {
 
 #[test]
 fn intersection_pcurve_attachment_requires_face_incidence() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &geometry_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("empty geometry root is admitted");
+    
+    crate::test_support::with_decode_context(|geometry_ctx| {
+
 
     let ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let edge = cadmpeg_ir::ids::EdgeId::mint("synthetic:cube:edge#0").expect("identity grammar");
@@ -740,7 +736,7 @@ fn intersection_pcurve_attachment_requires_face_incidence() {
     };
 
     assert!(pcurve_matches_edge(
-        &geometry_ctx,
+        geometry_ctx,
         &ir,
         &edge,
         &surface,
@@ -748,13 +744,15 @@ fn intersection_pcurve_attachment_requires_face_incidence() {
         None,
     ));
     assert!(!pcurve_matches_edge(
-        &geometry_ctx,
+        geometry_ctx,
         &ir,
         &edge,
         &surface,
         &pcurve(Point2::new(10.0, 5.0)),
         None,
     ));
+
+})
 }
 
 #[test]

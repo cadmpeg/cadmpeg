@@ -2812,13 +2812,9 @@ mod tests {
         use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
         use cadmpeg_ir::geometry::Surface;
 
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
+        
+        crate::test_support::with_decode_context(|geometry_ctx| {
+
 
         let mut ir = CadIr::empty();
         let surface = SurfaceId::mint("test:model:entity#nx:test:wide-coarse-surface")
@@ -2844,7 +2840,7 @@ mod tests {
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
         let geometry_budget = GeometryWorkBudget::from_context(
-            &geometry_ctx,
+            geometry_ctx,
             cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
         );
         let parameters = super::coarse_model_surface_parameters(
@@ -2858,7 +2854,9 @@ mod tests {
         .expect("finite grid candidate");
         assert!(parameters.is_finite());
         assert_eq!(parameters.u, 0.0);
-    }
+    
+})
+}
 
     #[test]
     fn offset_derivative_step_remains_finite_across_a_wide_domain() {
@@ -2906,13 +2904,9 @@ mod tests {
 
     #[test]
     fn pointwise_offset_rejection_preserves_the_adaptive_budget() {
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
+        
+        crate::test_support::with_decode_context(|geometry_ctx| {
+
 
         let coordinates = [0.0, 0.5, 1.0];
         let square_controls = [0.0, 0.0, 1.0];
@@ -2963,7 +2957,7 @@ mod tests {
         let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support));
         let candidate = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate));
         let budget = GeometryWorkBudget::from_context(
-            &geometry_ctx,
+            geometry_ctx,
             cadmpeg_core::decode::u64_from_index(200),
         );
 
@@ -2978,7 +2972,9 @@ mod tests {
         .is_none());
         assert!(budget.consumed() > 0);
         assert!(!budget.exhausted());
-    }
+    
+})
+}
 
     #[test]
     fn positive_weight_control_hull_bounds_offset_queries() {
@@ -3031,13 +3027,9 @@ mod tests {
 
     #[test]
     fn offset_inverse_continues_past_a_linear_support_boundary() {
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
+        
+        crate::test_support::with_decode_context(|geometry_ctx| {
+
 
         let support = SurfaceId::mint("test:model:entity#synthetic:linear-support")
             .expect("identity grammar");
@@ -3118,7 +3110,7 @@ mod tests {
             fit_tolerance,
         ));
         let parameters = offset_surface_parameters_with_tolerance(
-            &geometry_ctx,
+            geometry_ctx,
             &ir,
             &offset,
             target,
@@ -3131,7 +3123,7 @@ mod tests {
         assert!((parameters.v - 0.25).abs() <= fit_tolerance);
 
         let geometry_budget = GeometryWorkBudget::from_context(
-            &geometry_ctx,
+            geometry_ctx,
             cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
         );
         let refined = refine_offset_surface_parameters_with_index_and_budget(
@@ -3149,7 +3141,7 @@ mod tests {
 
         let remote = Point3::new(3.0, 0.25, 1e200);
         assert!(offset_surface_parameters_with_tolerance(
-            &geometry_ctx,
+            geometry_ctx,
             &ir,
             &offset,
             remote,
@@ -3158,7 +3150,7 @@ mod tests {
         )
         .is_none());
         let geometry_budget = GeometryWorkBudget::from_context(
-            &geometry_ctx,
+            geometry_ctx,
             cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
         );
         assert!(super::coarse_model_surface_parameters(
@@ -3193,7 +3185,7 @@ mod tests {
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&near_zero);
         let target = Point3::new(3., 0.25, 1e-200);
         assert!(offset_surface_parameters_with_tolerance(
-            &geometry_ctx,
+            geometry_ctx,
             &near_zero,
             &offset,
             target,
@@ -3202,7 +3194,7 @@ mod tests {
         )
         .is_none());
         let geometry_budget = GeometryWorkBudget::from_context(
-            &geometry_ctx,
+            geometry_ctx,
             cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
         );
         assert!(refine_offset_surface_parameters_with_index_and_budget(
@@ -3215,7 +3207,9 @@ mod tests {
         )
         .expect("evaluator allocation succeeds")
         .is_none());
-    }
+    
+})
+}
     #[test]
     fn intersection_null_vector_is_invariant_under_row_scaling() {
         for a in [1e-200, 1e-5, 1., 1e100, 1e200] {
@@ -3239,13 +3233,9 @@ mod tests {
     #[test]
     fn audit_regression_derivative_bounds_ignore_common_weight_scale() {
         use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
+        
+        crate::test_support::with_decode_context(|geometry_ctx| {
+
 
         for weight in [1., 1e-300, 1e-200, 1e-120, 1e120, 1e200, 1e300] {
             let axis = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
@@ -3263,7 +3253,7 @@ mod tests {
             )
             .unwrap();
             let geometry_budget = super::GeometryWorkBudget::from_context(
-                &geometry_ctx,
+                geometry_ctx,
                 cadmpeg_core::decode::u64_from_index(super::MAX_ADAPTIVE_GEOMETRY_WORK),
             );
             let net =
@@ -3281,7 +3271,9 @@ mod tests {
             assert!((bounds.v - 1.).abs() <= 16. * f64::EPSILON);
             assert_eq!([bounds.uu, bounds.uv, bounds.vv], [0., 0., 0.]);
         }
-    }
+    
+})
+}
 
     #[test]
     fn audit_regression_translation_normal_rejects_constant_parameter_axes() {
@@ -3394,13 +3386,9 @@ mod tests {
     /// first Gauss-Newton step lands near `u = -0.2`, where x exceeds the
     /// finite range; the search halves it and converges.
     fn refine_across_the_overflowing_step(ir: &CadIr, offset: &SurfaceId) -> Option<Point2> {
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
+        
+        crate::test_support::with_decode_context(|geometry_ctx| {
+
 
         let axis_x = 1.701e308;
         let radius = 1.0e307;
@@ -3416,7 +3404,7 @@ mod tests {
             "{first_candidate:?}"
         );
         let geometry_budget = GeometryWorkBudget::from_context(
-            &geometry_ctx,
+            geometry_ctx,
             cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
         );
         refine_offset_surface_parameters_with_index_and_budget(
@@ -3428,7 +3416,9 @@ mod tests {
             &geometry_budget,
         )
         .expect("evaluator allocation succeeds")
-    }
+    
+})
+}
 
     #[test]
     fn the_offset_refinement_halves_a_step_whose_offset_point_overflows() {

@@ -16,13 +16,9 @@ use std::io::Cursor;
 
 #[test]
 fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &geometry_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("empty geometry root is admitted");
+    
+    crate::test_support::with_decode_context(|geometry_ctx| {
+
 
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let partition =
@@ -85,7 +81,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
         SerializedSupportUv::default(),
     )];
 
-    crate::decode::support_uv::complete_support_uv(&geometry_ctx, &mut result.ir_mut(), &pending)
+    crate::decode::support_uv::complete_support_uv(geometry_ctx, &mut result.ir_mut(), &pending)
         .unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
@@ -108,17 +104,15 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
             .expect("resource allocation did not fail")
             .is_ok()
     );
+
+})
 }
 
 #[test]
 fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &geometry_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("empty geometry root is admitted");
+    
+    crate::test_support::with_decode_context(|geometry_ctx| {
+
 
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let partition =
@@ -178,8 +172,8 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
         SerializedSupportUv::default(),
     )];
 
-    invalidate_inconsistent_support_uv(&geometry_ctx, &mut result.ir_mut(), &pending);
-    crate::decode::support_uv::complete_support_uv(&geometry_ctx, &mut result.ir_mut(), &pending)
+    invalidate_inconsistent_support_uv(geometry_ctx, &mut result.ir_mut(), &pending);
+    crate::decode::support_uv::complete_support_uv(geometry_ctx, &mut result.ir_mut(), &pending)
         .unwrap();
 
     assert!(
@@ -187,4 +181,6 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
             .expect("resource allocation did not fail")
             .is_ok()
     );
+
+})
 }

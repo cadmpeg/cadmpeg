@@ -2150,7 +2150,7 @@ mod tests {
     use crate::container::Container;
     use crate::decode::Scan;
     use crate::parasolid::Stream;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -2183,54 +2183,64 @@ mod tests {
 
     #[test]
     fn unknown_stream_metadata_refuses_identity_text_at_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
         assert!(matches!(
-            unknown_stream_metadata(&ctx, 0, &preview_stream(Vec::new())),
+            unknown_stream_metadata(ctx, 0, &preview_stream(Vec::new())),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "nx unknown stream id"
         ));
-    }
+    
+})
+}
 
     #[test]
     fn unknown_stream_metadata_refuses_digest_text_at_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("nx:container:parasolid#0".len());
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("nx:container:parasolid#0".len()); }, |ctx| {
+
         assert!(matches!(
-            unknown_stream_metadata(&ctx, 0, &preview_stream(Vec::new())),
+            unknown_stream_metadata(ctx, 0, &preview_stream(Vec::new())),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "nx unknown stream digest"
         ));
-    }
+    
+})
+}
 
     #[test]
     fn unknown_stream_metadata_refuses_digest_work_at_caller_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_work_units = 0; }, |ctx| {
+
         assert!(matches!(
-            unknown_stream_metadata(&ctx, 0, &preview_stream(vec![7])),
+            unknown_stream_metadata(ctx, 0, &preview_stream(vec![7])),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "hash NX unknown stream"
         ));
-    }
+    
+})
+}
 
     #[test]
     fn unknown_stream_metadata_preserves_identity_and_digest_under_service_profile() {
         let stream = preview_stream(vec![7]);
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let unknown = unknown_stream_metadata(&ctx, 0, &stream).unwrap();
+        
+        
+        crate::test_support::with_decode_context(|ctx| {
+
+        let unknown = unknown_stream_metadata(ctx, 0, &stream).unwrap();
         assert_eq!(unknown.id().as_str(), "nx:container:parasolid#0");
         assert_eq!(unknown.offset(), 0);
         assert_eq!(unknown.data(), None);
@@ -2239,7 +2249,9 @@ mod tests {
             wire["retention"]["sha256"],
             cadmpeg_ir::hash::sha256_hex(&stream.inflated)
         );
-    }
+    
+})
+}
 
     #[test]
     fn source_meta_refuses_first_attribute_node_at_collection_limit() {
@@ -2249,17 +2261,20 @@ mod tests {
         })
         .unwrap()
         .into_report_parts();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
         assert!(matches!(
-            source_meta(&ctx, &scan, &dialects),
+            source_meta(ctx, &scan, &dialects),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "nx source attributes"
         ));
-    }
+    
+})
+}
 
     #[test]
     fn source_meta_refuses_first_attribute_text_at_retained_limit() {
@@ -2269,17 +2284,20 @@ mod tests {
         })
         .unwrap()
         .into_report_parts();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
         assert!(matches!(
-            source_meta(&ctx, &scan, &dialects),
+            source_meta(ctx, &scan, &dialects),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "nx source attribute text"
         ));
-    }
+    
+})
+}
 
     #[test]
     fn source_meta_refuses_second_map_nodes_at_collection_limit() {
@@ -2289,31 +2307,36 @@ mod tests {
         })
         .unwrap()
         .into_report_parts();
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (service_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let expected = source_meta(&service_ctx, &scan, &dialects).unwrap();
+        
+        
+        crate::test_support::with_decode_context_over(&[], |_| {}, |service_ctx| {
+
+        let expected = source_meta(service_ctx, &scan, &dialects).unwrap();
         assert_eq!(expected.attributes["file_size"], "0");
-        let mut limited_policy = DecodePolicy::service();
-        limited_policy.limits.max_collection_items =
-            cadmpeg_core::decode::u64_from_index(expected.attributes.len());
-        let (limited_ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items =
+            cadmpeg_core::decode::u64_from_index(expected.attributes.len()); }, |limited_ctx| {
+
         assert!(matches!(
-            source_meta(&limited_ctx, &scan, &dialects),
+            source_meta(limited_ctx, &scan, &dialects),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "nx source attribute names"
         ));
-    }
+    
+})
+
+})
+}
 
     #[test]
     fn unknown_stream_copy_refuses_when_retained_budget_is_exhausted() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = 2;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("bounded test input");
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[0], |policy| { policy.limits.max_retained_bytes = 2; }, |ctx| {
+
         let stream = Stream {
             file_offset: 0,
             consumed: 0,
@@ -2325,22 +2348,20 @@ mod tests {
         };
 
         assert!(matches!(
-            unknown_stream(&ctx, 0, &stream),
+            unknown_stream(ctx, 0, &stream),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                     && limit.operation == "retain NX unknown stream"
         ));
-    }
+    
+})
+}
 
     #[test]
     fn curve_point_cache_reuses_an_exact_parameter_evaluation() {
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
+        
+        crate::test_support::with_decode_context(|geometry_ctx| {
+
 
         let curve = CurveId::mint("test:model:entity#synthetic:curve").expect("identity grammar");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -2354,7 +2375,7 @@ mod tests {
             .expect("valid test curve"),
         ));
         let geometry_budget = GeometryWorkBudget::from_context(
-            &geometry_ctx,
+            geometry_ctx,
             cadmpeg_core::decode::u64_from_index(1024),
         );
         let mut cache = CurvePointCache::default();
@@ -2373,5 +2394,7 @@ mod tests {
             assert_eq!(first, second);
             assert_eq!(geometry_budget.remaining(), remaining_after_first);
         });
-    }
+    
+})
+}
 }

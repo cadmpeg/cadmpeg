@@ -464,32 +464,34 @@ impl IntersectionIncidenceIndex {
 
 #[cfg(test)]
 pub(crate) fn complete_intersection_supports_from_edge_incidence(ir: &mut CadIr) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
-            .expect("test context");
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let mut index = IntersectionIncidenceIndex::default();
     let affected_curves = index
-        .index_stream(&ctx, ir, IntersectionEntityStarts::default())
+        .index_stream(ctx, ir, IntersectionEntityStarts::default())
         .expect("test incidence");
     index
-        .complete_supports(&ctx, ir, &affected_curves)
+        .complete_supports(ctx, ir, &affected_curves)
         .expect("test support completion");
+
+})
 }
 
 #[cfg(test)]
 pub(crate) fn complete_intersection_pcurves_from_coedge_incidence(ir: &mut CadIr) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
-            .expect("test context");
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let mut index = IntersectionIncidenceIndex::default();
     let affected_curves = index
-        .index_stream(&ctx, ir, IntersectionEntityStarts::default())
+        .index_stream(ctx, ir, IntersectionEntityStarts::default())
         .expect("test incidence");
     index
-        .complete_pcurves(&ctx, ir, &affected_curves)
+        .complete_pcurves(ctx, ir, &affected_curves)
         .expect("test pcurve completion");
+
+})
 }
 
 #[cfg(test)]
@@ -4607,17 +4609,19 @@ mod tests {
                 pcurves: Vec::new(),
             },
         });
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test context");
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
         let mut index = super::IntersectionIncidenceIndex::default();
         let error = index
-            .complete_from_stream(&ctx, &mut ir, super::IntersectionEntityStarts::default())
+            .complete_from_stream(ctx, &mut ir, super::IntersectionEntityStarts::default())
             .expect_err("incidence collection refusal");
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-    }
+    
+})
+}
 
     #[test]
     fn serialized_branch_completion_route_refuses_retained_limit() {
@@ -4634,14 +4638,14 @@ mod tests {
             point,
             tolerance: None,
         });
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test context");
-        let geometry_budget = super::GeometryWorkBudget::from_context(&ctx, 100);
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
+        let geometry_budget = super::GeometryWorkBudget::from_context(ctx, 100);
         let error = super::complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
-            &ctx,
+            ctx,
             &mut ir,
             &std::collections::BTreeSet::new(),
             0,
@@ -4651,11 +4655,11 @@ mod tests {
         )
         .expect_err("branch completion retained refusal");
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-    }
+    
+})
+}
 
-    fn tolerant_edge_attachment_limit_error(
-        policy: &cadmpeg_core::decode::DecodePolicy,
-    ) -> cadmpeg_core::CodecError {
+    fn tolerant_edge_attachment_limit_error(adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
         let mut ir = CadIr::empty();
         ir.model.points.push(cadmpeg_ir::topology::Point::new(
             cadmpeg_ir::ids::PointId::mint("nx:test:point#0").expect("identity grammar"),
@@ -4663,12 +4667,12 @@ mod tests {
                 .expect("finite point"),
             None,
         ));
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, policy)
-            .expect("test context");
-        let geometry_budget = super::GeometryWorkBudget::from_context(&ctx, 100);
+        
+        crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+
+        let geometry_budget = super::GeometryWorkBudget::from_context(ctx, 100);
         super::attach_tolerant_edge_intersections_with_budget(
-            &ctx,
+            ctx,
             &mut ir,
             &crate::topology::Graph::default(),
             &std::collections::BTreeMap::new(),
@@ -4680,24 +4684,24 @@ mod tests {
             &geometry_budget,
         )
         .expect_err("tolerant edge attachment limit refusal")
-    }
+    
+})
+}
 
     #[test]
     fn tolerant_edge_attachment_route_refuses_collection_limit() {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 0; };
         assert!(matches!(
-            tolerant_edge_attachment_limit_error(&policy),
+            tolerant_edge_attachment_limit_error(adjust_policy),
             cadmpeg_core::CodecError::ResourceLimit(_)
         ));
     }
 
     #[test]
     fn tolerant_edge_attachment_route_refuses_retained_limit() {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_retained_bytes = 0; };
         assert!(matches!(
-            tolerant_edge_attachment_limit_error(&policy),
+            tolerant_edge_attachment_limit_error(adjust_policy),
             cadmpeg_core::CodecError::ResourceLimit(_)
         ));
     }
@@ -4841,16 +4845,12 @@ mod tests {
             use_curve: None,
         });
 
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("test context");
+        
+        crate::test_support::with_decode_context(|ctx| {
+
         let mut index = super::IntersectionIncidenceIndex::default();
         index
-            .complete_from_stream(&ctx, &mut ir, super::IntersectionEntityStarts::default())
+            .complete_from_stream(ctx, &mut ir, super::IntersectionEntityStarts::default())
             .expect("first stream incidence");
 
         let later_starts = super::IntersectionEntityStarts {
@@ -4904,7 +4904,7 @@ mod tests {
         });
 
         index
-            .complete_from_stream(&ctx, &mut ir, later_starts)
+            .complete_from_stream(ctx, &mut ir, later_starts)
             .expect("later stream incidence");
         let procedural = &ir.model.procedural_curves[0];
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
@@ -4915,7 +4915,7 @@ mod tests {
         assert!(context.sides()[1].pcurve.is_none());
 
         index
-            .complete_from_model(&ctx, &mut ir)
+            .complete_from_model(ctx, &mut ir)
             .expect("model incidence");
         let procedural = &ir.model.procedural_curves[0];
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
@@ -4936,7 +4936,9 @@ mod tests {
                 .into()
             )
         );
-    }
+    
+})
+}
 }
 
 #[cfg(test)]

@@ -1023,7 +1023,7 @@ pub(crate) fn append_design_intent_losses(
 #[cfg(test)]
 mod tests {
     use super::append_design_intent_losses;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{ResourceDimension};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
@@ -1044,31 +1044,35 @@ mod tests {
 
     #[test]
     fn design_intent_report_refuses_body_list_at_collection_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("bounded test input");
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
         assert!(matches!(
-            append_design_intent_losses(&ctx, &body_ir(), &mut Vec::new()),
+            append_design_intent_losses(ctx, &body_ir(), &mut Vec::new()),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "nx report current body identities"
         ));
-    }
+    
+})
+}
 
     #[test]
     fn design_intent_report_refuses_body_copy_at_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("bounded test input");
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
         assert!(matches!(
-            append_design_intent_losses(&ctx, &body_ir(), &mut Vec::new()),
+            append_design_intent_losses(ctx, &body_ir(), &mut Vec::new()),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "nx report current body identity"
         ));
-    }
+    
+})
+}
 }

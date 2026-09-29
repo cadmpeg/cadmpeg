@@ -1,37 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry decode unknown-record admission.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{ResourceDimension};
 
 use super::{retain_live_annotations, unknown_stream_metadata};
 
-fn geometry_route_limit_error(policy: &DecodePolicy) -> cadmpeg_core::CodecError {
+fn geometry_route_limit_error(adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
     let bytes = crate::test_support::test_prt::prt_with_partition(
         &crate::test_support::test_streams::topology_partition_stream(),
     );
-    let scan_arena = DecodeArena::new();
-    let scan_policy = DecodePolicy::service();
-    let (scan_ctx, scan_root) = DecodeContext::from_root_bytes(&bytes, &scan_arena, &scan_policy)
-        .expect("bounded topology input");
-    let scan = crate::decode::scan(&scan_ctx, scan_root).expect("valid topology container");
-    let (dialects, _) = crate::dialect::classify_layers(&scan_ctx, &scan)
+    
+    
+    crate::test_support::with_decode_context_over(&bytes, |_| {}, |scan_ctx| {
+let scan_root = cadmpeg_core::decode::View::over_retained(&bytes);
+
+    let scan = crate::decode::scan(scan_ctx, scan_root).expect("valid topology container");
+    let (dialects, _) = crate::dialect::classify_layers(scan_ctx, &scan)
         .expect("classified topology input")
         .into_report_parts();
-    let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, policy).expect("root input fits policy");
-    match super::try_decode_geometry(&ctx, root, &scan, &dialects, &[], &[], &mut 0) {
+    
+    crate::test_support::with_decode_context_over(&bytes, adjust, |ctx| {
+let root = cadmpeg_core::decode::View::over_retained(&bytes);
+
+    match super::try_decode_geometry(ctx, root, &scan, &dialects, &[], &[], &mut 0) {
         Err(error) => error,
         Ok(_) => panic!("geometry route must refuse the low limit"),
     }
+
+})
+
+})
 }
 
 #[test]
 fn geometry_route_refuses_collection_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 0; };
     assert!(matches!(
-        geometry_route_limit_error(&policy),
+        geometry_route_limit_error(adjust_policy),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
     ));
@@ -39,10 +44,9 @@ fn geometry_route_refuses_collection_limit() {
 
 #[test]
 fn geometry_route_refuses_retained_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_retained_bytes = 0; };
     assert!(matches!(
-        geometry_route_limit_error(&policy),
+        geometry_route_limit_error(adjust_policy),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
     ));
@@ -50,10 +54,9 @@ fn geometry_route_refuses_retained_limit() {
 
 #[test]
 fn geometry_route_refuses_scoped_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_materialized_bytes = 0; };
     assert!(matches!(
-        geometry_route_limit_error(&policy),
+        geometry_route_limit_error(adjust_policy),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
     ));
@@ -61,10 +64,9 @@ fn geometry_route_refuses_scoped_limit() {
 
 #[test]
 fn geometry_route_refuses_work_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_work_units = 0; };
     assert!(matches!(
-        geometry_route_limit_error(&policy),
+        geometry_route_limit_error(adjust_policy),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
     ));
@@ -89,13 +91,13 @@ fn preview_unknown() -> cadmpeg_ir::unknown::UnknownRecord {
 #[test]
 fn live_annotations_refuse_first_identity_at_collection_limit() {
     let unknown = preview_unknown();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
     let error = retain_live_annotations(
-        &ctx,
+        ctx,
         &cadmpeg_ir::document::CadIr::empty(),
         &[unknown],
         &mut cadmpeg_ir::Annotations::default(),
@@ -107,4 +109,6 @@ fn live_annotations_refuse_first_identity_at_collection_limit() {
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "nx live annotation identities"
     ));
+
+})
 }
