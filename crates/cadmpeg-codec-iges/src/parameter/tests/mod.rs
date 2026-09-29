@@ -11,21 +11,28 @@ use crate::test_support::scan;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
 mod advanced_entity_boundaries;
+mod advanced_geometry_boundaries;
 mod curve_surface_boundaries;
+mod curve_surface_segment_boundaries;
 mod drawing_associativity;
+mod drawing_property_boundaries;
 mod entity_table_boundaries;
+mod entity_table_text_and_names;
 mod entity_table_forms;
 mod envelope_boundaries;
 mod envelope_counted_entity_boundaries;
 mod envelope_fixed_field_boundaries;
 mod fixed_entity_boundaries;
+mod fixed_entity_boundaries_surfaces;
 mod implementor_defined;
 mod later_entity_boundaries;
+mod later_drawing_boundaries;
 mod legacy_entities;
 mod legacy_type402;
 mod lexical;
 mod macros;
 mod presentation_forms;
+mod presentation_string_forms;
 mod solid_entity_boundaries;
 mod type_fem;
 
