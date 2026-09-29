@@ -1181,17 +1181,17 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         }))
                 }
                 Some(DesignFeatureFamily::OffsetFaces) => {
-                    project_offset_faces(scope, &parameters, face_operands, construction_groups)
+                    project_offset_faces(ctx, scope, &parameters, face_operands, construction_groups)?
                         .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Move) => project_move(ctx, scope, construction_groups)?
                     .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Shell) => {
-                    project_shell(scope, face_operands, construction_groups)
+                    project_shell(ctx, scope, face_operands, construction_groups)?
                         .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Thicken) => {
-                    project_thicken(scope, face_operands, construction_groups)
+                    project_thicken(ctx, scope, face_operands, construction_groups)?
                         .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Coil) => {
@@ -3735,28 +3735,29 @@ fn single_operand_group<'a>(
 }
 
 pub(super) fn project_offset_faces(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FaceMotion, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::scalar::Length;
 
     let parameter_distance = match parameters {
         [] => None,
-        [(_, distance)] if distance.source_kind() == "distance" => Some(design_length(distance)?),
-        _ => return None,
+        [(_, distance)] if distance.source_kind() == "distance" => Some(or_none!(design_length(distance))),
+        _ => return Ok(None),
     };
     let fixed_distance = match &scope.payload() {
         crate::records::feature::scope::DesignScopePayload::OffsetFaces(value)
         | crate::records::feature::scope::DesignScopePayload::DecalerLesFaces(value) => {
             match value.as_ref() {
-                Some(value) => Some(Length::new(value.distance.get() * 10.0)?),
+                Some(value) => Some(or_none!(Length::new(value.distance.get() * 10.0))),
                 None => None,
             }
         }
-        _ => return None,
+        _ => return Ok(None),
     };
     let distance = match (parameter_distance, fixed_distance) {
         (Some(parameter), Some(fixed))
@@ -3766,25 +3767,27 @@ pub(super) fn project_offset_faces(
             parameter
         }
         (Some(distance), None) | (None, Some(distance)) => distance,
-        _ => return None,
+        _ => return Ok(None),
     };
-    let faces = direct_face_selection(scope, operands).or_else(|| {
-        let group = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10)?;
-        Some(cadmpeg_ir::features::FaceSelection::Native(
-            group.id.clone(),
-        ))
-    })?;
-    Some(FeatureDefinition::Operation(FeatureOperation::MoveFace {
+    let faces = if let Some(faces) = direct_face_selection(scope, operands) {
+        faces
+    } else {
+        let group = or_none!(single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10));
+        cadmpeg_ir::features::FaceSelection::Native(copy_feature_text(ctx, &group.id,
+            "f3d OffsetFaces native group id")?)
+    };
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::MoveFace {
         faces,
         motion: FaceMotion::Offset { distance },
-    }))
+    })))
 }
 
 pub(super) fn project_thicken(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ThickenSide};
 
     let crate::records::feature::scope::DesignScopePayload::Thicken(Some(
@@ -3793,9 +3796,11 @@ pub(super) fn project_thicken(
         },
     )) = &scope.payload()
     else {
-        return None;
+        return Ok(None);
     };
-    let faces = direct_face_selection(scope, operands).or_else(|| {
+    let faces = if let Some(faces) = direct_face_selection(scope, operands) {
+        faces
+    } else {
         let mut candidates = groups.iter().filter(|group| {
             native_stream(&group.id) == native_stream(&scope.id)
                 && group.scope_record_index == scope.record_index
@@ -3805,30 +3810,32 @@ pub(super) fn project_thicken(
                 )
                 && !group.members().is_empty()
         });
-        let group = candidates.next()?;
+        let group = or_none!(candidates.next());
         if candidates.next().is_some() {
-            return None;
+            return Ok(None);
         }
-        Some(FaceSelection::Native(group.id.clone()))
-    })?;
-    Some(FeatureDefinition::Operation(FeatureOperation::Thicken {
+        FaceSelection::Native(copy_feature_text(ctx, &group.id,
+            "f3d Thicken native group id")?)
+    };
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Thicken {
         faces,
-        thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(
+        thickness: Some(or_none!(cadmpeg_ir::scalar::PositiveLength::new(
             signed_thickness.get().abs() * 10.0,
-        )?),
+        ))),
         side: Some(if signed_thickness.get() > 0.0 {
             ThickenSide::Forward
         } else {
             ThickenSide::Reverse
         }),
-    }))
+    })))
 }
 
 pub(super) fn project_shell(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
 
     let (crate::records::feature::scope::DesignScopePayload::Shell(Some(
@@ -3842,28 +3849,33 @@ pub(super) fn project_shell(
         },
     ))) = &scope.payload()
     else {
-        return None;
+        return Ok(None);
     };
     let bodies = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)
-        .map(|group| BodySelection::Native(group.id.clone()));
-    let removed_faces = direct_face_selection(scope, operands)
-        .or_else(|| {
-            let group = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10)?;
-            Some(FaceSelection::Native(group.id.clone()))
-        })
-        .or_else(|| bodies.is_some().then(|| FaceSelection::Faces(Vec::new())))?;
-    Some(FeatureDefinition::Operation(FeatureOperation::Shell {
+        .map(|group| copy_feature_text(ctx, &group.id, "f3d Shell native body group id")
+            .map(BodySelection::Native)).transpose()?;
+    let removed_faces = if let Some(faces) = direct_face_selection(scope, operands) {
+        faces
+    } else if let Some(group) = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10) {
+        FaceSelection::Native(copy_feature_text(ctx, &group.id,
+            "f3d Shell native face group id")?)
+    } else if bodies.is_some() {
+        FaceSelection::Faces(Vec::new())
+    } else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies,
         removed_faces,
-        thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(
+        thickness: Some(or_none!(cadmpeg_ir::scalar::PositiveLength::new(
             thickness.get() * 10.0,
-        )?),
+        ))),
         outward: Some(*outward),
         mode: None,
         join: None,
         resolve_intersections: None,
         allow_self_intersections: None,
-    }))
+    })))
 }
 
 fn project_move(
