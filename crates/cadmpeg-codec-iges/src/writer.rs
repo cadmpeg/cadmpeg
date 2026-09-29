@@ -3896,10 +3896,15 @@ fn source_pcurve(ir: &CadIr, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
         return Ok(pcurve);
     };
     nurbs
-        .edit_control_points(|point| {
-            point.u = point.u.mul_add(u_factor, u_offset);
-            point.v = point.v.mul_add(v_factor, v_offset);
-            Ok(())
+        .try_map_control_points(|_, point| {
+            let point = point.get();
+            cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                point.u.mul_add(u_factor, u_offset),
+                point.v.mul_add(v_factor, v_offset),
+            ))
+            .ok_or_else(|| {
+                NurbsError::Structure("control_points contains a non-finite point".into())
+            })
         })
         .map_err(|error| {
             CodecError::malformed(format_args!(
@@ -6845,7 +6850,7 @@ fn apply_rigid_transform(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
             nurbs
-                .map_control_points(|control_point| {
+                .try_map_control_points(|_, control_point| {
                     transform.apply_point(control_point.get()).ok_or_else(|| {
                         NurbsError::EditRefused(
                             "transformed NURBS curve control point has a non-finite coordinate"

@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
 use crate::annotations::{AnnotationBuilder, Annotations};
@@ -135,26 +135,31 @@ fn insert_admitted_identity<T>(
 ) -> Result<(), CodecError> {
     if !index.contains_key(&hash) {
         ctx.charge_collection_items(1, operation)?;
-        index
-            .try_reserve(1)
-            .map_err(|_| refuse_local_limit(operation, 1, 1))?;
+        index.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    1,
+                    1,
+                    operation,
+                ),
+            )
+        })?;
     }
     ctx.charge_collection_items(1, operation)?;
     let slots = index.entry(hash).or_default();
-    slots
-        .try_reserve(1)
-        .map_err(|_| refuse_local_limit(operation, 1, 1))?;
+    slots.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                1,
+                1,
+                operation,
+            ),
+        )
+    })?;
     slots.push(value);
     Ok(())
-}
-
-fn copy_admitted_identity(
-    ctx: &DecodeContext<'_>,
-    identity: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let copy = ctx.copy_retained(identity.as_bytes(), operation)?;
-    String::from_utf8(copy).map_err(|_| CodecError::Malformed("identity copy is not UTF-8".into()))
 }
 
 fn index_model_identities_admitted(
@@ -166,7 +171,7 @@ fn index_model_identities_admitted(
         ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
             $(for (slot_index, entity) in model.$field.iter().enumerate() {
                 if identity_index_contains(model, &identity_index, entity.identity()) {
-                    let identity = copy_admitted_identity(ctx, entity.identity(), "draft identity collision")?;
+                    let identity = ctx.copy_retained_text(entity.identity(), "draft identity collision")?;
                     return Ok(Err(DraftError::IdentityCollision(identity)));
                 }
                 insert_admitted_identity(
@@ -463,7 +468,7 @@ impl<A> ModelDraft<A> {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
                 $(for entity in &self.model.$field {
                     if contains(entity.identity()) {
-                        let identity = copy_admitted_identity(ctx, entity.identity(), "draft external identity collision")?;
+                        let identity = ctx.copy_retained_text(entity.identity(), "draft external identity collision")?;
                         return Ok(Err(DraftError::IdentityCollision(identity)));
                     }
                 })*
@@ -482,7 +487,7 @@ impl<A> ModelDraft<A> {
                             && !contains(target)
                             && !identity_index_contains(&self.model, &identity_index, target)
                         {
-                            match copy_admitted_identity(ctx, target, "draft missing reference") {
+                            match ctx.copy_retained_text(target, "draft missing reference") {
                                 Ok(target) => missing = Some(target),
                                 Err(error) => refusal = Some(error),
                             }
@@ -492,11 +497,11 @@ impl<A> ModelDraft<A> {
                         return Err(error);
                     }
                     if let Err(source) = walk {
-                        let owner = copy_admitted_identity(ctx, owner, "draft reference walk owner")?;
+                        let owner = ctx.copy_retained_text(owner, "draft reference walk owner")?;
                         return Ok(Err(DraftError::ReferenceWalk { owner, source }));
                     }
                     if let Some(target) = missing {
-                        let owner = copy_admitted_identity(ctx, owner, "draft missing reference owner")?;
+                        let owner = ctx.copy_retained_text(owner, "draft missing reference owner")?;
                         return Ok(Err(DraftError::UnresolvedReference { owner, target }));
                     }
                 })*
@@ -645,7 +650,7 @@ fn index_committed_identities_admitted(
         .values()
         .flat_map(|namespace| namespace.arenas().values().flatten())
     {
-        let identity = copy_admitted_identity(ctx, record.id(), "committed native identity")?;
+        let identity = ctx.copy_retained_text(record.id(), "committed native identity")?;
         insert_admitted_identity(
             &mut identities,
             identity_hash(record.id()),
@@ -761,7 +766,7 @@ impl<'a> CommitSession<'a> {
                     let count = draft.model.$field.len();
                     ctx.charge_collection_items(u64_from_index(count), "committed model arena slots")?;
                     self.base.model.$field.try_reserve(count).map_err(|_| {
-                        refuse_local_limit("committed model arena slots", u64_from_index(count), u64_from_index(count))
+                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("committed model arena slots"), u64_from_index(count), u64_from_index(count), "committed model arena slots"))
                     })?;
                 })*
             };

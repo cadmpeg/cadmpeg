@@ -81,9 +81,13 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                             panic!("NURBS support lane");
                         };
                         nurbs
-                            .edit_control_points(|point| {
-                                point.u += 100.0;
-                                Ok(())
+                            .try_map_control_points(|_, point| {
+                                let point = point.get();
+                                cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                                    point.u + 100.0,
+                                    point.v,
+                                ))
+                                .ok_or(())
                             })
                             .unwrap();
                     };

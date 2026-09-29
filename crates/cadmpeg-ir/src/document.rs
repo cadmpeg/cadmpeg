@@ -498,12 +498,11 @@ macro_rules! declare_model {
             ) -> Result<(), cadmpeg_core::CodecError> {
                 $(
                     ctx.charge_collection_items(
-                        u64::try_from(other.$field.len())
-                            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
+                        cadmpeg_core::decode::u64_from_index(other.$field.len()),
                         operation,
                     )?;
                     self.$field.try_reserve(other.$field.len())
-                        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), u64::MAX, u64::MAX, operation)))?;
                     for entity in other.$field {
                         self.$field.push(rewrite.rewrite(entity)?);
                     }

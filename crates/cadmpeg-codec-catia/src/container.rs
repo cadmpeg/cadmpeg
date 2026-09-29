@@ -247,11 +247,7 @@ fn finjpl_primary_name(
     let Some(value) = std::str::from_utf8(value).ok() else {
         return Ok(None);
     };
-    Ok(Some(crate::resource::copy_retained_str(
-        ctx,
-        value,
-        "catia_finjpl_name",
-    )?))
+    Ok(Some(ctx.copy_retained_text(value, "catia_finjpl_name")?))
 }
 
 /// Extract length-closed JPEG previews from `CATSummaryInformation` FINJPL
@@ -357,11 +353,8 @@ fn external_references_in_segments(
         for (relative, value) in bytes.windows(STORAGE.len()).enumerate() {
             if value == STORAGE {
                 if let Some((target_offset, target)) = parse_external_reference(bytes, relative) {
-                    let target = crate::resource::copy_retained_str(
-                        ctx,
-                        target,
-                        "catia_external_reference_target",
-                    )?;
+                    let target =
+                        ctx.copy_retained_text(target, "catia_external_reference_target")?;
                     let reference = ExternalReference {
                         offset: target_offset + segment.range.start,
                         target,
@@ -449,8 +442,7 @@ fn parse_last_save_version(
     let Some((version, release, service_pack, hot_fix, build_date)) = parsed else {
         return Ok(None);
     };
-    let build_date =
-        crate::resource::copy_retained_str(ctx, build_date, "catia_last_save_build_date")?;
+    let build_date = ctx.copy_retained_text(build_date, "catia_last_save_build_date")?;
     Ok(Some(LastSaveVersion {
         version,
         release,
@@ -1228,8 +1220,7 @@ fn parse_extents(
     file_len: usize,
 ) -> Result<Option<(Vec<Extent>, usize)>, CodecError> {
     ctx.charge_work(
-        u64::try_from(k)
-            .map_err(|_| ctx.refuse_codec_limit("catia_extent_validation", u64::MAX, u64::MAX))?,
+        cadmpeg_core::decode::u64_from_index(k),
         "catia_extent_validation",
     )?;
     let Some(cum) = validate_extents(dirbuf, o, k, physical_base, file_len) else {
@@ -1386,8 +1377,7 @@ fn reconstruct_logical_stream(
     else {
         return Ok(Vec::new());
     };
-    let bytes = u64::try_from(logical_length)
-        .map_err(|_| ctx.refuse_codec_limit("catia_logical_stream_bytes", u64::MAX, u64::MAX))?;
+    let bytes = cadmpeg_core::decode::u64_from_index(logical_length);
     ctx.charge_retained(bytes, "catia_logical_stream_bytes")?;
     let mut out = Vec::new();
     crate::resource::reserve_vec(ctx, &mut out, logical_length, "catia_logical_stream_bytes")?;
@@ -1429,7 +1419,7 @@ pub(crate) fn outer_container_for_extent<'a>(
     byte_len: u64,
 ) -> Option<&'a OuterContainerDeclaration> {
     let byte_end = byte_offset.checked_add(byte_len)?;
-    let physical_base = u64::try_from(outer.inner).ok()?;
+    let physical_base = cadmpeg_core::decode::u64_from_index(outer.inner);
     let mut containing = declarations.iter().filter(|declaration| {
         outer
             .descriptors
@@ -1515,10 +1505,8 @@ fn parse_outer_container_declarations(
         let Some(ordinal) = View::u32_le_at(data, start + 12) else {
             continue;
         };
-        let class_name =
-            crate::resource::copy_retained_str(ctx, class_name, "catia_container_class_name")?;
-        let base_class =
-            crate::resource::copy_retained_str(ctx, base_class, "catia_container_base_class")?;
+        let class_name = ctx.copy_retained_text(class_name, "catia_container_class_name")?;
+        let base_class = ctx.copy_retained_text(base_class, "catia_container_base_class")?;
         crate::resource::push(
             ctx,
             &mut declarations,
@@ -1885,7 +1873,7 @@ pub(crate) fn summarize(
                     "catia_summary_entry_name",
                 )?
             } else {
-                crate::resource::copy_retained_str(ctx, &d.name, "catia_summary_entry_name")?
+                ctx.copy_retained_text(&d.name, "catia_summary_entry_name")?
             };
             crate::resource::push(
                 ctx,
@@ -1965,8 +1953,7 @@ pub(crate) fn summarize(
             reference.target.as_str().into(),
             LENGTH_PREFIXED_ASCII_HEADER,
         );
-        let name =
-            crate::resource::copy_retained_str(ctx, &reference.target, "catia_summary_entry_name")?;
+        let name = ctx.copy_retained_text(&reference.target, "catia_summary_entry_name")?;
         crate::resource::push(
             ctx,
             &mut entries,
@@ -2008,9 +1995,7 @@ pub(crate) fn summarize(
             "catia_summary_attribute",
         )?;
         let name = match &segment.name {
-            Some(name) => {
-                crate::resource::copy_retained_str(ctx, name, "catia_summary_entry_name")?
-            }
+            Some(name) => ctx.copy_retained_text(name, "catia_summary_entry_name")?,
             None => crate::resource::format_retained(
                 ctx,
                 format_args!("FINJPL#{index}"),
@@ -2094,8 +2079,7 @@ pub(crate) fn notes(
             crate::resource::push(ctx, &mut notes, note, "catia_container_notes")?;
         }
         None => {
-            let note = crate::resource::copy_retained_str(
-                ctx,
+            let note = ctx.copy_retained_text(
                 "no nested V5_CFV2 sub-container (outer-preamble record families only)",
                 "catia_container_note",
             )?;
@@ -2143,8 +2127,7 @@ pub(crate) fn notes(
         )?;
         crate::resource::push(ctx, &mut notes, note, "catia_container_notes")?;
     }
-    let note = crate::resource::copy_retained_str(
-        ctx,
+    let note = ctx.copy_retained_text(
         "container-level enumeration; `decode` applies the identified storage family's \
          standard, freeform, E5, zero-entity, or metadata-fallback route",
         "catia_container_note",

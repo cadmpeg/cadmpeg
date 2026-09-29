@@ -649,14 +649,17 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     else {
         panic!("embedded use curve must be NURBS")
     };
-    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|point| {
-            if pole_index == 0 {
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 0 {
                 point.x += 1.0;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     let expected = nurbs.clone();

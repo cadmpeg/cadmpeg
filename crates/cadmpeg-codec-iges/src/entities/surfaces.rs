@@ -2152,13 +2152,14 @@ pub(super) fn project(
             .map_or(cached_interval, |geometry| {
                 source_parameter_interval(geometry, cached_interval)
             });
+        let mut directrix = directrix;
         let placed_directrix = if entry.transform == 0 {
             directrix
         } else {
             match directrix
-                .try_map_owned_control_points(|point| transform.apply_point(point.get()).ok_or(()))
+                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
             {
-                Ok(placed) => placed,
+                Ok(()) => directrix,
                 Err(()) => {
                     super::push_optional_attributed_loss(
                         ctx,
@@ -2860,8 +2861,9 @@ pub(super) fn project(
         } else if let Some(orientation) = similarity_orientation(transform) {
             // This arm is the transformed route, so the generatrix is placed
             // here rather than carried past the untransformed one.
-            let Ok(placed_generatrix) = generatrix
-                .try_map_owned_control_points(|point| transform.apply_point(point.get()).ok_or(()))
+            let mut placed_generatrix = generatrix;
+            let Ok(()) = placed_generatrix
+                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
             else {
                 super::push_optional_attributed_loss(
                     ctx,

@@ -230,7 +230,7 @@ fn pcurve_carrier_copy_refuses_collection_limit() {
 }
 
 #[test]
-fn pcurve_coordinate_scale_refuses_pole_copy_limit() {
+fn pcurve_coordinate_scale_uses_no_collection_items() {
     let nurbs = PcurveNurbs::new(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -243,11 +243,17 @@ fn pcurve_coordinate_scale_refuses_pole_copy_limit() {
     let mut geometry = PcurveGeometry::Nurbs { nurbs };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
+    policy.limits.max_collection_items = 0;
     let ctx = context_with_limit(&arena, &policy);
-    assert!(
-        matches!(geometry.try_scale_coordinates_for_decode([2.0, 3.0], &ctx, "step_pcurve_coordinate_scale"),
-        Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "step_pcurve_coordinate_scale")
+    assert!(matches!(
+        geometry.try_scale_coordinates_for_decode([2.0, 3.0], &ctx, "step_pcurve_coordinate_scale"),
+        Ok(true)
+    ));
+    let PcurveGeometry::Nurbs { nurbs } = geometry else {
+        panic!("the pcurve form stays NURBS");
+    };
+    assert_eq!(
+        nurbs.control_points(),
+        vec![Point2::new(0.0, 0.0), Point2::new(2.0, 0.0)]
     );
 }

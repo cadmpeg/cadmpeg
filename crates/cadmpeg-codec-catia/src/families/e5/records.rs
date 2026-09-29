@@ -439,9 +439,7 @@ fn parse_e5_rolling_ball_jet(
     };
     // Knots, multiplicities, three channel lanes, sites, and stations each
     // contain one item per declared station.
-    let station_count_u64 = u64::try_from(station_count).map_err(|_| {
-        ctx.refuse_codec_limit("decode CATIA E5 rolling-ball stations", u64::MAX, u64::MAX)
-    })?;
+    let station_count_u64 = cadmpeg_core::decode::u64_from_index(station_count);
     ctx.charge_collection_items(
         station_count_u64.checked_mul(7).ok_or_else(|| {
             ctx.refuse_codec_limit("decode CATIA E5 rolling-ball stations", u64::MAX, u64::MAX)
@@ -770,9 +768,7 @@ fn e5_nurbs_surface(
     let Some(control_count) = u_count.checked_mul(v_count) else {
         return Ok(None);
     };
-    let Some(control_count_u64) = u64::try_from(control_count).ok() else {
-        return Ok(None);
-    };
+    let control_count_u64 = cadmpeg_core::decode::u64_from_index(control_count);
     let point_bytes = if mode == 1 { 32 } else { 24 };
     if view.counted(control_count_u64, point_bytes).is_none() {
         return Ok(None);
@@ -840,7 +836,7 @@ fn e5_nurbs_surface(
             .checked_mul(size_of::<
                 cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>,
             >())
-            .and_then(|bytes| u64::try_from(bytes).ok())
+            .map(cadmpeg_core::decode::u64_from_index)
         else {
             return Err(ctx.refuse_codec_limit(
                 "catia_e5_nurbs_weighted_poles",
@@ -910,9 +906,7 @@ fn read_nurbs_axis(ctx: &DecodeContext<'_>, view: &mut View<'_>) -> NurbsAxisOut
     if degree == 0 || [zero0, zero1, zero2] != [0; 3] || knot_count == 0 {
         return Ok(None);
     }
-    let Some(knot_count_u64) = u64::try_from(knot_count).ok() else {
-        return Ok(None);
-    };
+    let knot_count_u64 = cadmpeg_core::decode::u64_from_index(knot_count);
     if view.counted(knot_count_u64, 12).is_none() {
         return Ok(None);
     }
@@ -984,7 +978,7 @@ fn expand_nurbs_axis(
     }
     let Some(bytes) = total
         .checked_mul(size_of::<f64>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
     else {
         return Err(ctx.refuse_codec_limit("catia_e5_nurbs_expanded_axis", u64::MAX, u64::MAX));
     };

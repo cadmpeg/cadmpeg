@@ -38,8 +38,7 @@ fn charge_collection_items(
     count: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let count =
-        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let count = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count, operation)
 }
 

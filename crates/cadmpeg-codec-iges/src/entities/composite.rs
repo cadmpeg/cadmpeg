@@ -2113,20 +2113,20 @@ fn anchor_analytic_nurbs_endpoint_poles(
     let Some(last) = nurbs.pole_count().checked_sub(1) else {
         return Ok(None);
     };
-    let mut visited = 0usize;
+    let mut nurbs = nurbs;
     Ok(nurbs
-        .try_map_owned_control_points(|point| {
-            let mapped = if visited == last {
+        .try_map_control_points(|index, point| {
+            let mapped = if index == last {
                 end
-            } else if visited == 0 {
+            } else if index == 0 {
                 start
             } else {
                 point
             };
-            visited += 1;
             Ok::<_, ()>(mapped)
         })
-        .ok())
+        .ok()
+        .map(|()| nurbs))
 }
 
 fn project_native_composite(

@@ -912,15 +912,11 @@ impl<'a> Cursor<'a> {
         let utf8_len = crate::reader::utf16_utf8_len(self.view, count)
             .ok_or_else(|| CodecError::malformed(format_args!("UFRxDoc {field} is not UTF-16")))?;
         let _units = ctx.reserve_scoped(
-            u64::try_from(len).map_err(|_| {
-                ctx.refuse_codec_limit("UFRxDoc UTF-16 unit byte count", u64::MAX - 1, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(len),
             "decode UFRxDoc UTF-16 units",
         )?;
         ctx.charge_retained(
-            u64::try_from(utf8_len).map_err(|_| {
-                ctx.refuse_codec_limit("UFRxDoc UTF-8 byte count", u64::MAX - 1, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(utf8_len),
             "retain UFRxDoc string",
         )?;
         // `utf16_le` proves the byte count before it reads a code unit, so a

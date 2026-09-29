@@ -138,9 +138,18 @@ fn has_forbidden_form_63_duplicate(
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
             if !exact_points.contains_key(&exact_key(point)) {
                 ctx.charge_collection_items(1, "iges copious exact-point index")?;
-                exact_points
-                    .try_reserve(1)
-                    .map_err(|_| refuse_local_limit("iges copious exact-point index", 1, 1))?;
+                exact_points.try_reserve(1).map_err(|_| {
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(
+                                "iges copious exact-point index",
+                            ),
+                            1,
+                            1,
+                            "iges copious exact-point index",
+                        ),
+                    )
+                })?;
             }
             if let Some(previous) = exact_points.insert(exact_key(point), index) {
                 if !allowed_endpoint_pair(previous, index) {
@@ -162,9 +171,18 @@ fn has_forbidden_form_63_duplicate(
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
             if !exact_points.contains_key(&exact_key(point)) {
                 ctx.charge_collection_items(1, "iges copious exact-point index")?;
-                exact_points
-                    .try_reserve(1)
-                    .map_err(|_| refuse_local_limit("iges copious exact-point index", 1, 1))?;
+                exact_points.try_reserve(1).map_err(|_| {
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(
+                                "iges copious exact-point index",
+                            ),
+                            1,
+                            1,
+                            "iges copious exact-point index",
+                        ),
+                    )
+                })?;
             }
             if let Some(previous) = exact_points.insert(exact_key(point), index) {
                 if !allowed_endpoint_pair(previous, index) {
@@ -197,9 +215,18 @@ fn has_forbidden_form_63_duplicate(
         }
         if !cells.contains_key(&(x, y, z)) {
             ctx.charge_collection_items(1, "iges copious proximity cells")?;
-            cells
-                .try_reserve(1)
-                .map_err(|_| refuse_local_limit("iges copious proximity cells", 1, 1))?;
+            cells.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "iges copious proximity cells",
+                        ),
+                        1,
+                        1,
+                        "iges copious proximity cells",
+                    ),
+                )
+            })?;
         }
         cells.entry((x, y, z)).or_insert((index, point));
     }

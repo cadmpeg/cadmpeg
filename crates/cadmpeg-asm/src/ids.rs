@@ -62,13 +62,19 @@ impl IdFormat {
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("ASM unknown record identity", u64::MAX, u64::MAX)
             })?;
-        let requested = u64::try_from(length).map_err(|_| {
-            ctx.refuse_codec_limit("ASM unknown record identity", u64::MAX, u64::MAX)
-        })?;
+        let requested = cadmpeg_core::decode::u64_from_index(length);
         ctx.charge_retained(requested, "ASM unknown record identity")?;
         let mut text = String::new();
-        text.try_reserve(length)
-            .map_err(|_| ctx.refuse_codec_limit("ASM unknown record identity", 0, requested))?;
+        text.try_reserve(length).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("ASM unknown record identity"),
+                    0,
+                    requested,
+                    "ASM unknown record identity",
+                ),
+            )
+        })?;
         text.push_str(format.as_str());
         text.push_str(":brep:");
         text.push_str(kind.as_str());

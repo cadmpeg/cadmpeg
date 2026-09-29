@@ -4,6 +4,27 @@
 use super::{is_valid_identity, IdentityComponent, IdentityError, IdentityKey, IdentityNamespace};
 
 #[test]
+fn try_clone_for_decode_refuses_before_allocation_and_succeeds_under_service_profile() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let id = super::BodyId::mint("test:model:body#1").unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = (id.as_str().len() - 1) as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    assert!(matches!(
+        id.try_clone_for_decode(&ctx, "identity test"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default()).unwrap();
+    assert_eq!(id.try_clone_for_decode(&ctx, "identity test").unwrap(), id);
+}
+
+#[test]
 fn source_key_encoding_preserves_reserved_and_separator_distinctions() {
     let mut seen = std::collections::BTreeSet::new();
     for (source, expected) in [

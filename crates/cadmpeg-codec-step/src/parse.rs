@@ -61,17 +61,21 @@ pub(crate) enum Value {
     Typed(String, Box<Value>),
 }
 
-fn copy_parser_text(
+pub(crate) fn copy_unmetered_text(
     value: &str,
-    budget: Option<&DecodeContext<'_>>,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let mut copied = String::new();
-    copied
-        .try_reserve_exact(value.len())
-        .map_err(|_| parser_copy_refusal(budget, operation, value.len()))?;
-    copied.push_str(value);
-    Ok(copied)
+    let mut copy = String::new();
+    copy.try_reserve_exact(value.len()).map_err(|_| {
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::Codec(operation),
+            0,
+            cadmpeg_core::decode::u64_from_index(value.len()),
+            operation,
+        ))
+    })?;
+    copy.push_str(value);
+    Ok(copy)
 }
 
 fn copy_parser_bytes(
@@ -83,22 +87,16 @@ fn copy_parser_bytes(
         ctx.charge_collection_items(u64_from_index(value.len()), operation)?;
     }
     let mut copied = Vec::new();
-    copied
-        .try_reserve_exact(value.len())
-        .map_err(|_| parser_copy_refusal(budget, operation, value.len()))?;
+    copied.try_reserve_exact(value.len()).map_err(|_| {
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::Codec(operation),
+            0,
+            u64_from_index(value.len()),
+            operation,
+        ))
+    })?;
     copied.extend_from_slice(value);
     Ok(copied)
-}
-
-fn parser_copy_refusal(
-    budget: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-    requested: usize,
-) -> CodecError {
-    budget.map_or_else(
-        || cadmpeg_core::decode::refuse_local_limit(operation, 0, u64_from_index(requested)),
-        |ctx| ctx.refuse_codec_limit(operation, 0, u64_from_index(requested)),
-    )
 }
 
 fn try_clone_value(
@@ -112,18 +110,26 @@ fn try_clone_value(
     Ok(match value {
         Value::Reference(id) => Value::Reference(*id),
         Value::ValueReference(id) => Value::ValueReference(*id),
-        Value::ConstantEntity(text) => {
-            Value::ConstantEntity(copy_parser_text(text, budget, operation)?)
-        }
-        Value::ConstantValue(text) => {
-            Value::ConstantValue(copy_parser_text(text, budget, operation)?)
-        }
+        Value::ConstantEntity(text) => Value::ConstantEntity(match budget {
+            Some(ctx) => ctx.copy_retained_text(text, operation),
+            None => crate::parse::copy_unmetered_text(text, operation),
+        }?),
+        Value::ConstantValue(text) => Value::ConstantValue(match budget {
+            Some(ctx) => ctx.copy_retained_text(text, operation),
+            None => crate::parse::copy_unmetered_text(text, operation),
+        }?),
         Value::Integer(value) => Value::Integer(*value),
         Value::Real(value) => Value::Real(*value),
-        Value::Enumeration(text) => Value::Enumeration(copy_parser_text(text, budget, operation)?),
+        Value::Enumeration(text) => Value::Enumeration(match budget {
+            Some(ctx) => ctx.copy_retained_text(text, operation),
+            None => crate::parse::copy_unmetered_text(text, operation),
+        }?),
         Value::String(bytes) => Value::String(copy_parser_bytes(bytes, budget, operation)?),
         Value::Binary(binary) => Value::Binary(binary.try_clone_for_decode(budget, operation)?),
-        Value::Resource(text) => Value::Resource(copy_parser_text(text, budget, operation)?),
+        Value::Resource(text) => Value::Resource(match budget {
+            Some(ctx) => ctx.copy_retained_text(text, operation),
+            None => crate::parse::copy_unmetered_text(text, operation),
+        }?),
         Value::Omitted => Value::Omitted,
         Value::Derived => Value::Derived,
         Value::List(values) => {
@@ -131,9 +137,14 @@ fn try_clone_value(
                 ctx.charge_collection_items(u64_from_index(values.len()), operation)?;
             }
             let mut copied = Vec::new();
-            copied
-                .try_reserve_exact(values.len())
-                .map_err(|_| parser_copy_refusal(budget, operation, values.len()))?;
+            copied.try_reserve_exact(values.len()).map_err(|_| {
+                CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    u64_from_index(values.len()),
+                    operation,
+                ))
+            })?;
             for value in values {
                 copied.push(try_clone_value(value, budget, operation)?);
             }
@@ -144,7 +155,10 @@ fn try_clone_value(
                 ctx.charge_collection_items(1, operation)?;
             }
             Value::Typed(
-                copy_parser_text(name, budget, operation)?,
+                match budget {
+                    Some(ctx) => ctx.copy_retained_text(name, operation),
+                    None => crate::parse::copy_unmetered_text(name, operation),
+                }?,
                 Box::new(try_clone_value(nested, budget, operation)?),
             )
         }
@@ -662,8 +676,22 @@ fn push_charged<T>(
     }
     values.try_reserve(1).map_err(|_| {
         ParseError::Resource(match budget {
-            Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            ),
+            None => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            ),
         })
     })?;
     values.push(value);
@@ -1155,8 +1183,16 @@ impl Parser<'_, '_, '_> {
             let mut anchor_bindings = BTreeMap::new();
             for anchor in &anchors {
                 anchor_bindings.insert(
-                    copy_parser_text(&anchor.name, self.budget, "step_anchor_binding_name_copy")
-                        .map_err(ParseError::Resource)?,
+                    match self.budget {
+                        Some(ctx) => {
+                            ctx.copy_retained_text(&anchor.name, "step_anchor_binding_name_copy")
+                        }
+                        None => crate::parse::copy_unmetered_text(
+                            &anchor.name,
+                            "step_anchor_binding_name_copy",
+                        ),
+                    }
+                    .map_err(ParseError::Resource)?,
                     try_clone_value(&anchor.value, self.budget, "step_anchor_binding_value_copy")
                         .map_err(ParseError::Resource)?,
                 );
@@ -2031,7 +2067,15 @@ fn validate_header_sections(
                 }
                 let section_copy = section
                     .as_deref()
-                    .map(|value| copy_parser_text(value, budget, "step_section_language_name_copy"))
+                    .map(|value| match budget {
+                        Some(ctx) => {
+                            ctx.copy_retained_text(value, "step_section_language_name_copy")
+                        }
+                        None => crate::parse::copy_unmetered_text(
+                            value,
+                            "step_section_language_name_copy",
+                        ),
+                    })
                     .transpose()
                     .map_err(ValidationError::Resource)?;
                 if !language_sections.insert(section_copy) {
@@ -2061,7 +2105,15 @@ fn validate_header_sections(
                 }
                 let section_copy = section
                     .as_deref()
-                    .map(|value| copy_parser_text(value, budget, "step_section_context_name_copy"))
+                    .map(|value| match budget {
+                        Some(ctx) => {
+                            ctx.copy_retained_text(value, "step_section_context_name_copy")
+                        }
+                        None => crate::parse::copy_unmetered_text(
+                            value,
+                            "step_section_context_name_copy",
+                        ),
+                    })
                     .transpose()
                     .map_err(ValidationError::Resource)?;
                 if !context_sections.insert(section_copy) {
@@ -2798,10 +2850,26 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 let mut resolved = Vec::new();
                 resolved.try_reserve_exact(values.len()).map_err(|_| {
                     ResolveError::Resource(match self.budget {
-                        Some(ctx) => ctx.refuse_codec_limit("step_anchor_list_items", 0, 1),
-                        None => {
-                            cadmpeg_core::decode::refuse_local_limit("step_anchor_list_items", 0, 1)
-                        }
+                        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                cadmpeg_core::decode::ResourceDimension::Codec(
+                                    "step_anchor_list_items",
+                                ),
+                                0,
+                                1,
+                                "step_anchor_list_items",
+                            ),
+                        ),
+                        None => cadmpeg_core::CodecError::ResourceLimit(
+                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                cadmpeg_core::decode::ResourceDimension::Codec(
+                                    "step_anchor_list_items",
+                                ),
+                                0,
+                                1,
+                                "step_anchor_list_items",
+                            ),
+                        ),
                     })
                 })?;
                 for value in values {
@@ -2830,8 +2898,13 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         .ok_or("anchor typed storage exceeds u64")?,
                 )?;
                 let value = Value::Typed(
-                    copy_parser_text(name, self.budget, "step_anchor_typed_name_copy")
-                        .map_err(ResolveError::Resource)?,
+                    match self.budget {
+                        Some(ctx) => ctx.copy_retained_text(name, "step_anchor_typed_name_copy"),
+                        None => {
+                            crate::parse::copy_unmetered_text(name, "step_anchor_typed_name_copy")
+                        }
+                    }
+                    .map_err(ResolveError::Resource)?,
                     Box::new(value),
                 );
                 Ok((value, nodes + 1, expanded_nodes))
@@ -2946,11 +3019,25 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 let mut resolved = Vec::new();
                 resolved.try_reserve_exact(values.len()).map_err(|_| {
                     ResolveError::Resource(match self.budget {
-                        Some(ctx) => ctx.refuse_codec_limit("step_reference_list_items", 0, 1),
-                        None => cadmpeg_core::decode::refuse_local_limit(
-                            "step_reference_list_items",
-                            0,
-                            1,
+                        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                cadmpeg_core::decode::ResourceDimension::Codec(
+                                    "step_reference_list_items",
+                                ),
+                                0,
+                                1,
+                                "step_reference_list_items",
+                            ),
+                        ),
+                        None => cadmpeg_core::CodecError::ResourceLimit(
+                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                cadmpeg_core::decode::ResourceDimension::Codec(
+                                    "step_reference_list_items",
+                                ),
+                                0,
+                                1,
+                                "step_reference_list_items",
+                            ),
                         ),
                     })
                 })?;
@@ -2966,8 +3053,14 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                     .ok_or("reference typed storage exceeds u64")?;
                 self.admit_copy(1, bytes)?;
                 Ok(Value::Typed(
-                    copy_parser_text(name, self.budget, "step_reference_typed_name_copy")
-                        .map_err(ResolveError::Resource)?,
+                    match self.budget {
+                        Some(ctx) => ctx.copy_retained_text(name, "step_reference_typed_name_copy"),
+                        None => crate::parse::copy_unmetered_text(
+                            name,
+                            "step_reference_typed_name_copy",
+                        ),
+                    }
+                    .map_err(ResolveError::Resource)?,
                     Box::new(resolved),
                 ))
             }
@@ -3075,8 +3168,16 @@ fn resolve_local_references(
     let mut anchor_bindings = BTreeMap::new();
     for anchor in anchors.iter() {
         anchor_bindings.insert(
-            copy_parser_text(&anchor.name, budget, "step_reference_anchor_name_copy")
-                .map_err(ResolveError::Resource)?,
+            match budget {
+                Some(ctx) => {
+                    ctx.copy_retained_text(&anchor.name, "step_reference_anchor_name_copy")
+                }
+                None => crate::parse::copy_unmetered_text(
+                    &anchor.name,
+                    "step_reference_anchor_name_copy",
+                ),
+            }
+            .map_err(ResolveError::Resource)?,
             try_clone_value(&anchor.value, budget, "step_reference_anchor_value_copy")
                 .map_err(ResolveError::Resource)?,
         );
