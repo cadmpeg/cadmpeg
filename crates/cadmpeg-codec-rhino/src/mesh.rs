@@ -362,9 +362,8 @@ pub(crate) fn decode(
         let surface = read_buffer(
             expand,
             &mut reader,
-            vertex_count * 16,
+            MeshBufferSpec { expected: vertex_count * 16, name: "surface parameters" },
             &mut decoded.warnings,
-            "surface parameters",
             &mut decompressed_bytes,
             document_budget,
             archive,
@@ -941,9 +940,8 @@ fn read_compressed_channels(
         let bytes = read_buffer(
             expand,
             reader,
-            vertices * spec.item_size as usize,
+            MeshBufferSpec { expected: vertices * spec.item_size as usize, name: spec.name },
             &mut decoded.warnings,
-            spec.name,
             decompressed_bytes,
             document_budget,
             archive,
@@ -1008,17 +1006,21 @@ fn read_counted_raw<'a>(
     Ok(Some(data))
 }
 
-#[allow(clippy::too_many_arguments)]
+struct MeshBufferSpec<'a> {
+    expected: usize,
+    name: &'a str,
+}
+
 fn read_buffer<'a>(
     expand: MeshExpand<'a>,
     reader: &mut BoundedReader<'_>,
-    expected: usize,
+    spec: MeshBufferSpec<'_>,
     warnings: &mut Diagnostics,
-    name: &str,
     decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
     archive: ArchiveVersion,
 ) -> Result<Option<Cow<'a, [u8]>>, GeometryError> {
+    let MeshBufferSpec { expected, name } = spec;
     let declared = reader.u32()? as usize;
     if declared == 0 {
         return Ok(None);
@@ -1169,9 +1171,8 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
     let _probe = read_buffer(
         expand,
         &mut reader,
-        expected,
+        MeshBufferSpec { expected: expected, name: "fuzz" },
         &mut warnings,
-        "fuzz",
         &mut decompressed_bytes,
         &mut document_budget,
         ArchiveVersion::V8,
@@ -1340,9 +1341,8 @@ fn read_double_chunk<'a>(
     let bytes = read_buffer(
         expand,
         &mut child,
-        expected,
+        MeshBufferSpec { expected: expected, name: "double vertices" },
         warnings,
-        "double vertices",
         decompressed_bytes,
         document_budget,
         archive,
@@ -1710,7 +1710,7 @@ mod tests {
     use super::{
         consume_optional_chunk, decode, parse_f32_points, parse_mesh_correspondence_userdata,
         quad_face_count, read_buffer, read_faces, read_mapping_tag, read_ngons, read_raw_channels,
-        read_v4v5_ngon_userdata, synchronization_ok, triangulate_faces, MeshBudget,
+        read_v4v5_ngon_userdata, synchronization_ok, triangulate_faces, MeshBufferSpec, MeshBudget,
         MeshDecodeOptions, MeshExpand, MAX_BUFFER_OUTPUT, OPENNURBS4, V4V5_MESH_NGON_USERDATA,
         V5_MESH_DOUBLE_VERTICES,
     };
@@ -2534,9 +2534,8 @@ mod tests {
                 read_buffer(
                     expand,
                     &mut reader,
-                    3,
+                    MeshBufferSpec { expected: 3, name: "test" },
                     &mut warnings,
-                    "test",
                     &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
@@ -2563,9 +2562,8 @@ mod tests {
                 read_buffer(
                     expand,
                     &mut reader,
-                    4,
+                    MeshBufferSpec { expected: 4, name: "test" },
                     &mut warnings,
-                    "test",
                     &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
@@ -2578,9 +2576,8 @@ mod tests {
                 read_buffer(
                     expand,
                     &mut reader,
-                    1,
+                    MeshBufferSpec { expected: 1, name: "test" },
                     &mut warnings,
-                    "test",
                     &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
@@ -2605,9 +2602,8 @@ mod tests {
                 read_buffer(
                     expand,
                     &mut reader,
-                    2,
+                    MeshBufferSpec { expected: 2, name: "test" },
                     &mut warnings,
-                    "test",
                     &mut budget,
                     &mut document_budget,
                     ArchiveVersion::V8,
@@ -2635,9 +2631,8 @@ mod tests {
                 read_buffer(
                     expand,
                     &mut first,
-                    4,
+                    MeshBufferSpec { expected: 4, name: "first" },
                     &mut warnings,
-                    "first",
                     &mut 0,
                     &mut document_budget,
                     ArchiveVersion::V8,
@@ -2651,9 +2646,8 @@ mod tests {
             let refused = read_buffer(
                 expand,
                 &mut second,
-                4,
+                MeshBufferSpec { expected: 4, name: "second" },
                 &mut warnings,
-                "second",
                 &mut 0,
                 &mut document_budget,
                 ArchiveVersion::V8,
@@ -2675,9 +2669,8 @@ mod tests {
             assert!(read_buffer(
                 expand,
                 &mut reader,
-                1,
+                MeshBufferSpec { expected: 1, name: "bad" },
                 &mut Diagnostics::new(),
-                "bad",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -2691,9 +2684,8 @@ mod tests {
             assert!(read_buffer(
                 expand,
                 &mut reader,
-                3,
+                MeshBufferSpec { expected: 3, name: "short" },
                 &mut Diagnostics::new(),
-                "short",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -2713,9 +2705,8 @@ mod tests {
             assert!(read_buffer(
                 expand,
                 &mut reader,
-                1,
+                MeshBufferSpec { expected: 1, name: "bomb" },
                 &mut Diagnostics::new(),
-                "bomb",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -2733,9 +2724,8 @@ mod tests {
             assert!(read_buffer(
                 expand,
                 &mut reader,
-                1,
+                MeshBufferSpec { expected: 1, name: "budget" },
                 &mut Diagnostics::new(),
-                "budget",
                 &mut budget,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -2754,9 +2744,8 @@ mod tests {
                 let result = read_buffer(
                     expand,
                     &mut reader,
-                    1,
+                    MeshBufferSpec { expected: 1, name: "aggregate" },
                     &mut Diagnostics::new(),
-                    "aggregate",
                     &mut 0,
                     &mut document_budget,
                     ArchiveVersion::V8,
@@ -3019,9 +3008,8 @@ mod tests {
             let decoded = read_buffer(
                 expand,
                 &mut child,
-                4,
+                MeshBufferSpec { expected: 4, name: "nested" },
                 &mut Diagnostics::new(),
-                "nested",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -3045,9 +3033,8 @@ mod tests {
             let decoded = read_buffer(
                 expand,
                 &mut reader,
-                3,
+                MeshBufferSpec { expected: 3, name: "first" },
                 &mut Diagnostics::new(),
-                "first",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -3057,9 +3044,8 @@ mod tests {
             let refused = read_buffer(
                 expand,
                 &mut reader,
-                3,
+                MeshBufferSpec { expected: 3, name: "second" },
                 &mut Diagnostics::new(),
-                "second",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -3078,9 +3064,8 @@ mod tests {
             read_buffer(
                 expand,
                 &mut reader,
-                3,
+                MeshBufferSpec { expected: 3, name: "vertices" },
                 &mut Diagnostics::new(),
-                "vertices",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
@@ -3103,9 +3088,8 @@ mod tests {
             read_buffer(
                 expand,
                 &mut reader,
-                3,
+                MeshBufferSpec { expected: 3, name: "vertices" },
                 &mut Diagnostics::new(),
-                "vertices",
                 &mut 0,
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,

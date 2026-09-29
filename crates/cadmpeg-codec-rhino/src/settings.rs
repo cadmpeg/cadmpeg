@@ -540,19 +540,15 @@ pub(crate) struct SubDDisplayParameters {
 
 /// Serialized mesh parameters used by settings records.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-// These independent flags are separate fields in the source wire grammar.
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct MeshParameters {
     /// Packed version.
     pub(crate) version: (u8, u8),
-    /// Legacy boolean fields, decoded from nonzero integers.
-    pub(crate) compute_curvature: bool,
-    /// Whether simple planes are used.
-    pub(crate) simple_planes: bool,
-    /// Whether refinement is enabled.
-    refine: bool,
-    /// Whether jagged seams are allowed.
-    jagged_seams: bool,
+    /// Mesh generation switches.
+    #[serde(flatten)]
+    pub(crate) generation: MeshGenerationFlags,
+    /// Mesh refinement switches.
+    #[serde(flatten)]
+    refinement: MeshRefinementFlags,
     /// Obsolete weld field retained in the wire layout.
     pub(crate) obsolete_weld: i32,
     /// Meshing tolerance.
@@ -589,6 +585,22 @@ pub(crate) struct MeshParameters {
     pub(crate) custom_settings_enabled: Option<bool>,
     /// `SubD` display parameters, introduced at minor 5.
     pub(crate) subd: Option<SubDDisplayParameters>,
+}
+
+/// Flags that select the mesh generation method.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct MeshGenerationFlags {
+    /// Whether curvature is computed.
+    pub(crate) compute_curvature: bool,
+    /// Whether simple planes are used.
+    pub(crate) simple_planes: bool,
+}
+
+/// Flags that select mesh refinement behavior.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct MeshRefinementFlags {
+    refine: bool,
+    jagged_seams: bool,
 }
 
 /// A bounded unsupported setting payload.
@@ -1675,10 +1687,8 @@ pub(crate) fn parse_mesh_parameters<'a>(
     };
     Ok(MeshParameters {
         version,
-        compute_curvature,
-        simple_planes,
-        refine,
-        jagged_seams,
+        generation: MeshGenerationFlags { compute_curvature, simple_planes },
+        refinement: MeshRefinementFlags { refine, jagged_seams },
         obsolete_weld,
         tolerance,
         min_edge_length,

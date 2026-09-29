@@ -104,18 +104,24 @@ pub(crate) fn supported_class(uuid: Uuid) -> bool {
     uuid == ON_EXTRUSION
 }
 
+/// Archive settings shared by the extrusion and its embedded mesh caches.
+#[derive(Clone, Copy)]
+pub(crate) struct ExtrusionFormat {
+    pub(crate) archive: ArchiveVersion,
+    pub(crate) writer_version: Option<i64>,
+    pub(crate) scale: MillimeterScale,
+}
+
 /// Decodes one complete bounded `ON_Extrusion` class payload.
-#[allow(clippy::too_many_arguments)] // Keeps the borrowed archive and mesh-owner contexts explicit.
 pub(crate) fn decode(
     expand: crate::mesh::MeshExpand<'_>,
     data: &[u8],
     range: Range<usize>,
-    archive: ArchiveVersion,
-    writer_version: Option<i64>,
-    scale: MillimeterScale,
+    format: ExtrusionFormat,
     userdata: &[UserdataDescriptor],
     mesh_budget: &mut crate::mesh::MeshBudget,
 ) -> Result<DecodedExtrusion, GeometryError> {
+    let ExtrusionFormat { archive, writer_version, scale } = format;
     let outer = chunk_at(data, range.start, range.end, archive, false)?;
     if outer.typecode != ANONYMOUS || outer.short() {
         return Err(error(range.start, "invalid extrusion anonymous framing"));
@@ -189,9 +195,7 @@ pub(crate) fn decode(
             expand,
             data,
             &mut reader,
-            archive,
-            writer_version,
-            scale,
+            ExtrusionFormat { archive: archive, writer_version: writer_version, scale: scale },
             mesh_budget,
             &mut warnings,
         ) {
@@ -215,9 +219,7 @@ pub(crate) fn decode(
         match read_v5_mesh_cache(
             expand,
             data,
-            archive,
-            writer_version,
-            scale,
+            ExtrusionFormat { archive: archive, writer_version: writer_version, scale: scale },
             userdata,
             mesh_budget,
             &mut warnings,
@@ -762,17 +764,15 @@ fn mitered_local(
     ))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn read_mesh_cache(
     expand: crate::mesh::MeshExpand<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    archive: ArchiveVersion,
-    writer_version: Option<i64>,
-    scale: MillimeterScale,
+    format: ExtrusionFormat,
     mesh_budget: &mut crate::mesh::MeshBudget,
     warnings: &mut Diagnostics,
 ) -> Result<Vec<crate::mesh::DecodedMesh>, GeometryError> {
+    let ExtrusionFormat { archive, writer_version, scale } = format;
     let cache = anonymous_chunk(data, reader, archive, "extrusion mesh cache")?;
     let mut cache_reader = BoundedReader::new(data, cache.body().start, cache.body().end)?;
     require_anonymous_version(&mut cache_reader, 1, 0, "extrusion mesh cache")?;
@@ -866,17 +866,15 @@ fn read_mesh_cache(
     Ok(meshes)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn read_v5_mesh_cache(
     expand: crate::mesh::MeshExpand<'_>,
     data: &[u8],
-    archive: ArchiveVersion,
-    writer_version: Option<i64>,
-    scale: MillimeterScale,
+    format: ExtrusionFormat,
     userdata: &[UserdataDescriptor],
     mesh_budget: &mut crate::mesh::MeshBudget,
     warnings: &mut Diagnostics,
 ) -> Result<Vec<crate::mesh::DecodedMesh>, GeometryError> {
+    let ExtrusionFormat { archive, writer_version, scale } = format;
     let Some(cache) = userdata
         .iter()
         .filter_map(UserdataDescriptor::known)
@@ -1090,7 +1088,7 @@ pub(crate) mod tests {
 
     use super::{
         active_miter, cap_frame, cap_pcurve, exact_orientation, mitered_local, read_mesh_cache,
-        read_v5_mesh_cache, split_profiles, transform_nurbs, ANONYMOUS, CLOSURE_ABSOLUTE_TOLERANCE,
+        read_v5_mesh_cache, split_profiles, transform_nurbs, ExtrusionFormat, ANONYMOUS, CLOSURE_ABSOLUTE_TOLERANCE,
         ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
     };
     use crate::chunks::ArchiveVersion;
@@ -1140,9 +1138,7 @@ pub(crate) mod tests {
                 expand,
                 data,
                 range,
-                archive,
-                writer_version,
-                scale,
+                ExtrusionFormat { archive, writer_version, scale },
                 &[],
                 mesh_budget,
             )
@@ -2024,9 +2020,7 @@ pub(crate) mod tests {
                 crate::mesh::MeshExpand::new(&ctx, root),
                 &bytes,
                 0..bytes.len(),
-                ArchiveVersion::V5,
-                None,
-                MillimeterScale::IDENTITY,
+                ExtrusionFormat { archive: ArchiveVersion::V5, writer_version: None, scale: MillimeterScale::IDENTITY },
                 &[],
                 &mut crate::mesh::MeshBudget::new(),
             )
@@ -2056,9 +2050,7 @@ pub(crate) mod tests {
             crate::mesh::MeshExpand::new(&ctx, root),
             &bytes,
             0..bytes.len(),
-            ArchiveVersion::V5,
-            None,
-            MillimeterScale::IDENTITY,
+            ExtrusionFormat { archive: ArchiveVersion::V5, writer_version: None, scale: MillimeterScale::IDENTITY },
             &[],
             &mut crate::mesh::MeshBudget::new(),
         )
@@ -2085,9 +2077,7 @@ pub(crate) mod tests {
             crate::mesh::MeshExpand::new(&ctx, root),
             &bytes,
             &mut reader,
-            ArchiveVersion::V5,
-            None,
-            MillimeterScale::IDENTITY,
+            ExtrusionFormat { archive: ArchiveVersion::V5, writer_version: None, scale: MillimeterScale::IDENTITY },
             &mut crate::mesh::MeshBudget::new(),
             &mut Diagnostics::new(),
         )
@@ -2105,9 +2095,7 @@ pub(crate) mod tests {
                 expand,
                 &bytes,
                 &mut reader,
-                ArchiveVersion::V5,
-                None,
-                MillimeterScale::IDENTITY,
+                ExtrusionFormat { archive: ArchiveVersion::V5, writer_version: None, scale: MillimeterScale::IDENTITY },
                 &mut crate::mesh::MeshBudget::new(),
                 &mut Diagnostics::new(),
             )
@@ -2131,9 +2119,7 @@ pub(crate) mod tests {
             crate::mesh::MeshExpand::new(&ctx, root),
             &bytes,
             &mut reader,
-            ArchiveVersion::V5,
-            None,
-            MillimeterScale::IDENTITY,
+            ExtrusionFormat { archive: ArchiveVersion::V5, writer_version: None, scale: MillimeterScale::IDENTITY },
             &mut crate::mesh::MeshBudget::new(),
             &mut Diagnostics::new(),
         )
@@ -2182,9 +2168,7 @@ pub(crate) mod tests {
             read_v5_mesh_cache(
                 expand,
                 &bytes,
-                ArchiveVersion::V5,
-                None,
-                MillimeterScale::IDENTITY,
+                ExtrusionFormat { archive: ArchiveVersion::V5, writer_version: None, scale: MillimeterScale::IDENTITY },
                 std::slice::from_ref(&descriptor),
                 &mut crate::mesh::MeshBudget::new(),
                 &mut Diagnostics::new(),
@@ -2219,9 +2203,7 @@ pub(crate) mod tests {
         let refusal = read_v5_mesh_cache(
             crate::mesh::MeshExpand::new(&ctx, root),
             &bytes,
-            ArchiveVersion::V5,
-            None,
-            MillimeterScale::IDENTITY,
+            ExtrusionFormat { archive: ArchiveVersion::V5, writer_version: None, scale: MillimeterScale::IDENTITY },
             std::slice::from_ref(&descriptor),
             &mut crate::mesh::MeshBudget::new(),
             &mut Diagnostics::new(),
@@ -2255,9 +2237,7 @@ pub(crate) mod tests {
             read_v5_mesh_cache(
                 expand,
                 &bytes,
-                ArchiveVersion::V5,
-                None,
-                MillimeterScale::IDENTITY,
+                ExtrusionFormat { archive: ArchiveVersion::V5, writer_version: None, scale: MillimeterScale::IDENTITY },
                 std::slice::from_ref(&descriptor),
                 &mut crate::mesh::MeshBudget::new(),
                 &mut Diagnostics::new(),
