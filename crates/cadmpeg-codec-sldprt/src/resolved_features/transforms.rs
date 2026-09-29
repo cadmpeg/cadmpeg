@@ -139,7 +139,7 @@ fn axis_aligned_sketch_frame_marker_transform(
     ];
     let origin = [origin.x, origin.y, origin.z];
     let axis = |vector: [f64; 3]| {
-        let matches = vector
+        let mut matches = vector
             .iter()
             .enumerate()
             .filter(|(_, value)| {
@@ -155,35 +155,32 @@ fn axis_aligned_sketch_frame_marker_transform(
                         Sign::Positive
                     },
                 )
-            })
-            .collect::<Vec<_>>();
-        let [(index, sign)] = matches.as_slice() else {
+            });
+        let (index, sign) = matches.next()?;
+        if matches.next().is_some() {
             return None;
-        };
+        }
         vector
             .iter()
             .enumerate()
             .all(|(candidate, value)| {
-                candidate == *index
+                candidate == index
                     || value.abs() <= EPS_TRANSFORMS_AXIS_ALIGNED_SKETCH_FRAME_MARKER_TRANSFORM_E8
             })
-            .then_some((*index, *sign))
+            .then_some((index, sign))
     };
     let (normal_axis, _) = axis(normal)?;
-    let native_axes = (0..3)
-        .filter(|candidate| *candidate != normal_axis)
-        .collect::<Vec<_>>();
-    let [first_native_axis, second_native_axis] = native_axes.as_slice() else {
-        return None;
-    };
+    let mut native_axes = (0..3).filter(|candidate| *candidate != normal_axis);
+    let first_native_axis = native_axes.next()?;
+    let second_native_axis = native_axes.next()?;
     let (u_axis_index, u_sign) = axis(u_axis)?;
     let (v_axis_index, v_sign) = axis(v_axis)?;
     if u_axis_index == normal_axis || v_axis_index == normal_axis || u_axis_index == v_axis_index {
         return None;
     }
     let swap = match (u_axis_index, v_axis_index) {
-        (u, v) if u == *first_native_axis && v == *second_native_axis => false,
-        (u, v) if u == *second_native_axis && v == *first_native_axis => true,
+        (u, v) if u == first_native_axis && v == second_native_axis => false,
+        (u, v) if u == second_native_axis && v == first_native_axis => true,
         _ => return None,
     };
     Some(MarkerTransform {
@@ -227,12 +224,9 @@ fn affine_sketch_frame_marker_transform(
     if normal[normal_axis].abs() <= EPS_TRANSFORMS_AFFINE_SKETCH_FRAME_MARKER_TRANSFORM_E8 {
         return None;
     }
-    let native_axes = (0..3)
-        .filter(|candidate| *candidate != normal_axis)
-        .collect::<Vec<_>>();
-    let [first_axis, second_axis] = native_axes.as_slice() else {
-        return None;
-    };
+    let mut native_axes = (0..3).filter(|candidate| *candidate != normal_axis);
+    let first_axis = native_axes.next()?;
+    let second_axis = native_axes.next()?;
     let tangent = |axis: usize| {
         let mut value = [0.0; 3];
         value[axis] = 1.0;
@@ -242,8 +236,8 @@ fn affine_sketch_frame_marker_transform(
     let dot = |left: [f64; 3], right: [f64; 3]| {
         left[0] * right[0] + left[1] * right[1] + left[2] * right[2]
     };
-    let first = tangent(*first_axis);
-    let second = tangent(*second_axis);
+    let first = tangent(first_axis);
+    let second = tangent(second_axis);
     let first_row = quantize(
         Point2::new(dot(first, u_axis) * SCALE, dot(second, u_axis) * SCALE),
         1.0,
@@ -256,10 +250,10 @@ fn affine_sketch_frame_marker_transform(
     .cells()?;
     let matrix = [first_row.0, first_row.1, second_row.0, second_row.1];
     let mut zero_world_delta = [0.0; 3];
-    zero_world_delta[*first_axis] = -origin[*first_axis];
-    zero_world_delta[*second_axis] = -origin[*second_axis];
-    zero_world_delta[normal_axis] = -(normal[*first_axis] * zero_world_delta[*first_axis]
-        + normal[*second_axis] * zero_world_delta[*second_axis])
+    zero_world_delta[first_axis] = -origin[first_axis];
+    zero_world_delta[second_axis] = -origin[second_axis];
+    zero_world_delta[normal_axis] = -(normal[first_axis] * zero_world_delta[first_axis]
+        + normal[second_axis] * zero_world_delta[second_axis])
         / normal[normal_axis];
     Some(MarkerTransform {
         axes: Axes::Affine(matrix),
