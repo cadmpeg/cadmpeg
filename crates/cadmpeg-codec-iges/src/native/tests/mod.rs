@@ -159,19 +159,19 @@ fn native_ambiguity_and_entity_slots_refuse_after_input_indexes() {
     use cadmpeg_core::CodecError;
 
     let bytes = point_file();
-    let scan = crate::card::scan(&bytes).unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
     let arena = DecodeArena::new();
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, quarantined_directory) =
-        crate::directory::parse(&scan, global.global_table(), Some(&parse_ctx)).unwrap();
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
         &directory,
         &quarantined_directory,
         &global,
-        Some(&parse_ctx),
+        &parse_ctx,
     )
     .unwrap();
     assert_eq!(directory.len(), 1);
@@ -253,19 +253,19 @@ fn native_required_back_pointer_member_refuses_node_limit() {
             parameters: "402,1,1;".into(),
         },
     ]);
-    let scan = crate::card::scan(&bytes).unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
     let arena = DecodeArena::new();
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, quarantined_directory) =
-        crate::directory::parse(&scan, global.global_table(), Some(&parse_ctx)).unwrap();
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
         &directory,
         &quarantined_directory,
         &global,
-        Some(&parse_ctx),
+        &parse_ctx,
     )
     .unwrap();
     assert_eq!(directory.len(), 2);
@@ -315,19 +315,19 @@ fn native_input_card_and_lookup_indexes_refuse_collection_limits() {
     use cadmpeg_core::CodecError;
 
     let bytes = point_file();
-    let scan = crate::card::scan(&bytes).unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
     let arena = DecodeArena::new();
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, quarantined_directory) =
-        crate::directory::parse(&scan, global.global_table(), Some(&parse_ctx)).unwrap();
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
         &directory,
         &quarantined_directory,
         &global,
-        Some(&parse_ctx),
+        &parse_ctx,
     )
     .unwrap();
     assert!(quarantined_directory.is_empty());
@@ -381,19 +381,19 @@ fn native_quarantine_indexes_refuse_each_collection_limit() {
         status: "00000000",
         parameters: "116,1,2,3x4,0;".into(),
     }]);
-    let scan = crate::card::scan(&bytes).unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
     let arena = DecodeArena::new();
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, parsed_quarantine) =
-        crate::directory::parse(&scan, global.global_table(), Some(&parse_ctx)).unwrap();
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
         &directory,
         &parsed_quarantine,
         &global,
-        Some(&parse_ctx),
+        &parse_ctx,
     )
     .unwrap();
     assert_eq!(assembly.quarantined.len(), 1);

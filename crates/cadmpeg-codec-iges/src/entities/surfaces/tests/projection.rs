@@ -396,6 +396,8 @@ fn decode_enforces_type128_closure_flags_in_iges_4_and_5_0() {
 
 #[test]
 fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let first = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -423,7 +425,7 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
     }
     .unwrap();
     assert_eq!(
-        homogeneous_curve_boundary_matches(None, &first, &scaled, [0.0, 1.0], 0.0).unwrap(),
+        homogeneous_curve_boundary_matches(decode_ctx, &first, &scaled, [0.0, 1.0], 0.0).unwrap(),
         Some(true)
     );
     scaled
@@ -440,9 +442,11 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
         })
         .unwrap();
     assert_eq!(
-        homogeneous_curve_boundary_matches(None, &first, &scaled, [0.0, 1.0], 0.0).unwrap(),
+        homogeneous_curve_boundary_matches(decode_ctx, &first, &scaled, [0.0, 1.0], 0.0).unwrap(),
         Some(false)
     );
+
+    })
 }
 
 #[test]
@@ -503,6 +507,8 @@ fn decode_applies_rational_surface_weight_declaration_in_iges_4_and_5_0() {
 
 #[test]
 fn a_ruled_weight_lane_shorter_than_its_pole_lane_reaches_the_codec_error() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let rail = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -512,7 +518,7 @@ fn a_ruled_weight_lane_shorter_than_its_pole_lane_reaches_the_codec_error() {
     )
     .expect("valid rail");
     let weight = cadmpeg_ir::scalar::NonZeroReal::try_from(0.5).expect("nonzero weight");
-    let error = super::super::same_basis_ruled_surface(&rail, &rail, &[weight], None)
+    let error = super::super::same_basis_ruled_surface(&rail, &rail, &[weight], decode_ctx)
         .expect_err("a weight lane one shorter than the pole lane is refused");
     let reported = error;
     let CodecError::Malformed(message) = &reported else {
@@ -522,6 +528,8 @@ fn a_ruled_weight_lane_shorter_than_its_pole_lane_reaches_the_codec_error() {
         message.contains("pole(s) against"),
         "the refusal states both lane counts: {message}"
     );
+
+    })
 }
 
 #[test]
@@ -551,6 +559,8 @@ fn numerical_audit_similarity_orientation_survives_uniform_scale() {
 
 #[test]
 fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let knots = vec![0., 0., 0., 1., 1., 1., 2., 2., 2.];
     let first = (0..6)
         .map(|i| Point3::new(f64::from(i), 0., 0.))
@@ -560,7 +570,7 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
     let a = NurbsCurve::from_lanes(2, knots.clone(), first, None, false).unwrap();
     let b = NurbsCurve::from_lanes(2, knots, second, None, false).unwrap();
     assert_eq!(
-        homogeneous_curve_boundary_matches(None, &a, &b, [0., 2.], 0.).unwrap(),
+        homogeneous_curve_boundary_matches(decode_ctx, &a, &b, [0., 2.], 0.).unwrap(),
         Some(false)
     );
     for weight in [1., 1e-200, 1e200] {
@@ -581,18 +591,22 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
         )
         .unwrap();
         assert_eq!(
-            homogeneous_curve_boundary_matches(None, &a, &b, [0., 1.], 0.001).unwrap(),
+            homogeneous_curve_boundary_matches(decode_ctx, &a, &b, [0., 1.], 0.001).unwrap(),
             Some(false)
         );
         assert_eq!(
-            homogeneous_curve_boundary_matches(None, &a, &a, [0., 1.], 0.).unwrap(),
+            homogeneous_curve_boundary_matches(decode_ctx, &a, &a, [0., 1.], 0.).unwrap(),
             Some(true)
         );
     }
+
+    })
 }
 
 #[test]
 fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::Point3;
     let line = |domain: [f64; 2], y| {
@@ -618,7 +632,7 @@ fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
         false,
     )
     .unwrap();
-    let pairs = super::super::aligned_homogeneous_spans(None, &first, &second)
+    let pairs = super::super::aligned_homogeneous_spans(decode_ctx, &first, &second)
         .unwrap()
         .unwrap();
     assert_eq!(pairs.len(), 2);
@@ -633,4 +647,6 @@ fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
             assert!((pole[0] / pole[3] - expected).abs() < 16. * f64::EPSILON);
         }
     }
+
+    })
 }

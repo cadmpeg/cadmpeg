@@ -2031,7 +2031,7 @@ fn member_affine(
         length_factor,
         precision,
         &mut std::collections::BTreeSet::new(),
-        Some(ctx),
+        ctx,
     )
 }
 
@@ -2053,8 +2053,7 @@ impl OccurrenceExpansion<'_, '_> {
         malformed: &mut BTreeSet<u32>,
         sequence: u32,
     ) -> Result<(), CodecError> {
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            Some(self.ctx),
+        self.ctx.insert_btree_set(
             malformed,
             sequence,
             "iges malformed occurrence placement nodes",
@@ -2098,7 +2097,7 @@ impl OccurrenceExpansion<'_, '_> {
             self.records,
             self.length_factor,
             self.precision,
-            Some(self.ctx),
+            self.ctx,
         ) {
             Ok(placement) => placement,
             Err(error) => {
@@ -2266,8 +2265,7 @@ fn push_occurrence_neutral_link(
     id: &str,
 ) -> Result<(), CodecError> {
     if !links.contains_key(&sequence) {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             links,
             sequence,
             Vec::new(),
@@ -2367,8 +2365,7 @@ fn index_native_inputs<'a>(
     );
     let mut by_directory = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut by_directory,
             record.directory_sequence,
             record,
@@ -2377,8 +2374,7 @@ fn index_native_inputs<'a>(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
@@ -2441,7 +2437,7 @@ pub(crate) fn store(
             &record.bytes,
             global.parameter_delimiter,
             global.record_delimiter,
-            Some(ctx),
+            ctx,
         ) {
             Ok(data) => data,
             Err(MacroDataError::Defect(_, _)) => continue,
@@ -2581,8 +2577,7 @@ pub(crate) fn store(
                 .and_then(|value| u32::try_from(value).ok())
                 .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
             {
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                    Some(ctx),
+                ctx.insert_btree_set(
                     &mut required_back_pointer_members,
                     sequence,
                     "iges native required back-pointer member",
@@ -3334,8 +3329,7 @@ pub(crate) fn store(
                 format_args!("{name}"),
                 "iges native primitive dimension name",
             )?;
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                Some(ctx),
+            ctx.insert_btree_map(
                 &mut dimensions,
                 key,
                 number(index + 1),
@@ -5625,8 +5619,7 @@ pub(crate) fn store(
                 }
                 Ok(None) => Vec::new(),
                 Err(refusal) => {
-                    cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                        Some(ctx),
+                    ctx.insert_btree_map(
                         &mut unstatable_attribute_tables,
                         entry.sequence,
                         refusal,
@@ -6700,7 +6693,7 @@ pub(crate) fn store(
                 length_factor,
                 global.real_precision(),
                 &mut BTreeSet::new(),
-                Some(ctx),
+                ctx,
             ) {
                 Ok(transform) => transform,
                 Err(error) => {
@@ -6741,8 +6734,7 @@ pub(crate) fn store(
                 .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
         })
     {
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            Some(ctx),
+        ctx.insert_btree_set(
             &mut contained_instances,
             sequence,
             "iges contained occurrence instances",
@@ -6755,8 +6747,7 @@ pub(crate) fn store(
             structure_admitted.is_none_or(|admitted| admitted.decoded.contains(sequence))
         })
     {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut occurrence_definitions,
             sequence,
             definition,
@@ -6830,8 +6821,7 @@ pub(crate) fn store(
                     }
                 },
             ) {
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                    Some(ctx),
+                ctx.insert_btree_set(
                     &mut malformed_placement_sequences,
                     sequence,
                     "iges malformed occurrence placement nodes",

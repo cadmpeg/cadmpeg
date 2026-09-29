@@ -313,7 +313,7 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     let mut written = Vec::new();
     plan.write_to(&mut written)
         .expect("generated IGES bytes are writable");
-    let scan = crate::card::scan(&written).expect("generated IGES cards scan");
+    let scan = crate::test_support::scan(&written).expect("generated IGES cards scan");
     let (global, _) =
         crate::test_support::parse_global(&scan).expect("generated Global record parses");
     assert_eq!(global.sender_product(), Some(WRITER_SENDER_PRODUCT));
@@ -358,7 +358,7 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
     ] {
         let global_bytes = generated_global(version, timestamp, real(0.001), real(1000.0));
         let fixture = fixed_ascii_with_global(&global_bytes);
-        let scan = crate::card::scan(&fixture).expect("versioned generated Global cards scan");
+        let scan = crate::test_support::scan(&fixture).expect("versioned generated Global cards scan");
         let (global, losses) =
             crate::test_support::parse_global(&scan).expect("versioned Global parses");
         assert_eq!(
@@ -411,7 +411,7 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
     let report = plan
         .write_to(&mut written)
         .expect("neutral tolerance floor output is writable");
-    let scan = crate::card::scan(&written).expect("neutral tolerance floor output scans");
+    let scan = crate::test_support::scan(&written).expect("neutral tolerance floor output scans");
     let (global, _) =
         crate::test_support::parse_global(&scan).expect("neutral tolerance floor Global parses");
 
@@ -446,7 +446,7 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
     let report = plan
         .write_to(&mut written)
         .expect("source resolution witness output is writable");
-    let scan = crate::card::scan(&written).expect("source resolution output scans");
+    let scan = crate::test_support::scan(&written).expect("source resolution output scans");
     let (global, _) =
         crate::test_support::parse_global(&scan).expect("source resolution output Global parses");
 
@@ -850,9 +850,11 @@ fn generated_reals_round_trip_without_writer_quantization() {
 
 #[test]
 fn generated_parameter_cards_preserve_field_boundaries() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let token = number(real(f64::MAX));
     let parameters = format!("128,{token},{token},{token},{token};");
-    let fragments = crate::parameter::layout_parameter_cards(parameters.as_bytes(), None)
+    let fragments = crate::parameter::layout_parameter_cards(parameters.as_bytes(), decode_ctx)
         .expect("ordinary generated real tokens fit one card");
     assert!(fragments.len() > 1);
     assert!(fragments.iter().all(|fragment| fragment.len() <= 64));
@@ -862,14 +864,20 @@ fn generated_parameter_cards_preserve_field_boundaries() {
         .filter(|byte| *byte != b' ')
         .collect::<Vec<_>>();
     assert_eq!(compact, parameters.as_bytes());
+
+    })
 }
 
 #[test]
 fn generated_parameter_field_wider_than_a_card_is_refused() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let parameters = format!("{};", "1".repeat(65));
-    let error = crate::parameter::layout_parameter_cards(parameters.as_bytes(), None)
+    let error = crate::parameter::layout_parameter_cards(parameters.as_bytes(), decode_ctx)
         .expect_err("a field wider than the data area must fail");
     assert!(error.to_string().contains("field exceeds one card"));
+
+    })
 }
 
 #[test]

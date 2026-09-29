@@ -12,7 +12,7 @@ fn macro_statement_spans_refuse_collection_limit_before_growth() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let result = crate::parameter::macro_parameter_data_with_context(bytes, b',', b';', Some(&ctx));
+    let result = crate::parameter::macro_parameter_data_with_context(bytes, b',', b';', &ctx);
     assert!(matches!(
         result,
         Err(crate::parameter::MacroDataError::Refusal(
@@ -26,7 +26,7 @@ fn macro_statement_spans_refuse_collection_limit_before_growth() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        crate::parameter::macro_parameter_data_with_context(bytes, b',', b';', Some(&ctx))
+        crate::parameter::macro_parameter_data_with_context(bytes, b',', b';', &ctx)
             .ok()
             .map(|data| data.statement_spans.len()),
         Some(3)

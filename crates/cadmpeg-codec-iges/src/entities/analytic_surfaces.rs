@@ -27,7 +27,7 @@ fn admit_analytic<T>(
     result: Result<T, &str>,
     entry: &DirectoryEntry,
     losses: &mut Vec<LossNote>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<T>, CodecError> {
     match result {
         Ok(value) => Ok(Some(value)),
@@ -250,7 +250,7 @@ fn surface_transform(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Transform, TransformResolutionError> {
     resolve_transform(
         entry.transform,
@@ -268,13 +268,12 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut records,
             record.directory_sequence,
             record,
@@ -283,8 +282,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
@@ -757,13 +755,12 @@ pub(super) fn project(
             entry.sequence,
             ctx,
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.surfaces,
             1,
             "iges analytic-surface slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_analytic_surfaces")?;
+        ctx.charge_entities( 1, "iges_geometry_analytic_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
             geometry: result,
@@ -776,8 +773,7 @@ pub(super) fn project(
                 }
             }),
         });
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
+        ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges analytic-surface decoded sequences",

@@ -73,7 +73,7 @@ fn surface_grid_error_fields_refuse_retained_limit_before_copy() {
         policy.limits.max_retained_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result =
-            super::pair_admitted_surface_poles(Some(&ctx), rows, Some(weights), "outer", "inner");
+            super::pair_admitted_surface_poles(&ctx, rows, Some(weights), "outer", "inner");
         assert!(
             matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges surface grid error field")
         );
@@ -483,6 +483,8 @@ fn ruled_homogeneous_carriers_refuse_copied_poles_weights_and_controls() {
 
 #[test]
 fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let first = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -503,7 +505,7 @@ fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
         false,
     )
     .unwrap();
-    let spans = super::aligned_homogeneous_spans(None, &first, &second)
+    let spans = super::aligned_homogeneous_spans(decode_ctx, &first, &second)
         .unwrap()
         .unwrap();
     assert_eq!(spans.len(), 2);
@@ -531,7 +533,7 @@ fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match super::aligned_homogeneous_spans(Some(&ctx), &first, &second) {
+            match super::aligned_homogeneous_spans(&ctx, &first, &second) {
                 Err(CodecError::ResourceLimit(limit)) => {
                     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
                     if limit.operation == operation {
@@ -548,10 +550,14 @@ fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
         }
         assert!(found, "aligned-span refusal was not reached: {operation}");
     }
+
+    })
 }
 
 #[test]
 fn unclamped_ruled_span_extraction_refuses_knot_insertion_storage() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let curve = NurbsCurve::from_lanes(
         1,
         vec![-1.0, 0.0, 1.0, 2.0],
@@ -560,7 +566,7 @@ fn unclamped_ruled_span_extraction_refuses_knot_insertion_storage() {
         false,
     )
     .unwrap();
-    let expected = super::homogeneous_bezier_spans(None, &curve)
+    let expected = super::homogeneous_bezier_spans(decode_ctx, &curve)
         .unwrap()
         .unwrap();
     for operation in ["Bezier knot insertion", "Bezier inserted knot"] {
@@ -572,7 +578,7 @@ fn unclamped_ruled_span_extraction_refuses_knot_insertion_storage() {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match super::homogeneous_bezier_spans(Some(&ctx), &curve) {
+            match super::homogeneous_bezier_spans(&ctx, &curve) {
                 Err(CodecError::ResourceLimit(limit)) => {
                     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
                     if limit.operation == operation {
@@ -594,7 +600,7 @@ fn unclamped_ruled_span_extraction_refuses_knot_insertion_storage() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .unwrap();
-    let actual = super::homogeneous_bezier_spans(Some(&ctx), &curve)
+    let actual = super::homogeneous_bezier_spans(&ctx, &curve)
         .unwrap()
         .unwrap();
     assert_eq!(actual.len(), expected.len());
@@ -602,10 +608,14 @@ fn unclamped_ruled_span_extraction_refuses_knot_insertion_storage() {
         assert_eq!(actual.domain, expected.domain);
         assert_eq!(actual.controls, expected.controls);
     }
+
+    })
 }
 
 #[test]
 fn same_basis_ruled_surface_refuses_nested_weight_rows() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let rail = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -616,7 +626,7 @@ fn same_basis_ruled_surface_refuses_nested_weight_rows() {
     .unwrap();
     let weight = cadmpeg_ir::scalar::NonZeroReal::try_from(0.5).unwrap();
     let weights = [weight, weight];
-    super::same_basis_ruled_surface(&rail, &rail, &weights, None).unwrap();
+    super::same_basis_ruled_surface(&rail, &rail, &weights, decode_ctx).unwrap();
     for operation in [
         "iges ruled same-basis weight rows",
         "iges ruled same-basis weight row controls",
@@ -631,7 +641,7 @@ fn same_basis_ruled_surface_refuses_nested_weight_rows() {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match super::same_basis_ruled_surface(&rail, &rail, &weights, Some(&ctx)) {
+            match super::same_basis_ruled_surface(&rail, &rail, &weights, &ctx) {
                 Err(CodecError::ResourceLimit(limit)) => {
                     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
                     if limit.operation == operation {
@@ -648,6 +658,8 @@ fn same_basis_ruled_surface_refuses_nested_weight_rows() {
         }
         assert!(found, "same-basis refusal was not reached: {operation}");
     }
+
+    })
 }
 
 #[test]
@@ -794,16 +806,20 @@ fn decode_refuses_a_nurbs_surface_over_its_pole_limit() {
 
 #[test]
 fn angular_basis_canonicalizes_a_full_sweep_with_decimal_roundoff() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let basis = angular_basis(
         0.0,
         std::f64::consts::TAU + std::f64::consts::TAU * 5.0e-13,
-        None,
+        decode_ctx,
     )
     .unwrap()
     .expect("a near-full finite sweep has an exact rational basis");
 
     assert_eq!(basis.controls.len(), 9);
     assert_eq!(basis.knots.last(), Some(&std::f64::consts::TAU));
+
+    })
 }
 
 #[test]
@@ -922,6 +938,8 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
 
 #[test]
 fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_weight_limit() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let first = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -942,7 +960,7 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_we
         false,
     )
     .expect("valid second rail");
-    let surface = super::ruled_surface_carrier(&first, &second, None)
+    let surface = super::ruled_surface_carrier(&first, &second, decode_ctx)
         .expect("ruled lanes pair")
         .expect("relative-parameter rational ruled carrier");
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -950,7 +968,7 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_we
     policy.limits.max_collection_items = 1;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::ruled_surface_carrier(&first, &second, Some(&ctx))
+    let error = super::ruled_surface_carrier(&first, &second, &ctx)
         .expect_err("two unit weights exceed one admitted collection item");
     assert!(matches!(
         error,
@@ -972,10 +990,14 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_we
             cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).expect("ruled surface point");
         assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
     }
+
+    })
 }
 
 #[test]
 fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let first = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 0.5, 1.0, 1.0],
@@ -996,7 +1018,7 @@ fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
         false,
     )
     .expect("valid second rail");
-    let surface = super::ruled_surface_carrier(&first, &second, None)
+    let surface = super::ruled_surface_carrier(&first, &second, decode_ctx)
         .expect("ruled lanes pair")
         .expect("partition-aligned rational ruled carrier");
     assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
@@ -1019,6 +1041,8 @@ fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
             cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).expect("ruled surface point");
         assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
     }
+
+    })
 }
 
 #[test]

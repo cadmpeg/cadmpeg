@@ -29,12 +29,11 @@ use std::collections::{BTreeMap, BTreeSet};
 const EPS_OFFSET_FRAME: f64 = 1.0e-10;
 
 fn admit_offset_controls(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     controls: Vec<Point3>,
     operation: &'static str,
 ) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
-    let mut admitted = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
+    let mut admitted = ctx.collection_vec(
         controls.len(),
         operation,
     )?;
@@ -282,13 +281,12 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut records,
             record.directory_sequence,
             record,
@@ -297,8 +295,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
@@ -810,8 +807,7 @@ pub(super) fn project(
                     )?;
                     continue;
                 };
-                let mut controls = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                    ctx,
+                let mut controls = ctx.collection_vec(
                     2,
                     "iges linear-offset controls",
                 )?;
@@ -819,8 +815,7 @@ pub(super) fn project(
                     source_start.translated(offset_direction, evaluate_distance(start)),
                     source_end.translated(offset_direction, evaluate_distance(end)),
                 ]);
-                let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                    ctx,
+                let mut knots = ctx.collection_vec(
                     4,
                     "iges linear-offset knots",
                 )?;
@@ -1018,8 +1013,7 @@ pub(super) fn project(
                     CurveOffsetLawBasis::Parameter => independent,
                 };
                 let offset_direction = normal_direction.cross(direction);
-                let mut controls = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                    ctx,
+                let mut controls = ctx.collection_vec(
                     function_nurbs.pole_count(),
                     "iges function-offset controls",
                 )?;
@@ -1064,8 +1058,7 @@ pub(super) fn project(
                     )?;
                     continue;
                 }
-                let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                    ctx,
+                let mut knots = ctx.collection_vec(
                     function_nurbs.knots().len(),
                     "iges function-offset knots",
                 )?;
@@ -1243,13 +1236,12 @@ pub(super) fn project(
                 }
             };
             sequences.record_curve(&offset_source_id, entry.sequence, ctx)?;
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
+            ctx.reserve_vec(
                 &mut ir.model.curves,
                 1,
                 "iges offset source curve slots",
             )?;
-            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
+            ctx.charge_entities( 1, "iges_geometry_offsets")?;
             ir.model.curves.push(Curve {
                 id: offset_source_id
                     .try_clone_for_decode(ctx, "iges offset placed source identity")?,
@@ -1268,13 +1260,12 @@ pub(super) fn project(
                 }),
             });
         }
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.points,
             2,
             "iges offset neutral point slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_offsets")?;
+        ctx.charge_entities( 2, "iges_geometry_offsets")?;
         ir.model.points.extend([
             Point::new(
                 start_point.try_clone_for_decode(ctx, "iges offset start point identity")?,
@@ -1287,13 +1278,12 @@ pub(super) fn project(
                 None,
             ),
         ]);
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.vertices,
             2,
             "iges offset neutral vertex slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_offsets")?;
+        ctx.charge_entities( 2, "iges_geometry_offsets")?;
         ir.model.vertices.extend([
             Vertex {
                 id: start_vertex.try_clone_for_decode(ctx, "iges offset start vertex identity")?,
@@ -1307,13 +1297,12 @@ pub(super) fn project(
             },
         ]);
         sequences.record_curve(&curve_id, entry.sequence, ctx)?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.curves,
             1,
             "iges offset neutral curve slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
+        ctx.charge_entities( 1, "iges_geometry_offsets")?;
         ir.model.curves.push(Curve {
             id: curve_id.try_clone_for_decode(ctx, "iges offset curve identity")?,
             geometry,
@@ -1340,13 +1329,12 @@ pub(super) fn project(
                 continue;
             }
         };
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.edges,
             1,
             "iges offset neutral edge slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
+        ctx.charge_entities( 1, "iges_geometry_offsets")?;
         ir.model.edges.push(Edge {
             id: edge_id.try_clone_for_decode(ctx, "iges offset edge identity")?,
             carrier,
@@ -1354,23 +1342,20 @@ pub(super) fn project(
             end: end_vertex,
             tolerance: None,
         });
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.procedural_curves,
             1,
             "iges offset procedural curve slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
+        ctx.charge_entities( 1, "iges_geometry_offsets")?;
         let _attached = ir.model.add_procedural_curve(&curve_id, procedural);
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut wire_edges,
             1,
             "iges offset wire edge slots",
         )?;
         wire_edges.push(edge_id);
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
+        ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges offsets decoded sequences",

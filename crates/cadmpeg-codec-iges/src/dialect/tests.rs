@@ -117,7 +117,7 @@ fn every_write_target_names_a_fixed_ascii_row() {
 /// resolved Global serves every representation in the matrix below.
 fn resolved_global(version_flag: &str) -> crate::global::ResolvedGlobal {
     let bytes = fixed_ascii_with_global(&global_with_version_flag(version_flag));
-    let scan = crate::card::scan(&bytes).unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
     crate::test_support::parse_global(&scan).unwrap().0
 }
 

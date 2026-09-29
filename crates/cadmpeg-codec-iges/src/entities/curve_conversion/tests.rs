@@ -29,7 +29,7 @@ fn analytic_arc_conversion_refuses_each_decode_lane() {
                 Vector3::new(1.0, 0.0, 0.0),
                 PositiveLength::new(1.0).expect("test setup"),
                 [0.0, 1.0],
-                Some(&ctx),
+                &ctx,
             )
         } else {
             elliptical_arc_nurbs(
@@ -39,7 +39,7 @@ fn analytic_arc_conversion_refuses_each_decode_lane() {
                 PositiveLength::new(2.0).expect("test setup"),
                 PositiveLength::new(1.0).expect("test setup"),
                 [0.0, std::f64::consts::FRAC_PI_2],
-                Some(&ctx),
+                &ctx,
             )
         };
         assert!(
@@ -106,6 +106,8 @@ fn angular_equality_has_one_inclusive_absolute_boundary() {
 
 #[test]
 fn an_ellipse_arc_has_exact_rational_quadratic_points() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let curve = elliptical_arc_nurbs(
         Point3::new(1.0, 2.0, 3.0),
         Vector3::new(0.0, 0.0, 1.0),
@@ -113,7 +115,7 @@ fn an_ellipse_arc_has_exact_rational_quadratic_points() {
         PositiveLength::new(4.0).expect("positive major radius"),
         PositiveLength::new(2.0).expect("positive minor radius"),
         [0.0, std::f64::consts::FRAC_PI_2],
-        None,
+        decode_ctx,
     )
     .expect("arc lanes pair")
     .expect("valid ellipse arc");
@@ -133,17 +135,21 @@ fn an_ellipse_arc_has_exact_rational_quadratic_points() {
             "{actual:?} != {expected:?}"
         );
     }
+
+    })
 }
 
 #[test]
 fn a_parabola_arc_has_exact_quadratic_points() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let curve = parabolic_arc_nurbs(
         Point3::new(1.0, 2.0, 3.0),
         Vector3::new(0.0, 0.0, 1.0),
         Vector3::new(1.0, 0.0, 0.0),
         PositiveLength::new(2.0).expect("positive focal distance"),
         [-1.0, 3.0],
-        None,
+        decode_ctx,
     )
     .expect("arc lanes pair")
     .expect("valid parabola arc");
@@ -158,17 +164,21 @@ fn a_parabola_arc_has_exact_quadratic_points() {
             "{actual:?} != {expected:?}"
         );
     }
+
+    })
 }
 
 #[test]
 fn parabola_arc_keeps_finite_poles_across_an_overflowing_parameter_span() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let curve = parabolic_arc_nurbs(
         Point3::new(0.0, 0.0, 0.0),
         Vector3::new(0.0, 0.0, 1.0),
         Vector3::new(1.0, 0.0, 0.0),
         PositiveLength::new(f64::from_bits(1)).expect("positive subnormal focal distance"),
         [-f64::MAX, f64::MAX],
-        None,
+        decode_ctx,
     )
     .expect("parabola arc conversion")
     .expect("finite parabola poles");
@@ -188,17 +198,21 @@ fn parabola_arc_keeps_finite_poles_across_an_overflowing_parameter_span() {
         .control_points()
         .iter()
         .all(|point| point.get().is_finite()));
+
+    })
 }
 
 #[test]
 fn audit_regression_parabola_keeps_finite_scaled_coordinates() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let curve = parabolic_arc_nurbs(
         Point3::new(0., 0., 0.),
         Vector3::new(0., 0., 1.),
         Vector3::new(1., 0., 0.),
         PositiveLength::new(1e308).expect("positive focal distance"),
         [1e-100, 2e-100],
-        None,
+        decode_ctx,
     )
     .expect("valid quadratic NURBS")
     .expect("finite parabola interval");
@@ -207,4 +221,6 @@ fn audit_regression_parabola_keeps_finite_scaled_coordinates() {
         assert!((point.y / expected - 1.).abs() <= 8. * f64::EPSILON);
         assert!(point.is_finite());
     }
+
+    })
 }

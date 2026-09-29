@@ -141,3 +141,19 @@ pub(crate) fn only_match(
     assert_eq!(layers.primary().format(), "iges");
     layers.primary()
 }
+
+/// Scans a test source under the service decode policy.
+pub(crate) fn scan(source: &[u8]) -> Result<crate::card::CardScan<'_>, cadmpeg_core::CodecError> {
+    with_service_context(source, |ctx| crate::card::scan_with_context(source, ctx))
+}
+
+pub(crate) fn with_service_context<T>(
+    input: &[u8],
+    use_context: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
+        .expect("test input is within service limits");
+    use_context(&ctx)
+}

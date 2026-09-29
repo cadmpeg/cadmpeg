@@ -22,6 +22,8 @@ use cadmpeg_ir::CadIr;
 
 #[test]
 fn degree_elevation_preserves_nonzero_declared_interval_endpoints() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let interval = [-29.063_334_917_342_4, 2.000_000_000_000_02];
     let mut curve = NurbsCurve::from_lanes(
         1,
@@ -32,15 +34,19 @@ fn degree_elevation_preserves_nonzero_declared_interval_endpoints() {
     )
     .expect("valid line");
 
-    elevate_nurbs_to_degree(None, &mut curve, interval, 3, None).expect("elevation lanes pair");
+    elevate_nurbs_to_degree(decode_ctx, &mut curve, interval, 3, None).expect("elevation lanes pair");
     assert_eq!(curve.knots().first(), Some(&interval[0]));
     assert_eq!(curve.knots().last(), Some(&interval[1]));
     assert_eq!(&curve.knots()[..4], &[interval[0]; 4]);
     assert_eq!(&curve.knots()[4..], &[interval[1]; 4]);
+
+    })
 }
 
 #[test]
 fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let center = Point3::new(-55.9308, -12.896_865_742_92, 71.124_028_363_8);
     let first = circular_arc_nurbs(
         center,
@@ -48,7 +54,7 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
         Vector3::new(0.0, 0.999_999_999_999_995_7, 9.334_897_886_982_299e-8),
         PositiveLength::new(10.185_400_000_000_001).expect("positive radius"),
         [0.0, 3.141_592_560_240_814_3],
-        None,
+        decode_ctx,
     )
     .expect("carrier lanes pair")
     .unwrap();
@@ -58,7 +64,7 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
         Vector3::new(0.0, -1.0, 0.0),
         PositiveLength::new(10.185_400_000_000_001).expect("positive radius"),
         [0.0, 3.141_592_746_938_772],
-        None,
+        decode_ctx,
     )
     .expect("carrier lanes pair")
     .unwrap();
@@ -71,7 +77,7 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
             < 0.001
     );
     concatenate_nurbs(
-        None,
+        decode_ctx,
         vec![
             (first, [0.0, 3.141_592_560_240_814_3], ()),
             (second, [0.0, 3.141_592_746_938_772], ()),
@@ -80,10 +86,14 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
     )
     .expect("carrier lanes pair")
     .expect("analytic arcs with source-valid endpoints should concatenate");
+
+    })
 }
 
 #[test]
 fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let curve_id = CurveId::mint("test:model:curve#circle").expect("identity grammar");
     let start_id = PointId::mint("test:model:point#start-point").expect("identity grammar");
     let end_id = PointId::mint("test:model:point#end-point").expect("identity grammar");
@@ -143,16 +153,18 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
     });
 
     let (carrier, _) =
-        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None, None)
+        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), decode_ctx, None)
             .expect("carrier lanes pair")
             .expect("the source endpoint is inside the declared resolution");
     assert_eq!(carrier.pole_rows().raw_points().first(), Some(&start));
     assert_eq!(carrier.pole_rows().raw_points().last(), Some(&declared_end));
     assert!(
-        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.0001), None, None,)
+        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.0001), decode_ctx, None,)
             .expect("carrier lanes pair")
             .is_none()
     );
+
+    })
 }
 
 /// A child whose knot vector is not clamped to its declared interval states
@@ -160,6 +172,8 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
 /// endpoint join it never tested.
 #[test]
 fn a_child_that_does_not_elevate_states_its_own_cause() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     // Child A: degree 1 with non-clamped knots.
     let first = NurbsCurve::from_lanes(
         1,
@@ -184,7 +198,7 @@ fn a_child_that_does_not_elevate_states_its_own_cause() {
     .expect("valid child");
 
     let error = concatenate_nurbs(
-        None,
+        decode_ctx,
         vec![(first, [0.0, 1.5], ()), (second, [0.0, 1.0], ())],
         Some(0.001),
     )
@@ -195,10 +209,14 @@ fn a_child_that_does_not_elevate_states_its_own_cause() {
         "the error names the elevation cause: {text}"
     );
     assert!(!text.contains("join"), "{text}");
+
+    })
 }
 
 #[test]
 fn audit_regression_join_rescales_weights_without_overflowing_ratio() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let segment = |x, weight| {
         NurbsCurve::from_lanes(
             1,
@@ -210,7 +228,7 @@ fn audit_regression_join_rescales_weights_without_overflowing_ratio() {
         .unwrap()
     };
     let joined = concatenate_nurbs(
-        None,
+        decode_ctx,
         vec![
             (segment(0., 1e200), [0., 1.], ()),
             (segment(1., 1e-200), [0., 1.], ()),
@@ -227,4 +245,6 @@ fn audit_regression_join_rescales_weights_without_overflowing_ratio() {
             Point3::new(2., 0., 0.)
         ]
     );
+
+    })
 }

@@ -18,10 +18,9 @@ use cadmpeg_ir::scalar::PositiveReal;
 
 fn copy_nurbs_curve(
     curve: &NurbsCurve,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<NurbsCurve, CodecError> {
-    let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
+    let mut knots = ctx.collection_vec(
         curve.knots().len(),
         "iges solved curve copied knots",
     )?;
@@ -29,8 +28,7 @@ fn copy_nurbs_curve(
     let knots = KnotVector::new(knots).map_err(CodecError::malformed)?;
     let poles = match curve.pole_rows() {
         NurbsPoles3::Polynomial { points } => {
-            let mut copied = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
+            let mut copied = ctx.collection_vec(
                 points.len(),
                 "iges solved curve copied poles",
             )?;
@@ -38,8 +36,7 @@ fn copy_nurbs_curve(
             NurbsPoles3::Polynomial { points: copied }
         }
         NurbsPoles3::Rational { points } => {
-            let mut copied = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
+            let mut copied = ctx.collection_vec(
                 points.len(),
                 "iges solved curve copied weighted poles",
             )?;
@@ -52,16 +49,14 @@ fn copy_nurbs_curve(
 
 fn copy_nurbs_surface(
     surface: &NurbsSurface,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<NurbsSurface, CodecError> {
-    let mut u_knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
+    let mut u_knots = ctx.collection_vec(
         surface.u_knots().len(),
         "iges copied support u knots",
     )?;
     u_knots.extend_from_slice(surface.u_knots().as_slice());
-    let mut v_knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
+    let mut v_knots = ctx.collection_vec(
         surface.v_knots().len(),
         "iges copied support v knots",
     )?;
@@ -78,14 +73,12 @@ fn copy_nurbs_surface(
     );
     let poles = match surface.pole_grid() {
         NurbsPoleGrid::Polynomial { rows } => {
-            let mut copied = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
+            let mut copied = ctx.collection_vec(
                 rows.len(),
                 "iges copied support pole rows",
             )?;
             for row in rows {
-                let mut points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                    ctx,
+                let mut points = ctx.collection_vec(
                     row.len(),
                     "iges copied support pole row",
                 )?;
@@ -95,14 +88,12 @@ fn copy_nurbs_surface(
             NurbsPoleGrid::Polynomial { rows: copied }
         }
         NurbsPoleGrid::Rational { rows } => {
-            let mut copied = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
+            let mut copied = ctx.collection_vec(
                 rows.len(),
                 "iges copied support weighted rows",
             )?;
             for row in rows {
-                let mut points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                    ctx,
+                let mut points = ctx.collection_vec(
                     row.len(),
                     "iges copied support weighted row",
                 )?;
@@ -117,16 +108,14 @@ fn copy_nurbs_surface(
 
 fn copy_polygonal_surface(
     surface: &PolygonalSurface,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<PolygonalSurface, CodecError> {
-    let mut vertices = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
+    let mut vertices = ctx.collection_vec(
         surface.vertices().len(),
         "iges copied support polygon vertices",
     )?;
     vertices.extend_from_slice(surface.vertices());
-    let mut triangles = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
+    let mut triangles = ctx.collection_vec(
         surface.triangles().len(),
         "iges copied support polygon triangles",
     )?;
@@ -142,7 +131,7 @@ fn copy_polygonal_surface(
 
 pub(super) fn copy_solved_surface(
     geometry: &SolvedSurfaceGeometry,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<SolvedSurfaceGeometry, CodecError> {
     Ok(match geometry {
         SolvedSurfaceGeometry::Plane(value) => SolvedSurfaceGeometry::Plane(*value),
@@ -157,10 +146,8 @@ pub(super) fn copy_solved_surface(
             SolvedSurfaceGeometry::Polygonal(copy_polygonal_surface(value, ctx)?)
         }
         SolvedSurfaceGeometry::Transformed(value) => {
-            let _nested = ctx
-                .map(|ctx| ctx.enter_nested("iges_support_surface_copy"))
-                .transpose()?;
-            if let Some(ctx) = ctx {
+            let _nested = ctx.enter_nested("iges_support_surface_copy")?;
+            {
                 ctx.charge_collection_items(1, "iges copied support placement box")?;
             }
             SolvedSurfaceGeometry::Transformed(
@@ -182,7 +169,7 @@ pub(super) fn copy_solved_surface(
 
 pub(super) fn copy_surface_geometry(
     geometry: &SurfaceGeometry,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<SurfaceGeometry, CodecError> {
     Ok(match geometry {
         SurfaceGeometry::Solved(solved) => {
@@ -204,12 +191,11 @@ pub(super) fn copy_surface_geometry(
 
 fn copy_polyline(
     curve: &PolylineCurve,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<PolylineCurve, CodecError> {
     let count = curve.point_count();
     let samples = if let Some(parameters) = curve.parameters() {
-        let mut vertices = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
+        let mut vertices = ctx.collection_vec(
             count,
             "iges solved curve copied polyline samples",
         )?;
@@ -222,8 +208,7 @@ fn copy_polyline(
             vertices: NonEmptyMembers::try_from(vertices).map_err(CodecError::malformed)?,
         }
     } else {
-        let mut points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
+        let mut points = ctx.collection_vec(
             count,
             "iges solved curve copied polyline samples",
         )?;
@@ -238,7 +223,7 @@ fn copy_polyline(
 
 pub(super) fn copy_solved_curve(
     geometry: &SolvedCurveGeometry,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<SolvedCurveGeometry, CodecError> {
     Ok(match geometry {
         SolvedCurveGeometry::Line(value) => SolvedCurveGeometry::Line(*value),
@@ -257,8 +242,7 @@ pub(super) fn copy_solved_curve(
             segments,
             self_intersect,
         } => {
-            let mut copied = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
+            let mut copied = ctx.collection_vec(
                 segments.len(),
                 "iges solved curve copied composite segments",
             )?;
@@ -278,10 +262,8 @@ pub(super) fn copy_solved_curve(
             }
         }
         SolvedCurveGeometry::Transformed(value) => {
-            let _nested = ctx
-                .map(|ctx| ctx.enter_nested("iges_solved_curve_copy"))
-                .transpose()?;
-            if let Some(ctx) = ctx {
+            let _nested = ctx.enter_nested("iges_solved_curve_copy")?;
+            {
                 ctx.charge_collection_items(1, "iges solved curve copied placement box")?;
             }
             SolvedCurveGeometry::Transformed(
@@ -328,7 +310,7 @@ mod tests {
             let arena = DecodeArena::new();
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
-            let result = copy_solved_curve(&geometry, Some(&ctx));
+            let result = copy_solved_curve(&geometry, &ctx);
             assert!(
                 matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation)
             );
@@ -337,7 +319,7 @@ mod tests {
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
         assert_eq!(
-            copy_solved_curve(&geometry, Some(&ctx)).expect("test setup"),
+            copy_solved_curve(&geometry, &ctx).expect("test setup"),
             geometry
         );
     }
@@ -358,13 +340,13 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
         assert!(
-            matches!(copy_solved_curve(&geometry, Some(&ctx)), Err(CodecError::ResourceLimit(limit)) if limit.operation == "iges solved curve copied polyline samples")
+            matches!(copy_solved_curve(&geometry, &ctx), Err(CodecError::ResourceLimit(limit)) if limit.operation == "iges solved curve copied polyline samples")
         );
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
         assert_eq!(
-            copy_solved_curve(&geometry, Some(&ctx)).expect("test setup"),
+            copy_solved_curve(&geometry, &ctx).expect("test setup"),
             geometry
         );
     }
@@ -385,7 +367,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
         assert!(
-            matches!(copy_solved_curve(&geometry, Some(&ctx)), Err(CodecError::ResourceLimit(limit)) if limit.operation == "iges solved curve copied composite ID")
+            matches!(copy_solved_curve(&geometry, &ctx), Err(CodecError::ResourceLimit(limit)) if limit.operation == "iges solved curve copied composite ID")
         );
     }
 
@@ -411,14 +393,14 @@ mod tests {
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
             assert!(
-                matches!(copy_polygonal_surface(&polygon, Some(&ctx)), Err(CodecError::ResourceLimit(limit)) if limit.operation == operation)
+                matches!(copy_polygonal_surface(&polygon, &ctx), Err(CodecError::ResourceLimit(limit)) if limit.operation == operation)
             );
         }
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
         assert_eq!(
-            copy_polygonal_surface(&polygon, Some(&ctx)).expect("test setup"),
+            copy_polygonal_surface(&polygon, &ctx).expect("test setup"),
             polygon
         );
     }

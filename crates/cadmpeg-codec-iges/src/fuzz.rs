@@ -13,7 +13,7 @@ pub fn cards(data: &[u8]) {
     else {
         return;
     };
-    let _probe = crate::card::scan_with_context(data, Some(&ctx));
+    let _probe = crate::card::scan_with_context(data, &ctx);
 }
 
 /// Exercise IGES global-section parsing.
@@ -24,7 +24,7 @@ pub fn global(data: &[u8]) {
     else {
         return;
     };
-    let Ok(scan) = crate::card::scan_with_context(data, Some(&ctx)) else {
+    let Ok(scan) = crate::card::scan_with_context(data, &ctx) else {
         return;
     };
     let _probe = crate::global::parse(&scan, &ctx);
@@ -38,10 +38,10 @@ pub fn directory(data: &[u8]) {
     else {
         return;
     };
-    let Ok(scan) = crate::card::scan_with_context(data, Some(&ctx)) else {
+    let Ok(scan) = crate::card::scan_with_context(data, &ctx) else {
         return;
     };
-    let _probe = crate::directory::parse(&scan, crate::global::GlobalTable::Legacy, Some(&ctx));
+    let _probe = crate::directory::parse(&scan, crate::global::GlobalTable::Legacy, &ctx);
 }
 
 /// Exercise IGES parameter-section assembly.
@@ -52,14 +52,14 @@ pub fn parameters(data: &[u8]) {
     else {
         return;
     };
-    let Ok(scan) = crate::card::scan_with_context(data, Some(&ctx)) else {
+    let Ok(scan) = crate::card::scan_with_context(data, &ctx) else {
         return;
     };
     let Ok((global, _)) = crate::global::parse(&scan, &ctx) else {
         return;
     };
     let Ok((directory, quarantined)) =
-        crate::directory::parse(&scan, global.global_table(), Some(&ctx))
+        crate::directory::parse(&scan, global.global_table(), &ctx)
     else {
         return;
     };
@@ -68,7 +68,7 @@ pub fn parameters(data: &[u8]) {
         &directory,
         &quarantined,
         &global,
-        Some(&ctx),
+        &ctx,
     );
 }
 

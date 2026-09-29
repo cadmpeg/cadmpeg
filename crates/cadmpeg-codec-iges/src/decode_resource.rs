@@ -47,20 +47,9 @@ pub(crate) fn lossy_retained(
     Ok(text)
 }
 
-pub(crate) fn admit_optional_entities(
-    ctx: Option<&DecodeContext<'_>>,
-    count: u64,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if let Some(ctx) = ctx {
-        ctx.charge_entities(count, operation)?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{admit_optional_entities, lossy_retained};
+    use super::lossy_retained;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -162,8 +151,8 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_entities = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
-        admit_optional_entities(Some(&ctx), 2, "iges geometry test").expect("test setup");
-        let result = admit_optional_entities(Some(&ctx), 1, "iges geometry test");
+        ctx.charge_entities( 2, "iges geometry test").expect("test setup");
+        let result = ctx.charge_entities( 1, "iges geometry test");
         assert!(matches!(result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities

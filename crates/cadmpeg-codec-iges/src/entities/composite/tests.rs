@@ -97,7 +97,7 @@ fn composite_index_refuses_each_collection_before_insertion() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match CompositeIndex::from_ir(ir, Some(&ctx)) {
+            match CompositeIndex::from_ir(ir, &ctx) {
                 Err(CodecError::ResourceLimit(limit)) => {
                     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
                     if limit.operation == operation {
@@ -141,7 +141,7 @@ fn composite_index_refuses_each_retained_identity_copy() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match CompositeIndex::from_ir(ir, Some(&ctx)) {
+            match CompositeIndex::from_ir(ir, &ctx) {
                 Err(CodecError::ResourceLimit(limit)) => {
                     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
                     if limit.operation == operation {
@@ -163,7 +163,7 @@ fn composite_index_refuses_each_retained_identity_copy() {
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let index = CompositeIndex::from_ir(ir, Some(&ctx)).unwrap();
+    let index = CompositeIndex::from_ir(ir, &ctx).unwrap();
     assert_eq!(index.curve_positions.len(), ir.model.curves.len());
 }
 
@@ -183,7 +183,7 @@ fn composite_index_admits_added_entity_nodes_and_identity_keys() {
                 param_range: None,
             },
             [(start.clone(), position), (end.clone(), position)],
-            Some(ctx),
+            ctx,
         )
     };
     for (dimension, operation) in [
@@ -1039,6 +1039,8 @@ fn positive_join_tolerance_excludes_the_resolution_boundary() {
 
 #[test]
 fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
@@ -1088,7 +1090,7 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
     });
 
     assert!(
-        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None, None)
+        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), decode_ctx, None)
             .expect("carrier lanes pair")
             .is_none()
     );
@@ -1098,10 +1100,12 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
             .expect("a finite position is a point"),
     );
     assert!(
-        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None, None)
+        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), decode_ctx, None)
             .expect("carrier lanes pair")
             .is_some()
     );
+
+    })
 }
 
 #[test]
@@ -1204,7 +1208,7 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default()).unwrap();
     // The depth refusal is the reader's answer, not an absent carrier: it names
     // the limit it exceeds and the session carries the same refusal.
-    let error = bounded_nurbs_for_curve(&ir, &child_id, Some(&ctx), None)
+    let error = bounded_nurbs_for_curve(&ir, &child_id, &ctx, None)
         .expect_err("a composite deeper than the limit is refused")
         .to_string();
     assert!(error.contains("iges_composite_depth"), "{error}");
@@ -1220,6 +1224,8 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
 
 #[test]
 fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
@@ -1307,7 +1313,7 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
     let (carrier, range) = bounded_nurbs_for_curve(
         &ir,
         &CurveId::mint("test:model:curve#line").expect("identity grammar"),
-        None,
+        decode_ctx,
         None,
     )
     .expect("carrier lanes pair")
@@ -1315,10 +1321,14 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
     assert_eq!(range, [0.0, 1.0]);
     assert_eq!(carrier.control_points()[0], Point3::new(0.0, 0.0, 0.0));
     assert_eq!(carrier.control_points()[1], Point3::new(2.0, 0.0, 0.0));
+
+    })
 }
 
 #[test]
 fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
@@ -1387,13 +1397,17 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
         });
     }
 
-    assert!(bounded_nurbs_for_curve(&ir, &curve_id, None, None)
+    assert!(bounded_nurbs_for_curve(&ir, &curve_id, decode_ctx, None)
         .expect("carrier lanes pair")
         .is_none());
+
+    })
 }
 
 #[test]
 fn composite_index_lookups_match_the_unindexed_scan() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let bounded = CurveId::mint("test:model:curve#bounded").expect("identity grammar");
     let edgeless = CurveId::mint("test:model:curve#edgeless").expect("identity grammar");
     let absent = CurveId::mint("test:model:curve#absent").expect("identity grammar");
@@ -1446,11 +1460,11 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         tolerance: None,
     });
 
-    let index = CompositeIndex::from_ir(&ir, None).unwrap();
+    let index = CompositeIndex::from_ir(&ir, decode_ctx).unwrap();
     for curve_id in [bounded, edgeless, absent] {
         let scanned =
-            bounded_nurbs_for_curve(&ir, &curve_id, None, None).expect("carrier lanes pair");
-        let indexed = bounded_nurbs_for_curve(&ir, &curve_id, None, Some(&index))
+            bounded_nurbs_for_curve(&ir, &curve_id, decode_ctx, None).expect("carrier lanes pair");
+        let indexed = bounded_nurbs_for_curve(&ir, &curve_id, decode_ctx, Some(&index))
             .expect("carrier lanes pair");
         assert_eq!(
             scanned.as_ref().map(|(carrier, range)| (
@@ -1469,7 +1483,7 @@ fn composite_index_lookups_match_the_unindexed_scan() {
     assert!(bounded_nurbs_for_curve(
         &ir,
         &CurveId::mint("test:model:curve#bounded").expect("identity grammar"),
-        None,
+        decode_ctx,
         Some(&index)
     )
     .expect("carrier lanes pair")
@@ -1477,7 +1491,7 @@ fn composite_index_lookups_match_the_unindexed_scan() {
     assert!(bounded_nurbs_for_curve(
         &ir,
         &CurveId::mint("test:model:curve#edgeless").expect("identity grammar"),
-        None,
+        decode_ctx,
         Some(&index)
     )
     .expect("carrier lanes pair")
@@ -1485,11 +1499,13 @@ fn composite_index_lookups_match_the_unindexed_scan() {
     assert!(bounded_nurbs_for_curve(
         &ir,
         &CurveId::mint("test:model:curve#absent").expect("identity grammar"),
-        None,
+        decode_ctx,
         Some(&index)
     )
     .expect("carrier lanes pair")
     .is_none());
+
+    })
 }
 
 #[test]
@@ -1518,7 +1534,7 @@ fn composite_scanned_edges_admit_slots_and_endpoint_ids() {
             }
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match super::bounded_edge_for_curve(ir, curve_id, 0.0, None, Some(&ctx)) {
+            match super::bounded_edge_for_curve(ir, curve_id, 0.0, None, &ctx) {
                 Err(CodecError::ResourceLimit(limit)) => {
                     let dimension = if retained {
                         ResourceDimension::RetainedBytes
@@ -1542,6 +1558,8 @@ fn composite_scanned_edges_admit_slots_and_endpoint_ids() {
 
 #[test]
 fn rational_linear_degree_elevation_preserves_the_curve() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let mut curve = test_nurbs(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -1550,12 +1568,14 @@ fn rational_linear_degree_elevation_preserves_the_curve() {
     );
     let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.25)
         .expect("valid rational linear NURBS evaluates before degree elevation");
-    elevate_nurbs_to_degree(None, &mut curve, [0.0, 1.0], 2, None).expect("elevation lanes pair");
+    elevate_nurbs_to_degree(decode_ctx, &mut curve, [0.0, 1.0], 2, None).expect("elevation lanes pair");
     let after = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.25)
         .expect("valid rational quadratic NURBS evaluates after degree elevation");
     assert!(before.distance(after.get()) <= 1.0e-12);
     assert_eq!(curve.control_points()[1], Point3::new(1.5, 0.0, 0.0));
     assert_eq!(curve.pole_rows().weights(), Some(vec![1.0, 2.0, 3.0]));
+
+    })
 }
 
 #[test]
@@ -1570,7 +1590,7 @@ fn homogeneous_control_points_refuse_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = homogeneous_control_points(Some(&ctx), &curve).unwrap_err();
+    let error = homogeneous_control_points(&ctx, &curve).unwrap_err();
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -1588,7 +1608,7 @@ fn composite_knot_insertion_refuses_knot_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = insert_homogeneous_knot(Some(&ctx), &controls, &knots, 1, 0.5).unwrap_err();
+    let error = insert_homogeneous_knot(&ctx, &controls, &knots, 1, 0.5).unwrap_err();
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -1606,7 +1626,7 @@ fn composite_knot_insertion_refuses_control_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 7;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = insert_homogeneous_knot(Some(&ctx), &controls, &knots, 1, 0.5).unwrap_err();
+    let error = insert_homogeneous_knot(&ctx, &controls, &knots, 1, 0.5).unwrap_err();
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -1628,7 +1648,7 @@ fn composite_elevated_knots_refuse_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 19;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = elevate_nurbs_to_degree(Some(&ctx), &mut curve, [0.0, 1.0], 2, None)
+    let error = elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], 2, None)
         .unwrap_err()
         .non_resource()
         .unwrap_err();
@@ -1667,7 +1687,7 @@ fn composite_trimmed_lanes_refuse_fallible_copies_and_weight_conversion() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match trim_nurbs_to_interval(Some(&ctx), &curve, [0.25, 1.5]) {
+            match trim_nurbs_to_interval(&ctx, &curve, [0.25, 1.5]) {
                 Err(error) => match error.non_resource() {
                     Err(CodecError::ResourceLimit(limit)) => {
                         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
@@ -1716,7 +1736,7 @@ fn composite_elevation_refuses_nested_knot_and_weight_storage() {
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut curve = source();
-            match elevate_nurbs_to_degree(Some(&ctx), &mut curve, [0.0, 1.0], 3, None) {
+            match elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], 3, None) {
                 Err(error) => match error.non_resource() {
                     Err(CodecError::ResourceLimit(limit)) => {
                         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
@@ -1747,7 +1767,7 @@ fn composite_child_weights_refuse_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = concatenate_nurbs(Some(&ctx), vec![(curve, [0.0, 1.0], ())], None)
+    let error = concatenate_nurbs(&ctx, vec![(curve, [0.0, 1.0], ())], None)
         .unwrap_err()
         .non_resource()
         .unwrap_err();
@@ -1804,7 +1824,7 @@ fn composite_join_refuses_child_and_joined_lane_storage() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match concatenate_nurbs(Some(&ctx), children(rational), Some(0.0)) {
+            match concatenate_nurbs(&ctx, children(rational), Some(0.0)) {
                 Err(error) => match error.non_resource() {
                     Err(CodecError::ResourceLimit(limit)) => {
                         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
@@ -1826,7 +1846,7 @@ fn composite_join_refuses_child_and_joined_lane_storage() {
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(concatenate_nurbs(Some(&ctx), children(true), Some(0.0))
+    assert!(concatenate_nurbs(&ctx, children(true), Some(0.0))
         .unwrap()
         .is_some());
 }

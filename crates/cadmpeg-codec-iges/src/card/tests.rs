@@ -22,7 +22,7 @@ fn framing_recovery_record_refuses_text_and_node_limits() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut recoveries = super::FramingRecoveries::default();
     assert!(matches!(
-        recoveries.record(Some(&ctx), (super::Section::Start, super::FramingDefect::Sequence),
+        recoveries.record(&ctx, (super::Section::Start, super::FramingDefect::Sequence),
             1, 0, format_args!("bad"), format_args!("1")),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
@@ -34,7 +34,7 @@ fn framing_recovery_record_refuses_text_and_node_limits() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        recoveries.record(Some(&ctx), (super::Section::Start, super::FramingDefect::Sequence),
+        recoveries.record(&ctx, (super::Section::Start, super::FramingDefect::Sequence),
             1, 0, format_args!("bad"), format_args!("1")),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
@@ -45,7 +45,7 @@ fn framing_recovery_record_refuses_text_and_node_limits() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     recoveries
         .record(
-            Some(&ctx),
+            &ctx,
             (super::Section::Start, super::FramingDefect::Sequence),
             1,
             0,
@@ -58,12 +58,14 @@ fn framing_recovery_record_refuses_text_and_node_limits() {
 
 #[test]
 fn merging_framing_recoveries_refuses_new_node_limit() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let mut incoming = super::FramingRecoveries::default();
     incoming
         .record(
-            None,
+            decode_ctx,
             (
                 super::Section::Parameter,
                 super::FramingDefect::ParameterOwner,
@@ -90,6 +92,8 @@ fn merging_framing_recoveries_refuses_new_node_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     merged.merge(incoming, &ctx).unwrap();
     assert_eq!(merged.notes(&ctx).unwrap().len(), 1);
+
+    })
 }
 
 #[test]
@@ -103,12 +107,14 @@ fn terminate_count_field_lossy_rendering_matches_source_text() {
 
 #[test]
 fn framing_recovery_losses_refuse_slot_and_retained_limits() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let mut recoveries = super::FramingRecoveries::default();
     recoveries
         .record(
-            None,
+            decode_ctx,
             (
                 super::Section::Parameter,
                 super::FramingDefect::ParameterOwner,
@@ -153,6 +159,8 @@ fn framing_recovery_losses_refuse_slot_and_retained_limits() {
     assert!(notes[0]
         .message
         .contains("which declared D1, and the decoder used D3"));
+
+    })
 }
 
 #[test]
@@ -160,7 +168,7 @@ fn card_summary_refuses_entry_attribute_and_text_limits_before_allocation() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let bytes = point_file();
-    let scan = super::scan(&bytes).unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
     let arena = DecodeArena::new();
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
@@ -232,7 +240,7 @@ fn physical_card_payload_refuses_retained_limit_before_copy() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 79;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let result = super::scan_with_context(&bytes, Some(&ctx));
+    let result = super::scan_with_context(&bytes, &ctx);
     assert!(matches!(
         result,
         Err(CodecError::ResourceLimit(limit))
@@ -244,7 +252,7 @@ fn physical_card_payload_refuses_retained_limit_before_copy() {
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    assert!(super::scan_with_context(&bytes, Some(&ctx)).is_ok());
+    assert!(super::scan_with_context(&bytes, &ctx).is_ok());
 }
 
 #[test]

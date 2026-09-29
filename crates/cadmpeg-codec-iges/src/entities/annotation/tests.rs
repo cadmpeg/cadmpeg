@@ -687,6 +687,8 @@ fn sectioned_area_fill_patterns_follow_the_declared_dialect() {
 
 #[test]
 fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let mut ir = CadIr::empty();
     for (sequence, z) in [(1, 0.0), (3, 0.0)] {
         ir.model.curves.push(Curve {
@@ -705,7 +707,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
     }
     let pattern_plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
     assert!(
-        sectioned_area_curves_coplanar(&ir, [1, 3].into_iter(), pattern_plane, 0.001, None)
+        sectioned_area_curves_coplanar(&ir, [1, 3].into_iter(), pattern_plane, 0.001, decode_ctx)
             .unwrap()
     );
     if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
@@ -726,7 +728,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         .unwrap();
     }
     assert!(
-        !sectioned_area_curves_coplanar(&ir, [1, 3].into_iter(), pattern_plane, 0.001, None)
+        !sectioned_area_curves_coplanar(&ir, [1, 3].into_iter(), pattern_plane, 0.001, decode_ctx)
             .unwrap()
     );
 
@@ -787,7 +789,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
             length_factor: 1.0,
             resolution: 0.001
         },
-        None
+        decode_ctx
     )
     .unwrap());
     assert!(!sectioned_area_valid(
@@ -801,7 +803,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
             length_factor: 1.0,
             resolution: 0.001
         },
-        None
+        decode_ctx
     )
     .unwrap());
     if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
@@ -838,13 +840,17 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
             length_factor: 1.0,
             resolution: 0.001
         },
-        None
+        decode_ctx
     )
     .unwrap());
+
+    })
 }
 
 #[test]
 fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let mut ir = CadIr::empty();
     for sequence in [1, 3] {
         ir.model.curves.push(Curve {
@@ -920,7 +926,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
             length_factor: 1.0,
             resolution: 0.001
         },
-        None
+        decode_ctx
     )
     .unwrap());
     assert!(!sectioned_area_valid(
@@ -934,7 +940,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
             length_factor: 1.0,
             resolution: 0.001
         },
-        None
+        decode_ctx
     )
     .unwrap());
     assert!(!sectioned_area_valid(
@@ -948,9 +954,11 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
             length_factor: 1.0,
             resolution: 0.001
         },
-        None
+        decode_ctx
     )
     .unwrap());
+
+    })
 }
 
 #[test]
