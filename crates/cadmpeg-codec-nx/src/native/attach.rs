@@ -1471,7 +1471,7 @@ fn attach_feature_operations(
         .as_ref()
         .and_then(|id| ir.model.features.iter().find(|feature| feature.id == *id))
     {
-        body_writer_history.record_writer(None, None, feature.evaluation.outputs(), &feature.id);
+        body_writer_history.record_writer(ctx, None, None, feature.evaluation.outputs(), &feature.id)?;
     }
     let body_alias_roots = crate::native::segments::body_alias_roots(ctx, body_bindings)?;
     let canonical_body =
@@ -3482,12 +3482,13 @@ fn attach_feature_operations(
             }
         }
         body_writer_history.extend_primary_dependencies(
+            ctx,
             initial_body_id.as_ref(),
             native_primary_body,
             offset_store_primary_body,
             &outputs,
             &mut dependencies,
-        );
+        )?;
         let block_placement = block_projection.map(|(_, placement)| placement);
         let sphere_definition = sphere_projection.as_ref().and_then(|(_, center, radius)| {
             (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Operation(
@@ -3788,7 +3789,7 @@ fn attach_feature_operations(
         let offset_store_output = (!deletes_body)
             .then_some(offset_store_primary_body)
             .flatten();
-        body_writer_history.record_writer(native_output, offset_store_output, &outputs, &id);
+        body_writer_history.record_writer(ctx, native_output, offset_store_output, &outputs, &id)?;
         for write in operation_body_writes {
             body_identity_writers.insert(write.frame.body_identity(), id.clone());
         }
@@ -3806,7 +3807,7 @@ fn attach_feature_operations(
                     &definition,
                     canonical_body(operation.target.token.value()),
                 );
-                body_writer_history.record_writer(native_target, offset_store_target, &[], &id);
+                body_writer_history.record_writer(ctx, native_target, offset_store_target, &[], &id)?;
             }
         }
         ir.model.features.push(Feature {

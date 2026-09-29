@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::ids::BodyId;
@@ -12,6 +14,20 @@ use cadmpeg_ir::ids::BodyId;
 pub(super) const NATIVE_PRIMARY_BODY_CLOSURE_WITNESS: &str = "native_primary_body_closure_witness";
 /// Source property carrying an admitted native primary-body object index.
 pub(super) const NATIVE_PRIMARY_BODY_OBJECT_INDEX: &str = "primary_body_object_index";
+
+fn charge_history_bytes(
+    ctx: &DecodeContext<'_>,
+    fixed_bytes: usize,
+    key_bytes: usize,
+    value_bytes: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let bytes = fixed_bytes
+        .checked_add(key_bytes)
+        .and_then(|bytes| bytes.checked_add(value_bytes))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64_from_index(value_bytes)))?;
+    ctx.charge_retained(u64_from_index(bytes), operation)
+}
 
 /// Ordered feature writers indexed by both native history identity and the
 /// neutral body identity established by projection.
@@ -52,12 +68,30 @@ impl BodyWriterHistory {
 
     pub(super) fn extend_primary_dependencies(
         &self,
+        ctx: &DecodeContext<'_>,
         provisional_feature: Option<&FeatureId>,
         native_body: Option<u32>,
         offset_store_body: Option<&str>,
         outputs: &[BodyId],
         dependencies: &mut Vec<FeatureId>,
-    ) {
+    ) -> Result<(), CodecError> {
+        let mut append = |writer: &FeatureId| -> Result<(), CodecError> {
+            if !dependencies.contains(writer) {
+                ctx.charge_collection_items(1, "NX primary writer dependencies")?;
+                charge_history_bytes(
+                    ctx,
+                    std::mem::size_of::<FeatureId>(),
+                    0,
+                    writer.as_str().len(),
+                    "NX primary writer dependencies",
+                )?;
+                dependencies.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("NX primary writer dependencies", 0, 1)
+                })?;
+                dependencies.push(writer.clone());
+            }
+            Ok(())
+        };
         let mut has_output_writer = false;
         for output in outputs {
             if let Some(writer) = self.outputs.get(output) {
@@ -65,43 +99,77 @@ impl BodyWriterHistory {
                     continue;
                 }
                 has_output_writer = true;
-                if !dependencies.contains(writer) {
-                    dependencies.push(writer.clone());
-                }
+                append(writer)?;
             }
         }
         if !has_output_writer {
             if let Some(writer) = native_body.and_then(|body| self.native.get(&body)) {
-                if !dependencies.contains(writer) {
-                    dependencies.push(writer.clone());
-                }
+                append(writer)?;
             } else if let Some(writer) =
                 offset_store_body.and_then(|body| self.offset_store.get(body))
             {
-                if !dependencies.contains(writer) {
-                    dependencies.push(writer.clone());
-                }
+                append(writer)?;
             }
         }
+        Ok(())
     }
 
     pub(super) fn record_writer(
         &mut self,
+        ctx: &DecodeContext<'_>,
         native_body: Option<u32>,
         offset_store_body: Option<&str>,
         outputs: &[BodyId],
         feature: &FeatureId,
-    ) {
+    ) -> Result<(), CodecError> {
+        let feature_bytes = feature.as_str().len();
         if let Some(body) = native_body {
+            if !self.native.contains_key(&body) {
+                ctx.charge_collection_items(1, "NX native body writer history")?;
+                charge_history_bytes(
+                    ctx,
+                    std::mem::size_of::<(u32, FeatureId)>(),
+                    0,
+                    feature_bytes,
+                    "NX native body writer history",
+                )?;
+            } else {
+                ctx.charge_retained(u64_from_index(feature_bytes), "NX native body writer history")?;
+            }
             self.native.insert(body, feature.clone());
         }
         if let Some(data_block) = offset_store_body {
+            if !self.offset_store.contains_key(data_block) {
+                ctx.charge_collection_items(1, "NX offset-store writer history")?;
+                charge_history_bytes(
+                    ctx,
+                    std::mem::size_of::<(String, FeatureId)>(),
+                    data_block.len(),
+                    feature_bytes,
+                    "NX offset-store writer history",
+                )?;
+            } else {
+                ctx.charge_retained(u64_from_index(feature_bytes), "NX offset-store writer history")?;
+            }
             self.offset_store
                 .insert(data_block.to_string(), feature.clone());
         }
         for output in outputs {
+            if !self.outputs.contains_key(output) {
+                ctx.charge_collection_items(1, "NX neutral body writer history")?;
+                charge_history_bytes(
+                    ctx,
+                    std::mem::size_of::<(BodyId, FeatureId)>(),
+                    output.as_str().len(),
+                    feature_bytes,
+                    "NX neutral body writer history",
+                )?;
+            } else {
+                ctx.charge_retained(u64_from_index(feature_bytes), "NX neutral body writer history")?;
+            }
             self.outputs.insert(output.clone(), feature.clone());
         }
+        Ok(())
     }
 
     /// Retract provisional output ownership when a later construction record
@@ -284,7 +352,48 @@ mod tests {
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureTreeNodeRole};
+
+    #[test]
+    fn body_writer_history_refuses_collection_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
+        let mut history = BodyWriterHistory::default();
+        let error = history.record_writer(&ctx, Some(7), None, &[], &feature).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn body_writer_history_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
+        let mut history = BodyWriterHistory::default();
+        let error = history.record_writer(&ctx, Some(7), None, &[], &feature).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn primary_writer_dependency_refuses_collection_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
+        let mut history = BodyWriterHistory::default();
+        history.record_writer(&ctx, Some(7), None, &[], &feature).unwrap();
+        let mut dependencies = Vec::new();
+        let error = history.extend_primary_dependencies(&ctx, None, Some(7), None, &[], &mut dependencies).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems));
+    }
 
     fn history_feature(
         id: &str,
@@ -424,31 +533,36 @@ mod tests {
 
     #[test]
     fn neutral_output_identity_closes_lineage_across_native_identities() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+
         let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
         let first = FeatureId::mint("synthetic:test:id#first").expect("identity grammar");
         let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
         let mut history = BodyWriterHistory::default();
-        history.record_writer(Some(7), None, std::slice::from_ref(&body), &first);
+        history.record_writer(&ctx, Some(7), None, std::slice::from_ref(&body), &first).expect("admitted writer history");
 
         let mut dependencies = Vec::new();
-        history.extend_primary_dependencies(
+        history.extend_primary_dependencies(&ctx,
             None,
             Some(8),
             None,
             std::slice::from_ref(&body),
             &mut dependencies,
-        );
+        ).expect("admitted writer history");
 
         assert_eq!(dependencies, [first]);
         assert!(history.native_writer(8).is_none());
-        history.record_writer(Some(8), None, std::slice::from_ref(&body), &second);
+        history.record_writer(&ctx, Some(8), None, std::slice::from_ref(&body), &second).expect("admitted writer history");
         assert_eq!(history.native_writer(8), Some(&second));
         dependencies.clear();
-        history.extend_primary_dependencies(None, Some(7), None, &[body], &mut dependencies);
+        history.extend_primary_dependencies(&ctx, None, Some(7), None, &[body], &mut dependencies).expect("admitted writer history");
         assert_eq!(dependencies, [second]);
 
         dependencies.clear();
-        history.extend_primary_dependencies(None, Some(7), None, &[], &mut dependencies);
+        history.extend_primary_dependencies(&ctx, None, Some(7), None, &[], &mut dependencies).expect("admitted writer history");
         assert_eq!(
             dependencies,
             [FeatureId::mint("synthetic:test:id#first").expect("identity grammar")]
@@ -457,19 +571,24 @@ mod tests {
 
     #[test]
     fn provisional_output_writer_can_be_retracted_without_affecting_other_writers() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+
         let provisional =
             FeatureId::mint("synthetic:test:id#provisional").expect("identity grammar");
         let retained = FeatureId::mint("synthetic:test:id#retained").expect("identity grammar");
         let created = BodyId::mint("test:model:entity#created").expect("identity grammar");
         let existing = BodyId::mint("test:model:entity#existing").expect("identity grammar");
         let mut history = BodyWriterHistory::default();
-        history.record_writer(
+        history.record_writer(&ctx,
             None,
             None,
             &[created.clone(), existing.clone()],
             &provisional,
-        );
-        history.record_writer(Some(7), None, std::slice::from_ref(&existing), &retained);
+        ).expect("admitted writer history");
+        history.record_writer(&ctx, Some(7), None, std::slice::from_ref(&existing), &retained).expect("admitted writer history");
 
         assert!(!history.has_preceding_writer(
             Some(&provisional),
@@ -485,23 +604,23 @@ mod tests {
         ));
 
         let mut dependencies = Vec::new();
-        history.extend_primary_dependencies(
+        history.extend_primary_dependencies(&ctx,
             Some(&provisional),
             Some(7),
             None,
             std::slice::from_ref(&existing),
             &mut dependencies,
-        );
+        ).expect("admitted writer history");
         assert_eq!(dependencies, [retained]);
 
         let mut dependencies = Vec::new();
-        history.extend_primary_dependencies(
+        history.extend_primary_dependencies(&ctx,
             Some(&provisional),
             Some(7),
             None,
             std::slice::from_ref(&created),
             &mut dependencies,
-        );
+        ).expect("admitted writer history");
         assert_eq!(
             dependencies,
             [FeatureId::mint("synthetic:test:id#retained").expect("identity grammar")]
@@ -515,43 +634,48 @@ mod tests {
 
     #[test]
     fn exact_offset_store_identity_orders_writers_without_cross_store_aliases() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+
         let first = FeatureId::mint("synthetic:test:id#first").expect("identity grammar");
         let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
         let mut history = BodyWriterHistory::default();
-        history.record_writer(None, Some("store-a:block#7"), &[], &first);
+        history.record_writer(&ctx, None, Some("store-a:block#7"), &[], &first).expect("admitted writer history");
 
         let mut dependencies = Vec::new();
-        history.extend_primary_dependencies(
+        history.extend_primary_dependencies(&ctx,
             None,
             None,
             Some("store-a:block#7"),
             &[],
             &mut dependencies,
-        );
+        ).expect("admitted writer history");
         assert_eq!(dependencies, [first]);
         dependencies.clear();
-        history.extend_primary_dependencies(
+        history.extend_primary_dependencies(&ctx,
             None,
             None,
             Some("store-b:block#7"),
             &[],
             &mut dependencies,
-        );
+        ).expect("admitted writer history");
         assert!(dependencies.is_empty());
 
-        history.record_writer(None, Some("store-a:block#7"), &[], &second);
+        history.record_writer(&ctx, None, Some("store-a:block#7"), &[], &second).expect("admitted writer history");
         assert_eq!(
             history.offset_store_writer("store-a:block#7"),
             Some(&second)
         );
         dependencies.clear();
-        history.extend_primary_dependencies(
+        history.extend_primary_dependencies(&ctx,
             None,
             None,
             Some("store-a:block#7"),
             &[],
             &mut dependencies,
-        );
+        ).expect("admitted writer history");
         assert_eq!(dependencies, [second]);
     }
 
