@@ -147,6 +147,51 @@ fn feature_label_refusal(
     feature_operation_labels(&ctx, &container).unwrap_err()
 }
 
+fn feature_operation_record_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = unlabeled_history_fixture();
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_records(ctx, &container)
+    }).expect("admitted feature operation records");
+    assert_eq!(admitted.len(), 2);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    feature_operation_records(&ctx, &container)
+        .expect_err("feature operation record resource limit")
+}
+
+#[test]
+fn feature_operation_record_route_refuses_collection_limit() {
+    let error = feature_operation_record_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn feature_operation_record_route_refuses_retained_limit() {
+    let error = feature_operation_record_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn feature_operation_record_route_refuses_scoped_limit() {
+    let error = feature_operation_record_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn feature_operation_record_route_refuses_work_limit() {
+    let error = feature_operation_record_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 #[test]
 fn feature_label_route_refuses_collection_limit() {
     let error = feature_label_refusal(|policy| policy.limits.max_collection_items = 0);
