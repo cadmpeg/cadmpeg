@@ -301,8 +301,11 @@ fn occurrence_model_identity_rescope_refuses_retained_limit() {
 fn occurrence_native_identity_rescope_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let record =
-        cadmpeg_ir::NativeRecord::new("f3d:model:native#source", serde_json::Map::new()).unwrap();
+    let record = cadmpeg_ir::NativeRecord::new(
+        cadmpeg_ir::ids::Identity::new("f3d:model:native#source").expect("fixture identity"),
+        serde_json::Map::new(),
+    )
+    .unwrap();
     policy.limits.max_retained_bytes =
         u64::try_from(serde_json::to_vec(&record).unwrap().len()).unwrap();
     let (ctx, _) =
@@ -323,7 +326,11 @@ fn occurrence_native_field_clone_refuses_collection_limit() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut fields = serde_json::Map::new();
     fields.insert("links".into(), serde_json::json!(["f3d:model:body#source"]));
-    let record = cadmpeg_ir::NativeRecord::new("f3d:model:native#source", fields).unwrap();
+    let record = cadmpeg_ir::NativeRecord::new(
+        cadmpeg_ir::ids::Identity::new("f3d:model:native#source").expect("fixture identity"),
+        fields,
+    )
+    .unwrap();
     let error = rescope_record(&ctx, &record, "unknowns", "component-0").unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

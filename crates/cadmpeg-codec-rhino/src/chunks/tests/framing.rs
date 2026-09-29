@@ -8,16 +8,50 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence};
 
 use crate::chunks::{
-    anonymous_version, checked_count_bytes, chunk_at, crc16, packed_version, parse_header,
-    validate_eof, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
-    TCODE_CRC, TCODE_SHORT,
+    anonymous_version, checked_count_bytes, checksum_children_through_class_end, chunk_at, crc16,
+    packed_version, parse_header, validate_eof, verify_checksum, ArchiveVersion, BoundedReader,
+    ChecksumStatus, FramingError, TCODE_CLASS_END, TCODE_CRC, TCODE_SHORT,
 };
 use crate::layout::endoffile_record_wide as eof_wide;
 use crate::layout::file_header;
 use crate::layout::long_chunk_header_narrow as long_narrow;
 use crate::layout::long_chunk_header_wide as long_wide;
-use crate::test_support::test_dump::{eof, header, long_chunk};
+use crate::test_support::test_dump::{eof, header, long_chunk, short_chunk};
 use crate::{RhinoCodec, MAGIC};
+
+#[test]
+fn class_end_checksum_children_refuse_collection_limit() {
+    let archive = ArchiveVersion::V8;
+    let bytes = short_chunk(archive, TCODE_CLASS_END, 0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let error = checksum_children_through_class_end(
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        archive,
+        "render-settings userdata",
+    )
+    .expect_err("one child exceeds collection limit");
+    assert!(matches!(
+        error,
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino class-end checksum children"
+    ));
+    let service = cadmpeg_test_support::service_decode_context();
+    let ranges = checksum_children_through_class_end(
+        &service,
+        &bytes,
+        0..bytes.len(),
+        archive,
+        "render-settings userdata",
+    )
+    .expect("service profile admits child range");
+    assert_eq!(ranges, vec![0..bytes.len()]);
+}
 
 #[test]
 fn detects_existing_magic_forms() {

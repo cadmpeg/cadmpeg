@@ -156,7 +156,7 @@ pub(crate) fn decode_kernel_carrier(
         None => sab::frame_history(ctx, bytes, start, bytes.len(), width),
     }
     .map_err(|failure| {
-        failure.into_codec_error(|error| {
+        failure.into_codec_error(ctx, |error| {
             CodecError::malformed(format_args!(
                 "Inventor {} SAB framing failed: {error}",
                 carrier.family.label()

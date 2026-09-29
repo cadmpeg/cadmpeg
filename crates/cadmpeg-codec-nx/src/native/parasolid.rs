@@ -6,6 +6,8 @@ use crate::parasolid::name_references::NameReferences;
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::blend_surface_state::BlendSurfaceState;
 use crate::topology::offset_surface_state::OffsetSurfaceState;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 use crate::deltas::census::Census;
@@ -157,10 +159,11 @@ impl Clone for ParasolidGroupMember {
 /// reconstruction. A record in an unpaired deltas stream remains exact native
 /// evidence but has no partition-local namespace assignment.
 pub(super) fn parasolid_group_records(
+    ctx: &DecodeContext<'_>,
     streams: &[Stream],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
     deltas_records: &[ParasolidDeltasRecord],
-) -> Vec<ParasolidGroupRecord> {
+) -> Result<Vec<ParasolidGroupRecord>, CodecError> {
     let paired_partition = delta_pairs
         .iter()
         .flat_map(|(partition, deltas)| {
@@ -177,7 +180,7 @@ pub(super) fn parasolid_group_records(
         let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
             continue;
         };
-        for record in crate::deltas::census::walk(&stream.inflated)
+        for record in crate::deltas::census::walk(ctx, &stream.inflated)?
             .into_events()
             .records
         {
@@ -236,7 +239,7 @@ pub(super) fn parasolid_group_records(
         });
     }
     groups.sort_by_key(|group| (group.origin.stream_ordinal(), group.inflated_offset));
-    groups
+    Ok(groups)
 }
 
 fn group_members_from_records(
@@ -331,12 +334,16 @@ fn group_members_from_records(
     members
 }
 
-fn apply_group_state_events(records: &mut BTreeMap<u32, crate::deltas::Record>, bytes: &[u8]) {
+fn apply_group_state_events(
+    ctx: &DecodeContext<'_>,
+    records: &mut BTreeMap<u32, crate::deltas::Record>,
+    bytes: &[u8],
+) -> Result<(), CodecError> {
     enum Event {
         Record(crate::deltas::Record),
         Tombstone(u32),
     }
-    let census = crate::deltas::census::walk(bytes).into_events();
+    let census = crate::deltas::census::walk(ctx, bytes)?.into_events();
     let mut events = census
         .records
         .into_iter()
@@ -359,30 +366,40 @@ fn apply_group_state_events(records: &mut BTreeMap<u32, crate::deltas::Record>, 
             }
         }
     }
+    Ok(())
 }
 
 /// Resolve current GROUP membership from partition and ordered deltas events.
 pub(super) fn parasolid_group_members(
+    ctx: &DecodeContext<'_>,
     streams: &[Stream],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
     parsed: &ParsedStreams<'_>,
-) -> Vec<ParasolidGroupMember> {
+) -> Result<Vec<ParasolidGroupMember>, CodecError> {
     let mut members = streams
         .iter()
         .enumerate()
         .filter(|(_, stream)| stream.kind() == crate::parasolid::StreamKind::Partition)
-        .filter_map(|(stream_ordinal, stream)| {
-            let stream_ordinal_u32 = u32::try_from(stream_ordinal).ok()?;
+        .map(|(stream_ordinal, stream)| -> Result<Option<(u32, Vec<crate::deltas::Record>)>, CodecError> {
+            let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
+                return Ok(None);
+            };
             let mut current = BTreeMap::new();
-            apply_group_state_events(&mut current, &stream.inflated);
+            apply_group_state_events(ctx, &mut current, &stream.inflated)?;
             for delta in delta_pairs.get(&stream_ordinal).into_iter().flatten() {
-                apply_group_state_events(&mut current, &streams.get(*delta)?.inflated);
+                let Some(stream) = streams.get(*delta) else {
+                    return Ok(None);
+                };
+                apply_group_state_events(ctx, &mut current, &stream.inflated)?;
             }
-            Some((
+            Ok(Some((
                 stream_ordinal_u32,
                 current.into_values().collect::<Vec<_>>(),
-            ))
+            )))
         })
+        .collect::<Result<Vec<_>, CodecError>>()?
+        .into_iter()
+        .flatten()
         .flat_map(|(stream_ordinal, records)| group_members_from_records(stream_ordinal, &records))
         .collect::<Vec<_>>();
     for member in &mut members {
@@ -392,7 +409,7 @@ pub(super) fn parasolid_group_members(
         let graph = parsed.stream(partition).view_for_geometry().graph.as_ref();
         member.target = member.target.resolve(graph, member.member_xmt);
     }
-    members
+    Ok(members)
 }
 
 /// One completely bounded record in a Parasolid deltas stream.
@@ -1071,14 +1088,20 @@ pub(in crate::native) struct ParasolidDeltasEvents {
 /// Retain every completely bounded event in every Parasolid deltas stream.
 #[cfg(test)]
 fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
-    let delta_censuses = streams
-        .iter()
-        .map(|stream| {
-            (stream.kind() == crate::parasolid::StreamKind::Deltas)
-                .then(|| crate::deltas::census::walk(&stream.inflated))
-        })
-        .collect();
-    parasolid_deltas_events_with_censuses(streams, delta_censuses)
+    crate::test_support::with_decode_context(|ctx| {
+        let delta_censuses = streams
+            .iter()
+            .map(|stream| {
+                if stream.kind() == crate::parasolid::StreamKind::Deltas {
+                    Ok(Some(crate::deltas::census::walk(ctx, &stream.inflated)?))
+                } else {
+                    Ok(None)
+                }
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
+        parasolid_deltas_events_with_censuses(ctx, streams, delta_censuses)
+    })
+    .expect("bounded test deltas")
 }
 
 /// Retain deltas events from censuses produced by the shared decode substrate.
@@ -1087,9 +1110,10 @@ fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
 /// finished, so the large record walk is performed once and its owned records
 /// are moved directly into native output.
 pub(super) fn parasolid_deltas_events_with_censuses(
+    ctx: &DecodeContext<'_>,
     streams: &[Stream],
     mut delta_censuses: Vec<Option<Census>>,
-) -> ParasolidDeltasEvents {
+) -> Result<ParasolidDeltasEvents, CodecError> {
     let mut events = ParasolidDeltasEvents {
         transmit_headers: Vec::new(),
         terminal_null_references: Vec::new(),
@@ -1111,12 +1135,15 @@ pub(super) fn parasolid_deltas_events_with_censuses(
         if stream.kind() != crate::parasolid::StreamKind::Deltas {
             continue;
         }
-        let census = delta_censuses
+        let census = match delta_censuses
             .get_mut(stream_ordinal)
             .and_then(Option::take)
-            .unwrap_or_else(|| crate::deltas::census::walk(&stream.inflated));
+        {
+            Some(census) => census,
+            None => crate::deltas::census::walk(ctx, &stream.inflated)?,
+        };
         let mut residual_start = 0;
-        for (covered_start, covered_end) in census.covered_spans() {
+        for (covered_start, covered_end) in census.covered_spans(ctx)? {
             if residual_start < covered_start {
                 push_deltas_residual_span(
                     &mut events.residual_spans,
@@ -1395,7 +1422,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
     events
         .residual_spans
         .sort_by(|left, right| left.id.cmp(&right.id));
-    events
+    Ok(events)
 }
 
 fn push_deltas_residual_span(
@@ -1463,7 +1490,7 @@ trait ParasolidScanRecords {
     /// Identity stem between the `nx:s{ordinal}:` prefix and the `#{xmt}` suffix.
     const ID_STEM: &'static str;
     /// Scan one inflated Parasolid stream into its rows.
-    fn scan(bytes: &[u8]) -> Vec<Self::Row>;
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError>;
     /// Cross-reference index carried into the record identity.
     fn xmt(row: &Self::Row) -> u32;
     /// Build one record from its identity, stream ordinal, and scanned row.
@@ -1474,19 +1501,22 @@ trait ParasolidScanRecords {
 
 /// Run the fresh-scan record skeleton for one family: scan every Parasolid
 /// stream, map each scanned row to a record, then sort by identity.
-fn per_parasolid_scan<P: ParasolidScanRecords>(streams: &[Stream]) -> Vec<P::Record> {
+fn per_parasolid_scan<P: ParasolidScanRecords>(
+    ctx: &DecodeContext<'_>,
+    streams: &[Stream],
+) -> Result<Vec<P::Record>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
             continue;
         }
-        for row in P::scan(&stream.inflated) {
+        for row in P::scan(ctx, &stream.inflated)? {
             let id = format!("nx:s{stream_ordinal}:{}#{}", P::ID_STEM, P::xmt(&row));
             records.push(P::record(id, stream_ordinal as u32, row));
         }
     }
     records.sort_by(|left, right| P::id(left).cmp(P::id(right)));
-    records
+    Ok(records)
 }
 
 /// Complete typed source record for one Parasolid offset surface.
@@ -1650,16 +1680,19 @@ pub(super) struct ParasolidBlendBoundRecord {
 }
 
 /// Decode complete typed source records for Parasolid blend-bound bridges.
-pub(super) fn parasolid_blend_bound_records(streams: &[Stream]) -> Vec<ParasolidBlendBoundRecord> {
-    per_parasolid_scan::<ParasolidBlendBoundRecord>(streams)
+pub(super) fn parasolid_blend_bound_records(
+    ctx: &DecodeContext<'_>,
+    streams: &[Stream],
+) -> Result<Vec<ParasolidBlendBoundRecord>, CodecError> {
+    per_parasolid_scan::<ParasolidBlendBoundRecord>(ctx, streams)
 }
 
 impl ParasolidScanRecords for ParasolidBlendBoundRecord {
     type Row = crate::intersection::BlendBound;
     type Record = ParasolidBlendBoundRecord;
     const ID_STEM: &'static str = "blend-bound-record";
-    fn scan(bytes: &[u8]) -> Vec<Self::Row> {
-        crate::intersection::blend_bounds(bytes)
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
+        crate::intersection::blend_bounds(ctx, bytes)
     }
     fn xmt(row: &Self::Row) -> u32 {
         row.state.xmt()
@@ -1807,16 +1840,19 @@ mod term_use_wire_tests {
 }
 
 /// Decode complete typed source records for Parasolid `term_use` endpoints.
-pub(super) fn parasolid_term_use_records(streams: &[Stream]) -> Vec<ParasolidTermUseRecord> {
-    per_parasolid_scan::<ParasolidTermUseRecord>(streams)
+pub(super) fn parasolid_term_use_records(
+    ctx: &DecodeContext<'_>,
+    streams: &[Stream],
+) -> Result<Vec<ParasolidTermUseRecord>, CodecError> {
+    per_parasolid_scan::<ParasolidTermUseRecord>(ctx, streams)
 }
 
 impl ParasolidScanRecords for ParasolidTermUseRecord {
     type Row = crate::intersection::TermUse;
     type Record = ParasolidTermUseRecord;
     const ID_STEM: &'static str = "term-use-record";
-    fn scan(bytes: &[u8]) -> Vec<Self::Row> {
-        crate::intersection::term_use_records(bytes)
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
+        crate::intersection::term_use_records(ctx, bytes)
     }
     fn xmt(row: &Self::Row) -> u32 {
         row.xmt
@@ -1856,16 +1892,19 @@ pub(super) struct ParasolidSupportUvRecord {
 }
 
 /// Decode complete typed source records for Parasolid support-UV arrays.
-pub(super) fn parasolid_support_uv_records(streams: &[Stream]) -> Vec<ParasolidSupportUvRecord> {
-    per_parasolid_scan::<ParasolidSupportUvRecord>(streams)
+pub(super) fn parasolid_support_uv_records(
+    ctx: &DecodeContext<'_>,
+    streams: &[Stream],
+) -> Result<Vec<ParasolidSupportUvRecord>, CodecError> {
+    per_parasolid_scan::<ParasolidSupportUvRecord>(ctx, streams)
 }
 
 impl ParasolidScanRecords for ParasolidSupportUvRecord {
     type Row = crate::intersection::SupportUvRecord;
     type Record = ParasolidSupportUvRecord;
     const ID_STEM: &'static str = "support-uv-record";
-    fn scan(bytes: &[u8]) -> Vec<Self::Row> {
-        crate::intersection::support_uv_records(bytes)
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
+        crate::intersection::support_uv_records(ctx, bytes)
     }
     fn xmt(row: &Self::Row) -> u32 {
         row.xmt
@@ -1906,14 +1945,18 @@ pub(super) struct ParasolidChartRecord {
 }
 
 /// Decode every complete physical Parasolid chart source record.
-pub(super) fn parasolid_chart_records(streams: &[Stream]) -> Vec<ParasolidChartRecord> {
+pub(super) fn parasolid_chart_records(
+    ctx: &DecodeContext<'_>,
+    streams: &[Stream],
+) -> Result<Vec<ParasolidChartRecord>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
             continue;
         };
         let point_layout = subtype.chart_point_layout();
-        for chart in crate::intersection::chart_source_records(&stream.inflated, point_layout) {
+        for chart in crate::intersection::chart_source_records(ctx, &stream.inflated, point_layout)?
+        {
             records.push(ParasolidChartRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:chart-record#{}-{}",
@@ -1929,7 +1972,7 @@ pub(super) fn parasolid_chart_records(streams: &[Stream]) -> Vec<ParasolidChartR
         }
     }
     records.sort_by(|left, right| left.id.cmp(&right.id));
-    records
+    Ok(records)
 }
 
 /// Complete typed source record for one Parasolid surface-intersection curve.
@@ -4059,7 +4102,10 @@ mod tests {
 
     #[test]
     fn group_member_xmt_is_checked_before_node_identity_fallback() {
-        let graph = Graph::parse(&many_face_partition_stream(1_000));
+        let graph = crate::test_support::with_decode_context(|ctx| {
+            Graph::parse(ctx, &many_face_partition_stream(1_000))
+        })
+        .unwrap();
         let resolve = |member: &ParasolidGroupMember| match member
             .target
             .resolve(&graph, member.member_xmt)
@@ -4118,7 +4164,10 @@ mod tests {
             ),
         ];
 
-        let groups = super::parasolid_group_records(&streams, &BTreeMap::new(), &[]);
+        let groups = crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_group_records(ctx, &streams, &BTreeMap::new(), &[])
+        })
+        .unwrap();
 
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].node_id, groups[1].node_id);
@@ -4151,7 +4200,10 @@ mod tests {
         let events = super::parasolid_deltas_events(&streams);
         let pairs = BTreeMap::from([(0, vec![1])]);
 
-        let groups = super::parasolid_group_records(&streams, &pairs, &events.records);
+        let groups = crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_group_records(ctx, &streams, &pairs, &events.records)
+        })
+        .unwrap();
 
         assert_eq!(groups.len(), 3);
         assert_eq!(groups[0].origin.partition_stream_ordinal(), Some(0));
@@ -4199,8 +4251,14 @@ mod tests {
             },
         }];
 
-        let census = crate::deltas::census::walk(&streams[0].inflated);
-        let events = super::parasolid_deltas_events_with_censuses(&streams, vec![Some(census)]);
+        let census = crate::test_support::with_decode_context(|ctx| {
+            crate::deltas::census::walk(ctx, &streams[0].inflated)
+        })
+        .unwrap();
+        let events = crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_deltas_events_with_censuses(ctx, &streams, vec![Some(census)])
+        })
+        .unwrap();
 
         assert_eq!(events.body_revisions.len(), 1);
         assert_eq!(u32::from(events.body_revisions[0].xmt), 3);
@@ -5326,7 +5384,10 @@ mod tests {
         stream.extend_from_slice(&42u16.to_be_bytes());
         stream.extend_from_slice(b"deadbeef\0");
 
-        let graph = crate::topology::Graph::parse(&stream);
+        let graph = crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &stream)
+        })
+        .unwrap();
         assert_eq!(
             graph
                 .get(crate::framing::node_kind::NodeKind::Face, 4)

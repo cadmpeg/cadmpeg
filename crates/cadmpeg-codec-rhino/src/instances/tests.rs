@@ -6,6 +6,7 @@ use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
 mod recovery;
+mod resource_limits;
 mod support;
 mod transforms;
 mod units;
@@ -20,7 +21,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::transform::Transform;
 
-use crate::chunks::{ArchiveVersion, BoundedReader};
+use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::test_support::test_dump::{
     anonymous_chunk, circle_payload, class_userdata, class_userdata_v2_with_direct_payload,
     class_userdata_with_anonymous_payload, class_userdata_with_payload, definition_record,
@@ -110,6 +111,7 @@ fn anonymous_instance_crc_mismatch_warns_and_consumes_boundary() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
     let mut warnings = Diagnostics::new();
     let (_, payload) = anonymous(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &mut reader,
         ArchiveVersion::V5,
@@ -121,6 +123,39 @@ fn anonymous_instance_crc_mismatch_warns_and_consumes_boundary() {
     assert_eq!(payload.remaining(), 0);
     assert_eq!(warnings.len(), 1);
     assert!(warnings[0].contains("instance test CRC mismatch"));
+}
+
+#[test]
+fn anonymous_instance_crc_diagnostic_refuses_collection_limit() {
+    let body = [1_i32.to_le_bytes(), 0_i32.to_le_bytes()].concat();
+    let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
+    bytes.extend_from_slice(
+        &i64::try_from(body.len() + 4)
+            .expect("bounded body")
+            .to_le_bytes(),
+    );
+    bytes.extend_from_slice(&body);
+    bytes.extend_from_slice(&crc32fast::hash(&body).to_le_bytes());
+    let crc = bytes.len() - 1;
+    bytes[crc] ^= 1;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+    let refused = anonymous(
+        &ctx,
+        &bytes,
+        &mut reader,
+        ArchiveVersion::V5,
+        "instance test",
+        &mut Diagnostics::new(),
+    )
+    .expect_err("checksum diagnostic exceeds zero collection items");
+    assert!(
+        matches!(refused, FramingError::Resource(limit) if limit.operation == "Rhino diagnostics")
+    );
 }
 
 #[test]
@@ -301,6 +336,7 @@ fn instance_definition_readers_follow_source_minor_boundaries() {
     append_crc_suffix(&mut reference, &[0xa5, 0x5a]);
     let mut reader = BoundedReader::new(&reference, 0, reference.len()).expect("chunk bounds");
     let parsed = parse_file_reference(
+        &cadmpeg_test_support::service_decode_context(),
         &reference,
         &mut reader,
         ArchiveVersion::V6,
@@ -780,8 +816,14 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
         diagnostic.source_range.start < diagnostic.source_range.end
             && !diagnostic.diagnostic.message.contains("unsupported class")
     }));
-    let container_only =
-        crate::decode::seal_for_test(crate::container::container_only_result(&scan), true);
+    let container_only = crate::decode::seal_for_test(
+        crate::container::container_only_result(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+        )
+        .expect("container-only source metadata admitted"),
+        true,
+    );
     assert!(container_only.report().losses.iter().any(|loss| {
         loss.severity == Severity::Warning
             && loss
@@ -1276,7 +1318,8 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
     );
 
     crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
         context.decode_geometry().expect("geometry decode");
         assert!(context.mesh_budget_used() > 0);
         let result =
@@ -1417,7 +1460,8 @@ fn branching_instance_budget_retains_current_reference_and_later_reference_recov
         ],
     );
     crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
         context.set_expansion_limits([16, 1, 128]);
         context.decode_geometry().expect("geometry decode");
         let result =
@@ -1604,8 +1648,14 @@ fn contradictory_standard_unit_detail_preserves_scale_and_name() {
     let data = anonymous_chunk(archive, 0, &body);
     let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded units");
     let mut warnings = Diagnostics::new();
-    let units =
-        super::unit_detail(&data, &mut reader, archive, &mut warnings).expect("unit evidence");
+    let units = super::unit_detail(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &mut reader,
+        archive,
+        &mut warnings,
+    )
+    .expect("unit evidence");
     assert_eq!(units.unit, 2);
     assert_eq!(f64::from_bits(units.meters_per_unit_bits()), 0.5);
     assert_eq!(units.custom_name, "retained name");
@@ -1628,8 +1678,14 @@ fn file_reference_fixtures_have_valid_nested_checksums() {
         let mut reader =
             BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded file reference");
         let mut warnings = Diagnostics::new();
-        let reference = parse_file_reference(&bytes, &mut reader, archive, &mut warnings)
-            .expect("valid file reference");
+        let reference = parse_file_reference(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &mut reader,
+            archive,
+            &mut warnings,
+        )
+        .expect("valid file reference");
         assert_eq!(reference.full_path, "/full/source.3dm");
         assert_eq!(reference.relative_path, "source.3dm");
         assert_eq!(reader.remaining(), 0);

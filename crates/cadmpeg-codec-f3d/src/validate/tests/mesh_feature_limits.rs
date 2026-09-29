@@ -121,7 +121,8 @@ fn mesh_error_with_feature(
     if tessellation {
         ir.model.tessellations.push(
             cadmpeg_ir::tessellation::Tessellation::new(
-                "f3d:model:tessellation#one",
+                cadmpeg_ir::tessellation::TessellationId::mint("f3d:model:tessellation#one")
+                    .expect("valid identity"),
                 cadmpeg_ir::tessellation::TessellationMesh::List {
                     vertices: Vec::new(),
                     triangles: Vec::new(),

@@ -36,6 +36,7 @@
 
 mod archive;
 mod codec;
+mod decode_alloc;
 mod dialect;
 mod export;
 mod geometry;

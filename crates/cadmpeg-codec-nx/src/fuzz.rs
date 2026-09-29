@@ -18,13 +18,24 @@ fn fuzz_policy() -> DecodePolicy {
 
 /// Exercise the NX deltas walker.
 pub fn deltas(data: &[u8]) {
-    let _ = crate::deltas::census::walk(data);
-    let mid = data.len() / 2;
-    let _ = crate::deltas::unmatched_terminal_tombstones(&data[..mid], &data[mid..]);
+    let arena = DecodeArena::new();
+    let policy = fuzz_policy();
+    if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) {
+        drop(crate::deltas::census::walk(&ctx, data));
+        let mid = data.len() / 2;
+        drop(crate::deltas::unmatched_terminal_tombstones(
+            &ctx,
+            &data[..mid],
+            &data[mid..],
+        ));
+    }
 }
 
 /// Exercise NX object-model indexed section framing.
-pub fn om(data: &[u8]) {
+pub fn om(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = DecodeArena::new();
+    let policy = fuzz_policy();
+    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)?;
     let _ = (
         crate::om_tokens::ROOT_MARKER,
         crate::om_tokens::HOST_GLOBALS,
@@ -42,59 +53,93 @@ pub fn om(data: &[u8]) {
     while let Some(token) = crate::om::compact::NullableCompactIndex::read(data, at) {
         at += token.raw().len();
     }
-    for section in crate::om::indexed_sections(data) {
-        let _ = section.numeric_expressions();
+    for section in crate::om::indexed_sections(&ctx, data)? {
+        drop(section.numeric_expressions(&ctx)?);
     }
-    for section in crate::om::sections(data) {
-        let _ = section.operation_body_references();
+    for section in crate::om::sections(&ctx, data)? {
+        drop(section.operation_body_references(&ctx)?);
     }
+    Ok(())
 }
 
 /// Exercise NX analytic point extraction.
 pub fn geometry_points(data: &[u8]) {
-    let _ = crate::geometry::points(data);
+    with_geometry_context(data, |ctx| drop(crate::geometry::points(ctx, data)));
 }
 
 /// Exercise NX analytic curve extraction.
 pub fn geometry_curves(data: &[u8]) {
-    let _ = crate::geometry::curves(data);
+    with_geometry_context(data, |ctx| drop(crate::geometry::curves(ctx, data)));
 }
 
 /// Exercise NX analytic surface extraction.
 pub fn geometry_surfaces(data: &[u8]) {
-    let _ = crate::geometry::surfaces(data);
+    with_geometry_context(data, |ctx| drop(crate::geometry::surfaces(ctx, data)));
+}
+
+fn with_geometry_context(data: &[u8], parse: impl FnOnce(&DecodeContext<'_>)) {
+    let arena = DecodeArena::new();
+    if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &fuzz_policy()) {
+        parse(&ctx);
+    }
 }
 
 /// Exercise NX surface-intersection chart decoding.
 pub fn intersection(data: &[u8]) {
-    for curve in crate::intersection::curves(data, crate::intersection::ChartPointLayout::Xyz3) {
-        let _ = (curve.references, curve.pos);
+    let arena = DecodeArena::new();
+    let policy = fuzz_policy();
+    let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) else {
+        return;
+    };
+    if let Ok(curves) =
+        crate::intersection::curves(&ctx, data, crate::intersection::ChartPointLayout::Xyz3)
+    {
+        for curve in curves {
+            // discarded-value: fuzz decoded curve fields without using their values.
+            let _ = (curve.references, curve.pos);
+        }
     }
 }
 
 /// Exercise NX NURBS curve extraction.
 pub fn nurbs_curves(data: &[u8]) {
-    let _ = crate::nurbs::curves(data);
+    let arena = DecodeArena::new();
+    let policy = fuzz_policy();
+    if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) {
+        drop(crate::nurbs::curves(&ctx, data));
+    }
 }
 
 /// Exercise NX NURBS surface extraction.
 pub fn nurbs_surfaces(data: &[u8]) {
-    let _ = crate::nurbs::surfaces(data);
+    let arena = DecodeArena::new();
+    let policy = fuzz_policy();
+    if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) {
+        drop(crate::nurbs::surfaces(&ctx, data));
+    }
 }
 
 /// Exercise NX Parasolid topology parsing.
 pub fn topology(data: &[u8]) {
-    let graph = crate::topology::Graph::parse(data);
-    for node in graph.of_kind(NodeKind::Body) {
-        let _ = node.byte_at(0);
-        let _ = node.f64_at(0);
+    let arena = DecodeArena::new();
+    let policy = fuzz_policy();
+    let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) else {
+        return;
+    };
+    if let Ok(graph) = crate::topology::Graph::parse(&ctx, data) {
+        for node in graph.of_kind(NodeKind::Body) {
+            // discarded-value: fuzz this bounded node read without using its value.
+            let _ = node.byte_at(0);
+            // discarded-value: fuzz this bounded scalar read without using its value.
+            let _ = node.f64_at(0);
+        }
     }
-    let _ = crate::topology::composite_curves(data);
-    let _ = crate::topology::intersection_data_curves(data);
-    let _ = crate::topology::blend_surfaces(data);
-    let _ = crate::topology::offset_surfaces(data);
-    let _ = crate::topology::surface_curves(data);
-    let _ = crate::topology::trimmed_curves(data);
+    drop(crate::topology::composite_curves(&ctx, data));
+    drop(crate::topology::intersection_data_curves(&ctx, data));
+    drop(crate::topology::blend_surfaces(&ctx, data));
+    drop(crate::topology::offset_surfaces(&ctx, data));
+    drop(crate::topology::surface_curves(&ctx, data));
+    drop(crate::topology::trimmed_curves(&ctx, data));
 }
 
 /// Exercise NX Parasolid stream extraction.
@@ -118,7 +163,7 @@ mod tests {
     #[test]
     fn wrappers_accept_empty() {
         super::deltas(&[]);
-        super::om(&[]);
+        drop(super::om(&[]));
         super::geometry_points(&[]);
         super::geometry_curves(&[]);
         super::geometry_surfaces(&[]);
@@ -137,8 +182,12 @@ mod tests {
 
     #[test]
     fn om_wrapper_accepts_fixture() {
-        super::om(&crate::test_support::test_om::indexed_om_section());
-        super::om(&crate::test_support::test_om::size_framed_om_section());
+        drop(super::om(
+            &crate::test_support::test_om::indexed_om_section(),
+        ));
+        drop(super::om(
+            &crate::test_support::test_om::size_framed_om_section(),
+        ));
     }
 
     #[test]
@@ -186,6 +235,6 @@ mod tests {
             std::str::from_utf8(&bytes).is_err(),
             "the fixture must state no text"
         );
-        super::om(&bytes);
+        drop(super::om(&bytes));
     }
 }

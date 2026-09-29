@@ -141,6 +141,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
     use cadmpeg_ir::SourceObjectAssociation;
 
+    let default_arena = cadmpeg_core::decode::DecodeArena::new();
+    let default_policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (default_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &default_arena, &default_policy)
+            .unwrap();
     let operations = ["hole-a".to_string(), "hole-b".to_string()];
     let templates = operations
         .iter()
@@ -813,7 +818,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
         }
     }
     assert_eq!(
-        simple_hole_chamfers(None, &chamfered, &templates, &outputs).unwrap(),
+        simple_hole_chamfers(&default_ctx, &chamfered, &templates, &outputs).unwrap(),
         std::collections::BTreeMap::from([
             (
                 "hole-a".into(),
@@ -838,7 +843,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
     policy.limits.max_collection_items = 1;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = simple_hole_chamfers(Some(&ctx), &chamfered, &templates, &outputs)
+    let error = simple_hole_chamfers(&ctx, &chamfered, &templates, &outputs)
         .expect_err("two bore cone counters exceed one admitted collection item");
     assert!(matches!(
         error,
@@ -847,19 +852,21 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
     ));
     assert_eq!(
         simple_hole_chamfers(
-            None,
+            &default_ctx,
             &chamfered,
             &templates,
             &std::collections::BTreeMap::new()
         )
         .unwrap(),
-        simple_hole_chamfers(None, &chamfered, &templates, &outputs).unwrap()
+        simple_hole_chamfers(&default_ctx, &chamfered, &templates, &outputs).unwrap()
     );
     let mut sheet = chamfered.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
-    assert!(simple_hole_chamfers(None, &sheet, &templates, &outputs)
-        .unwrap()
-        .is_empty());
+    assert!(
+        simple_hole_chamfers(&default_ctx, &sheet, &templates, &outputs)
+            .unwrap()
+            .is_empty()
+    );
     let mut unrelated = chamfered.clone();
     unrelated.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:entity#unrelated-cone").expect("identity grammar"),
@@ -890,8 +897,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
         tolerance: None,
     });
     assert_eq!(
-        simple_hole_chamfers(None, &unrelated, &templates, &outputs).unwrap(),
-        simple_hole_chamfers(None, &chamfered, &templates, &outputs).unwrap()
+        simple_hole_chamfers(&default_ctx, &unrelated, &templates, &outputs).unwrap(),
+        simple_hole_chamfers(&default_ctx, &chamfered, &templates, &outputs).unwrap()
     );
     let mut unequal_chamfers = chamfered;
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = &mut unequal_chamfers
@@ -913,7 +920,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, *axis, *ref_direction, radius)
             .unwrap();
     assert!(
-        simple_hole_chamfers(None, &unequal_chamfers, &templates, &outputs)
+        simple_hole_chamfers(&default_ctx, &unequal_chamfers, &templates, &outputs)
             .unwrap()
             .is_empty()
     );

@@ -454,6 +454,43 @@ impl Provenance<AnnotationLocation> {
 }
 
 impl Provenance<SourceLocation> {
+    /// Copies source provenance through the active decode admission context.
+    pub(crate) fn clone_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        fn copy(
+            ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            value: &str,
+            operation: &'static str,
+        ) -> Result<String, cadmpeg_core::CodecError> {
+            String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
+                .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))
+        }
+        let format = copy(ctx, &self.location.format, operation)?;
+        let stream = self
+            .location
+            .stream
+            .as_ref()
+            .map(|value| {
+                let text = copy(ctx, value.as_str(), operation)?;
+                StreamName::try_from(text)
+                    .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))
+            })
+            .transpose()?;
+        let tag = self
+            .tag
+            .as_deref()
+            .map(|value| copy(ctx, value, operation))
+            .transpose()?;
+        Ok(Self {
+            location: SourceLocation { format, stream },
+            offset: self.offset,
+            tag,
+        })
+    }
+
     /// Construct provenance relative to a format's root source stream.
     pub fn root(format: impl Into<String>, offset: u64) -> Self {
         Self {

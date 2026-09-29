@@ -151,7 +151,7 @@ pub(crate) fn inspect(
             // The kernel header is bound here so the evidence can borrow it
             // past the arm that built it.
             let parsed = match sat::parse(ctx, bytes) {
-                Ok(stream) => Ok((stream.header.as_kernel_header(), stream)),
+                Ok(stream) => Ok((stream.header.as_kernel_header(ctx)?, stream)),
                 Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
                     return Err(error);
                 }

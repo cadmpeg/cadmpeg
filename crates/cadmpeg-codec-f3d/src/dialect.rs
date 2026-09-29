@@ -224,10 +224,7 @@ pub(crate) fn classify_layers(
     ctx: &DecodeContext<'_>,
     scan: &crate::container::ContainerScan<'_>,
 ) -> Result<(DialectLayers, Vec<LossNote>), CodecError> {
-    let primary = scan
-        .kind
-        .dialect()
-        .clone_charged(ctx, "clone F3D primary dialect layer")?;
+    let primary = scan.kind.dialect().try_clone_for_decode(ctx)?;
     let mut layers = DialectLayers::of(primary);
     let mut losses = Vec::new();
     let mut add_layer = |layer: DialectMatch| -> Result<(), CodecError> {
@@ -267,7 +264,7 @@ pub(crate) fn classify_layers(
     for name in crate::container::text_brep_names(scan) {
         let matched = match scan.text_breps.get(name) {
             Some(crate::container::TextBrepFraming::Parsed(stream)) => {
-                let header = stream.header.as_kernel_header();
+                let header = stream.header.as_kernel_header(ctx)?;
                 let reference = match stream.terminator {
                     cadmpeg_asm::sat::Terminator::Asm => {
                         cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(&header)

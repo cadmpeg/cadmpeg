@@ -66,7 +66,9 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .position(|window| window == [0, 17])
         .expect("fin record");
     put_ref(&mut stream, fin + 18, 1);
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
+            .unwrap();
     let mut off_support_ir = ir.clone();
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
@@ -187,7 +189,9 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
         .position(|window| window == [0, 16])
         .expect("edge record");
     put_ref(&mut stream, edge + 24, 1);
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
+            .unwrap();
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
 
@@ -407,7 +411,15 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
         crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
     );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test context");
     crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts_with_budget(
+        &ctx,
         &mut ir,
         1,
         &transfer_budget,
@@ -427,6 +439,52 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
         unreachable!()
     };
     assert!(later.sides()[1].pcurve.is_some());
+}
+
+fn opposite_chart_completion_limit_error(
+    policy: &cadmpeg_core::decode::DecodePolicy,
+) -> cadmpeg_core::CodecError {
+    let mut ir = cylinder_plane_transfer_fixture(std::f64::consts::TAU, 0.01);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, policy)
+        .expect("test context");
+    let transfer_budget = cadmpeg_core::decode::WorkBudget::new(
+        crate::decode::pcurves::MAX_COMPLETION_TRANSFER_SAMPLES,
+    );
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+        &ctx,
+        cadmpeg_core::decode::u64_from_index(
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+        ),
+    );
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts_with_budget(
+        &ctx,
+        &mut ir,
+        0,
+        &transfer_budget,
+        &geometry_budget,
+    )
+    .expect_err("opposite chart limit refusal")
+}
+
+#[test]
+fn opposite_chart_completion_route_refuses_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    assert!(matches!(
+        opposite_chart_completion_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
+}
+
+#[test]
+fn opposite_chart_completion_route_refuses_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    assert!(matches!(
+        opposite_chart_completion_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
 }
 
 fn cylinder_plane_transfer_fixture(
@@ -1075,7 +1133,8 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             owner,
             evaluated.get(),
             parameter,
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
         .expect("charted tolerant intersection inverts");
         assert!((inverted.get() - parameter).abs() < 1.0e-8);
         let points: [Point3; 2] = std::array::from_fn(|side| {

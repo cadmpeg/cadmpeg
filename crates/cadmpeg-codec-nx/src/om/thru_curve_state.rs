@@ -2,6 +2,8 @@
 //! Member-count-dependent `THRU_CURVE` branch states.
 
 use super::branch_items::BranchItems;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ThruCurveBranchItems<T> {
@@ -67,6 +69,7 @@ impl<T> ThruCurveBranchItems<T> {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn map_indexed<U>(
         self,
         mut f: impl FnMut(usize, T) -> U,
@@ -81,6 +84,27 @@ impl<T> ThruCurveBranchItems<T> {
                     mapped
                 });
                 ThruCurveBranchItems::Extended { members, values }
+            }
+        }
+    }
+
+    pub(super) fn map_indexed_charged<U>(
+        self,
+        ctx: &DecodeContext<'_>,
+        mut f: impl FnMut(usize, T) -> U,
+    ) -> Result<ThruCurveBranchItems<U>, CodecError> {
+        match self {
+            Self::Standard(members) => Ok(ThruCurveBranchItems::Standard(
+                members.map_indexed_charged(ctx, f)?,
+            )),
+            Self::Extended { members, values } => {
+                let mut index = 0;
+                let members = members.map(|member| {
+                    let mapped = f(index, member);
+                    index += 1;
+                    mapped
+                });
+                Ok(ThruCurveBranchItems::Extended { members, values })
             }
         }
     }

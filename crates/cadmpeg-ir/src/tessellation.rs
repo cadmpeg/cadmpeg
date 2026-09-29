@@ -14,7 +14,7 @@ use crate::scalar::NonNegativeReal;
 
 crate::ids::id_type!(
     /// Stable tessellation identity.
-    TessellationId, into_string
+    TessellationId, compose, into_string
 );
 
 /// Admission error in a tessellation mesh or channel carrier.
@@ -1109,7 +1109,7 @@ fn require_texture_assignments(
 impl Tessellation {
     /// Build a tessellation from its mesh rows and channels.
     pub fn new(
-        id: impl Into<String>,
+        id: TessellationId,
         mesh: TessellationMesh,
         channels: Vec<TessellationChannel>,
     ) -> Result<Self, TessellationError> {
@@ -1121,7 +1121,7 @@ impl Tessellation {
 
     /// Build from admitted positions and normals; check only relationships.
     pub fn from_parts(
-        id: impl Into<String>,
+        id: TessellationId,
         mesh: TessellationMesh<FinitePoint3, FiniteVector3>,
         channels: Vec<TessellationChannel>,
     ) -> Result<Self, TessellationError> {
@@ -1129,7 +1129,7 @@ impl Tessellation {
         require_triangle_indices(mesh.vertex_count(), &triangles)?;
         require_channel_indices(triangles.len(), &channels)?;
         Ok(Self {
-            id: TessellationId::mint(id).map_err(|error| tessellation_error(error.to_string()))?,
+            id,
             body: None,
             faces: Vec::new(),
             chordal_deflection: None,
@@ -1499,7 +1499,7 @@ impl TryFrom<TessellationWire> for Tessellation {
             body: wire.body,
             faces: wire.faces,
             source_object: wire.source_object,
-            ..Self::new(wire.id.into_string(), wire.mesh, wire.channels)?
+            ..Self::new(wire.id, wire.mesh, wire.channels)?
         };
         mesh.set_chordal_deflection(wire.chordal_deflection)?;
         mesh = mesh.with_feature_edges(wire.feature_edges)?;

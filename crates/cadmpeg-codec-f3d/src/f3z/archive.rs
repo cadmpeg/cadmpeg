@@ -135,10 +135,7 @@ pub(super) fn classify_members<'a>(
     scan: &ContainerScan<'a>,
 ) -> Result<ArchiveSession<'a>, CodecError> {
     let mut members = BTreeMap::new();
-    let primary = scan
-        .kind
-        .dialect()
-        .clone_charged(ctx, "clone F3Z primary dialect layer")?;
+    let primary = scan.kind.dialect().try_clone_for_decode(ctx)?;
     let mut layers = DialectLayers::of(primary);
     let mut losses = Vec::new();
     for member_path in scan
@@ -222,7 +219,7 @@ pub(super) fn merge_member_layers(
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
     for matched in member.iter() {
-        let matched = matched.clone_charged(ctx, "clone F3Z member dialect layer")?;
+        let matched = matched.try_clone_for_decode(ctx)?;
         let instance = match matched.instance() {
             Some(nested) => crate::container::format_retained(
                 ctx,

@@ -52,7 +52,7 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         .expect("add part");
     crate::builder::test_support::attach_part_fixture(&mut builder, b"extension payload");
     let mut ir = builder.build().expect("build source-less graph");
-    assert!(crate::validate_native(&ir).is_empty());
+    assert!(crate::test_support::validate_native(&ir).is_empty());
     crate::mutation::replace_entry(&mut ir, "Payload.bin", b"edited payload".to_vec())
         .expect("replace side entry");
 

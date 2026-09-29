@@ -199,6 +199,10 @@ mod ownership_tests {
     /// intersection belongs to the construction the record embeds.
     #[test]
     fn a_nested_intcurve_construction_does_not_own_the_record() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         for int_width in [RefWidth::Four, RefWidth::Eight] {
             let mut bytes = Vec::new();
             open(&mut bytes, b"defm_int_cur");
@@ -218,9 +222,12 @@ mod ownership_tests {
             );
             assert_eq!(
                 crate::nurbs::toks::owned_construction_subtype(
+                    &ctx,
                     &crate::nurbs::toks::lex_test_span(&bytes, int_width)
                         .expect("valid single-record byte fixture")
                 )
+                .transpose()
+                .unwrap()
                 .as_deref(),
                 Some("defm_int_cur")
             );

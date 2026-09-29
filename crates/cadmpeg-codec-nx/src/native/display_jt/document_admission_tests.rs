@@ -49,10 +49,13 @@ pub(super) fn one_document() -> Container<'static> {
 
 fn refused_at(policy: DecodePolicy) -> (ResourceDimension, String) {
     let container = one_document();
-    let indices = super::display_jt_indices(None, &container).unwrap();
+    let index_arena = DecodeArena::new();
+    let index_policy = DecodePolicy::service();
+    let (index_ctx, _) = DecodeContext::from_root_bytes(&[], &index_arena, &index_policy).unwrap();
+    let indices = super::display_jt_indices(&index_ctx, &container).unwrap();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::display_jt_documents(Some(&ctx), &container, &indices).unwrap_err();
+    let error = super::display_jt_documents(&ctx, &container, &indices).unwrap_err();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected resource refusal");
     };
@@ -224,10 +227,13 @@ fn display_jt_document_count_refuses_before_vector_reservation() {
 #[test]
 fn display_jt_document_service_profile_keeps_toc_entry() {
     let container = one_document();
-    let indices = super::display_jt_indices(None, &container).unwrap();
+    let index_arena = DecodeArena::new();
+    let index_policy = DecodePolicy::service();
+    let (index_ctx, _) = DecodeContext::from_root_bytes(&[], &index_arena, &index_policy).unwrap();
+    let indices = super::display_jt_indices(&index_ctx, &container).unwrap();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let documents = super::display_jt_documents(Some(&ctx), &container, &indices).unwrap();
+    let documents = super::display_jt_documents(&ctx, &container, &indices).unwrap();
     assert_eq!(documents.len(), 1);
     assert_eq!(documents[0].toc_entries.len(), 1);
     assert_eq!(documents[0].toc_entries[0].segment_offset, 137);
