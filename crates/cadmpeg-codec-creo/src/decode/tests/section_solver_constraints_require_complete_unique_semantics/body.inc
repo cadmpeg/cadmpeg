@@ -2225,7 +2225,8 @@ offset: 30,
             offset: 95,
         }];
     assert_eq!(
-        solver_only_section_entities(&solver_only),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entities(ctx, &solver_only))
+            .expect("service solver-only entities"),
         BTreeMap::from([(99, 95)])
     );
     let mut whole_entity_tangent = definition.clone();
