@@ -21,7 +21,7 @@ use super::super::holes::placement::plane_envelope_corners;
 use super::super::surfaces::intersection_resolve::intersect_plane_with_carrier_components;
 use super::super::surfaces::{fc05_cap_pair_model_frame, fc05_model_frame};
 
-use super::edges::nurbs_intrinsic_parameter_range;
+use super::edges::{nurbs_intrinsic_parameter_range, nurbs_points, nurbs_weights_positive};
 use super::equations::{
     intersect_plane_with_two_quadrics, intersect_two_planes_with_quadric,
     intersect_two_planes_with_torus, solve_planes, CarrierEquation, PlaneEquation, SphereEquation,
@@ -1985,10 +1985,7 @@ pub(super) fn analytic_curve_plane(
             }
             let Some(plane) = topology_bound_plane(
                 ctx,
-                nurbs
-                    .control_points()
-                    .iter()
-                    .map(|point| [point.x, point.y, point.z]),
+                nurbs_points(nurbs).map(|point| [point.x, point.y, point.z]),
             )? else {
                 return Ok(None);
             };
@@ -2017,19 +2014,15 @@ pub(super) fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<Boundar
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             (nurbs.degree() == 1 && !nurbs.periodic()).then_some(())?;
             valid_positive_nurbs_curve(nurbs)?;
-            let first = *nurbs.control_points().first()?;
-            let last = *nurbs.control_points().last()?;
+            let first = nurbs.pole_rows().point_at(0)?;
+            let last = nurbs.pole_rows().point_at(nurbs.pole_count().checked_sub(1)?)?;
             let origin = [first.x, first.y, first.z];
             let direction = normalize([last.x - first.x, last.y - first.y, last.z - first.z])?;
-            let scale = nurbs
-                .control_points()
-                .iter()
+            let scale = nurbs_points(nurbs)
                 .flat_map(|point| [point.x, point.y, point.z])
                 .map(f64::abs)
                 .fold(1.0, f64::max);
-            nurbs
-                .control_points()
-                .iter()
+            nurbs_points(nurbs)
                 .map(|point| {
                     let relative = [
                         point.x - origin[0],
@@ -2050,10 +2043,7 @@ pub(super) fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<Boundar
 
 pub(in crate::decode) fn valid_positive_nurbs_curve(nurbs: &NurbsCurve) -> Option<()> {
     nurbs_intrinsic_parameter_range(nurbs)?;
-    nurbs
-        .weights()
-        .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
-        .then_some(())
+    nurbs_weights_positive(nurbs).then_some(())
 }
 
 fn topology_bound_line_plane(lines: &[BoundaryLine]) -> Option<PlaneEquation> {

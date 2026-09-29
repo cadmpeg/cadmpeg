@@ -66,7 +66,7 @@ pub(super) fn add_extrusion_pcurve(
             .and_then(|degree| {
                 Some([
                     *nurbs.knots().get(degree)?,
-                    *nurbs.knots().get(nurbs.control_points().len())?,
+                    *nurbs.knots().get(nurbs.pole_rows().count())?,
                 ])
             })
             .filter(|range| range[0] < range[1])
