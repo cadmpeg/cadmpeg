@@ -86,6 +86,11 @@ fn affine_probe_values() -> BTreeMap<String, SimultaneousAffineValue> {
     )])
 }
 
+fn dimension_probe_variable(name: &str) -> DimensionProbeValue {
+    crate::decode::with_test_decode_ctx(|ctx| DimensionProbeValue::variable(ctx, name))
+        .expect("service profile admits dimension variable")
+}
+
 #[test]
 fn relation_affine_reference_refuses_coefficient_node() {
     let error = relation_parse_limit_error("driver", &affine_probe_values(), |policy| {
@@ -108,7 +113,7 @@ fn relation_affine_reference_refuses_coefficient_name() {
 
 #[test]
 fn relation_dimension_reference_refuses_variable_node() {
-    let values = BTreeMap::from([("driver".to_owned(), DimensionProbeValue::variable("x"))]);
+    let values = BTreeMap::from([("driver".to_owned(), dimension_probe_variable("x"))]);
     let error = relation_parse_limit_error("driver", &values, |policy| {
         policy.limits.max_collection_items = 0;
     });
@@ -119,7 +124,7 @@ fn relation_dimension_reference_refuses_variable_node() {
 
 #[test]
 fn relation_dimension_reference_refuses_variable_name() {
-    let values = BTreeMap::from([("driver".to_owned(), DimensionProbeValue::variable("x"))]);
+    let values = BTreeMap::from([("driver".to_owned(), dimension_probe_variable("x"))]);
     let error = relation_parse_limit_error("driver", &values, |policy| {
         policy.limits.max_retained_bytes = 0;
     });

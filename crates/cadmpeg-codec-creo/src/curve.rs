@@ -3159,6 +3159,39 @@ struct DimensionForm {
 }
 
 impl DimensionForm {
+    fn combine_admitted(
+        mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        right: Self,
+        subtract: bool,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        self.constant = match self.constant.combine(right.constant, subtract) {
+            Some(value) => value,
+            None => return Ok(None),
+        };
+        for (name, coefficient) in right.variables {
+            if let Some(value) = self.variables.get_mut(&name) {
+                *value = match (*value).combine(coefficient, subtract) {
+                    Some(value) => value,
+                    None => return Ok(None),
+                };
+                if value.is_zero() {
+                    self.variables.remove(&name);
+                }
+            } else {
+                let value = match DimensionRational::default().combine(coefficient, subtract) {
+                    Some(value) => value,
+                    None => return Ok(None),
+                };
+                if !value.is_zero() {
+                    ctx.charge_collection_items(1, "creo dimension difference variable nodes")?;
+                    self.variables.insert(name, value);
+                }
+            }
+        }
+        Ok(Some(self))
+    }
+
     fn copy_admitted(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -3181,11 +3214,15 @@ impl DimensionForm {
         }
     }
 
-    fn variable(name: &str) -> Self {
-        Self {
+    fn variable(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        name: String,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.charge_collection_items(1, "creo dimension variable nodes")?;
+        Ok(Self {
             constant: DimensionRational::default(),
-            variables: BTreeMap::from([(name.to_owned(), DimensionRational::one())]),
-        }
+            variables: BTreeMap::from([(name, DimensionRational::one())]),
+        })
     }
 
     fn combine(mut self, right: Self, subtract: bool) -> Option<Self> {
@@ -3261,12 +3298,19 @@ impl SymbolicRelationDimension {
         }
     }
 
-    fn variable(name: &str) -> Self {
-        Self {
-            axes: std::array::from_fn(|axis| {
-                DimensionForm::variable(&dimension_variable_key(name, axis))
-            }),
-        }
+    fn variable(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            axes: [
+                DimensionForm::variable(ctx, dimension_variable_key(ctx, name, 0, "creo dimension variable names")?)?,
+                DimensionForm::variable(ctx, dimension_variable_key(ctx, name, 1, "creo dimension variable names")?)?,
+                DimensionForm::variable(ctx, dimension_variable_key(ctx, name, 2, "creo dimension variable names")?)?,
+                DimensionForm::variable(ctx, dimension_variable_key(ctx, name, 3, "creo dimension variable names")?)?,
+                DimensionForm::variable(ctx, dimension_variable_key(ctx, name, 4, "creo dimension variable names")?)?,
+            ],
+        })
     }
 
     fn combine(self, right: Self, subtract: bool) -> Option<Self> {
@@ -3307,8 +3351,13 @@ impl SymbolicRelationDimension {
     }
 }
 
-fn dimension_variable_key(name: &str, axis: usize) -> String {
-    format!("{name}#{axis}")
+fn dimension_variable_key(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    name: &str,
+    axis: usize,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    ctx.format_retained(format_args!("{name}#{axis}"), operation)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3373,12 +3422,15 @@ impl DimensionProbeValue {
         }
     }
 
-    fn variable(name: &str) -> Self {
-        Self {
-            dimension: SymbolicRelationDimension::variable(name),
+    fn variable(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            dimension: SymbolicRelationDimension::variable(ctx, name)?,
             kind: DimensionProbeKind::Numeric(None),
             constraints: Vec::new(),
-        }
+        })
     }
 
     fn from_relation_value(value: &CurveExpressionValue) -> Option<Self> {
@@ -5310,33 +5362,54 @@ fn infer_solve_variable_dimensions(
     if known_dimensions.len() != block.unknowns.len() {
         return Ok(None);
     }
-    let variable_keys = block
-        .unknowns
-        .iter()
-        .map(|unknown| &unknown.name)
-        .map(|variable| expression_identifier_key(variable))
-        .collect::<Vec<_>>();
-    let unique_keys = variable_keys.iter().collect::<BTreeSet<_>>();
-    if unique_keys.len() != variable_keys.len() {
-        return Ok(None);
+    let mut variable_keys = Vec::new();
+    for unknown in &block.unknowns {
+        ctx.try_reserve_items(&mut variable_keys, 1, "creo dimension variable keys")?;
+        let mut key = ctx.copy_retained_text(&unknown.name, "creo dimension variable key text")?;
+        key.make_ascii_lowercase();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(variable_keys.len()),
+            "creo dimension duplicate checks",
+        )?;
+        if variable_keys.contains(&key) {
+            return Ok(None);
+        }
+        variable_keys.push(key);
     }
 
-    let mut probe_values = values
-        .iter()
-        .filter_map(|(name, value)| {
-            DimensionProbeValue::from_relation_value(value).map(|value| (name.clone(), value))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut probe_values = BTreeMap::new();
+    for (name, value) in values {
+        let probe = match value {
+            CurveExpressionValue::String(value) => DimensionProbeValue::text(Some(
+                ctx.copy_retained_text(value, "creo dimension known text")?,
+            )),
+            _ => match DimensionProbeValue::from_relation_value(value) {
+                Some(probe) => probe,
+                None => continue,
+            },
+        };
+        ctx.charge_collection_items(1, "creo dimension known value nodes")?;
+        probe_values.insert(
+            ctx.copy_retained_text(name, "creo dimension known value names")?,
+            probe,
+        );
+    }
     for (key, dimension) in variable_keys.iter().zip(known_dimensions) {
-        let value = dimension.map_or_else(
-            || DimensionProbeValue::variable(key),
-            |dimension| DimensionProbeValue {
-                dimension: SymbolicRelationDimension::from_relation_dimension(dimension),
+        let value = match dimension {
+            Some(dimension) => DimensionProbeValue {
+                dimension: SymbolicRelationDimension::from_relation_dimension(*dimension),
                 kind: DimensionProbeKind::Numeric(None),
                 constraints: Vec::new(),
             },
+            None => DimensionProbeValue::variable(ctx, key)?,
+        };
+        if !probe_values.contains_key(key) {
+            ctx.charge_collection_items(1, "creo dimension unknown value nodes")?;
+        }
+        probe_values.insert(
+            ctx.copy_retained_text(key, "creo dimension unknown value names")?,
+            value,
         );
-        probe_values.insert(key.clone(), value);
     }
 
     let mut constraints = Vec::new();
@@ -5357,8 +5430,11 @@ fn infer_solve_variable_dimensions(
         )? else {
             return Ok(None);
         };
-        constraints.extend(left.constraints.iter().cloned());
-        constraints.extend(right.constraints.iter().cloned());
+        for constraint in left.constraints.iter().chain(&right.constraints) {
+            ctx.try_reserve_items(&mut constraints, 1, "creo dimension constraint rows")?;
+            constraints.push(constraint.copy_admitted(ctx)?);
+        }
+        ctx.try_reserve_items(&mut constraints, 1, "creo dimension constraint rows")?;
         constraints.push(DimensionEquality {
             left: left.dimension,
             right: right.dimension,
@@ -5367,33 +5443,45 @@ fn infer_solve_variable_dimensions(
 
     let mut axis_rows: [Vec<AffineEquationRow>; 5] =
         std::array::from_fn(|_| Vec::<AffineEquationRow>::new());
-    let axis_variable_keys: [Vec<String>; 5] = std::array::from_fn(|axis| {
-        variable_keys
-            .iter()
-            .map(|variable| dimension_variable_key(variable, axis))
-            .collect()
-    });
+    let mut axis_variable_keys: [Vec<String>; 5] = std::array::from_fn(|_| Vec::new());
+    for (axis, keys) in axis_variable_keys.iter_mut().enumerate() {
+        for variable in &variable_keys {
+            ctx.try_reserve_items(keys, 1, "creo dimension axis variable keys")?;
+            keys.push(dimension_variable_key(
+                ctx,
+                variable,
+                axis,
+                "creo dimension axis variable names",
+            )?);
+        }
+    }
     for equality in constraints {
         for (axis, rows) in axis_rows.iter_mut().enumerate() {
-            let Some(difference) = equality.left.axes[axis]
-                .clone()
-                .combine(equality.right.axes[axis].clone(), true)
-            else {
+            let left = equality.left.axes[axis].copy_admitted(ctx)?;
+            let right = equality.right.axes[axis].copy_admitted(ctx)?;
+            let Some(difference) = left.combine_admitted(ctx, right, true)? else {
                 return Ok(None);
             };
-            let coefficients = axis_variable_keys[axis]
-                .iter()
-                .map(|variable| {
-                    difference
-                        .variables
-                        .get(variable)
-                        .copied()
-                        .unwrap_or_default()
-                        .as_f64()
-                })
-                .collect::<Vec<_>>();
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(axis_variable_keys[axis].len()),
+                "creo dimension equation coefficient work",
+            )?;
+            let mut coefficients = ctx.alloc_filled(
+                axis_variable_keys[axis].len(),
+                0.0,
+                "creo dimension equation coefficients",
+            )?;
+            for (coefficient, variable) in coefficients.iter_mut().zip(&axis_variable_keys[axis]) {
+                *coefficient = difference
+                    .variables
+                    .get(variable)
+                    .copied()
+                    .unwrap_or_default()
+                    .as_f64();
+            }
             let rhs = -difference.constant.as_f64();
             if coefficients.iter().any(|coefficient| *coefficient != 0.0) || rhs != 0.0 {
+                ctx.try_reserve_items(rows, 1, "creo dimension equation rows")?;
                 rows.push(AffineEquationRow { coefficients, rhs });
             }
         }
@@ -5417,11 +5505,13 @@ fn infer_solve_variable_dimensions(
             components[4][index] = dimension.temperature;
         }
     }
-    let required_columns = known_dimensions
-        .iter()
-        .enumerate()
-        .filter_map(|(index, dimension)| dimension.is_none().then_some(index))
-        .collect::<BTreeSet<_>>();
+    let mut required_columns = BTreeSet::new();
+    for (index, dimension) in known_dimensions.iter().enumerate() {
+        if dimension.is_none() {
+            ctx.charge_collection_items(1, "creo dimension required column nodes")?;
+            required_columns.insert(index);
+        }
+    }
     for (axis, rows) in axis_rows.iter_mut().enumerate() {
         let Some(solution) =
             solve_dimension_axis(ctx, rows, variable_keys.len(), &required_columns)?
@@ -5443,17 +5533,21 @@ fn infer_solve_variable_dimensions(
             components[axis][index] = rounded as i8;
         }
     }
-    Ok(Some(
-        (0..variable_keys.len())
-            .map(|index| RelationDimension {
-                length: components[0][index],
-                mass: components[1][index],
-                time: components[2][index],
-                angle: components[3][index],
-                temperature: components[4][index],
-            })
-            .collect(),
-    ))
+    let mut dimensions = ctx.alloc_filled(
+        variable_keys.len(),
+        RelationDimension::default(),
+        "creo inferred variable dimensions",
+    )?;
+    for (index, dimension) in dimensions.iter_mut().enumerate() {
+        *dimension = RelationDimension {
+            length: components[0][index],
+            mass: components[1][index],
+            time: components[2][index],
+            angle: components[3][index],
+            temperature: components[4][index],
+        };
+    }
+    Ok(Some(dimensions))
 }
 
 fn solve_dimension_axis(
