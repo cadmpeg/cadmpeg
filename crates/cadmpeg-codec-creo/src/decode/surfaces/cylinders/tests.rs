@@ -139,8 +139,11 @@ fn support_tangent_frame_selects_the_uniquely_witnessed_origin_sign() {
         normal: [0.0, 1.0, 0.0],
     };
 
-    let selected = unique_support_tangent_cylinder_frame(stored, &[tangent, unrelated_parallel])
-        .expect("unique tangent origin");
+    let selected = crate::decode::with_test_decode_ctx(|ctx| {
+        unique_support_tangent_cylinder_frame(ctx, stored, &[tangent, unrelated_parallel])
+    })
+    .expect("service tangent search admitted")
+    .expect("unique tangent origin");
     assert_eq!(selected.frame().origin(), [-29.8, -5.25, 6.76]);
 }
 
@@ -156,8 +159,62 @@ fn support_tangent_frame_requires_a_matching_axis_aligned_support() {
         normal: [0.0, 1.0, 1.0],
     };
 
-    assert!(unique_support_tangent_cylinder_frame(stored, &[unmatched]).is_none());
-    assert!(unique_support_tangent_cylinder_frame(stored, &[oblique]).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        unique_support_tangent_cylinder_frame(ctx, stored, &[unmatched])
+    })
+    .expect("service unmatched search admitted")
+    .is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        unique_support_tangent_cylinder_frame(ctx, stored, &[oblique])
+    })
+    .expect("service oblique search admitted")
+    .is_none());
+}
+
+fn support_tangent_limit_error(limit: u64) -> cadmpeg_core::CodecError {
+    let stored = crate::surface::PositionalCylinderFrame::new(
+        [-29.8, 5.25, 6.76],
+        [1.0, 0.0, 0.0],
+        [0.0, -1.0, 0.0],
+        0.25,
+        None,
+    )
+    .expect("valid positional cylinder frame");
+    let tangent = PlaneEquation {
+        origin: [0.0, -5.5, 0.0],
+        normal: [0.0, 1.0, 0.0],
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    unique_support_tangent_cylinder_frame(&ctx, stored, &[tangent])
+        .expect_err("tangent search exceeds collection limit")
+}
+
+#[test]
+fn support_tangent_initial_origin_refuses_collection_limit() {
+    let error = support_tangent_limit_error(0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo support tangent initial origins"));
+}
+
+#[test]
+fn support_tangent_witness_plane_refuses_collection_limit() {
+    let error = support_tangent_limit_error(1);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo support tangent witness planes"));
+}
+
+#[test]
+fn support_tangent_next_origin_refuses_collection_limit() {
+    let error = support_tangent_limit_error(2);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo support tangent next origins"));
 }
 
 fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {

@@ -754,76 +754,85 @@ fn unique_tangent_axial_interval_corner_frame(
 }
 
 fn unique_support_tangent_cylinder_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     stored: crate::surface::PositionalCylinderFrame,
     support_planes: &[PlaneEquation],
-) -> Option<crate::surface::PositionalCylinderFrame> {
+) -> Result<Option<crate::surface::PositionalCylinderFrame>, cadmpeg_core::CodecError> {
     let axis = unit_length(*stored.frame().orthonormal_frame().axis());
-    let mut origins = vec![stored.frame().origin()];
+    let mut origins = Vec::new();
+    ctx.try_reserve_items(&mut origins, 1, "creo support tangent initial origins")?;
+    origins.push(stored.frame().origin());
     let mut witnessed_axis = [false; 3];
     let mut witnessed_planes = Vec::new();
     for plane in support_planes {
-        let normal = normalize(plane.normal)?;
+        let Some(normal) = normalize(plane.normal) else {
+            return Ok(None);
+        };
         if dot(axis, normal).abs() > EPS_CYLINDER_GEOMETRY {
-            return None;
+            return Ok(None);
         }
-        let [axis_index] = (0..3)
+        let mut axis_indices = (0..3)
             .filter(|index| {
                 normal[*index].abs() > 1.0 - EPS_CYLINDER_GEOMETRY
                     && (0..3)
                         .filter(|other| *other != *index)
                         .all(|other| normal[other].abs() <= EPS_CYLINDER_GEOMETRY)
-            })
-            .collect::<Vec<_>>()
-            .as_slice()
-            .try_into()
-            .ok()?;
+            });
+        let Some(axis_index) = axis_indices.next() else {
+            return Ok(None);
+        };
+        if axis_indices.next().is_some() {
+            return Ok(None);
+        }
         let plane_offset = dot(normal, plane.origin);
-        let candidates = [
-            (plane_offset - stored.radius().get()) / normal[axis_index],
-            (plane_offset + stored.radius().get()) / normal[axis_index],
-        ]
-        .into_iter()
-        .filter(|coordinate| coordinate.is_finite())
-        .filter(|coordinate| {
-            let scale = coordinate
-                .abs()
-                .max(stored.frame().origin()[axis_index].abs())
-                .max(stored.radius().get())
-                .max(1.0);
-            (coordinate.abs() - stored.frame().origin()[axis_index].abs()).abs()
-                <= EPS_CYLINDER_POSITION * scale
-        })
-        .collect::<Vec<_>>();
-        if candidates.is_empty() {
+        let candidates = || {
+            [
+                (plane_offset - stored.radius().get()) / normal[axis_index],
+                (plane_offset + stored.radius().get()) / normal[axis_index],
+            ]
+            .into_iter()
+            .filter(|coordinate| coordinate.is_finite())
+            .filter(|coordinate| {
+                let scale = coordinate
+                    .abs()
+                    .max(stored.frame().origin()[axis_index].abs())
+                    .max(stored.radius().get())
+                    .max(1.0);
+                (coordinate.abs() - stored.frame().origin()[axis_index].abs()).abs()
+                    <= EPS_CYLINDER_POSITION * scale
+            })
+        };
+        if candidates().next().is_none() {
             continue;
         }
         witnessed_axis[axis_index] = true;
+        ctx.try_reserve_items(&mut witnessed_planes, 1, "creo support tangent witness planes")?;
         witnessed_planes.push(PlaneEquation {
             origin: plane.origin,
             normal,
         });
         let mut next = Vec::new();
         for origin in &origins {
-            for coordinate in &candidates {
+            for coordinate in candidates() {
                 let mut candidate = *origin;
-                candidate[axis_index] = *coordinate;
+                candidate[axis_index] = coordinate;
                 if !next.iter().any(|known: &[f64; 3]| {
                     known.iter().zip(candidate).all(|(left, right)| {
                         (left - right).abs()
                             <= EPS_CYLINDER_POSITION * left.abs().max(right.abs()).max(1.0)
                     })
                 }) {
+                    ctx.try_reserve_items(&mut next, 1, "creo support tangent next origins")?;
                     next.push(candidate);
                 }
             }
         }
         origins = next;
     }
-    witnessed_axis
-        .into_iter()
-        .any(|witnessed| witnessed)
-        .then_some(())?;
-    let mut frames = Vec::new();
+    if !witnessed_axis.into_iter().any(|witnessed| witnessed) {
+        return Ok(None);
+    }
+    let mut frame = None;
     for origin in origins {
         let tangent_to_all = witnessed_planes.iter().all(|plane| {
             let normal = plane.normal;
@@ -843,21 +852,17 @@ fn unique_support_tangent_cylinder_frame(
         ) else {
             continue;
         };
-        if !frames
-            .iter()
-            .any(|known: &crate::surface::PositionalCylinderFrame| {
-                crate::surface::cylinder_frame_readers::positional_cylinder_frames_agree(
-                    *known, candidate,
-                )
-            })
-        {
-            frames.push(candidate);
+        if let Some(known) = frame {
+            if !crate::surface::cylinder_frame_readers::positional_cylinder_frames_agree(
+                known, candidate,
+            ) {
+                return Ok(None);
+            }
+        } else {
+            frame = Some(candidate);
         }
     }
-    let [frame] = frames.as_slice() else {
-        return None;
-    };
-    Some(*frame)
+    Ok(frame)
 }
 
 fn perpendicular_round_edge_cylinder_frame(
@@ -1042,13 +1047,15 @@ pub(in super::super) fn transfer_positional_cylinders(
                 round_support_envelope_cylinder(scan, ir, source_carriers, row.feature_id, envelope)
             });
         let support_planes = round_edge_support_planes.get(&row.id);
-        let support_tangent_frame = (!selector_corner_interval)
-            .then(|| {
-                let stored = record.positional_cylinder_frame()?;
-                let support_planes = support_planes?;
-                unique_support_tangent_cylinder_frame(stored, support_planes)
-            })
-            .flatten();
+        let support_tangent_frame = if !selector_corner_interval {
+            match (record.positional_cylinder_frame(), support_planes) {
+                (Some(stored), Some(planes)) =>
+                    unique_support_tangent_cylinder_frame(ctx, stored, planes)?,
+                _ => None,
+            }
+        } else {
+            None
+        };
         if !axial_interval_corner_candidates.is_empty() {
             summary.axial_interval_corner_envelopes += 1;
         }
