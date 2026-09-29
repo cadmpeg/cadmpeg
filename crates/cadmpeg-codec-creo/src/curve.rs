@@ -1043,10 +1043,11 @@ pub(crate) fn expression_records_with_model_name(
                 evaluation.solve_solutions.clear();
             }
             synchronize_solve_blocks(
+                ctx,
                 &mut solve_program.blocks,
                 &evaluation.assignments,
                 &evaluation.solve_solutions,
-            );
+            )?;
             ctx.try_reserve_items(&mut records, 1, "creo expression records")?;
             records.push(CurveExpressionRecord {
                 entity_id,
@@ -1081,34 +1082,42 @@ pub(crate) fn reevaluate_expression_records(
             evaluation.solve_solutions.clear();
         }
         synchronize_solve_blocks(
+            ctx,
             &mut record.solve_blocks,
             &evaluation.assignments,
             &evaluation.solve_solutions,
-        );
+        )?;
         record.assignments = evaluation.assignments;
     }
     Ok(())
 }
 
 fn synchronize_solve_blocks(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     blocks: &mut [CurveExpressionSolveBlock],
     assignments: &[CurveExpressionAssignment],
     solutions: &BTreeMap<usize, Vec<CurveExpressionValue>>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for block in blocks {
         for assignment in &mut block.assignments {
             if let Some(evaluated) = assignments
                 .iter()
                 .find(|evaluated| evaluated.offset == assignment.offset)
             {
-                *assignment = evaluated.clone();
+                assignment.value = evaluated.value.as_ref()
+                    .map(|value| copy_expression_value(ctx, value, "creo synchronized assignment values"))
+                    .transpose()?;
+                assignment.activation = evaluated.activation;
             }
         }
         let values = solutions.get(&block.offset);
         for (index, unknown) in block.unknowns.iter_mut().enumerate() {
-            unknown.solution = values.and_then(|values| values.get(index)).cloned();
+            unknown.solution = values.and_then(|values| values.get(index))
+                .map(|value| copy_expression_value(ctx, value, "creo synchronized solve values"))
+                .transpose()?;
         }
     }
+    Ok(())
 }
 
 fn curve_equation_prohibited_constructs(

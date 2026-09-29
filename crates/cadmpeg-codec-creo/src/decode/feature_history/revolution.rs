@@ -380,14 +380,16 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             )?;
             let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix))) =
                 exactly_one(ir.model.curves.iter().filter(|curve| curve.id == curve_id))
-                    .map(|curve| source_carriers.curve_geometry(curve).clone())
+                    .map(|curve| source_carriers.curve_geometry(curve))
             else {
                 continue;
             };
+            let directrix_knots = directrix.knots().first().zip(directrix.knots().last())
+                .map(|(lower, upper)| [*lower, *upper]);
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let surface = revolved_nurbs_surface(
                 ctx,
-                &directrix,
+                directrix,
                 &axis,
                 &format_args!(
                     "feature {feature_id} saved spline at offset {}",
@@ -447,7 +449,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 ctx,
                 ir,
                 Surface {
-                    id: surface_id.clone(),
+                    id: surface_id.copy_admitted(ctx, "creo construction surface identity copy")?,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
@@ -478,7 +480,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     ),
                     [0.0, std::f64::consts::TAU],
                     None,
-                    directrix_parameter_range(ctx, spline.offset, directrix.knots())?.into(),
+                    directrix_parameter_range(ctx, spline.offset, directrix_knots.as_ref().map_or(&[][..], |knots| knots.as_slice()))?.into(),
                     false,
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )

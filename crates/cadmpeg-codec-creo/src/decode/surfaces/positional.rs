@@ -383,7 +383,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             ctx,
             ir,
             Curve {
-                id: curve_id.clone(),
+                id: curve_id.copy_admitted(ctx, "creo construction curve identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
@@ -408,7 +408,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             ctx,
             ir,
             Surface {
-                id: surface_id.clone(),
+                id: surface_id.copy_admitted(ctx, "creo construction surface identity copy")?,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
@@ -631,7 +631,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             ctx,
             ir,
             Curve {
-                id: curve_id.clone(),
+                id: curve_id.copy_admitted(ctx, "creo construction curve identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
@@ -656,7 +656,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             ctx,
             ir,
             Surface {
-                id: surface_id.clone(),
+                id: surface_id.copy_admitted(ctx, "creo construction surface identity copy")?,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
