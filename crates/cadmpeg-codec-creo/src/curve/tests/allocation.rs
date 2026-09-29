@@ -266,6 +266,56 @@ fn curve_parameter_records_refuse_before_vector_growth() {
             && limit.operation == "creo curve parameter records"));
 }
 
+#[test]
+fn expression_conditional_validation_refuses_before_stack_growth() {
+    let lines = [
+        super::super::CurveExpressionLine {
+            text: "if 1".to_string(),
+            offset: 0,
+        },
+        super::super::CurveExpressionLine {
+            text: "endif".to_string(),
+            offset: 5,
+        },
+    ];
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        super::super::expression_program_control_is_valid(&ctx, &lines)
+    };
+    assert_eq!(run(1).expect("one conditional is admitted"), true);
+    let error = run(0).expect_err("one conditional requires a validation slot");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo expression conditional validation"));
+}
+
+#[test]
+fn expression_conditional_parent_refuses_before_stack_growth() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let frame = || super::super::ConditionalFrame {
+        parent: super::super::CurveExpressionActivation::Active,
+        condition: Some(true),
+    };
+    let mut stack = super::super::ConditionalStack::default();
+    stack.push(&ctx, frame()).expect("first frame is held inline");
+    let error = stack.push(&ctx, frame()).expect_err("a nested frame needs a parent slot");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo expression conditional parents"));
+    assert_eq!(
+        stack.end(),
+        super::super::CurveExpressionActivation::Active
+    );
+}
+
 const ONE_DEPDB_CURVE_ROW: &[u8] = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x07\x08\x04\x01\xf6\xe4\xff\0\x09\x0a\0\xe1\xe0next_record\0";
 
 fn depdb_rows_with_limit(limit: u64) -> Result<Vec<super::super::DepdbCurveRow>, CodecError> {

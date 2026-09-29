@@ -1702,20 +1702,27 @@ enum ConditionalStack {
 }
 
 impl ConditionalStack {
-    fn push(&mut self, frame: ConditionalFrame) {
-        *self = match std::mem::take(self) {
-            Self::Empty => Self::Open {
-                frame,
-                parents: Vec::new(),
-            },
+    fn push(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        frame: ConditionalFrame,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        match self {
+            Self::Empty => {
+                *self = Self::Open {
+                    frame,
+                    parents: Vec::new(),
+                };
+            }
             Self::Open {
                 frame: parent,
-                mut parents,
+                parents,
             } => {
-                parents.push(parent);
-                Self::Open { frame, parents }
+                ctx.try_reserve_items(parents, 1, "creo expression conditional parents")?;
+                parents.push(std::mem::replace(parent, frame));
             }
-        };
+        }
+        Ok(())
     }
 
     fn alternative(&self) -> CurveExpressionActivation {
@@ -1765,33 +1772,37 @@ fn starts_relation_keyword(source: &str, keyword: &str) -> bool {
             .is_none_or(u8::is_ascii_whitespace)
 }
 
-fn expression_program_control_is_valid(lines: &[CurveExpressionLine]) -> bool {
+fn expression_program_control_is_valid(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    lines: &[CurveExpressionLine],
+) -> Result<bool, cadmpeg_core::CodecError> {
     let mut else_seen = Vec::new();
     for line in lines {
         let source = line.text.trim();
         if starts_relation_keyword(source, "if") {
             if conditional_keyword_expression(source, "if").is_none() {
-                return false;
+                return Ok(false);
             }
+            ctx.try_reserve_items(&mut else_seen, 1, "creo expression conditional validation")?;
             else_seen.push(false);
         } else if starts_relation_keyword(source, "else") {
             if !source.eq_ignore_ascii_case("else") {
-                return false;
+                return Ok(false);
             }
             let Some(seen) = else_seen.last_mut() else {
-                return false;
+                return Ok(false);
             };
             if *seen {
-                return false;
+                return Ok(false);
             }
             *seen = true;
         } else if starts_relation_keyword(source, "endif")
             && (!source.eq_ignore_ascii_case("endif") || else_seen.pop().is_none())
         {
-            return false;
+            return Ok(false);
         }
     }
-    else_seen.is_empty()
+    Ok(else_seen.is_empty())
 }
 
 fn branch_activation(
@@ -1826,7 +1837,7 @@ fn evaluate_expression_program_details(
         !solve_program.line_indices.contains(index)
             || solve_program.executable_line_indices.contains(index)
     };
-    if !expression_program_control_is_valid(lines) {
+    if !expression_program_control_is_valid(ctx, lines)? {
         return Ok(CurveExpressionEvaluation {
             assignments: lines
                 .iter()
@@ -1997,7 +2008,7 @@ fn evaluate_expression_program_details(
                 .and_then(|value| value.truth());
             let parent = activity;
             activity = branch_activation(parent, condition, false);
-            stack.push(ConditionalFrame { parent, condition });
+            stack.push(ctx, ConditionalFrame { parent, condition })?;
             continue;
         }
         if source.eq_ignore_ascii_case("else") {
