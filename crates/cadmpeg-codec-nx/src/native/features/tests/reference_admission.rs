@@ -6,6 +6,7 @@ use crate::native::features::feature_projected_curve_construction_strings;
 use crate::native::features::feature_operation_labels;
 use crate::native::features::feature_point_construction_headers;
 use crate::native::features::feature_point_construction_scalar_lanes;
+use crate::native::features::feature_swp104_leading_branches;
 use crate::native::features::feature_surface_construction_references;
 use crate::native::features::feature_surface_construction_payloads;
 use crate::native::features::feature_thru_curve_construction_envelopes;
@@ -63,6 +64,62 @@ fn point_lane_container() -> crate::container::Container<'static> {
     let file = crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
     crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
         .expect("synthetic point scalar lane container")
+}
+
+fn swp104_container() -> crate::container::Container<'static> {
+    let mut payload = vec![33, 0, 0, 1, 0];
+    for _ in 0..4 {
+        payload.extend([47, 164, 122, 225, 71, 174, 20, 123]);
+    }
+    payload.extend([35, 1, 2, 240, 1]);
+    payload.extend([0; 5]);
+    payload.extend([255, 1, 2, 241, 1, 0, 0]);
+    reference_container("SWP104", payload)
+}
+
+fn swp104_branch_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = swp104_container();
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_swp104_leading_branches(ctx, &container)
+    };
+    assert_eq!(crate::test_support::with_decode_context(|ctx| decode(ctx))
+        .expect("admitted SWP104 branches").len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    decode(&ctx).expect_err("SWP104 branch resource limit")
+}
+
+#[test]
+fn swp104_branch_route_refuses_collection_limit() {
+    let error = swp104_branch_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn swp104_branch_route_refuses_retained_limit() {
+    let error = swp104_branch_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn swp104_branch_route_refuses_scoped_limit() {
+    let error = swp104_branch_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn swp104_branch_route_refuses_work_limit() {
+    let error = swp104_branch_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 fn point_lane_refusal(

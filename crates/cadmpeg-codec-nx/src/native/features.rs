@@ -8530,21 +8530,37 @@ pub(super) fn feature_swp104_leading_branches(
             let Some(branch) = branch else {
                 return;
             };
-            let operation_key = format!("{section_key}-{operation_ordinal:010}");
-            let Some(source_offset) = entry_offset.checked_add(record.payload_offset() as u64)
+            let Some(source_offset) = entry_offset.checked_add(
+                cadmpeg_core::decode::u64_from_index(record.payload_offset()))
             else {
                 return;
             };
-            let resolved = FeatureSwp104LeadingBranch::from_source(
-                ctx,
-                format!("nx:feature-history:swp104-leading-branch#{operation_key}"),
-                format!("nx:feature-history:operation-label#{operation_key}"),
-                source_offset,
-                branch,
-                |token| unique_offset_data_block(&indexed, token.value()),
-            );
+            let resolved = (|| -> Result<Option<_>, CodecError> {
+                let id = format_feature_history_id(ctx, "swp104-leading-branch",
+                    section_key, operation_ordinal, None)?;
+                let operation_label = format_feature_history_id(ctx, "operation-label",
+                    section_key, operation_ordinal, None)?;
+                FeatureSwp104LeadingBranch::from_source(
+                    ctx, id, operation_label, source_offset, branch,
+                    |token| charged_unique_offset_data_block(ctx, &indexed, token.value()),
+                )
+            })();
             match resolved {
-                Ok(Some(branch)) => branches.push(branch),
+                Ok(Some(branch)) => {
+                    let admitted = (|| -> Result<(), CodecError> {
+                        ctx.charge_collection_items(1, "NX SWP104 leading branches")?;
+                        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                            std::mem::size_of::<FeatureSwp104LeadingBranch>()),
+                            "NX SWP104 leading branches")?;
+                        branches.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                            "allocate NX SWP104 leading branches", 0, 1))?;
+                        branches.push(branch);
+                        Ok(())
+                    })();
+                    if let Err(error) = admitted {
+                        failure = Some(error);
+                    }
+                }
                 Ok(None) => {}
                 Err(error) => {
                     failure = Some(error);
