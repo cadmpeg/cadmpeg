@@ -29,23 +29,6 @@ pub struct Annotations {
     exactness: BTreeMap<String, ExactnessNote>,
 }
 
-fn copy_annotation_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    id: &str,
-    operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    ctx.charge_retained(
-        u64::try_from(id.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
-        operation,
-    )?;
-    let mut copy = String::new();
-    copy.try_reserve(id.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-    copy.push_str(id);
-    Ok(copy)
-}
-
 /// Two source annotation identities would become one identity.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("annotation identity collision at {id}")]
@@ -311,30 +294,21 @@ impl AnnotationBuilder {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        fn copy_string(
-            ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-            text: &str,
-            operation: &'static str,
-        ) -> Result<String, cadmpeg_core::CodecError> {
-            String::from_utf8(ctx.copy_retained(text.as_bytes(), operation)?)
-                .map_err(cadmpeg_core::CodecError::malformed)
-        }
-
         let mut annotations = Annotations::default();
         for (id, source) in &self.annotations.provenance {
             ctx.charge_collection_items(1, operation)?;
-            let id = copy_string(ctx, id, operation)?;
+            let id = copy_annotation_text(ctx, id, operation)?;
             annotations
                 .provenance
                 .insert(id, source.copy_charged(ctx, operation)?);
         }
         for (id, note) in &self.annotations.exactness {
             ctx.charge_collection_items(1, operation)?;
-            let id = copy_string(ctx, id, operation)?;
+            let id = copy_annotation_text(ctx, id, operation)?;
             let mut fields = BTreeMap::new();
             for (field, exactness) in note.fields() {
                 ctx.charge_collection_items(1, operation)?;
-                let field = FieldName(copy_string(ctx, field.as_str(), operation)?);
+                let field = FieldName(copy_annotation_text(ctx, field.as_str(), operation)?);
                 fields.insert(field, *exactness);
             }
             let note = match note {
@@ -659,10 +633,10 @@ impl Annotations {
                 return Ok(Err(AnnotationIdentityCollision { id: target }));
             }
             ctx.charge_collection_items(1, operation)?;
-            targets.insert(copy_annotation_id(ctx, &target, operation)?);
+            targets.insert(copy_annotation_text(ctx, &target, operation)?);
             let provenance_target = if self.provenance.contains_key(id) {
                 ctx.charge_collection_items(1, operation)?;
-                Some(copy_annotation_id(ctx, &target, operation)?)
+                Some(copy_annotation_text(ctx, &target, operation)?)
             } else {
                 None
             };
@@ -670,7 +644,7 @@ impl Annotations {
                 ctx.charge_collection_items(1, operation)?;
             }
             remapping.push((
-                copy_annotation_id(ctx, id, operation)?,
+                copy_annotation_text(ctx, id, operation)?,
                 target,
                 provenance_target,
             ));
@@ -731,7 +705,7 @@ impl Annotations {
         for id in other.provenance.keys().chain(other.exactness.keys()) {
             if self.provenance.contains_key(id) || self.exactness.contains_key(id) {
                 return Ok(Err(AnnotationIdentityCollision {
-                    id: copy_annotation_id(ctx, id, operation)?,
+                    id: copy_annotation_text(ctx, id, operation)?,
                 }));
             }
         }
