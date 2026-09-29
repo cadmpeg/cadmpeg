@@ -802,26 +802,26 @@ fn stored_frame_branch_constraints(
 }
 
 fn fc05_cylinder_branch_witnesses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-) -> BTreeMap<u32, Vec<super::equations::CylinderEquation>> {
-    let mut cylinder_frames = scan
-        .curves
-        .fc05_cylinder_cap_pairs
-        .iter()
-        .filter_map(|pair| {
-            let frame = fc05_cap_pair_model_frame(scan, pair)?;
+) -> Result<BTreeMap<u32, Vec<super::equations::CylinderEquation>>, cadmpeg_core::CodecError> {
+    let mut cylinder_frames = BTreeMap::new();
+    for pair in &scan.curves.fc05_cylinder_cap_pairs {
+            let Some(frame) = fc05_cap_pair_model_frame(scan, pair) else {
+                continue;
+            };
             let legacy = super::equations::CylinderEquation {
                 origin: frame.origin,
                 axis: frame.unit_vector(),
                 ref_direction: frame.ref_direction,
                 radius: pair.radius_mm,
             };
-            Some((
-                pair.surface_id,
-                fc05_cylinder_model_witness(scan, pair.surface_id, legacy),
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
+            let witness = fc05_cylinder_model_witness(ctx, scan, pair.surface_id, legacy)?;
+            if !cylinder_frames.contains_key(&pair.surface_id) {
+                ctx.charge_collection_items(1, "creo FC05 cylinder frame nodes")?;
+            }
+            cylinder_frames.insert(pair.surface_id, witness);
+    }
 
     for circle in &scan.curves.fc05_circles {
         let Some(topology) = scan
@@ -884,7 +884,8 @@ fn fc05_cylinder_branch_witnesses(
             ref_direction,
             radius: circle.radius_mm,
         };
-        let witness = fc05_cylinder_model_witness(scan, cylinder_id, legacy);
+        let witness = fc05_cylinder_model_witness(ctx, scan, cylinder_id, legacy)?;
+        ctx.charge_collection_items(1, "creo FC05 cylinder frame nodes")?;
         cylinder_frames.insert(cylinder_id, witness);
     }
 
@@ -913,28 +914,36 @@ fn fc05_cylinder_branch_witnesses(
         let Some(cylinder) = cylinder_frames.get(&cylinder_id).copied() else {
             continue;
         };
-        let entries = witnesses.entry(plane_id).or_default();
+        let entries = match witnesses.entry(plane_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo FC05 witness plane nodes")?;
+                entry.insert(Vec::new())
+            }
+        };
         if !entries.iter().any(|known| {
             known.origin == cylinder.origin
                 && known.axis == cylinder.axis
                 && known.radius.to_bits() == cylinder.radius.to_bits()
         }) {
+            ctx.try_reserve_items(entries, 1, "creo FC05 cylinder witnesses")?;
             entries.push(cylinder);
         }
     }
-    witnesses
+    Ok(witnesses)
 }
 
 /// Select an FC05 cylinder frame only when reference geometry improves the
 /// independent stored-plane tangency score. A validated cap pair remains the
 /// primary frame source; this witness does not turn an ID match into geometry.
 pub(in crate::decode) fn fc05_cylinder_model_witness(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     cylinder_id: u32,
     legacy: super::equations::CylinderEquation,
-) -> super::equations::CylinderEquation {
-    let curve_ids =
-        scan.curves
+) -> Result<super::equations::CylinderEquation, cadmpeg_core::CodecError> {
+    let mut curve_ids = BTreeSet::new();
+    for curve_id in scan.curves
             .fc05_circles
             .iter()
             .filter(|circle| {
@@ -943,25 +952,28 @@ pub(in crate::decode) fn fc05_cylinder_model_witness(
                 })
             })
             .map(|circle| circle.curve_id)
-            .collect::<BTreeSet<_>>();
-    let circles = curve_ids
-        .iter()
-        .flat_map(|curve_id| {
-            scan.references
-                .circles
-                .iter()
-                .filter(move |circle| circle.entity_id == *curve_id)
-        })
-        .collect::<Vec<_>>();
+    {
+        if !curve_ids.contains(&curve_id) {
+            ctx.charge_collection_items(1, "creo FC05 witness curve ID nodes")?;
+            curve_ids.insert(curve_id);
+        }
+    }
+    let mut circles = Vec::new();
+    for curve_id in &curve_ids {
+        for circle in scan.references.circles.iter().filter(|circle| circle.entity_id == *curve_id) {
+            ctx.try_reserve_items(&mut circles, 1, "creo FC05 witness circles")?;
+            circles.push(circle);
+        }
+    }
     let Some(frame) = fc05_reference_circle_frame(&circles) else {
-        return legacy;
+        return Ok(legacy);
     };
     if (frame.radius().get() - legacy.radius).abs() > EPS_FC05_TANGENT_RESIDUAL
         || dot(frame.frame().axis(), legacy.axis).abs() < 1.0 - EPS_FC05_TANGENT_AXIS
     {
-        return legacy;
+        return Ok(legacy);
     }
-    let legacy_score = fc05_tangent_plane_score(scan, cylinder_id, legacy);
+    let legacy_score = fc05_tangent_plane_score(ctx, scan, cylinder_id, legacy)?;
     let mut reference_origin = frame.frame().origin();
     if let Some(axis_index) = (0..3).find(|axis| legacy.axis[*axis].abs() > 1.0 - EPS_FC05_CAP_AXIS)
     {
@@ -973,10 +985,10 @@ pub(in crate::decode) fn fc05_cylinder_model_witness(
         ref_direction: legacy.ref_direction,
         radius: legacy.radius,
     };
-    if fc05_tangent_plane_score(scan, cylinder_id, reference) > legacy_score {
-        reference
+    if fc05_tangent_plane_score(ctx, scan, cylinder_id, reference)? > legacy_score {
+        Ok(reference)
     } else {
-        legacy
+        Ok(legacy)
     }
 }
 
@@ -1028,11 +1040,13 @@ fn fc05_reference_circle_frame(
 }
 
 fn fc05_tangent_plane_score(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     cylinder_id: u32,
     cylinder: super::equations::CylinderEquation,
-) -> usize {
-    scan.curves
+) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut plane_ids = BTreeSet::new();
+    for plane_id in scan.curves
         .topology_rows
         .iter()
         .filter(|topology| topology.bounds_face(cylinder_id))
@@ -1042,8 +1056,13 @@ fn fc05_tangent_plane_score(
             crate::surface::unique_surface_row(&scan.surfaces.rows, *face_id)
                 .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
         })
-        .collect::<BTreeSet<_>>()
-        .into_iter()
+    {
+        if !plane_ids.contains(&plane_id) {
+            ctx.charge_collection_items(1, "creo FC05 tangent plane ID nodes")?;
+            plane_ids.insert(plane_id);
+        }
+    }
+    Ok(plane_ids.into_iter()
         .filter(|plane_id| {
             scan.planes
                 .local_systems
@@ -1053,7 +1072,7 @@ fn fc05_tangent_plane_score(
                 .flat_map(|(candidates, count)| candidates.into_iter().take(count))
                 .any(|candidate| plane_candidate_is_fc05_tangent(candidate, cylinder))
         })
-        .count()
+        .count())
 }
 
 fn plane_candidate_is_fc05_tangent(
@@ -1185,10 +1204,11 @@ fn select_stored_frame_carrier_pcurve_branches(
 }
 
 fn select_stored_frame_branches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     candidates: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
-) {
-    let cylinder_witnesses = fc05_cylinder_branch_witnesses(scan);
+) -> Result<(), cadmpeg_core::CodecError> {
+    let cylinder_witnesses = fc05_cylinder_branch_witnesses(ctx, scan)?;
     let mut variable_domains = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
     let mut origin_domains = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
     for frame in &scan.planes.local_systems {
@@ -1238,7 +1258,7 @@ fn select_stored_frame_branches(
         }
     }
     if variable_domains.is_empty() {
-        return;
+        return Ok(());
     }
 
     let mut domains = variable_domains.clone();
@@ -1339,6 +1359,7 @@ fn select_stored_frame_branches(
         };
         candidates.insert(surface_id, vec![*candidate]);
     }
+    Ok(())
 }
 
 fn round_edge_endpoint_plane_score(
@@ -1645,7 +1666,7 @@ fn plane_candidates(
         ctx.charge_collection_items(1, "creo plane candidate nodes")?;
         candidates.insert(plane.surface_id, options);
     }
-    select_stored_frame_branches(scan, &mut candidates);
+    select_stored_frame_branches(ctx, scan, &mut candidates)?;
     select_round_edge_origin_branches(scan, &mut candidates);
     candidates.retain(|id, _| {
             scan.surfaces

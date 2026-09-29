@@ -2,7 +2,8 @@ use crate::decode::analytic::carriers::transfer_topology_bound_planes;
 use crate::decode::analytic::equations::{CylinderEquation, PlaneEquation};
 use crate::decode::analytic::planes::{
     agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
-    analytic_curve_plane, envelope_reconciled_plane_candidate, fc05_cylinder_model_witness,
+    analytic_curve_plane, envelope_reconciled_plane_candidate, fc05_cylinder_branch_witnesses,
+    fc05_cylinder_model_witness,
     frame_bound_outline_plane_candidate, held_coordinate_plane,
     plane_candidate_pcurve_lies_on_carrier, plane_candidates, reconciled_model_plane,
     stored_parameter_normal_candidates, topology_bound_line_plane, topology_bound_plane,
@@ -1326,8 +1327,7 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
     assert!((candidate.equation.origin[2] - origin_z).abs() < EPS_BRANCH_TEST);
 }
 
-#[test]
-fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
+fn fc05_witness_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
@@ -1416,16 +1416,122 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
         offset: 11,
     });
 
-    let witness = fc05_cylinder_model_witness(
-        &scan,
-        2,
+    scan
+}
+
+fn fc05_witness_limit_error(limit: u64) -> CodecError {
+    let scan = fc05_witness_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    fc05_cylinder_model_witness(&ctx, &scan, 2, CylinderEquation {
+        origin: [0.0, 0.0, 0.0],
+        axis: [0.0, 1.0, 0.0],
+        ref_direction: [1.0, 0.0, 0.0],
+        radius: 1.0,
+    })
+    .err()
+    .expect("FC05 witness exceeds collection limit")
+}
+
+#[test]
+fn fc05_witness_curve_id_node_refuses_collection_limit() {
+    let error = fc05_witness_limit_error(0);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo FC05 witness curve ID nodes"));
+}
+
+#[test]
+fn fc05_witness_circle_vector_refuses_collection_limit() {
+    let error = fc05_witness_limit_error(1);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo FC05 witness circles"));
+}
+
+#[test]
+fn fc05_tangent_plane_id_node_refuses_collection_limit() {
+    let error = fc05_witness_limit_error(2);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo FC05 tangent plane ID nodes"));
+}
+
+fn fc05_branch_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = fc05_witness_scan();
+    scan.planes.outlines.push(OutlinePlane {
+        surface_id: 1,
+        origin: [0.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        offset: 10,
+    });
+    scan
+}
+
+fn fc05_branch_limit_error(limit: u64) -> CodecError {
+    let scan = fc05_branch_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    fc05_cylinder_branch_witnesses(&ctx, &scan)
+        .err()
+        .expect("FC05 branch witnesses exceed collection limit")
+}
+
+#[test]
+fn fc05_cylinder_frame_node_refuses_collection_limit() {
+    let error = fc05_branch_limit_error(4);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo FC05 cylinder frame nodes"));
+}
+
+#[test]
+fn fc05_witness_plane_node_refuses_collection_limit() {
+    let error = fc05_branch_limit_error(5);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo FC05 witness plane nodes"));
+}
+
+#[test]
+fn fc05_cylinder_witness_vector_refuses_collection_limit() {
+    let error = fc05_branch_limit_error(6);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo FC05 cylinder witnesses"));
+}
+
+#[test]
+fn fc05_branch_witnesses_keep_plane_and_cylinder_identity() {
+    let scan = fc05_branch_scan();
+    let witnesses = crate::decode::with_test_decode_ctx(|ctx| {
+        fc05_cylinder_branch_witnesses(ctx, &scan)
+    })
+    .expect("service FC05 branch witnesses admitted");
+    assert_eq!(witnesses.len(), 1);
+    assert_eq!(witnesses.get(&1).map(Vec::len), Some(1));
+    assert_eq!(witnesses[&1][0].radius, 1.0);
+}
+
+#[test]
+fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
+    let scan = fc05_witness_scan();
+    let witness = crate::decode::with_test_decode_ctx(|ctx| fc05_cylinder_model_witness(
+        ctx, &scan, 2,
         CylinderEquation {
             origin: [0.0, 0.0, 0.0],
             axis: [0.0, 1.0, 0.0],
             ref_direction: [1.0, 0.0, 0.0],
             radius: 1.0,
         },
-    );
+    )).expect("service FC05 witness admitted");
 
     assert_eq!(witness.origin, [1.0, 0.0, 0.5]);
     assert_eq!(witness.axis, [0.0, 1.0, 0.0]);
