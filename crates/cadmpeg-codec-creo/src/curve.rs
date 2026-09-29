@@ -916,7 +916,7 @@ pub(crate) fn prototype_topology_rows(
             offset: topology.offset,
         });
     }
-    rows.sort_by_key(|row| row.offset);
+    crate::sort::stable_sort_by_key(ctx, rows.as_mut_slice(), |row| row.offset, "creo prototype topology rows rows ordering")?;
     Ok(rows)
 }
 
@@ -7668,7 +7668,7 @@ pub(crate) fn topology_rows_with_face_ids(
             rows.push(parsed);
         }
     }
-    rows.sort_by_key(|row| row.offset);
+    crate::sort::stable_sort_by_key(ctx, rows.as_mut_slice(), |row| row.offset, "creo topology rows with face ids rows ordering")?;
     rows.dedup_by_key(|row| row.offset);
     Ok(rows)
 }
@@ -7961,7 +7961,7 @@ fn framed_rows_with_face_ids(
             }
         }
     }
-    result.sort_by_key(|row| row.start);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |row| row.start, "creo framed rows with face ids result ordering")?;
     result.dedup_by_key(|row| row.start);
     Ok(result)
 }
@@ -8312,7 +8312,7 @@ pub(crate) fn pcurve_endpoints(
                 offset: record.offset,
         });
     }
-    result.sort_by_key(|record| record.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |record| record.offset, "creo pcurve endpoints result ordering")?;
     Ok(result)
 }
 
@@ -8453,7 +8453,7 @@ pub(crate) fn two_chart_pcurve_samples(
             offset: row.start,
         });
     }
-    result.sort_by_key(|record| record.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |record| record.offset, "creo two chart pcurve samples result ordering")?;
     let mut counts = BTreeMap::new();
     for record in &result {
         let count = match counts.entry(record.curve_id) {
@@ -8538,7 +8538,7 @@ pub(crate) fn fc02_short_pcurve_endpoints(
                 offset: record.offset,
             });
     }
-    result.sort_by_key(|record| record.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |record| record.offset, "creo fc02 short pcurve endpoints result ordering")?;
     Ok(result)
 }
 
@@ -8619,7 +8619,7 @@ pub(crate) fn fc_coordinates(
             });
         }
     }
-    result.sort_by_key(|record| record.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |record| record.offset, "creo fc coordinates result ordering")?;
     Ok(result)
 }
 
@@ -8804,7 +8804,7 @@ pub(crate) fn fc05_circles(
             offset: record.offset,
         });
     }
-    circles.sort_by_key(|circle| circle.offset);
+    crate::sort::stable_sort_by_key(ctx, circles.as_mut_slice(), |circle| circle.offset, "creo fc05 circles circles ordering")?;
     Ok(circles)
 }
 
@@ -8879,7 +8879,7 @@ pub(crate) fn fc05_cylinder_cap_pairs(
 
     let mut result = Vec::new();
     for (surface_id, mut group) in groups {
-        group.sort_by_key(|(circle, _, _)| circle.offset);
+        crate::sort::stable_sort_by_key(ctx, group.as_mut_slice(), |(circle, _, _)| circle.offset, "creo fc05 cylinder cap pairs group ordering")?;
         let first = group[0].0;
         let Fc05AngleParameterRelation::Consistent {
             sense: parameter_sense,
@@ -8938,7 +8938,7 @@ pub(crate) fn fc05_cylinder_cap_pairs(
             offset: first.offset,
         });
     }
-    result.sort_by_key(|pair| pair.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |pair| pair.offset, "creo fc05 cylinder cap pairs result ordering")?;
     Ok(result)
 }
 
@@ -9002,7 +9002,7 @@ pub(crate) fn prototype_pcurve_endpoints(
             });
         }
     }
-    result.sort_by_key(|record| record.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |record| record.offset, "creo prototype pcurve endpoints result ordering")?;
     Ok(result)
 }
 
@@ -9049,7 +9049,7 @@ pub(crate) fn prototype_topology(
             offset: namespace,
         });
     }
-    result.sort_by_key(|record| record.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |record| record.offset, "creo prototype topology result ordering")?;
     Ok(result)
 }
 
@@ -9102,7 +9102,7 @@ pub(crate) fn bind_prototype_pcurves(
             offset: pcurve.offset,
         });
     }
-    result.sort_by_key(|record| record.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |record| record.offset, "creo bind prototype pcurves result ordering")?;
     Ok(result)
 }
 

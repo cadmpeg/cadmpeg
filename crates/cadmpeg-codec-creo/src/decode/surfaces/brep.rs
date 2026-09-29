@@ -1057,11 +1057,11 @@ fn ordered_two_edge_circle_loops<'a>(
         ctx.try_reserve_items(&mut order, 1, "creo native circle loop order")?;
         order.push(index);
     }
-    order.sort_by(|first, second| {
+    crate::sort::stable_sort_by(ctx, order.as_mut_slice(), |first, second| {
         circle_loops[*second]
             .radius
             .total_cmp(&circle_loops[*first].radius)
-    });
+    }, "creo ordered two edge circle loops order ordering")?;
     let mut ordered = Vec::new();
     for index in order {
         ctx.try_reserve_items(&mut ordered, 1, "creo native ordered circle loops")?;

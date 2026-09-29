@@ -371,9 +371,9 @@ pub(in super::super) fn transfer_feature_dimensions(
             ));
         }
     }
-    candidates.sort_by_key(|(_, definition, source_ordinal, _)| {
+    crate::sort::stable_sort_by_key(ctx, candidates.as_mut_slice(), |(_, definition, source_ordinal, _)| {
         (definition.offset, definition.identity.id(), *source_ordinal)
-    });
+    }, "creo transfer feature dimensions candidates ordering")?;
     let mut keys = Vec::new();
     ctx.try_reserve_items(&mut keys, candidates.len(), "creo dimension layout keys")?;
     for (sketch, _, _, dimension) in &candidates {

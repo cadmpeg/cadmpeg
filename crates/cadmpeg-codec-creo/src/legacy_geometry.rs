@@ -159,7 +159,7 @@ pub(crate) fn scan(
         "creo legacy nonvisible carrier aggregation",
     )?;
     carriers.append(&mut nonvisible_carriers);
-    carriers.sort_by_key(|carrier| carrier.offset);
+    crate::sort::stable_sort_by_key(ctx, carriers.as_mut_slice(), |carrier| carrier.offset, "creo scan carriers ordering")?;
     let (topology_rows, pcurves) = curve_namespace(
         ctx,
         &persistence.objects,
@@ -206,9 +206,9 @@ fn curve_namespace(
         ctx.try_reserve_items(&mut topology_rows, 1, "creo legacy topology rows")?;
         topology_rows.push(row);
     }
-    topology_rows.sort_by_key(|row| row.offset);
+    crate::sort::stable_sort_by_key(ctx, topology_rows.as_mut_slice(), |row| row.offset, "creo curve namespace topology rows ordering")?;
     topology_rows.dedup_by_key(|row| row.offset);
-    pcurves.sort_by_key(|pcurve| pcurve.offset);
+    crate::sort::stable_sort_by_key(ctx, pcurves.as_mut_slice(), |pcurve| pcurve.offset, "creo curve namespace pcurves ordering")?;
     pcurves.dedup_by_key(|pcurve| pcurve.offset);
     Ok((topology_rows, pcurves))
 }
@@ -399,8 +399,8 @@ fn namespace(
         ctx.try_reserve_items(&mut rows, 1, "creo legacy surface rows")?;
         rows.push(row);
     }
-    rows.sort_by_key(|row| row.offset);
-    carriers.sort_by_key(|carrier| carrier.offset);
+    crate::sort::stable_sort_by_key(ctx, rows.as_mut_slice(), |row| row.offset, "creo namespace rows ordering")?;
+    crate::sort::stable_sort_by_key(ctx, carriers.as_mut_slice(), |carrier| carrier.offset, "creo namespace carriers ordering")?;
     Ok((rows, carriers))
 }
 

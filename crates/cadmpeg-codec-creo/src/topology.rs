@@ -622,7 +622,7 @@ pub(crate) fn build(
             });
         }
     }
-    edges.sort_by_key(|edge| edge.id);
+    crate::sort::stable_sort_by_key(ctx, edges.as_mut_slice(), |edge| edge.id, "creo build edges ordering")?;
     let by_id = |id: HalfEdgeId| {
         edges
             .binary_search_by_key(&id, |edge| edge.id)

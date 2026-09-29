@@ -372,7 +372,7 @@ fn curve_expression_emitted_ordinals(
             indices.push(index);
         }
     }
-    indices.sort_by_key(|index| parameter_ordinals[*index]);
+    crate::sort::stable_sort_by_key(ctx, indices.as_mut_slice(), |index| parameter_ordinals[*index], "creo curve expression emitted ordinals indices ordering")?;
     let mut emitted = BTreeMap::new();
     for (ordinal, index) in indices.into_iter().enumerate() {
         let ordinal = u32::try_from(ordinal)
