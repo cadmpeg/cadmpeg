@@ -11,7 +11,8 @@ use crate::chunks::{chunk_at, ArchiveVersion};
 use crate::curves::GeometryError;
 use crate::mesh::MeshExpand;
 use crate::settings::MillimeterScale;
-use crate::wire::{ExactVec, Uuid};
+use crate::wire::Uuid;
+use cadmpeg_core::decode::collect::ExactVec;
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const MAX_DIMENSION: usize = 10_000;
