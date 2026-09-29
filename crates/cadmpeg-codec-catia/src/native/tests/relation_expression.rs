@@ -67,6 +67,30 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
 }
 
 #[test]
+fn native_relation_signature_wire_refuses_nested_input_limit() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_expression("param"),
+    );
+    let record = &native.entity_records[0];
+    let mut found = false;
+    for cap in 0..=512 {
+        let result = crate::test_support::with_collection_limit(cap, |ctx| {
+            super::super::CatiaEntityRecordWire::from_charged(ctx, record.clone())
+        });
+        match result {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_native_signature_inputs" => {
+                    found = true;
+                    break;
+                }
+            Ok(_) => break,
+            _ => {}
+        }
+    }
+    assert!(found, "collection sweep must reach the relation signature inputs");
+}
+
+#[test]
 fn parser_version_relation_expression_retains_its_distinct_framing() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_parser_version_relation_expression("Boolean", "ParserVersion"),
