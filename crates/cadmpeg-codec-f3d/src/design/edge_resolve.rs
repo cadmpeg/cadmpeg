@@ -981,11 +981,11 @@ fn resolved_edge_group_with_transition_chain(
     };
     let transition_state_id = previous_state_id;
     let Some(previous_state_id) = transition_state_id.or_else(recipe_state_id) else {
-        return Ok(if group.lost_edge_references.is_empty() {
-            EdgeSelection::Native(group.id.clone())
+        return if group.lost_edge_references.is_empty() {
+            native_edge_selection(group, ctx)
         } else {
-            EdgeSelection::Unresolved
-        });
+            Ok(EdgeSelection::Unresolved)
+        };
     };
     let state = feature_input_topology_id(feature_id, previous_state_id);
     let lost_selection = || unmatched_selection(Some(previous_state_id));
@@ -1071,7 +1071,7 @@ fn resolved_edge_group_with_transition_chain(
             return lost_selection();
         }
         if has_standard_recipe_operands {
-            return Ok(EdgeSelection::Native(group.id.clone()));
+            return native_edge_selection(group, ctx);
         }
         let mut combined_edges = Vec::new();
         for (index, operand) in matched_operands.iter().enumerate() {
