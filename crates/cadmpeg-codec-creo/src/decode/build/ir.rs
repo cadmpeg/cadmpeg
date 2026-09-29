@@ -17,7 +17,10 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::tessellation::{
+    ShadedVertex, Strip, Strips, Tessellation, TessellationLaneError, TessellationMesh,
+};
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
@@ -425,6 +428,52 @@ fn transfer_reference_ellipses(
     Ok(())
 }
 
+fn display_strip_error(
+    ctx: &DecodeContext<'_>,
+    offset: usize,
+    detail: impl std::fmt::Display,
+) -> Result<CodecError, CodecError> {
+    Ok(CodecError::Malformed(ctx.format_retained(
+        format_args!("SolidPrimdata display triangle strip at byte {offset}: {detail}"),
+        "creo display tessellation malformed text",
+    )?))
+}
+
+fn admitted_display_strips<V>(
+    ctx: &DecodeContext<'_>,
+    vertices: Vec<V>,
+    spans: &[u32],
+) -> Result<Option<Strips<V>>, CodecError> {
+    let mut remaining = vertices.into_iter();
+    let mut strips = Vec::new();
+    ctx.try_reserve_items(&mut strips, spans.len(), "creo display tessellation strip rows")?;
+    for span in spans {
+        let Ok(count) = usize::try_from(*span) else {
+            return Ok(None);
+        };
+        let mut run = Vec::new();
+        ctx.try_reserve_items(
+            &mut run,
+            count.min(remaining.len()),
+            "creo display tessellation strip vertices",
+        )?;
+        for _ in 0..count {
+            let Some(vertex) = remaining.next() else {
+                return Ok(None);
+            };
+            run.push(vertex);
+        }
+        let Some(strip) = Strip::new(run) else {
+            return Ok(None);
+        };
+        strips.push(strip);
+    }
+    if remaining.next().is_some() {
+        return Ok(None);
+    }
+    Ok(Strips::new(strips))
+}
+
 fn transfer_display_tessellations(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -436,7 +485,10 @@ fn transfer_display_tessellations(
         .principal_unit
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     for strip in &scan.primitives.triangle_strips {
-        let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
+        let id = ctx.format_retained(
+            format_args!("creo:solid_primdata:tessellation#{}", strip.offset),
+            "creo display tessellation identity",
+        )?;
         annotate(ctx,
             annotations,
             &id,
@@ -446,60 +498,64 @@ fn transfer_display_tessellations(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model tessellations")?;
-        let positions = strip
-            .positions
-            .iter()
-            .copied()
-            .map(|position| {
-                let position = Point3::from(position.get());
-                let Some(scale) = length_scale else {
-                    return Ok(position);
-                };
-                let position = Point3::new(
-                    position.x * scale.get(),
-                    position.y * scale.get(),
-                    position.z * scale.get(),
+        let mut positions = Vec::new();
+        ctx.try_reserve_items(&mut positions, strip.positions.len(), "creo display tessellation positions")?;
+        for position in &strip.positions {
+            let mut point = Point3::from(position.get());
+            if let Some(scale) = length_scale {
+                point = Point3::new(
+                    point.x * scale.get(),
+                    point.y * scale.get(),
+                    point.z * scale.get(),
                 );
-                if !position.is_finite() {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SolidPrimdata display triangle strip at byte {} has a vertex that cannot be represented in millimeters",
-                        strip.offset
-                    )));
+                if !point.is_finite() {
+                    return Err(CodecError::NotImplemented(ctx.format_retained(
+                        format_args!("SolidPrimdata display triangle strip at byte {} has a vertex that cannot be represented in millimeters", strip.offset),
+                        "creo display tessellation overflow text",
+                    )?));
                 }
-                Ok(position)
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
-        ir.model.tessellations.push(
-            Tessellation::new(
-                id,
-                cadmpeg_ir::tessellation::TessellationMesh::from_strip_lanes(
-                    positions,
-                    // A primitive that carries only `mv_p_xyz` states an
-                    // unshaded strip set: the normal lane is absent, never
-                    // empty.
-                    strip.normals.as_ref().map(|normals| {
-                        normals
-                            .iter()
-                            .map(|normal| Vector3::from(normal.get()))
-                            .collect()
-                    }),
-                    &strip.strip_lengths,
-                )
-                .map_err(|error| {
-                    CodecError::malformed(format_args!(
-                        "SolidPrimdata display triangle strip at byte {}: {error}",
-                        strip.offset
-                    ))
-                })?,
-                Vec::new(),
-            )
-            .map_err(|error| {
-                CodecError::malformed(format_args!(
-                    "SolidPrimdata display triangle strip at byte {}: {error}",
-                    strip.offset
-                ))
-            })?,
-        );
+            }
+            let Some(point) = FinitePoint3::new(point) else {
+                return Err(display_strip_error(ctx, strip.offset,
+                    "vertices contain a non-finite coordinate")?);
+            };
+            positions.push(point);
+        }
+        let mesh = if let Some(normals) = &strip.normals {
+            if normals.len() != positions.len() {
+                return Err(display_strip_error(ctx, strip.offset,
+                    TessellationLaneError::VertexNormalLane {
+                        vertices: positions.len(), normals: normals.len(),
+                    })?);
+            }
+            let mut rows = Vec::new();
+            ctx.try_reserve_items(&mut rows, positions.len(), "creo display tessellation shaded rows")?;
+            for (position, normal) in positions.into_iter().zip(normals) {
+                let Some(normal) = FiniteVector3::new(Vector3::from(normal.get())) else {
+                    return Err(display_strip_error(ctx, strip.offset,
+                        "normals contain a non-finite coordinate")?);
+                };
+                rows.push(ShadedVertex { position, normal });
+            }
+            let Some(strips) = admitted_display_strips(ctx, rows, &strip.strip_lengths)? else {
+                return Err(display_strip_error(ctx, strip.offset,
+                    TessellationLaneError::Strips { spans: strip.strip_lengths.len() })?);
+            };
+            TessellationMesh::ShadedStrips { strips }
+        } else {
+            // An absent normal lane is an unshaded strip set.
+            let Some(strips) = admitted_display_strips(ctx, positions, &strip.strip_lengths)? else {
+                return Err(display_strip_error(ctx, strip.offset,
+                    TessellationLaneError::Strips { spans: strip.strip_lengths.len() })?);
+            };
+            TessellationMesh::Strips { strips }
+        };
+        let tessellation = match Tessellation::from_parts(id, mesh, Vec::new()) {
+            Ok(tessellation) => tessellation,
+            Err(error) => return Err(display_strip_error(ctx, strip.offset, error)?),
+        };
+        ctx.try_reserve_items(&mut ir.model.tessellations, 1, "creo model tessellations")?;
+        ir.model.tessellations.push(tessellation);
     }
     Ok(())
 }

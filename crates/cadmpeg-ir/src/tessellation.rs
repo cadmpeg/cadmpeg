@@ -1125,9 +1125,19 @@ impl Tessellation {
         mesh: TessellationMesh<FinitePoint3, FiniteVector3>,
         channels: Vec<TessellationChannel>,
     ) -> Result<Self, TessellationError> {
-        let triangles = mesh.triangles();
-        require_triangle_indices(mesh.vertex_count(), &triangles)?;
-        require_channel_indices(triangles.len(), &channels)?;
+        let triangle_count = match &mesh {
+            TessellationMesh::Strips { .. } | TessellationMesh::ShadedStrips { .. } => {
+                // Strips::new proved the total vertex span fits a u32 index,
+                // and Strip::new proved each row has at least three vertices.
+                mesh.triangle_count()
+            }
+            _ => {
+                let triangles = mesh.triangles();
+                require_triangle_indices(mesh.vertex_count(), &triangles)?;
+                triangles.len()
+            }
+        };
+        require_channel_indices(triangle_count, &channels)?;
         Ok(Self {
             id: TessellationId::mint(id).map_err(|error| tessellation_error(error.to_string()))?,
             body: None,
