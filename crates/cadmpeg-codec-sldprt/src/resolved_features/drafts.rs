@@ -108,7 +108,7 @@ fn compact_parting_line_draft_operands(
 ) -> Option<DraftOperands> {
     let end = super::DeclaredEnd::of(object_end, lane.native_payload.len())?.get();
     let final_marker = end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len())?;
-    let records = (object_start.saturating_add(12)..=final_marker)
+    let mut records = (object_start.saturating_add(12)..=final_marker)
         .filter(|marker| {
             lane.native_payload
                 .get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
@@ -119,13 +119,16 @@ fn compact_parting_line_draft_operands(
                 .map(|(role, paths, selection_end)| (marker, role, paths, selection_end))
         })
         .collect::<Vec<_>>();
-    let parting_records = records
+    let mut parting_records = records
         .iter()
-        .filter(|(_, role, _, _)| *role == CompactDraftSelectionRole::PartingTool)
-        .collect::<Vec<_>>();
-    let [parting_record] = parting_records.as_slice() else {
+        .enumerate()
+        .filter(|(_, (_, role, _, _))| *role == CompactDraftSelectionRole::PartingTool);
+    let Some((parting_index, parting_record)) = parting_records.next() else {
         return None;
     };
+    if parting_records.next().is_some() {
+        return None;
+    }
     let first_face = records.iter().find(|(marker, role, _, _)| {
         *role == CompactDraftSelectionRole::DraftedFace && *marker > parting_record.0
     })?;
@@ -149,8 +152,9 @@ fn compact_parting_line_draft_operands(
                 paths
             },
         );
+    let (_, _, parting_paths, _) = records.swap_remove(parting_index);
     (!faces.is_empty()).then_some(DraftOperands {
-        anchor: DraftAnchor::PartingTool(parting_record.2.clone()),
+        anchor: DraftAnchor::PartingTool(parting_paths),
         faces,
         pull_direction,
     })
