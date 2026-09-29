@@ -1471,9 +1471,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         );
     assert_eq!(
         crate::design::feature_project::project_remove_body(
+            None,
             &remove_scope,
             std::slice::from_ref(&remove_group)
-        ),
+        ).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::DeleteBody {
                 bodies: cadmpeg_ir::features::BodySelection::Native(remove_group.id.clone()),
@@ -1520,9 +1521,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         );
     assert_eq!(
         crate::design::feature_project::project_surface_stitch(
+            None,
             &stitch_scope,
             std::slice::from_ref(&stitch_group)
-        ),
+        ).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::KnitSurface {
                 faces: cadmpeg_ir::features::FaceSelection::Native(stitch_scope.id),
