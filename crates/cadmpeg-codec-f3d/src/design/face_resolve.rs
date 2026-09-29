@@ -1980,27 +1980,29 @@ pub(crate) fn face_operand_candidates(operand: &DesignFaceOperand) -> &[cadmpeg_
 /// reference even when the broader persistent-tag set also contains faces
 /// excluded from the operand's unreferenced candidate lane.
 pub(crate) fn historical_face_operand_candidates(
+    ctx: Option<&DecodeContext<'_>>,
     operand: &DesignFaceOperand,
-) -> Vec<cadmpeg_ir::ids::FaceId> {
+) -> Result<Vec<cadmpeg_ir::ids::FaceId>, CodecError> {
     if operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::Face {
-        let mut referenced = operand
-            .recipe_references
-            .iter()
-            .flat_map(|reference| {
-                reference
-                    .candidate_faces
-                    .iter()
-                    .chain(&reference.alternate_selector_faces)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
+        let mut referenced = Vec::new();
+        for candidate in operand.recipe_references.iter().flat_map(|reference| {
+            reference.candidate_faces.iter().chain(&reference.alternate_selector_faces)
+        }) {
+            let candidate = copy_face_id(ctx, candidate, "f3d historical face candidate id")?;
+            push_face_item(ctx, &mut referenced, candidate, "f3d historical face candidate")?;
+        }
         referenced.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         referenced.dedup();
         if !referenced.is_empty() {
-            return referenced;
+            return Ok(referenced);
         }
     }
-    face_operand_candidates(operand).to_vec()
+    let mut candidates = Vec::new();
+    for candidate in face_operand_candidates(operand) {
+        let candidate = copy_face_id(ctx, candidate, "f3d historical fallback face id")?;
+        push_face_item(ctx, &mut candidates, candidate, "f3d historical fallback face")?;
+    }
+    Ok(candidates)
 }
 
 pub(crate) fn historical_face_operand_candidate_iter(
@@ -2023,29 +2025,28 @@ pub(crate) fn historical_face_operand_candidate_iter(
 /// topology supports, not selected faces; callers must map them through the
 /// historical support graph and prove a unique preceding target.
 pub(crate) fn nested_bounded_face_history_candidates(
+    ctx: Option<&DecodeContext<'_>>,
     operand: &DesignFaceOperand,
-) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
-    complete_counted_face_recipe(operand)?;
+) -> Result<Option<Vec<cadmpeg_ir::ids::FaceId>>, CodecError> {
+    if complete_counted_face_recipe(operand).is_none() {
+        return Ok(None);
+    }
     if !operand.candidate_faces.is_empty()
         || !operand.unreferenced_candidate_faces.is_empty()
         || !operand.alternate_selector_candidate_faces.is_empty()
     {
-        return None;
+        return Ok(None);
     }
-    let mut candidates = operand
-        .recipe_references
-        .iter()
-        .flat_map(|reference| {
-            reference
-                .candidate_faces
-                .iter()
-                .chain(&reference.alternate_selector_faces)
-        })
-        .cloned()
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for candidate in operand.recipe_references.iter().flat_map(|reference| {
+        reference.candidate_faces.iter().chain(&reference.alternate_selector_faces)
+    }) {
+        let candidate = copy_face_id(ctx, candidate, "f3d nested bounded face candidate id")?;
+        push_face_item(ctx, &mut candidates, candidate, "f3d nested bounded face candidate")?;
+    }
     candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     candidates.dedup();
-    (!candidates.is_empty()).then_some(candidates)
+    Ok((!candidates.is_empty()).then_some(candidates))
 }
 
 fn has_nested_bounded_face_history_candidates(operand: &DesignFaceOperand) -> bool {
@@ -2605,6 +2606,8 @@ pub(super) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
 
 #[cfg(test)]
 mod tests {
+    mod candidate_limits;
+
     use super::{
         bounded_face_candidate_by_boundary_cardinality, convergent_face_support,
         effective_historical_face_slots, extrude_start_plane_geometry_candidates,

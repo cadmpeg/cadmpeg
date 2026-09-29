@@ -4022,13 +4022,14 @@ pub(crate) fn bind_face_operand_history_candidates(
             (!candidates.is_empty()).then(|| candidates.to_vec())
         })
         .flatten();
-        let nested_split_face_candidates = (scope.kind()
-            == crate::records::feature::scope::DesignFeatureKind::SplitFace)
-            .then(|| {
-                exact_face_selection_group(operand, scope, operand_groups)?;
-                crate::design::face_resolve::nested_bounded_face_history_candidates(operand)
-            })
-            .flatten();
+        let nested_split_face_candidates = if scope.kind()
+            == crate::records::feature::scope::DesignFeatureKind::SplitFace
+            && exact_face_selection_group(operand, scope, operand_groups).is_some()
+        {
+            crate::design::face_resolve::nested_bounded_face_history_candidates(ctx, operand)?
+        } else {
+            None
+        };
         let grouped_reference_face_candidates = (!matches!(
             feature_family,
             Some(
@@ -4073,15 +4074,17 @@ pub(crate) fn bind_face_operand_history_candidates(
                 *recipe_record_index,
             )
         })()?;
-        let history_candidates = direct_face_candidates.clone().unwrap_or_else(|| {
-            thread_face_candidates
-                .clone()
-                .or(nested_split_face_candidates)
-                .or_else(|| grouped_reference_face_candidates.clone())
-                .unwrap_or_else(|| {
-                    crate::design::face_resolve::historical_face_operand_candidates(operand)
-                })
-        });
+        let history_candidates = if let Some(candidates) = direct_face_candidates.clone() {
+            candidates
+        } else if let Some(candidates) = thread_face_candidates.clone() {
+            candidates
+        } else if let Some(candidates) = nested_split_face_candidates {
+            candidates
+        } else if let Some(candidates) = grouped_reference_face_candidates.clone() {
+            candidates
+        } else {
+            crate::design::face_resolve::historical_face_operand_candidates(ctx, operand)?
+        };
         operand.preceding_candidate_faces = faces_in_topology(&history_candidates, topology);
         operand.changed_candidate_faces = operand
             .preceding_candidate_faces
@@ -7801,15 +7804,15 @@ fn historical_mirror_face_operand_plane(
     previous_state_id: i64,
 ) -> Option<HistoricalMirrorPlane> {
     let mut slots = if operand.resolved_face_slots.is_empty() {
-        let candidates = if operand.preceding_candidate_faces.is_empty() {
-            crate::design::face_resolve::historical_face_operand_candidates(operand)
+        if operand.preceding_candidate_faces.is_empty() {
+            crate::design::face_resolve::historical_face_operand_candidate_iter(operand)
+                .filter_map(|face| stable_ref(face.as_str()))
+                .collect::<Vec<_>>()
         } else {
-            operand.preceding_candidate_faces.clone()
-        };
-        candidates
-            .iter()
-            .filter_map(|face| stable_ref(face.as_str()))
-            .collect::<Vec<_>>()
+            operand.preceding_candidate_faces.iter()
+                .filter_map(|face| stable_ref(face.as_str()))
+                .collect::<Vec<_>>()
+        }
     } else {
         operand.resolved_face_slots.clone()
     };
