@@ -745,13 +745,14 @@ pub(in super::super) fn build_ir(
     attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
     emit_geometry_arenas(ctx, scan, &mut ir, &mut annotations, &brep_diagnostics)?;
     collect_feature_coverage(
+        ctx,
         scan,
         &ir,
         geometry_generator_feature_count,
         feature_result_topology_count,
         feature_result_edge_count,
         &mut coverage,
-    );
+    )?;
     Ok(BuiltIr {
         ir,
         annotations: annotations.build(),

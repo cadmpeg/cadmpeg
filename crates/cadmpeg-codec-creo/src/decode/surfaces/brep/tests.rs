@@ -31,6 +31,20 @@ mod face_references;
 mod loop_ring;
 mod pcurve_emission;
 
+#[test]
+fn brep_coverage_refuses_before_first_report_node() {
+    let diagnostics = BrepTransferDiagnostics::default();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = diagnostics.record_coverage(&ctx, &mut cadmpeg_ir::report::decode::Coverage::default())
+        .expect_err("first B-rep coverage node exceeds cap");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "decode coverage nodes"));
+}
+
 fn brep_edge_index_input() -> (
     Vec<crate::curve::CurveTopologyRow>,
     BTreeMap<u32, [u32; 2]>,
@@ -745,7 +759,8 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
     assert_eq!(records[0].reason, "missing_loops");
     assert_eq!(records[5].face_id, 15);
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-    diagnostics.record_coverage(&mut coverage);
+    crate::decode::with_test_decode_ctx(|ctx| diagnostics.record_coverage(ctx, &mut coverage))
+        .expect("service coverage admitted");
     assert_eq!(coverage["brep_candidate_face_count"], 6);
     assert_eq!(coverage["brep_admitted_face_count"], 1);
     assert_eq!(coverage["brep_emitted_face_count"], 1);
@@ -931,7 +946,8 @@ fn face_admission_diagnostics_report_missing_surface_carrier() {
         vec![42]
     );
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-    diagnostics.record_coverage(&mut coverage);
+    crate::decode::with_test_decode_ctx(|ctx| diagnostics.record_coverage(ctx, &mut coverage))
+        .expect("service coverage admitted");
     assert_eq!(coverage["brep_rejected_face_count"], 1);
     assert_eq!(
         coverage["brep_rejected_face_missing_surface_carrier_count"],
@@ -947,7 +963,8 @@ fn brep_diagnostics_report_component_gate_inputs() {
         ..BrepTransferDiagnostics::default()
     };
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-    diagnostics.record_coverage(&mut coverage);
+    crate::decode::with_test_decode_ctx(|ctx| diagnostics.record_coverage(ctx, &mut coverage))
+        .expect("service coverage admitted");
 
     assert_eq!(coverage["brep_admitted_component_count"], 3);
     assert_eq!(coverage["brep_selected_body_count"], 0);
