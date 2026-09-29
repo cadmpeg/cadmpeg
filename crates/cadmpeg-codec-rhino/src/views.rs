@@ -500,7 +500,7 @@ fn located_presentation_loss(
 ) -> LossNote {
     crate::loss::RhinoLossCode::PresentationRecordDropped
         .note(message.into())
-        .with_provenance(SourceProvenance::root("rhino", offset as u64).with_tag(tag))
+        .with_provenance(SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset)).with_tag(tag))
 }
 
 fn push_list_loss(
@@ -521,7 +521,7 @@ fn push_list_loss(
         cadmpeg_core::decode::u64_from_index(tag.len()),
         "Rhino view list loss tag",
     )?;
-    losses.push(loss.with_provenance(SourceProvenance::root("rhino", offset as u64).with_tag(tag)));
+    losses.push(loss.with_provenance(SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset)).with_tag(tag)));
     Ok(())
 }
 
@@ -539,7 +539,7 @@ fn push_view_loss(
         cadmpeg_core::decode::u64_from_index(tag.len()),
         "Rhino view loss tag",
     )?;
-    losses.push(loss.with_provenance(SourceProvenance::root("rhino", offset as u64).with_tag(tag)));
+    losses.push(loss.with_provenance(SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(offset)).with_tag(tag)));
     Ok(())
 }
 
@@ -1089,7 +1089,7 @@ fn scan_viewport_userdata(
         if children.len() >= 1 << 20 {
             return Err(FramingError::InvalidLength {
                 offset: start,
-                value: children.len() as i128,
+                value: i128::from(cadmpeg_core::decode::u64_from_index(children.len())),
             });
         }
         reserve_admitted_vec(ctx, &mut children, 1, "Rhino viewport userdata children")?;
@@ -1125,7 +1125,7 @@ fn scan_viewport_userdata(
                 has_untyped_content = true;
             }
             TCODE_CLASS_END => {
-                if !child.short() || child.value() != 0 {
+                if !child.short() || child.value()? != 0 {
                     return Err(FramingError::structural(
                         child.header_start,
                         "view viewport userdata class end must be a short zero chunk",
@@ -1301,10 +1301,10 @@ fn parse_view(
             VIEW_POSITION if !child.short() => {
                 window_position = Some(parse_window_position(data, child.body().clone())?);
             }
-            VIEW_SHOW_GRID if child.short() => show_grid = child.value() != 0,
-            VIEW_SHOW_AXES if child.short() => show_axes = child.value() != 0,
-            VIEW_SHOW_WORLD_AXES if child.short() => show_world_axes = child.value() != 0,
-            VIEW_V3_DISPLAY_MODE if child.short() => legacy_display_mode = Some(child.value()),
+            VIEW_SHOW_GRID if child.short() => show_grid = child.value()? != 0,
+            VIEW_SHOW_AXES if child.short() => show_axes = child.value()? != 0,
+            VIEW_SHOW_WORLD_AXES if child.short() => show_world_axes = child.value()? != 0,
+            VIEW_V3_DISPLAY_MODE if child.short() => legacy_display_mode = Some(child.value()?),
             VIEW_ATTRIBUTES if !child.short() => {
                 let (attributes, nested_children) =
                     parse_attributes(ctx, data, child.body().clone(), archive, scale)?;
@@ -1382,7 +1382,7 @@ fn parse_view(
                 }
             }
             TCODE_ENDOFTABLE => {
-                if !child.short() || child.value() != 0 {
+                if !child.short() || child.value()? != 0 {
                     return Err(FramingError::structural(
                         offset,
                         "view end marker is invalid",
@@ -1399,8 +1399,8 @@ fn parse_view(
                 "Rhino view child typecode",
             )?,
             kind: child_kind(child.typecode),
-            source_offset: offset as u64,
-            byte_len: (child.next_offset() - offset) as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(offset),
+            byte_len: cadmpeg_core::decode::u64_from_index(child.next_offset() - offset),
             sha256: crate::instances::hex(
                 ctx,
                 &cadmpeg_ir::hash::sha256(&data[offset..child.next_offset()]),
@@ -1441,7 +1441,7 @@ fn parse_view(
             format_args!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
             "Rhino view ID",
         )?,
-        source_offset: record.header_start as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(record.header_start),
         list_kind,
         list_index,
         name,
@@ -1640,7 +1640,7 @@ fn parse_named_cplanes(
                 format_args!("rhino:document:construction_plane#{index:04}"),
                 "Rhino named construction plane ID",
             )?,
-            source_offset: chunk.header_start as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(chunk.header_start),
             list_index: index,
             value: parse_cplane(ctx, data, chunk.body().clone(), scale)?,
         });
@@ -1735,7 +1735,7 @@ pub(crate) fn install(
                         )?;
                         losses.push(
                             loss.with_provenance(
-                                SourceProvenance::root("rhino", record.range.start as u64)
+                                SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(record.range.start))
                                     .with_tag("VIEW/NAMED_CPLANES"),
                             ),
                         );

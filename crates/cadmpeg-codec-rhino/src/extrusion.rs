@@ -285,7 +285,7 @@ pub(crate) fn decode(
     let source_boundaries = split_profiles(
         expand.ctx(),
         profile,
-        profile_count as usize,
+        usize::try_from(profile_count).map_err(|_| GeometryError::unpositioned("geometry count exceeds address space"))?,
         version_offset,
     )?;
     let xaxis = normalize(
@@ -542,7 +542,7 @@ fn exact_orientation(
             continue;
         }
         for sample in 0..samples_per_span {
-            let fraction = sample as f64 / samples_per_span as f64;
+            let fraction = cadmpeg_core::convert::f64_from_index(sample).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))? / cadmpeg_core::convert::f64_from_index(samples_per_span).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
             let parameter = sample_parameter(
                 span_start,
                 span_end,
@@ -572,7 +572,7 @@ fn source_periodic(curve: &NurbsCurve) -> bool {
     if !curve.periodic() || curve.degree() <= 1 {
         return false;
     }
-    let degree = curve.degree() as usize;
+    let Ok(degree) = usize::try_from(curve.degree()) else { return false; };
     let control_points = curve.pole_rows().raw_points();
     control_points.len() >= degree
         && (0..degree).all(|offset| {

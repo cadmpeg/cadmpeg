@@ -659,7 +659,7 @@ fn annotation_record_dropped(
         "Rhino annotation loss tag",
     )?;
     losses.push(
-        loss.with_provenance(SourceProvenance::root("rhino", source_offset as u64).with_tag(tag)),
+        loss.with_provenance(SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(source_offset)).with_tag(tag)),
     );
     Ok(())
 }
@@ -791,7 +791,7 @@ pub(crate) fn install(
                         format_args!("rhino:document:annotation#{key}"),
                         "Rhino annotation ID",
                     )?,
-                    source_offset: object.range.start as u64,
+                    source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
                     kind: if leader {
                         AnnotationKind::Leader
@@ -878,7 +878,7 @@ pub(crate) fn install(
                         format_args!("rhino:document:annotation#{key}"),
                         "Rhino annotation ID",
                     )?,
-                    source_offset: object.range.start as u64,
+                    source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
                     kind: if leader {
                         AnnotationKind::Leader
@@ -978,7 +978,7 @@ pub(crate) fn install(
                         format_args!("rhino:document:annotation#{key}"),
                         "Rhino annotation ID",
                     )?,
-                    source_offset: object.range.start as u64,
+                    source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
                     kind,
                     rich_text,
@@ -1040,7 +1040,7 @@ pub(crate) fn install(
                         format_args!("rhino:document:text_dot#{key}"),
                         "Rhino text dot ID",
                     )?,
-                    source_offset: object.range.start as u64,
+                    source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
                     data,
                     links,
@@ -1073,7 +1073,7 @@ pub(crate) fn install(
                         format_args!("rhino:document:annotation_arrow#{key}"),
                         "Rhino annotation arrow ID",
                     )?,
-                    source_offset: object.range.start as u64,
+                    source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
                     tail,
                     head,

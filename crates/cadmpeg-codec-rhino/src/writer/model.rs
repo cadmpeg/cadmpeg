@@ -479,7 +479,7 @@ impl<'a> WritableModel<'a> {
                     check_nurbs_curve(curve.id.as_str(), nurbs)?;
                     let count = nurbs.control_points().len();
                     if nurbs.periodic()
-                        || [nurbs.knots()[nurbs.degree() as usize], nurbs.knots()[count]]
+                        || [nurbs.knots()[usize::try_from(nurbs.degree()).map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?], nurbs.knots()[count]]
                             != [lo, hi]
                     {
                         return Err(CodecError::NotImplemented(format!(

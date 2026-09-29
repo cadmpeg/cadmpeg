@@ -262,12 +262,17 @@ impl From<FramingError> for GeometryError {
 impl From<cadmpeg_core::decode::ParseError> for GeometryError {
     fn from(error: cadmpeg_core::decode::ParseError) -> Self {
         use cadmpeg_core::decode::ParseErrorKind;
-        let offset = error.location.offset as usize;
+        let Ok(offset) = usize::try_from(error.location.offset) else {
+            return Self::Codec(cadmpeg_core::decode::refuse_local_limit("Rhino parse error offset", cadmpeg_core::decode::u64_from_index(usize::MAX), error.location.offset));
+        };
         match error.kind {
             ParseErrorKind::UnexpectedEof { needed, .. } => {
                 Self::Malformed(FramingError::Truncated {
                     offset,
-                    needed: needed as usize,
+                    needed: match usize::try_from(needed) {
+                        Ok(needed) => needed,
+                        Err(_) => return Self::Codec(cadmpeg_core::decode::refuse_local_limit("Rhino parse error length", cadmpeg_core::decode::u64_from_index(usize::MAX), needed)),
+                    },
                 })
             }
             ParseErrorKind::InvalidValue => Self::Malformed(FramingError::Structural {
@@ -898,7 +903,7 @@ fn elevate_bezier(
     while values.len() - 1 < target {
         let degree = values.len() - 1;
         let count = values.len() + 1;
-        ctx.charge_collection_items(count as u64, "Rhino polycurve Bezier elevation")?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "Rhino polycurve Bezier elevation")?;
         let mut elevated = Vec::new();
         elevated.try_reserve_exact(count).map_err(|_| {
             crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
@@ -913,7 +918,7 @@ fn elevate_bezier(
         elevated.push(values[0]);
         for index in 1..=degree {
             elevated
-                .push(values[index].blend(values[index - 1], index as f64 / (degree + 1) as f64));
+                .push(values[index].blend(values[index - 1], cadmpeg_core::convert::f64_from_index(index).ok_or_else(|| GeometryError::unpositioned("geometry index exceeds exact float range"))? / cadmpeg_core::convert::f64_from_index(degree + 1).ok_or_else(|| GeometryError::unpositioned("geometry index exceeds exact float range"))?));
         }
         elevated.push(values[degree]);
         values = elevated;
@@ -1062,7 +1067,7 @@ fn elevate_to_degree(
         };
         *value = Homogeneous([point.x * weight, point.y * weight, point.z * weight, weight]);
     }
-    ctx.charge_collection_items(source_knots.len() as u64, "Rhino polycurve knots")?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(source_knots.len()), "Rhino polycurve knots")?;
     let mut knots = Vec::new();
     knots.try_reserve_exact(source_knots.len()).map_err(|_| {
         crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
@@ -1144,7 +1149,7 @@ fn elevate_to_degree(
     let mut elevated = Vec::new();
     for (index, span) in spans.into_iter().enumerate() {
         let bezier_count = degree + 1;
-        ctx.charge_collection_items(bezier_count as u64, "Rhino polycurve Bezier span")?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(bezier_count), "Rhino polycurve Bezier span")?;
         let mut bezier = Vec::new();
         bezier.try_reserve_exact(bezier_count).map_err(|_| {
             crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
@@ -1162,7 +1167,7 @@ fn elevate_to_degree(
         let skip = usize::from(index > 0 && !disconnected);
         if index > 0 {
             let added = target + usize::from(disconnected);
-            ctx.charge_collection_items(added as u64, "Rhino polycurve elevated knots")?;
+            ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(added), "Rhino polycurve elevated knots")?;
             elevated_knots.try_reserve(added).map_err(|_| {
                 crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
                     cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -1176,7 +1181,7 @@ fn elevate_to_degree(
             elevated_knots.extend(std::iter::repeat_with(|| knots[span]).take(added));
         }
         let added = bezier.len() - skip;
-        ctx.charge_collection_items(added as u64, "Rhino polycurve elevated points")?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(added), "Rhino polycurve elevated points")?;
         elevated.try_reserve(added).map_err(|_| {
             crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -1189,7 +1194,7 @@ fn elevate_to_degree(
         })?;
         elevated.extend(bezier.into_iter().skip(skip));
     }
-    ctx.charge_collection_items((target + 1) as u64, "Rhino polycurve elevated knots")?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(target + 1), "Rhino polycurve elevated knots")?;
     elevated_knots.try_reserve(target + 1).map_err(|_| {
         crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -1201,7 +1206,7 @@ fn elevate_to_degree(
         ))
     })?;
     elevated_knots.extend(std::iter::repeat_with(|| domain[1]).take(target + 1));
-    ctx.charge_collection_items(elevated.len() as u64, "Rhino polycurve output weights")?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(elevated.len()), "Rhino polycurve output weights")?;
     let mut output_weights = Vec::new();
     output_weights
         .try_reserve_exact(elevated.len())
@@ -1215,7 +1220,7 @@ fn elevate_to_degree(
                 ),
             ))
         })?;
-    ctx.charge_collection_items(elevated.len() as u64, "Rhino polycurve output points")?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(elevated.len()), "Rhino polycurve output points")?;
     let mut control_points = Vec::new();
     control_points
         .try_reserve_exact(elevated.len())
@@ -1243,11 +1248,12 @@ fn elevate_to_degree(
         ));
         output_weights.push(weight);
     }
+    let target = u32::try_from(target).map_err(|_| GeometryError::unpositioned("polycurve degree exceeds u32"))?;
     cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_checked_lanes(
         control_points,
         rational.then_some(output_weights),
     )
-    .and_then(|poles| NurbsCurve::new(target as u32, elevated_knots, poles, false))
+    .and_then(|poles| NurbsCurve::new(target, elevated_knots, poles, false))
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
@@ -2040,11 +2046,11 @@ fn arc_nurbs(
     delta: f64,
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
-    let spans = (delta / FRAC_PI_2).ceil().max(1.0) as usize;
-    let step = delta / spans as f64;
+    let spans = cadmpeg_core::convert::truncate_f64_to_usize((delta / FRAC_PI_2).ceil().max(1.0)).ok_or_else(|| error(offset, "arc span count exceeds address space"))?;
+    let step = delta / cadmpeg_core::convert::f64_from_index(spans).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
     let domain_at = |index: usize| -> Result<f64, GeometryError> {
-        let fraction = index as f64 / spans as f64;
-        let ordinary = domain[0] + (domain[1] - domain[0]) * index as f64 / spans as f64;
+        let fraction = cadmpeg_core::convert::f64_from_index(index).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))? / cadmpeg_core::convert::f64_from_index(spans).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
+        let ordinary = domain[0] + (domain[1] - domain[0]) * cadmpeg_core::convert::f64_from_index(index).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))? / cadmpeg_core::convert::f64_from_index(spans).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
         if ordinary.is_finite() {
             Ok(ordinary)
         } else {
@@ -2065,8 +2071,8 @@ fn arc_nurbs(
     let mut weights = charged_vec(ctx, point_count, "Rhino arc weights")?;
     let mut knots = charged_vec(ctx, knot_count, "Rhino arc knots")?;
     for span in 0..spans {
-        let a0 = angle[0] + step * span as f64;
-        let a1 = angle[0] + step * (span + 1) as f64;
+        let a0 = angle[0] + step * cadmpeg_core::convert::f64_from_index(span).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
+        let a1 = angle[0] + step * cadmpeg_core::convert::f64_from_index(span + 1).ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
         let amid = (a0 + a1) * 0.5;
         let weight = ((a1 - a0) * 0.5).cos();
         let p0 = circle_point(circle, a0);
