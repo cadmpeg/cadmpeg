@@ -4959,6 +4959,7 @@ fn attach_parasolid_topology_string_attributes(
                         attribute_index
                             .class_names
                             .get(reference.id.as_str())
+                            .and_then(Option::as_ref)
                             .map(|class_name| format!("{class_name}.{generic_name}"))
                     })
                     .unwrap_or(generic_name),
@@ -5152,35 +5153,33 @@ fn insert_sole<'a, K: Ord, V>(
 }
 
 fn parasolid_topology_attribute_class_names<'a>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
     definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
-) -> BTreeMap<&'a str, &'a str> {
-    let mut definitions_by_id = BTreeMap::<&str, BTreeSet<&str>>::new();
-    for definition in definitions {
-        definitions_by_id
-            .entry(definition.id.as_str())
-            .or_default()
-            .insert(definition.name.as_str());
-    }
-    let mut classes_by_reference = BTreeMap::<&str, BTreeSet<&str>>::new();
+) -> Result<BTreeMap<&'a str, Option<&'a str>>, CodecError> {
+    let mut classes_by_reference = BTreeMap::<&str, Option<&str>>::new();
     for class_use in class_uses {
-        let Some(class_names) = definitions_by_id.get(class_use.attribute_definition.as_str())
-        else {
-            continue;
-        };
-        classes_by_reference
-            .entry(class_use.topology_attribute_reference.as_str())
-            .or_default()
-            .extend(class_names.iter().copied());
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(definitions.len()), "NX Parasolid class name lookup")?;
+        for definition in definitions.iter().filter(|definition| definition.id == class_use.attribute_definition) {
+            let key = class_use.topology_attribute_reference.as_str();
+            let name = definition.name.as_str();
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(classes_by_reference.len()), "NX Parasolid class name index")?;
+            match classes_by_reference.entry(key) {
+                Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "NX Parasolid class names")?;
+                    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, Option<&str>)>() * 4))?;
+                    entry.insert(Some(name));
+                }
+                Entry::Occupied(mut entry) => {
+                    if entry.get().is_some_and(|existing| existing != name) {
+                        entry.insert(None);
+                    }
+                }
+            }
+        }
     }
-    classes_by_reference
-        .into_iter()
-        .filter_map(|(reference, names)| {
-            let mut names = names.into_iter();
-            let name = names.next()?;
-            names.next().is_none().then_some((reference, name))
-        })
-        .collect()
+    Ok(classes_by_reference)
 }
 
 fn parasolid_topology_attribute_targets(ir: &CadIr) -> BTreeMap<String, AttributeTarget> {
@@ -5234,7 +5233,7 @@ struct ParasolidTopologyAttributeContext<'a> {
 }
 
 struct ParasolidTopologyAttributeIndex<'a, 'ctx> {
-    class_names: BTreeMap<&'a str, &'a str>,
+    class_names: BTreeMap<&'a str, Option<&'a str>>,
     attribute_names: ParasolidAttributeNameIndex<'a>,
     contexts: Vec<ParasolidTopologyAttributeContext<'a>>,
     _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
@@ -5260,8 +5259,9 @@ impl<'a, 'ctx> ParasolidTopologyAttributeIndex<'a, 'ctx> {
             field_uses,
             field_names,
         )?;
+        let class_names = parasolid_topology_attribute_class_names(ctx, &mut reservation, class_uses, definitions)?;
         Ok(Self {
-            class_names: parasolid_topology_attribute_class_names(class_uses, definitions),
+            class_names,
             attribute_names,
             contexts: parasolid_topology_attribute_contexts(ir, topology_references, class_uses),
             _reservation: reservation,
@@ -5451,6 +5451,7 @@ fn attach_parasolid_topology_numeric_attributes(
                         attribute_index
                             .class_names
                             .get(reference.id.as_str())
+                            .and_then(Option::as_ref)
                             .map(|class_name| format!("{class_name}.{generic_name}"))
                     })
                     .unwrap_or(generic_name),
@@ -5624,6 +5625,7 @@ fn attach_parasolid_topology_structured_attributes(
                         attribute_index
                             .class_names
                             .get(reference.id.as_str())
+                            .and_then(Option::as_ref)
                             .map(|class_name| format!("{class_name}.{generic_name}"))
                     })
                     .unwrap_or(generic_name),

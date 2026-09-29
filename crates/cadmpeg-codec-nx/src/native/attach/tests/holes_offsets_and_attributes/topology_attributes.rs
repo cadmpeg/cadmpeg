@@ -1,6 +1,7 @@
 use crate::native::attach::attach_parasolid_topology_numeric_attributes;
 use crate::native::attach::attach_parasolid_topology_structured_attributes;
 use crate::native::attach::insert_sole;
+use crate::native::attach::parasolid_topology_attribute_class_names;
 use crate::native::attach::ParasolidAttributeNameIndex;
 use crate::native::attach::ParasolidNumericAttributeSources;
 use crate::native::attach::ParasolidStructuredAttributeSources;
@@ -623,8 +624,19 @@ fn topology_attribute_index_retains_linked_type_81_records() {
     assert_eq!(index.contexts.len(), 2);
     assert_eq!(
         index.class_names.get(reference.id.as_str()).copied(),
-        Some("CLASS")
+        Some(Some("CLASS"))
     );
+    let mut conflicting_definition = definition.clone();
+    conflicting_definition.name = crate::printable_string::PrintableString::new("OTHER".to_string()).unwrap();
+    let conflicting_definitions = [definition.clone(), conflicting_definition];
+    let mut class_reservation = ctx.reserve_scoped(0, "test Parasolid class names").unwrap();
+    let class_names = parasolid_topology_attribute_class_names(
+        &ctx,
+        &mut class_reservation,
+        &class_uses,
+        &conflicting_definitions,
+    ).unwrap();
+    assert_eq!(class_names.get(reference.id.as_str()).copied(), Some(None));
     assert_eq!(
         index
             .attribute_names
