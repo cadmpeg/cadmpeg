@@ -28,6 +28,8 @@ use crate::records::FeatureSource;
 
 pub(super) mod datum;
 #[cfg(test)]
+mod custom_property_tests;
+#[cfg(test)]
 mod feature_projection_tests;
 pub(crate) mod modify;
 pub(crate) mod pattern;
