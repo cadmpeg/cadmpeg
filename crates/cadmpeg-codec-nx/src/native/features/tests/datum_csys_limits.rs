@@ -30,13 +30,15 @@ fn datum_csys_refusal(
     .expect("admitted datum CSYS constructions");
     assert_eq!(admitted.len(), 1);
     assert_eq!(admitted[0].frame.members().len(), 8);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_datum_csys_constructions(&ctx, &container)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    feature_datum_csys_constructions(ctx, &container)
         .expect_err("datum CSYS construction resource limit")
+
+})
 }
 
 #[test]

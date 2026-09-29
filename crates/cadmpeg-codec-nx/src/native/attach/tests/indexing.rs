@@ -6,13 +6,13 @@ use crate::native::attach::segment_binding_body_indexes;
 
 #[test]
 fn source_property_reference_preserves_block_and_numeric_fallback() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let mut properties = std::collections::BTreeMap::new();
     insert_source_property_reference(
-        &ctx,
+        ctx,
         &mut properties,
         format_args!("reference.{}", 0),
         Some("source-block"),
@@ -20,7 +20,7 @@ fn source_property_reference_preserves_block_and_numeric_fallback() {
     )
     .unwrap();
     insert_source_property_reference(
-        &ctx,
+        ctx,
         &mut properties,
         format_args!("reference.{}", 1),
         None,
@@ -29,18 +29,20 @@ fn source_property_reference_preserves_block_and_numeric_fallback() {
     .unwrap();
     assert_eq!(properties["reference.0"], "source-block");
     assert_eq!(properties["reference.1"], "17");
+
+})
 }
 
 #[test]
 fn operation_body_operand_source_keys_follow_reference_ordinal() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let mut properties = std::collections::BTreeMap::new();
     for reference_ordinal in [0, 1] {
         insert_source_property_reference(
-            &ctx,
+            ctx,
             &mut properties,
             format_args!("operation_body_operand.{}.{}", reference_ordinal, 0),
             None,
@@ -50,25 +52,29 @@ fn operation_body_operand_source_keys_follow_reference_ordinal() {
     }
     assert_eq!(properties["operation_body_operand.0.0"], "20");
     assert_eq!(properties["operation_body_operand.1.0"], "20");
+
+})
 }
 
 fn source_property_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     let mut properties = std::collections::BTreeMap::new();
     insert_source_property(
-        &ctx,
+        ctx,
         &mut properties,
         format_args!("body_write.{}", 7),
         format_args!("{}", "write"),
     )?;
     assert_eq!(properties["body_write.7"], "write");
     Ok(())
+
+})
 }
 
 #[test]
@@ -129,13 +135,13 @@ fn segment_body_index_with_limit(
         stream_role: 0,
         source_offset: 0,
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     let bindings = [binding];
-    let indexes = segment_binding_body_indexes(&ctx, &ir, &bindings)?;
+    let indexes = segment_binding_body_indexes(ctx, &ir, &bindings)?;
     assert_eq!(
         indexes.by_object[&10].as_slice(),
         std::slice::from_ref(&body)
@@ -146,6 +152,8 @@ fn segment_body_index_with_limit(
     );
     assert_eq!(indexes.by_binding["binding"], [body]);
     Ok(())
+
+})
 }
 
 #[test]

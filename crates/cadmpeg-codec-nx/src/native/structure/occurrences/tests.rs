@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::CodecBackend;
 use cadmpeg_ir::native::NativeNamespace;
 use serde_json::{json, Value};
@@ -8,10 +7,12 @@ use serde_json::{json, Value};
 use super::{FastLoadComponentOccurrenceWire, FastLoadOccurrences};
 
 fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("validation context");
-    crate::NxCodec::validate_native(&ctx, ir).expect("validation fits service policy")
+    
+    crate::test_support::with_decode_context(|ctx| {
+
+    crate::NxCodec::validate_native(ctx, ir).expect("validation fits service policy")
+
+})
 }
 
 fn rows(form: u8) -> Value {

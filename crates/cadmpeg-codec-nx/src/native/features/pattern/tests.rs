@@ -55,13 +55,15 @@ fn pattern_construction_route_refusal(
     })
     .expect("admitted pattern construction payload");
     assert_eq!(admitted.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    super::feature_pattern_construction_payloads(&ctx, &container, &labels, &references)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::feature_pattern_construction_payloads(ctx, &container, &labels, &references)
         .expect_err("pattern construction resource limit")
+
+})
 }
 
 #[test]
@@ -123,13 +125,15 @@ fn pattern_reference_route_refusal(
     })
     .expect("admitted pattern references");
     assert_eq!(admitted.len(), 9);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    crate::native::features::pattern::feature_pattern_references(&ctx, &container)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    crate::native::features::pattern::feature_pattern_references(ctx, &container)
         .expect_err("pattern reference resource limit")
+
+})
 }
 
 #[test]
@@ -190,14 +194,16 @@ fn pattern_output_lane_refusal<T>(
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx, &container))
         .expect("admitted pattern output lane");
     assert_eq!(admitted.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    route(&ctx, &container)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    route(ctx, &container)
         .err()
         .expect("pattern output lane resource limit")
+
+})
 }
 
 macro_rules! pattern_output_lane_limit_tests {
@@ -342,12 +348,14 @@ fn pattern_content_refusal(
         crate::test_support::with_decode_context(|ctx| call(ctx, std::slice::from_ref(&payload)))
             .expect("admitted pattern construction result");
     assert_eq!(admitted, 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    call(&ctx, &[payload]).expect_err("pattern construction resource limit")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    call(ctx, &[payload]).expect_err("pattern construction resource limit")
+
+})
 }
 
 fn pattern_string_bytes() -> Vec<u8> {

@@ -3,16 +3,18 @@
 #[test]
 fn parameterized_expression_refuses_scoped_limit() {
     let bytes = b"p1 + 2";
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(bytes, |policy| { policy.limits.max_materialized_bytes = 0; }, |ctx| {
+
     let error =
-        super::evaluate_parameterized_expression(&ctx, "p1 + 2", |_| Some(3.0)).unwrap_err();
+        super::evaluate_parameterized_expression(ctx, "p1 + 2", |_| Some(3.0)).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
     );
+
+})
 }
 
 use crate::test_support::test_om::offset_only_indexed_om_section;
@@ -25,13 +27,7 @@ use crate::test_support::test_prt::prt_with_indexed_om_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::test_support::test_prt::prt_with_size_framed_om_section;
 use cadmpeg_test_support::EditableDecodeResult;
-fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test decode context");
-    run(&ctx)
-}
+
 
 #[test]
 fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
@@ -152,12 +148,14 @@ fn control_form_route_refusal(
     .expect("control form projection");
     assert_eq!(forms.len(), 1);
     assert_eq!(forms[0].id, "nx:om-data-block-control-forms:form#0");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    super::data_block_control_forms(&ctx, &container).unwrap_err()
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::data_block_control_forms(ctx, &container).unwrap_err()
+
+})
 }
 
 fn control_class_route_refusal(
@@ -173,13 +171,15 @@ fn control_class_route_refusal(
     })
     .expect("control class projection");
     assert_eq!(classes.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    super::data_block_control_class_references(&ctx, &container)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::data_block_control_class_references(ctx, &container)
         .expect_err("control class resource refusal")
+
+})
 }
 
 fn data_block_reference_route_refusal(
@@ -211,13 +211,15 @@ fn data_block_reference_route_refusal(
     .expect("data block reference projection");
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].target_record.as_deref(), Some("test-record"));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    super::data_block_references(&ctx, &container, &records, &[])
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::data_block_references(ctx, &container, &records, &[])
         .expect_err("data block reference resource refusal")
+
+})
 }
 
 fn part_color_container() -> crate::container::Container<'static> {
@@ -280,12 +282,14 @@ fn part_color_route_refusal(
             .expect("part color projection");
     assert_eq!(tables.len(), 1);
     assert_eq!(definitions.len(), 216);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    super::part_color_tables(&ctx, &container).expect_err("part color resource refusal")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::part_color_tables(ctx, &container).expect_err("part color resource refusal")
+
+})
 }
 
 #[test]
@@ -472,12 +476,14 @@ fn control_reference_route_refusal(
     assert!(references[0]
         .id
         .starts_with("nx:om-data-block-control-references-0:reference#"));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    super::data_block_control_references(&ctx, &container).unwrap_err()
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::data_block_control_references(ctx, &container).unwrap_err()
+
+})
 }
 
 #[test]
@@ -551,12 +557,14 @@ fn control_value_route_refusal(
     })
     .expect("control-value projection");
     assert_eq!(values.len(), 2);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    super::data_block_control_values(&ctx, &container).unwrap_err()
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::data_block_control_values(ctx, &container).unwrap_err()
+
+})
 }
 
 #[test]
@@ -663,7 +671,7 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
     assert_eq!(control_values[0].ordinal, 0);
     assert_eq!(control_values[0].value.value(), 0);
     assert_eq!(control_values[1].value.value(), 1);
-    let classes = with_test_ctx(|ctx| super::data_block_control_class_references(ctx, &container))
+    let classes = crate::test_support::with_decode_context_over(&[0], |_| {}, |ctx| super::data_block_control_class_references(ctx, &container))
         .expect("test OM class ordinals");
     assert_eq!(classes.len(), 1);
     assert_eq!(classes[0].data_block, blocks[0].id);
@@ -690,7 +698,7 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
             .unwrap()
             .is_empty()
     );
-    let expressions = with_test_ctx(|ctx| {
+    let expressions = crate::test_support::with_decode_context_over(&[0], |_| {}, |ctx| {
         let declarations = super::expression_declarations(ctx, &container).unwrap();
         super::expressions(ctx, &container, &declarations).unwrap()
     });
@@ -709,7 +717,7 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
 fn stable_data_block_identity_excludes_position_and_scopes_role() {
     let bytes = [0x01, 0x02, 0x03];
     let digest = |source, role| {
-        with_test_ctx(|ctx| super::data_block_digest(ctx, source, role, &bytes)).unwrap()
+        crate::test_support::with_decode_context_over(&[0], |_| {}, |ctx| super::data_block_digest(ctx, source, role, &bytes)).unwrap()
     };
     let identity = digest("/Root/UG_PART/UG_PART", super::DataBlockRole::Column);
     assert_eq!(
@@ -730,20 +738,22 @@ fn stable_data_block_identity_excludes_position_and_scopes_role() {
 fn data_blocks_refuses_identity_work_at_caller_limit() {
     let file =
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
-    let container = with_test_ctx(|ctx| container::scan_bytes(ctx, &file)).unwrap();
-    with_test_ctx(|ctx| container.indexed_om_sections(ctx)).unwrap();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
-    let error = super::data_blocks(&ctx, &container).expect_err("work refusal");
+    let container = crate::test_support::with_decode_context_over(&[0], |_| {}, |ctx| container::scan_bytes(ctx, &file)).unwrap();
+    crate::test_support::with_decode_context_over(&[0], |_| {}, |ctx| container.indexed_om_sections(ctx)).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&file, |policy| { policy.limits.max_work_units = 0; }, |ctx| {
+
+    let error = super::data_blocks(ctx, &container).expect_err("work refusal");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
                 && limit.operation == "nx data block identity digest"
     ));
+
+})
 }
 
 #[test]
@@ -811,12 +821,14 @@ fn control_index_value_route_refusal(
     })
     .expect("control-index projection");
     assert_eq!(values.len(), 2);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    super::data_block_control_index_values(&ctx, &container).unwrap_err()
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::data_block_control_index_values(ctx, &container).unwrap_err()
+
+})
 }
 
 #[test]
@@ -888,9 +900,10 @@ fn data_block_control_index_value_target_refuses_retained_limit() {
         Some("nx:om-data-blocks-0:block#1")
     );
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
         std::mem::size_of::<(
             crate::container::entry_ref::EntryRef<'_>,
             crate::om::IndexedSection<'_>,
@@ -898,16 +911,17 @@ fn data_block_control_index_value_target_refuses_retained_limit() {
             + std::mem::size_of::<u32>()
             + "nx:om-data-block-control-index-values-0:value#0".len()
             + "nx:om-data-blocks-0:block#0".len(),
-    );
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    let error = super::data_block_control_index_values(&ctx, &container).unwrap_err();
+    ); }, |ctx| {
+
+    let error = super::data_block_control_index_values(ctx, &container).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
             && limit.operation == "retain NX control index value target block"),
         "{error:?}"
     );
+
+})
 }
 
 #[test]
@@ -963,7 +977,7 @@ fn offset_store_class_identities_span_ordered_registries() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
             .expect("required invariant");
 
-    let classes = with_test_ctx(|ctx| super::data_block_control_class_references(ctx, &container))
+    let classes = crate::test_support::with_decode_context_over(&[0], |_| {}, |ctx| super::data_block_control_class_references(ctx, &container))
         .expect("test OM class ordinals");
     assert_eq!(classes.len(), 1);
     assert_eq!(classes[0].class_ordinal, 1);
@@ -986,7 +1000,7 @@ fn om_numeric_expression_retains_formula_without_literal_value() {
     bytes.extend_from_slice(text);
     bytes.push(0);
 
-    let expressions = with_test_ctx(|ctx| crate::om::numeric_expressions(ctx, &bytes).unwrap());
+    let expressions = crate::test_support::with_decode_context_over(&[0], |_| {}, |ctx| crate::om::numeric_expressions(ctx, &bytes).unwrap());
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].name.as_str(), "p9");
     assert_eq!(expressions[0].expression, "p2 * 2 + p7_radius");

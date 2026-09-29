@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::{AnnotationBuilder, CadIr};
@@ -8,15 +8,16 @@ use cadmpeg_ir::{AnnotationBuilder, CadIr};
 fn attach_one_configuration(
     configure: impl FnOnce(&mut DecodePolicy),
 ) -> Result<CadIr, CodecError> {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     super::super::attach_configurations(
-        &ctx,
+        ctx,
         &mut ir,
         std::iter::once((
             "nx:arrangements:configuration#0",
@@ -28,6 +29,8 @@ fn attach_one_configuration(
         &stream,
     )?;
     Ok(ir)
+
+})
 }
 
 #[test]

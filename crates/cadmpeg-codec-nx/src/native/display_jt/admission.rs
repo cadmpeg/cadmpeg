@@ -151,14 +151,11 @@ impl DisplayJtGraph {
 
     #[cfg(test)]
     fn from_namespace(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )?;
+        
+        crate::test_support::with_decode_context(|ctx| {
+
         Self::from_wire_with_context(
-            &ctx,
+            ctx,
             DisplayJtGraphWire {
                 documents: namespace.arena_as("display_jt_documents")?,
                 segments: namespace.arena_as("display_jt_segments")?,
@@ -168,7 +165,9 @@ impl DisplayJtGraph {
                     .arena_as("display_jt_compressed_element_sequences")?,
             },
         )
-    }
+    
+})
+}
 
     fn from_wire(
         ctx: &DecodeContext<'_>,
@@ -336,14 +335,13 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
     type Error = NativeConvertError;
 
     fn try_from(wire: DisplayJtGraphWire) -> Result<Self, Self::Error> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )?;
-        Self::from_wire_with_context(&ctx, wire)
-    }
+        
+        crate::test_support::with_decode_context(|ctx| {
+
+        Self::from_wire_with_context(ctx, wire)
+    
+})
+}
 }
 
 #[cfg(test)]

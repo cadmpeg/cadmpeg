@@ -237,23 +237,17 @@ pub(in crate::native) fn rm_creation_display_data_relations(
 #[cfg(test)]
 mod admission_tests {
     use super::{finalize_relations, push_relation, RmCreationDisplayDataRelation};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{ResourceDimension};
     use cadmpeg_core::CodecError;
 
     const ROW: &str = r#"{"id":"relation","ordinal":0,"first_index":1,"raw_first_index":[128,1],"first_index_source_offset":8,"class_name":"UGS::RM_creation_display_data","class_definition":"definition","encoding":{"kind":"index","flag":3,"indices":[2,3,4,5],"raw_indices":[[2],[3],[4],[5]],"index_source_offsets":[13,14,15,16]},"source_entry":"entry","source_offset":5}"#;
 
-    fn with_policy<T>(policy: DecodePolicy, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        run(&ctx)
-    }
 
     #[test]
     fn creation_display_relation_refuses_collection_limit() {
         let row: RmCreationDisplayDataRelation = serde_json::from_str(ROW).unwrap();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let error = with_policy(policy, |ctx| {
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 0; };
+        let error = crate::test_support::with_decode_context_over(&[],  adjust_policy, |ctx| {
             push_relation(ctx, &mut Vec::new(), row.encoding, 0, 10, "entry").unwrap_err()
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -263,9 +257,8 @@ mod admission_tests {
     #[test]
     fn creation_display_relation_refuses_retained_limit() {
         let row: RmCreationDisplayDataRelation = serde_json::from_str(ROW).unwrap();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
-        let error = with_policy(policy, |ctx| {
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_retained_bytes = 0; };
+        let error = crate::test_support::with_decode_context_over(&[],  adjust_policy, |ctx| {
             push_relation(ctx, &mut Vec::new(), row.encoding, 0, 10, "entry").unwrap_err()
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -275,7 +268,7 @@ mod admission_tests {
     #[test]
     fn creation_display_relation_preserves_class_identity() {
         let row: RmCreationDisplayDataRelation = serde_json::from_str(ROW).unwrap();
-        with_policy(DecodePolicy::default(), |ctx| {
+        crate::test_support::with_decode_context_over(&[], |_| {}, |ctx| {
             let mut relations = Vec::new();
             push_relation(ctx, &mut relations, row.encoding, 7, 11, "entry").unwrap();
             assert_eq!(relations[0].class_definition, "nx:om-entry-7:class#11");
@@ -286,9 +279,8 @@ mod admission_tests {
     #[test]
     fn creation_display_finalization_refuses_scoped_limit() {
         let row: RmCreationDisplayDataRelation = serde_json::from_str(ROW).unwrap();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_materialized_bytes = 0;
-        let error = with_policy(policy, |ctx| {
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_materialized_bytes = 0; };
+        let error = crate::test_support::with_decode_context_over(&[],  adjust_policy, |ctx| {
             finalize_relations(ctx, vec![row]).unwrap_err()
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -298,9 +290,8 @@ mod admission_tests {
     #[test]
     fn creation_display_finalization_refuses_work_limit() {
         let row: RmCreationDisplayDataRelation = serde_json::from_str(ROW).unwrap();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 0;
-        let error = with_policy(policy, |ctx| {
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_work_units = 0; };
+        let error = crate::test_support::with_decode_context_over(&[],  adjust_policy, |ctx| {
             finalize_relations(ctx, vec![row]).unwrap_err()
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)

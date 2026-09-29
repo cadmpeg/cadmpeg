@@ -5,14 +5,14 @@ use cadmpeg_ir::features::{BodySelection, BodyTrimSide, FeatureDefinition, Featu
 
 #[test]
 fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let project_trim =
         |bodies: &[(u32, String)],
          operands: &[&crate::native::features::FeatureOperationBodyOperand]| {
-            offset_store_trim_body_feature_definition(&ctx, bodies, operands)
+            offset_store_trim_body_feature_definition(ctx, bodies, operands)
                 .expect("resource admission")
         };
     let body = (114, "nx:om-data-blocks-2:block#114".to_string());
@@ -73,4 +73,6 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
             keep: BodyTrimSide::Unresolved,
         }))
     );
+
+})
 }

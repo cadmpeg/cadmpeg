@@ -526,62 +526,71 @@ mod tests {
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{ResourceDimension};
     use cadmpeg_core::CodecError;
 
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureTreeNodeRole};
 
     #[test]
     fn body_writer_history_refuses_collection_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
         let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
         let mut history = BodyWriterHistory::default();
         let error = history
-            .record_writer(&ctx, Some(7), None, &[], &feature)
+            .record_writer(ctx, Some(7), None, &[], &feature)
             .unwrap_err();
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
         );
-    }
+    
+})
+}
 
     #[test]
     fn body_writer_history_refuses_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
         let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
         let mut history = BodyWriterHistory::default();
         let error = history
-            .record_writer(&ctx, Some(7), None, &[], &feature)
+            .record_writer(ctx, Some(7), None, &[], &feature)
             .unwrap_err();
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
         );
-    }
+    
+})
+}
 
     #[test]
     fn primary_writer_dependency_refuses_collection_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 1; }, |ctx| {
+
         let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
         let mut history = BodyWriterHistory::default();
         history
-            .record_writer(&ctx, Some(7), None, &[], &feature)
+            .record_writer(ctx, Some(7), None, &[], &feature)
             .unwrap();
         let mut dependencies = Vec::new();
         let error = history
-            .extend_primary_dependencies(&ctx, None, Some(7), None, &[], &mut dependencies)
+            .extend_primary_dependencies(ctx, None, Some(7), None, &[], &mut dependencies)
             .unwrap_err();
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
         );
-    }
+    
+})
+}
 
     fn history_feature(
         id: &str,
@@ -630,21 +639,23 @@ mod tests {
             BTreeMap::new(),
             false,
         )]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+        
+        
+        let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
+            ResourceDimension::CollectionItems => |policy| { policy.limits.max_collection_items = 0; },
+            ResourceDimension::RetainedBytes => |policy| { policy.limits.max_retained_bytes = 0; },
+            ResourceDimension::MaterializedBytes => |policy| { policy.limits.max_materialized_bytes = 0; },
+            ResourceDimension::WorkUnits => |policy| { policy.limits.max_work_units = 0; },
             _ => unreachable!("test only covers four closure dimensions"),
-        }
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-        active_feature_closure_for_decode(&ctx, &ir, &[body]).expect_err("closure must refuse")
-    }
+        };
+        crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
 
-    #[test]
+        active_feature_closure_for_decode(ctx, &ir, &[body]).expect_err("closure must refuse")
+    
+})
+}
+
+#[test]
     fn active_feature_closure_refuses_collection_limit() {
         assert!(
             matches!(closure_refusal_for_limit(ResourceDimension::CollectionItems), CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
@@ -772,23 +783,23 @@ mod tests {
 
     #[test]
     fn neutral_output_identity_closes_lineage_across_native_identities() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test root");
+        
+        
+        crate::test_support::with_decode_context(|ctx| {
+
 
         let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
         let first = FeatureId::mint("synthetic:test:id#first").expect("identity grammar");
         let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
         let mut history = BodyWriterHistory::default();
         history
-            .record_writer(&ctx, Some(7), None, std::slice::from_ref(&body), &first)
+            .record_writer(ctx, Some(7), None, std::slice::from_ref(&body), &first)
             .expect("admitted writer history");
 
         let mut dependencies = Vec::new();
         history
             .extend_primary_dependencies(
-                &ctx,
+                ctx,
                 None,
                 Some(8),
                 None,
@@ -800,31 +811,33 @@ mod tests {
         assert_eq!(dependencies, [first]);
         assert!(history.native_writer(8).is_none());
         history
-            .record_writer(&ctx, Some(8), None, std::slice::from_ref(&body), &second)
+            .record_writer(ctx, Some(8), None, std::slice::from_ref(&body), &second)
             .expect("admitted writer history");
         assert_eq!(history.native_writer(8), Some(&second));
         dependencies.clear();
         history
-            .extend_primary_dependencies(&ctx, None, Some(7), None, &[body], &mut dependencies)
+            .extend_primary_dependencies(ctx, None, Some(7), None, &[body], &mut dependencies)
             .expect("admitted writer history");
         assert_eq!(dependencies, [second]);
 
         dependencies.clear();
         history
-            .extend_primary_dependencies(&ctx, None, Some(7), None, &[], &mut dependencies)
+            .extend_primary_dependencies(ctx, None, Some(7), None, &[], &mut dependencies)
             .expect("admitted writer history");
         assert_eq!(
             dependencies,
             [FeatureId::mint("synthetic:test:id#first").expect("identity grammar")]
         );
-    }
+    
+})
+}
 
     #[test]
     fn provisional_output_writer_can_be_retracted_without_affecting_other_writers() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test root");
+        
+        
+        crate::test_support::with_decode_context(|ctx| {
+
 
         let provisional =
             FeatureId::mint("synthetic:test:id#provisional").expect("identity grammar");
@@ -834,7 +847,7 @@ mod tests {
         let mut history = BodyWriterHistory::default();
         history
             .record_writer(
-                &ctx,
+                ctx,
                 None,
                 None,
                 &[created.clone(), existing.clone()],
@@ -843,7 +856,7 @@ mod tests {
             .expect("admitted writer history");
         history
             .record_writer(
-                &ctx,
+                ctx,
                 Some(7),
                 None,
                 std::slice::from_ref(&existing),
@@ -867,7 +880,7 @@ mod tests {
         let mut dependencies = Vec::new();
         history
             .extend_primary_dependencies(
-                &ctx,
+                ctx,
                 Some(&provisional),
                 Some(7),
                 None,
@@ -880,7 +893,7 @@ mod tests {
         let mut dependencies = Vec::new();
         history
             .extend_primary_dependencies(
-                &ctx,
+                ctx,
                 Some(&provisional),
                 Some(7),
                 None,
@@ -897,26 +910,28 @@ mod tests {
 
         assert!(!history.has_preceding_writer(Some(&provisional), None, None, &[created]));
         assert!(history.has_preceding_writer(Some(&provisional), Some(7), None, &[existing]));
-    }
+    
+})
+}
 
     #[test]
     fn exact_offset_store_identity_orders_writers_without_cross_store_aliases() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test root");
+        
+        
+        crate::test_support::with_decode_context(|ctx| {
+
 
         let first = FeatureId::mint("synthetic:test:id#first").expect("identity grammar");
         let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
         let mut history = BodyWriterHistory::default();
         history
-            .record_writer(&ctx, None, Some("store-a:block#7"), &[], &first)
+            .record_writer(ctx, None, Some("store-a:block#7"), &[], &first)
             .expect("admitted writer history");
 
         let mut dependencies = Vec::new();
         history
             .extend_primary_dependencies(
-                &ctx,
+                ctx,
                 None,
                 None,
                 Some("store-a:block#7"),
@@ -928,7 +943,7 @@ mod tests {
         dependencies.clear();
         history
             .extend_primary_dependencies(
-                &ctx,
+                ctx,
                 None,
                 None,
                 Some("store-b:block#7"),
@@ -939,7 +954,7 @@ mod tests {
         assert!(dependencies.is_empty());
 
         history
-            .record_writer(&ctx, None, Some("store-a:block#7"), &[], &second)
+            .record_writer(ctx, None, Some("store-a:block#7"), &[], &second)
             .expect("admitted writer history");
         assert_eq!(
             history.offset_store_writer("store-a:block#7"),
@@ -948,7 +963,7 @@ mod tests {
         dependencies.clear();
         history
             .extend_primary_dependencies(
-                &ctx,
+                ctx,
                 None,
                 None,
                 Some("store-a:block#7"),
@@ -957,7 +972,9 @@ mod tests {
             )
             .expect("admitted writer history");
         assert_eq!(dependencies, [second]);
-    }
+    
+})
+}
 
     #[test]
     fn native_primary_body_witness_closes_history_without_neutral_outputs() {

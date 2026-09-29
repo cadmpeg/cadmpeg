@@ -47,13 +47,14 @@ fn chart_record_route_limit_error(
         "SCH_TEST",
         crate::test_support::test_streams::charted_intersection_curve_topology_partition_stream(),
     )];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&streams[0].inflated, &arena, &policy)
-            .unwrap();
-    super::parasolid_chart_records(&ctx, &streams).expect_err("chart record route limit refusal")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&streams[0].inflated, |policy| { configure(policy); }, |ctx| {
+
+    super::parasolid_chart_records(ctx, &streams).expect_err("chart record route limit refusal")
+
+})
 }
 
 #[test]
@@ -134,13 +135,12 @@ fn native_value_records_refuse_collection_at_caller_limit() {
         "SCH_TEST",
         inflated,
     )];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(offset_count);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&streams[0].inflated, &arena, &policy)
-            .unwrap();
-    let error = super::parasolid_entity_value_records(&ctx, &streams, &[])
+    
+    
+    
+    crate::test_support::with_decode_context_over(&streams[0].inflated, |policy| { policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(offset_count); }, |ctx| {
+
+    let error = super::parasolid_entity_value_records(ctx, &streams, &[])
         .err()
         .expect("value records need an item after owner offsets");
     assert!(matches!(
@@ -149,6 +149,8 @@ fn native_value_records_refuse_collection_at_caller_limit() {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && limit.operation == "NX Parasolid value records"
     ));
+
+})
 }
 
 fn record(
@@ -216,10 +218,10 @@ use std::num::NonZeroU32;
 
 #[test]
 fn attribute_value_uses_are_assigned_to_compatible_declared_fields() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 2,
@@ -276,7 +278,7 @@ fn attribute_value_uses_are_assigned_to_compatible_declared_fields() {
     };
 
     let uses = parasolid_attribute_field_uses(
-        &ctx,
+        ctx,
         std::slice::from_ref(&class_use),
         std::slice::from_ref(&definition),
         &[numeric_use.clone(), double_use],
@@ -322,7 +324,7 @@ fn attribute_value_uses_are_assigned_to_compatible_declared_fields() {
         attribute_definition: "other-definition".into(),
     };
     assert!(parasolid_attribute_field_uses(
-        &ctx,
+        ctx,
         &[class_use.clone(), duplicate.clone()],
         std::slice::from_ref(&definition),
         std::slice::from_ref(&numeric_use),
@@ -337,7 +339,7 @@ fn attribute_value_uses_are_assigned_to_compatible_declared_fields() {
         ..duplicate
     };
     assert!(parasolid_attribute_field_uses(
-        &ctx,
+        ctx,
         &[wrong_stream],
         std::slice::from_ref(&definition),
         std::slice::from_ref(&numeric_use),
@@ -352,7 +354,7 @@ fn attribute_value_uses_are_assigned_to_compatible_declared_fields() {
         ..numeric_use.clone()
     };
     assert!(parasolid_attribute_field_uses(
-        &ctx,
+        ctx,
         std::slice::from_ref(&class_use),
         std::slice::from_ref(&definition),
         &[mismatched],
@@ -367,7 +369,7 @@ fn attribute_value_uses_are_assigned_to_compatible_declared_fields() {
         ..string_use
     };
     assert!(parasolid_attribute_field_uses(
-        &ctx,
+        ctx,
         std::slice::from_ref(&class_use),
         std::slice::from_ref(&definition),
         std::slice::from_ref(&numeric_use),
@@ -376,6 +378,8 @@ fn attribute_value_uses_are_assigned_to_compatible_declared_fields() {
     )
     .unwrap()
     .is_empty());
+
+})
 }
 
 #[test]
@@ -450,10 +454,10 @@ fn structured_value_uses_require_one_same_stream_family() {
 
 #[test]
 fn structured_value_families_match_only_their_declared_field_codes() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let kinds = [
         StructuredValueKind::Points,
         StructuredValueKind::Vectors,
@@ -514,7 +518,7 @@ fn structured_value_families_match_only_their_declared_field_codes() {
         })
         .collect::<Vec<_>>();
     let uses = parasolid_attribute_field_uses(
-        &ctx,
+        ctx,
         std::slice::from_ref(&class_use),
         std::slice::from_ref(&definition),
         &[],
@@ -530,18 +534,20 @@ fn structured_value_families_match_only_their_declared_field_codes() {
     let mut mismatched = structured;
     mismatched[0].kind = StructuredValueKind::Vectors;
     let uses =
-        parasolid_attribute_field_uses(&ctx, &[class_use], &[definition], &[], &[], &mismatched)
+        parasolid_attribute_field_uses(ctx, &[class_use], &[definition], &[], &[], &mismatched)
             .unwrap();
     assert_eq!(uses.len(), 5);
     assert!(uses.iter().all(|use_| use_.position.field_ordinal() != 0));
+
+})
 }
 
 #[test]
 fn attribute_loss_requires_concrete_unresolved_references() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let definition = |field_names_xmt, field_codes: Vec<u8>| ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 0,
@@ -616,7 +622,7 @@ fn attribute_loss_requires_concrete_unresolved_references() {
     // An unused declaration carries no value-loss evidence.
     assert!(
         !parasolid_topology_attribute_fields_have_untransferred_values(
-            &ctx,
+            ctx,
             &[definition(1, vec![4])],
             &[],
             &[],
@@ -627,7 +633,7 @@ fn attribute_loss_requires_concrete_unresolved_references() {
     // A non-null instance reference must have exactly one resolved field use.
     assert!(
         parasolid_topology_attribute_fields_have_untransferred_values(
-            &ctx,
+            ctx,
             &[definition(1, vec![4])],
             std::slice::from_ref(&entity),
             &[],
@@ -637,7 +643,7 @@ fn attribute_loss_requires_concrete_unresolved_references() {
     );
     assert!(
         !parasolid_topology_attribute_fields_have_untransferred_values(
-            &ctx,
+            ctx,
             &[definition(1, vec![4])],
             std::slice::from_ref(&entity),
             std::slice::from_ref(&field_use),
@@ -650,7 +656,7 @@ fn attribute_loss_requires_concrete_unresolved_references() {
     null_entity.trailing_references.values_mut()[0] = 1;
     assert!(
         !parasolid_topology_attribute_fields_have_untransferred_values(
-            &ctx,
+            ctx,
             &[definition(1, vec![4])],
             &[null_entity],
             &[],
@@ -660,7 +666,7 @@ fn attribute_loss_requires_concrete_unresolved_references() {
     );
     assert!(
         !parasolid_topology_attribute_fields_have_untransferred_values(
-            &ctx,
+            ctx,
             &[definition(1, vec![9])],
             std::slice::from_ref(&entity),
             &[],
@@ -674,7 +680,7 @@ fn attribute_loss_requires_concrete_unresolved_references() {
     // deterministic ordinal/code fallback and does not lose the value.
     assert!(
         !parasolid_topology_attribute_fields_have_untransferred_values(
-            &ctx,
+            ctx,
             std::slice::from_ref(&named_definition),
             std::slice::from_ref(&entity),
             std::slice::from_ref(&field_use),
@@ -684,7 +690,7 @@ fn attribute_loss_requires_concrete_unresolved_references() {
     );
     assert!(
         parasolid_topology_attribute_fields_have_untransferred_values(
-            &ctx,
+            ctx,
             &[named_definition],
             std::slice::from_ref(&entity),
             &[],
@@ -692,6 +698,8 @@ fn attribute_loss_requires_concrete_unresolved_references() {
         )
         .unwrap()
     );
+
+})
 }
 
 fn topology_attribute_validation_limit_error(
@@ -733,19 +741,21 @@ fn topology_attribute_validation_limit_error(
         stream_ordinal: 0,
         inflated_offset: 30,
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     parasolid_topology_attribute_fields_have_untransferred_values(
-        &ctx,
+        ctx,
         &[definition],
         &[entity],
         &[],
         &[class_use],
     )
     .expect_err("topology attribute validation limit refusal")
+
+})
 }
 
 fn attribute_class_use_limit_error(
@@ -777,13 +787,15 @@ fn attribute_class_use_limit_error(
         byte_len: 32,
         inflated_offset: 30,
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::parasolid_attribute_class_uses(&ctx, &[entity], &[definition])
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::parasolid_attribute_class_uses(ctx, &[entity], &[definition])
         .expect_err("attribute class use limit refusal")
+
+})
 }
 
 fn attribute_field_use_limit_error(
@@ -822,13 +834,13 @@ fn attribute_field_use_limit_error(
         value_record: "value".into(),
         inflated_offset: 30,
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     super::parasolid_attribute_field_uses(
-        &ctx,
+        ctx,
         &[class_use],
         &[definition],
         &[numeric_use],
@@ -836,6 +848,8 @@ fn attribute_field_use_limit_error(
         &[],
     )
     .expect_err("attribute field use limit refusal")
+
+})
 }
 
 #[test]
@@ -897,13 +911,15 @@ fn topology_class_use_limit_error(
         attribute_list_record: Some(entity.id.clone()),
         inflated_offset: 80,
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::parasolid_topology_attribute_class_uses(&ctx, &[reference], &[entity], &[class_use])
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::parasolid_topology_attribute_class_uses(ctx, &[reference], &[entity], &[class_use])
         .expect_err("topology attribute class use limit refusal")
+
+})
 }
 
 #[test]
@@ -990,10 +1006,10 @@ fn topology_attribute_validation_refuses_work_limit() {
 
 #[test]
 fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
@@ -1045,7 +1061,7 @@ fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
     };
 
     let relations = parasolid_attribute_field_names(
-        &ctx,
+        ctx,
         std::slice::from_ref(&definition),
         std::slice::from_ref(&list),
         &strings,
@@ -1066,7 +1082,7 @@ fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
     incomplete.name_xmts =
         NameReferences::try_from(incomplete.name_xmts.as_slice()[..2].to_vec()).unwrap();
     assert!(parasolid_attribute_field_names(
-        &ctx,
+        ctx,
         std::slice::from_ref(&definition),
         &[incomplete],
         &strings,
@@ -1075,7 +1091,7 @@ fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
     .unwrap()
     .is_empty());
     assert!(parasolid_attribute_field_names(
-        &ctx,
+        ctx,
         &[definition.clone(), definition.clone()],
         std::slice::from_ref(&list),
         &strings,
@@ -1089,7 +1105,7 @@ fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
         ..unicode.clone()
     };
     assert!(parasolid_attribute_field_names(
-        &ctx,
+        ctx,
         std::slice::from_ref(&definition),
         &[ParasolidFieldNamesRecord {
             id: "field-names".into(),
@@ -1109,6 +1125,8 @@ fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
     )
     .unwrap()
     .is_empty());
+
+})
 }
 
 fn attribute_field_names_limit_error(
@@ -1145,13 +1163,15 @@ fn attribute_field_names_limit_error(
         byte_len: 10,
         inflated_offset: 40,
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    parasolid_attribute_field_names(&ctx, &[definition], &[list], &[value], &[])
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    parasolid_attribute_field_names(ctx, &[definition], &[list], &[value], &[])
         .expect_err("attribute field-name relation limit refusal")
+
+})
 }
 
 fn topology_list_reference_limit_error(
@@ -1162,12 +1182,13 @@ fn topology_list_reference_limit_error(
         + b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00".len();
     put_ref(&mut stream, prefix_len + 24 + 8, 50);
     let bytes = prt_with_partition(&stream);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let scan = crate::decode::scan(&ctx, root).unwrap();
-    let parsed = crate::native::substrate::ParsedStreams::parse(&ctx, &scan).unwrap();
+    
+    
+    crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
+let root = cadmpeg_core::decode::View::over_retained(&bytes);
+
+    let scan = crate::decode::scan(ctx, root).unwrap();
+    let parsed = crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
     let entity = super::ParasolidEntity51Record {
         id: "entity".into(),
         stream_ordinal: 0,
@@ -1179,17 +1200,17 @@ fn topology_list_reference_limit_error(
         byte_len: 32,
         inflated_offset: 40,
     };
-    let limited_arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut limited_policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut limited_policy);
-    let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes,
-        &limited_arena,
-        &limited_policy,
-    )
-    .unwrap();
-    super::parasolid_topology_attribute_list_references(&limited_ctx, &parsed, &[entity])
+    
+    
+    
+    crate::test_support::with_decode_context_over(&bytes, |policy| { configure(policy); }, |limited_ctx| {
+
+    super::parasolid_topology_attribute_list_references(limited_ctx, &parsed, &[entity])
         .expect_err("topology attribute list reference limit refusal")
+
+})
+
+})
 }
 
 #[test]
@@ -1625,11 +1646,11 @@ fn entity_51_value_use_limit_error(
         inflated_offset: 40,
     };
     let xmt = NonNullXmt::try_from(12).unwrap();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
     match route {
         ValueUseRoute::Numeric => {
             let value = super::ParasolidEntity52IntegerRecord {
@@ -1640,7 +1661,7 @@ fn entity_51_value_use_limit_error(
                 byte_len: 12,
                 inflated_offset: 80,
             };
-            super::parasolid_entity_51_numeric_uses(&ctx, &[entity], &[value], &[]).err()
+            super::parasolid_entity_51_numeric_uses(ctx, &[entity], &[value], &[]).err()
         }
         ValueUseRoute::String => {
             let value = super::ParasolidEntity54StringRecord {
@@ -1651,7 +1672,7 @@ fn entity_51_value_use_limit_error(
                 byte_len: 12,
                 inflated_offset: 80,
             };
-            super::parasolid_entity_51_string_uses(&ctx, &[entity], &[value]).err()
+            super::parasolid_entity_51_string_uses(ctx, &[entity], &[value]).err()
         }
         ValueUseRoute::Structured => {
             let value = super::ParasolidEntityVectorRecord {
@@ -1664,11 +1685,13 @@ fn entity_51_value_use_limit_error(
                 byte_len: 36,
                 inflated_offset: 80,
             };
-            super::parasolid_entity_51_structured_uses(&ctx, &[entity], &[value], &[], &[], &[])
+            super::parasolid_entity_51_structured_uses(ctx, &[entity], &[value], &[], &[], &[])
                 .err()
         }
     }
     .expect("entity 51 value use route limit refusal")
+
+})
 }
 
 macro_rules! value_use_limit_test {

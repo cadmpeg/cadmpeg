@@ -91,30 +91,28 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
 fn parameter_owner_with_limit(
     dimension: cadmpeg_core::decode::ResourceDimension,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    match dimension {
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = 0;
-        }
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = 0;
-        }
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+    
+    
+    let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => |policy| { policy.limits.max_collection_items = 0; },
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => |policy| { policy.limits.max_retained_bytes = 0; },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => |policy| { policy.limits.max_work_units = 0; },
         _ => {
             return Err(cadmpeg_core::CodecError::InvalidInput(
                 "unsupported parameter owner test limit".to_string(),
             ))
         }
-    }
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    };
+    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+
     let parameter = ParameterId::mint("nx:test:parameter#20").unwrap();
     let owner = FeatureId::mint("nx:test:feature#1").unwrap();
     let owners = BTreeMap::from([(parameter.clone(), Some(owner.clone()))]);
-    let dependencies = parameter_owner_dependencies(&ctx, &owners, &[parameter])?;
+    let dependencies = parameter_owner_dependencies(ctx, &owners, &[parameter])?;
     assert_eq!(dependencies, [owner]);
     Ok(())
+
+})
 }
 
 #[test]

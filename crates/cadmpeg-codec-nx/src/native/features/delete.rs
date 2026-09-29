@@ -362,14 +362,16 @@ mod tests {
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> CodecError {
         let (field, blocks) = delete_construction_fixture();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        configure(&mut policy);
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test root");
-        super::delete_construction_payload_from_field(&ctx, &field, &blocks)
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+        super::delete_construction_payload_from_field(ctx, &field, &blocks)
             .expect_err("DELETE construction limit refusal")
-    }
+    
+})
+}
 
     #[test]
     fn delete_construction_refuses_collection_limit() {
@@ -404,11 +406,11 @@ mod tests {
     #[test]
     fn delete_construction_preserves_complete_source_order() {
         let (field, blocks) = delete_construction_fixture();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test root");
-        let payload = super::delete_construction_payload_from_field(&ctx, &field, &blocks)
+        
+        
+        crate::test_support::with_decode_context(|ctx| {
+
+        let payload = super::delete_construction_payload_from_field(ctx, &field, &blocks)
             .expect("admitted source blocks")
             .expect("complete DELETE payload");
         assert_eq!(
@@ -424,7 +426,9 @@ mod tests {
             payload.content.blocks()[4].id,
             "nx:om-data-blocks-0:block#36"
         );
-    }
+    
+})
+}
 
     #[test]
     fn delete_reference_borrowed_wire_matches_owned_bytes_and_retained_limit() {

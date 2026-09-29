@@ -1,15 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn with_jt_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("test decode context");
-    f(&ctx)
-}
+
 
 fn with_jt_budget<T>(
     container: &crate::container::Container,
@@ -20,18 +11,17 @@ fn with_jt_budget<T>(
         ),
     ) -> T,
 ) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        container.data.as_ref(),
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("test DisplayJT root");
-    run((&ctx, root))
+    
+    crate::test_support::with_decode_context_over(container.data.as_ref(), |_| {}, |ctx| {
+let root = cadmpeg_core::decode::View::over_retained(container.data.as_ref());
+
+    run((ctx, root))
+
+})
 }
 
 fn high_degree_lane_count(representation: &[u8], bindings: u64) -> Option<usize> {
-    with_jt_context(|ctx| {
+    crate::test_support::with_decode_context(|ctx| {
         super::jt9_topology_high_degree_lane_count(ctx, representation, bindings)
             .expect("service JT budget")
     })
@@ -362,10 +352,10 @@ fn finite<const N: usize>(values: [f32; N]) -> [FiniteBinary32; N] {
 fn display_jt_index_requires_every_declared_header() {
     use crate::container::{Container, DirEntry, Region};
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
 
     let mut inflated = Vec::new();
     inflated.extend_from_slice(&24_u32.to_le_bytes());
@@ -428,12 +418,12 @@ fn display_jt_index_requires_every_declared_header() {
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
-    let indices = super::display_jt_indices(&ctx, &container).unwrap();
+    let indices = super::display_jt_indices(ctx, &container).unwrap();
     assert_eq!(indices[0].version, 9);
     assert_eq!(indices[0].declared_count(), 1);
     assert_eq!(indices[0].rows.first().header_offset, 28);
     assert_eq!(indices[0].rows.first().value.get(), 100);
-    let documents = super::display_jt_documents(&ctx, &container, &indices).unwrap();
+    let documents = super::display_jt_documents(ctx, &container, &indices).unwrap();
     assert_eq!(
         (documents[0].version.major(), documents[0].version.minor()),
         (9, 4)
@@ -529,9 +519,11 @@ fn display_jt_index_requires_every_declared_header() {
 
     let mut malformed = container;
     malformed.data.to_mut()[28] = b'X';
-    assert!(super::display_jt_indices(&ctx, &malformed)
+    assert!(super::display_jt_indices(ctx, &malformed)
         .unwrap()
         .is_empty());
+
+})
 }
 
 #[test]
@@ -731,7 +723,7 @@ fn display_jt_string_property_body_requires_exact_utf16_frame() {
     let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
     body.extend_from_slice(&3_u32.to_le_bytes());
     body.extend_from_slice(&[b'N', 0, b'X', 0, 0xa9, 0x03]);
-    let value = with_jt_context(|ctx| super::parse_jt_string_property_atom_body(ctx, &body))
+    let value = crate::test_support::with_decode_context(|ctx| super::parse_jt_string_property_atom_body(ctx, &body))
         .unwrap()
         .expect("required invariant");
     assert_eq!(
@@ -742,47 +734,47 @@ fn display_jt_string_property_body_requires_exact_utf16_frame() {
 
     body.push(0);
     assert!(
-        with_jt_context(|ctx| super::parse_jt_string_property_atom_body(ctx, &body))
+        crate::test_support::with_decode_context(|ctx| super::parse_jt_string_property_atom_body(ctx, &body))
             .unwrap()
             .is_none()
     );
 }
 
-fn assert_jt_string_resource_limit(
-    policy: cadmpeg_core::decode::DecodePolicy,
-    dimension: cadmpeg_core::decode::ResourceDimension,
-    operation: &'static str,
-) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+fn assert_jt_string_resource_limit(adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+dimension: cadmpeg_core::decode::ResourceDimension,
+operation: &'static str) {
 
     let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
     body.extend_from_slice(&3_u32.to_le_bytes());
     body.extend_from_slice(&[b'N', 0, b'X', 0, 0xa9, 0x03]);
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::parse_jt_string_property_atom_body(&ctx, &body).unwrap_err();
+    
+    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+
+    let error = super::parse_jt_string_property_atom_body(ctx, &body).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == dimension && limit.operation == operation)
     );
 
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    crate::test_support::with_decode_context(|service| {
+
     assert_eq!(
-        super::parse_jt_string_property_atom_body(&service, &body)
+        super::parse_jt_string_property_atom_body(service, &body)
             .unwrap()
             .as_deref(),
         Some("NXΩ")
     );
+
+})
+
+})
 }
 
 #[test]
 fn jt_string_code_units_refuse_before_collection_growth() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    assert_jt_string_resource_limit(
-        policy,
+    use cadmpeg_core::decode::{ResourceDimension};
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 2; };
+    assert_jt_string_resource_limit( adjust_policy,
         ResourceDimension::CollectionItems,
         "decode DisplayJT string code units",
     );
@@ -790,11 +782,9 @@ fn jt_string_code_units_refuse_before_collection_growth() {
 
 #[test]
 fn jt_string_code_units_refuse_before_scoped_allocation() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 5;
-    assert_jt_string_resource_limit(
-        policy,
+    use cadmpeg_core::decode::{ResourceDimension};
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_materialized_bytes = 5; };
+    assert_jt_string_resource_limit( adjust_policy,
         ResourceDimension::MaterializedBytes,
         "decode DisplayJT string code units",
     );
@@ -802,11 +792,9 @@ fn jt_string_code_units_refuse_before_scoped_allocation() {
 
 #[test]
 fn jt_string_value_refuses_before_retained_allocation() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 3;
-    assert_jt_string_resource_limit(
-        policy,
+    use cadmpeg_core::decode::{ResourceDimension};
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_retained_bytes = 3; };
+    assert_jt_string_resource_limit( adjust_policy,
         ResourceDimension::RetainedBytes,
         "retain DisplayJT string property",
     );
@@ -814,11 +802,9 @@ fn jt_string_value_refuses_before_retained_allocation() {
 
 #[test]
 fn jt_string_scan_refuses_before_utf16_work() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 2;
-    assert_jt_string_resource_limit(
-        policy,
+    use cadmpeg_core::decode::{ResourceDimension};
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_work_units = 2; };
+    assert_jt_string_resource_limit( adjust_policy,
         ResourceDimension::WorkUnits,
         "decode DisplayJT string code units",
     );
@@ -1254,7 +1240,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         source_offset: 106,
     };
 
-    let tessellations = with_jt_context(|ctx| {
+    let tessellations = crate::test_support::with_decode_context(|ctx| {
         super::display_jt_tessellations(
             ctx,
             &super::DisplayJtTessellationInputs {
@@ -1400,13 +1386,12 @@ fn jt9_topology_bounds_variable_high_degree_lane_count() {
 #[test]
 fn jt9_topology_lookahead_returns_packet_nesting_refusal() {
     let representation = vec![0; 21 * 4];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_recursion_depth = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&representation, &arena, &policy)
-            .expect("bounded JT lookahead input");
-    let error = super::jt9_topology_high_degree_lane_count(&ctx, &representation, 10)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&representation, |policy| { policy.limits.max_recursion_depth = 0; }, |ctx| {
+
+    let error = super::jt9_topology_high_degree_lane_count(ctx, &representation, 10)
         .expect_err("the packet frame exceeds the nesting limit");
     assert!(matches!(
         error,
@@ -1414,6 +1399,8 @@ fn jt9_topology_lookahead_returns_packet_nesting_refusal() {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
                 && limit.operation == "frame JT integer packet"
     ));
+
+})
 }
 
 #[test]
@@ -1828,7 +1815,7 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
         source_offset,
     }];
 
-    let sequences = with_jt_context(|ctx| {
+    let sequences = crate::test_support::with_decode_context(|ctx| {
         display_jt_topology_packet_sequences(ctx, &container, &elements).expect("service JT budget")
     })
     .sequences;

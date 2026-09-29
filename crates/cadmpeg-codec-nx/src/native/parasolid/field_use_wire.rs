@@ -144,18 +144,19 @@ mod tests {
 
     #[test]
     fn attribute_field_use_retained_limit_refuses_borrowed_serialization() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::{ResourceDimension};
         use cadmpeg_ir::NativeNamespace;
 
         let wire = r#"{"id":"nx:s3:attribute-field-use#2-8","stream_ordinal":3,"attribute_class_use":"class","entity_51_record":"entity","attribute_definition":"definition","field_ordinal":1,"field_code":2,"reference_ordinal":6,"value_kind":"doubles","value_use":"use","value_record":"value","inflated_offset":8}"#;
         let record: ParasolidAttributeFieldUse = serde_json::from_str(wire).unwrap();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(wire.len()).unwrap() - 1;
-        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = u64::try_from(wire.len()).unwrap() - 1; }, |limited| {
+
         ATTRIBUTE_FIELD_USE_CLONE_COUNT.with(|count| count.set(0));
         let error = NativeNamespace::default()
-            .set_arena(&limited, "a", std::slice::from_ref(&record))
+            .set_arena(limited, "a", std::slice::from_ref(&record))
             .unwrap_err();
         ATTRIBUTE_FIELD_USE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
         assert!(matches!(cadmpeg_core::CodecError::from(error),
@@ -163,11 +164,15 @@ mod tests {
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "serialize native record"));
 
-        let (service, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        crate::test_support::with_decode_context(|service| {
+
         NativeNamespace::default()
-            .set_arena(&service, "a", &[record])
+            .set_arena(service, "a", &[record])
             .unwrap();
         ATTRIBUTE_FIELD_USE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
-    }
+    
+})
+
+})
+}
 }

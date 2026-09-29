@@ -82,7 +82,7 @@ impl Serialize for FeatureSwp104LeadingBranch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
 
@@ -138,12 +138,13 @@ mod tests {
         })
         .unwrap()
         .unwrap();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        configure(&mut policy);
-        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&payload, |policy| { configure(policy); }, |ctx| {
+
         FeatureSwp104LeadingBranch::from_source(
-            &ctx,
+            ctx,
             "branch".to_owned(),
             "operation".to_owned(),
             1200,
@@ -151,7 +152,9 @@ mod tests {
             |_| Ok(None),
         )
         .unwrap_err()
-    }
+    
+})
+}
 
     #[test]
     fn swp104_mapped_branch_refuses_collection_limit() {

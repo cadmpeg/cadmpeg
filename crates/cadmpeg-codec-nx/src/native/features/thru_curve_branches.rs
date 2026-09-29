@@ -302,14 +302,16 @@ mod tests {
         })
         .expect("admitted THRU_CURVE branch group");
         assert_eq!(groups.len(), 1);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        configure(&mut policy);
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test root");
-        super::feature_thru_curve_construction_branch_groups(&ctx, &container)
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+        super::feature_thru_curve_construction_branch_groups(ctx, &container)
             .expect_err("THRU_CURVE branch group resource limit")
-    }
+    
+})
+}
 
     #[test]
     fn thru_curve_branch_group_route_refuses_collection_limit() {

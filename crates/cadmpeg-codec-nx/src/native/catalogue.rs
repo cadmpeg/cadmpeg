@@ -4153,19 +4153,21 @@ pub(super) const NATIVE_CATALOGUE: Catalogue<
 mod tests {
     #[test]
     fn roll_forward_catalog_refuses_scoped_reference_storage() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::{ResourceDimension};
         let bytes = crate::test_support::test_prt::prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
             crate::test_support::test_om::segment_om_record_area_with_state_groups_and_counter_map(
             ),
         )]);
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let scan = crate::decode::scan(&ctx, root).unwrap();
-        let mut parsed = crate::native::substrate::ParsedStreams::parse(&ctx, &scan).unwrap();
+        
+        
+        crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
+let root = cadmpeg_core::decode::View::over_retained(&bytes);
+
+        let scan = crate::decode::scan(ctx, root).unwrap();
+        let mut parsed = crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
         let model = crate::native::model::NativeModel::extract(
-            &ctx,
+            ctx,
             root,
             &scan.container,
             &scan.streams,
@@ -4178,34 +4180,40 @@ mod tests {
             .iter()
             .find(|row| row.arena == "om_roll_forward_state_groups")
             .expect("roll-forward group family");
-        let refusal_arena = DecodeArena::new();
-        let mut refusal_policy = DecodePolicy::service();
-        refusal_policy.limits.max_materialized_bytes = 0;
-        let (refusal_ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &refusal_arena, &refusal_policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_materialized_bytes = 0; }, |refusal_ctx| {
+
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-        let error = (row.emit)(&refusal_ctx, &model, row, &mut namespace).unwrap_err();
+        let error = (row.emit)(refusal_ctx, &model, row, &mut namespace).unwrap_err();
         assert!(
             matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes)
         );
-    }
+    
+})
+
+})
+}
 
     #[test]
     fn roll_forward_catalog_refuses_collection_reference_storage() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::{ResourceDimension};
         let bytes = crate::test_support::test_prt::prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
             crate::test_support::test_om::segment_om_record_area_with_state_groups_and_counter_map(
             ),
         )]);
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let scan = crate::decode::scan(&ctx, root).unwrap();
-        let mut parsed = crate::native::substrate::ParsedStreams::parse(&ctx, &scan).unwrap();
+        
+        
+        crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
+let root = cadmpeg_core::decode::View::over_retained(&bytes);
+
+        let scan = crate::decode::scan(ctx, root).unwrap();
+        let mut parsed = crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
         let model = crate::native::model::NativeModel::extract(
-            &ctx,
+            ctx,
             root,
             &scan.container,
             &scan.streams,
@@ -4224,35 +4232,40 @@ mod tests {
             .iter()
             .find(|row| row.arena == "om_roll_forward_state_groups")
             .expect("roll-forward group family");
-        let refusal_arena = DecodeArena::new();
-        let mut refusal_policy = DecodePolicy::service();
-        refusal_policy.limits.max_collection_items =
-            cadmpeg_core::decode::u64_from_index(count - 1);
-        let (refusal_ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &refusal_arena, &refusal_policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items =
+            cadmpeg_core::decode::u64_from_index(count - 1); }, |refusal_ctx| {
+
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-        let error = (row.emit)(&refusal_ctx, &model, row, &mut namespace).unwrap_err();
+        let error = (row.emit)(refusal_ctx, &model, row, &mut namespace).unwrap_err();
         assert!(
             matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "NX roll-forward catalog group references")
         );
-    }
+    
+})
+
+})
+}
 
     #[test]
     fn class_use_annotation_survives_absent_entity_record() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         use cadmpeg_ir::native::catalogue::NotePhase;
         let bytes = crate::test_support::test_prt::prt_with_partition(
             &crate::test_support::test_streams::parasolid_entity_records_stream(),
         );
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::default();
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let scan = crate::decode::scan(&ctx, root).unwrap();
-        let mut parsed = crate::native::substrate::ParsedStreams::parse(&ctx, &scan).unwrap();
+        
+        
+        crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
+let root = cadmpeg_core::decode::View::over_retained(&bytes);
+
+        let scan = crate::decode::scan(ctx, root).unwrap();
+        let mut parsed = crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
         let mut model = crate::native::model::NativeModel::extract(
-            &ctx,
+            ctx,
             root,
             &scan.container,
             &scan.streams,
@@ -4266,5 +4279,7 @@ mod tests {
         let mut annotations = super::AnnotationBuilder::new();
         super::NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, &model, &mut annotations);
         assert!(annotations.build().exactness().contains_key(&id));
-    }
+    
+})
+}
 }

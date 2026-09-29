@@ -138,12 +138,14 @@ fn body_segment_join_refusal(
     })
     .expect("admitted body segment use");
     assert_eq!(admitted, 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    call(&ctx, &[write], &[binding]).expect_err("body segment use resource limit")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    call(ctx, &[write], &[binding]).expect_err("body segment use resource limit")
+
+})
 }
 
 macro_rules! body_segment_join_limit_tests {
@@ -250,12 +252,14 @@ fn body_partition_join_refusal(
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
         .expect("admitted body partition use");
     assert_eq!(admitted.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    route(&ctx).expect_err("body partition use resource limit")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    route(ctx).expect_err("body partition use resource limit")
+
+})
 }
 
 #[test]
@@ -403,12 +407,14 @@ fn feature_label_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let container = unlabeled_history_fixture();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_operation_labels(&ctx, &container).unwrap_err()
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    feature_operation_labels(ctx, &container).unwrap_err()
+
+})
 }
 
 fn feature_operation_record_refusal(
@@ -419,13 +425,15 @@ fn feature_operation_record_refusal(
         crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &container))
             .expect("admitted feature operation records");
     assert_eq!(admitted.len(), 2);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_operation_records(&ctx, &container)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    feature_operation_records(ctx, &container)
         .expect_err("feature operation record resource limit")
+
+})
 }
 
 #[test]
@@ -502,12 +510,12 @@ fn feature_label_route_refuses_work_limit() {
 
 #[test]
 fn feature_label_identity_admits_full_ordinal_width() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    
+    
+    crate::test_support::with_decode_context_over(&[], |_| {}, |ctx| {
+
     let id = crate::native::features::format_feature_history_id(
-        &ctx,
+        ctx,
         "operation-label",
         "0000000000",
         usize::MAX,
@@ -521,12 +529,12 @@ fn feature_label_identity_admits_full_ordinal_width() {
             value = usize::MAX
         ),
     );
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.len() - 1);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.len() - 1); }, |ctx| {
+
     let error = crate::native::features::format_feature_history_id(
-        &ctx,
+        ctx,
         "operation-label",
         "0000000000",
         usize::MAX,
@@ -537,18 +545,24 @@ fn feature_label_identity_admits_full_ordinal_width() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
     );
+
+})
+
+})
 }
 
 fn unlabeled_record_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let container = unlabeled_history_fixture();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_unlabeled_operation_records(&ctx, &container).unwrap_err()
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    feature_unlabeled_operation_records(ctx, &container).unwrap_err()
+
+})
 }
 
 #[test]
@@ -681,12 +695,12 @@ fn operation_header_identity_requires_unique_resolved_blocks() {
 fn feature_operation_identity_refuses_scoped_keys_at_caller_limit() {
     let block_identities = BTreeMap::from([(55, Some("block-55".to_string()))]);
     let mut labels = vec![label(0, [Some(55), None, None, None])];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = assign_operation_header_identities(&ctx, &mut labels, &block_identities)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_materialized_bytes = 0; }, |ctx| {
+
+    let error = assign_operation_header_identities(ctx, &mut labels, &block_identities)
         .expect_err("scoped key refusal");
     assert!(matches!(
         error,
@@ -694,6 +708,8 @@ fn feature_operation_identity_refuses_scoped_keys_at_caller_limit() {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
                 && limit.operation == "reserve NX operation header keys"
     ));
+
+})
 }
 
 #[test]
@@ -756,12 +772,14 @@ fn operation_object_reference_refusal(
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
         .expect("admitted operation object reference");
     assert_eq!(admitted.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    route(&ctx).expect_err("operation object reference resource limit")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    route(ctx).expect_err("operation object reference resource limit")
+
+})
 }
 
 #[test]
@@ -856,12 +874,14 @@ fn operation_common_frame_refusal(
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
         .expect("admitted operation frame route");
     assert_eq!(admitted, 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    route(&ctx).expect_err("operation frame resource limit")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    route(ctx).expect_err("operation frame resource limit")
+
+})
 }
 
 #[derive(Clone, Copy)]
@@ -903,12 +923,14 @@ fn feature_payload_reference_refusal(
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
         .expect("admitted feature payload route");
     assert_eq!(admitted, 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    route(&ctx).expect_err("feature payload resource limit")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    route(ctx).expect_err("feature payload resource limit")
+
+})
 }
 
 fn input_block_refusal(
@@ -935,12 +957,14 @@ fn input_block_refusal(
     let admitted =
         crate::test_support::with_decode_context(|ctx| route(ctx)).expect("admitted input block");
     assert_eq!(admitted.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    route(&ctx).expect_err("input block resource limit")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    route(ctx).expect_err("input block resource limit")
+
+})
 }
 
 fn input_block_group_refusal(
@@ -966,12 +990,14 @@ fn input_block_group_refusal(
         .expect("admitted input block identity group");
     assert_eq!(admitted.len(), 1);
     assert_eq!(admitted[0].members.len(), 2);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    route(&ctx).expect_err("input block identity group resource limit")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    route(ctx).expect_err("input block identity group resource limit")
+
+})
 }
 
 #[test]
@@ -1169,13 +1195,15 @@ fn operation_body_write_refusal(
     .expect("admitted operation body writes");
     assert_eq!(admitted.len(), 1);
     assert!(admitted[0].body_image_data_block.is_some());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_operation_body_writes(&ctx, &container)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    feature_operation_body_writes(ctx, &container)
         .expect_err("operation body-write resource limit")
+
+})
 }
 
 #[test]
@@ -1560,12 +1588,14 @@ fn body_group_partition_refusal(
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
         .expect("admitted body-write group partition use");
     assert_eq!(admitted.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    route(&ctx).expect_err("body-write group partition resource limit")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    route(ctx).expect_err("body-write group partition resource limit")
+
+})
 }
 
 #[test]
@@ -1707,12 +1737,14 @@ fn state_journal_use_refusal(
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
         .expect("admitted operation journal use");
     assert_eq!(admitted.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    route(&ctx).expect_err("operation journal use resource limit")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    route(ctx).expect_err("operation journal use resource limit")
+
+})
 }
 
 #[test]

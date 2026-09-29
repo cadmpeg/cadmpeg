@@ -10,15 +10,13 @@ use crate::test_support::test_prt::prt_with_two_bodies_and_rmfastload;
 use crate::test_support::test_prt::rmfastload_prt;
 use crate::test_support::test_streams::partition_stream;
 use crate::NxCodec;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 use std::io::Cursor;
 
-fn native_fastload_result(
-    policy: DecodePolicy,
-) -> Result<
+fn native_fastload_result(adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> Result<
     Option<(
         super::super::RmFastLoadObjectIdTable,
         Vec<super::super::RmFastLoadObjectId>,
@@ -26,23 +24,32 @@ fn native_fastload_result(
     CodecError,
 > {
     let file = rmfastload_prt();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy)?;
-    let container = container::scan_bytes(&ctx, file.as_slice())?;
-    super::super::rmfastload_object_id_table(&ctx, &container)
+    
+    crate::test_support::with_decode_context_over(&file, adjust, |ctx| {
+
+    let container = container::scan_bytes(ctx, file.as_slice())?;
+    super::super::rmfastload_object_id_table(ctx, &container)
+
+})
 }
 
 fn store_header_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
     let file = prt_with_indexed_om_section();
-    let scan_arena = DecodeArena::new();
-    let scan_policy = DecodePolicy::service();
-    let (scan_ctx, _) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy).unwrap();
-    let container = container::scan_bytes(&scan_ctx, file.as_slice()).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::store_headers(&ctx, &container).unwrap_err()
+    
+    
+    crate::test_support::with_decode_context_over(&file, |_| {}, |scan_ctx| {
+
+    let container = container::scan_bytes(scan_ctx, file.as_slice()).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::store_headers(ctx, &container).unwrap_err()
+
+})
+
+})
 }
 
 #[test]
@@ -71,15 +78,21 @@ fn indexed_om_projection_error(
     project: impl FnOnce(&DecodeContext<'_>, &container::Container) -> Result<(), CodecError>,
 ) -> CodecError {
     let file = prt_with_indexed_om_section();
-    let scan_arena = DecodeArena::new();
-    let scan_policy = DecodePolicy::service();
-    let (scan_ctx, _) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy).unwrap();
-    let container = container::scan_bytes(&scan_ctx, file.as_slice()).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    project(&ctx, &container).unwrap_err()
+    
+    
+    crate::test_support::with_decode_context_over(&file, |_| {}, |scan_ctx| {
+
+    let container = container::scan_bytes(scan_ctx, file.as_slice()).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    project(ctx, &container).unwrap_err()
+
+})
+
+})
 }
 
 #[test]
@@ -329,19 +342,20 @@ fn assembly_metadata_lists_external_child_paths() {
 
 #[test]
 fn external_reference_extraction_refuses_record_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{ResourceDimension};
 
     let file = assembly_with_external_paths();
     let container =
         crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
             .expect("external reference container");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
+    
+    
     // Two strings enter both the parsed table and the container result before
     // extraction admits the two native records.
-    policy.limits.max_collection_items = 5;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    let error = super::super::external_references(&ctx, &container)
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 5; }, |ctx| {
+
+    let error = super::super::external_references(ctx, &container)
         .expect_err("two native records exceed the remaining collection item");
     assert!(matches!(
         error,
@@ -349,6 +363,8 @@ fn external_reference_extraction_refuses_record_collection_limit() {
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "nx external references"
     ));
+
+})
 }
 
 fn native_external_record_result(
@@ -362,11 +378,14 @@ fn native_external_record_result(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("indexed external-reference container");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    super::super::external_reference_records(&ctx, &container)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::external_reference_records(ctx, &container)
+
+})
 }
 
 #[test]
@@ -414,11 +433,14 @@ fn native_external_indexed_result(
         super::super::external_reference_records(ctx, &container)
     })
     .expect("handle-set record");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    super::super::external_reference_indexed_records(&ctx, &container, &decoded)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::external_reference_indexed_records(ctx, &container, &decoded)
+
+})
 }
 
 #[test]
@@ -496,11 +518,14 @@ fn native_external_empty_result(
         super::super::external_reference_indexed_records(ctx, &container, &records)
     })
     .expect("native indexed records");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    super::super::external_reference_empty_records(&ctx, &container, &indexed)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::external_reference_empty_records(ctx, &container, &indexed)
+
+})
 }
 
 #[test]
@@ -553,11 +578,14 @@ fn native_external_tail_result(
         super::super::external_reference_records(ctx, &container)
     })
     .expect("handle-set record");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    super::super::external_reference_tail_reference_pairs(&ctx, &container, &records)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::external_reference_tail_reference_pairs(ctx, &container, &records)
+
+})
 }
 
 #[test]
@@ -621,11 +649,14 @@ fn native_external_string_uses_result(
             ))
         })
         .expect("native external-reference inputs");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    super::super::external_reference_record_string_uses(&ctx, &records, &references)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::external_reference_record_string_uses(ctx, &records, &references)
+
+})
 }
 
 #[test]
@@ -709,11 +740,14 @@ fn native_external_children_result(
             Ok((records, references, uses))
         })
         .expect("complete external-reference child inputs");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    super::super::external_reference_record_children(&ctx, &records, &references, &uses)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::external_reference_record_children(ctx, &records, &references, &uses)
+
+})
 }
 
 #[test]
@@ -790,11 +824,14 @@ fn active_configuration_join_result(
         super::super::part_attributes(ctx, &container)
     })
     .expect("part attribute table");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    super::super::configuration_attribute_uses(&ctx, &configurations, &attributes)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::configuration_attribute_uses(ctx, &configurations, &attributes)
+
+})
 }
 
 #[test]
@@ -848,11 +885,14 @@ fn arrangement_configuration_result(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("arrangement container");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    super::super::configurations(&ctx, &container)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::configurations(ctx, &container)
+
+})
 }
 
 #[test]
@@ -919,11 +959,14 @@ fn part_attribute_result(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("part attribute container");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    super::super::part_attributes(&ctx, &container)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::part_attributes(ctx, &container)
+
+})
 }
 
 #[test]
@@ -978,11 +1021,14 @@ fn class_definition_result(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("class definition container");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    super::super::class_definitions(&ctx, &container)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::class_definitions(ctx, &container)
+
+})
 }
 
 fn field_definition_result(
@@ -993,11 +1039,14 @@ fn field_definition_result(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("field definition container");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    super::super::field_definitions(&ctx, &container)
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::field_definitions(ctx, &container)
+
+})
 }
 
 #[test]
@@ -1144,11 +1193,12 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         source_offset: 30,
     };
 
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let handles =
-        super::super::persistent_handles(&ctx, &[reference], &[control], &[external], &[tail_pair])
+        super::super::persistent_handles(ctx, &[reference], &[control], &[external], &[tail_pair])
             .unwrap();
 
     assert_eq!(handles.len(), 2);
@@ -1160,6 +1210,8 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
     assert_eq!(handles[1].value, 0x5060_7080);
     assert_eq!(handles[1].external_records, ["nx:test:external-record#6"]);
     assert_eq!(handles[1].external_occurrence_count, 1);
+
+})
 }
 
 fn persistent_handle_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
@@ -1172,11 +1224,14 @@ fn persistent_handle_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> C
         source_entry: "om".into(),
         source_offset: 0,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::persistent_handles(&ctx, &[reference], &[], &[], &[]).unwrap_err()
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::persistent_handles(ctx, &[reference], &[], &[], &[]).unwrap_err()
+
+})
 }
 
 #[test]
@@ -1244,11 +1299,14 @@ fn control_handle_pair_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> Cod
         source_offset,
     };
     let references = [reference(0, 10), reference(1, 15)];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    super::super::data_block_control_handle_pairs(&ctx, &references).unwrap_err()
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::data_block_control_handle_pairs(ctx, &references).unwrap_err()
+
+})
 }
 
 #[test]
@@ -1304,10 +1362,11 @@ fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
         reference("record#1", 6, 25),
     ];
 
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let pairs = super::super::object_record_handle_pairs(&ctx, &references).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
+    let pairs = super::super::object_record_handle_pairs(ctx, &references).unwrap();
     assert_eq!(pairs.len(), 2);
     assert_eq!(pairs[0].record, "record#0");
     assert_eq!(pairs[0].first_reference, "record#0:reference#0");
@@ -1315,6 +1374,8 @@ fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
     assert_eq!(pairs[0].object_id, 7);
     assert_eq!(pairs[1].record, "record#1");
     assert_eq!(pairs[1].source_offset, 20);
+
+})
 }
 
 fn record_handle_pair_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
@@ -1328,11 +1389,14 @@ fn record_handle_pair_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> 
         source_offset,
     };
     let references = [reference(0, 10), reference(1, 15)];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::object_record_handle_pairs(&ctx, &references).unwrap_err()
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::object_record_handle_pairs(ctx, &references).unwrap_err()
+
+})
 }
 
 #[test]
@@ -1418,21 +1482,24 @@ fn native_retains_rmfastload_table_and_member_words() {
 
 #[test]
 fn rmfastload_target_identity_refuses_retained_limit() {
-    let (_, object_ids) = native_fastload_result(DecodePolicy::service())
+    let (_, object_ids) = native_fastload_result(|_| {})
         .expect("RMFastLoad input is valid")
         .expect("RMFastLoad table is present");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::rmfastload_target_object_id(&ctx, &object_ids, 0).unwrap_err();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
+    let error = super::super::rmfastload_target_object_id(ctx, &object_ids, 0).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes));
+
+})
 }
 
 #[test]
 fn service_profile_admits_fastload_native_members() {
-    let (table, object_ids) = native_fastload_result(DecodePolicy::service())
+    let (table, object_ids) = native_fastload_result(|_| {})
         .expect("service FastLoad admission")
         .expect("FastLoad table");
     assert_eq!(table.members.as_slice().len(), 50);
@@ -1441,9 +1508,8 @@ fn service_profile_admits_fastload_native_members() {
 
 #[test]
 fn fastload_identity_map_refuses_collection_limit_before_reserve() {
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 100;
-    let error = native_fastload_result(policy).expect_err("identity map needs fifty more items");
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 100; };
+    let error = native_fastload_result( adjust_policy).expect_err("identity map needs fifty more items");
     assert_fastload_limit(
         &error,
         ResourceDimension::CollectionItems,
@@ -1453,11 +1519,10 @@ fn fastload_identity_map_refuses_collection_limit_before_reserve() {
 
 #[test]
 fn fastload_identity_map_refuses_materialized_limit_before_reserve() {
-    let mut policy = DecodePolicy::default();
+    
     let map_entry_bytes = std::mem::size_of::<(u32, usize)>() + 4 * std::mem::size_of::<usize>();
-    policy.limits.max_materialized_bytes =
-        cadmpeg_core::decode::u64_from_index(50 * map_entry_bytes - 1);
-    let error = native_fastload_result(policy).expect_err("identity map needs one more byte");
+    let adjust_policy = |policy: &mut DecodePolicy| { policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(50 * map_entry_bytes - 1); };
+    let error = native_fastload_result(adjust_policy).expect_err("identity map needs one more byte");
     assert_fastload_limit(
         &error,
         ResourceDimension::MaterializedBytes,
@@ -1467,9 +1532,8 @@ fn fastload_identity_map_refuses_materialized_limit_before_reserve() {
 
 #[test]
 fn fastload_identity_map_refuses_work_limit_before_counting() {
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 100;
-    let error = native_fastload_result(policy).expect_err("fifty IDs need one hundred work units");
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_work_units = 100; };
+    let error = native_fastload_result( adjust_policy).expect_err("fifty IDs need one hundred work units");
     assert_fastload_limit(
         &error,
         ResourceDimension::WorkUnits,
@@ -1479,10 +1543,9 @@ fn fastload_identity_map_refuses_work_limit_before_counting() {
 
 #[test]
 fn fastload_native_records_refuse_collection_limit_before_reserve() {
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 201;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 201; };
     let error =
-        native_fastload_result(policy).expect_err("native records and links need one more item");
+        native_fastload_result( adjust_policy).expect_err("native records and links need one more item");
     assert_fastload_limit(
         &error,
         ResourceDimension::CollectionItems,
@@ -1492,9 +1555,8 @@ fn fastload_native_records_refuse_collection_limit_before_reserve() {
 
 #[test]
 fn fastload_native_records_refuse_entity_limit_before_creation() {
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_entities = 50;
-    let error = native_fastload_result(policy)
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_entities = 50; };
+    let error = native_fastload_result( adjust_policy)
         .expect_err("fifty members and table need fifty-one entities");
     assert_fastload_limit(
         &error,
@@ -1505,7 +1567,7 @@ fn fastload_native_records_refuse_entity_limit_before_creation() {
 
 #[test]
 fn fastload_native_copies_refuse_retained_limit_before_creation() {
-    let mut policy = DecodePolicy::default();
+    
     let table_id = "nx:rmfastload:object-id-table#0";
     let member_id_len = "nx:rmfastload:object-id#".len() + 10;
     let stable_bytes = (1..=50)
@@ -1523,9 +1585,8 @@ fn fastload_native_copies_refuse_retained_limit_before_creation() {
         + std::mem::size_of::<super::super::RmFastLoadObjectIdTable>()
         + "/Root/FastLoad/RMFastLoad".len()
         + stable_bytes;
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(directory_bytes + parsed_id_bytes + native_bytes - 1);
-    let error = native_fastload_result(policy).expect_err("native copies need one more byte");
+    let adjust_policy = |policy: &mut DecodePolicy| { policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(directory_bytes + parsed_id_bytes + native_bytes - 1); };
+    let error = native_fastload_result(adjust_policy).expect_err("native copies need one more byte");
     assert_fastload_limit(
         &error,
         ResourceDimension::RetainedBytes,
@@ -1690,10 +1751,11 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         ),
     ];
 
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let tables = data_block_column_index_tables(&ctx, &linked_rows, &target_rows).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
+    let tables = data_block_column_index_tables(ctx, &linked_rows, &target_rows).unwrap();
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].id, "nx:om-data-block-column-index-tables:table#2");
     assert_eq!(tables[0].opening_linked_row, "opening");
@@ -1716,7 +1778,7 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         crate::om::discriminators::IndexRowMode::Form07,
         150,
     );
-    assert!(data_block_column_index_tables(&ctx, &linked_rows, &gap)
+    assert!(data_block_column_index_tables(ctx, &linked_rows, &gap)
         .unwrap()
         .is_empty());
     let mut incomplete_mode = target_rows.clone();
@@ -1727,10 +1789,12 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         175,
     );
     assert!(
-        data_block_column_index_tables(&ctx, &linked_rows, &incomplete_mode)
+        data_block_column_index_tables(ctx, &linked_rows, &incomplete_mode)
             .unwrap()
             .is_empty()
     );
+
+})
 }
 
 fn column_index_table_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
@@ -1783,11 +1847,14 @@ fn column_index_table_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> 
         linked("linked", 61, IndexRowMode::Form04, 150),
     ];
     let target_rows = [target_row(62, IndexRowMode::Form04, 125)];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::data_block_column_index_tables(&ctx, &linked_rows, &target_rows).unwrap_err()
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    super::super::data_block_column_index_tables(ctx, &linked_rows, &target_rows).unwrap_err()
+
+})
 }
 
 #[test]
@@ -1824,9 +1891,10 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
         external_reference_record_children, external_reference_record_string_uses,
         ExternalReference, ExternalReferenceRecord,
     };
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
 
     let references = (0..4)
         .map(|ordinal| ExternalReference {
@@ -1848,7 +1916,7 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
         source_offset: 20,
     };
     let uses =
-        external_reference_record_string_uses(&ctx, std::slice::from_ref(&record), &references)
+        external_reference_record_string_uses(ctx, std::slice::from_ref(&record), &references)
             .expect("complete string use lane");
     assert_eq!(uses.len(), 4);
     assert_eq!(uses[0].id, "nx:external-reference:record-string-use#7-0");
@@ -1869,13 +1937,13 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     let mut child_references = references.clone();
     child_references[0].path = "child.prt".into();
     let child_uses = external_reference_record_string_uses(
-        &ctx,
+        ctx,
         std::slice::from_ref(&record),
         &child_references,
     )
     .expect("complete child string use lane");
     let children = external_reference_record_children(
-        &ctx,
+        ctx,
         std::slice::from_ref(&record),
         &child_references,
         &child_uses,
@@ -1886,7 +1954,7 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     assert_eq!(children[0].name_reference, "reference#0");
     assert_eq!(children[0].directory_reference, "reference#1");
     assert!(external_reference_record_children(
-        &ctx,
+        ctx,
         std::slice::from_ref(&record),
         &references,
         &uses
@@ -1897,15 +1965,17 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     let mut out_of_range = record.clone();
     out_of_range.id_slots[2] = 4;
     assert!(
-        external_reference_record_string_uses(&ctx, &[out_of_range], &references)
+        external_reference_record_string_uses(ctx, &[out_of_range], &references)
             .expect("unresolved slot")
             .is_empty()
     );
     let mut duplicate = references.clone();
     duplicate.push(references[0].clone());
     assert!(
-        external_reference_record_string_uses(&ctx, &[record], &duplicate)
+        external_reference_record_string_uses(ctx, &[record], &duplicate)
             .expect("duplicate slot")
             .is_empty()
     );
+
+})
 }

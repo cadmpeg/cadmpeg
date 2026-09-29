@@ -44,12 +44,14 @@ fn datum_block_use_refusal(
             .expect("admitted datum block use")
             > 0
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    decode(&ctx).expect_err("datum block use resource limit")
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { configure(policy); }, |ctx| {
+
+    decode(ctx).expect_err("datum block use resource limit")
+
+})
 }
 
 macro_rules! datum_block_use_limit_tests {
