@@ -5168,10 +5168,11 @@ fn bind_profile_face_group_cardinality(
         };
         for group in profile_groups {
             let Some(indices) = crate::design::face_resolve::extrude_profile_group_operand_indices(
+                ctx,
                 group,
                 operand_groups,
                 operands,
-            ) else {
+            )? else {
                 continue;
             };
             if group.members().len() != indices.len()

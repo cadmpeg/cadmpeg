@@ -8972,11 +8972,12 @@ fn project_extrude(
             };
             if rest.is_empty() {
                 match resolved_extrude_profile_face_group(
+                    ctx,
                     scope,
                     first,
                     construction_groups,
                     face_operands,
-                ) {
+                )? {
                     Some(profile) => profile,
                     None => ProfileRef::Planar(PlanarProfileRef::Native(copy_feature_text(
                         ctx, &first.id, "f3d Extrude profile group id")?)),
@@ -8988,11 +8989,12 @@ fn project_extrude(
                 let mut complete = true;
                 for group in &profile_groups {
                     let Some(selection) = resolved_extrude_profile_face_group(
+                            ctx,
                             scope,
                             group,
                             construction_groups,
                             face_operands,
-                    ) else {
+                    )? else {
                         complete = false;
                         break;
                     };

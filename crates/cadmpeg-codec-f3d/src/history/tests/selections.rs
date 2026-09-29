@@ -1552,8 +1552,9 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     );
     assert_eq!(
         crate::design::face_resolve::extrude_profile_group_operand_indices(
-            roots[0], &groups, &operands,
+            None, roots[0], &groups, &operands,
         )
+        .unwrap()
         .expect("one leaf operand per root member"),
         [0, 1]
     );
@@ -1652,8 +1653,9 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     assert_eq!(operands[0].resolved_face_slots, [10]);
     assert_eq!(operands[1].resolved_face_slots, [11]);
     let profile = crate::design::face_resolve::resolved_extrude_profile_face_group(
-        &scope, roots[0], &groups, &operands,
+        None, &scope, roots[0], &groups, &operands,
     )
+    .unwrap()
     .expect("resolved root profile");
     let feature = crate::ids::neutral_feature_id(&scope);
     let feature_key = feature.key();
