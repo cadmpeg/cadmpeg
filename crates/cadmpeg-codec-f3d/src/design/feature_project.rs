@@ -8,7 +8,7 @@ use crate::design::decode::operands::entity_selection_matches_curve;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::dimensions::expression_identifiers;
 use crate::design::edge_resolve::{
-    feature_input_topology_id, project_fixed_fillet_with_corners, resolved_edge_flange_group,
+    project_fixed_fillet_with_corners, resolved_edge_flange_group,
     resolved_edge_group, resolved_edge_treatment_group_with_corners,
     resolved_surface_patch_edge_group,
 };
@@ -21,10 +21,7 @@ use crate::design::face_resolve::{
     resolved_loft_edge_profile_group, resolved_profile_face_group,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
-use crate::ids::{
-    self, native_stream, neutral_feature_id, neutral_parameter_id, neutral_sketch_id,
-    neutral_spatial_sketch_id,
-};
+use crate::ids::{self, native_stream};
 use crate::layout::coil_long_scope_fixed_prologue as coil_long;
 use crate::layout::{
     form_class_325_cage_entry as form_325_entry, form_class_325_cage_table as form_325,
@@ -906,7 +903,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         if source_ordinals.contains_key(&(stream, scope.record_index)) {
             // discarded-value: duplicate scope keys retain the last feature ID.
             let _ = insert_feature_map(ctx, &mut scope_ids,
-                (stream, scope.record_index), neutral_feature_id(scope),
+                (stream, scope.record_index), crate::design::identity::neutral_feature_id(ctx,scope)?,
                 "f3d projected scope id index")?;
         }
     }
@@ -958,7 +955,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     .map_or_else(
                         || native_scope_definition(ctx, scope, &parameters),
                         |_| Ok(FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
-                            joint: crate::ids::neutral_assembly_joint_id(scope),
+                            joint: crate::design::identity::neutral_assembly_joint_id(ctx,scope)?,
                         })),
                     )?,
                 Some(DesignFeatureFamily::Extrude) => project_extrude(
@@ -1392,7 +1389,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             })),
                         )?
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFlange {
-                        project_base_flange(scope, construction_groups, placements).unwrap_or_else(
+                        project_base_flange(ctx, scope, construction_groups, placements)?.unwrap_or_else(
                             || FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
@@ -1747,7 +1744,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
             };
             Ok(NeutralParameter {
-                id: neutral_parameter_id(parameter),
+                id: crate::design::identity::neutral_parameter_id(ctx,parameter)?,
                 owner: owner.map(|id| copy_feature_id(ctx, id,
                     "f3d projected parameter owner id")).transpose()?,
                 ordinal: owner
@@ -2132,13 +2129,13 @@ fn project_work_point_construction(
             return Ok(Some(EdgeSelection::Native(copy_feature_text(ctx, &operand.id,
                 "f3d WorkPoint native edge operand id")?)));
         };
-        let feature_id = neutral_feature_id(scope);
-        let feature_key = feature_id.key();
-        let prefix = ids::history_input_prefix(&feature_key, state_id);
+        let feature_id = crate::design::identity::neutral_feature_id(ctx,scope)?;
+        let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
+        let prefix = crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?;
         Ok(Some(
             match EdgeSelection::historical(
-                feature_input_topology_id(&feature_id, state_id),
-                vec![ids::history_input_edge_id(&prefix, edge_slot)],
+                crate::design::identity::feature_input_topology_id(ctx, &feature_id, state_id)?,
+                vec![crate::design::identity::history_input_edge_id(ctx, &prefix, edge_slot, "f3d historical edge identifier")?],
                 copy_feature_text(ctx, &operand.id,
                     "f3d WorkPoint historical edge operand id")?,
             ) {
@@ -2186,12 +2183,12 @@ fn project_work_point_construction(
                 Some(resolution) => {
                     let state_id = resolution.state_id;
                     let vertex_slot = resolution.vertex_slot();
-                    let feature_id = neutral_feature_id(scope);
-                    let feature_key = feature_id.key();
-                    let prefix = ids::history_input_prefix(&feature_key, state_id);
+                    let feature_id = crate::design::identity::neutral_feature_id(ctx,scope)?;
+                    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
+                    let prefix = crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?;
                     match VertexSelection::historical(
-                        feature_input_topology_id(&feature_id, state_id),
-                        ids::history_input_vertex_id(&prefix, vertex_slot),
+                        crate::design::identity::feature_input_topology_id(ctx, &feature_id, state_id)?,
+                        crate::design::identity::history_input_vertex_id(ctx, &prefix, vertex_slot, "f3d historical vertex identifier")?,
                         copy_feature_text(ctx, &recipe.recipe_id,
                             "f3d WorkPoint historical vertex recipe id")?,
                     ) {
@@ -2258,17 +2255,17 @@ fn project_work_plane(
             family: UnresolvedFamily::DatumPlane,
         }));
     };
-    let feature_id = neutral_feature_id(scope);
-    let feature_key = feature_id.key();
-    let prefix = ids::history_input_prefix(&feature_key, state_id);
+    let feature_id = crate::design::identity::neutral_feature_id(ctx,scope)?;
+    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
+    let prefix = crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?;
     let vertex = |recipe: &crate::records::feature::work_geometry::DesignVertexRecipe|
         -> Result<Option<VertexSelection>, CodecError> {
             let Some(resolution) = recipe.resolution else { return Ok(None); };
             let native = copy_feature_text(ctx, &recipe.recipe_id,
                 "f3d WorkPlane vertex recipe id")?;
             let selection = match VertexSelection::historical(
-                    feature_input_topology_id(&feature_id, state_id),
-                    ids::history_input_vertex_id(&prefix, resolution.vertex_slot()),
+                    crate::design::identity::feature_input_topology_id(ctx, &feature_id, state_id)?,
+                    crate::design::identity::history_input_vertex_id(ctx, &prefix, resolution.vertex_slot(), "f3d historical vertex identifier")?,
                     native,
                 ) {
                 Ok(selection) => selection,
@@ -2351,7 +2348,7 @@ fn scope_properties(
             native_stream(&placement.id) == Some(native_scope)
                 && placement.entity_id == profile.entity_id
         }) {
-            let id = neutral_sketch_id(placement);
+            let id = crate::design::identity::neutral_sketch_id(ctx,placement)?;
             insert_feature_tree(ctx, &mut properties,
                 cadmpeg_core::nonblank_literal!("profile"), id.into_string(),
                 "f3d scope profile property")?;
@@ -2464,7 +2461,7 @@ fn project_fillet_arm(
                                 inputs.edge_treatment_vertex_operands,
                                 inputs.histories,
                                 scope.previous_history_state_id(),
-                                &neutral_feature_id(scope),
+                                &crate::design::identity::neutral_feature_id(ctx,scope)?,
                                 edge_radius,
                                 ctx,
                             )?
@@ -2865,21 +2862,23 @@ pub(crate) fn bind_sketch_feature_geometry(
     };
 
     for feature in features.iter_mut() {
+        let mut edit_result = Ok(());
         feature.evaluation.edit(|definition, _| {
+            edit_result = (|| -> Result<(), CodecError> {
             if !matches!(
                 definition,
                 FeatureDefinition::Operation(
                     FeatureOperation::Sketch { .. } | FeatureOperation::SpatialSketch { .. }
                 )
             ) {
-                return;
+                return Ok(());
             }
             let Some(scope) = feature
                 .native_ref
                 .as_deref()
                 .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
             else {
-                return;
+                return Ok(());
             };
             let stream = native_stream(&scope.id);
             let mut matching = placements
@@ -2889,13 +2888,13 @@ pub(crate) fn bind_sketch_feature_geometry(
                         && placement.scope_record_index == Some(scope.record_index)
                 });
             let Some(placement) = matching.next() else {
-                return;
+                return Ok(());
             };
             if matching.next().is_some() {
-                return;
+                return Ok(());
             }
-            let planar = neutral_sketch_id(placement);
-            let spatial = neutral_spatial_sketch_id(placement);
+            let planar = crate::design::identity::neutral_sketch_id(ctx, placement)?;
+            let spatial = crate::design::identity::neutral_spatial_sketch_id(ctx, placement)?;
             let has_planar = sketches.iter().any(|sketch| sketch.id == planar);
             let has_spatial = spatial_sketches.iter().any(|sketch| sketch.id == spatial);
             *definition = match (has_planar, has_spatial) {
@@ -2909,7 +2908,10 @@ pub(crate) fn bind_sketch_feature_geometry(
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
                 }),
             };
+            Ok(())
+            })();
         });
+        edit_result?;
     }
     for feature in features.iter_mut() {
         let mut edit_result = Ok(());
@@ -2934,21 +2936,19 @@ pub(crate) fn bind_sketch_feature_geometry(
             if sketches.iter().any(|candidate| candidate.id == *sketch) {
                 break 'feature_edit;
             }
-            let mut matching = placements
-                .iter()
-                .filter(|placement| neutral_sketch_id(placement) == *sketch)
-                .filter_map(|placement| {
-                    let spatial_id = neutral_spatial_sketch_id(placement);
-                    spatial_sketches
-                        .iter()
-                        .find(|candidate| candidate.id == spatial_id)
-                });
-            let Some(spatial) = matching.next() else {
-                break 'feature_edit;
-            };
-            if matching.next().is_some() {
-                break 'feature_edit;
+            let mut spatial = None;
+            for placement in placements {
+                if crate::design::identity::neutral_sketch_id(ctx, placement)? != *sketch {
+                    continue;
+                }
+                let spatial_id = crate::design::identity::neutral_spatial_sketch_id(ctx, placement)?;
+                if let Some(candidate) = spatial_sketches.iter().find(|candidate| candidate.id == spatial_id) {
+                    if spatial.replace(candidate).is_some() {
+                        break 'feature_edit;
+                    }
+                }
             }
+            let Some(spatial) = spatial else { break 'feature_edit; };
             if spatial.profiles.is_empty() {
                 let Some(profile_operand) = scope.extrude_profile() else {
                     break 'feature_edit;
@@ -3373,13 +3373,13 @@ fn project_draft(
                     faces: project_draft_face_selection(ctx, scope, faces, face_operands, histories)?,
                     anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                         plane: cadmpeg_ir::features::FaceSelection::Native(
-                            neutral_feature_id(neutral_plane).into_string(),
+                            crate::design::identity::neutral_feature_id(ctx,neutral_plane)?.into_string(),
                         ),
                         pull: Some(cadmpeg_ir::features::DraftPull {
                             direction: cadmpeg_ir::features::FeatureDirection3::from(
                                 pull_direction,
                             ),
-                            plane: Some(neutral_feature_id(neutral_plane)),
+                            plane: Some(crate::design::identity::neutral_feature_id(ctx,neutral_plane)?),
                         }),
                     },
                     angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
@@ -3462,7 +3462,7 @@ fn project_draft(
                     )?,
                     pull: cadmpeg_ir::features::DraftPull {
                         direction: cadmpeg_ir::features::FeatureDirection3::from(pull_direction),
-                        plane: Some(neutral_feature_id(pull_plane)),
+                        plane: Some(crate::design::identity::neutral_feature_id(ctx,pull_plane)?),
                     },
                 },
                 angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
@@ -3512,13 +3512,13 @@ fn selected_historical_face_selection(
     if face_slots.any(|candidate| candidate != face_slot) {
         return Ok(None);
     }
-    let feature = neutral_feature_id(scope);
-    let feature_key = feature.key();
-    let prefix = ids::history_input_prefix(&feature_key, previous_state_id);
+    let feature = crate::design::identity::neutral_feature_id(ctx,scope)?;
+    let feature_key = crate::design::identity::identity_key(feature.as_str())?;
+    let prefix = crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?;
     Ok(Some(
         match cadmpeg_ir::features::FaceSelection::historical(
-            feature_input_topology_id(&feature, previous_state_id),
-            vec![ids::history_input_face_id(&prefix, face_slot)],
+            crate::design::identity::feature_input_topology_id(ctx, &feature, previous_state_id)?,
+            vec![crate::design::identity::history_input_face_id(ctx, &prefix, face_slot, "f3d historical face identifier")?],
             copy_feature_text(ctx, &group.id, "f3d Draft historical face group id")?,
         ) {
             Ok(selection) => selection,
@@ -3698,9 +3698,9 @@ fn resolved_split_face_path(
     let previous_state_id = or_none!(
         crate::history::effective_scope_previous_history_state_id(scope, histories));
     let stream = or_none!(native_stream(&scope.id));
-    let feature = neutral_feature_id(scope);
-    let feature_key = feature.key();
-    let prefix = ids::history_input_prefix(&feature_key, previous_state_id);
+    let feature = crate::design::identity::neutral_feature_id(ctx,scope)?;
+    let feature_key = crate::design::identity::identity_key(feature.as_str())?;
+    let prefix = crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?;
     let mut edge_slots = Vec::new();
     for (ordinal, member) in group
         .members()
@@ -3728,17 +3728,12 @@ fn resolved_split_face_path(
     }
     let mut edges = Vec::new();
     for edge_slot in edge_slots {
-        let edge = ids::history_input_edge_id(&prefix, edge_slot);
-        if let Some(ctx) = ctx {
-            ctx.charge_retained(u64::try_from(edge.as_str().len()).map_err(|_| {
-                ctx.refuse_codec_limit("f3d SplitFace historical edge id", 0, 1)
-            })?, "f3d SplitFace historical edge id")?;
-        }
+        let edge = crate::design::identity::history_input_edge_id(ctx, &prefix, edge_slot, "f3d SplitFace historical edge id")?;
         push_feature_item(ctx, &mut edges, edge,
             "f3d SplitFace historical edge")?;
     }
     Ok(PathRef::historical_edges(
-        feature_input_topology_id(&feature, previous_state_id),
+        crate::design::identity::feature_input_topology_id(ctx, &feature, previous_state_id)?,
         edges,
         copy_feature_text(ctx, &group.id, "f3d SplitFace path group id")?,
     )
@@ -3948,15 +3943,16 @@ pub(super) fn project_remove_body(
 }
 
 fn project_base_flange(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     placements: &[DesignSketchPlacement],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, PlanarProfileRef, SheetMetalThicknessSide,
     };
 
-    let operation = scope.base_flange_operation()?;
+    let operation = or_none!(scope.base_flange_operation());
     let mut matching = groups
         .iter()
         .filter(|group| {
@@ -3964,10 +3960,10 @@ fn project_base_flange(
                 && group.scope_record_index == scope.record_index
         });
     let Some(profile_group) = matching.next() else {
-        return None;
+        return Ok(None);
     };
     if matching.next().is_some() {
-        return None;
+        return Ok(None);
     }
     if profile_group.scope_reference_ordinal != 0
         || profile_group.record_index != operation.profile_group_record_index
@@ -3978,25 +3974,25 @@ fn project_base_flange(
             .map(|member| member.value)
             .eq([operation.profile_record_index])
     {
-        return None;
+        return Ok(None);
     }
-    let profile = scope.base_flange_profile()?;
+    let profile = or_none!(scope.base_flange_profile());
     if profile.scope_reference_ordinal != 1
         || profile.record_index != operation.profile_record_index
     {
-        return None;
+        return Ok(None);
     }
-    let placement = placements.iter().find(|placement| {
+    let placement = or_none!(placements.iter().find(|placement| {
         native_stream(&placement.id) == native_stream(&scope.id)
             && placement.entity_id == profile.entity_id
-    })?;
-    Some(FeatureDefinition::Operation(
+    }));
+    Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::SheetMetalBaseFlange {
-            profile: PlanarProfileRef::Sketch(neutral_sketch_id(placement)),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(operation.thickness.get() * 10.0)?,
+            profile: PlanarProfileRef::Sketch(crate::design::identity::neutral_sketch_id(ctx, placement)?),
+            thickness: or_none!(cadmpeg_ir::scalar::PositiveLength::new(operation.thickness.get() * 10.0)),
             side: SheetMetalThicknessSide::Forward,
         },
-    ))
+    )))
 }
 
 /// Project a sheet-metal `EdgeFlange` scope onto its neutral operation.
@@ -4110,7 +4106,7 @@ fn project_edge_flange(
                     });
                 let target = match target_scopes.next() {
                     Some(target_scope) if target_scopes.next().is_none() => {
-                        SheetMetalFlangeHeightTarget::Feature(neutral_feature_id(target_scope))
+                        SheetMetalFlangeHeightTarget::Feature(crate::design::identity::neutral_feature_id(ctx,target_scope)?)
                     }
                     None => SheetMetalFlangeHeightTarget::Native(copy_feature_text(ctx,
                         &target_selection.id, "f3d EdgeFlange native height target id")?),
@@ -4242,7 +4238,7 @@ fn project_edge_flange(
             edge_operands,
             edge_identity_operands,
             scope.previous_history_state_id(),
-            &neutral_feature_id(scope),
+            &crate::design::identity::neutral_feature_id(ctx,scope)?,
             ctx,
         )?;
         push_feature_item(ctx, &mut selections, selection, "f3d edge flange selection")?;
@@ -4404,7 +4400,7 @@ fn project_hem(
         edge_operands,
         edge_identity_operands,
         crate::history::effective_scope_previous_history_state_id(scope, histories),
-        &neutral_feature_id(scope),
+        &crate::design::identity::neutral_feature_id(ctx,scope)?,
         ctx,
     )?;
 
@@ -4591,7 +4587,7 @@ fn project_ruled_surface(
                 edge_operands,
                 edge_identity_operands,
                 scope.previous_history_state_id(),
-                &neutral_feature_id(scope),
+                &crate::design::identity::neutral_feature_id(ctx,scope)?,
                 ctx,
             )?;
         push_feature_item(ctx, &mut selections, selection,
@@ -4793,18 +4789,12 @@ pub(crate) fn direct_face_selection(
             (operand.id.as_str(), operand.resolved_face_slots.as_slice()),
             "f3d direct face member")?;
     }
-    let feature_id = neutral_feature_id(scope);
-    let feature_key = feature_id.key();
+    let feature_id = crate::design::identity::neutral_feature_id(ctx,scope)?;
+    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
     let historical_face = |previous_state_id, slot| -> Result<_, CodecError> {
-        let face = ids::history_input_face_id(
-            &ids::history_input_prefix(&feature_key, previous_state_id),
-            slot,
-        );
-        if let Some(ctx) = ctx {
-            ctx.charge_retained(u64::try_from(face.as_str().len()).map_err(|_| {
-                ctx.refuse_codec_limit("f3d direct historical face id", 0, 1)
-            })?, "f3d direct historical face id")?;
-        }
+        let face = crate::design::identity::history_input_face_id(ctx, 
+            &crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?,
+            slot, "f3d direct historical face id")?;
         Ok(face)
     };
     let faces = match scope.previous_history_state_id() {
@@ -4818,7 +4808,7 @@ pub(crate) fn direct_face_selection(
                 }
             }
             match FaceSelection::historical(
-                feature_input_topology_id(&feature_id, previous_state_id),
+                crate::design::identity::feature_input_topology_id(ctx, &feature_id, previous_state_id)?,
                 resolved,
                 copy_feature_text(ctx, &scope.id, "f3d direct historical native id")?,
             ) {
@@ -4847,7 +4837,7 @@ pub(crate) fn direct_face_selection(
                 }
             }
             match FaceSelection::historical_partial(
-                feature_input_topology_id(&feature_id, previous_state_id),
+                crate::design::identity::feature_input_topology_id(ctx, &feature_id, previous_state_id)?,
                 faces,
                 unresolved,
                 copy_feature_text(ctx, &scope.id, "f3d direct partial native id")?,
@@ -4956,7 +4946,7 @@ pub(crate) fn bind_form_cages(
                     && !resolved.is_empty()
                     && distinct_form_cage_ids(ctx, &resolved)?
                 {
-                    let feature_id = neutral_feature_id(scope);
+                    let feature_id = crate::design::identity::neutral_feature_id(Some(ctx),scope)?;
                     if let Some(feature) =
                         features.iter_mut().find(|feature| feature.id == feature_id)
                     {
@@ -5017,7 +5007,7 @@ pub(crate) fn bind_form_cages(
                 && resolved.len() == cages.len()
                 && distinct_form_cage_ids(ctx, &resolved)?
             {
-                let feature_id = neutral_feature_id(scope);
+                let feature_id = crate::design::identity::neutral_feature_id(Some(ctx),scope)?;
                 if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id)
                 {
                     if matches!(
@@ -5046,7 +5036,7 @@ pub(crate) fn bind_form_cages(
             && cages.len() == 1
             && cage_counts.as_slice() == [1]
         {
-            let feature_id = neutral_feature_id(scope);
+            let feature_id = crate::design::identity::neutral_feature_id(Some(ctx),scope)?;
             if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) {
                 if matches!(
                     feature.evaluation.definition(),
@@ -5092,7 +5082,7 @@ pub(crate) fn bind_form_cages(
         if !distinct_form_cage_ids(ctx, &resolved)? {
             continue;
         }
-        let feature_id = neutral_feature_id(scope);
+        let feature_id = crate::design::identity::neutral_feature_id(Some(ctx),scope)?;
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
@@ -6173,7 +6163,7 @@ fn project_variable_fillet(
                     edge_treatment_vertex_operands,
                     histories,
                     scope.previous_history_state_id(),
-                    &neutral_feature_id(scope),
+                    &crate::design::identity::neutral_feature_id(ctx,scope)?,
                     None,
                     ctx,
                 )?,
@@ -6492,7 +6482,7 @@ fn project_chamfer(
                     edge_treatment_vertex_operands,
                     histories,
                     scope.previous_history_state_id(),
-                    &neutral_feature_id(scope),
+                    &crate::design::identity::neutral_feature_id(ctx,scope)?,
                     None,
                     ctx,
                 )?,
@@ -6558,7 +6548,7 @@ fn project_fixed_chamfer(
                     edge_treatment_vertex_operands,
                     histories,
                     scope.previous_history_state_id(),
-                    &neutral_feature_id(scope),
+                    &crate::design::identity::neutral_feature_id(ctx,scope)?,
                     None,
                     ctx,
                 )?,
@@ -7172,7 +7162,7 @@ fn resolved_loft_path(
         operands,
         identity_operands,
         scope.previous_history_state_id(),
-        &neutral_feature_id(scope),
+        &crate::design::identity::neutral_feature_id(ctx,scope)?,
         ctx,
     )?;
     loft_path_from_edge_selection(ctx, &group.id, selection)
@@ -7204,7 +7194,7 @@ fn resolved_surface_patch_path(
                     operands,
                     identity_operands,
                     scope.previous_history_state_id(),
-                    &neutral_feature_id(scope),
+                    &crate::design::identity::neutral_feature_id(ctx,scope)?,
                     ctx,
                 )
             } else {
@@ -7214,7 +7204,7 @@ fn resolved_surface_patch_path(
                     operands,
                     identity_operands,
                     scope.previous_history_state_id(),
-                    &neutral_feature_id(scope),
+                    &crate::design::identity::neutral_feature_id(ctx,scope)?,
                     ctx,
                 )
             }?;
@@ -7569,7 +7559,7 @@ fn project_mirror(
                     && candidate.record_index == record_index
             }));
         let Some(seed_scope) = seed_scope else { return Ok(None); };
-        PatternSeed::Feature(neutral_feature_id(seed_scope))
+        PatternSeed::Feature(crate::design::identity::neutral_feature_id(ctx,seed_scope)?)
     } else if seed_group.role() == DesignOperandRole::BODIES_B {
         PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
             copy_feature_text(ctx, &seed_group.id, "f3d mirror body seed id")?,
@@ -8842,7 +8832,7 @@ fn project_split_face(
     {
         let mut selected = Vec::new();
         for plane in planes {
-            let id = neutral_feature_id(plane);
+            let id = crate::design::identity::neutral_feature_id(ctx,plane)?;
             push_feature_item(ctx, &mut selected, id, "f3d SplitFace tool plane")?;
         }
         if selected.len() == 1 {
@@ -9034,7 +9024,7 @@ fn project_extrude(
                 native_stream(&placement.id) == native_stream(&scope.id)
                     && placement.entity_id == profile.entity_id
             }));
-            ProfileRef::Planar(PlanarProfileRef::Sketch(neutral_sketch_id(placement)))
+            ProfileRef::Planar(PlanarProfileRef::Sketch(crate::design::identity::neutral_sketch_id(ctx,placement)?))
         }
         None => {
             let [first, rest @ ..] = profile_groups.as_slice() else {

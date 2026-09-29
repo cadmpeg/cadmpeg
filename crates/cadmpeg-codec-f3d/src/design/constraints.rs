@@ -7,9 +7,7 @@ use crate::design::dimensions::{
 };
 use crate::design::face_resolve::design_angle;
 use crate::design::feature_project::design_length;
-use crate::ids::{
-    native_stream, neutral_parameter_id, neutral_sketch_constraint_id, neutral_sketch_id,
-};
+use crate::ids::native_stream;
 use crate::records::{
     parameters::DesignParameter,
     sketch_geometry::{SketchCurveIdentity, SketchPoint, SketchText},
@@ -118,7 +116,7 @@ pub(crate) fn project_sketch_constraints(
 
     let mut sketches = HashMap::new();
     for placement in placements {
-        let id = neutral_sketch_id(placement);
+        let id = crate::design::identity::neutral_sketch_id(ctx,placement)?;
         if let Some(ctx) = ctx {
             let work = u64::try_from(entities.len())
                 .map_err(|_| ctx.refuse_codec_limit("f3d planar sketch admission scan", 0, 1))?;
@@ -334,7 +332,7 @@ pub(crate) fn project_sketch_constraints(
             return Ok(None);
         };
         Ok(Some(SketchConstraint {
-            id: neutral_sketch_constraint_id(&relation.id, relation.record_index),
+            id: crate::design::identity::neutral_sketch_constraint_id(ctx,&relation.id, relation.record_index)?,
             sketch,
             definition,
             name: None,
@@ -401,12 +399,10 @@ fn exact_rectangular_pattern(
     let Some(SketchPatternDefinition::Rectangular { directions }) = pattern else {
         return Ok(None);
     };
-    let source = directions
-        .iter()
-        .map(|direction| {
+    let project_direction = |direction: &crate::records::sketch_relations::SketchPatternDirection| -> Result<Option<_>, CodecError> {
             let source_direction = direction.direction.get();
             if source_direction[2].abs() > EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9 {
-                return None;
+                return Ok(None);
             }
             let count_parameter = parameters.iter().find(|parameter| {
                 native_stream(&parameter.id) == Some(scope)
@@ -420,32 +416,31 @@ fn exact_rectangular_pattern(
             if count_parameter.is_some_and(|parameter| {
                 !scalar_close(parameter.evaluated_value().get(), f64::from(count))
             }) {
-                return None;
+                return Ok(None);
             }
             let distance = cadmpeg_ir::scalar::NonNegativeLength::new(
                 direction.evaluated_distance.get() * 10.0,
-            )?;
+            );
+            let Some(distance) = distance else { return Ok(None); };
             if (count == 1 && !scalar_close(distance.get(), 0.0))
                 || distance_parameter.is_some_and(|parameter| {
                     design_length(parameter)
                         .is_none_or(|value| !scalar_close(value.get(), distance.get()))
                 })
             {
-                return None;
+                return Ok(None);
             }
-            Some(RectangularPatternSourceDirection {
+            Ok(Some(RectangularPatternSourceDirection {
                 direction: [source_direction[0], source_direction[1]],
                 count,
                 distance,
-                distance_parameter: distance_parameter.map(neutral_parameter_id),
-                count_parameter: count_parameter.map(neutral_parameter_id),
-            })
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(source) = source else { return Ok(None); };
-    let Ok(source): Result<[RectangularPatternSourceDirection; 2], _> = source.try_into() else {
-        return Ok(None);
+                distance_parameter: distance_parameter.map(|parameter| crate::design::identity::neutral_parameter_id(ctx, parameter)).transpose()?,
+                count_parameter: count_parameter.map(|parameter| crate::design::identity::neutral_parameter_id(ctx, parameter)).transpose()?,
+            }))
     };
+    let Some(first) = project_direction(&directions[0])? else { return Ok(None); };
+    let Some(second) = project_direction(&directions[1])? else { return Ok(None); };
+    let source = [first, second];
     if source
         .iter()
         .any(|direction| !scalar_close(direction.direction[0].hypot(direction.direction[1]), 1.0))
@@ -865,8 +860,8 @@ fn exact_circular_pattern(
     let pattern = SketchCircularPattern::new(
         center,
         angle,
-        angle_parameter.map(neutral_parameter_id),
-        count_parameter.map(neutral_parameter_id),
+        angle_parameter.map(|parameter| crate::design::identity::neutral_parameter_id(ctx, parameter)).transpose()?,
+        count_parameter.map(|parameter| crate::design::identity::neutral_parameter_id(ctx, parameter)).transpose()?,
         seed_entities,
         instances,
     );

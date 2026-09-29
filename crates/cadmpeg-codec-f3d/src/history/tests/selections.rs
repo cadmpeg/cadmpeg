@@ -1666,7 +1666,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             state,
             faces,
             native,
-        }) if state == crate::design::edge_resolve::feature_input_topology_id(&feature, 1)
+        }) if state == crate::ids::feature_input_topology_id(&feature, 1)
             && faces.as_slice() == [
                 crate::ids::history_input_face_id(&prefix, 10),
                 crate::ids::history_input_face_id(&prefix, 11),

@@ -4,10 +4,7 @@
 use crate::design::constraints::scalar_close;
 use crate::design::feature_project::{design_dimension_unit, design_length};
 use crate::design::geometry::{angle_in_sweep, sketch_entity_endpoints};
-use crate::ids::{
-    native_stream, neutral_dimension_constraint_id, neutral_parameter_id,
-    neutral_sketch_constraint_id, neutral_sketch_id, neutral_spatial_sketch_id,
-};
+use crate::ids::native_stream;
 use crate::records::{
     dimensions::{
         DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
@@ -400,13 +397,15 @@ fn retain_planar_dimension_constraints(
     }
     let mut output = Vec::new();
     for constraint in constraints {
-        if placements
-                .iter()
-                .find(|placement| neutral_sketch_id(placement) == constraint.sketch)
-                .is_none_or(|placement| {
-                    !spatial_sketch_ids.contains(&neutral_spatial_sketch_id(placement))
-                })
-        {
+        let mut keep = true;
+        for placement in placements {
+            if crate::design::identity::neutral_sketch_id(ctx, placement)? == constraint.sketch {
+                keep = !spatial_sketch_ids.contains(
+                    &crate::design::identity::neutral_spatial_sketch_id(ctx, placement)?);
+                break;
+            }
+        }
+        if keep {
             push_dimension_item(ctx, &mut output, constraint,
                 "f3d planar dimension output")?;
         }
@@ -446,11 +445,11 @@ fn project_all_dimension_constraints(
         let Some(scope) = native_stream(&placement.id) else { continue; };
         if let Ok(suffix) = u32::try_from(placement.entity_id.suffix()) {
             insert_dimension_index(ctx, &mut sketches, (scope, suffix),
-                neutral_sketch_id(placement), "f3d dimension sketch index")?;
+                crate::design::identity::neutral_sketch_id(ctx,placement)?, "f3d dimension sketch index")?;
         }
         if let Some(scope_record_index) = placement.scope_record_index {
             insert_dimension_index(ctx, &mut sketches_by_scope, (scope, scope_record_index),
-                neutral_sketch_id(placement), "f3d dimension scope sketch index")?;
+                crate::design::identity::neutral_sketch_id(ctx,placement)?, "f3d dimension scope sketch index")?;
         }
     }
     let mut parameters_by_record = HashMap::new();
@@ -512,7 +511,7 @@ fn project_all_dimension_constraints(
     let parameter_for = |scope: &str, companion_record_index: u32| {
         let record_index = *parameter_by_companion.get(&(scope, companion_record_index))?;
         let parameter = *parameters.get(&(scope, record_index))?;
-        Some((parameter, neutral_parameter_id(parameter)))
+        Some(crate::design::identity::neutral_parameter_id(ctx, parameter).map(|id| (parameter, id)))
     };
     let presentation_for_owner = |scope: &str, owner_record_index: u32| {
         let mut matches = presentation_frames.iter().filter(|frame| {
@@ -842,7 +841,7 @@ fn project_all_dimension_constraints(
             if group.state != 0 {
                 return None;
             }
-            let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
+            let (parameter, parameter_id) = dimension_resource!(parameter_for(scope, group.companion_record_index)?);
             let copied = match copy_dimension_parameter_id(ctx, &parameter_id,
                 "f3d radial group parameter id") {
                 Ok(copied) => copied,
@@ -895,7 +894,7 @@ fn project_all_dimension_constraints(
     for pair in pairs {
             let Some(scope) = native_stream(&pair.id) else { continue; };
             let Some((parameter, parameter_id)) =
-                parameter_for(scope, pair.governing_companion_record_index) else { continue; };
+                parameter_for(scope, pair.governing_companion_record_index).transpose()? else { continue; };
             let indices = [
                 pair.loci()[0].geometry_index(),
                 pair.loci()[1].geometry_index(),
@@ -909,7 +908,7 @@ fn project_all_dimension_constraints(
     let mut parameterized_offset_companions = HashSet::new();
     for group in groups {
         let Some(scope) = native_stream(&group.id) else { continue; };
-        let Some((parameter, parameter_id)) = parameter_for(scope, group.companion_record_index)
+        let Some((parameter, parameter_id)) = parameter_for(scope, group.companion_record_index).transpose()?
             else { continue; };
         match exact_group_definition(scope, group, parameter, parameter_id) {
             Some(Ok(Definition::Offset { parameter: Some(_), .. })) => {
@@ -949,7 +948,7 @@ fn project_all_dimension_constraints(
             continue;
         }
         let Some((parameter, parameter_id)) =
-            parameter_for(scope, group.companion_record_index) else { continue; };
+            parameter_for(scope, group.companion_record_index).transpose()? else { continue; };
         let copied = copy_dimension_parameter_id(ctx, &parameter_id,
             "f3d projected group parameter id")?;
         let definition = exact_group_definition(scope, group, parameter, copied)
@@ -973,7 +972,7 @@ fn project_all_dimension_constraints(
             if exact_pair_companions.contains(&(scope, group.companion_record_index)) {
                 return None;
             }
-            let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
+            let (parameter, parameter_id) = dimension_resource!(parameter_for(scope, group.companion_record_index)?);
             let mut locus_indices = Vec::new();
             for locus in &group.loci {
                 if let Err(error) = push_dimension_item(ctx, &mut locus_indices,
@@ -1041,7 +1040,7 @@ fn project_all_dimension_constraints(
                 Err(error) => return Some(Err(error)),
             };
             Some(Ok(SketchConstraint {
-                id: neutral_sketch_constraint_id(&group.id, group.record_index),
+                id: dimension_resource!(crate::design::identity::neutral_sketch_constraint_id(ctx,&group.id, group.record_index)),
                 sketch,
                 definition,
                 name: None,
@@ -1065,14 +1064,14 @@ fn project_all_dimension_constraints(
     for pair in pairs {
             let Some(scope) = native_stream(&pair.id) else { continue; };
             let Some((parameter, parameter_id)) =
-                parameter_for(scope, pair.governing_companion_record_index) else { continue; };
+                parameter_for(scope, pair.governing_companion_record_index).transpose()? else { continue; };
             let indices = [
                 pair.loci()[0].geometry_index(),
                 pair.loci()[1].geometry_index(),
             ];
             let Some(sketch) = sketch_for_geometry(scope, &indices,
                 "f3d dimension pair sketch id")? else { continue; };
-            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair");
+            let constraint_id = crate::design::identity::neutral_dimension_constraint_id(ctx,&parameter_id, "pair")?;
             let copied = copy_dimension_parameter_id(ctx, &parameter_id,
                 "f3d pair exact parameter id")?;
             let definition = exact_definition(scope, parameter, &indices, copied)?.map(Ok)
@@ -1139,7 +1138,7 @@ linear_tolerance,
         .chain(annotation_frames.iter().filter_map(|frame| {
             let scope = native_stream(&frame.id)?;
             let (parameter, parameter_id) =
-                parameter_for(scope, frame.governing_companion_record_index)?;
+                dimension_resource!(parameter_for(scope, frame.governing_companion_record_index)?);
             let mut indices = Vec::new();
             for operand in frame.operands() {
                 if let Some(index) = operand.geometry_record_index {
@@ -1155,7 +1154,7 @@ linear_tolerance,
                 Ok(sketch) => sketch,
                 Err(error) => return Some(Err(error)),
             };
-            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "annotation");
+            let constraint_id = dimension_resource!(crate::design::identity::neutral_dimension_constraint_id(ctx,&parameter_id, "annotation"));
             let copied = match copy_dimension_parameter_id(ctx, &parameter_id,
                 "f3d annotation exact parameter id") {
                 Ok(copied) => copied,
@@ -1259,7 +1258,7 @@ linear_tolerance,
                 return None;
             }
             let (parameter, parameter_id) =
-                parameter_for(scope, pair.governing_companion_record_index)?;
+                dimension_resource!(parameter_for(scope, pair.governing_companion_record_index)?);
             let indices = [pair.loci()[1].geometry_index()];
             let sketch = match sketch_for_geometry(scope, &indices,
                 "f3d dimension null pair sketch id") {
@@ -1267,7 +1266,7 @@ linear_tolerance,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "null-pair");
+            let constraint_id = dimension_resource!(crate::design::identity::neutral_dimension_constraint_id(ctx,&parameter_id, "null-pair"));
             if design_dimension_unit(parameter) {
                 if let Some(entity) = projected.get(&(scope, pair.loci()[1].geometry_index())) {
                     let copied = match copy_dimension_parameter_id(ctx, &parameter_id,
@@ -1419,10 +1418,10 @@ linear_tolerance,
         let Some(owner) = owners_by_companion.get(&(scope, companion_record_index)) else {
             continue;
         };
-        let Some((parameter, parameter_id)) = parameter_for(scope, companion_record_index) else {
+        let Some((parameter, parameter_id)) = parameter_for(scope, companion_record_index).transpose()? else {
             continue;
         };
-        let constraint_id = neutral_dimension_constraint_id(&parameter_id, "recipe-group");
+        let constraint_id = crate::design::identity::neutral_dimension_constraint_id(ctx,&parameter_id, "recipe-group")?;
         let Some(sketch) = sketches_by_scope.get(&(scope, owner.scope_record_index())) else {
             continue;
         };
@@ -1534,7 +1533,7 @@ linear_tolerance,
         let projected = (|| {
         let scope = native_stream(companion.id())?;
         let owner = owners_by_companion.get(&(scope, companion.record_index()))?;
-        let (parameter, parameter_id) = parameter_for(scope, companion.record_index())?;
+        let (parameter, parameter_id) = dimension_resource!(parameter_for(scope, companion.record_index())?);
         if parameter.kind() != DesignParameterKind::Dimension
             || projected_parameters.contains(&parameter_id)
             || container_only_payload_companions.contains(&(scope, companion.record_index()))
@@ -1721,7 +1720,7 @@ curves,
             Err(error) => return Some(Err(error)),
         };
         Some(Ok(SketchConstraint {
-            id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
+            id: dimension_resource!(crate::design::identity::neutral_dimension_constraint_id(ctx,&parameter_id, "companion-payload")),
             sketch,
             definition,
             name: None,
@@ -2796,7 +2795,7 @@ pub(crate) fn bind_offset_dimension_parameters(
     for parameter in parameters {
         if let Some(value) = design_length(parameter) {
             insert_dimension_index(Some(ctx), &mut parameter_values,
-                neutral_parameter_id(parameter), value.get(),
+                crate::design::identity::neutral_parameter_id(Some(ctx),parameter)?, value.get(),
                 "f3d offset parameter value index")?;
         }
     }
@@ -2926,10 +2925,10 @@ pub(crate) fn project_spatial_dimension_constraints(
 
     let mut spatial_by_planar_id = HashMap::new();
     for placement in placements {
-        let spatial_id = neutral_spatial_sketch_id(placement);
+        let spatial_id = crate::design::identity::neutral_spatial_sketch_id(ctx,placement)?;
         if spatial_sketches.iter().any(|sketch| sketch.id == spatial_id) {
             insert_dimension_index(ctx, &mut spatial_by_planar_id,
-                neutral_sketch_id(placement), spatial_id,
+                crate::design::identity::neutral_sketch_id(ctx,placement)?, spatial_id,
                 "f3d spatial planar sketch index")?;
         }
     }
@@ -2937,7 +2936,7 @@ pub(crate) fn project_spatial_dimension_constraints(
     for placement in placements {
         let (Some(scope), Some(scope_record_index)) =
             (native_stream(&placement.id), placement.scope_record_index) else { continue; };
-        if let Some(sketch) = spatial_by_planar_id.get(&neutral_sketch_id(placement)) {
+        if let Some(sketch) = spatial_by_planar_id.get(&crate::design::identity::neutral_sketch_id(ctx,placement)?) {
             let sketch = copy_spatial_sketch_id(ctx, sketch, "f3d spatial scope sketch id")?;
             insert_dimension_index(ctx, &mut spatial_by_scope,
                 (scope, scope_record_index), sketch,
@@ -2976,11 +2975,11 @@ pub(crate) fn project_spatial_dimension_constraints(
     for parameter in parameters {
         if let Some(length) = design_length(parameter) {
             insert_dimension_index(ctx, &mut parameter_lengths,
-                neutral_parameter_id(parameter), length.get().abs(),
+                crate::design::identity::neutral_parameter_id(ctx,parameter)?, length.get().abs(),
                 "f3d spatial parameter length index")?;
         }
         insert_dimension_index(ctx, &mut parameters_by_id,
-            neutral_parameter_id(parameter), parameter,
+            crate::design::identity::neutral_parameter_id(ctx,parameter)?, parameter,
             "f3d spatial parameter index")?;
     }
     let source_constraints = project_all_dimension_constraints(ctx, inputs, &[], linear_tolerance)?;
@@ -3259,7 +3258,7 @@ spatial_sketches,
         ).ok();
         let Some(definition) = definition else { continue; };
         push_dimension_item(ctx, &mut projected, SpatialSketchConstraint {
-            id: neutral_dimension_constraint_id(parameter_id, "companion-payload"),
+            id: crate::design::identity::neutral_dimension_constraint_id(ctx,parameter_id, "companion-payload")?,
             sketch,
             definition,
             native_ref: Some(constraint_native_ref),

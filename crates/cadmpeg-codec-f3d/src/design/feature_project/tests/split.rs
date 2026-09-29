@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::edge_resolve::feature_input_topology_id;
+use crate::ids::feature_input_topology_id;
 use crate::design::feature_project::{project_delete_face, project_split, project_split_face, selected_work_planes};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
@@ -139,7 +139,7 @@ fn assert_split_body_refusal(
 ) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    for limit in 0..192 {
+    for limit in 0..16_384 {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let arena = DecodeArena::new();
@@ -247,7 +247,7 @@ fn delete_face_fallback_group_id_refuses_retained_limit() {
             faces: FaceSelection::Native(ref native), ..
         }) if native == &selected.id
     ));
-    for limit in 0..128 {
+    for limit in 0..16_384 {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let arena = DecodeArena::new();
@@ -338,7 +338,7 @@ fn assert_split_face_retained_refusal(operation: &'static str) {
     use cadmpeg_core::CodecError;
     let (scope, groups) = compact_split_face_fixture();
     let scopes = [scope.clone()];
-    for limit in 0..192 {
+    for limit in 0..16_384 {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let arena = DecodeArena::new();
@@ -610,7 +610,15 @@ fn assert_historical_split_face_path_refusal(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     if let Some(limit) = collection_limit { policy.limits.max_collection_items = limit; }
-    if let Some(limit) = retained_limit { policy.limits.max_retained_bytes = limit; }
+    if let Some(limit) = retained_limit {
+        let feature = crate::ids::neutral_feature_id(&scope);
+        let prefix = crate::ids::history_input_prefix(&feature.key(), 7);
+        let state_bytes = if operation == "f3d SplitFace path group id" {
+            crate::ids::feature_input_topology_id(&feature, 7).as_str().len()
+        } else { 0 };
+        policy.limits.max_retained_bytes = limit + u64::try_from(
+            feature.as_str().len() + prefix.as_str().len() + state_bytes).unwrap();
+    }
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::super::resolved_split_face_path(
         Some(&ctx), &scope, &group, std::slice::from_ref(&selection), &[],
@@ -678,7 +686,13 @@ fn draft_historical_face_group_id_refuses_retained_limit() {
     }];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(group.id.len() - 1).unwrap();
+    let feature = crate::ids::neutral_feature_id(&scope);
+    let prefix = crate::ids::history_input_prefix(&feature.key(), 7);
+    let state = crate::ids::feature_input_topology_id(&feature, 7);
+    let face = crate::ids::history_input_face_id(&prefix, selection.historical_face_candidates[0].face_slot);
+    policy.limits.max_retained_bytes = u64::try_from(group.id.len() - 1
+        + feature.as_str().len() + prefix.as_str().len()
+        + state.as_str().len() + face.as_str().len()).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::super::selected_historical_face_selection(
         Some(&ctx), &scope, &group, std::slice::from_ref(&selection), &[],

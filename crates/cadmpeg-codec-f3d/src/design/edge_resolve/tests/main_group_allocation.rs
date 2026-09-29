@@ -36,7 +36,7 @@ fn assert_main_group_refusal_with_limit(
     }
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#main-edge-group")
         .unwrap();
-    for limit in 0..128 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         if retained {
@@ -212,7 +212,7 @@ fn assert_complete_identity_refusal(operation: &'static str, retained: bool) {
     operand.resolved_edge_slot = Some(17);
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#complete-identity")
         .unwrap();
-    for limit in 0..128 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         if retained {
@@ -270,7 +270,7 @@ fn assert_identity_historical_refusal(
     let radius = matches!(route, IdentityHistoricalRoute::Radius).then_some(3.0);
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#identity-history")
         .unwrap();
-    for limit in 0..256 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         if retained {
@@ -343,7 +343,7 @@ fn assert_combined_historical_refusal(operation: &'static str, retained: bool) {
     let identities = [first_identity, second_identity];
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#combined-history")
         .unwrap();
-    for limit in 0..256 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         if retained {
@@ -385,7 +385,7 @@ fn assert_native_group_refusal(standard_recipe: bool) {
     }
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#native-group")
         .unwrap();
-    for limit in 0..128 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;

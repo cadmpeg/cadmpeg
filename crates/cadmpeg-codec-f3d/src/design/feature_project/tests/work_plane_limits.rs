@@ -50,7 +50,9 @@ fn work_plane_vertex_recipe_id_refuses_retained_limit() {
     assert!(matches!(super::super::project_work_plane(None, &plane, transform).unwrap(),
         FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { .. })));
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
+    let feature = crate::ids::neutral_feature_id(&plane);
+    let prefix = crate::ids::history_input_prefix(&feature.key(), plane.work_plane_construction().unwrap().inputs()[0].resolution.unwrap().state_id);
+    policy.limits.max_retained_bytes = u64::try_from(feature.as_str().len() + prefix.as_str().len()).unwrap();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(super::super::project_work_plane(Some(&ctx), &plane, transform),

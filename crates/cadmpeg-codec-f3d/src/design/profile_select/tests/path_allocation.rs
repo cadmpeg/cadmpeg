@@ -138,7 +138,7 @@ fn assert_spatial_path_refusal(operation: &'static str, retained: bool, profile:
         spatial_sketches: &sketches,
         spatial_sketch_entities: &entities,
     };
-    for limit in 0..32 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         if retained {

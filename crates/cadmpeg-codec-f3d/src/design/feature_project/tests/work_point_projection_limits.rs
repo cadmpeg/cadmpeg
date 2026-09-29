@@ -122,7 +122,21 @@ fn assert_retained_refusal(
 ) {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(required_bytes - 1).unwrap();
+    let preceding = match operation {
+        "f3d WorkPoint historical edge operand id" | "f3d WorkPoint historical vertex recipe id" => {
+            let feature = crate::ids::neutral_feature_id(&scope());
+            let prefix = crate::ids::history_input_prefix(&feature.key(), 4);
+            let state = crate::ids::feature_input_topology_id(&feature, 4);
+            let entity_len = if operation == "f3d WorkPoint historical edge operand id" {
+                crate::ids::history_input_edge_id(&prefix, 7).as_str().len()
+            } else {
+                crate::ids::history_input_vertex_id(&prefix, 43).as_str().len()
+            };
+            feature.as_str().len() + prefix.as_str().len() + state.as_str().len() + entity_len
+        }
+        _ => 0,
+    };
+    policy.limits.max_retained_bytes = u64::try_from(preceding + required_bytes - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::super::project_work_point_construction(
         Some(&ctx), &scope(), construction, &[], edge_operands, scope_ids,

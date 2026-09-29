@@ -241,7 +241,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
         occurrences.try_reserve(1).map_err(|_| {
             ctx.refuse_codec_limit("f3d unresolved component occurrence allocation", 0, 1)
         })?;
-        let occurrence_id = crate::ids::neutral_component_insert_occurrence_id(scope);
+        let occurrence_id = crate::design::identity::neutral_component_insert_occurrence_id(Some(ctx),scope)?;
         let feature_occurrence_id = cadmpeg_ir::ids::OccurrenceId::mint(copy_component_text(
             ctx,
             occurrence_id.as_str(),
@@ -698,7 +698,8 @@ mod tests {
         let (scope, feature) = unresolved_component_fixture();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = maximum;
+        policy.limits.max_retained_bytes = maximum + u64::try_from(
+            crate::ids::neutral_component_insert_occurrence_id(&scope).as_str().len()).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         super::project_unresolved_component_insert_occurrences(
             &ctx,

@@ -13,7 +13,7 @@ fn assert_partial_refusal(operation: &'static str, retained: bool) {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match partial_historical_edge_selection(
             [("operand-a", Some(17)), ("operand-b", None)], 41,
-            &cadmpeg_ir::identity_key!("feature"), state.clone(), "group", Some(&ctx),
+            cadmpeg_ir::identity_key!("feature").as_str(), state.clone(), "group", Some(&ctx),
         ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {},
