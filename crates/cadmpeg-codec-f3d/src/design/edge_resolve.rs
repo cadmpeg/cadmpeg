@@ -2261,21 +2261,21 @@ pub(super) fn edge_operand_reference_edge_sets(
     })
 }
 
-pub(crate) fn resolved_edge_candidate_intersection<'a>(
+pub(crate) fn resolved_edge_candidate_intersection<'a, I>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
-) -> Option<i64> {
-    let mut ordered = shared_edge_sets.into_iter();
-    let first = ordered.next();
-    let has_reference_sets = first.is_some();
-    let shared_edge_sets = first
-        .into_iter()
-        .chain(ordered)
-        .filter(|edges| !edges.is_empty())
-        .collect::<Vec<_>>();
-    let references_unavailable = has_reference_sets && shared_edge_sets.is_empty();
+    shared_edge_sets: I,
+) -> Option<i64>
+where
+    I: IntoIterator<Item = &'a [i64]>,
+    I::IntoIter: Clone,
+{
+    let ordered = shared_edge_sets.into_iter();
+    let has_reference_sets = ordered.clone().next().is_some();
+    let shared_edge_sets = ordered.filter(|edges| !edges.is_empty());
+    let references_unavailable = has_reference_sets && shared_edge_sets.clone().next().is_none();
     let reference_candidates =
-        (shared_edge_sets.len() >= 2).then(|| unique_edge_set_intersection(&shared_edge_sets));
+        (shared_edge_sets.clone().take(2).count() == 2)
+            .then(|| unique_edge_set_intersection(shared_edge_sets.clone()));
     if reference_candidates == Some(EdgeSetIntersection::Disjoint) {
         return None;
     }
@@ -2287,7 +2287,7 @@ pub(crate) fn resolved_edge_candidate_intersection<'a>(
         .then(|| {
             corroborated_edge_intersection(
                 selector_contexts,
-                &shared_edge_sets,
+                shared_edge_sets.clone(),
                 SelectorSlots::Incidence,
             )
         })
@@ -2296,15 +2296,15 @@ pub(crate) fn resolved_edge_candidate_intersection<'a>(
         .then(|| {
             corroborated_edge_intersection(
                 selector_contexts,
-                &shared_edge_sets,
+                shared_edge_sets.clone(),
                 SelectorSlots::BoundaryCount,
             )
         })
         .flatten();
     let common_triplet =
-        corroborated_common_triplet_intersection(selector_contexts, &shared_edge_sets);
+        corroborated_common_triplet_intersection(selector_contexts, shared_edge_sets.clone());
     let cross_clause_triplet =
-        corroborated_cross_clause_triplet_intersection(selector_contexts, &shared_edge_sets);
+        corroborated_cross_clause_triplet_intersection(selector_contexts, shared_edge_sets);
     let mut proofs = [
         reference,
         incidence,
@@ -2358,9 +2358,9 @@ where
     candidate
 }
 
-fn corroborated_common_triplet_intersection(
+fn corroborated_common_triplet_intersection<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: &[&[i64]],
+    shared_edge_sets: impl Iterator<Item = &'a [i64]> + Clone,
 ) -> Option<i64> {
     let edge_pairs = selector_contexts.iter().flat_map(|selector| {
         selector.clauses.iter().flatten().filter_map(|clause| {
@@ -2372,9 +2372,9 @@ fn corroborated_common_triplet_intersection(
     corroborated_edge_pair_intersection(edge_pairs, shared_edge_sets)
 }
 
-fn corroborated_cross_clause_triplet_intersection(
+fn corroborated_cross_clause_triplet_intersection<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: &[&[i64]],
+    shared_edge_sets: impl Iterator<Item = &'a [i64]> + Clone,
 ) -> Option<i64> {
     let edge_pairs = selector_contexts.iter().filter_map(|selector| {
         let [Some(left), Some(right)] = selector.clauses.as_slice() else {
@@ -2386,9 +2386,9 @@ fn corroborated_cross_clause_triplet_intersection(
     corroborated_edge_pair_intersection(edge_pairs, shared_edge_sets)
 }
 
-fn corroborated_edge_pair_intersection<'a>(
+fn corroborated_edge_pair_intersection<'a, 'b>(
     edge_pairs: impl Iterator<Item = (&'a [i64], &'a [i64])> + Clone,
-    shared_edge_sets: &[&[i64]],
+    shared_edge_sets: impl Iterator<Item = &'b [i64]> + Clone,
 ) -> Option<i64> {
     let active_pairs = edge_pairs.filter(|(left, right)| {
         left.iter().any(|edge| right.contains(edge))
@@ -2400,7 +2400,7 @@ fn corroborated_edge_pair_intersection<'a>(
             && active_pairs.clone().all(|(left, right)| {
                 left.contains(&edge) && right.contains(&edge)
             })
-            && shared_edge_sets.iter().all(|set| set.contains(&edge))
+            && shared_edge_sets.clone().all(|set| set.contains(&edge))
         {
             if candidate.is_some_and(|selected| selected != edge) {
                 return None;
@@ -2418,14 +2418,16 @@ enum EdgeSetIntersection {
     Ambiguous,
 }
 
-fn unique_edge_set_intersection(edge_sets: &[&[i64]]) -> EdgeSetIntersection {
-    let mut sets = edge_sets.iter();
+fn unique_edge_set_intersection<'a>(
+    edge_sets: impl Iterator<Item = &'a [i64]> + Clone,
+) -> EdgeSetIntersection {
+    let mut sets = edge_sets.clone();
     let Some(first) = sets.next() else {
         return EdgeSetIntersection::Disjoint;
     };
     let mut candidate = None;
-    for &edge in *first {
-        if edge_sets.iter().all(|set| set.contains(&edge)) {
+    for &edge in first {
+        if edge_sets.clone().all(|set| set.contains(&edge)) {
             if candidate.is_some_and(|selected| selected != edge) {
                 return EdgeSetIntersection::Ambiguous;
             }
@@ -2441,9 +2443,9 @@ enum SelectorSlots {
     BoundaryCount,
 }
 
-fn corroborated_edge_intersection(
+fn corroborated_edge_intersection<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: &[&[i64]],
+    shared_edge_sets: impl Iterator<Item = &'a [i64]> + Clone,
     slots: SelectorSlots,
 ) -> Option<i64> {
     let mut selectors = selector_contexts.iter();
@@ -2452,7 +2454,7 @@ fn corroborated_edge_intersection(
     for &edge in selector_candidate_edges(first, slots) {
         if !selector_contexts.iter().skip(1)
             .all(|selector| selector_candidate_edges(selector, slots).contains(&edge))
-            || !shared_edge_sets.iter().all(|set| set.contains(&edge))
+            || !shared_edge_sets.clone().all(|set| set.contains(&edge))
         {
             continue;
         }
