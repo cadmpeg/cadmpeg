@@ -6965,11 +6965,11 @@ mod tests {
             object_id: 20,
             source_offset: offset,
         };
-        let uses = feature_parameter_uses(&[
+        let uses = crate::test_support::with_decode_context(|ctx| feature_parameter_uses(ctx, &[
             binding("late", "nx:feature-history:operation-label#1-2", 1, 30),
             binding("early", "nx:feature-history:operation-label#1-2", 0, 20),
             binding("other", "nx:feature-history:operation-label#1-3", 0, 40),
-        ]);
+        ])).expect("admitted parameter uses");
         assert_eq!(uses.len(), 2);
         assert_eq!(
             uses[0]

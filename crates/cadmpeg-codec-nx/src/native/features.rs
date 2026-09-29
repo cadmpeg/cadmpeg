@@ -10452,47 +10452,67 @@ pub(super) fn feature_parameter_bindings(
 
 /// Group exact expression bindings by consuming operation and expression.
 pub(super) fn feature_parameter_uses(
+    ctx: &DecodeContext<'_>,
     bindings: &[FeatureParameterBinding],
-) -> Vec<FeatureParameterUse> {
-    let mut grouped = BTreeMap::<(&str, &str), Vec<&FeatureParameterBinding>>::new();
-    for binding in bindings {
-        if let Some(expression) = binding.expression.as_deref() {
-            grouped
-                .entry((binding.operation_label.as_str(), expression))
-                .or_default()
-                .push(binding);
+) -> Result<Vec<FeatureParameterUse>, CodecError> {
+    let mut uses = Vec::new();
+    let scan_work = bindings.len().checked_mul(bindings.len())
+        .and_then(|count| count.checked_mul(4))
+        .ok_or_else(|| ctx.refuse_codec_limit("group NX parameter uses", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(scan_work),
+        "group NX parameter uses")?;
+    for (ordinal, binding) in bindings.iter().enumerate() {
+        let Some(expression) = binding.expression.as_deref() else { continue; };
+        if bindings[..ordinal].iter().any(|candidate| {
+            candidate.operation_label == binding.operation_label
+                && candidate.expression.as_deref() == Some(expression)
+        }) {
+            continue;
         }
+        let operation_key = binding.operation_label.rsplit_once('#')
+            .map_or(binding.operation_label.as_str(), |(_, key)| key);
+        let expression_key = expression.rsplit_once('#').map_or(expression, |(_, key)| key);
+        let id = format_charged_text(ctx, format_args!(
+            "nx:feature-history:parameter-use#{operation_key}-{expression_key}"),
+            "NX parameter use identity")?;
+        let operation_label = copy_operation_text(ctx, &binding.operation_label,
+            "NX parameter use operation")?;
+        let expression_id = copy_operation_text(ctx, expression,
+            "NX parameter use expression")?;
+        let mut occurrences = Vec::new();
+        for candidate in bindings.iter().filter(|candidate| {
+            candidate.operation_label == binding.operation_label
+                && candidate.expression.as_deref() == Some(expression)
+        }) {
+            let binding_id = copy_operation_text(ctx, &candidate.id,
+                "NX parameter use binding")?;
+            ctx.charge_collection_items(1, "NX parameter use bindings")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureParameterUseBinding>()),
+                "NX parameter use bindings")?;
+            occurrences.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX parameter use bindings", 0, 1))?;
+            occurrences.push(FeatureParameterUseBinding {
+                binding: binding_id,
+                source_offset: candidate.source_offset,
+            });
+        }
+        occurrences.sort_by_key(|occurrence| occurrence.source_offset);
+        ctx.charge_collection_items(1, "NX parameter uses")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureParameterUse>()), "NX parameter uses")?;
+        uses.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX parameter uses", 0, 1))?;
+        uses.push(FeatureParameterUse {
+            id, operation_label, expression: expression_id, bindings: occurrences,
+        });
     }
-    let mut uses = grouped
-        .into_iter()
-        .map(|((operation_label, expression), mut bindings)| {
-            bindings.sort_by_key(|binding| binding.source_offset);
-            (operation_label, expression, bindings)
-        })
-        .collect::<Vec<_>>();
-    uses.sort_by_key(|(_, _, bindings)| bindings[0].source_offset);
-    uses.into_iter()
-        .map(|(operation_label, expression, bindings)| {
-            let operation_key = operation_label
-                .rsplit_once('#')
-                .map_or(operation_label, |(_, key)| key);
-            let expression_key = expression
-                .rsplit_once('#')
-                .map_or(expression, |(_, key)| key);
-            FeatureParameterUse {
-                id: format!("nx:feature-history:parameter-use#{operation_key}-{expression_key}"),
-                operation_label: operation_label.to_string(),
-                expression: expression.to_string(),
-                bindings: bindings
-                    .into_iter()
-                    .map(|binding| FeatureParameterUseBinding {
-                        binding: binding.id.clone(),
-                        source_offset: binding.source_offset,
-                    })
-                    .collect(),
-            }
-        })
-        .collect()
+    uses.sort_by(|left, right| {
+        left.bindings[0].source_offset.cmp(&right.bindings[0].source_offset)
+            .then_with(|| left.operation_label.cmp(&right.operation_label))
+            .then_with(|| left.expression.cmp(&right.expression))
+    });
+    Ok(uses)
 }
 
 fn visit_feature_history_sections(
