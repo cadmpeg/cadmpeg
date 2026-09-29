@@ -8791,22 +8791,34 @@ pub(super) fn feature_extrude_profile_references(
             let Some(decoded) = decoded.relocate(entry_offset) else {
                 return;
             };
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            references.extend(decoded.references().enumerate().map(|(ordinal, (token, source_offset, witness_source_offset))| {
-                FeatureExtrudeProfileReference {
-                    id: format!(
-                        "nx:feature-history:extrude-profile-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
-                    ),
-                    operation_label: operation_label.clone(),
-                    ordinal: ordinal as u32,
-                    field_tag: decoded.field_tag(),
-                    witness_source_offset,
-                    token,
-                    data_block: unique_offset_data_block(&indexed, token.value()),
-                    source_offset,
+            let projected = (|| -> Result<(), CodecError> {
+                for (ordinal, (token, source_offset, witness_source_offset)) in
+                    decoded.references().enumerate()
+                {
+                    let id = format_feature_history_id(ctx, "extrude-profile-reference",
+                        section_key, operation_ordinal, Some(ordinal))?;
+                    let operation_label = format_feature_history_id(ctx, "operation-label",
+                        section_key, operation_ordinal, None)?;
+                    let data_block = charged_unique_offset_data_block(ctx, &indexed,
+                        token.value())?;
+                    let ordinal = u32::try_from(ordinal).map_err(|_| ctx.refuse_codec_limit(
+                        "NX extrude profile reference ordinal", 0, 1))?;
+                    ctx.charge_collection_items(1, "NX extrude profile references")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<FeatureExtrudeProfileReference>()),
+                        "NX extrude profile references")?;
+                    references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "allocate NX extrude profile references", 0, 1))?;
+                    references.push(FeatureExtrudeProfileReference {
+                        id, operation_label, ordinal, field_tag: decoded.field_tag(),
+                        witness_source_offset, token, data_block, source_offset,
+                    });
                 }
-            }));
+                Ok(())
+            })();
+            if let Err(error) = projected {
+                refusal = Some(error);
+            }
         },
     )?;
     if let Some(error) = refusal {
@@ -8821,25 +8833,45 @@ pub(super) fn feature_extrude_payload_headers(
     container: &Container,
 ) -> Result<Vec<FeatureExtrudePayloadHeader>, cadmpeg_core::CodecError> {
     let mut headers = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
             let Some(header) = crate::om::extrude_payload_header(record.payload_view()) else {
                 return;
             };
-            headers.push(FeatureExtrudePayloadHeader {
-                id: format!(
-                    "nx:feature-history:extrude-payload-header#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
-                scalars: header.scalars,
-                source_offset: entry_offset + header.offset as u64,
-            });
+            let projected = (|| -> Result<(), CodecError> {
+                let id = format_feature_history_id(ctx, "extrude-payload-header",
+                    section_key, operation_ordinal, None)?;
+                let operation_label = format_feature_history_id(ctx, "operation-label",
+                    section_key, operation_ordinal, None)?;
+                let source_offset = entry_offset.checked_add(
+                    cadmpeg_core::decode::u64_from_index(header.offset))
+                    .ok_or_else(|| ctx.refuse_codec_limit(
+                        "NX extrude header source offset", 0, 1))?;
+                ctx.charge_collection_items(1, "NX extrude payload headers")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<FeatureExtrudePayloadHeader>()),
+                    "NX extrude payload headers")?;
+                headers.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX extrude payload headers", 0, 1))?;
+                headers.push(FeatureExtrudePayloadHeader {
+                    id, operation_label, scalars: header.scalars, source_offset,
+                });
+                Ok(())
+            })();
+            if let Err(error) = projected {
+                failure = Some(error);
+            }
         },
     )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(headers)
 }
 

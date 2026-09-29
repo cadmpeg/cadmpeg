@@ -7,6 +7,8 @@ use crate::native::features::feature_operation_labels;
 use crate::native::features::feature_point_construction_headers;
 use crate::native::features::feature_point_construction_scalar_lanes;
 use crate::native::features::feature_swp104_leading_branches;
+use crate::native::features::feature_extrude_profile_references;
+use crate::native::features::feature_extrude_payload_headers;
 use crate::native::features::feature_surface_construction_references;
 use crate::native::features::feature_surface_construction_payloads;
 use crate::native::features::feature_thru_curve_construction_envelopes;
@@ -76,6 +78,87 @@ fn swp104_container() -> crate::container::Container<'static> {
     payload.extend([255, 1, 2, 241, 1, 0, 0]);
     reference_container("SWP104", payload)
 }
+
+#[derive(Clone, Copy)]
+enum ExtrudeRoute { Profile, Header }
+
+fn extrude_route_refusal(
+    route: ExtrudeRoute,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let payload = match route {
+        ExtrudeRoute::Profile =>
+            b"\x01\x02\x16\x01\x03\xf0\xff\xf1\x01\x00\x01\x03\x79\xaa\x01\x03\xf0\xff\xf1\x01\x00\x00\x00".to_vec(),
+        ExtrudeRoute::Header =>
+            b"\x0f\x00\x00\x01\x00\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x2f\xa3\x74\xbc\x6a\x7e\xf9\xdb".to_vec(),
+    };
+    let container = reference_container("EXTRUDE", payload);
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        match route {
+            ExtrudeRoute::Profile => feature_extrude_profile_references(ctx, &container)
+                .map(|rows| rows.len()),
+            ExtrudeRoute::Header => feature_extrude_payload_headers(ctx, &container)
+                .map(|rows| rows.len()),
+        }
+    };
+    let expected = match route { ExtrudeRoute::Profile => 2, ExtrudeRoute::Header => 1 };
+    assert_eq!(crate::test_support::with_decode_context(|ctx| decode(ctx))
+        .expect("admitted extrude route"), expected);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    decode(&ctx).expect_err("extrude route resource limit")
+}
+
+macro_rules! extrude_route_limit_tests {
+    ($collection:ident, $retained:ident, $scoped:ident, $work:ident, $route:expr) => {
+        #[test]
+        fn $collection() {
+            let error = extrude_route_refusal($route,
+                |policy| policy.limits.max_collection_items = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        }
+        #[test]
+        fn $retained() {
+            let error = extrude_route_refusal($route,
+                |policy| policy.limits.max_retained_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        }
+        #[test]
+        fn $scoped() {
+            let error = extrude_route_refusal($route,
+                |policy| policy.limits.max_materialized_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+        }
+        #[test]
+        fn $work() {
+            let error = extrude_route_refusal($route,
+                |policy| policy.limits.max_work_units = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        }
+    };
+}
+
+extrude_route_limit_tests!(
+    extrude_profile_refuses_collection_limit,
+    extrude_profile_refuses_retained_limit,
+    extrude_profile_refuses_scoped_limit,
+    extrude_profile_refuses_work_limit,
+    ExtrudeRoute::Profile
+);
+extrude_route_limit_tests!(
+    extrude_header_refuses_collection_limit,
+    extrude_header_refuses_retained_limit,
+    extrude_header_refuses_scoped_limit,
+    extrude_header_refuses_work_limit,
+    ExtrudeRoute::Header
+);
 
 fn swp104_branch_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
