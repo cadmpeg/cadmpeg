@@ -121,24 +121,24 @@ impl Serialize for Type38State {
         wire.end()
     }
 }
+pub(super) struct Type38StateParts<'inputs> {
+    pub(super) xmt: NonNullXmt,
+    pub(super) node_id: u32,
+    pub(super) leading_references: [u32; 5],
+    pub(super) leading_statuses: [u8; 5],
+    pub(super) marker: IntersectionMarker,
+    pub(super) linked_references: &'inputs [NonNullXmt],
+    pub(super) state_references: &'inputs [NonNullXmt],
+    pub(super) numeric_values: Option<FiniteVector<11>>,
+}
+
 impl Type38State {
-    // This conversion consumes the input carrier at the typed construction boundary.
-    // The constructor checks the complete source row and its coupled fields together.
-    #[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
-    pub(super) fn new(
-        xmt: NonNullXmt,
-        node_id: u32,
-        leading_references: [u32; 5],
-        leading_statuses: [u8; 5],
-        marker: IntersectionMarker,
-        linked_references: Vec<NonNullXmt>,
-        state_references: Vec<NonNullXmt>,
-        numeric_values: Option<FiniteVector<11>>,
-    ) -> Result<Self, &'static str> {
+    pub(super) fn new(parts: Type38StateParts<'_>) -> Result<Self, &'static str> {
+        let Type38StateParts { xmt, node_id, leading_references, leading_statuses, marker, linked_references, state_references, numeric_values } = parts;
         if leading_statuses[..4] != [1; 4] || !matches!(leading_statuses[4], 0 | 1) {
             return Err("leading_statuses: require four ones followed by zero or one");
         }
-        let lanes = match *linked_references.as_slice() {
+        let lanes = match *linked_references {
             [left, right] => {
                 let identity = u32::from(xmt);
                 identity
@@ -194,7 +194,7 @@ impl Type38State {
                 if numeric_values.is_some() {
                     return Err("numeric_values: one-link form cannot carry term-use state");
                 }
-                let &[first, start, second, third] = state_references.as_slice() else {
+                let &[first, start, second, third] = state_references else {
                     return Err("state_references: one-link form requires four references");
                 };
                 let anchor = u32::from(start);
@@ -281,10 +281,8 @@ impl Type38State {
 fn default_statuses() -> [u8; 5] {
     [1; 5]
 }
-// Serde requires a borrowed skip predicate.
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn statuses_are_default(statuses: &[u8; 5]) -> bool {
-    *statuses == [1; 5]
+fn statuses_are_default(statuses: &[u8]) -> bool {
+    statuses == [1; 5]
 }
 fn deserialize_statuses<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
@@ -310,26 +308,22 @@ struct StateWire {
 impl TryFrom<StateWire> for Type38State {
     type Error = &'static str;
     fn try_from(wire: StateWire) -> Result<Self, Self::Error> {
-        Self::new(
-            NonNullXmt::try_from(wire.xmt)?,
-            wire.node_id,
-            wire.leading_references,
-            wire.leading_statuses,
-            IntersectionMarker::try_from(wire.marker)?,
-            wire.linked_references
-                .into_iter()
-                .map(NonNullXmt::try_from)
-                .collect::<Result<_, _>>()
-                .map_err(|_| "linked_references: must be non-null")?,
-            wire.state_references
-                .into_iter()
-                .map(NonNullXmt::try_from)
-                .collect::<Result<_, _>>()
-                .map_err(|_| "state_references: must be non-null")?,
-            wire.numeric_values,
-        )
+        let xmt = NonNullXmt::try_from(wire.xmt)?;
+        let marker = IntersectionMarker::try_from(wire.marker)?;
+        let linked_references = wire.linked_references.into_iter().map(NonNullXmt::try_from)
+            .collect::<Result<Vec<_>, _>>().map_err(|_| "linked_references: must be non-null")?;
+        let state_references = wire.state_references.into_iter().map(NonNullXmt::try_from)
+            .collect::<Result<Vec<_>, _>>().map_err(|_| "state_references: must be non-null")?;
+        Self::new(Type38StateParts {
+            xmt, node_id: wire.node_id,
+            leading_references: wire.leading_references, leading_statuses: wire.leading_statuses,
+            marker,
+            linked_references: &linked_references, state_references: &state_references,
+            numeric_values: wire.numeric_values,
+        })
     }
 }
+
 #[cfg(test)]
 impl From<Type38State> for StateWire {
     fn from(state: Type38State) -> Self {
