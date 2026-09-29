@@ -1487,6 +1487,8 @@ fn noncollinear_coplanar_spatial_positions_define_one_hole_axis() {
 
 #[test]
 fn source_intervals_supply_legacy_hole_profiles() {
+    let hole_arena = DecodeArena::new();
+    let (hole_ctx, _) = DecodeContext::from_root_bytes(&[], &hole_arena, &DecodePolicy::service()).unwrap();
     let mut history = native_history();
     history.features.push(crate::records::Feature {
         id: "native-profile-sketch".into(),
@@ -1559,7 +1561,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
     enrich_history_parameters(&ctx, &mut histories, [&lane], true)
         .expect("hole parameter enrichment succeeds");
     assert_eq!(histories[0].features[1].parameters["depth"], "6.8mm");
-    enrich_history_hole_constructions(&mut histories, &[lane]);
+    enrich_history_hole_constructions(&hole_ctx, &mut histories, &[lane]).unwrap();
     assert_eq!(
         histories[0].features[0]
             .properties
@@ -1577,7 +1579,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
     next_hole.source_id = FeatureSource::from_value(20);
     next_hole.ordinal = 1;
     histories[0].features.push(next_hole);
-    enrich_history_hole_constructions(&mut histories, &[]);
+    enrich_history_hole_constructions(&hole_ctx, &mut histories, &[]).unwrap();
     assert_eq!(
         histories[0].features[0]
             .properties
@@ -1589,6 +1591,8 @@ fn source_intervals_supply_legacy_hole_profiles() {
 
 #[test]
 fn serialized_position_successor_owns_legacy_hole_profile() {
+    let hole_arena = DecodeArena::new();
+    let (hole_ctx, _) = DecodeContext::from_root_bytes(&[], &hole_arena, &DecodePolicy::service()).unwrap();
     let mut history = native_history();
     let mut position = history.features[0].clone();
     position.id = "native-position-sketch".into();
@@ -1650,7 +1654,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
         },
     ]);
 
-    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane.clone()]);
+    enrich_history_hole_constructions(&hole_ctx, std::slice::from_mut(&mut history), &[lane.clone()]).unwrap();
     assert_eq!(
         history.features[0]
             .properties
@@ -1693,7 +1697,7 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
             object_id: ObjectId::from_value(58),
         },
     ]);
-    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane, alternate_lane]);
+    enrich_history_hole_constructions(&hole_ctx, std::slice::from_mut(&mut history), &[lane, alternate_lane]).unwrap();
     assert!(!history.features[0]
         .properties
         .contains_key("DissectableChildren"));
@@ -1701,6 +1705,8 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
 
 #[test]
 fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
+    let hole_arena = DecodeArena::new();
+    let (hole_ctx, _) = DecodeContext::from_root_bytes(&[], &hole_arena, &DecodePolicy::service()).unwrap();
     let mut history = native_history();
     let mut position = history.features[0].clone();
     position.id = "native-position-sketch".into();
@@ -1740,7 +1746,7 @@ fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
         ],
     });
 
-    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[]);
+    enrich_history_hole_constructions(&hole_ctx, std::slice::from_mut(&mut history), &[]).unwrap();
 
     assert_eq!(
         history.features[0]
