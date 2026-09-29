@@ -1381,12 +1381,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             |(construction, position)| Ok(FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                                 position,
                                 construction: project_work_point_construction(
+                                    ctx,
                                     scope,
                                     construction,
                                     &parameters,
                                     edge_operands,
                                     &scope_ids,
-                                )
+                                )?
                                 .map(Box::new),
                             })),
                         )?
@@ -2105,12 +2106,13 @@ pub(crate) fn work_plane_recipe_state_id(scope: &DesignParameterScope) -> Option
 }
 
 fn project_work_point_construction(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     construction: &crate::records::feature::work_geometry::DesignWorkPointConstruction,
     parameters: &[(u32, &DesignParameter)],
     edge_operands: &[DesignEdgeOperand],
     scope_ids: &HashMap<(&str, u32), cadmpeg_ir::features::FeatureId>,
-) -> Option<cadmpeg_ir::features::DatumPointConstruction> {
+) -> Result<Option<cadmpeg_ir::features::DatumPointConstruction>, CodecError> {
     use crate::records::feature::work_geometry::{
         DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRuleForm,
     };
@@ -2118,83 +2120,92 @@ fn project_work_point_construction(
         DatumPlaneReference, DatumPointConstruction, EdgeSelection, VertexSelection,
     };
 
-    let stream = native_stream(&scope.id)?;
-    let edge = |input: &DesignWorkPointInput| {
-        let operand = work_point_edge_operand(scope, input, edge_operands)?;
+    let stream = or_none!(native_stream(&scope.id));
+    let edge = |input: &DesignWorkPointInput| -> Result<Option<EdgeSelection>, CodecError> {
+        let Some(operand) = work_point_edge_operand(scope, input, edge_operands) else {
+            return Ok(None);
+        };
         let Some((state_id, edge_slot)) = operand
             .recipe_state_id
             .zip(crate::design::edge_resolve::resolved_edge_operand(operand))
         else {
-            return Some(EdgeSelection::Native(operand.id.clone()));
+            return Ok(Some(EdgeSelection::Native(copy_feature_text(ctx, &operand.id,
+                "f3d WorkPoint native edge operand id")?)));
         };
         let feature_id = neutral_feature_id(scope);
         let feature_key = feature_id.key();
         let prefix = ids::history_input_prefix(&feature_key, state_id);
-        Some(
-            EdgeSelection::historical(
+        Ok(Some(
+            match EdgeSelection::historical(
                 feature_input_topology_id(&feature_id, state_id),
                 vec![ids::history_input_edge_id(&prefix, edge_slot)],
-                operand.id.clone(),
-            )
-            .unwrap_or_else(|_| EdgeSelection::Native(operand.id.clone())),
-        )
+                copy_feature_text(ctx, &operand.id,
+                    "f3d WorkPoint historical edge operand id")?,
+            ) {
+                Ok(selection) => selection,
+                Err(_) => EdgeSelection::Native(copy_feature_text(ctx, &operand.id,
+                    "f3d WorkPoint fallback edge operand id")?),
+            },
+        ))
     };
-    let plane = |input: &DesignWorkPointInput| {
-        let DesignWorkPointInputCarrier::WorkPlane { selection } = input.carrier()? else {
-            return None;
+    let plane = |input: &DesignWorkPointInput| -> Result<Option<DatumPlaneReference>, CodecError> {
+        let Some(DesignWorkPointInputCarrier::WorkPlane { selection }) = input.carrier() else {
+            return Ok(None);
         };
-        scope_ids
+        Ok(scope_ids
             .get(&(stream, selection.work_plane_scope_record_index))
-            .cloned()
-            .map(|feature| DatumPlaneReference::Feature { feature })
+            .map(|feature| copy_feature_id(ctx, feature,
+                "f3d WorkPoint plane feature id")
+                .map(|feature| DatumPlaneReference::Feature { feature }))
+            .transpose()?)
     };
 
-    Some(match construction.rule.form() {
+    Ok(Some(match construction.rule.form() {
         DesignWorkPointRuleForm::CircleCenter { input } => {
-            DatumPointConstruction::CircleCenter { edge: edge(input)? }
+            DatumPointConstruction::CircleCenter { edge: or_none!(edge(input)?) }
         }
         DesignWorkPointRuleForm::TwoEdgeIntersection { inputs } => {
             DatumPointConstruction::TwoEdgeIntersection {
-                edges: [edge(&inputs[0])?, edge(&inputs[1])?],
+                edges: [or_none!(edge(&inputs[0])?), or_none!(edge(&inputs[1])?)],
             }
         }
         DesignWorkPointRuleForm::ThreePlaneIntersection { inputs } => {
             DatumPointConstruction::ThreePlaneIntersection {
-                planes: Box::new([plane(&inputs[0])?, plane(&inputs[1])?, plane(&inputs[2])?]),
+                planes: Box::new([or_none!(plane(&inputs[0])?),
+                    or_none!(plane(&inputs[1])?), or_none!(plane(&inputs[2])?)]),
             }
         }
         DesignWorkPointRuleForm::Vertex { input } => {
-            let DesignWorkPointInputCarrier::VertexRecipe { recipe } = input.carrier()? else {
-                return None;
+            let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier() else {
+                return Ok(None);
             };
-            let vertex = recipe.resolution.map_or_else(
-                || {
-                    VertexSelection::native(recipe.recipe_id.clone())
-                        .unwrap_or(VertexSelection::Unresolved)
-                },
-                |resolution| {
+            let vertex = match recipe.resolution {
+                None => VertexSelection::native(copy_feature_text(ctx, &recipe.recipe_id,
+                    "f3d WorkPoint native vertex recipe id")?)
+                    .unwrap_or(VertexSelection::Unresolved),
+                Some(resolution) => {
                     let state_id = resolution.state_id;
                     let vertex_slot = resolution.vertex_slot();
                     let feature_id = neutral_feature_id(scope);
                     let feature_key = feature_id.key();
                     let prefix = ids::history_input_prefix(&feature_key, state_id);
-                    VertexSelection::historical(
+                    match VertexSelection::historical(
                         feature_input_topology_id(&feature_id, state_id),
                         ids::history_input_vertex_id(&prefix, vertex_slot),
-                        recipe.recipe_id.clone(),
-                    )
-                    .unwrap_or_else(|_| {
-                        VertexSelection::native(recipe.recipe_id.clone())
-                            .unwrap_or(VertexSelection::Unresolved)
-                    })
+                        copy_feature_text(ctx, &recipe.recipe_id,
+                            "f3d WorkPoint historical vertex recipe id")?,
+                    ) {
+                        Ok(selection) => selection,
+                        Err(_) => VertexSelection::Unresolved,
+                    }
                 },
-            );
+            };
             DatumPointConstruction::Vertex { vertex }
         }
         DesignWorkPointRuleForm::EdgePlaneIntersection { inputs } => {
             DatumPointConstruction::EdgePlaneIntersection {
-                edge: edge(&inputs[0])?,
-                plane: plane(&inputs[1])?,
+                edge: or_none!(edge(&inputs[0])?),
+                plane: or_none!(plane(&inputs[1])?),
             }
         }
         DesignWorkPointRuleForm::DistanceOnEdge { input } => {
@@ -2202,19 +2213,19 @@ fn project_work_point_construction(
                 .iter()
                 .map(|(_, parameter)| *parameter)
                 .filter(|parameter| parameter.source_kind() == "PathDistance");
-            let distance = distances.next()?;
+            let distance = or_none!(distances.next());
             if distances.next().is_some()
                 || !(0.0..=1.0).contains(&distance.evaluated_value().get())
             {
-                return None;
+                return Ok(None);
             }
             DatumPointConstruction::DistanceOnEdge {
-                edge: edge(input)?,
-                fraction: cadmpeg_ir::scalar::Fraction::new(distance.evaluated_value().get())?,
+                edge: or_none!(edge(input)?),
+                fraction: or_none!(cadmpeg_ir::scalar::Fraction::new(distance.evaluated_value().get())),
             }
         }
-        DesignWorkPointRuleForm::Native { .. } => return None,
-    })
+        DesignWorkPointRuleForm::Native { .. } => return Ok(None),
+    }))
 }
 
 fn project_work_plane(
