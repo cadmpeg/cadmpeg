@@ -1580,11 +1580,12 @@ pub(crate) fn project_compact_surface_selections(
                                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
                             let native = compact_surface_selection_value_charged(ctx, &selection.components)?;
                             let generated = component_path_feature(
+                                ctx,
                                 &selection.components,
                                 &history_features,
                                 &selection.feature_ref,
                                 ComponentPathEnd::Trailing,
-                            )
+                            )?
                             .and_then(|(component, producer)| {
                                 feature_ids_by_native
                                     .get(producer.id.as_str())
@@ -2889,26 +2890,27 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 let mut complete = true;
                 for (_, components, explicit_producer) in &references {
                     ctx.charge_work(1, GENERATED_OPERATION)?;
-                    let candidate = (|| {
-                        let components = components.as_deref()?;
-                        let explicit = explicit_producer.as_deref().and_then(|producer_ref| {
-                            let producer = history_features
-                                .iter()
-                                .copied()
-                                .find(|candidate| candidate.id.as_str() == producer_ref)?;
-                            let component = components.first()?;
-                            component.local_id.is_some().then_some((component, producer))
-                        });
-                        let (component, producer) = explicit.or_else(|| {
-                            component_path_feature(
-                                components,
-                                &history_features,
-                                native_feature.id.as_str(),
-                                ComponentPathEnd::Leading,
-                            )
-                        })?;
-                        Some((feature_ids_by_native.get(producer.id.as_str())?, component.local_id?))
-                    })();
+                    let candidate = match components.as_deref() {
+                        None => None,
+                        Some(components) => {
+                            let explicit = explicit_producer.as_deref().and_then(|producer_ref| {
+                                let producer = history_features.iter().copied()
+                                    .find(|candidate| candidate.id.as_str() == producer_ref)?;
+                                let component = components.first()?;
+                                component.local_id.is_some().then_some((component, producer))
+                            });
+                            let selected = match explicit {
+                                Some(selected) => Some(selected),
+                                None => component_path_feature(
+                                    ctx, components, &history_features,
+                                    native_feature.id.as_str(), ComponentPathEnd::Leading,
+                                )?,
+                            };
+                            selected.and_then(|(component, producer)| {
+                                Some((feature_ids_by_native.get(producer.id.as_str())?, component.local_id?))
+                            })
+                        }
+                    };
                     let Some(candidate) = candidate else {
                         complete = false;
                         break;
