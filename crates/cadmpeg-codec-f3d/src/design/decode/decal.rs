@@ -92,7 +92,7 @@ pub(crate) fn project_decal_images(
             )?)
             .map_err(|_| CodecError::malformed("F3D Decal face identifier must be UTF-8"))?;
             let copied = FaceId::mint(copied)
-                .map_err(|error| CodecError::malformed(format_args!("{error}")))?;
+                .map_err(|error| crate::design::text::malformed_design(Some(ctx), format_args!("{error}")))?;
             ctx.charge_collection_items(1, "f3d Decal faces")?;
             faces.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("f3d Decal faces allocation", 0, 1)

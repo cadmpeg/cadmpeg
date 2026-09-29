@@ -572,7 +572,7 @@ pub(crate) fn decode_parameter_owners(
             })?;
         }
         if stream_headers.insert(header.record_index, header).is_some() {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "Fusion Design stream has duplicate primary headers for record {}",
                 header.record_index
             )));
@@ -603,7 +603,7 @@ pub(crate) fn decode_parameter_owners(
             continue;
         };
         let malformed = |invariant: &str| {
-            CodecError::malformed(format_args!(
+            crate::design::text::malformed_design(Some(ctx), format_args!(
                 "Fusion Design parameter {} owner {} {invariant}",
                 parameter.record_index, owner_index
             ))

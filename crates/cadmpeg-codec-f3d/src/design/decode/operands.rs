@@ -3178,7 +3178,7 @@ pub(crate) fn bind_lost_edge_groups(
             continue;
         };
         if identity_matches.next().is_some() {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "Fusion construction group {} has multiple identity chains",
                 group.record_index
             )));
@@ -3203,7 +3203,7 @@ pub(crate) fn bind_lost_edge_groups(
             }
         }
         if multiple_terminals {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "Fusion construction group {} has multiple terminating lost-edge runs",
                 group.record_index
             )));
@@ -3223,7 +3223,7 @@ pub(crate) fn bind_lost_edge_groups(
         }
         let run = &stream_edges[start..=terminal];
         if run.len() != group.members().len() {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "Fusion construction group {} has {} operands but its lost-edge run has {} records",
                 group.record_index,
                 group.members().len(),

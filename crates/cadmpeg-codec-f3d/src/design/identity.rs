@@ -71,12 +71,12 @@ pub(super) fn neutral_configuration_id(ctx: Option<&DecodeContext<'_>>, entry: &
     let entry_len = encoded_length(ctx, entry, operation)?;
     let name_len = encoded_length(ctx, name, operation)?;
     let text = format_identity(ctx, format_args!("f3d:configuration:variant#{entry_len}:{}{name_len}:{}", Encoded(entry, false), Encoded(name, false)), operation)?;
-    cadmpeg_ir::features::ConfigurationId::mint(text).map_err(|error| CodecError::malformed(format_args!("{error}")))
+    cadmpeg_ir::features::ConfigurationId::mint(text).map_err(|error| crate::design::text::malformed_design(ctx, format_args!("{error}")))
 }
 
-fn mint<T: TryFrom<String>>(text: String) -> Result<T, CodecError>
+fn mint<T: TryFrom<String>>(ctx: Option<&DecodeContext<'_>>, text: String) -> Result<T, CodecError>
 where T::Error: fmt::Display {
-    T::try_from(text).map_err(|error| CodecError::malformed(format_args!("{error}")))
+    T::try_from(text).map_err(|error| crate::design::text::malformed_design(ctx, format_args!("{error}")))
 }
 
 pub(super) fn neutral_feature_id(ctx: Option<&DecodeContext<'_>>, scope: &crate::records::feature::scope::DesignParameterScope) -> Result<cadmpeg_ir::features::FeatureId, CodecError> {
@@ -85,31 +85,31 @@ pub(super) fn neutral_feature_id(ctx: Option<&DecodeContext<'_>>, scope: &crate:
     let kind = scope.kind_name();
     let stream_len = encoded_length(ctx, stream, operation)?;
     let kind_len = encoded_length(ctx, kind, operation)?;
-    mint(format_identity(ctx, format_args!("f3d:model:feature#{stream_len}:{}{kind_len}:{}{}:{}", Encoded(stream, false), Encoded(kind, false), scope.feature_ordinal.get(), scope.record_index), operation)?)
+    mint(ctx, format_identity(ctx, format_args!("f3d:model:feature#{stream_len}:{}{kind_len}:{}{}:{}", Encoded(stream, false), Encoded(kind, false), scope.feature_ordinal.get(), scope.record_index), operation)?)
 }
 
 pub(super) fn neutral_parameter_id(ctx: Option<&DecodeContext<'_>>, parameter: &crate::records::parameters::DesignParameter) -> Result<cadmpeg_ir::features::ParameterId, CodecError> {
     let operation = "f3d parameter identifier";
     let stream = crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM);
     let len = encoded_length(ctx, stream, operation)?;
-    mint(format_identity(ctx, format_args!("f3d:model:parameter#{len}:{}{}", Encoded(stream, false), parameter.record_index), operation)?)
+    mint(ctx, format_identity(ctx, format_args!("f3d:model:parameter#{len}:{}{}", Encoded(stream, false), parameter.record_index), operation)?)
 }
 
 pub(super) fn neutral_sketch_id(ctx: Option<&DecodeContext<'_>>, placement: &crate::records::sketch_placement::DesignSketchPlacement) -> Result<cadmpeg_ir::sketches::SketchId, CodecError> {
     let stream = crate::ids::native_stream(&placement.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-    mint(format_identity(ctx, format_args!("f3d:model:sketch#{}@{}", Encoded(stream, false), placement.entity_id.suffix()), "f3d sketch identifier")?)
+    mint(ctx, format_identity(ctx, format_args!("f3d:model:sketch#{}@{}", Encoded(stream, false), placement.entity_id.suffix()), "f3d sketch identifier")?)
 }
 
 pub(super) fn neutral_spatial_sketch_id(ctx: Option<&DecodeContext<'_>>, placement: &crate::records::sketch_placement::DesignSketchPlacement) -> Result<cadmpeg_ir::sketches::SpatialSketchId, CodecError> {
     let stream = crate::ids::native_stream(&placement.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-    mint(format_identity(ctx, format_args!("f3d:model:spatial-sketch#{}@{}", Encoded(stream, false), placement.entity_id.suffix()), "f3d spatial sketch identifier")?)
+    mint(ctx, format_identity(ctx, format_args!("f3d:model:spatial-sketch#{}@{}", Encoded(stream, false), placement.entity_id.suffix()), "f3d spatial sketch identifier")?)
 }
 
 macro_rules! tagged_entity_id {
     ($name:ident, $owner:ty, $result:ty, $namespace:literal, $tag:literal, $index:ty, $operation:literal) => {
         pub(super) fn $name(ctx: Option<&DecodeContext<'_>>, sketch: &$owner, index: $index) -> Result<$result, CodecError> {
             let len = encoded_length(ctx, sketch.as_str(), $operation)?;
-            mint(format_identity(ctx, format_args!(concat!($namespace, "#{}:{}", $tag, "{}"), len, Encoded(sketch.as_str(), false), index), $operation)?)
+            mint(ctx, format_identity(ctx, format_args!(concat!($namespace, "#{}:{}", $tag, "{}"), len, Encoded(sketch.as_str(), false), index), $operation)?)
         }
     };
 }
@@ -124,25 +124,25 @@ tagged_entity_id!(neutral_spatial_sketch_surface_id, cadmpeg_ir::sketches::Spati
 pub(super) fn neutral_sketch_curve_id(ctx: Option<&DecodeContext<'_>>, sketch: &cadmpeg_ir::sketches::SketchId, primary: u64, secondary: u64) -> Result<cadmpeg_ir::sketches::SketchEntityId, CodecError> {
     let operation = "f3d sketch curve identifier";
     let len = encoded_length(ctx, sketch.as_str(), operation)?;
-    mint(format_identity(ctx, format_args!("f3d:model:sketch-entity#{len}:{}c{primary}:{secondary}", Encoded(sketch.as_str(), false)), operation)?)
+    mint(ctx, format_identity(ctx, format_args!("f3d:model:sketch-entity#{len}:{}c{primary}:{secondary}", Encoded(sketch.as_str(), false)), operation)?)
 }
 
 pub(super) fn neutral_spatial_sketch_curve_id(ctx: Option<&DecodeContext<'_>>, sketch: &cadmpeg_ir::sketches::SpatialSketchId, primary: u64, secondary: u64) -> Result<cadmpeg_ir::sketches::SpatialSketchEntityId, CodecError> {
     let operation = "f3d spatial sketch curve identifier";
     let len = encoded_length(ctx, sketch.as_str(), operation)?;
-    mint(format_identity(ctx, format_args!("f3d:model:spatial-sketch-entity#{len}:{}c{primary}:{secondary}", Encoded(sketch.as_str(), false)), operation)?)
+    mint(ctx, format_identity(ctx, format_args!("f3d:model:spatial-sketch-entity#{len}:{}c{primary}:{secondary}", Encoded(sketch.as_str(), false)), operation)?)
 }
 
 pub(super) fn neutral_sketch_constraint_id(ctx: Option<&DecodeContext<'_>>, native_ref: &str, record: u32) -> Result<cadmpeg_ir::sketches::SketchConstraintId, CodecError> {
     let stream = crate::ids::native_stream(native_ref).unwrap_or(crate::ids::DEFAULT_STREAM);
-    mint(format_identity(ctx, format_args!("f3d:model:sketch-constraint#{}@{record}", Encoded(stream, false)), "f3d sketch constraint identifier")?)
+    mint(ctx, format_identity(ctx, format_args!("f3d:model:sketch-constraint#{}@{record}", Encoded(stream, false)), "f3d sketch constraint identifier")?)
 }
 
 pub(super) fn neutral_dimension_constraint_id(ctx: Option<&DecodeContext<'_>>, parameter: &cadmpeg_ir::features::ParameterId, form: &str) -> Result<cadmpeg_ir::sketches::SketchConstraintId, CodecError> {
     let operation = "f3d dimension constraint identifier";
     let key = identity_key(parameter.as_str())?;
     let form_len = encoded_length(ctx, form, operation)?;
-    mint(format_identity(ctx, format_args!("f3d:model:sketch-constraint#dimension:{}:{key}{form_len}:{}", key.len(), Encoded(form, false)), operation)?)
+    mint(ctx, format_identity(ctx, format_args!("f3d:model:sketch-constraint#dimension:{}:{key}{form_len}:{}", key.len(), Encoded(form, false)), operation)?)
 }
 
 pub(super) fn identity_key(id: &str) -> Result<&str, CodecError> {
@@ -154,14 +154,14 @@ pub(super) fn neutral_component_insert_occurrence_id(ctx: Option<&DecodeContext<
     let operation = "f3d component insert occurrence identifier";
     let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
     let len = encoded_length(ctx, stream, operation)?;
-    mint(format_identity(ctx, format_args!("f3d:model:occurrence#component-insert-{len}:{}{}:{}", Encoded(stream, false), scope.feature_ordinal.get(), scope.record_index), operation)?)
+    mint(ctx, format_identity(ctx, format_args!("f3d:model:occurrence#component-insert-{len}:{}{}:{}", Encoded(stream, false), scope.feature_ordinal.get(), scope.record_index), operation)?)
 }
 
 pub(super) fn neutral_assembly_joint_id(ctx: Option<&DecodeContext<'_>>, scope: &crate::records::feature::scope::DesignParameterScope) -> Result<cadmpeg_ir::products::JointId, CodecError> {
     let operation = "f3d assembly joint identifier";
     let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
     let len = encoded_length(ctx, stream, operation)?;
-    mint(format_identity(ctx, format_args!("f3d:model:joint#{len}:{}{}", Encoded(stream, false), scope.record_index), operation)?)
+    mint(ctx, format_identity(ctx, format_args!("f3d:model:joint#{len}:{}{}", Encoded(stream, false), scope.record_index), operation)?)
 }
 
 pub(super) fn configuration_entry_id(ctx: Option<&DecodeContext<'_>>, entry: &str) -> Result<String, CodecError> {
@@ -170,24 +170,24 @@ pub(super) fn configuration_entry_id(ctx: Option<&DecodeContext<'_>>, entry: &st
 
 pub(super) fn history_input_prefix(ctx: Option<&DecodeContext<'_>>, key: &str, previous: i64) -> Result<cadmpeg_ir::ids::IdentityKey, CodecError> {
     let text = format_identity(ctx, format_args!("{}:{key}:{previous}", key.len()), "f3d history input prefix")?;
-    cadmpeg_ir::ids::IdentityKey::try_new(text).map_err(|error| CodecError::malformed(format_args!("{error}")))
+    cadmpeg_ir::ids::IdentityKey::try_new(text).map_err(|error| crate::design::text::malformed_design(ctx, format_args!("{error}")))
 }
 
 pub(super) fn feature_input_topology_id(ctx: Option<&DecodeContext<'_>>, feature: &cadmpeg_ir::features::FeatureId, previous: i64) -> Result<cadmpeg_ir::ids::FeatureInputTopologyId, CodecError> {
     let key = identity_key(feature.as_str())?;
-    mint(format_identity(ctx, format_args!("f3d:history-input:state#{}:{key}:{previous}", key.len()), "f3d feature input topology identifier")?)
+    mint(ctx, format_identity(ctx, format_args!("f3d:history-input:state#{}:{key}:{previous}", key.len()), "f3d feature input topology identifier")?)
 }
 
 pub(super) fn history_input_edge_id(ctx: Option<&DecodeContext<'_>>, prefix: &cadmpeg_ir::ids::IdentityKey, slot: i64, operation: &'static str) -> Result<cadmpeg_ir::ids::HistoricalEdgeId, CodecError> {
-    mint(format_identity(ctx, format_args!("f3d:history-input:edge#{}:{slot}", prefix.as_str()), operation)?)
+    mint(ctx, format_identity(ctx, format_args!("f3d:history-input:edge#{}:{slot}", prefix.as_str()), operation)?)
 }
 
 pub(super) fn history_input_face_id(ctx: Option<&DecodeContext<'_>>, prefix: &cadmpeg_ir::ids::IdentityKey, slot: i64, operation: &'static str) -> Result<cadmpeg_ir::ids::HistoricalFaceId, CodecError> {
-    mint(format_identity(ctx, format_args!("f3d:history-input:face#{}:{slot}", prefix.as_str()), operation)?)
+    mint(ctx, format_identity(ctx, format_args!("f3d:history-input:face#{}:{slot}", prefix.as_str()), operation)?)
 }
 
 pub(super) fn history_input_vertex_id(ctx: Option<&DecodeContext<'_>>, prefix: &cadmpeg_ir::ids::IdentityKey, slot: i64, operation: &'static str) -> Result<cadmpeg_ir::ids::HistoricalVertexId, CodecError> {
-    mint(format_identity(ctx, format_args!("f3d:history-input:vertex#{}:{slot}", prefix.as_str()), operation)?)
+    mint(ctx, format_identity(ctx, format_args!("f3d:history-input:vertex#{}:{slot}", prefix.as_str()), operation)?)
 }
 
 

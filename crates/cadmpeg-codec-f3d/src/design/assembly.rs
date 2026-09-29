@@ -504,7 +504,7 @@ fn project_qualified_operands(
                 };
                 Ok(Some(JointOperand::occurrence(
                     OccurrenceId::mint(copy_assembly_text(ctx, occurrence.as_str(), false)?)
-                        .map_err(|error| CodecError::malformed(format_args!("{error}")))?,
+                        .map_err(|error| crate::design::text::malformed_design(ctx, format_args!("{error}")))?,
                     super::identity::neutral_assembly_axial_object_id(ctx, &selectors[0])?,
                     Vec::new(),
                 )))

@@ -20,7 +20,7 @@ pub(super) fn copy_asset_id_charged(
     )?)
     .map_err(|_| CodecError::malformed("F3D asset identifier must be UTF-8"))?;
     cadmpeg_ir::assets::AssetId::mint(copied)
-        .map_err(|error| CodecError::malformed(format_args!("{error}")))
+        .map_err(|error| crate::design::text::malformed_design(Some(ctx), format_args!("{error}")))
 }
 
 pub(super) fn neutral_asset_id_charged(
@@ -78,7 +78,7 @@ pub(super) fn neutral_asset_id_charged(
         }
     }
     cadmpeg_ir::assets::AssetId::mint(id)
-        .map_err(|error| CodecError::malformed(format_args!("{error}")))
+        .map_err(|error| crate::design::text::malformed_design(Some(ctx), format_args!("{error}")))
 }
 
 pub(super) fn embedded_image_asset(

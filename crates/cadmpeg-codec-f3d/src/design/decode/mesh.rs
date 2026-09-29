@@ -354,6 +354,7 @@ impl MeshBody {
 }
 
 fn validate_mesh_registration(
+    ctx: &DecodeContext<'_>,
     frame: TypedPrimaryFrame<'_>,
     expected_version: u32,
     expected_base_type_guid: &str,
@@ -361,10 +362,10 @@ fn validate_mesh_registration(
     record_kind: &str,
 ) -> Result<(), CodecError> {
     if frame.design_type.version != expected_version {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(CodecError::NotImplemented(crate::design::text::format_design_text(Some(ctx), format_args!(
             "F3D Design {record_kind} record version {} is unsupported",
             frame.design_type.version
-        )));
+        ), "f3d Design unsupported diagnostic")?));
     }
     if frame.design_type.module != expected_module
         || !frame
@@ -374,7 +375,7 @@ fn validate_mesh_registration(
             .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
             .is_some_and(|base| base.eq_ignore_ascii_case(expected_base_type_guid))
     {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
             "F3D Design {record_kind} entity {} has incompatible registration metadata",
             frame.entity_id
         )));
@@ -383,6 +384,7 @@ fn validate_mesh_registration(
 }
 
 fn exact_record_index(
+    ctx: &DecodeContext<'_>,
     record: &[u8],
     frame: TypedPrimaryFrame<'_>,
     record_kind: &str,
@@ -390,15 +392,16 @@ fn exact_record_index(
     View::u32_le_at(record, 7)
         .filter(|record_index| u64::from(*record_index) == frame.entity_id)
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            crate::design::text::malformed_design(Some(ctx), format_args!(
                 "F3D Design {record_kind} entity {} has an invalid record index",
                 frame.entity_id
             ))
         })
 }
 
-fn malformed_frame(record_kind: &str, entity_id: u64) -> CodecError {
-    CodecError::malformed(format_args!(
+fn malformed_frame(ctx: &DecodeContext<'_>,
+    record_kind: &str, entity_id: u64) -> CodecError {
+    crate::design::text::malformed_design(Some(ctx), format_args!(
         "F3D Design {record_kind} entity {entity_id} has an invalid primary frame"
     ))
 }
@@ -417,21 +420,22 @@ fn indexed_class_tag(
 }
 
 fn record_identity(
+    ctx: &DecodeContext<'_>,
     record: &[u8],
     frame: TypedPrimaryFrame<'_>,
     record_kind: &str,
 ) -> Result<DesignMeshRecordIdentity, CodecError> {
-    let record_index = exact_record_index(record, frame, record_kind)?;
+    let record_index = exact_record_index(ctx, record, frame, record_kind)?;
     let class_tag = indexed_class_tag(record, 0)
-        .ok_or_else(|| malformed_frame(record_kind, frame.entity_id))?;
+        .ok_or_else(|| malformed_frame(ctx, record_kind, frame.entity_id))?;
     DesignMeshRecordIdentity::new(
         class_tag,
         record_index,
-        u64::try_from(frame.start).map_err(|_| malformed_frame(record_kind, frame.entity_id))?,
+        u64::try_from(frame.start).map_err(|_| malformed_frame(ctx, record_kind, frame.entity_id))?,
         u64::try_from(frame.end.saturating_sub(frame.start))
-            .map_err(|_| malformed_frame(record_kind, frame.entity_id))?,
+            .map_err(|_| malformed_frame(ctx, record_kind, frame.entity_id))?,
     )
-    .map_err(|_| malformed_frame(record_kind, frame.entity_id))
+    .map_err(|_| malformed_frame(ctx, record_kind, frame.entity_id))
 }
 
 fn validate_design_type(
@@ -539,7 +543,7 @@ fn parse_mesh_entry_name_record(
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshEntryNameRecord, CodecError> {
-    validate_mesh_registration(
+    validate_mesh_registration(ctx, 
         frame,
         MESH_ENTRY_NAME_TYPE_VERSION,
         MESH_ENTRY_NAME_BASE_TYPE_GUID,
@@ -547,29 +551,30 @@ fn parse_mesh_entry_name_record(
         "mesh-entry-name",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-entry-name")?;
+    let identity = record_identity(ctx, record, frame, "mesh-entry-name")?;
     if record.get(entry_name_prefix::ZERO_RUN_10..entry_name_prefix::GUID_RECORD_REFERENCE)
         != Some(&[0; 10])
     {
-        return Err(malformed_frame("mesh-entry-name", frame.entity_id));
+        return Err(malformed_frame(ctx, "mesh-entry-name", frame.entity_id));
     }
     let guid_record_index =
         exact_local_record_index(record, entry_name_prefix::GUID_RECORD_REFERENCE)
-            .ok_or_else(|| malformed_frame("mesh-entry-name", frame.entity_id))?;
+            .ok_or_else(|| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?;
     let (entry_name, _) = lp_utf16_bounded_charged(ctx, record, entry_name_prefix::LEN, 1..=1024)?
-        .ok_or_else(|| malformed_frame("mesh-entry-name", frame.entity_id))?;
+        .ok_or_else(|| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?;
     Ok(MeshEntryNameRecord {
         entry: DesignMeshEntryName::new(identity, entry_name)
-            .map_err(|_| malformed_frame("mesh-entry-name", frame.entity_id))?,
+            .map_err(|_| malformed_frame(ctx, "mesh-entry-name", frame.entity_id))?,
         guid_record_index,
     })
 }
 
 fn parse_mesh_guid_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshGuidRecord, CodecError> {
-    validate_mesh_registration(
+    validate_mesh_registration(ctx, 
         frame,
         MESH_GUID_TYPE_VERSION,
         MESH_GUID_BASE_TYPE_GUID,
@@ -577,7 +582,7 @@ fn parse_mesh_guid_record(
         "mesh-GUID",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-GUID")?;
+    let identity = record_identity(ctx, record, frame, "mesh-GUID")?;
     let parsed = (|| {
         (record.get(guid_join::ZERO_RUN_21..guid_join::FUSION_UUID) == Some(&[0; 21]))
             .then_some(())?;
@@ -591,14 +596,15 @@ fn parse_mesh_guid_record(
             entry_name_record_index,
         })
     })();
-    parsed.ok_or_else(|| malformed_frame("mesh-GUID", frame.entity_id))
+    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-GUID", frame.entity_id))
 }
 
 fn parse_mesh_body_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshBodyRecord, CodecError> {
-    validate_mesh_registration(
+    validate_mesh_registration(ctx, 
         frame,
         MESH_BODY_TYPE_VERSION,
         MESH_BODY_BASE_TYPE_GUID,
@@ -606,7 +612,7 @@ fn parse_mesh_body_record(
         "mesh-body",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-body")?;
+    let identity = record_identity(ctx, record, frame, "mesh-body")?;
     let parsed = (|| {
         (record.get(mesh_body::ZERO_RUN_10..mesh_body::ZERO_RUN_10 + 10) == Some(&[0; 10]))
             .then_some(())?;
@@ -632,7 +638,7 @@ fn parse_mesh_body_record(
             collection_record_index,
         })
     })();
-    parsed.ok_or_else(|| malformed_frame("mesh-body", frame.entity_id))
+    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-body", frame.entity_id))
 }
 
 fn parse_mesh_collection_record(
@@ -641,7 +647,7 @@ fn parse_mesh_collection_record(
     meta: &crate::metastream::MetaStream,
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshCollectionRecord, CodecError> {
-    validate_mesh_registration(
+    validate_mesh_registration(ctx, 
         frame,
         MESH_COLLECTION_TYPE_VERSION,
         MESH_COLLECTION_BASE_TYPE_GUID,
@@ -649,7 +655,7 @@ fn parse_mesh_collection_record(
         "mesh-collection",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-collection")?;
+    let identity = record_identity(ctx, record, frame, "mesh-collection")?;
     let counted_bodies = counted_local_record_indices(
         ctx,
         record,
@@ -693,7 +699,7 @@ fn parse_mesh_collection_record(
             owner_record_index,
         })
     })();
-    parsed.ok_or_else(|| malformed_frame("mesh-collection", frame.entity_id))
+    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-collection", frame.entity_id))
 }
 
 fn parse_mesh_texture_table_record(
@@ -701,7 +707,7 @@ fn parse_mesh_texture_table_record(
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshTextureTableRecord, CodecError> {
-    validate_mesh_registration(
+    validate_mesh_registration(ctx, 
         frame,
         MESH_TEXTURE_TABLE_TYPE_VERSION,
         MESH_TEXTURE_TABLE_BASE_TYPE_GUID,
@@ -709,7 +715,7 @@ fn parse_mesh_texture_table_record(
         "mesh-texture-table",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-texture-table")?;
+    let identity = record_identity(ctx, record, frame, "mesh-texture-table")?;
     let parsed = (|| -> Result<Option<MeshTextureTableRecord>, CodecError> {
         if record.get(texture_table::ZERO_RUN_10..texture_table::FLAGS_MAP_COUNT)
             != Some(&[0; 10][..])
@@ -822,14 +828,15 @@ fn parse_mesh_texture_table_record(
             filenames,
         }))
     })()?;
-    parsed.ok_or_else(|| malformed_frame("mesh-texture-table", frame.entity_id))
+    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-texture-table", frame.entity_id))
 }
 
 fn parse_mesh_wrapper_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshWrapperRecord, CodecError> {
-    validate_mesh_registration(
+    validate_mesh_registration(ctx, 
         frame,
         MESH_WRAPPER_TYPE_VERSION,
         MESH_WRAPPER_BASE_TYPE_GUID,
@@ -837,8 +844,8 @@ fn parse_mesh_wrapper_record(
         "mesh-wrapper",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = DesignMeshFixedRecord::try_from(record_identity(record, frame, "mesh-wrapper")?)
-        .map_err(|_| malformed_frame("mesh-wrapper", frame.entity_id))?;
+    let identity = DesignMeshFixedRecord::try_from(record_identity(ctx, record, frame, "mesh-wrapper")?)
+        .map_err(|_| malformed_frame(ctx, "mesh-wrapper", frame.entity_id))?;
     let parsed = (|| {
         (record.get(body_wrapper::ZERO_RUN_10..body_wrapper::BODY_REFERENCE) == Some(&[0; 10]))
             .then_some(())?;
@@ -849,7 +856,7 @@ fn parse_mesh_wrapper_record(
             body_record_index,
         })
     })();
-    parsed.ok_or_else(|| malformed_frame("mesh-wrapper", frame.entity_id))
+    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-wrapper", frame.entity_id))
 }
 
 fn scene_state_mask_is_exact(mask: &[u8]) -> bool {
@@ -892,10 +899,11 @@ fn parse_scene_bounds_payload(
 }
 
 fn parse_mesh_scene_state_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<DesignMeshSceneState, CodecError> {
-    validate_mesh_registration(
+    validate_mesh_registration(ctx, 
         frame,
         MESH_SCENE_STATE_TYPE_VERSION,
         MESH_SCENE_STATE_BASE_TYPE_GUID,
@@ -904,21 +912,22 @@ fn parse_mesh_scene_state_record(
     )?;
     let record = &bytes[frame.start..frame.end];
     let identity =
-        DesignMeshFixedRecord::try_from(record_identity(record, frame, "mesh-scene-state")?)
-            .map_err(|_| malformed_frame("mesh-scene-state", frame.entity_id))?;
+        DesignMeshFixedRecord::try_from(record_identity(ctx, record, frame, "mesh-scene-state")?)
+            .map_err(|_| malformed_frame(ctx, "mesh-scene-state", frame.entity_id))?;
     let bounds = (record.get(scene_state::ZERO_RUN_34..scene_state::FOOTER_MARKER)
         == Some(&[0; 34]))
     .then(|| parse_scene_footer(record, scene_state::FOOTER_MARKER))
     .flatten()
-    .ok_or_else(|| malformed_frame("mesh-scene-state", frame.entity_id))?;
+    .ok_or_else(|| malformed_frame(ctx, "mesh-scene-state", frame.entity_id))?;
     Ok(DesignMeshSceneState::new(identity, bounds))
 }
 
 fn parse_scene_node_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshSceneNodeRecord, CodecError> {
-    validate_mesh_registration(
+    validate_mesh_registration(ctx, 
         frame,
         SCENE_NODE_TYPE_VERSION,
         SCENE_NODE_BASE_TYPE_GUID,
@@ -926,7 +935,7 @@ fn parse_scene_node_record(
         "mesh-scene-node",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-scene-node")?;
+    let identity = record_identity(ctx, record, frame, "mesh-scene-node")?;
     let parsed = (|| {
         (record.get(scene_node::ZERO_RUN_14..scene_node::CONSTANT_TWO_A) == Some(&[0; 14])
             && View::u32_le_at(record, scene_node::CONSTANT_TWO_A) == Some(2)
@@ -963,10 +972,11 @@ fn parse_scene_node_record(
             )?,
         })
     })();
-    parsed.ok_or_else(|| malformed_frame("mesh-scene-node", frame.entity_id))
+    parsed.ok_or_else(|| malformed_frame(ctx, "mesh-scene-node", frame.entity_id))
 }
 
 fn parse_typed_identity(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
     expected_version: u32,
@@ -974,14 +984,14 @@ fn parse_typed_identity(
     expected_module: &str,
     record_kind: &str,
 ) -> Result<DesignMeshRecordIdentity, CodecError> {
-    validate_mesh_registration(
+    validate_mesh_registration(ctx, 
         frame,
         expected_version,
         expected_base_type_guid,
         expected_module,
         record_kind,
     )?;
-    record_identity(&bytes[frame.start..frame.end], frame, record_kind)
+    record_identity(ctx, &bytes[frame.start..frame.end], frame, record_kind)
 }
 
 fn parse_mesh_scope_record(
@@ -991,7 +1001,7 @@ fn parse_mesh_scope_record(
     records: &IndexedRecordOffsets,
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshScopeRecord, CodecError> {
-    validate_mesh_registration(
+    validate_mesh_registration(ctx, 
         frame,
         MESH_FEATURE_SCOPE_TYPE_VERSION,
         MESH_FEATURE_SCOPE_BASE_TYPE_GUID,
@@ -999,7 +1009,7 @@ fn parse_mesh_scope_record(
         "mesh-feature-scope",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let identity = record_identity(record, frame, "mesh-feature-scope")?;
+    let identity = record_identity(ctx, record, frame, "mesh-feature-scope")?;
     let counted_bodies = counted_local_record_indices(ctx, record, feature_scope::BODY_COUNT)?;
     let parsed = (|| {
         (record.get(feature_scope::ZERO_RUN_10..feature_scope::BODY_COUNT) == Some(&[0; 10]))
@@ -1051,10 +1061,11 @@ fn parse_mesh_scope_record(
     })();
     parsed
         .transpose()?
-        .ok_or_else(|| malformed_frame("mesh-feature-scope", frame.entity_id))
+        .ok_or_else(|| malformed_frame(ctx, "mesh-feature-scope", frame.entity_id))
 }
 
 fn parse_mesh_collection_owner_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<Option<MeshCollectionOwnerRecord>, CodecError> {
@@ -1064,7 +1075,7 @@ fn parse_mesh_collection_owner_record(
         } else {
             MESH_COLLECTION_OWNER_TYPE_VERSIONS[2]
         };
-    let identity = parse_typed_identity(
+    let identity = parse_typed_identity(ctx, 
         bytes,
         frame,
         admitted_version,
@@ -1090,9 +1101,9 @@ fn parse_mesh_collection_owner_record(
         owner: DesignMeshCollectionOwner::new(
             identity,
             source_offset(frame.start, backlink_at)
-                .ok_or_else(|| malformed_frame("mesh-collection-owner", frame.entity_id))?,
+                .ok_or_else(|| malformed_frame(ctx, "mesh-collection-owner", frame.entity_id))?,
         )
-        .map_err(|_| malformed_frame("mesh-collection-owner", frame.entity_id))?,
+        .map_err(|_| malformed_frame(ctx, "mesh-collection-owner", frame.entity_id))?,
         collection_record_index,
     }))
 }
@@ -1102,7 +1113,7 @@ fn parse_mesh_texture_filename_record(
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<(DesignMeshRecordIdentity, String), CodecError> {
-    let identity = parse_typed_identity(
+    let identity = parse_typed_identity(ctx, 
         bytes,
         frame,
         MESH_TEXTURE_FILENAME_TYPE_VERSION,
@@ -1114,14 +1125,14 @@ fn parse_mesh_texture_filename_record(
     if record.get(texture_filename::ZERO_RUN_10..texture_filename::BASENAME_CODE_UNIT_COUNT)
         != Some(&[0; 10])
     {
-        return Err(malformed_frame("mesh-texture-filename", frame.entity_id));
+        return Err(malformed_frame(ctx, "mesh-texture-filename", frame.entity_id));
     }
     let (filename, end) = lp_utf16_bounded_charged(
         ctx, record, texture_filename::BASENAME_CODE_UNIT_COUNT, 1..=1024,
     )?
-    .ok_or_else(|| malformed_frame("mesh-texture-filename", frame.entity_id))?;
+    .ok_or_else(|| malformed_frame(ctx, "mesh-texture-filename", frame.entity_id))?;
     if end != record.len() {
-        return Err(malformed_frame("mesh-texture-filename", frame.entity_id));
+        return Err(malformed_frame(ctx, "mesh-texture-filename", frame.entity_id));
     }
     Ok((identity, filename))
 }
@@ -1145,7 +1156,7 @@ fn unique_record_map<T>(
     for record in records {
         let index = record_index(&record);
         if out.insert(index, record).is_some() {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "F3D Design {record_kind} record index {index} is not unique"
             )));
         }
@@ -1170,13 +1181,13 @@ fn typed_frame_map<'a>(
     })?;
     for frame in frames {
         let index = u32::try_from(frame.entity_id).map_err(|_| {
-            CodecError::malformed(format_args!(
+            crate::design::text::malformed_design(Some(ctx), format_args!(
                 "F3D Design {record_kind} entity {} exceeds the indexed-record domain",
                 frame.entity_id
             ))
         })?;
         if out.insert(index, frame).is_some() {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "F3D Design {record_kind} record index {index} is not unique"
             )));
         }
@@ -1184,8 +1195,9 @@ fn typed_frame_map<'a>(
     Ok(out)
 }
 
-fn malformed_mesh_graph(stream: &str, invariant: &str) -> CodecError {
-    CodecError::malformed(format_args!(
+fn malformed_mesh_graph(ctx: &DecodeContext<'_>,
+    stream: &str, invariant: &str) -> CodecError {
+    crate::design::text::malformed_design(Some(ctx), format_args!(
         "F3D Design mesh feature graph violates `{invariant}` in {stream}"
     ))
 }
@@ -1322,7 +1334,7 @@ where
             ctx,
             typed_primary_frames(ctx, bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
                 .into_iter()
-                .map(|frame| parse_mesh_guid_record(bytes, frame)),
+                .map(|frame| parse_mesh_guid_record(ctx, bytes, frame)),
             "f3d mesh GUID records",
         )?,
         |record| record.guid.record().record_index(),
@@ -1334,7 +1346,7 @@ where
             ctx,
             typed_primary_frames(ctx, bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
                 .into_iter()
-                .map(|frame| parse_mesh_body_record(bytes, frame)),
+                .map(|frame| parse_mesh_body_record(ctx, bytes, frame)),
             "f3d mesh body records",
         )?,
         |record| record.placement.record().record_index(),
@@ -1364,7 +1376,7 @@ where
             ctx,
             typed_primary_frames(ctx, bytes, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
                 .into_iter()
-                .map(|frame| parse_mesh_wrapper_record(bytes, frame)),
+                .map(|frame| parse_mesh_wrapper_record(ctx, bytes, frame)),
             "f3d mesh wrapper records",
         )?,
         |record| record.identity.record_index(),
@@ -1393,7 +1405,7 @@ where
             ctx,
             typed_primary_frames(ctx, bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?
                 .into_iter()
-                .map(|frame| parse_mesh_scene_state_record(bytes, frame)),
+                .map(|frame| parse_mesh_scene_state_record(ctx, bytes, frame)),
             "f3d mesh scene-state records",
         )?,
         |record| record.record().record_index(),
@@ -1405,7 +1417,7 @@ where
             ctx,
             typed_primary_frames(ctx, bytes, meta, SCENE_NODE_TYPE_GUID, "mesh-scene-node")?
                 .into_iter()
-                .map(|frame| parse_scene_node_record(bytes, frame)),
+                .map(|frame| parse_scene_node_record(ctx, bytes, frame)),
             "f3d mesh scene-node records",
         )?,
         |record| record.node.record_index(),
@@ -1438,7 +1450,7 @@ where
         MESH_COLLECTION_OWNER_TYPE_GUID,
         "mesh-collection-owner",
     )? {
-        if let Some(owner) = parse_mesh_collection_owner_record(bytes, frame)? {
+        if let Some(owner) = parse_mesh_collection_owner_record(ctx, bytes, frame)? {
             if collection_record_indices.contains(&owner.collection_record_index) {
                 push_mesh_record(ctx, &mut owner_records, owner, "f3d mesh collection owners")?;
             }
@@ -1458,7 +1470,7 @@ where
 
     let mut features = charged_mesh_vec(ctx, collections.len(), "f3d mesh graph features")?;
     for collection in collections {
-        let stream_error = |invariant| malformed_mesh_graph(&stream, invariant);
+        let stream_error = |invariant| malformed_mesh_graph(ctx, &stream, invariant);
         let mut candidate_scopes = scopes
             .iter()
             .filter(|(_, scope)| scope.body_records == collection.body_records)
@@ -1557,7 +1569,7 @@ where
                     &filename,
                     archive_entry_name,
                 )
-                .map_err(|message| malformed_mesh_graph(&stream, &message))?,
+                .map_err(|message| malformed_mesh_graph(ctx, &stream, &message))?,
                 asset,
             });
         }
@@ -1602,7 +1614,7 @@ where
                 .ok_or_else(|| {
                     stream_error("each Scene node has one unused Scene auxiliary record")
                 })?;
-            let scene_auxiliary = parse_typed_identity(
+            let scene_auxiliary = parse_typed_identity(ctx, 
                 bytes,
                 scene_auxiliary_frame,
                 SCENE_AUXILIARY_TYPE_VERSION,
@@ -1614,7 +1626,7 @@ where
                 .get(&body.owner_record_index)
                 .copied()
                 .ok_or_else(|| stream_error("each mesh body references a typed Body owner"))?;
-            let body_owner = parse_typed_identity(
+            let body_owner = parse_typed_identity(ctx, 
                 bytes,
                 body_owner_frame,
                 MESH_BODY_OWNER_TYPE_VERSION,
@@ -1644,11 +1656,11 @@ where
                 scope.scope,
                 collection.collection,
                 DesignMeshTextureTable::new(texture_table.identity, textures)
-                    .map_err(|message| malformed_mesh_graph(&stream, &message))?,
+                    .map_err(|message| malformed_mesh_graph(ctx, &stream, &message))?,
                 collection_owner.owner,
                 feature_bodies,
             )
-            .map_err(|message| malformed_mesh_graph(&stream, &message))?,
+            .map_err(|message| malformed_mesh_graph(ctx, &stream, &message))?,
         );
     }
     if !entry_names.is_empty()
@@ -1658,7 +1670,7 @@ where
         || !wrappers.is_empty()
         || !scopes.is_empty()
     {
-        return Err(malformed_mesh_graph(
+        return Err(malformed_mesh_graph(ctx, 
             &stream,
             "all typed mesh graph records belong to exactly one feature",
         ));
@@ -1704,7 +1716,7 @@ fn mesh_image_asset(
             && candidate.name.rsplit('/').next() == Some(filename)
     });
     let (Some(asset), None) = (matches.next(), matches.next()) else {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
             "F3D Design mesh texture `{filename}` does not resolve to one embedded image"
         )));
     };
@@ -3151,10 +3163,10 @@ mod tests {
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                     && limit.operation == "f3d mesh filename entries"
         ));
-        let owner = parse_mesh_collection_owner_record(
+        let owner = crate::design::test_support::with_test_decode_context(|ctx| parse_mesh_collection_owner_record(ctx, 
             &graph.bytes,
             sole_typed_frame(&graph, MESH_COLLECTION_OWNER_TYPE_GUID),
-        )
+        ))
         .unwrap()
         .unwrap();
         let (owners_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -3310,7 +3322,7 @@ mod tests {
             design_type: &graph.meta.types[6],
         };
         assert!(matches!(
-            parse_mesh_wrapper_record(&bytes, frame),
+            crate::design::test_support::with_test_decode_context(|ctx| parse_mesh_wrapper_record(ctx, &bytes, frame)),
             Err(CodecError::Malformed(_))
         ));
     }
@@ -3323,7 +3335,7 @@ mod tests {
         let frame = sole_typed_frame(&graph, MESH_SCENE_STATE_TYPE_GUID);
 
         assert!(matches!(
-            parse_mesh_scene_state_record(&graph.bytes, frame),
+            crate::design::test_support::with_test_decode_context(|ctx| parse_mesh_scene_state_record(ctx, &graph.bytes, frame)),
             Err(CodecError::Malformed(_))
         ));
     }
@@ -3336,7 +3348,7 @@ mod tests {
         let frame = sole_typed_frame(&graph, SCENE_NODE_TYPE_GUID);
 
         assert!(matches!(
-            parse_scene_node_record(&graph.bytes, frame),
+            crate::design::test_support::with_test_decode_context(|ctx| parse_scene_node_record(ctx, &graph.bytes, frame)),
             Err(CodecError::Malformed(_))
         ));
     }
@@ -3354,7 +3366,7 @@ mod tests {
         graph.bytes[payload_at + 48] = 1;
         let frame = sole_typed_frame(&graph, SCENE_NODE_TYPE_GUID);
 
-        let parsed = parse_scene_node_record(&graph.bytes, frame).expect("finite Scene bounds");
+        let parsed = crate::design::test_support::with_test_decode_context(|ctx| parse_scene_node_record(ctx, &graph.bytes, frame)).expect("finite Scene bounds");
         let bounds = parsed.node.bounds().expect("present bounds");
         assert_eq!(bounds.maximum(), [1.0, 2.0, 3.0]);
         assert_eq!(bounds.minimum(), [-4.0, -5.0, -6.0]);
@@ -3398,7 +3410,7 @@ mod tests {
                 .expect("Scene-node type"),
         };
 
-        let parsed = parse_scene_node_record(&bytes, frame).expect("placed Scene node");
+        let parsed = crate::design::test_support::with_test_decode_context(|ctx| parse_scene_node_record(ctx, &bytes, frame)).expect("placed Scene node");
         assert_eq!(
             parsed
                 .node
@@ -3505,7 +3517,7 @@ mod tests {
             design_type,
         };
 
-        let owner = parse_mesh_collection_owner_record(&bytes, frame)
+        let owner = crate::design::test_support::with_test_decode_context(|ctx| parse_mesh_collection_owner_record(ctx, &bytes, frame))
             .expect("valid legacy owner frame")
             .expect("legacy collection owner");
         assert_eq!(owner.collection_record_index, EXPECTED_COLLECTION);
@@ -3540,7 +3552,7 @@ mod tests {
             design_type,
         };
 
-        let owner = parse_mesh_collection_owner_record(&bytes, frame)
+        let owner = crate::design::test_support::with_test_decode_context(|ctx| parse_mesh_collection_owner_record(ctx, &bytes, frame))
             .expect("valid version-17 owner frame")
             .expect("version-17 collection owner");
         assert_eq!(owner.collection_record_index, EXPECTED_COLLECTION);
@@ -3575,7 +3587,7 @@ mod tests {
             design_type,
         };
 
-        assert!(parse_mesh_collection_owner_record(&bytes, frame)
+        assert!(crate::design::test_support::with_test_decode_context(|ctx| parse_mesh_collection_owner_record(ctx, &bytes, frame))
             .expect("valid generic owner frame")
             .is_none());
     }
@@ -3885,4 +3897,53 @@ mod tests {
         singular[0] = 0.0;
         assert!(mesh_body_transform(&mesh_body_payload(singular)).is_none());
     }
+    #[test]
+    fn mesh_frame_diagnostic_refuses_retained_limit() {
+        let expected = "F3D Design mesh-wrapper entity 108 has an invalid primary frame";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::malformed_frame(&ctx, "mesh-wrapper", 108),
+            CodecError::ResourceLimit(failure) if failure.operation == "f3d Design diagnostic"));
+    }
+
+    #[test]
+    fn mesh_graph_invariant_diagnostic_refuses_retained_limit() {
+        let expected = "F3D Design mesh feature graph violates `member` in Synthetic/BulkStream.dat";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::malformed_mesh_graph(&ctx, "Synthetic/BulkStream.dat", "member"),
+            CodecError::ResourceLimit(failure) if failure.operation == "f3d Design diagnostic"));
+    }
+
+    #[test]
+    fn mesh_invalid_record_index_diagnostic_refuses_retained_limit() {
+        let graph = synthetic_mesh_graph(false);
+        let frame = sole_typed_frame(&graph, MESH_WRAPPER_TYPE_GUID);
+        let expected = format!("F3D Design mesh-wrapper entity {} has an invalid record index", frame.entity_id);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::exact_record_index(&ctx, &[], frame, "mesh-wrapper"),
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == "f3d Design diagnostic"));
+    }
+
+    #[test]
+    fn mesh_unsupported_version_diagnostic_refuses_retained_limit() {
+        let graph = synthetic_mesh_graph(false);
+        let frame = sole_typed_frame(&graph, MESH_WRAPPER_TYPE_GUID);
+        let expected = format!("F3D Design mesh-wrapper record version {} is unsupported", frame.design_type.version);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::validate_mesh_registration(&ctx, frame, frame.design_type.version + 1,
+            MESH_WRAPPER_BASE_TYPE_GUID, PARAMESH_MODULE, "mesh-wrapper"),
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == "f3d Design unsupported diagnostic"));
+    }
+
 }
