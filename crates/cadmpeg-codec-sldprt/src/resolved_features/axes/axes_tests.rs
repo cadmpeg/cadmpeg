@@ -183,8 +183,64 @@ fn revolution_line_reference_inputs(
     object_end: usize,
     profile_sources: &HashSet<u32>,
 ) -> Option<(u32, Point3, Vector3)> {
-    typed_revolution_line_reference_inputs(payload, object_start, object_end, profile_sources)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("revolution line reference input fits service policy");
+    typed_revolution_line_reference_inputs(&ctx, payload, object_start, object_end, profile_sources)
+        .expect("revolution line reference scan fits service policy")
         .map(|(source, origin, direction)| (source, origin.get(), *direction.as_raw()))
+}
+
+fn revolution_line_reference_limit_input() -> Vec<u8> {
+    let mut payload = vec![0; 240];
+    let handles = 96;
+    payload[64..68].copy_from_slice(&42u32.to_le_bytes());
+    payload[68..72].copy_from_slice(&0x5919_4a35u32.to_le_bytes());
+    payload[72..74].copy_from_slice(&0x81dbu16.to_le_bytes());
+    payload[76..80].copy_from_slice(&[0xff; 4]);
+    payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+    payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+    payload[handles + 12..handles + 16].copy_from_slice(&7000u32.to_le_bytes());
+    for (index, value) in [0.012, -0.034, 0.056, 0.0, 1.0, 0.0]
+        .into_iter()
+        .enumerate()
+    {
+        let offset = handles + 16 + index * 8;
+        payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+    }
+    payload[handles + 64..handles + 68].copy_from_slice(CLASS_MARKER);
+    payload
+}
+
+#[test]
+fn revolution_line_reference_scan_refuses_collection_limit() {
+    let payload = revolution_line_reference_limit_input();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("line reference input fits root policy");
+    let error = typed_revolution_line_reference_inputs(
+        &ctx, &payload, 32, payload.len(), &HashSet::from([42]),
+    )
+    .expect_err("one line reference candidate requires a collection slot");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn revolution_line_reference_scan_refuses_work_limit() {
+    let payload = revolution_line_reference_limit_input();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("line reference input fits root policy");
+    let error = typed_revolution_line_reference_inputs(
+        &ctx, &payload, 32, payload.len(), &HashSet::from([42]),
+    )
+    .expect_err("one line reference scan requires work");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 fn temporary_axis_reference(
