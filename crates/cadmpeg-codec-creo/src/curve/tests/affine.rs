@@ -936,7 +936,7 @@ fn dimension_axis_refuses_collection_limit() {
         coefficients: vec![1.0],
         rhs: 2.0,
     }];
-    let error = with_collection_limit(0, |ctx| {
+    let error = with_collection_limit(1, |ctx| {
         crate::curve::solve_dimension_axis(ctx, &mut rows, 1, &BTreeSet::from([0]))
     })
     .expect_err("axis solution allocation exceeds the limit");
@@ -944,6 +944,24 @@ fn dimension_axis_refuses_collection_limit() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "creo_solve_dimension_axis"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn dimension_pivot_rows_refuse_collection_limit() {
+    let mut rows = vec![AffineEquationRow {
+        coefficients: vec![1.0],
+        rhs: 2.0,
+    }];
+    let error = with_collection_limit(0, |ctx| {
+        crate::curve::solve_dimension_axis(ctx, &mut rows, 1, &BTreeSet::from([0]))
+    })
+    .expect_err("pivot row exceeds the collection limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo solve dimension pivot rows"
                 && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
     ));
 }
