@@ -689,8 +689,11 @@ fn intersection_support_uv_scan_does_not_admit_nested_counted_candidates() {
 fn intersection_pcurve_attachment_requires_face_incidence() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let edge = cadmpeg_ir::ids::EdgeId::mint("synthetic:cube:edge#0").expect("identity grammar");
@@ -723,14 +726,16 @@ fn intersection_pcurve_attachment_requires_face_incidence() {
         .expect("valid intersection pcurve"),
     };
 
-    assert!(pcurve_matches_edge(&geometry_ctx,
+    assert!(pcurve_matches_edge(
+        &geometry_ctx,
         &ir,
         &edge,
         &surface,
         &pcurve(Point2::new(10.0, 0.0)),
         None,
     ));
-    assert!(!pcurve_matches_edge(&geometry_ctx,
+    assert!(!pcurve_matches_edge(
+        &geometry_ctx,
         &ir,
         &edge,
         &surface,

@@ -17,8 +17,8 @@ fn spine_model(count: u32) -> (CadIr, CurveId) {
     let mut knots = vec![0.0];
     knots.extend((0..count).map(f64::from));
     knots.push(f64::from(count - 1));
-    let nurbs = NurbsCurve::from_lanes(1, knots, points, None, false)
-        .expect("clamped linear test spine");
+    let nurbs =
+        NurbsCurve::from_lanes(1, knots, points, None, false).expect("clamped linear test spine");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),

@@ -18,8 +18,11 @@ use std::io::Cursor;
 fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let partition =
@@ -82,7 +85,8 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
         SerializedSupportUv::default(),
     )];
 
-    crate::decode::support_uv::complete_support_uv(&geometry_ctx, &mut result.ir_mut(), &pending).unwrap();
+    crate::decode::support_uv::complete_support_uv(&geometry_ctx, &mut result.ir_mut(), &pending)
+        .unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition()
@@ -110,8 +114,11 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
 fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let partition =
@@ -172,7 +179,8 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
     )];
 
     invalidate_inconsistent_support_uv(&geometry_ctx, &mut result.ir_mut(), &pending);
-    crate::decode::support_uv::complete_support_uv(&geometry_ctx, &mut result.ir_mut(), &pending).unwrap();
+    crate::decode::support_uv::complete_support_uv(&geometry_ctx, &mut result.ir_mut(), &pending)
+        .unwrap();
 
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -180,4 +188,3 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
             .is_ok()
     );
 }
-

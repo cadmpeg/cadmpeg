@@ -499,7 +499,10 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches(
     serialized: &BTreeSet<(CurveId, SurfaceId, PcurveId)>,
     annotations: &mut AnnotationBuilder,
 ) {
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
+    let geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+    );
     complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget(
         ctx,
         ir,
@@ -811,7 +814,10 @@ pub(super) fn orient_tolerant_intersection_pcurve(
     tolerance: f64,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
+    let geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+    );
     orient_tolerant_intersection_pcurve_with_index_and_budget(
         ctx,
         &index,
@@ -1294,7 +1300,10 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts(
     ir: &mut CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let transfer_budget = new_transfer_budget();
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
+    let geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+    );
     complete_intersection_pcurves_from_opposite_charts_with_budget(
         ctx,
         ir,
@@ -1589,7 +1598,10 @@ pub(super) fn complete_exact_boundary_intersection_pcurves(
     annotations: &mut AnnotationBuilder,
 ) {
     let transfer_budget = WorkBudget::new(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES);
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
+    let geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+    );
     complete_exact_boundary_intersection_pcurves_with_budget(
         ctx,
         ir,
@@ -1913,7 +1925,10 @@ pub(super) fn exact_boundary_pcurve(
     tolerance: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
+    let geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+    );
     exact_boundary_pcurve_with_index(
         &index,
         curve,
@@ -2297,17 +2312,17 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
         return Ok(false);
     };
     let mut breaks = Vec::new();
-    let _curve_reservation =
-        geometry_budget.charges.reserve_temporary_vec(&mut breaks,
-            curve_breaks.len(),
-            "nx boundary curve breaks",
-        )?;
+    let _curve_reservation = geometry_budget.charges.reserve_temporary_vec(
+        &mut breaks,
+        curve_breaks.len(),
+        "nx boundary curve breaks",
+    )?;
     breaks.extend_from_slice(curve_breaks);
-    let _surface_reservation =
-        geometry_budget.charges.reserve_temporary_vec(&mut breaks,
-            surface_breaks.len(),
-            "nx boundary surface breaks",
-        )?;
+    let _surface_reservation = geometry_budget.charges.reserve_temporary_vec(
+        &mut breaks,
+        surface_breaks.len(),
+        "nx boundary surface breaks",
+    )?;
     breaks.extend(surface_breaks);
     breaks.sort_by(f64::total_cmp);
     breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
@@ -2352,12 +2367,10 @@ fn exact_boundary_curve_breaks(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
     let mut breaks = match geometry {
-        SolvedCurveGeometry::Line(_) => {
-            geometry_budget.charges.copy_temporary_slice(&range,
-                "nx boundary breaks",
-            )
-            .map(|(copy, _reservation)| copy)?
-        }
+        SolvedCurveGeometry::Line(_) => geometry_budget
+            .charges
+            .copy_temporary_slice(&range, "nx boundary breaks")
+            .map(|(copy, _reservation)| copy)?,
         SolvedCurveGeometry::Nurbs(nurbs)
             if nurbs.degree() == 1
                 && !nurbs.periodic()
@@ -2377,21 +2390,21 @@ fn exact_boundary_curve_breaks(
             let Some(knots) = nurbs.knots().get(degree..=count) else {
                 return Ok(None);
             };
-            geometry_budget.charges.copy_temporary_slice(knots,
-                "nx boundary breaks",
-            )
-            .map(|(copy, _reservation)| copy)?
+            geometry_budget
+                .charges
+                .copy_temporary_slice(knots, "nx boundary breaks")
+                .map(|(copy, _reservation)| copy)?
         }
         _ => return Ok(None),
     };
     breaks.retain(|parameter| {
         parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
     });
-    let _range_reservation =
-        geometry_budget.charges.reserve_temporary_vec(&mut breaks,
-            2,
-            "nx boundary range breaks",
-        )?;
+    let _range_reservation = geometry_budget.charges.reserve_temporary_vec(
+        &mut breaks,
+        2,
+        "nx boundary range breaks",
+    )?;
     breaks.extend(range);
     breaks.sort_by(f64::total_cmp);
     breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
@@ -2408,7 +2421,10 @@ pub(super) fn exact_analytic_isocurve_pcurve(
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
+    let geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+    );
     exact_analytic_isocurve_pcurve_with_index_and_budget(
         &index,
         curve,
@@ -2457,14 +2473,14 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
         .then_some(())?;
         let periods = surface_parameter_periods_with_index(index, surface);
         let mut samples = Vec::new();
-        let _samples_reservation =
-            match geometry_budget.charges.reserve_temporary_vec(&mut samples,
-                SAMPLE_INTERVALS + 1,
-                "nx analytic pcurve samples",
-            ) {
-                Ok(reservation) => reservation,
-                Err(limit) => return Some(Err(limit)),
-            };
+        let _samples_reservation = match geometry_budget.charges.reserve_temporary_vec(
+            &mut samples,
+            SAMPLE_INTERVALS + 1,
+            "nx analytic pcurve samples",
+        ) {
+            Ok(reservation) => reservation,
+            Err(limit) => return Some(Err(limit)),
+        };
         for index in 0..=SAMPLE_INTERVALS {
             let parameter = finite_parameter_sample(range, index, SAMPLE_INTERVALS);
             let point = match finite_or_refusal(curve_point_with_budget(
@@ -2613,7 +2629,10 @@ pub(super) fn coincident_pcurve_pair(
     tolerance: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
+    let geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+    );
     coincident_pcurve_pair_with_index(
         &index,
         surfaces,
@@ -2678,11 +2697,11 @@ fn coincident_pcurve_pair_with_index(
     ];
     if let [Some(first), Some(second)] = affine_breaks {
         let mut breaks = first;
-        let _reservation =
-            geometry_budget.charges.reserve_temporary_vec(&mut breaks,
-                second.len(),
-                "nx coincident pcurve breaks",
-            )?;
+        let _reservation = geometry_budget.charges.reserve_temporary_vec(
+            &mut breaks,
+            second.len(),
+            "nx coincident pcurve breaks",
+        )?;
         breaks.extend(second);
         breaks.sort_by(f64::total_cmp);
         breaks.dedup();
@@ -2707,11 +2726,11 @@ fn coincident_pcurve_pair_with_index(
         }
     }
     let mut intervals = Vec::new();
-    let _initial_reservation =
-        geometry_budget.charges.reserve_temporary_vec(&mut intervals,
-            1,
-            "nx coincident pcurve intervals",
-        )?;
+    let _initial_reservation = geometry_budget.charges.reserve_temporary_vec(
+        &mut intervals,
+        1,
+        "nx coincident pcurve intervals",
+    )?;
     intervals.push(range);
     while let Some([start, end]) = intervals.pop() {
         if !geometry_budget.charge() {
@@ -2737,11 +2756,11 @@ fn coincident_pcurve_pair_with_index(
         if middle == start || middle == end {
             return Ok(false);
         }
-        let _child_reservation =
-            geometry_budget.charges.reserve_temporary_vec(&mut intervals,
-                2,
-                "nx coincident pcurve intervals",
-            )?;
+        let _child_reservation = geometry_budget.charges.reserve_temporary_vec(
+            &mut intervals,
+            2,
+            "nx coincident pcurve intervals",
+        )?;
         intervals.push([middle, end]);
         intervals.push([start, middle]);
     }
@@ -2762,10 +2781,10 @@ fn boundary_curve_affine_breaks_with_index(
             Some(SolvedSurfaceGeometry::Plane(_))
         ) {
             return Some(
-                geometry_budget.charges.copy_temporary_slice(&range,
-                    "nx boundary breaks",
-                )
-                .map(|(copy, _reservation)| copy),
+                geometry_budget
+                    .charges
+                    .copy_temporary_slice(&range, "nx boundary breaks")
+                    .map(|(copy, _reservation)| copy),
             );
         }
         if matches!(
@@ -2784,10 +2803,10 @@ fn boundary_curve_affine_breaks_with_index(
                     && nurbs.knots().as_slice() == [range[0], range[0], range[1], range[1]]
                 {
                     return Some(
-                        geometry_budget.charges.copy_temporary_slice(&range,
-                            "nx boundary breaks",
-                        )
-                        .map(|(copy, _reservation)| copy),
+                        geometry_budget
+                            .charges
+                            .copy_temporary_slice(&range, "nx boundary breaks")
+                            .map(|(copy, _reservation)| copy),
                     );
                 }
             }
@@ -2839,22 +2858,20 @@ fn boundary_curve_affine_breaks_with_index(
                     else {
                         continue;
                     };
-                    if let Err(limit) =
-                        geometry_budget.charges.reserve_temporary_vec(&mut breaks,
-                            1,
-                            "nx affine pcurve breaks",
-                        )
-                    {
+                    if let Err(limit) = geometry_budget.charges.reserve_temporary_vec(
+                        &mut breaks,
+                        1,
+                        "nx affine pcurve breaks",
+                    ) {
                         return Some(Err(limit));
                     }
                     breaks.push(mapped);
                 }
-                if let Err(limit) =
-                    geometry_budget.charges.reserve_temporary_vec(&mut breaks,
-                        2,
-                        "nx affine pcurve range",
-                    )
-                {
+                if let Err(limit) = geometry_budget.charges.reserve_temporary_vec(
+                    &mut breaks,
+                    2,
+                    "nx affine pcurve range",
+                ) {
                     return Some(Err(limit));
                 }
                 breaks.extend(range);
@@ -2871,20 +2888,20 @@ fn boundary_curve_affine_breaks_with_index(
                 if { direction.u == 0.0 && direction.v != 0.0 } =>
             {
                 return Some(
-                    geometry_budget.charges.copy_temporary_slice(&range,
-                        "nx boundary breaks",
-                    )
-                    .map(|(copy, _reservation)| copy),
+                    geometry_budget
+                        .charges
+                        .copy_temporary_slice(&range, "nx boundary breaks")
+                        .map(|(copy, _reservation)| copy),
                 );
             }
             Some(SolvedSurfaceGeometry::Cone(_))
                 if { direction.u == 0.0 && direction.v != 0.0 } =>
             {
                 return Some(
-                    geometry_budget.charges.copy_temporary_slice(&range,
-                        "nx boundary breaks",
-                    )
-                    .map(|(copy, _reservation)| copy),
+                    geometry_budget
+                        .charges
+                        .copy_temporary_slice(&range, "nx boundary breaks")
+                        .map(|(copy, _reservation)| copy),
                 );
             }
             Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
@@ -2907,27 +2924,28 @@ fn boundary_curve_affine_breaks_with_index(
                 };
                 let degree = usize::try_from(isocurve.degree()).ok()?;
                 let count = isocurve.control_points().len();
-                let mut breaks =
-                    match geometry_budget.charges.copy_temporary_slice(isocurve.knots().get(degree..=count)?,
+                let mut breaks = match geometry_budget
+                    .charges
+                    .copy_temporary_slice(
+                        isocurve.knots().get(degree..=count)?,
                         "nx boundary breaks",
                     )
                     .map(|(copy, _reservation)| copy)
-                    {
-                        Ok(breaks) => breaks,
-                        Err(limit) => return Some(Err(limit)),
-                    };
+                {
+                    Ok(breaks) => breaks,
+                    Err(limit) => return Some(Err(limit)),
+                };
                 for parameter in &mut breaks {
                     *parameter = (*parameter - varying_origin) / varying_scale;
                 }
                 breaks.retain(|parameter| {
                     parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
                 });
-                if let Err(limit) =
-                    geometry_budget.charges.reserve_temporary_vec(&mut breaks,
-                        2,
-                        "nx affine pcurve range",
-                    )
-                {
+                if let Err(limit) = geometry_budget.charges.reserve_temporary_vec(
+                    &mut breaks,
+                    2,
+                    "nx affine pcurve range",
+                ) {
                     return Some(Err(limit));
                 }
                 breaks.extend(range);
@@ -3293,11 +3311,11 @@ fn transfer_intersection_pcurve_with_budget<'a>(
         return Ok(None);
     };
     let mut coarse = Vec::new();
-    let _coarse_reservation =
-        geometry_budget.charges.reserve_temporary_vec(&mut coarse,
-            continuation_steps + 1,
-            "nx transferred pcurve continuation samples",
-        )?;
+    let _coarse_reservation = geometry_budget.charges.reserve_temporary_vec(
+        &mut coarse,
+        continuation_steps + 1,
+        "nx transferred pcurve continuation samples",
+    )?;
     coarse.push(first);
     for sample_index in 1..=continuation_steps {
         let parameter = finite_parameter_sample(parameter_range, sample_index, continuation_steps);
@@ -3349,17 +3367,17 @@ fn transfer_intersection_pcurve_with_budget<'a>(
         };
     }
     let mut sample_parameters = Vec::new();
-    let _parameter_reservation =
-        geometry_budget.charges.reserve_temporary_vec(&mut sample_parameters,
-            samples.len(),
-            "nx transferred pcurve parameters",
-        )?;
+    let _parameter_reservation = geometry_budget.charges.reserve_temporary_vec(
+        &mut sample_parameters,
+        samples.len(),
+        "nx transferred pcurve parameters",
+    )?;
     let mut control_points = Vec::new();
-    let _control_reservation =
-        geometry_budget.charges.reserve_temporary_vec(&mut control_points,
-            samples.len(),
-            "nx transferred pcurve controls",
-        )?;
+    let _control_reservation = geometry_budget.charges.reserve_temporary_vec(
+        &mut control_points,
+        samples.len(),
+        "nx transferred pcurve controls",
+    )?;
     for sample in &samples {
         sample_parameters.push(sample.0);
         control_points.push(sample.1);
@@ -3615,8 +3633,8 @@ pub(super) fn blend_boundary_parameter_from_support_spine(
     tolerance: f64,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    blend_boundary_parameter_from_support_spine_with_index(ctx,
-        &index, blend, support, point, seed, tolerance,
+    blend_boundary_parameter_from_support_spine_with_index(
+        ctx, &index, blend, support, point, seed, tolerance,
     )
 }
 
@@ -3630,7 +3648,10 @@ fn blend_boundary_parameter_from_support_spine_with_index(
     seed: Option<Point2>,
     tolerance: f64,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
+    let geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+    );
     blend_boundary_parameter_from_support_spine_with_index_and_budget(
         index,
         blend,
@@ -3909,11 +3930,11 @@ fn append_transferred_pcurve_segment_with_budget<'a>(
         Ok(true)
     })()?;
     if fits {
-        let _reservation =
-            geometry_budget.charges.reserve_temporary_vec(samples,
-                1,
-                "nx transferred pcurve samples",
-            )?;
+        let _reservation = geometry_budget.charges.reserve_temporary_vec(
+            samples,
+            1,
+            "nx transferred pcurve samples",
+        )?;
         samples.push(last);
         return Ok(Some(()));
     }
@@ -4053,9 +4074,9 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache<'a>(
                     geometry_budget,
                 )?;
                 geometry_budget.charges.charge_collection_items_limit(
-                        cadmpeg_core::decode::u64_from_index(1),
-                        "nx blend parameter grid cache",
-                    )?;
+                    cadmpeg_core::decode::u64_from_index(1),
+                    "nx blend parameter grid cache",
+                )?;
                 blend_parameter_grids.insert(surface.as_str(), grid);
             }
             let grid = blend_parameter_grids
@@ -4133,7 +4154,10 @@ pub(super) fn attach_tolerant_edge_intersections(
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
 ) {
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
+    let geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+    );
     attach_tolerant_edge_intersections_with_budget(
         ctx,
         ir,
@@ -4419,7 +4443,10 @@ fn pcurve_matches_edge_range(
     fit_tolerance: Option<f64>,
 ) -> bool {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
+    let geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+    );
     pcurve_matches_edge_range_with_index_and_budget(
         &index,
         edge_id,

@@ -13,8 +13,11 @@ use cadmpeg_ir::math::{Point2, Point3};
 fn rational_pcurve_incidence_isolates_close_branches() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
     let controls = [
@@ -38,9 +41,10 @@ fn rational_pcurve_incidence_isolates_close_branches() {
         )
         .unwrap(),
     };
-    let roots = closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(0.0, 0.0), Some(0.11))
-        .expect("evaluator allocation succeeds")
-        .expect("complete homogeneous root isolation");
+    let roots =
+        closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(0.0, 0.0), Some(0.11))
+            .expect("evaluator allocation succeeds")
+            .expect("complete homogeneous root isolation");
 
     assert_eq!(roots.len(), 4);
     for (actual, expected) in roots.iter().zip([0.1001, 0.1, 0.7, 0.9]) {
@@ -52,8 +56,11 @@ fn rational_pcurve_incidence_isolates_close_branches() {
 fn rational_pcurve_closest_search_retains_close_global_branches() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
     let control_points = [
@@ -77,9 +84,10 @@ fn rational_pcurve_closest_search_retains_close_global_branches() {
         )
         .unwrap(),
     };
-    let parameters = closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
-        .expect("evaluator allocation succeeds")
-        .expect("complete global closest-point search");
+    let parameters =
+        closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
+            .expect("evaluator allocation succeeds")
+            .expect("complete global closest-point search");
 
     assert_eq!(parameters.len(), 4, "{parameters:?}");
     for (actual, expected) in parameters.iter().zip([0.1001, 0.1, 0.7, 0.9]) {
@@ -91,8 +99,11 @@ fn rational_pcurve_closest_search_retains_close_global_branches() {
 fn rational_spine_closest_search_resolves_close_global_branches() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
     let control_points = [
@@ -120,7 +131,10 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
         &curve,
         point,
         Some(0.099),
-        &crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(8_000_000)),
+        &crate::decode::geometry_work::GeometryWorkBudget::from_context(
+            &geometry_ctx,
+            cadmpeg_core::decode::u64_from_index(8_000_000),
+        ),
     )
     .expect("evaluator allocation succeeds")
     .expect("first close branch");
@@ -128,7 +142,10 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
         &curve,
         point,
         Some(0.101),
-        &crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(8_000_000)),
+        &crate::decode::geometry_work::GeometryWorkBudget::from_context(
+            &geometry_ctx,
+            cadmpeg_core::decode::u64_from_index(8_000_000),
+        ),
     )
     .expect("evaluator allocation succeeds")
     .expect("second close branch");
@@ -136,7 +153,10 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
         &curve,
         point,
         Some(0.69),
-        &crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(8_000_000)),
+        &crate::decode::geometry_work::GeometryWorkBudget::from_context(
+            &geometry_ctx,
+            cadmpeg_core::decode::u64_from_index(8_000_000),
+        ),
     )
     .expect("evaluator allocation succeeds")
     .expect("remote global branch");
@@ -150,8 +170,11 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
 fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let knots = vec![0.0, 0.0, 1.0, 2.0, 2.0];
     let pcurve = PcurveGeometry::Nurbs {
@@ -192,7 +215,10 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
             &curve,
             Point3::new(0.0, 0.0, 0.0),
             Some(4.1),
-            &crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(8_000_000))
+            &crate::decode::geometry_work::GeometryWorkBudget::from_context(
+                &geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(8_000_000)
+            )
         )
         .expect("evaluator allocation succeeds")
         .expect("periodic curve phase"),
@@ -214,8 +240,11 @@ fn polynomial_root_isolation_retains_repeated_real_roots() {
 fn coincident_pcurve_interval_retains_seed_and_boundaries() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -227,9 +256,10 @@ fn coincident_pcurve_interval_retains_seed_and_boundaries() {
         )
         .unwrap(),
     };
-    let roots = closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(2.0, -3.0), Some(0.3))
-        .expect("evaluator allocation succeeds")
-        .expect("coincident interval");
+    let roots =
+        closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(2.0, -3.0), Some(0.3))
+            .expect("evaluator allocation succeeds")
+            .expect("coincident interval");
 
     assert_eq!(roots, [0.3, 0.0, 1.0]);
 }
@@ -238,8 +268,11 @@ fn coincident_pcurve_interval_retains_seed_and_boundaries() {
 fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let knots = [0.0, 0.0, 0.0, 0.25, 0.75, 1.0, 1.0, 1.0];
     let points = [
@@ -270,7 +303,10 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
                 &span.controls,
                 parameter,
                 span.domain,
-                &crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100)),
+                &crate::decode::geometry_work::GeometryWorkBudget::from_context(
+                    &geometry_ctx,
+                    cadmpeg_core::decode::u64_from_index(100),
+                ),
             )
             .expect("test solver allocation succeeds");
             let expected = expected.as_raw();
@@ -278,4 +314,3 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
         }
     }
 }
-
