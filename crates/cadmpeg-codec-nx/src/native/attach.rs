@@ -2356,10 +2356,11 @@ fn attach_feature_operations(
         &bodies_by_object_index,
     );
     let simple_hole_operations = simple_hole_operations(
+        ctx,
         simple_hole_templates,
         simple_hole_construction_groups,
         &operation_positions,
-    )
+    )?
     .unwrap_or_default();
     let mut hole_outputs = explicit_hole_outputs;
     let mut simple_hole_diameters = BTreeMap::new();
@@ -2369,7 +2370,7 @@ fn attach_feature_operations(
         simple_hole_diameters.extend(projection.diameters);
     }
     let counterbore_operations =
-        counterbore_operations(simple_hole_templates, &operation_positions).unwrap_or_default();
+        counterbore_operations(ctx, simple_hole_templates, &operation_positions)?.unwrap_or_default();
     let mut counterbore_dimensions = BTreeMap::new();
     if let Some(projection) =
         counterbore_body_projection(ctx, ir, &counterbore_operations, &hole_outputs)?
@@ -2379,7 +2380,7 @@ fn attach_feature_operations(
         counterbore_dimensions.extend(projection.counterbores);
     }
     let blind_hole_operations =
-        blind_hole_operations(simple_hole_templates, &operation_positions).unwrap_or_default();
+        blind_hole_operations(ctx, simple_hole_templates, &operation_positions)?.unwrap_or_default();
     let mut blind_hole_depths = BTreeMap::new();
     if let Some(projection) = blind_hole_body_projection(ctx, ir, &blind_hole_operations, &hole_outputs)?
     {
@@ -7209,172 +7210,159 @@ fn primary_hole_outputs(
         .collect()
 }
 
+fn push_hole_operation_label(
+    ctx: &DecodeContext<'_>,
+    operations: &mut Vec<String>,
+    label: &str,
+) -> Result<(), CodecError> {
+    let bytes = std::mem::size_of::<String>().checked_add(label.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX hole operation labels", 0, cadmpeg_core::decode::u64_from_index(label.len())))?;
+    ctx.charge_collection_items(1, "NX hole operation labels")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX hole operation labels")?;
+    reserve_attach_vec(ctx, operations, 1, "NX hole operation labels")?;
+    operations.push(label.to_owned());
+    Ok(())
+}
+
+fn charge_hole_sort_work(ctx: &DecodeContext<'_>, count: usize) -> Result<(), CodecError> {
+    let work = count.checked_mul(count)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX hole operation sort", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX hole operation sort")
+}
+
 fn simple_hole_operations(
+    ctx: &DecodeContext<'_>,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
     operation_positions: &BTreeMap<&str, usize>,
-) -> Option<Vec<String>> {
-    let template_counts = templates
-        .iter()
-        .fold(BTreeMap::new(), |mut counts, template| {
-            *counts
-                .entry(template.operation_label.as_str())
-                .or_insert(0usize) += 1;
-            counts
-        });
-    let mut ordered_templates = templates
-        .iter()
-        .filter(|template| {
-            template.form == crate::native::features::holes::SimpleHoleForm::Simple
-                && template.extent == crate::native::features::holes::SimpleHoleExtent::Through
-        })
-        .collect::<Vec<_>>();
-    let template_operations = ordered_templates
-        .iter()
-        .map(|template| template.operation_label.as_str())
-        .collect::<BTreeSet<_>>();
-    if template_operations.is_empty()
-        || ordered_templates
-            .iter()
-            .any(|template| template_counts.get(template.operation_label.as_str()) != Some(&1))
-    {
-        return None;
+) -> Result<Option<Vec<String>>, CodecError> {
+    let mut ordered_templates = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX simple hole selected templates")?;
+    for template in templates {
+        ctx.charge_work(1, "NX simple hole template scan")?;
+        if template.form != crate::native::features::holes::SimpleHoleForm::Simple
+            || template.extent != crate::native::features::holes::SimpleHoleExtent::Through
+        {
+            continue;
+        }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(templates.len()), "NX simple hole template identity scan")?;
+        if templates.iter().filter(|candidate| candidate.operation_label == template.operation_label).count() != 1
+            || !operation_positions.contains_key(template.operation_label.as_str())
+        {
+            return Ok(None);
+        }
+        ctx.charge_collection_items(1, "NX simple hole selected templates")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&crate::native::features::holes::FeatureSimpleHoleTemplate>()))?;
+        reserve_attach_vec(ctx, &mut ordered_templates, 1, "NX simple hole selected templates")?;
+        ordered_templates.push(template);
     }
-    if ordered_templates
-        .iter()
-        .any(|template| !operation_positions.contains_key(template.operation_label.as_str()))
-    {
-        return None;
+    if ordered_templates.is_empty() {
+        return Ok(None);
     }
+    charge_hole_sort_work(ctx, ordered_templates.len())?;
     ordered_templates.sort_by(|first, second| {
-        operation_positions
-            .get(first.operation_label.as_str())
+        operation_positions.get(first.operation_label.as_str())
             .cmp(&operation_positions.get(second.operation_label.as_str()))
             .then_with(|| first.operation_label.cmp(&second.operation_label))
     });
-    let matching_groups = groups
-        .iter()
-        .filter(|group| {
-            let group_operations = group
-                .members
-                .iter()
-                .map(|member| member.operation_label.as_str())
-                .collect::<BTreeSet<_>>();
-            group_operations == template_operations
-        })
-        .collect::<Vec<_>>();
-    Some(match matching_groups.as_slice() {
-        [] => ordered_templates
-            .iter()
-            .map(|template| template.operation_label.clone())
-            .collect::<Vec<_>>(),
-        [group] => {
-            if group
-                .members
-                .iter()
-                .map(|member| &member.operation_label)
-                .any(|operation| !operation_positions.contains_key(operation.as_str()))
-                || group.members.windows(2).any(|pair| {
-                    operation_positions[pair[0].operation_label.as_str()]
-                        >= operation_positions[pair[1].operation_label.as_str()]
-                })
-            {
-                return None;
+    let mut selected_group = None;
+    for group in groups {
+        let comparisons = group.members.len().checked_mul(ordered_templates.len())
+            .and_then(|count| count.checked_mul(2))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX simple hole group membership", 0, cadmpeg_core::decode::u64_from_index(group.members.len())))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(comparisons), "NX simple hole group membership")?;
+        let same_operations = group.members.iter().all(|member| ordered_templates.iter().any(|template| template.operation_label == member.operation_label))
+            && ordered_templates.iter().all(|template| group.members.iter().any(|member| member.operation_label == template.operation_label));
+        if same_operations {
+            if selected_group.replace(group).is_some() {
+                return Ok(None);
             }
-            group
-                .members
-                .iter()
-                .map(|member| member.operation_label.clone())
-                .collect()
         }
-        _ => return None,
-    })
+    }
+    let mut operations = Vec::new();
+    if let Some(group) = selected_group {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(group.members.len()), "NX simple hole group order")?;
+        if group.members.iter().any(|member| !operation_positions.contains_key(member.operation_label.as_str()))
+            || group.members.windows(2).any(|pair| {
+                operation_positions[pair[0].operation_label.as_str()]
+                    >= operation_positions[pair[1].operation_label.as_str()]
+            })
+        {
+            return Ok(None);
+        }
+        for member in group.members.iter() {
+            push_hole_operation_label(ctx, &mut operations, &member.operation_label)?;
+        }
+    } else {
+        for template in ordered_templates {
+            push_hole_operation_label(ctx, &mut operations, &template.operation_label)?;
+        }
+    }
+    Ok(Some(operations))
+}
+
+/// Select uniquely typed hole operations in feature-history order.
+fn selected_hole_operations(
+    ctx: &DecodeContext<'_>,
+    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
+    operation_positions: &BTreeMap<&str, usize>,
+    accepts: impl Fn(&crate::native::features::holes::FeatureSimpleHoleTemplate) -> bool,
+) -> Result<Option<Vec<String>>, CodecError> {
+    let mut operations = Vec::new();
+    for template in templates {
+        ctx.charge_work(1, "NX selected hole template scan")?;
+        if !accepts(template) {
+            continue;
+        }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(templates.len()), "NX selected hole template identity scan")?;
+        if templates.iter().filter(|candidate| candidate.operation_label == template.operation_label).count() == 1 {
+            push_hole_operation_label(ctx, &mut operations, &template.operation_label)?;
+        }
+    }
+    if operations.is_empty() || !hole_operations_are_unique(ctx, &operations)? {
+        return Ok(None);
+    }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(operations.len()), "NX selected hole operation positions")?;
+    if operations.iter().any(|operation| !operation_positions.contains_key(operation.as_str())) {
+        return Ok(None);
+    }
+    charge_hole_sort_work(ctx, operations.len())?;
+    operations.sort_by(|first, second| {
+        operation_positions.get(first.as_str())
+            .cmp(&operation_positions.get(second.as_str()))
+            .then_with(|| first.cmp(second))
+    });
+    Ok(Some(operations))
 }
 
 /// Return simple blind-hole operations in feature-history order. A blind
 /// operation with competing typed templates is not assignable to one body
 /// witness and remains native-only.
 fn blind_hole_operations(
+    ctx: &DecodeContext<'_>,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     operation_positions: &BTreeMap<&str, usize>,
-) -> Option<Vec<String>> {
-    let template_counts = templates
-        .iter()
-        .fold(BTreeMap::new(), |mut counts, template| {
-            *counts
-                .entry(template.operation_label.as_str())
-                .or_insert(0usize) += 1;
-            counts
-        });
-    let mut operations = templates
-        .iter()
-        .filter(|template| {
-            template.form == crate::native::features::holes::SimpleHoleForm::Simple
-                && template.extent == crate::native::features::holes::SimpleHoleExtent::Blind
-        })
-        .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
-        .map(|template| template.operation_label.clone())
-        .collect::<Vec<_>>();
-    if operations.is_empty()
-        || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
-        || operations
-            .iter()
-            .any(|operation| !operation_positions.contains_key(operation.as_str()))
-    {
-        return None;
-    }
-    operations.sort_by(|first, second| {
-        operation_positions
-            .get(first.as_str())
-            .cmp(&operation_positions.get(second.as_str()))
-            .then_with(|| first.cmp(second))
-    });
-    Some(operations)
+) -> Result<Option<Vec<String>>, CodecError> {
+    selected_hole_operations(ctx, templates, operation_positions, |template| {
+        template.form == crate::native::features::holes::SimpleHoleForm::Simple
+            && template.extent == crate::native::features::holes::SimpleHoleExtent::Blind
+    })
 }
 
 /// Return counterbored through-hole operations in feature-history order.
 /// Counterbore construction groups are not inferred from the scalar lanes:
 /// each operation must have its own unambiguous body and topology witness.
 fn counterbore_operations(
+    ctx: &DecodeContext<'_>,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     operation_positions: &BTreeMap<&str, usize>,
-) -> Option<Vec<String>> {
-    let template_counts = templates
-        .iter()
-        .fold(BTreeMap::new(), |mut counts, template| {
-            *counts
-                .entry(template.operation_label.as_str())
-                .or_insert(0usize) += 1;
-            counts
-        });
-    let mut operations = templates
-        .iter()
-        .filter(|template| {
-            template.form == crate::native::features::holes::SimpleHoleForm::Counterbored
-                && template.extent == crate::native::features::holes::SimpleHoleExtent::Through
-                && template.start_treatment
-                    == crate::native::features::holes::SimpleHoleEndTreatment::None
-                && template.end_treatment
-                    == crate::native::features::holes::SimpleHoleEndTreatment::None
-        })
-        .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
-        .map(|template| template.operation_label.clone())
-        .collect::<Vec<_>>();
-    if operations.is_empty()
-        || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
-        || operations
-            .iter()
-            .any(|operation| !operation_positions.contains_key(operation.as_str()))
-    {
-        return None;
-    }
-    operations.sort_by(|first, second| {
-        operation_positions
-            .get(first.as_str())
-            .cmp(&operation_positions.get(second.as_str()))
-            .then_with(|| first.cmp(second))
-    });
-    Some(operations)
+) -> Result<Option<Vec<String>>, CodecError> {
+    selected_hole_operations(ctx, templates, operation_positions, |template| {
+        template.form == crate::native::features::holes::SimpleHoleForm::Counterbored
+            && template.extent == crate::native::features::holes::SimpleHoleExtent::Through
+            && template.start_treatment == crate::native::features::holes::SimpleHoleEndTreatment::None
+            && template.end_treatment == crate::native::features::holes::SimpleHoleEndTreatment::None
+    })
 }
 
 #[derive(Default)]

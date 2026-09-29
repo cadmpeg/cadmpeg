@@ -108,6 +108,10 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
     let template = |operation_label: &str| FeatureSimpleHoleTemplate {
         id: format!("template-{operation_label}"),
         operation_label: operation_label.to_string(),
@@ -122,7 +126,7 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
     let operation_positions =
         BTreeMap::from([("operation#older", 0usize), ("operation#newer", 1usize)]);
     assert_eq!(
-        simple_hole_operations(&templates, &[], &operation_positions),
+        simple_hole_operations(&ctx, &templates, &[], &operation_positions).unwrap(),
         Some(vec!["operation#older".into(), "operation#newer".into()])
     );
 
@@ -145,7 +149,7 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
         .unwrap(),
     };
     assert!(
-        simple_hole_operations(&templates, &[unordered_group], &operation_positions,).is_none()
+        simple_hole_operations(&ctx, &templates, &[unordered_group], &operation_positions,).unwrap().is_none()
     );
 
     let mut blind_template = template("operation#blind");
@@ -163,11 +167,11 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
         ("operation#blind", 2usize),
     ]);
     assert_eq!(
-        simple_hole_operations(&mixed_templates, &[], &mixed_positions),
+        simple_hole_operations(&ctx, &mixed_templates, &[], &mixed_positions).unwrap(),
         Some(vec!["operation#older".into(), "operation#newer".into()])
     );
     assert_eq!(
-        blind_hole_operations(&mixed_templates, &mixed_positions),
+        blind_hole_operations(&ctx, &mixed_templates, &mixed_positions).unwrap(),
         Some(vec!["operation#blind".into()])
     );
     let duplicate_members =
@@ -190,6 +194,61 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
         ]);
     assert!(duplicate_members.is_err());
 }
+
+#[derive(Clone, Copy)]
+enum HoleSelectorRoute { Simple, Blind, Counterbore }
+
+fn hole_selector_result(
+    route: HoleSelectorRoute,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<Option<Vec<String>>, cadmpeg_core::CodecError> {
+    use crate::native::features::holes::{
+        FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent,
+        SimpleHoleFamily, SimpleHoleForm,
+    };
+    let (form, extent) = match route {
+        HoleSelectorRoute::Simple => (SimpleHoleForm::Simple, SimpleHoleExtent::Through),
+        HoleSelectorRoute::Blind => (SimpleHoleForm::Simple, SimpleHoleExtent::Blind),
+        HoleSelectorRoute::Counterbore => (SimpleHoleForm::Counterbored, SimpleHoleExtent::Through),
+    };
+    let template = FeatureSimpleHoleTemplate {
+        id: "template".into(), operation_label: "operation".into(), payload_string: "value".into(),
+        family: SimpleHoleFamily::GeneralHole, form, extent,
+        start_treatment: SimpleHoleEndTreatment::None,
+        end_treatment: SimpleHoleEndTreatment::None,
+    };
+    let positions = BTreeMap::from([("operation", 0usize)]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    match route {
+        HoleSelectorRoute::Simple => simple_hole_operations(&ctx, &[template], &[], &positions),
+        HoleSelectorRoute::Blind => blind_hole_operations(&ctx, &[template], &positions),
+        HoleSelectorRoute::Counterbore => crate::native::attach::counterbore_operations(&ctx, &[template], &positions),
+    }
+}
+
+fn assert_hole_selector_limit(route: HoleSelectorRoute, dimension: cadmpeg_core::decode::ResourceDimension) {
+    let error = hole_selector_result(route, |policy| {
+        if dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems { policy.limits.max_collection_items = 0; }
+        if dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes { policy.limits.max_retained_bytes = 0; }
+        if dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes { policy.limits.max_materialized_bytes = 0; }
+        if dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits { policy.limits.max_work_units = 0; }
+    }).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+}
+
+#[test] fn simple_hole_selector_refuses_collection_limit() { assert_hole_selector_limit(HoleSelectorRoute::Simple, cadmpeg_core::decode::ResourceDimension::CollectionItems); }
+#[test] fn simple_hole_selector_refuses_retained_limit() { assert_hole_selector_limit(HoleSelectorRoute::Simple, cadmpeg_core::decode::ResourceDimension::RetainedBytes); }
+#[test] fn simple_hole_selector_refuses_scoped_limit() { assert_hole_selector_limit(HoleSelectorRoute::Simple, cadmpeg_core::decode::ResourceDimension::MaterializedBytes); }
+#[test] fn simple_hole_selector_refuses_work_limit() { assert_hole_selector_limit(HoleSelectorRoute::Simple, cadmpeg_core::decode::ResourceDimension::WorkUnits); }
+#[test] fn blind_hole_selector_refuses_collection_limit() { assert_hole_selector_limit(HoleSelectorRoute::Blind, cadmpeg_core::decode::ResourceDimension::CollectionItems); }
+#[test] fn blind_hole_selector_refuses_retained_limit() { assert_hole_selector_limit(HoleSelectorRoute::Blind, cadmpeg_core::decode::ResourceDimension::RetainedBytes); }
+#[test] fn blind_hole_selector_refuses_work_limit() { assert_hole_selector_limit(HoleSelectorRoute::Blind, cadmpeg_core::decode::ResourceDimension::WorkUnits); }
+#[test] fn counterbore_selector_refuses_collection_limit() { assert_hole_selector_limit(HoleSelectorRoute::Counterbore, cadmpeg_core::decode::ResourceDimension::CollectionItems); }
+#[test] fn counterbore_selector_refuses_retained_limit() { assert_hole_selector_limit(HoleSelectorRoute::Counterbore, cadmpeg_core::decode::ResourceDimension::RetainedBytes); }
+#[test] fn counterbore_selector_refuses_work_limit() { assert_hole_selector_limit(HoleSelectorRoute::Counterbore, cadmpeg_core::decode::ResourceDimension::WorkUnits); }
 
 #[test]
 fn exact_hole_package_owns_common_internal_simple_holes() {
