@@ -8,7 +8,6 @@ use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::Serialize;
 
 use crate::native::{EntryRecord, LinkTarget, ObjectRecord, PropertyFamily, PropertyRecord};
-use crate::resource::{collection_vec, reserve_vec_items};
 
 /// Write the legacy census from authoritative object, property, and entry records.
 pub(crate) fn install(
@@ -116,7 +115,7 @@ fn wire_records<'a>(
             })?;
         }
         let owned = by_owner.entry(owner).or_default();
-        reserve_vec_items(ctx, owned, 1, "FreeCAD application owner properties")?;
+        ctx.reserve_vec(owned, 1, "FreeCAD application owner properties")?;
         owned.push(property);
     }
     let mut entry_index = HashMap::new();
@@ -136,7 +135,7 @@ fn wire_records<'a>(
         }
         entry_index.insert(entry.name.as_str(), entry);
     }
-    let mut records = collection_vec(ctx, objects.len(), "FreeCAD application records")?;
+    let mut records = ctx.collection_vec(objects.len(), "FreeCAD application records")?;
     for object in objects {
         let mut owned = by_owner.remove(object.id.as_str()).unwrap_or_default();
         owned.sort_by_key(|property| (property.xml.start(), property.xml.end()));
@@ -145,21 +144,21 @@ fn wire_records<'a>(
             .as_ref()
             .map_or(&[][..], |data| data.text().as_bytes());
         let mut property_ids =
-            collection_vec(ctx, owned.len(), "FreeCAD application property IDs")?;
+            ctx.collection_vec(owned.len(), "FreeCAD application property IDs")?;
         property_ids.extend(owned.iter().map(|property| property.id.as_str()));
         let side_entry_count = owned
             .iter()
             .map(|property| property.side_entries().len())
             .sum();
         let mut side_entries =
-            collection_vec(ctx, side_entry_count, "FreeCAD application side entries")?;
+            ctx.collection_vec(side_entry_count, "FreeCAD application side entries")?;
         side_entries.extend(
             owned
                 .iter()
                 .flat_map(|property| property.side_entries().iter().map(String::as_str)),
         );
         let mut property_records =
-            collection_vec(ctx, owned.len(), "FreeCAD application property records")?;
+            ctx.collection_vec(owned.len(), "FreeCAD application property records")?;
         for property in owned {
             let data = property.xml.text().as_bytes();
             let payload_count = property
@@ -167,7 +166,7 @@ fn wire_records<'a>(
                 .iter()
                 .filter(|name| entry_index.contains_key(name.as_str()))
                 .count();
-            let mut payloads = collection_vec(ctx, payload_count, "FreeCAD application payloads")?;
+            let mut payloads = ctx.collection_vec(payload_count, "FreeCAD application payloads")?;
             for name in property.side_entries() {
                 if let Some(entry) = entry_index.get(name.as_str()) {
                     payloads.push(ApplicationPayloadWire {

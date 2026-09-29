@@ -26,10 +26,6 @@ use crate::native::{
     parse_bool, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord, GuiViewProviderRecord,
     ObjectRecord, PropertyRecord, ValueRecord,
 };
-use crate::resource::{
-    collection_vec, insert_hash_map, insert_hash_set, reserve_vec_items, reserved_vec,
-    retained_join,
-};
 
 use schema::Admission as GuiSchemaAdmission;
 
@@ -66,7 +62,7 @@ fn push_body_update(
 ) -> Result<(), CodecError> {
     let id = crate::resource::copied_identity(ctx, id.as_str(), "FCStd GUI body update identity")?;
     let color = color?;
-    reserve_vec_items(ctx, &mut plan.body_updates, 1, "FCStd GUI body updates")?;
+    ctx.reserve_vec(&mut plan.body_updates, 1, "FCStd GUI body updates")?;
     plan.body_updates.push(BodyUpdate { id, visible, color });
     Ok(())
 }
@@ -92,35 +88,15 @@ impl AppearancePlan {
         ir.model
             .appearances
             .retain(|appearance| !self.remove_appearances.contains(&appearance.id));
-        reserve_vec_items(
-            ctx,
-            &mut ir.model.appearances,
-            self.appearances.len(),
-            "FCStd neutral appearances",
-        )?;
+        ctx.reserve_vec(&mut ir.model.appearances, self.appearances.len(), "FCStd neutral appearances")?;
         ir.model.appearances.extend(self.appearances);
-        reserve_vec_items(
-            ctx,
-            &mut ir.model.appearance_bindings,
-            self.bindings.len(),
-            "FCStd neutral appearance bindings",
-        )?;
+        ctx.reserve_vec(&mut ir.model.appearance_bindings, self.bindings.len(), "FCStd neutral appearance bindings")?;
         ir.model.appearance_bindings.extend(self.bindings);
-        reserve_vec_items(
-            ctx,
-            &mut ir.model.presentation_documents,
-            self.presentation_documents.len(),
-            "FCStd neutral presentation documents",
-        )?;
+        ctx.reserve_vec(&mut ir.model.presentation_documents, self.presentation_documents.len(), "FCStd neutral presentation documents")?;
         ir.model
             .presentation_documents
             .extend(self.presentation_documents);
-        reserve_vec_items(
-            ctx,
-            &mut ir.model.view_presentations,
-            self.view_presentations.len(),
-            "FCStd neutral view presentations",
-        )?;
+        ctx.reserve_vec(&mut ir.model.view_presentations, self.view_presentations.len(), "FCStd neutral view presentations")?;
         ir.model.view_presentations.extend(self.view_presentations);
         Ok(())
     }
@@ -142,11 +118,7 @@ fn object_appearance_id(
     ctx: &DecodeContext<'_>,
     provider: &IdentityKey,
 ) -> Result<AppearanceId, CodecError> {
-    AppearanceId::mint(crate::resource::retained_format(
-        ctx,
-        format_args!("fcstd:appearance:object#{provider}"),
-        "FCStd GUI object appearance identity",
-    )?)
+    AppearanceId::mint(ctx.format_retained(format_args!("fcstd:appearance:object#{provider}"), "FCStd GUI object appearance identity")?)
     .map_err(CodecError::malformed)
 }
 
@@ -154,11 +126,7 @@ fn edge_appearance_id(
     ctx: &DecodeContext<'_>,
     provider: &IdentityKey,
 ) -> Result<AppearanceId, CodecError> {
-    AppearanceId::mint(crate::resource::retained_format(
-        ctx,
-        format_args!("fcstd:appearance:edge#{provider}"),
-        "FCStd GUI edge appearance identity",
-    )?)
+    AppearanceId::mint(ctx.format_retained(format_args!("fcstd:appearance:edge#{provider}"), "FCStd GUI edge appearance identity")?)
     .map_err(CodecError::malformed)
 }
 
@@ -166,11 +134,7 @@ fn vertex_appearance_id(
     ctx: &DecodeContext<'_>,
     provider: &IdentityKey,
 ) -> Result<AppearanceId, CodecError> {
-    AppearanceId::mint(crate::resource::retained_format(
-        ctx,
-        format_args!("fcstd:appearance:vertex#{provider}"),
-        "FCStd GUI vertex appearance identity",
-    )?)
+    AppearanceId::mint(ctx.format_retained(format_args!("fcstd:appearance:vertex#{provider}"), "FCStd GUI vertex appearance identity")?)
     .map_err(CodecError::malformed)
 }
 
@@ -179,11 +143,7 @@ fn shape_material_appearance_id(
     provider: &IdentityKey,
     index: usize,
 ) -> Result<AppearanceId, CodecError> {
-    AppearanceId::mint(crate::resource::retained_format(
-        ctx,
-        format_args!("fcstd:appearance:shape-material#{provider}:{}", index + 1),
-        "FCStd GUI shape material appearance identity",
-    )?)
+    AppearanceId::mint(ctx.format_retained(format_args!("fcstd:appearance:shape-material#{provider}:{}", index + 1), "FCStd GUI shape material appearance identity")?)
     .map_err(CodecError::malformed)
 }
 
@@ -194,11 +154,7 @@ fn topology_appearance_id(
     index: usize,
 ) -> Result<AppearanceId, CodecError> {
     let kind = topology_binding_kind(kind);
-    AppearanceId::mint(crate::resource::retained_format(
-        ctx,
-        format_args!("fcstd:appearance:{kind}#{provider}:{}", index + 1),
-        "FCStd GUI topology appearance identity",
-    )?)
+    AppearanceId::mint(ctx.format_retained(format_args!("fcstd:appearance:{kind}#{provider}:{}", index + 1), "FCStd GUI topology appearance identity")?)
     .map_err(CodecError::malformed)
 }
 
@@ -214,11 +170,7 @@ fn binding_id(
     ctx: &DecodeContext<'_>,
     text: std::fmt::Arguments<'_>,
 ) -> Result<AppearanceBindingId, CodecError> {
-    AppearanceBindingId::mint(crate::resource::retained_format(
-        ctx,
-        text,
-        "FCStd GUI appearance binding identity",
-    )?)
+    AppearanceBindingId::mint(ctx.format_retained(text, "FCStd GUI appearance binding identity")?)
     .map_err(CodecError::malformed)
 }
 
@@ -289,9 +241,9 @@ pub(crate) fn transfer(
         (GuiSchemaAdmission::Unverified { declaration }, Ok((mut graph, plan))) => {
             let declaration = declaration.as_deref().unwrap_or("missing");
             plan.apply(ctx, ir)?;
-            reserve_vec_items(ctx, &mut graph.losses, 1, "FCStd GUI schema losses")?;
+            ctx.reserve_vec(&mut graph.losses, 1, "FCStd GUI schema losses")?;
             graph.losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(
-                crate::resource::retained_format(ctx, format_args!(
+                ctx.format_retained(format_args!(
                     "GuiDocument.xml declares schema {declaration}; decoded with the schema-1 vocabulary"
                 ), "FCStd GUI schema loss text")?,
             ));
@@ -302,9 +254,9 @@ pub(crate) fn transfer(
             Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })),
         ) => {
             let declaration = declaration.as_deref().unwrap_or("missing");
-            let mut losses = collection_vec(ctx, 1, "FCStd GUI schema losses")?;
+            let mut losses = ctx.collection_vec(1, "FCStd GUI schema losses")?;
             losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(
-                crate::resource::retained_format(ctx, format_args!(
+                ctx.format_retained(format_args!(
                     "GuiDocument.xml could not be decoded with the schema-1 vocabulary; declared schema {declaration} is the probable cause: {error}"
                 ), "FCStd GUI schema loss text")?,
             ));
@@ -353,7 +305,7 @@ fn transfer_schema_one(
         .filter(roxmltree::Node::is_element)
         .filter(|node| !node.has_tag_name("ViewProviderData"))
         .count();
-    let mut states = collection_vec(ctx, state_count, "FCStd GUI state records")?;
+    let mut states = ctx.collection_vec(state_count, "FCStd GUI state records")?;
     for (order, node) in root
         .children()
         .filter(roxmltree::Node::is_element)
@@ -381,13 +333,7 @@ fn transfer_schema_one(
     };
     let mut objects_by_name = HashMap::new();
     for object in objects {
-        insert_hash_map(
-            ctx,
-            &mut objects_by_name,
-            object.name.as_str(),
-            object.id.as_str(),
-            "FCStd GUI object names",
-        )?;
+        ctx.insert_hash_map(&mut objects_by_name, object.name.as_str(), object.id.as_str(), "FCStd GUI object names")?;
     }
     let mut native_providers = Vec::new();
     let mut native_properties = Vec::new();
@@ -398,7 +344,7 @@ fn transfer_schema_one(
             .iter()
             .find(|property| property.id == payload.property)
         {
-            reserve_vec_items(ctx, &mut payloads_by_owner, 1, "FCStd GUI payload owners")?;
+            ctx.reserve_vec(&mut payloads_by_owner, 1, "FCStd GUI payload owners")?;
             payloads_by_owner.push((
                 property.owner.as_str(),
                 property.name.as_str(),
@@ -420,7 +366,7 @@ fn transfer_schema_one(
         .filter(|node| node.has_tag_name("ViewProvider"))
         .count();
     ctx.charge_collection_items(provider_count as u64, "FCStd GUI provider nodes")?;
-    let mut providers = reserved_vec(ctx, provider_count, "FCStd GUI provider nodes")?;
+    let mut providers = cadmpeg_core::decode::DecodeContext::admitted_vec(provider_count, "FCStd GUI provider nodes")?;
     providers.extend(
         xml.descendants()
             .filter(|node| node.has_tag_name("ViewProvider")),
@@ -486,7 +432,7 @@ fn transfer_schema_one(
             .filter(|node| node.has_tag_name("Property"))
             .count();
         let mut property_nodes =
-            collection_vec(ctx, property_count, "FCStd GUI presentation property nodes")?;
+            ctx.collection_vec(property_count, "FCStd GUI presentation property nodes")?;
         property_nodes.extend(
             properties_node
                 .children()
@@ -503,13 +449,7 @@ fn transfer_schema_one(
                 property.attribute("name"),
                 property.children().find(roxmltree::Node::is_element),
             ) {
-                insert_hash_map(
-                    ctx,
-                    &mut values,
-                    name,
-                    value,
-                    "FCStd GUI presentation values",
-                )?;
+                ctx.insert_hash_map(&mut values, name, value, "FCStd GUI presentation values")?;
             }
         }
         let property_provenance = |property_name: &str, type_name: &str| {
@@ -694,23 +634,14 @@ fn transfer_schema_one(
                 }
             }
         }
-        reserve_vec_items(
-            ctx,
-            &mut plan.appearances,
-            1,
-            "FCStd GUI planned appearances",
-        )?;
+        ctx.reserve_vec(&mut plan.appearances, 1, "FCStd GUI planned appearances")?;
         plan.appearances.push(Appearance {
             id: crate::resource::copied_identity(
                 ctx,
                 appearance_id.as_str(),
                 "FCStd GUI appearance identity copy",
             )?,
-            name: Some(crate::resource::retained_format(
-                ctx,
-                format_args!("{name} shape appearance"),
-                "FCStd GUI appearance name",
-            )?),
+            name: Some(ctx.format_retained(format_args!("{name} shape appearance"), "FCStd GUI appearance name")?),
             asset_guid: None,
             library_id: None,
             visual_guid: None,
@@ -722,7 +653,7 @@ fn transfer_schema_one(
             properties: material_properties,
         });
         for (index, body) in body_ids.into_iter().enumerate() {
-            reserve_vec_items(ctx, &mut plan.bindings, 1, "FCStd GUI planned bindings")?;
+            ctx.reserve_vec(&mut plan.bindings, 1, "FCStd GUI planned bindings")?;
             plan.bindings.push(AppearanceBinding {
                 id: binding_id(
                     ctx,
@@ -781,12 +712,7 @@ fn append_graph_losses(
     graph: &mut Graph,
     losses: Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    reserve_vec_items(
-        ctx,
-        &mut graph.losses,
-        losses.len(),
-        "FCStd GUI graph losses",
-    )?;
+    ctx.reserve_vec(&mut graph.losses, losses.len(), "FCStd GUI graph losses")?;
     graph.losses.extend(losses);
     Ok(())
 }
@@ -800,8 +726,8 @@ fn push_gui_appearance_loss(
     collection_operation: &'static str,
     text_operation: &'static str,
 ) -> Result<(), CodecError> {
-    reserve_vec_items(ctx, losses, 1, collection_operation)?;
-    let text = crate::resource::retained_format(ctx, message, text_operation)?;
+    ctx.reserve_vec(losses, 1, collection_operation)?;
+    let text = ctx.format_retained(message, text_operation)?;
     losses.push(code.note(text).with_provenance(provenance));
     Ok(())
 }
@@ -812,11 +738,7 @@ fn gui_provider_property_provenance(
     property_name: &str,
     offset: u64,
 ) -> Result<SourceProvenance, CodecError> {
-    let tag = crate::resource::retained_format(
-        ctx,
-        format_args!("ViewProvider {provider_name} property {property_name}"),
-        "FCStd GUI property provenance tag",
-    )?;
+    let tag = ctx.format_retained(format_args!("ViewProvider {provider_name} property {property_name}"), "FCStd GUI property provenance tag")?;
     Ok(
         SourceProvenance::in_stream("fcstd", cadmpeg_ir::stream_name!("GuiDocument.xml"), offset)
             .with_tag(tag),
@@ -860,7 +782,7 @@ fn gui_named_entries<'a>(
         let value = ctx.copy_retained_text(value, "FCStd GUI presentation property value")?;
         match NonBlankString::new(name) {
             Some(key) if kept.contains_key(&key) => {
-                reserve_vec_items(ctx, &mut refused, 1, "FCStd GUI refused property keys")?;
+                ctx.reserve_vec(&mut refused, 1, "FCStd GUI refused property keys")?;
                 refused.push(NamedEntryError::Restated {
                     record: record()?,
                     key: NonBlankString::new(
@@ -876,7 +798,7 @@ fn gui_named_entries<'a>(
                 kept.insert(key, value);
             }
             None => {
-                reserve_vec_items(ctx, &mut refused, 1, "FCStd GUI refused property keys")?;
+                ctx.reserve_vec(&mut refused, 1, "FCStd GUI refused property keys")?;
                 refused.push(NamedEntryError::Blank { record: record()? });
             }
         }
@@ -905,17 +827,12 @@ fn transfer_neutral_presentation(
         presentation.schema_version = neutral_schema_version;
         presentation.native_ref =
             Some(ctx.copy_retained_text(&document.id, "FCStd presentation document reference")?);
-        let mut states = collection_vec(ctx, document.states.len(), "FCStd presentation states")?;
+        let mut states = ctx.collection_vec(document.states.len(), "FCStd presentation states")?;
         for (order, state) in document.states.iter().enumerate() {
             let (attributes, refused) = gui_named_entries(
                 ctx,
                 || {
-                    retained_join(
-                        ctx,
-                        &["the gui ", state.kind.as_str(), " state"],
-                        "",
-                        "FCStd GUI state record name",
-                    )
+                    ctx.join_retained(&["the gui ", state.kind.as_str(), " state"], "", "FCStd GUI state record name")
                 },
                 state
                     .attributes
@@ -931,7 +848,7 @@ fn transfer_neutral_presentation(
                 )
             };
             let mut assets =
-                collection_vec(ctx, state.side_entries.len(), "FCStd presentation assets")?;
+                ctx.collection_vec(state.side_entries.len(), "FCStd presentation assets")?;
             for entry in &state.side_entries {
                 assets.push(crate::native::native_id_charged(ctx, "entry", entry)?);
             }
@@ -947,30 +864,19 @@ fn transfer_neutral_presentation(
         presentation
             .set_states(states)
             .map_err(CodecError::malformed)?;
-        reserve_vec_items(
-            ctx,
-            &mut plan.presentation_documents,
-            1,
-            "FCStd presentation documents",
-        )?;
+        ctx.reserve_vec(&mut plan.presentation_documents, 1, "FCStd presentation documents")?;
         plan.presentation_documents.push(presentation);
     }
-    reserve_vec_items(ctx, losses, state_losses.len(), "FCStd presentation losses")?;
+    ctx.reserve_vec(losses, state_losses.len(), "FCStd presentation losses")?;
     losses.append(&mut state_losses);
 
     let mut properties = HashMap::<&str, Vec<&GuiPropertyRecord>>::new();
     for property in &graph.properties {
         if !properties.contains_key(property.owner.as_str()) {
-            insert_hash_map(
-                ctx,
-                &mut properties,
-                property.owner.as_str(),
-                Vec::new(),
-                "FCStd presentation property owners",
-            )?;
+            ctx.insert_hash_map(&mut properties, property.owner.as_str(), Vec::new(), "FCStd presentation property owners")?;
         }
         if let Some(owned) = properties.get_mut(property.owner.as_str()) {
-            reserve_vec_items(ctx, owned, 1, "FCStd presentation owner properties")?;
+            ctx.reserve_vec(owned, 1, "FCStd presentation owner properties")?;
             owned.push(property);
         }
     }
@@ -1014,12 +920,7 @@ fn transfer_neutral_presentation(
             }),
         )?;
         charge_refused_gui_keys(ctx, losses, &refused)?;
-        reserve_vec_items(
-            ctx,
-            &mut plan.view_presentations,
-            1,
-            "FCStd view presentations",
-        )?;
+        ctx.reserve_vec(&mut plan.view_presentations, 1, "FCStd view presentations")?;
         plan.view_presentations.push(ViewPresentation {
             id: PresentationId::mint(crate::native::model_id_charged_at(
                 ctx,
@@ -1072,28 +973,18 @@ fn charge_refused_gui_keys(
     use cadmpeg_core::text::NamedEntryError;
     for key in refused {
         let message = match key {
-            NamedEntryError::Blank { record } => retained_join(
-                ctx,
-                &[
+            NamedEntryError::Blank { record } => ctx.join_retained(&[
                     record.as_str(),
                     " states a property with a blank key; the property value is not transferred",
-                ],
-                "",
-                "FCStd GUI refused property note",
-            )?,
-            NamedEntryError::Restated { record, key } => retained_join(
-                ctx,
-                &[
+                ], "", "FCStd GUI refused property note")?,
+            NamedEntryError::Restated { record, key } => ctx.join_retained(&[
                     record.as_str(),
                     " states the property ",
                     key.as_str(),
                     " a second time; the property value is not transferred",
-                ],
-                "",
-                "FCStd GUI refused property note",
-            )?,
+                ], "", "FCStd GUI refused property note")?,
         };
-        reserve_vec_items(ctx, losses, 1, "FCStd GUI refused property losses")?;
+        ctx.reserve_vec(losses, 1, "FCStd GUI refused property losses")?;
         losses.push(FreecadLossCode::SourceGuiPropertyKeyBlank.note(message));
     }
     Ok(())
@@ -1128,12 +1019,7 @@ fn camera_state_value(
     let (properties, refused) = gui_named_entries(
         ctx,
         || {
-            retained_join(
-                ctx,
-                &["the gui ", state.kind.as_str(), " state"],
-                "",
-                "FCStd GUI state record name",
-            )
+            ctx.join_retained(&["the gui ", state.kind.as_str(), " state"], "", "FCStd GUI state record name")
         },
         state
             .attributes
@@ -1159,11 +1045,7 @@ fn parse_camera_settings(
         });
     }
 
-    let mut tokens = collection_vec(
-        ctx,
-        settings.split_whitespace().count(),
-        "FCStd GUI camera tokens",
-    )?;
+    let mut tokens = ctx.collection_vec(settings.split_whitespace().count(), "FCStd GUI camera tokens")?;
     tokens.extend(settings.split_whitespace());
     let valid_shape = tokens.len() >= 3
         && tokens[1] == "{"
@@ -1285,13 +1167,8 @@ fn shape_payload_prefixes(
         .iter()
         .filter(|(owner, property, _)| *owner == object_id && *property == "Shape")
     {
-        reserve_vec_items(ctx, &mut prefixes, 1, "FCStd GUI payload prefixes")?;
-        prefixes.push(crate::resource::retained_suffix(
-            ctx,
-            crate::native::id_key(payload),
-            ":",
-            "FCStd GUI payload prefix text",
-        )?);
+        ctx.reserve_vec(&mut prefixes, 1, "FCStd GUI payload prefixes")?;
+        prefixes.push(ctx.retained_suffix(crate::native::id_key(payload), ":", "FCStd GUI payload prefix text")?);
     }
     Ok(prefixes)
 }
@@ -1319,7 +1196,7 @@ fn transfer_primitive_appearance(
                     .iter()
                     .any(|prefix| crate::native::id_key(edge.id.as_str()).starts_with(prefix))
             }) {
-                reserve_vec_items(ctx, &mut targets, 1, "FCStd GUI primitive targets")?;
+                ctx.reserve_vec(&mut targets, 1, "FCStd GUI primitive targets")?;
                 targets.push(AppearanceTarget::Edge(crate::resource::copied_identity(
                     ctx,
                     edge.id.as_str(),
@@ -1333,7 +1210,7 @@ fn transfer_primitive_appearance(
                     .iter()
                     .any(|prefix| crate::native::id_key(vertex.id.as_str()).starts_with(prefix))
             }) {
-                reserve_vec_items(ctx, &mut targets, 1, "FCStd GUI primitive targets")?;
+                ctx.reserve_vec(&mut targets, 1, "FCStd GUI primitive targets")?;
                 targets.push(AppearanceTarget::Vertex(crate::resource::copied_identity(
                     ctx,
                     vertex.id.as_str(),
@@ -1385,32 +1262,19 @@ fn transfer_primitive_appearance(
             "FCStd GUI primitive size loss text",
         )?;
     }
-    reserve_vec_items(
-        ctx,
-        &mut plan.appearances,
-        1,
-        "FCStd GUI planned appearances",
-    )?;
+    ctx.reserve_vec(&mut plan.appearances, 1, "FCStd GUI planned appearances")?;
     plan.appearances.push(Appearance {
         id: crate::resource::copied_identity(
             ctx,
             appearance_id.as_str(),
             "FCStd GUI appearance identity copy",
         )?,
-        name: Some(crate::resource::retained_format(
-            ctx,
-            format_args!("{provider_name} {label} appearance"),
-            "FCStd GUI appearance name",
-        )?),
+        name: Some(ctx.format_retained(format_args!("{provider_name} {label} appearance"), "FCStd GUI appearance name")?),
         asset_guid: None,
         library_id: None,
         visual_guid: None,
         physical_token: None,
-        schema: Some(crate::resource::retained_format(
-            ctx,
-            format_args!("FCStd ViewProvider {label} style"),
-            "FCStd GUI appearance schema",
-        )?),
+        schema: Some(ctx.format_retained(format_args!("FCStd ViewProvider {label} style"), "FCStd GUI appearance schema")?),
         category: None,
         base_color: Some(Color::from_rgba8(
             (packed_color >> 24) as u8,
@@ -1424,7 +1288,7 @@ fn transfer_primitive_appearance(
             .unwrap_or_default(),
     });
     for (index, target) in targets.into_iter().enumerate() {
-        reserve_vec_items(ctx, &mut plan.bindings, 1, "FCStd GUI planned bindings")?;
+        ctx.reserve_vec(&mut plan.bindings, 1, "FCStd GUI planned bindings")?;
         plan.bindings.push(AppearanceBinding {
             id: binding_id(
                 ctx,
@@ -1461,7 +1325,7 @@ fn gui_state(
         .descendants()
         .filter(|value| value.is_element() && *value != node)
         .count();
-    let mut values = collection_vec(ctx, value_count, "FCStd GUI state values")?;
+    let mut values = ctx.collection_vec(value_count, "FCStd GUI state values")?;
     for (value_order, value) in node
         .descendants()
         .filter(|value| value.is_element() && *value != node)
@@ -1496,7 +1360,7 @@ fn gui_state(
         .map(|attribute| attribute.value())
         .filter(|value| !value.is_empty())
     {
-        reserve_vec_items(ctx, &mut side_entries, 1, "FCStd GUI side entry references")?;
+        ctx.reserve_vec(&mut side_entries, 1, "FCStd GUI side entry references")?;
         side_entries.push(ctx.copy_retained_text(value, "FCStd GUI side entry name")?);
     }
     let kind = ctx.copy_retained_text(node.tag_name().name(), "FCStd GUI state kind")?;
@@ -1517,12 +1381,7 @@ fn gui_state(
         "FCStd GUI state XML",
     )?;
     let order = order.to_string();
-    let key = retained_join(
-        ctx,
-        &[kind.as_str(), order.as_str()],
-        ":",
-        "FCStd GUI state identity key",
-    )?;
+    let key = ctx.join_retained(&[kind.as_str(), order.as_str()], ":", "FCStd GUI state identity key")?;
     Ok(GuiStateRecord {
         id: crate::native::native_id_charged(ctx, "gui-state", &key)?,
         kind,
@@ -1564,7 +1423,7 @@ fn append_native_provider(
         .attribute("name")
         .ok_or_else(|| CodecError::Malformed("ViewProvider has no name".into()))?;
     let id = crate::native::native_id_charged(ctx, "gui-view-provider", name)?;
-    reserve_vec_items(ctx, providers, 1, "FCStd GUI provider records")?;
+    ctx.reserve_vec(providers, 1, "FCStd GUI provider records")?;
     providers.push(GuiViewProviderRecord {
         id: ctx.copy_retained_text(&id, "FCStd GUI provider record identity")?,
         object: object
@@ -1592,7 +1451,7 @@ fn append_native_provider(
         .children()
         .filter(|node| node.has_tag_name("Property"))
         .count();
-    let mut nodes = collection_vec(ctx, property_nodes, "FCStd GUI provider property nodes")?;
+    let mut nodes = ctx.collection_vec(property_nodes, "FCStd GUI provider property nodes")?;
     nodes.extend(
         container
             .children()
@@ -1646,7 +1505,7 @@ fn append_native_provider(
             .descendants()
             .filter(|value| value.is_element() && *value != property)
             .count();
-        let mut values = collection_vec(ctx, value_count, "FCStd GUI property values")?;
+        let mut values = ctx.collection_vec(value_count, "FCStd GUI property values")?;
         for (value_order, value) in property
             .descendants()
             .filter(|value| value.is_element() && *value != property)
@@ -1683,10 +1542,10 @@ fn append_native_provider(
             .map(|(_, value)| value.as_str())
             .filter(|value| !value.is_empty())
         {
-            reserve_vec_items(ctx, &mut side_entries, 1, "FCStd GUI side entry references")?;
+            ctx.reserve_vec(&mut side_entries, 1, "FCStd GUI side entry references")?;
             side_entries.push(ctx.copy_retained_text(value, "FCStd GUI side entry name")?);
         }
-        reserve_vec_items(ctx, properties, 1, "FCStd GUI property records")?;
+        ctx.reserve_vec(properties, 1, "FCStd GUI property records")?;
         properties.push(GuiPropertyRecord {
             id: crate::native::native_child_id_charged(ctx, "gui-property", &id, property_name)?,
             owner: ctx.copy_retained_text(&id, "FCStd GUI property owner")?,
@@ -2758,7 +2617,7 @@ fn gui_record_fields<'a, 'input>(
         .children()
         .filter(roxmltree::Node::is_element)
         .count();
-    let mut fields = collection_vec(ctx, count, operation)?;
+    let mut fields = ctx.collection_vec(count, operation)?;
     fields.extend(record.children().filter(roxmltree::Node::is_element));
     Ok(fields)
 }
@@ -4109,22 +3968,16 @@ fn validate_gui_list_payloads(
                     })
                     .transpose()?
                     .unwrap_or(0);
-                insert_hash_map(
-                    ctx,
-                    &mut material_lists,
-                    ctx.copy_retained_text(
+                ctx.insert_hash_map(&mut material_lists, ctx.copy_retained_text(
                         &property.id,
                         "FCStd GUI material list property identity",
-                    )?,
-                    parse_material_list(
+                    )?, parse_material_list(
                         ctx,
                         view,
                         version,
                         &property.id,
                         requires_alpha_conversion,
-                    )?,
-                    "FCStd GUI material lists",
-                )?;
+                    )?, "FCStd GUI material lists")?;
             }
             "App::PropertyPlacementList" => {
                 parse_placement_list(ctx, view, entry_name)?;
@@ -4154,7 +4007,7 @@ fn parse_color_list(
             )
         })?
         .get();
-    let mut colors = collection_vec(ctx, count, "FCStd GUI color-list entries")?;
+    let mut colors = ctx.collection_vec(count, "FCStd GUI color-list entries")?;
     for _ in 0..count {
         colors.push(convert_packed_alpha(
             view.req_u32_le()?,
@@ -4181,7 +4034,7 @@ fn read_gui_counted<'a, T>(
     let Some(count) = view.counted(count.into(), element_size) else {
         return Ok(None);
     };
-    let mut values = collection_vec(ctx, count.get(), operation)?;
+    let mut values = ctx.collection_vec(count.get(), operation)?;
     for _ in 0..count.get() {
         let Some(value) = read(view) else {
             return Ok(None);
@@ -4423,7 +4276,7 @@ fn parse_material_list(
             format_args!("GUI material list {property_id} count exceeds its payload"),
         )
     })?;
-    let mut materials = collection_vec(ctx, raw_materials.len(), "FCStd GUI material entries")?;
+    let mut materials = ctx.collection_vec(raw_materials.len(), "FCStd GUI material entries")?;
     for ([ambient, diffuse, specular, emissive], [shininess, transparency]) in raw_materials {
         let invalid = || {
             gui_malformed(
@@ -4548,12 +4401,7 @@ fn transfer_shape_appearances(
                 .retain(|binding| binding.appearance != legacy_id);
             plan.appearances
                 .retain(|appearance| appearance.id != legacy_id);
-            insert_hash_set(
-                ctx,
-                &mut plan.remove_appearances,
-                legacy_id,
-                "FCStd GUI removed appearances",
-            )?;
+            ctx.insert_hash_set(&mut plan.remove_appearances, legacy_id, "FCStd GUI removed appearances")?;
         } else {
             let Some(_) = group else {
                 continue;
@@ -4580,12 +4428,7 @@ fn transfer_shape_appearances(
         }
         for (index, material) in materials.iter().enumerate() {
             let appearance_id = shape_material_appearance_id(ctx, &provider_key, index)?;
-            reserve_vec_items(
-                ctx,
-                &mut plan.appearances,
-                1,
-                "FCStd GUI planned appearances",
-            )?;
+            ctx.reserve_vec(&mut plan.appearances, 1, "FCStd GUI planned appearances")?;
             plan.appearances.push(material_appearance(
                 ctx,
                 crate::resource::copied_identity(
@@ -4606,7 +4449,7 @@ fn transfer_shape_appearances(
                         Assignment::Keep,
                         decode_color(material.diffuse, Some(material.transparency.get())).map(Some),
                     )?;
-                    reserve_vec_items(ctx, &mut plan.bindings, 1, "FCStd GUI planned bindings")?;
+                    ctx.reserve_vec(&mut plan.bindings, 1, "FCStd GUI planned bindings")?;
                     plan.bindings.push(AppearanceBinding {
                         id: binding_id(
                             ctx,
@@ -4675,7 +4518,7 @@ fn select_shape_bodies<'a>(
                 .strip_prefix(payload_key)
                 .is_some_and(|suffix| suffix.starts_with(':'))
             {
-                reserve_vec_items(ctx, &mut body_ids, 1, "FCStd GUI displayed shape bodies")?;
+                ctx.reserve_vec(&mut body_ids, 1, "FCStd GUI displayed shape bodies")?;
                 body_ids.push(crate::resource::copied_identity(
                     ctx,
                     body.id.as_str(),
@@ -4700,11 +4543,7 @@ fn displayed_shape_payload<'a>(
         return Ok(None);
     };
     if shape_properties.next().is_some() {
-        return Err(CodecError::Malformed(crate::resource::retained_format(
-            ctx,
-            format_args!("object {object_id} has multiple Shape properties"),
-            "FCStd GUI duplicate shape property diagnostic",
-        )?));
+        return Err(CodecError::Malformed(ctx.format_retained(format_args!("object {object_id} has multiple Shape properties"), "FCStd GUI duplicate shape property diagnostic")?));
     }
     let mut shape_payloads = payloads
         .iter()
@@ -4713,11 +4552,7 @@ fn displayed_shape_payload<'a>(
         return Ok(None);
     };
     if shape_payloads.next().is_some() {
-        return Err(CodecError::Malformed(crate::resource::retained_format(
-            ctx,
-            format_args!("Shape property {} has multiple payloads", property.id),
-            "FCStd GUI duplicate shape payload diagnostic",
-        )?));
+        return Err(CodecError::Malformed(ctx.format_retained(format_args!("Shape property {} has multiple payloads", property.id), "FCStd GUI duplicate shape payload diagnostic")?));
     }
     Ok(Some(payload))
 }
@@ -4740,14 +4575,10 @@ fn displayed_shape_group<'a>(
         return Ok(None);
     };
     if shape_maps.next().is_some() {
-        return Err(CodecError::Malformed(crate::resource::retained_format(
-            ctx,
-            format_args!(
+        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
                 "Shape property {} has multiple element maps",
                 payload.property
-            ),
-            "FCStd GUI duplicate element map diagnostic",
-        )?));
+            ), "FCStd GUI duplicate element map diagnostic")?));
     }
     let root = map.maps.root();
     let mut groups = root
@@ -4758,14 +4589,10 @@ fn displayed_shape_group<'a>(
         return Ok(None);
     };
     if groups.next().is_some() {
-        return Err(CodecError::Malformed(crate::resource::retained_format(
-            ctx,
-            format_args!(
+        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
                 "Shape property {} has multiple {indexed_name} groups",
                 payload.property
-            ),
-            "FCStd GUI duplicate element group diagnostic",
-        )?));
+            ), "FCStd GUI duplicate element group diagnostic")?));
     }
     Ok(Some(group))
 }
@@ -4783,11 +4610,7 @@ fn material_appearance(
     };
     Ok(Appearance {
         id,
-        name: Some(crate::resource::retained_format(
-            ctx,
-            format_args!("{provider_name} face {} material", index + 1),
-            "FCStd GUI appearance name",
-        )?),
+        name: Some(ctx.format_retained(format_args!("{provider_name} face {} material", index + 1), "FCStd GUI appearance name")?),
         asset_guid: (!material.uuid.is_empty())
             .then(|| ctx.copy_retained_text(&material.uuid, "FCStd GUI material asset GUID"))
             .transpose()?,
@@ -4842,12 +4665,7 @@ fn bind_material_faces(
         .iter()
         .flat_map(|name| &name.topology_ids)
     {
-        if !insert_hash_set(
-            ctx,
-            &mut bound,
-            topology_id.as_str(),
-            "FCStd GUI material face identities",
-        )? {
+        if !ctx.insert_hash_set(&mut bound, topology_id.as_str(), "FCStd GUI material face identities")? {
             continue;
         }
         let Some(face) = ir
@@ -4864,7 +4682,7 @@ fn bind_material_faces(
             "FCStd GUI binding face identity",
         )?;
         let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
-        reserve_vec_items(ctx, &mut plan.bindings, 1, "FCStd GUI planned bindings")?;
+        ctx.reserve_vec(&mut plan.bindings, 1, "FCStd GUI planned bindings")?;
         plan.bindings.push(AppearanceBinding {
             id: binding_id(
                 ctx,
@@ -4996,12 +4814,7 @@ fn transfer_topology_colors(
             .chain(indexed_names)
             .flat_map(|name| &name.topology_ids)
         {
-            if !insert_hash_set(
-                ctx,
-                &mut bound_topology,
-                topology_id.as_str(),
-                "FCStd GUI colored topology identities",
-            )? {
+            if !ctx.insert_hash_set(&mut bound_topology, topology_id.as_str(), "FCStd GUI colored topology identities")? {
                 continue;
             }
             if !match kind {
@@ -5024,23 +4837,14 @@ fn transfer_topology_colors(
                 continue;
             }
             if !emitted_appearance {
-                reserve_vec_items(
-                    ctx,
-                    &mut plan.appearances,
-                    1,
-                    "FCStd GUI planned appearances",
-                )?;
+                ctx.reserve_vec(&mut plan.appearances, 1, "FCStd GUI planned appearances")?;
                 plan.appearances.push(Appearance {
                     id: crate::resource::copied_identity(
                         ctx,
                         appearance_id.as_str(),
                         "FCStd GUI appearance identity copy",
                     )?,
-                    name: Some(crate::resource::retained_format(
-                        ctx,
-                        format_args!("{provider_name} {}{} appearance", kind.name(), index + 1),
-                        "FCStd GUI appearance name",
-                    )?),
+                    name: Some(ctx.format_retained(format_args!("{provider_name} {}{} appearance", kind.name(), index + 1), "FCStd GUI appearance name")?),
                     asset_guid: None,
                     library_id: None,
                     visual_guid: None,
@@ -5107,7 +4911,7 @@ fn transfer_topology_colors(
             };
             let topology_key = crate::native::id_key(topology_id);
             let kind_key = topology_binding_kind(kind);
-            reserve_vec_items(ctx, &mut plan.bindings, 1, "FCStd GUI planned bindings")?;
+            ctx.reserve_vec(&mut plan.bindings, 1, "FCStd GUI planned bindings")?;
             plan.bindings.push(AppearanceBinding {
                 id: binding_id(
                     ctx,

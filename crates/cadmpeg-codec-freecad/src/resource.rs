@@ -1,59 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fallible collection admission for `FreeCAD` decoding.
 
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::{self, Write};
-use std::hash::Hash;
-
-pub(crate) fn retained_format(
-    ctx: &DecodeContext<'_>,
-    arguments: fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    struct Count(usize);
-    impl Write for Count {
-        fn write_str(&mut self, text: &str) -> fmt::Result {
-            self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
-            Ok(())
-        }
-    }
-    let mut count = Count(0);
-    fmt::write(&mut count, arguments).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                ctx.policy().limits.max_retained_bytes,
-                u64::MAX,
-                operation,
-            ),
-        )
-    })?;
-    ctx.charge_retained(count.0 as u64, operation)?;
-    let mut output = String::new();
-    output.try_reserve_exact(count.0).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                ctx.policy().limits.max_retained_bytes,
-                count.0 as u64,
-                operation,
-            ),
-        )
-    })?;
-    output
-        .write_fmt(arguments)
-        .map_err(|_| CodecError::Malformed("FreeCAD diagnostic formatting failed".into()))?;
-    Ok(output)
-}
+use std::collections::BTreeMap;
+use std::fmt;
 
 pub(crate) fn malformed_charged(
     ctx: &DecodeContext<'_>,
     arguments: fmt::Arguments<'_>,
     operation: &'static str,
 ) -> CodecError {
-    match retained_format(ctx, arguments, operation) {
+    match ctx.format_retained(arguments, operation) {
         Ok(message) => CodecError::Malformed(message),
         Err(refusal) => refusal,
     }
@@ -80,8 +38,7 @@ pub(crate) fn named_entries_charged<V>(
     let mut keyed = BTreeMap::new();
     for (name, value) in entries {
         let Some(key) = NonBlankString::new(name) else {
-            return Err(CodecError::Malformed(retained_join(
-                ctx,
+            return Err(CodecError::Malformed(ctx.join_retained(
                 &[record, " states a property with a blank key"],
                 "",
                 operation,
@@ -91,121 +48,6 @@ pub(crate) fn named_entries_charged<V>(
         keyed.insert(key, value);
     }
     Ok(keyed)
-}
-
-pub(crate) fn insert_hash_map<K: Eq + Hash, V>(
-    ctx: &DecodeContext<'_>,
-    items: &mut HashMap<K, V>,
-    key: K,
-    value: V,
-    operation: &'static str,
-) -> Result<Option<V>, CodecError> {
-    if !items.contains_key(&key) {
-        ctx.charge_collection_items(1, operation)?;
-        items.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                    ctx.policy().limits.max_collection_items,
-                    1,
-                    operation,
-                ),
-            )
-        })?;
-    }
-    Ok(items.insert(key, value))
-}
-
-pub(crate) fn collection_vec<T>(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    ctx.charge_collection_items(count as u64, operation)?;
-    reserved_vec(ctx, count, operation)
-}
-
-pub(crate) fn reserved_vec<T>(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let mut items = Vec::new();
-    items.try_reserve_exact(count).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
-                count as u64,
-                operation,
-            ),
-        )
-    })?;
-    Ok(items)
-}
-
-pub(crate) fn optional_collection_vec<T>(
-    ctx: &DecodeContext<'_>,
-    present: bool,
-    count: usize,
-    operation: &'static str,
-) -> Result<Option<Vec<T>>, CodecError> {
-    if present {
-        Ok(Some(collection_vec(ctx, count, operation)?))
-    } else {
-        Ok(None)
-    }
-}
-
-pub(crate) fn decode_reserved_vec<T>(
-    ctx: Option<&DecodeContext<'_>>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    match ctx {
-        Some(ctx) => reserved_vec(ctx, count, operation),
-        None => Ok(Vec::new()),
-    }
-}
-
-pub(crate) fn reserve_charged_vec_items<T>(
-    ctx: Option<&DecodeContext<'_>>,
-    items: &mut Vec<T>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if let Some(ctx) = ctx {
-        items.try_reserve(count).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                    ctx.policy().limits.max_collection_items,
-                    count as u64,
-                    operation,
-                ),
-            )
-        })?;
-    }
-    Ok(())
-}
-
-pub(crate) fn reserve_vec_items<T>(
-    ctx: &DecodeContext<'_>,
-    items: &mut Vec<T>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(count as u64, operation)?;
-    items.try_reserve(count).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
-                count as u64,
-                operation,
-            ),
-        )
-    })
 }
 
 pub(crate) fn copied_identity<I>(
@@ -218,198 +60,6 @@ where
     I::Error: std::fmt::Display,
 {
     I::try_from(ctx.copy_retained_text(value, operation)?).map_err(CodecError::malformed)
-}
-
-pub(crate) fn retained_strings(
-    ctx: &DecodeContext<'_>,
-    values: &[String],
-    operation: &'static str,
-) -> Result<Vec<String>, CodecError> {
-    let mut copies = collection_vec(ctx, values.len(), operation)?;
-    for value in values {
-        copies.push(ctx.copy_retained_text(value, operation)?);
-    }
-    Ok(copies)
-}
-
-pub(crate) fn copied_items<T: Copy>(
-    ctx: &DecodeContext<'_>,
-    values: &[T],
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let mut copies = collection_vec(ctx, values.len(), operation)?;
-    copies.extend_from_slice(values);
-    Ok(copies)
-}
-
-pub(crate) fn retained_suffix(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    suffix: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let mut output = ctx.copy_retained_text(value, operation)?;
-    append_retained(ctx, &mut output, suffix, operation)?;
-    Ok(output)
-}
-
-pub(crate) fn append_retained(
-    ctx: &DecodeContext<'_>,
-    output: &mut String,
-    suffix: &str,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_retained(suffix.len() as u64, operation)?;
-    output.try_reserve(suffix.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                ctx.policy().limits.max_retained_bytes,
-                suffix.len() as u64,
-                operation,
-            ),
-        )
-    })?;
-    output.push_str(suffix);
-    Ok(())
-}
-
-pub(crate) fn retained_join<S: AsRef<str>>(
-    ctx: &DecodeContext<'_>,
-    parts: &[S],
-    separator: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let mut count = 0_usize;
-    for part in parts {
-        count = count.checked_add(part.as_ref().len()).ok_or_else(|| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                    ctx.policy().limits.max_retained_bytes,
-                    u64::MAX,
-                    operation,
-                ),
-            )
-        })?;
-    }
-    let gaps = if parts.is_empty() { 0 } else { parts.len() - 1 };
-    count = count
-        .checked_add(separator.len().checked_mul(gaps).ok_or_else(|| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                    ctx.policy().limits.max_retained_bytes,
-                    u64::MAX,
-                    operation,
-                ),
-            )
-        })?)
-        .ok_or_else(|| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                    ctx.policy().limits.max_retained_bytes,
-                    u64::MAX,
-                    operation,
-                ),
-            )
-        })?;
-    ctx.charge_retained(count as u64, operation)?;
-    let mut output = String::new();
-    output.try_reserve_exact(count).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                ctx.policy().limits.max_retained_bytes,
-                count as u64,
-                operation,
-            ),
-        )
-    })?;
-    for (index, part) in parts.iter().enumerate() {
-        if index != 0 {
-            output.push_str(separator);
-        }
-        output.push_str(part.as_ref());
-    }
-    Ok(output)
-}
-
-pub(crate) fn materialized_bytes<'a>(
-    ctx: &'a DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(Vec<u8>, ScopedReservation<'a>), CodecError> {
-    let reservation = ctx.reserve_scoped(count as u64, operation)?;
-    let mut bytes = Vec::new();
-    bytes.try_reserve_exact(count).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-                ctx.policy().limits.max_materialized_bytes,
-                count as u64,
-                operation,
-            ),
-        )
-    })?;
-    Ok((bytes, reservation))
-}
-
-pub(crate) fn materialized_vec<'a, T>(
-    ctx: &'a DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(Vec<T>, ScopedReservation<'a>), CodecError> {
-    let bytes = count
-        .checked_mul(std::mem::size_of::<T>())
-        .map(cadmpeg_core::decode::u64_from_index)
-        .ok_or_else(|| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-                    ctx.policy().limits.max_materialized_bytes,
-                    u64::MAX,
-                    operation,
-                ),
-            )
-        })?;
-    let reservation = ctx.reserve_scoped(bytes, operation)?;
-    let mut items = Vec::new();
-    items.try_reserve_exact(count).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-                ctx.policy().limits.max_materialized_bytes,
-                bytes,
-                operation,
-            ),
-        )
-    })?;
-    Ok((items, reservation))
-}
-
-pub(crate) fn insert_hash_set<T: Eq + Hash>(
-    ctx: &DecodeContext<'_>,
-    items: &mut HashSet<T>,
-    value: T,
-    operation: &'static str,
-) -> Result<bool, CodecError> {
-    if items.contains(&value) {
-        return Ok(false);
-    }
-    ctx.charge_collection_items(1, operation)?;
-    items.try_reserve(1).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
-                1,
-                operation,
-            ),
-        )
-    })?;
-    Ok(items.insert(value))
 }
 
 #[cfg(test)]
@@ -439,8 +89,7 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
         assert_eq!(
-            super::retained_format(
-                &ctx,
+            ctx.format_retained(
                 format_args!("invalid {text}: {}", 12),
                 "test formatted diagnostic"
             )
@@ -452,7 +101,7 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
         assert!(
-            matches!(super::retained_format(&ctx, format_args!("invalid {text}: {}", 12),
+            matches!(ctx.format_retained(format_args!("invalid {text}: {}", 12),
             "test formatted diagnostic"), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "test formatted diagnostic")
         );
@@ -482,7 +131,7 @@ mod tests {
             .expect("empty root is within policy");
         let mut index = std::collections::HashMap::new();
         assert!(
-            matches!(super::insert_hash_map(&ctx, &mut index, "key", 1_u8, "fcstd test index"),
+            matches!(ctx.insert_hash_map(&mut index, "key", 1_u8, "fcstd test index"),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "fcstd test index")
         );

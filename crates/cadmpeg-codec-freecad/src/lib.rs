@@ -876,14 +876,10 @@ impl CodecBackend for FcstdCodec {
             for property in &graph.properties {
                 for side_entry in property.side_entries() {
                     if !scan.data.contains_key(side_entry) {
-                        return Err(CodecError::Malformed(resource::retained_format(
-                            ctx,
-                            format_args!(
+                        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
                                 "property {} references missing side entry {side_entry}",
                                 property.id
-                            ),
-                            "FCStd missing side entry diagnostic",
-                        )?));
+                            ), "FCStd missing side entry diagnostic")?));
                     }
                 }
             }
@@ -1106,20 +1102,10 @@ impl CodecBackend for FcstdCodec {
         // Charged on both decode branches: a schema outside the declared rows
         // is read with the schema-4 strategy on either path, so the charge is
         // not conditioned on the branch.
-        resource::reserve_vec_items(
-            ctx,
-            &mut losses,
-            topology_losses.len(),
-            "FCStd topology loss output",
-        )?;
+        ctx.reserve_vec(&mut losses, topology_losses.len(), "FCStd topology loss output")?;
         losses.extend(topology_losses);
         let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
-        resource::reserve_vec_items(
-            ctx,
-            &mut losses,
-            usize::from(dialect_losses.is_some()),
-            "FCStd dialect loss output",
-        )?;
+        ctx.reserve_vec(&mut losses, usize::from(dialect_losses.is_some()), "FCStd dialect loss output")?;
         losses.extend(dialect_losses);
         ctx.admit_entities(
             ir.model.entity_count() as u64,
@@ -1247,11 +1233,11 @@ fn push_semantic_loss(
     tag: Option<&str>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let message = resource::retained_join(ctx, message_parts, "", operation)?;
+    let message = ctx.join_retained(message_parts, "", operation)?;
     let tag = tag
         .map(|tag| ctx.copy_retained_text(tag, operation))
         .transpose()?;
-    resource::reserve_vec_items(ctx, losses, 1, "FCStd semantic loss output")?;
+    ctx.reserve_vec(losses, 1, "FCStd semantic loss output")?;
     losses.push(
         code.note(message).with_provenance(
             cadmpeg_ir::SourceProvenance::in_stream(
