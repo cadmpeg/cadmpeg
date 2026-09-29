@@ -55,6 +55,32 @@ fn transfer_empty_section(policy: &DecodePolicy) -> Result<cadmpeg_ir::document:
 }
 
 #[test]
+fn segment_table_underflow_error_refuses_retained_text_limit() {
+    let table = crate::feature::definitions::FeatureSegmentTable {
+        declared_count: 0,
+        has_elided_prototype: true,
+        entity_ref: None,
+        rows: crate::feature::segment_rows::SegmentRows::default(),
+        offset: 0,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = super::expected_segment_rows(&ctx, 7, &table)
+        .expect_err("underflow error text exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo segment table underflow error text"));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = super::expected_segment_rows(ctx, 7, &table)
+            .expect_err("negative ordinary row count is malformed");
+        assert!(error.to_string().contains("feature 7 states segment table count 0 and 1 elided prototype row(s)"));
+        Ok::<(), CodecError>(())
+    }).expect("service error text admitted");
+}
+
+#[test]
 fn empty_section_transfer_preserves_sketch_and_feature() {
     let ir = transfer_empty_section(&DecodePolicy::service()).expect("service section transfer");
     assert_eq!(ir.model.sketches.len(), 1);
