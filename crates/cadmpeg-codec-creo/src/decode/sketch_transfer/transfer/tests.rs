@@ -62,6 +62,25 @@ fn empty_section_transfer_preserves_sketch_and_feature() {
     assert_eq!(ir.model.features[0].source_tag.as_deref(), Some("section"));
 }
 
+#[test]
+fn sketch_native_reference_refuses_below_retained_limit() {
+    let sketch = SketchId::mint("creo:model:sketch#7").expect("valid sketch ID");
+    let need = "creo:featdefs:sketch#7".len() as u64;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = need - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = crate::decode::sketch_ids::sketch_native_ref_admitted(&ctx, &sketch)
+        .expect_err("native reference exceeds retained cap");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo sketch native reference"));
+    policy.limits.max_retained_bytes = need;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert_eq!(crate::decode::sketch_ids::sketch_native_ref_admitted(&ctx, &sketch)
+        .expect("exact cap admits reference"), "creo:featdefs:sketch#7");
+}
+
 fn disabled_constraint() -> SketchConstraint {
     SketchConstraint {
         id: SketchConstraintId::mint("creo:model:sketch_constraint#1").expect("constraint id"),

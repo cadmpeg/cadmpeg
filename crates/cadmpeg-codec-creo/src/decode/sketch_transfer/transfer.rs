@@ -23,8 +23,8 @@ use super::super::sketch::radii::{
 use super::super::sketch::skamp::section_segment_rows;
 use super::super::sketch_ids::{
     feature_definition_has_sketch_design, model_sketch_id,
-    sketch_constraint_id_admitted, sketch_entity_id, sketch_entity_id_admitted,
-    sketch_feature_id_admitted, sketch_native_ref, sketch_native_ref_admitted,
+    sketch_constraint_id_admitted, sketch_entity_id_admitted,
+    sketch_feature_id_admitted, sketch_native_ref_admitted,
 };
 use super::super::uniqueness::unique_feature_section_transform;
 use super::entities::transfer_section_entities;
@@ -515,7 +515,7 @@ pub(in super::super) fn transfer_sketches(
         let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         for (external_id, offset) in solver_only_section_entities(ctx, definition)? {
-            let Some(id) = sketch_entity_id(&sketch_id, external_id) else {
+            let Some(id) = sketch_entity_id_admitted(ctx, &sketch_id, external_id)? else {
                 continue;
             };
             if entities.iter().any(|entity| entity.id() == &id) {
@@ -554,7 +554,7 @@ pub(in super::super) fn transfer_sketches(
                     ),
                 )
                 .with_construction(true)
-                .with_native_ref(Some(sketch_native_ref(&sketch_id))),
+                .with_native_ref(Some(sketch_native_ref_admitted(ctx, &sketch_id)?)),
             );
         }
         let (emitted_entity_ids, emitted_entity_geometry) =
@@ -841,7 +841,7 @@ pub(in super::super) fn transfer_sketches(
                 visible: None,
                 placement,
                 profiles,
-                native_ref: Some(sketch_native_ref(&sketch_id)),
+                native_ref: Some(sketch_native_ref_admitted(ctx, &sketch_id)?),
             },
         )?;
         if owned_section_feature_id(scan, definition.identity.id()).is_none() {
@@ -875,7 +875,7 @@ pub(in super::super) fn transfer_sketches(
                         )),
                     }),
                 ),
-                native_ref: Some(sketch_native_ref(&sketch_id)),
+                native_ref: Some(sketch_native_ref_admitted(ctx, &sketch_id)?),
             };
             source_carriers.admit_feature(ctx, ir, feature)?;
         }
