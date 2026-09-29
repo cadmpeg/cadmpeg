@@ -7,7 +7,8 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
     FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::{HashMap, HashSet};
 
@@ -159,34 +160,39 @@ pub(super) fn component_path_feature<'a>(
 }
 
 pub(crate) fn project_adjacent_extrusion_profiles(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), CodecError> {
     #[derive(PartialEq)]
-    enum ProfileVote {
+    enum ProfileVote<'a> {
         Missing,
-        Unique { profile: String, strength: u8 },
+        Unique { profile: &'a str, strength: u8 },
         Ambiguous { strength: u8 },
     }
 
-    let native_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
-    let history_features = histories
-        .iter()
-        .map(|history| (history.id.as_str(), history.features.as_slice()))
-        .collect::<HashMap<_, _>>();
-    let neutral_indices = features
-        .iter()
-        .enumerate()
-        .filter_map(|(index, feature)| Some((feature.native_ref.clone()?, index)))
-        .collect::<HashMap<_, _>>();
-    let mut profiles = HashMap::<String, Vec<ProfileVote>>::new();
+    let mut native_features = HashMap::new();
+    let mut history_features = HashMap::new();
+    for history in histories {
+        reserve_component_map(ctx, &mut history_features)?;
+        history_features.insert(history.id.as_str(), history.features.as_slice());
+        for feature in &history.features {
+            reserve_component_map(ctx, &mut native_features)?;
+            native_features.insert(feature.id.as_str(), feature);
+        }
+    }
+    let mut neutral_indices = HashMap::new();
+    for (index, feature) in features.iter().enumerate() {
+        if let Some(native) = feature.native_ref.as_deref() {
+            reserve_component_map(ctx, &mut neutral_indices)?;
+            neutral_indices.insert(copy_component_text(ctx, native)?, index);
+        }
+    }
+    let mut profiles = HashMap::<&str, Vec<ProfileVote<'_>>>::new();
     for lane in lanes {
-        let mut objects = native_features
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(native_features.len()), "scan SLDPRT adjacent profile objects")?;
+        let mut objects = collect_component_vec(ctx, native_features
             .values()
             .filter_map(|feature| Some((feature_object_name(feature, lane)?, *feature)))
             .filter(|(_, feature)| {
@@ -196,8 +202,8 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                         crate::history::classify::is_history_metadata_record(feature, features)
                     })
             })
-            .collect::<Vec<_>>();
-        objects.sort_by_key(|(name, _)| name.offset);
+            .enumerate())?;
+        objects.sort_unstable_by_key(|(index, (name, _))| (name.offset, *index));
         let object_kind = |name: &FeatureInputName, feature: &crate::records::Feature| {
             let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
             if is_profile_feature_object(feature) {
@@ -215,17 +221,17 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             feature.properties.contains_key("DissectableChildren")
                 || feature.properties.get("Dissectable").map(String::as_str) == Some("true")
         };
-        for (name, feature) in &objects {
+        for (_, (name, feature)) in &objects {
             if object_kind(name, feature) == NativeClassKind::Extrusion {
-                profiles
-                    .entry(feature.id.clone())
-                    .or_default()
-                    .push(ProfileVote::Missing);
+                reserve_component_map(ctx, &mut profiles)?;
+                let votes = profiles.entry(feature.id.as_str()).or_default();
+                ctx.reserve_collection_vec(votes, 1, "collect SLDPRT adjacent profile votes")?;
+                votes.push(ProfileVote::Missing);
             }
         }
         let mut associations = Vec::new();
         for pair in objects.windows(2) {
-            let [(first_name, first), (second_name, second)] = pair else {
+            let [(_, (first_name, first)), (_, (second_name, second))] = pair else {
                 continue;
             };
             let first_kind = object_kind(first_name, first);
@@ -241,45 +247,48 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                 }
                 _ => None,
             };
-            associations.extend(association);
+            if let Some(association) = association {
+                ctx.reserve_collection_vec(&mut associations, 1, "collect SLDPRT adjacent profile associations")?;
+                associations.push(association);
+            }
         }
         for extrusion_index in 1..objects.len() {
-            let (extrusion_name, extrusion) = objects[extrusion_index];
+            let (_, (extrusion_name, extrusion)) = objects[extrusion_index];
             if object_kind(extrusion_name, extrusion) != NativeClassKind::Extrusion {
                 continue;
             }
-            let Some(profile) = (0..extrusion_index).rev().find_map(|profile_index| {
-                let (profile_name, profile) = objects[profile_index];
-                (object_kind(profile_name, profile) == NativeClassKind::ProfileFeature
-                    && profile_owns_intervening_sketch_blocks(
-                        profile,
-                        objects[profile_index + 1..extrusion_index]
-                            .iter()
-                            .map(|(_, feature)| *feature),
-                    ))
-                .then_some(profile)
-            }) else {
-                continue;
-            };
-            associations.push((profile, extrusion, 2));
+            let mut selected = None;
+            for profile_index in (0..extrusion_index).rev() {
+                let (_, (profile_name, profile)) = objects[profile_index];
+                ctx.charge_work(1, "match SLDPRT adjacent profile owners")?;
+                if object_kind(profile_name, profile) == NativeClassKind::ProfileFeature
+                    && profile_owns_intervening_sketch_blocks(ctx, profile, objects[profile_index + 1..extrusion_index].iter().map(|(_, (_, feature))| *feature))? {
+                    selected = Some(profile);
+                    break;
+                }
+            }
+            if let Some(profile) = selected {
+                ctx.reserve_collection_vec(&mut associations, 1, "collect SLDPRT adjacent profile associations")?;
+                associations.push((profile, extrusion, 2));
+            }
         }
         for (profile, extrusion, strength) in associations {
             let Some(vote) = profiles
-                .get_mut(&extrusion.id)
+                .get_mut(extrusion.id.as_str())
                 .and_then(|votes| votes.last_mut())
             else {
                 continue;
             };
             *vote = match vote {
                 ProfileVote::Missing => ProfileVote::Unique {
-                    profile: profile.id.clone(),
+                    profile: profile.id.as_str(),
                     strength,
                 },
                 ProfileVote::Unique {
                     profile: existing,
                     strength: existing_strength,
-                } if existing == &profile.id => ProfileVote::Unique {
-                    profile: existing.clone(),
+                } if *existing == profile.id.as_str() => ProfileVote::Unique {
+                    profile: *existing,
                     strength: (*existing_strength).max(strength),
                 },
                 ProfileVote::Unique {
@@ -289,7 +298,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                 | ProfileVote::Ambiguous {
                     strength: existing_strength,
                 } if strength > *existing_strength => ProfileVote::Unique {
-                    profile: profile.id.clone(),
+                    profile: profile.id.as_str(),
                     strength,
                 },
                 ProfileVote::Unique {
@@ -312,33 +321,25 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         {
             continue;
         }
-        let Some(&index) = neutral_indices.get(&extrusion) else {
+        let Some(&index) = neutral_indices.get(extrusion) else {
             continue;
         };
-        let mut definition = features[index].evaluation.definition().clone();
-        let FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: neutral_profile,
-            ..
-        }) = &mut definition
-        else {
-            continue;
-        };
-        if !matches!(neutral_profile, cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(owner)) if owner == &extrusion)
-        {
-            continue;
-        }
-        if let Some(&profile_index) = neutral_indices.get(profile) {
-            let dependency = features[profile_index].id.clone();
-            *neutral_profile = cadmpeg_ir::features::ProfileRef::Planar(
-                cadmpeg_ir::features::PlanarProfileRef::Feature(dependency.clone()),
-            );
-            if !features[index].dependencies.contains(&dependency) {
-                features[index].dependencies.insert(dependency);
+        let FeatureDefinition::Operation(FeatureOperation::Extrude { profile: neutral_profile, .. }) = features[index].evaluation.definition() else { continue; };
+        if !matches!(neutral_profile, cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(owner)) if owner == extrusion) { continue; }
+        if let Some(&profile_index) = neutral_indices.get(*profile) {
+            let reference = cadmpeg_ir::features::FeatureId::mint(copy_component_text(ctx, features[profile_index].id.as_str())?).map_err(CodecError::malformed)?;
+            if !features[index].dependencies.contains(&features[profile_index].id) {
+                let dependency = cadmpeg_ir::features::FeatureId::mint(copy_component_text(ctx, features[profile_index].id.as_str())?).map_err(CodecError::malformed)?;
+                features[index].dependencies.try_insert_charged(dependency, ctx, "collect SLDPRT adjacent profile dependencies")?;
             }
+            features[index].evaluation.edit(|definition, _| {
+                if let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) = definition {
+                    *profile = cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(reference));
+                }
+            });
         }
-
-        features[index].evaluation.set_definition(definition);
     }
+    Ok(())
 }
 
 pub(super) fn is_profile_feature_object(feature: &crate::records::Feature) -> bool {
@@ -350,45 +351,43 @@ pub(super) fn is_profile_feature_object(feature: &crate::records::Feature) -> bo
 }
 
 pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
+    ctx: &DecodeContext<'_>,
     profile: &crate::records::Feature,
     objects: impl IntoIterator<Item = &'a crate::records::Feature>,
-) -> bool {
-    let explicit_children = profile
-        .properties
-        .get("DissectableChildren")
-        .map(|encoded| {
-            let children = encoded
-                .split(',')
-                .map(str::trim)
-                .map(str::parse::<u32>)
-                .collect::<Result<HashSet<_>, _>>()
-                .ok()?;
-            (!children.is_empty()
-                && !children.contains(&0)
-                && children.len() == encoded.split(',').count())
-            .then_some(children)
-        });
-    if explicit_children.as_ref().is_some_and(Option::is_none) {
-        return false;
-    }
+) -> Result<bool, CodecError> {
+    let explicit_children = if let Some(encoded) = profile.properties.get("DissectableChildren") {
+        let mut children = HashSet::new();
+        for value in encoded.split(',') {
+            ctx.charge_work(1, "parse SLDPRT profile block children")?;
+            let Ok(source) = value.trim().parse::<u32>() else { return Ok(false); };
+            if source == 0 || children.contains(&source) { return Ok(false); }
+            reserve_component_set(ctx, &mut children)?;
+            children.insert(source);
+        }
+        Some(children)
+    } else { None };
     let mut definitions = HashSet::new();
     let mut referenced_definitions = HashSet::new();
     let mut object_ids = HashSet::new();
     let mut instance_count = 0usize;
     for feature in objects {
+        ctx.charge_work(1, "match SLDPRT profile block ownership")?;
         let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         let Some(source) = feature.source_value().filter(|source| *source != 0) else {
-            return false;
+            return Ok(false);
         };
-        if !object_ids.insert(source) {
-            return false;
+        if object_ids.contains(&source) {
+            return Ok(false);
         }
+        reserve_component_set(ctx, &mut object_ids)?;
+        object_ids.insert(source);
         match kind {
             NativeClassKind::SketchBlockDefinition => {
+                reserve_component_set(ctx, &mut definitions)?;
                 definitions.insert(source);
             }
             NativeClassKind::SketchBlockInstance => {
-                instance_count += 1;
+                instance_count = instance_count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("count SLDPRT sketch block instances", u64::MAX - 1, u64::MAX))?;
                 let Some(definition) = feature
                     .properties
                     .get("BlockDefinition")
@@ -397,18 +396,19 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
                 else {
                     continue;
                 };
+                reserve_component_set(ctx, &mut referenced_definitions)?;
                 referenced_definitions.insert(definition);
             }
-            _ => return false,
+            _ => return Ok(false),
         }
     }
-    if let Some(Some(children)) = explicit_children.as_ref() {
-        return &definitions == children;
+    if let Some(children) = explicit_children.as_ref() {
+        return Ok(&definitions == children);
     }
     if definitions.len() != 1 || instance_count == 0 {
-        return false;
+        return Ok(false);
     }
-    referenced_definitions.is_empty() || referenced_definitions == definitions
+    Ok(referenced_definitions.is_empty() || referenced_definitions == definitions)
 }
 
 pub(crate) fn is_dissected_profile_feature(feature: &crate::records::Feature) -> bool {
@@ -757,6 +757,31 @@ pub(crate) fn compact_body_selection_value_charged(
 
 pub(crate) fn is_compact_body_selection_value(value: &str) -> bool {
     value.starts_with("sldprt:feature-input:body-ids:")
+}
+
+
+fn copy_component_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
+    ctx.format_retained(format_args!("{text}"), "retain SLDPRT adjacent profile identity")
+}
+
+fn reserve_component_map<K: Eq + std::hash::Hash, V>(ctx: &DecodeContext<'_>, values: &mut HashMap<K, V>) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "index SLDPRT adjacent profiles")?;
+    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT adjacent profiles", u64::MAX - 1, u64::MAX))
+}
+
+fn reserve_component_set<T: Eq + std::hash::Hash>(ctx: &DecodeContext<'_>, values: &mut HashSet<T>) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "index SLDPRT profile block ownership")?;
+    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT profile block ownership", u64::MAX - 1, u64::MAX))
+}
+
+fn collect_component_vec<T>(ctx: &DecodeContext<'_>, items: impl Iterator<Item = T>) -> Result<Vec<T>, CodecError> {
+    let mut values = Vec::new();
+    for item in items {
+        ctx.charge_work(1, "collect SLDPRT adjacent profile objects")?;
+        ctx.reserve_collection_vec(&mut values, 1, "collect SLDPRT adjacent profile objects")?;
+        values.push(item);
+    }
+    Ok(values)
 }
 
 #[cfg(test)]

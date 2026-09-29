@@ -155,9 +155,9 @@ pub(crate) fn project_compact_and_generated(
         features, projection, lanes,
     );
     crate::resolved_features::holes::project_helix_axes(ctx, features, projection, lanes)?;
-    crate::resolved_features::component_paths::project_adjacent_extrusion_profiles(
+    crate::resolved_features::component_paths::project_adjacent_extrusion_profiles(ctx,
         features, projection, lanes,
-    );
+    )?;
 
     Ok(())
 }
@@ -644,11 +644,11 @@ pub(crate) fn project_configuration_sketch_states(
             histories,
             scoped_lanes,
         )?;
-        crate::resolved_features::component_paths::project_adjacent_extrusion_profiles(
+        crate::resolved_features::component_paths::project_adjacent_extrusion_profiles(ctx,
             &mut features,
             histories,
             scoped_lanes,
-        );
+        )?;
         crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
             ctx,
             &mut features,
