@@ -933,7 +933,7 @@ pub(crate) fn project_spatial_sketch_design(
         )?;
     }
     entities.sort_by(|a, b| a.id().cmp(b.id()));
-    let mut spatial_ids = HashSet::new();
+    let mut spatial_ids = HashSet::<cadmpeg_ir::sketches::SpatialSketchId>::new();
     for entity in &entities {
         if !spatial_ids.contains(&entity.sketch) {
             if let Some(ctx) = ctx {
@@ -942,7 +942,8 @@ pub(crate) fn project_spatial_sketch_design(
                     ctx.refuse_codec_limit("f3d spatial sketch id index allocation", 0, 1)
                 })?;
             }
-            spatial_ids.insert(entity.sketch.clone());
+            spatial_ids.insert(copy_project_id(ctx, entity.sketch.as_str(),
+                "f3d spatial sketch id index copy")?);
         }
     }
     let mut sketches = Vec::new();
