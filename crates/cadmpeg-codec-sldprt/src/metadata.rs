@@ -92,13 +92,14 @@ fn scan_transformed_reference_plane(
         };
         ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
+            ctx,
             section,
             offset,
             &cadmpeg_ir::identity_component!("transformed_reference_plane"),
             TOKEN,
             vec![center, extents, auxiliary, diagonal],
             annotations,
-        ));
+        )?);
     }
     Ok(())
 }
@@ -157,13 +158,14 @@ fn scan_length_user_units(
         }
         ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
+            ctx,
             section,
             offset,
             &cadmpeg_ir::identity_component!("source_linear_unit_name"),
             TOKEN,
             vec![AttributeValue::String(value)],
             annotations,
-        ));
+        )?);
     }
     Ok(())
 }
@@ -197,13 +199,14 @@ fn scan_units_xml(
         };
         ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
+            ctx,
             section,
             node.range().start,
             &cadmpeg_ir::identity_component!("source_linear_unit_code"),
             b"SW_UnitsLinear",
             vec![AttributeValue::Integer(code)],
             annotations,
-        ));
+        )?);
     }
     Ok(())
 }
@@ -246,7 +249,7 @@ fn scan_vectors(
             continue;
         };
         ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
-        out.push(attribute(section, offset, name, token, values, annotations));
+        out.push(attribute(ctx, section, offset, name, token, values, annotations)?);
     }
     Ok(())
 }
@@ -273,6 +276,7 @@ fn scan_part(
         };
         ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
+            ctx,
             section,
             offset,
             &cadmpeg_ir::identity_component!("part_record"),
@@ -282,7 +286,7 @@ fn scan_part(
                 AttributeValue::Integer(version as i64),
             ],
             annotations,
-        ));
+        )?);
     }
     Ok(())
 }
@@ -313,6 +317,7 @@ fn scan_configuration_manager(
         }
         ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
+            ctx,
             section,
             offset,
             &cadmpeg_ir::identity_component!("configuration_manager"),
@@ -323,7 +328,7 @@ fn scan_configuration_manager(
                 AttributeValue::Integer(filetime as i64),
             ],
             annotations,
-        ));
+        )?);
     }
     Ok(())
 }
@@ -335,13 +340,14 @@ fn millimetres(values: &[f64]) -> Option<AttributeValue> {
 }
 
 fn attribute(
+    ctx: &DecodeContext<'_>,
     section: Section<'_>,
     offset: usize,
     name: &cadmpeg_ir::ids::IdentityComponent,
     token: &[u8],
     values: Vec<AttributeValue>,
     annotations: &mut Annotations,
-) -> SourceAttribute {
+) -> Result<SourceAttribute, CodecError> {
     let id = AttributeId::compose(
         &cadmpeg_ir::ids::IdentityNamespace::from_components(
             &cadmpeg_ir::identity_component!("sldprt"),
@@ -351,19 +357,20 @@ fn attribute(
         cadmpeg_ir::ids::IdentityKey::from(section.ordinal()).colon(offset),
     );
     crate::annotations::note(
+        ctx,
         annotations,
-        id.as_str().to_owned(),
+        id.as_str(),
         section.source_stream(),
         offset as u64,
         std::str::from_utf8(token).unwrap_or(name.as_str()),
         Exactness::ByteExact,
-    );
-    SourceAttribute {
+    )?;
+    Ok(SourceAttribute {
         id,
         target: AttributeTarget::Document,
         name: name.as_str().into(),
         values,
-    }
+    })
 }
 
 #[cfg(test)]

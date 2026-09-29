@@ -4,7 +4,8 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
@@ -34,6 +35,40 @@ fn metadata_from_nameless_block_keeps_annotation_owner() {
         .provenance
         .values()
         .any(|provenance| provenance.stream() == "block@8"));
+}
+
+#[test]
+fn metadata_annotation_route_refuses_retained_text() {
+    let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "", payload));
+    let scan = container::scan_bytes(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    let error = super::attributes(&ctx, &scan, &mut annotations)
+        .expect_err("metadata annotation requires retained text");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn metadata_annotation_route_refuses_collection_growth() {
+    let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "", payload));
+    let scan = container::scan_bytes(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    let error = super::attributes(&ctx, &scan, &mut annotations)
+        .expect_err("metadata attributes require collection admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
 }
 
 #[test]

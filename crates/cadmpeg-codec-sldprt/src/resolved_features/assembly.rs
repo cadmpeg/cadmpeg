@@ -105,17 +105,19 @@ fn feature_input_lane(
                 }
             });
         crate::annotations::note(
+            ctx,
             annotations,
             entity.id(),
             source.source_stream(),
             entity.offset(),
             signature,
             Exactness::ByteExact,
-        );
+        )?;
     }
     crate::annotations::note(
+        ctx,
         annotations,
-        parent.clone(),
+        parent.as_str(),
         source.source_stream(),
         0,
         if family == "config-objects" {
@@ -124,7 +126,7 @@ fn feature_input_lane(
             "ResolvedFeatures"
         },
         Exactness::ByteExact,
-    );
+    )?;
     Ok(FeatureInputLane {
         id: parent,
         configuration: configuration(ctx, section)?,

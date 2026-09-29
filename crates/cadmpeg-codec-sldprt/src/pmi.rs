@@ -657,13 +657,14 @@ fn collect_dimensions(
                 let annotation_id =
                     copy_pmi_text(ctx, &record.id, "retain SLDPRT PMI annotation ID")?;
                 crate::annotations::note(
+                    ctx,
                     annotations,
                     annotation_id,
                     stream,
                     offset as u64,
                     "messagepack_dim_sem_data",
                     Exactness::ByteExact,
-                );
+                )?;
                 ctx.reserve_collection_vec(records, 1, "collect SLDPRT PMI dimensions")?;
                 records.push(record);
             }

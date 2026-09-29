@@ -151,13 +151,14 @@ pub(crate) fn histories(
                         history_record_key(source, ordinal)
                     );
                     crate::annotations::note(
+                        ctx,
                         annotations,
-                        id.clone(),
+                        id.as_str(),
                         stream,
                         node.range().start as u64,
                         "Configuration",
                         Exactness::ByteExact,
-                    );
+                    )?;
                     let properties = keyed_attributes(
                         ctx,
                         losses,
@@ -226,13 +227,14 @@ pub(crate) fn histories(
                 .try_fold(Vec::new(), |mut features, (ordinal, node)| {
                     let id = feature_ids[&node.range().start].clone();
                     crate::annotations::note(
+                        ctx,
                         annotations,
-                        id.clone(),
+                        id.as_str(),
                         stream,
                         node.range().start as u64,
                         node.tag_name().name(),
                         Exactness::ByteExact,
-                    );
+                    )?;
                     let properties = keyed_attributes(
                         ctx,
                         losses,
@@ -459,13 +461,14 @@ pub(crate) fn histories(
                 })?;
             let id = parent;
             crate::annotations::note(
+                ctx,
                 annotations,
-                id.clone(),
+                id.as_str(),
                 stream,
                 0,
                 "Keywords",
                 Exactness::ByteExact,
-            );
+            )?;
             let properties = keyed_attributes(
                 ctx,
                 losses,

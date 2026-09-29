@@ -315,13 +315,14 @@ pub(crate) fn annotations(
                     .is_some_and(|suffix| suffix.starts_with(':'))
         }) {
             crate::annotations::note(
+                ctx,
                 annotations,
                 ctx.format_retained(format_args!("{}", annotation.id.as_str()), "copy SWIFT provenance ID")?,
                 &stream,
                 entity.offset as u64,
                 "swift_gdt_analysis",
                 cadmpeg_ir::Exactness::ByteExact,
-            );
+            )?;
         }
     }
     Ok(projected)

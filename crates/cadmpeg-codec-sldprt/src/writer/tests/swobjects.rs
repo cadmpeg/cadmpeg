@@ -984,14 +984,18 @@ fn patched_retained_metadata(
         values,
     });
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)?;
     crate::annotations::note(
+        &ctx,
         &mut annotations,
         id,
         &cadmpeg_ir::stream_name!("SWObjects"),
         0,
         "metadata",
         cadmpeg_ir::Exactness::ByteExact,
-    );
+    )?;
     let mut sections = vec![("SWObjects".to_owned(), payload)];
     crate::writer::patch_retained_swobjects_metadata(&ir, &annotations, &mut sections, 1.0)?;
     Ok(sections.remove(0).1)

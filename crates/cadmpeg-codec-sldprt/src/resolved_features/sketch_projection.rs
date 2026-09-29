@@ -249,13 +249,14 @@ fn project_brep(
                         continue;
                     };
                     crate::annotations::note(
+                        ctx,
                         annotations,
-                        id.as_str().to_owned(),
+                        id.as_str(),
                         source_stream,
                         0,
                         "feature_input_profile_edge",
                         Exactness::Derived,
-                    );
+                    )?;
                     let native_edge_ref = retained_format(
                         ctx, format_args!("{stream_ordinal}:{}", edge.id.as_str()),
                         "retain SLDPRT sketch native edge reference",
@@ -336,13 +337,14 @@ fn project_brep(
                 continue;
             };
             crate::annotations::note(
+                ctx,
                 annotations,
-                id.as_str().to_owned(),
+                id.as_str(),
                 source_stream,
                 0,
                 "feature_input_profile_point",
                 Exactness::Derived,
-            );
+            )?;
             let entity_sketch_id = SketchId::mint(retained_text(
                 ctx, sketch_id.as_str(), "retain SLDPRT point sketch ID",
             )?).map_err(cadmpeg_core::CodecError::malformed)?;
@@ -370,13 +372,14 @@ fn project_brep(
             continue;
         }
         crate::annotations::note(
+            ctx,
             annotations,
-            sketch_id.as_str().to_owned(),
+            sketch_id.as_str(),
             source_stream,
             stream_offset as u64,
             "feature_input_profile",
             Exactness::Derived,
-        );
+        )?;
         project_endpoint_constraints(
             ctx,
             &sketch_id,

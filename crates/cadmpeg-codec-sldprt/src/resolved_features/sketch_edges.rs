@@ -148,13 +148,14 @@ pub(super) fn project_endpoint_constraints(
             continue;
         };
         crate::annotations::note(
+            ctx,
             annotations,
             retained_id_text(ctx, id.as_str(), "retain SLDPRT shared endpoint annotation ID")?,
             stream,
             0,
             "feature_input_shared_endpoint",
             Exactness::Derived,
-        );
+        )?;
         let sketch = SketchId::mint(retained_id_text(ctx, sketch.as_str(), "retain SLDPRT constraint sketch ID")?)
             .map_err(|_| cadmpeg_core::CodecError::malformed("invalid admitted SLDPRT sketch ID"))?;
         ctx.reserve_collection_vec(constraints, 1, "collect SLDPRT shared endpoint constraints")?;
