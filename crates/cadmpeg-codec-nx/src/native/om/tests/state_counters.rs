@@ -8,6 +8,8 @@ use crate::om::state_message::{StateMessage, StateMessageSeverity};
 use crate::om::state_status::StateStatusPayload;
 use std::io::Cursor;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
@@ -129,6 +131,123 @@ fn audit_trail_test_payload() -> Vec<u8> {
     payload.resize(32, 0);
     payload.extend_from_slice(&size_framed_audit_trail_section_with_record_area());
     payload
+}
+
+fn audit_trail_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", audit_trail_test_payload())]);
+    let scan_arena = DecodeArena::new();
+    let scan_policy = DecodePolicy::service();
+    let (scan_ctx, _) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy).unwrap();
+    let container = container::scan_bytes(&scan_ctx, file.as_slice()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    audit_trail_rows(&ctx, &container).unwrap_err()
+}
+
+#[test]
+fn audit_trail_route_refuses_collection_limit() {
+    let error = audit_trail_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn audit_trail_route_refuses_retained_limit() {
+    let error = audit_trail_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn audit_trail_route_refuses_work_limit() {
+    let error = audit_trail_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
+}
+
+fn state_projection_limit_error(
+    payload: Vec<u8>,
+    configure: impl FnOnce(&mut DecodePolicy),
+    project: impl FnOnce(&DecodeContext<'_>, &container::Container) -> Result<(), CodecError>,
+) -> CodecError {
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+    let scan_arena = DecodeArena::new();
+    let scan_policy = DecodePolicy::service();
+    let (scan_ctx, _) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy).unwrap();
+    let container = container::scan_bytes(&scan_ctx, file.as_slice()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    project(&ctx, &container).unwrap_err()
+}
+
+#[test]
+fn state_counter_route_refuses_collection_limit() {
+    let error = state_projection_limit_error(
+        segment_om_record_area_with_state_counter_map(),
+        |policy| policy.limits.max_collection_items = 0,
+        |ctx, container| operation_state_counters(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn state_counter_route_refuses_retained_limit() {
+    let error = state_projection_limit_error(
+        segment_om_record_area_with_state_counter_map(),
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx, container| operation_state_counters(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn state_counter_route_refuses_work_limit() {
+    let error = state_projection_limit_error(
+        segment_om_record_area_with_state_counter_map(),
+        |policy| policy.limits.max_work_units = 0,
+        |ctx, container| operation_state_counters(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn state_journal_route_refuses_collection_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_state_journal(),
+        |policy| policy.limits.max_collection_items = 0,
+        |ctx, container| operation_state_journal_groups(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn state_journal_route_refuses_retained_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_state_journal(),
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx, container| operation_state_journal_groups(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn state_journal_route_refuses_work_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_state_journal(),
+        |policy| policy.limits.max_work_units = 0,
+        |ctx, container| operation_state_journal_groups(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
 }
 
 #[test]
@@ -270,6 +389,29 @@ fn native_operation_state_groups_refuse_retained_limit() {
 }
 
 #[test]
+fn native_operation_state_groups_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        segment_om_record_area_with_state_groups_and_counter_map(),
+    )]);
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
+            .expect("feature-history container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error = operation_state_groups(&ctx, &container)
+        .expect_err("group route exceeds zero collection items");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
 fn native_operation_state_groups_refuse_work_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -357,6 +499,94 @@ fn native_operation_state_message_route_refuses_retained_bytes() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
     ));
+}
+
+#[test]
+fn state_message_route_refuses_collection_limit() {
+    let error = state_projection_limit_error(
+        segment_om_record_area_with_state_groups_and_counter_map(),
+        |policy| policy.limits.max_collection_items = 0,
+        |ctx, container| operation_state_messages(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn state_message_route_refuses_work_limit() {
+    let error = state_projection_limit_error(
+        segment_om_record_area_with_state_groups_and_counter_map(),
+        |policy| policy.limits.max_work_units = 0,
+        |ctx, container| operation_state_messages(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn state_status_route_refuses_collection_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_operation_state_statuses(),
+        |policy| policy.limits.max_collection_items = 0,
+        |ctx, container| operation_state_statuses(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn state_status_route_refuses_retained_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_operation_state_statuses(),
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx, container| operation_state_statuses(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn state_status_route_refuses_work_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_operation_state_statuses(),
+        |policy| policy.limits.max_work_units = 0,
+        |ctx, container| operation_state_statuses(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn state_slot_lane_route_refuses_collection_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_operation_state_statuses(),
+        |policy| policy.limits.max_collection_items = 0,
+        |ctx, container| operation_state_slot_lanes(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn state_slot_lane_route_refuses_retained_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_operation_state_statuses(),
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx, container| operation_state_slot_lanes(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn state_slot_lane_route_refuses_work_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_operation_state_statuses(),
+        |policy| policy.limits.max_work_units = 0,
+        |ctx, container| operation_state_slot_lanes(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
 }
 
 #[test]

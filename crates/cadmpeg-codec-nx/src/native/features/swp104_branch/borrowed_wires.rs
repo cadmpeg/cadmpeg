@@ -109,7 +109,7 @@ mod tests {
                 "operation".to_owned(),
                 1200,
                 source,
-                |token| Some(format!("block#{}", token.value())),
+                |token| Ok(Some(format!("block#{}", token.value()))),
             )
         })
         .unwrap()
@@ -148,7 +148,7 @@ mod tests {
             "operation".to_owned(),
             1200,
             source,
-            |_| None,
+            |_| Ok(None),
         )
         .unwrap_err()
     }
