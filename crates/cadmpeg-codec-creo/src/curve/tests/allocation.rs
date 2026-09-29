@@ -606,6 +606,16 @@ evaluation_retained_test!(affine_variable_names_refuse, &["SOLVE", "x=1", "FOR x
 evaluation_retained_test!(affine_known_value_names_refuse, &["y=2", "SOLVE", "x+y=3", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo affine known value names");
 evaluation_retained_test!(affine_coefficient_names_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo affine coefficient names");
 evaluation_retained_test!(affine_unknown_value_names_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo affine unknown value names");
+solve_storage_test!(nonlinear_known_value_nodes_refuse, &["y=3", "x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear known value nodes");
+solve_storage_test!(nonlinear_unknown_value_nodes_refuse, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear unknown value nodes");
+solve_storage_test!(nonlinear_residual_rows_refuse, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear residual rows");
+solve_storage_test!(nonlinear_jacobian_coefficients_refuse, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear Jacobian coefficients");
+solve_storage_test!(nonlinear_positive_probe_refuses, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear positive probe");
+solve_storage_test!(nonlinear_negative_probe_refuses, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear negative probe");
+solve_storage_test!(nonlinear_jacobian_rows_refuse, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear Jacobian rows");
+evaluation_retained_test!(nonlinear_known_value_names_refuse, &["y=3", "x=2", "SOLVE", "x*x*x=8", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo nonlinear known value names");
+evaluation_retained_test!(nonlinear_unknown_value_names_refuse, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo nonlinear unknown value names");
+evaluation_retained_test!(nonlinear_known_string_values_refuse, &["y=\"text\"", "x=2", "SOLVE", "x*x*x=8", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo nonlinear known string values");
 
 #[test]
 fn solve_unknowns_refuse_before_vector_growth() {
