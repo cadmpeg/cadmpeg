@@ -2299,17 +2299,13 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
     };
     let mut breaks = Vec::new();
     let _curve_reservation =
-        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            Some(geometry_budget.charges),
-            &mut breaks,
+        geometry_budget.charges.reserve_temporary_vec(&mut breaks,
             curve_breaks.len(),
             "nx boundary curve breaks",
         )?;
     breaks.extend_from_slice(curve_breaks);
     let _surface_reservation =
-        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            Some(geometry_budget.charges),
-            &mut breaks,
+        geometry_budget.charges.reserve_temporary_vec(&mut breaks,
             surface_breaks.len(),
             "nx boundary surface breaks",
         )?;
@@ -2358,9 +2354,7 @@ fn exact_boundary_curve_breaks(
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
     let mut breaks = match geometry {
         SolvedCurveGeometry::Line(_) => {
-            cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                Some(geometry_budget.charges),
-                &range,
+            geometry_budget.charges.copy_temporary_slice(&range,
                 "nx boundary breaks",
             )
             .map(|(copy, _reservation)| copy)?
@@ -2384,9 +2378,7 @@ fn exact_boundary_curve_breaks(
             let Some(knots) = nurbs.knots().get(degree..=count) else {
                 return Ok(None);
             };
-            cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                Some(geometry_budget.charges),
-                knots,
+            geometry_budget.charges.copy_temporary_slice(knots,
                 "nx boundary breaks",
             )
             .map(|(copy, _reservation)| copy)?
@@ -2397,9 +2389,7 @@ fn exact_boundary_curve_breaks(
         parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
     });
     let _range_reservation =
-        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            Some(geometry_budget.charges),
-            &mut breaks,
+        geometry_budget.charges.reserve_temporary_vec(&mut breaks,
             2,
             "nx boundary range breaks",
         )?;
@@ -2469,9 +2459,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
         let periods = surface_parameter_periods_with_index(index, surface);
         let mut samples = Vec::new();
         let _samples_reservation =
-            match cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                Some(geometry_budget.charges),
-                &mut samples,
+            match geometry_budget.charges.reserve_temporary_vec(&mut samples,
                 SAMPLE_INTERVALS + 1,
                 "nx analytic pcurve samples",
             ) {
@@ -2692,9 +2680,7 @@ fn coincident_pcurve_pair_with_index(
     if let [Some(first), Some(second)] = affine_breaks {
         let mut breaks = first;
         let _reservation =
-            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                Some(geometry_budget.charges),
-                &mut breaks,
+            geometry_budget.charges.reserve_temporary_vec(&mut breaks,
                 second.len(),
                 "nx coincident pcurve breaks",
             )?;
@@ -2723,9 +2709,7 @@ fn coincident_pcurve_pair_with_index(
     }
     let mut intervals = Vec::new();
     let _initial_reservation =
-        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            Some(geometry_budget.charges),
-            &mut intervals,
+        geometry_budget.charges.reserve_temporary_vec(&mut intervals,
             1,
             "nx coincident pcurve intervals",
         )?;
@@ -2755,9 +2739,7 @@ fn coincident_pcurve_pair_with_index(
             return Ok(false);
         }
         let _child_reservation =
-            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                Some(geometry_budget.charges),
-                &mut intervals,
+            geometry_budget.charges.reserve_temporary_vec(&mut intervals,
                 2,
                 "nx coincident pcurve intervals",
             )?;
@@ -2781,9 +2763,7 @@ fn boundary_curve_affine_breaks_with_index(
             Some(SolvedSurfaceGeometry::Plane(_))
         ) {
             return Some(
-                cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                    Some(geometry_budget.charges),
-                    &range,
+                geometry_budget.charges.copy_temporary_slice(&range,
                     "nx boundary breaks",
                 )
                 .map(|(copy, _reservation)| copy),
@@ -2805,9 +2785,7 @@ fn boundary_curve_affine_breaks_with_index(
                     && nurbs.knots().as_slice() == [range[0], range[0], range[1], range[1]]
                 {
                     return Some(
-                        cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                            Some(geometry_budget.charges),
-                            &range,
+                        geometry_budget.charges.copy_temporary_slice(&range,
                             "nx boundary breaks",
                         )
                         .map(|(copy, _reservation)| copy),
@@ -2863,9 +2841,7 @@ fn boundary_curve_affine_breaks_with_index(
                         continue;
                     };
                     if let Err(limit) =
-                        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                            Some(geometry_budget.charges),
-                            &mut breaks,
+                        geometry_budget.charges.reserve_temporary_vec(&mut breaks,
                             1,
                             "nx affine pcurve breaks",
                         )
@@ -2875,9 +2851,7 @@ fn boundary_curve_affine_breaks_with_index(
                     breaks.push(mapped);
                 }
                 if let Err(limit) =
-                    cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                        Some(geometry_budget.charges),
-                        &mut breaks,
+                    geometry_budget.charges.reserve_temporary_vec(&mut breaks,
                         2,
                         "nx affine pcurve range",
                     )
@@ -2898,9 +2872,7 @@ fn boundary_curve_affine_breaks_with_index(
                 if { direction.u == 0.0 && direction.v != 0.0 } =>
             {
                 return Some(
-                    cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                        Some(geometry_budget.charges),
-                        &range,
+                    geometry_budget.charges.copy_temporary_slice(&range,
                         "nx boundary breaks",
                     )
                     .map(|(copy, _reservation)| copy),
@@ -2910,9 +2882,7 @@ fn boundary_curve_affine_breaks_with_index(
                 if { direction.u == 0.0 && direction.v != 0.0 } =>
             {
                 return Some(
-                    cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                        Some(geometry_budget.charges),
-                        &range,
+                    geometry_budget.charges.copy_temporary_slice(&range,
                         "nx boundary breaks",
                     )
                     .map(|(copy, _reservation)| copy),
@@ -2939,9 +2909,7 @@ fn boundary_curve_affine_breaks_with_index(
                 let degree = usize::try_from(isocurve.degree()).ok()?;
                 let count = isocurve.control_points().len();
                 let mut breaks =
-                    match cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                        Some(geometry_budget.charges),
-                        isocurve.knots().get(degree..=count)?,
+                    match geometry_budget.charges.copy_temporary_slice(isocurve.knots().get(degree..=count)?,
                         "nx boundary breaks",
                     )
                     .map(|(copy, _reservation)| copy)
@@ -2956,9 +2924,7 @@ fn boundary_curve_affine_breaks_with_index(
                     parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
                 });
                 if let Err(limit) =
-                    cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                        Some(geometry_budget.charges),
-                        &mut breaks,
+                    geometry_budget.charges.reserve_temporary_vec(&mut breaks,
                         2,
                         "nx affine pcurve range",
                     )
@@ -3329,9 +3295,7 @@ fn transfer_intersection_pcurve_with_budget<'a>(
     };
     let mut coarse = Vec::new();
     let _coarse_reservation =
-        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            Some(geometry_budget.charges),
-            &mut coarse,
+        geometry_budget.charges.reserve_temporary_vec(&mut coarse,
             continuation_steps + 1,
             "nx transferred pcurve continuation samples",
         )?;
@@ -3387,17 +3351,13 @@ fn transfer_intersection_pcurve_with_budget<'a>(
     }
     let mut sample_parameters = Vec::new();
     let _parameter_reservation =
-        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            Some(geometry_budget.charges),
-            &mut sample_parameters,
+        geometry_budget.charges.reserve_temporary_vec(&mut sample_parameters,
             samples.len(),
             "nx transferred pcurve parameters",
         )?;
     let mut control_points = Vec::new();
     let _control_reservation =
-        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            Some(geometry_budget.charges),
-            &mut control_points,
+        geometry_budget.charges.reserve_temporary_vec(&mut control_points,
             samples.len(),
             "nx transferred pcurve controls",
         )?;
@@ -3951,9 +3911,7 @@ fn append_transferred_pcurve_segment_with_budget<'a>(
     })()?;
     if fits {
         let _reservation =
-            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                Some(geometry_budget.charges),
-                samples,
+            geometry_budget.charges.reserve_temporary_vec(samples,
                 1,
                 "nx transferred pcurve samples",
             )?;
