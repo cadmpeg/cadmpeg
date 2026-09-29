@@ -64,6 +64,7 @@ pub(super) fn history_metadata_ids(
 
 /// Bind pattern operands carried by adjacent feature-input objects.
 pub(crate) fn bind_pattern_inputs(
+    ctx: &DecodeContext<'_>,
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -371,33 +372,53 @@ pub(crate) fn bind_pattern_inputs(
                 if !needs_direction {
                     continue;
                 }
-                let declarations = lane
-                    .classes
-                    .iter()
-                    .filter(|class| {
-                        class.name == "moLineRef_w"
-                            && class.offset > u64_from_index(starts[start_index].0)
-                            && class.offset < u64_from_index(end)
-                    })
-                    .collect::<Vec<_>>();
-                let mut directions = declarations
-                    .iter()
-                    .flat_map(|class| {
-                        declared_line_reference_directions(&lane.native_payload, class.offset, end)
-                    })
-                    .collect::<Vec<_>>();
+                let mut declarations = Vec::new();
+                for class in &lane.classes {
+                    ctx.charge_work(1, "scan SLDPRT pattern line declarations")?;
+                    if class.name == "moLineRef_w"
+                        && class.offset > u64_from_index(starts[start_index].0)
+                        && class.offset < u64_from_index(end)
+                    {
+                        ctx.reserve_collection_vec(&mut declarations, 1, "collect SLDPRT pattern line declarations")?;
+                        declarations.push(class);
+                    }
+                }
+                let mut directions = Vec::new();
+                for class in &declarations {
+                    let declared = declared_line_reference_directions(
+                        ctx,
+                        &lane.native_payload,
+                        class.offset,
+                        end,
+                    )?;
+                    ctx.reserve_precharged_vec(
+                        &mut directions,
+                        declared.len(),
+                        "merge SLDPRT declared line directions",
+                    )?;
+                    directions.extend(declared);
+                }
                 if let Some(start) = object_start {
-                    let excluded_handles = declarations
-                        .iter()
-                        .filter_map(|class| usize::try_from(class.offset).ok())
-                        .flat_map(|offset| [offset + 136, offset + 144])
-                        .collect::<Vec<_>>();
-                    directions.extend(compact_line_reference_directions(
+                    let mut excluded_handles = Vec::new();
+                    for class in &declarations {
+                        if let Ok(offset) = usize::try_from(class.offset) {
+                            ctx.reserve_collection_vec(&mut excluded_handles, 2, "collect SLDPRT excluded line handles")?;
+                            excluded_handles.extend([offset + 136, offset + 144]);
+                        }
+                    }
+                    let compact = compact_line_reference_directions(
+                        ctx,
                         &lane.native_payload,
                         start,
                         end,
                         &excluded_handles,
-                    ));
+                    )?;
+                    ctx.reserve_precharged_vec(
+                        &mut directions,
+                        compact.len(),
+                        "merge SLDPRT compact line directions",
+                    )?;
+                    directions.extend(compact);
                     if directions.is_empty() {
                         let first_spacing_m = feature
                             .parameters

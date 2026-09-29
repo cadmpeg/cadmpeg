@@ -104,7 +104,7 @@ pub(crate) fn enrich_history_semantic(
         ctx, histories, lanes,
     )?;
     crate::resolved_features::operations::enrich_history_split_lines(ctx, histories, lanes)?;
-    crate::resolved_features::direct_edits::enrich_history_move_face_translations(histories, lanes);
+    crate::resolved_features::direct_edits::enrich_history_move_face_translations(ctx, histories, lanes)?;
     crate::resolved_features::direct_edits::enrich_history_move_body_translations(histories, lanes);
     enrich_history_parameters_semantic(ctx, histories, lanes)?;
     if matches!(mode, HistoryEnrichment::Read) {
@@ -243,6 +243,7 @@ pub(crate) fn project_configuration_design_states(
         )?;
         let mut features = project_features(&projection)?;
         crate::resolved_features::bindings::bind_pattern_inputs(
+            ctx,
             &mut features,
             &projection,
             scoped_lanes,
@@ -624,6 +625,7 @@ pub(crate) fn project_configuration_sketch_states(
             &surfaces,
         );
         crate::resolved_features::bindings::bind_pattern_inputs(
+            ctx,
             &mut features,
             histories,
             scoped_lanes,

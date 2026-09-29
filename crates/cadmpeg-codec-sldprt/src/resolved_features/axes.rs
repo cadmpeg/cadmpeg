@@ -18,7 +18,8 @@ use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, FeatureInputName, SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::index_from_u64;
 use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
@@ -78,29 +79,33 @@ pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Opt
 }
 
 pub(super) fn declared_line_reference_directions(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     class_offset: u64,
     object_end: usize,
-) -> Vec<UnitVector3> {
+) -> Result<Vec<UnitVector3>, CodecError> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
 
     let Ok(class_offset) = usize::try_from(class_offset) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(end) = super::DeclaredEnd::of(object_end, payload.len()).map(super::DeclaredEnd::get)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let mut directions = line_reference_direction(&payload[..end], class_offset as u64)
-        .into_iter()
-        .collect::<Vec<_>>();
+    let mut directions = Vec::new();
+    if let Some(direction) = line_reference_direction(&payload[..end], class_offset as u64) {
+        ctx.reserve_collection_vec(&mut directions, 1, "collect SLDPRT declared line directions")?;
+        directions.push(direction);
+    }
     let Some(final_handle) = end
         .checked_sub(88)
         .filter(|final_handle| *final_handle >= class_offset)
     else {
-        return directions;
+        return Ok(directions);
     };
     for handle in class_offset..=final_handle {
+        ctx.charge_work(1, "scan SLDPRT declared line directions")?;
         if payload.get(handle..handle + HANDLES.len()) != Some(HANDLES.as_slice()) {
             continue;
         }
@@ -136,11 +141,12 @@ pub(super) fn declared_line_reference_directions(
         };
         if let Some(candidate) = candidate {
             if !directions.contains(&candidate) {
+                ctx.reserve_collection_vec(&mut directions, 1, "collect SLDPRT declared line directions")?;
                 directions.push(candidate);
             }
         }
     }
-    directions
+    Ok(directions)
 }
 
 pub(super) fn linear_pattern_display_directions(
@@ -230,45 +236,50 @@ pub(super) fn typed_linear_pattern_dimensions(
 
 #[cfg(test)]
 pub(super) fn compact_line_reference_direction(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     object_start: usize,
     object_end: usize,
     excluded_handles: &[usize],
-) -> Option<UnitVector3> {
-    let directions =
-        compact_line_reference_directions(payload, object_start, object_end, excluded_handles);
+) -> Result<Option<UnitVector3>, CodecError> {
+    let directions = compact_line_reference_directions(
+        ctx, payload, object_start, object_end, excluded_handles,
+    )?;
     let [direction] = directions.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    Some(*direction)
+    Ok(Some(*direction))
 }
 
 pub(super) fn compact_line_reference_directions(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     object_start: usize,
     object_end: usize,
     excluded_handles: &[usize],
-) -> Vec<UnitVector3> {
+) -> Result<Vec<UnitVector3>, CodecError> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let Some(end) = super::DeclaredEnd::of(object_end, payload.len()).map(super::DeclaredEnd::get)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(final_handle) = end.checked_sub(80).filter(|end| *end >= object_start) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let mut candidates = (object_start..=final_handle).flat_map(|handle| {
+    let mut unique_directions = Vec::new();
+    for handle in object_start..=final_handle {
+        ctx.charge_work(1, "scan SLDPRT compact line directions")?;
         if excluded_handles.contains(&handle) {
-            return Vec::new();
+            continue;
         }
         let Some(record) = payload.get(handle..end) else {
-            return Vec::new();
+            continue;
         };
         let Some(address) = View::u32_le_at(record, 12) else {
-            return Vec::new();
+            continue;
         };
         if record[..8] != HANDLES || record[8..12] != [0; 4] {
-            return Vec::new();
+            continue;
         }
         let direction_at = |offset: usize| {
             square_sum_unit_direction([
@@ -297,11 +308,14 @@ pub(super) fn compact_line_reference_directions(
                 directions.extend(direction_at(56));
             }
             directions.dedup();
-            return if directions.len() == 1 {
-                directions
-            } else {
-                Vec::new()
-            };
+            if directions.len() == 1 {
+                let candidate = directions[0];
+                if !unique_directions.contains(&candidate) {
+                    ctx.reserve_collection_vec(&mut unique_directions, 1, "collect SLDPRT compact line directions")?;
+                    unique_directions.push(candidate);
+                }
+            }
+            continue;
         }
         let shifted_nine_scalar_trailer = record.get(96..104) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
             && record.get(104..116) == Some(&[0; 12])
@@ -413,18 +427,14 @@ pub(super) fn compact_line_reference_directions(
         // let the order of the recognizers choose between distinct vectors.
         directions.dedup();
         if directions.len() == 1 {
-            directions
-        } else {
-            Vec::new()
-        }
-    });
-    let mut directions = Vec::new();
-    for candidate in &mut candidates {
-        if !directions.contains(&candidate) {
-            directions.push(candidate);
+            let candidate = directions[0];
+            if !unique_directions.contains(&candidate) {
+                ctx.reserve_collection_vec(&mut unique_directions, 1, "collect SLDPRT compact line directions")?;
+                unique_directions.push(candidate);
+            }
         }
     }
-    directions
+    Ok(unique_directions)
 }
 
 fn revolution_line_reference_inputs(

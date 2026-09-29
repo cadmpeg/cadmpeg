@@ -2,7 +2,8 @@
 
 use super::super::{LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::{
-    bind_detached_legacy_sketch_objects, bind_mirror_surface_planes, bind_pattern_inputs,
+    bind_detached_legacy_sketch_objects, bind_mirror_surface_planes,
+    bind_pattern_inputs,
     bind_resolved_curve_vertices, bind_scalar_operands, normalize_indexed_curve_entities,
     represented_sketch_features,
 };
@@ -23,6 +24,21 @@ use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Face, Sense};
 use std::collections::{BTreeMap, HashSet};
+
+fn bind_pattern_inputs_test(
+    features: &mut [Feature],
+    histories: &[FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let bytes = lanes.first().map_or(&[][..], |lane| lane.native_payload.as_slice());
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    bind_pattern_inputs(&ctx, features, histories, lanes)
+}
 
 #[test]
 fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
@@ -507,7 +523,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         },
     ];
 
-    bind_pattern_inputs(
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
@@ -632,7 +648,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         native_ref: Some("pattern-native".into()),
     }];
 
-    bind_pattern_inputs(&mut features, std::slice::from_ref(&history), &[lane]).unwrap();
+    bind_pattern_inputs_test(&mut features, std::slice::from_ref(&history), &[lane]).unwrap();
 
     assert!(matches!(
         features[0].evaluation.definition(),
