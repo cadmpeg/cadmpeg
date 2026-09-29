@@ -253,6 +253,62 @@ fn unbound_cosmetic_thread_generated_face_refuses_collection_limit() {
 }
 
 #[test]
+fn unbound_cosmetic_thread_token_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (mut features, histories, faces, surfaces) = cosmetic_fallback_fixture();
+    let class_name = "moCylinderRef_w";
+    let mut payload = vec![0; 64];
+    let token_offset = 6 + class_name.len();
+    payload[token_offset..token_offset + 2].copy_from_slice(&0x802f_u16.to_le_bytes());
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![crate::records::FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            name: class_name.into(),
+        }],
+        names: vec![crate::records::FeatureInputName {
+            id: "name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            value: "thread-native".into(),
+            object_id: crate::records::ObjectId::from_value(7),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = project_unbound_cosmetic_thread_faces(
+        &ctx,
+        &mut features,
+        &histories,
+        &[lane],
+        &faces,
+        &surfaces,
+    )
+    .expect_err("cylinder token index exceeds collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT cosmetic thread cylinder tokens"));
+}
+
+#[test]
 fn unbound_offset_plane_refuses_work_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
