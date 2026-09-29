@@ -376,13 +376,17 @@ pub(crate) struct ZeroEntityOwnershipRoot {
 
 impl ZeroEntityOwnershipRoot {
     /// One-based ordinal of the immediately following `6006` shell root.
-    pub(crate) fn shell_record_ordinal(&self) -> u32 {
-        self.face_roster_record_ordinal.saturating_add(1)
+    pub(crate) fn shell_record_ordinal(&self) -> Result<u32, CodecError> {
+        self.face_roster_record_ordinal
+            .checked_add(1)
+            .ok_or_else(|| CodecError::malformed("CATIA zero-entity shell ordinal overflows"))
     }
 
     /// One-based ordinal of the immediately following `6508` body root.
-    pub(crate) fn body_record_ordinal(&self) -> u32 {
-        self.face_roster_record_ordinal.saturating_add(2)
+    pub(crate) fn body_record_ordinal(&self) -> Result<u32, CodecError> {
+        self.face_roster_record_ordinal
+            .checked_add(2)
+            .ok_or_else(|| CodecError::malformed("CATIA zero-entity body ordinal overflows"))
     }
 }
 
@@ -3945,8 +3949,18 @@ mod tests {
         let root = zero_entity_ownership_root(&stream).expect("complete ownership root");
         assert_eq!(root.face_roster_record_ordinal, 1);
         assert_eq!(root.face_slots, (1..=62).rev().collect::<Vec<_>>());
-        assert_eq!(root.shell_record_ordinal(), 2);
-        assert_eq!(root.body_record_ordinal(), 3);
+        assert_eq!(root.shell_record_ordinal().expect("shell ordinal fits"), 2);
+        assert_eq!(root.body_record_ordinal().expect("body ordinal fits"), 3);
+    }
+
+    #[test]
+    fn ownership_root_refuses_overflowed_shell_and_body_ordinals() {
+        let mut root = zero_entity_ownership_root(&zero_entity_ownership_stream(1))
+            .expect("complete ownership root");
+        root.face_roster_record_ordinal = u32::MAX - 1;
+        assert!(format!("{:?}", root.body_record_ordinal()).starts_with("Err("));
+        root.face_roster_record_ordinal = u32::MAX;
+        assert!(format!("{:?}", root.shell_record_ordinal()).starts_with("Err("));
     }
 
     #[test]

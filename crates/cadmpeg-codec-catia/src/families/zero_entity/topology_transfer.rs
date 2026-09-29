@@ -541,7 +541,7 @@ pub(super) fn transfer_closed_face_topology(
             admitted!(crate::resource::compose_u32_id(
                 admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-body"),
-                root.body_record_ordinal(),
+                admitted!(root.body_record_ordinal()),
                 BodyId::mint,
                 "catia_zero_topology_body_id"
             ))
@@ -561,7 +561,7 @@ pub(super) fn transfer_closed_face_topology(
             admitted!(crate::resource::compose_u32_id(
                 admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-region"),
-                root.body_record_ordinal(),
+                admitted!(root.body_record_ordinal()),
                 RegionId::mint,
                 "catia_zero_topology_region_id"
             ))
@@ -581,7 +581,7 @@ pub(super) fn transfer_closed_face_topology(
             admitted!(crate::resource::compose_u32_id(
                 admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-shell"),
-                root.shell_record_ordinal(),
+                admitted!(root.shell_record_ordinal()),
                 ShellId::mint,
                 "catia_zero_topology_shell_id"
             ))

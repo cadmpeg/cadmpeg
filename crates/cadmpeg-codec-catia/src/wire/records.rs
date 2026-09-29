@@ -796,7 +796,8 @@ fn parse_spanning_consolidated_record(
     }
     let mut logical_boundary = 0usize;
     let mut crosses_extent = false;
-    for range in ranges.iter().take(ranges.len().saturating_sub(1)) {
+    let (_, preceding_ranges) = ranges.split_last()?;
+    for range in preceding_ranges {
         logical_boundary = logical_boundary.checked_add(range.end - range.start)?;
         crosses_extent |= source_start < logical_boundary && logical_boundary < source_end;
     }
