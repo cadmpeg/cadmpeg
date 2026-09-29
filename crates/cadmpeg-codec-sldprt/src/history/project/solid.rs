@@ -451,73 +451,93 @@ fn hole_profile_construction(
                 })
         })
         .filter(|profile| classify(profile) == Some(FeatureClass::Sketch))
-        .filter_map(hole_sketch_construction)
-        .collect::<Vec<_>>();
-    let complete = constructions
-        .iter()
-        .filter(|construction| construction.depth.is_some())
-        .collect::<Vec<_>>();
-    match complete.as_slice() {
-        [construction] => Some((**construction).clone()),
-        [] => match constructions.as_slice() {
-            [construction] => Some(construction.clone()),
-            _ => None,
-        },
-        _ => None,
+        .filter_map(hole_sketch_construction);
+    let mut sole = None;
+    let mut multiple = false;
+    let mut complete = None;
+    for construction in constructions {
+        if construction.depth.is_some() {
+            if complete.is_some() {
+                return None;
+            }
+            complete = Some(construction.clone());
+        }
+        if sole.is_some() {
+            multiple = true;
+        } else {
+            sole = Some(construction);
+        }
     }
+    complete.or_else(|| if multiple { None } else { sole })
 }
 
 pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction> {
+    #[derive(Clone, Copy)]
     enum ParsedDimension {
         Diameter(PositiveLength),
         Length(PositiveLength),
         Angle(cadmpeg_ir::scalar::InteriorAngle),
     }
 
-    let mut dimensions = Vec::new();
-    let source_dimensions = profile
-        .content
-        .iter()
-        .filter_map(|content| match content {
-            crate::records::FeatureContent::Dimension(name) => Some(name.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let expressions = if source_dimensions.is_empty() {
-        profile.parameters.values().collect::<Vec<_>>()
-    } else {
-        source_dimensions
-            .into_iter()
-            .filter_map(|name| profile.parameters.get(name))
-            .collect::<Vec<_>>()
-    };
+    const MAX_DIMENSIONS: usize = 7;
+    const MAX_DIAMETERS: usize = 3;
+    const MAX_LENGTHS: usize = 2;
+    const MAX_ANGLES: usize = 2;
+    let initial_length = PositiveLength::new(1.0)?;
+    let initial_angle = cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2)?;
+    let mut dimensions = [ParsedDimension::Length(initial_length); MAX_DIMENSIONS];
+    let mut dimension_count = 0;
+    let has_source_dimensions = profile.content.iter().any(|content| {
+        matches!(content, FeatureContent::Dimension(_))
+    });
+    let expressions = profile.parameters.values().filter(|_| !has_source_dimensions)
+        .chain(profile.content.iter().filter_map(|content| match content {
+            FeatureContent::Dimension(name) => profile.parameters.get(name.as_str()),
+            FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
+        }));
     for expression in expressions {
-        if strip_diameter_modifier(expression).is_some() {
-            if let Some(value) = parse_dimension_display_length(expression)
+        let dimension = if strip_diameter_modifier(expression).is_some() {
+            parse_dimension_display_length(expression)
                 .and_then(|value| PositiveLength::try_from(value).ok())
-            {
-                dimensions.push(ParsedDimension::Diameter(value));
-            }
+                .map(ParsedDimension::Diameter)
         } else if let Some(value) = parse_bounded_angle_rad(expression) {
-            dimensions.push(ParsedDimension::Angle(value));
-        } else if let Some(value) = parse_positive_dimension_length_mm(expression) {
-            dimensions.push(ParsedDimension::Length(value));
+            Some(ParsedDimension::Angle(value))
+        } else {
+            parse_positive_dimension_length_mm(expression).map(ParsedDimension::Length)
+        };
+        if let Some(dimension) = dimension {
+            *dimensions.get_mut(dimension_count)? = dimension;
+            dimension_count += 1;
         }
     }
-    let mut diameters = Vec::new();
-    let mut lengths = Vec::new();
-    let mut angles = Vec::new();
-    for dimension in &dimensions {
+    let dimensions = &dimensions[..dimension_count];
+    let mut diameters = [initial_length; MAX_DIAMETERS];
+    let mut lengths = [initial_length; MAX_LENGTHS];
+    let mut angles = [initial_angle; MAX_ANGLES];
+    let (mut diameter_count, mut length_count, mut angle_count) = (0, 0, 0);
+    for dimension in dimensions {
         match dimension {
-            ParsedDimension::Diameter(value) => diameters.push(*value),
-            ParsedDimension::Length(value) => lengths.push(*value),
-            ParsedDimension::Angle(value) => angles.push(*value),
+            ParsedDimension::Diameter(value) => {
+                *diameters.get_mut(diameter_count)? = *value;
+                diameter_count += 1;
+            }
+            ParsedDimension::Length(value) => {
+                *lengths.get_mut(length_count)? = *value;
+                length_count += 1;
+            }
+            ParsedDimension::Angle(value) => {
+                *angles.get_mut(angle_count)? = *value;
+                angle_count += 1;
+            }
         }
     }
-    diameters.sort_by(|left, right| left.get().total_cmp(&right.get()));
-    lengths.sort_by(|left, right| left.get().total_cmp(&right.get()));
-    angles.sort_by(|left, right| left.get().total_cmp(&right.get()));
-    match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
+    let diameters = &mut diameters[..diameter_count];
+    let lengths = &mut lengths[..length_count];
+    let angles = &mut angles[..angle_count];
+    diameters.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
+    lengths.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
+    angles.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
+    match (&*diameters, &*lengths, &*angles) {
         ([diameter], [depth], []) => Some(HoleProfileConstruction {
             diameter: *diameter,
             depth: Some(*depth),
@@ -541,7 +561,7 @@ pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
         }),
         ([diameter, major_diameter], [thread_depth, drill_depth], [drill_point_angle])
             if matches!(
-                dimensions.as_slice(),
+                dimensions,
                 [
                     ParsedDimension::Diameter(_),
                     ParsedDimension::Length(_),
@@ -620,7 +640,7 @@ pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             [counterbore_depth, through_depth],
             [exit_angle],
         ) if matches!(
-            dimensions.as_slice(),
+            dimensions,
             [
                 ParsedDimension::Length(_),
                 ParsedDimension::Diameter(_),

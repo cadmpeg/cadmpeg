@@ -1264,3 +1264,31 @@ fn configuration_snapshots_preserve_base_tree_node_roles() {
         })
     ));
 }
+
+#[test]
+fn hole_profile_rejects_more_than_supported_dimension_roles() {
+    let mut profile = feature("profile", Some("7"), 0);
+    for (name, expression) in [
+        ("a", "<MOD-DIAM>5"), ("b", "1"), ("c", "2"), ("d", "3"),
+        ("e", "4"), ("f", "5"), ("g", "6"), ("h", "7"),
+    ] {
+        profile.parameters.insert(
+            cadmpeg_core::text::NonBlankString::new(name).expect("named dimension"),
+            expression.into(),
+        );
+        profile.content.push(FeatureContent::Dimension(name.into()));
+    }
+    assert!(hole_sketch_construction(&profile).is_none());
+}
+
+#[test]
+fn hole_profile_parameter_fallback_requires_no_dimension_content() {
+    let mut profile = feature("profile", Some("7"), 0);
+    profile.parameters.insert(cadmpeg_core::nonblank_literal!("diameter"), "<MOD-DIAM>5".into());
+    profile.parameters.insert(cadmpeg_core::nonblank_literal!("depth"), "9".into());
+    let construction = hole_sketch_construction(&profile).expect("fallback hole dimensions");
+    assert_eq!(construction.diameter.get(), 5.0);
+    assert_eq!(construction.depth.map(|depth| depth.get()), Some(9.0));
+    profile.content.push(FeatureContent::Dimension("missing".into()));
+    assert!(hole_sketch_construction(&profile).is_none());
+}
