@@ -271,19 +271,24 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
     }
 }
 
-pub(in super::super) fn close_sketch_constraint_parameter_references(ir: &mut CadIr) {
-    let emitted = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| parameter.id.clone())
-        .collect::<BTreeSet<_>>();
+pub(in super::super) fn close_sketch_constraint_parameter_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &mut CadIr,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut emitted = BTreeSet::new();
+    for parameter in &ir.model.parameters {
+        if !emitted.contains(&parameter.id) {
+            ctx.charge_collection_items(1, "creo emitted parameter ID nodes")?;
+            emitted.insert(parameter.id.copy_admitted(ctx, "creo emitted parameter identity")?);
+        }
+    }
     ir.model.sketch_constraints.retain_mut(|constraint| {
         constraint
             .definition
             .edit(|kind| reconcile_constraint_parameter_reference(kind, &emitted))
             .unwrap_or(false)
     });
+    Ok(())
 }
 
 pub(in super::super) fn joined_relation_incidence(
@@ -2216,13 +2221,56 @@ pub(in super::super) fn section_linear_distance_vectors(vectors: [[Option<u32>; 
 #[cfg(test)]
 mod tests {
     use super::{
-        reconcile_section_dimension_constraint,
+        close_sketch_constraint_parameter_references, reconcile_section_dimension_constraint,
         section_equation_function_five_scalar_equality_constraints,
         section_equation_function_sixteen_angle_difference_constraints,
     };
     use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntityId, SketchId};
     use std::collections::BTreeSet;
+
+    #[test]
+    fn emitted_parameter_ids_refuse_node_and_identity_copy() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let id = ParameterId::mint("creo:featdefs:parameter#1").expect("parameter ID");
+        let mut document = cadmpeg_ir::document::CadIr::empty();
+        document.model.parameters.push(cadmpeg_ir::features::DesignParameter {
+            id: id.clone(),
+            owner: None,
+            ordinal: 0,
+            name: "x".into(),
+            expression: "x".into(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = close_sketch_constraint_parameter_references(&ctx, &mut document)
+            .expect_err("one parameter node exceeds zero items");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo emitted parameter ID nodes"));
+        policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
+        policy.limits.max_retained_bytes = id.as_str().len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = close_sketch_constraint_parameter_references(&ctx, &mut document)
+            .expect_err("ID copy exceeds retained cap");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo emitted parameter identity"));
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+        close_sketch_constraint_parameter_references(&ctx, &mut document)
+            .expect("service parameter closure");
+        assert_eq!(document.model.parameters[0].id, id);
+    }
 
     #[test]
     fn segment_radius_bindings_and_constraints_refuse_before_vector_growth() {
