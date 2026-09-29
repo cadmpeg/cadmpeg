@@ -289,6 +289,21 @@ pub struct AnnotationBuilder {
     annotations: Annotations,
 }
 
+fn copy_annotation_text(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let bytes =
+        u64::try_from(source.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(bytes, operation)?;
+    let mut text = String::new();
+    text.try_reserve(source.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    text.push_str(source);
+    Ok(text)
+}
+
 impl AnnotationBuilder {
     /// Copy a speculative annotation set under the active decode budget.
     pub fn copy_charged(
@@ -359,6 +374,41 @@ impl AnnotationBuilder {
         self.note_owned(id.to_string(), stream, offset)
     }
 
+    /// Record a source location after admitting its identity, tag and map entry.
+    pub fn note_charged(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: &str,
+        stream: &StreamHandle,
+        offset: u64,
+        tag: &str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        self.note_charged_optional(ctx, id, stream, offset, Some(tag))
+    }
+
+    /// Record an optionally tagged source location under the caller's budget.
+    pub fn note_charged_optional(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: &str,
+        stream: &StreamHandle,
+        offset: u64,
+        tag: Option<&str>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        if !self.annotations.provenance.contains_key(id) {
+            ctx.charge_collection_items(1, "collect source provenance")?;
+        }
+        let id = copy_annotation_text(ctx, id, "retain source provenance identity")?;
+        let tag = tag
+            .map(|tag| copy_annotation_text(ctx, tag, "retain source provenance tag"))
+            .transpose()?;
+        let note = self.note_owned(id, stream, offset);
+        if let Some(tag) = tag {
+            note.tag(tag);
+        }
+        Ok(())
+    }
+
     /// Record a source location with an already admitted identity.
     pub fn note_owned(
         &mut self,
@@ -426,6 +476,31 @@ impl AnnotationBuilder {
         field: impl Into<String>,
     ) -> Result<&mut Self, &'static str> {
         self.field_exactness(id, field, Exactness::Derived)
+    }
+
+    /// Mark a derived field after admitting its identity and map entries.
+    pub fn derived_charged(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: &str,
+        field: &str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let existing = self.annotations.exactness.get(id);
+        if existing.is_none() {
+            ctx.charge_collection_items(1, "collect source exactness entities")?;
+        }
+        if existing.is_none_or(|note| !note.fields().contains_key(field)) {
+            ctx.charge_collection_items(1, "collect source exactness fields")?;
+        }
+        let id = copy_annotation_text(ctx, id, "retain source exactness identity")?;
+        let field = copy_annotation_text(ctx, field, "retain source exactness field")?;
+        self.derived_owned(id, field)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        Ok(())
+    }
+
+    fn derived_owned(&mut self, id: String, field: String) -> Result<&mut Self, &'static str> {
+        self.field_exactness_owned(id, field, Exactness::Derived)
     }
 
     /// Set a serialized field's exactness.
@@ -508,7 +583,7 @@ impl AnnotationBuilder {
         self.remove_entity_str(&id);
     }
 
-    /// Remove an entity's annotations through its borrowed identity.
+    /// Remove all annotations for an entity whose identity is already borrowed.
     pub fn remove_entity_str(&mut self, id: &str) {
         self.annotations.provenance.remove(id);
         self.annotations.exactness.remove(id);
@@ -633,9 +708,7 @@ impl Annotations {
             .len()
     }
 
-    /// Append annotations with disjoint identities.
-    ///
-    /// Every provenance owns its stream name, so there is no catalog to rebase.
+    /// Append annotations with disjoint identities without a decode context.
     /// A collision leaves this annotation set unchanged.
     pub fn append(&mut self, mut other: Self) -> Result<(), AnnotationIdentityCollision> {
         for id in other.provenance.keys().chain(other.exactness.keys()) {

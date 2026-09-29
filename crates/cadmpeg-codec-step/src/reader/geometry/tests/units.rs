@@ -448,7 +448,8 @@ pub(crate) fn decode_conical_apex_and_context_plane_angle_units() {
             radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_ANGLE
         })
     ));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(
         validation
             .findings
@@ -484,6 +485,27 @@ fn decode_selects_a_length_uncertainty_after_an_angular_measure() {
         .losses
         .iter()
         .any(|loss| { loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind() }));
+}
+
+#[test]
+fn uncertainty_name_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'distance_accuracy_value','');#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(SOURCE).expect("valid uncertainty exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root fits retained policy");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    assert!(matches!(
+        super::super::decode(&exchange, &mut ir, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
 }
 
 #[test]
@@ -690,6 +712,19 @@ fn decode_scales_geometry_by_its_representation_context() {
         .any(|loss| { loss.code == StepLossCode::ConflictingRepresentationUnits.kind() }));
 }
 
+fn resolve_unit_scales_for_test(
+    exchange: &crate::parse::Exchange,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> super::super::UnitScales {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default())
+        .expect("empty root fits policy");
+    super::super::resolve_unit_scales(exchange, PositiveReal::ONE, PositiveReal::ONE, losses, &ctx)
+        .expect("unit scales fit policy")
+}
+
 #[test]
 fn mapped_target_items_use_their_target_representation_context_units() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('mapped units'),'2;1');FILE_NAME('mapped-units','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
@@ -706,12 +741,7 @@ fn mapped_target_items_use_their_target_representation_context_units() {
 #12=SHAPE_REPRESENTATION('target',(#11),#5);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("parse mapped units");
     let mut losses = Vec::new();
-    let scales = super::super::resolve_unit_scales(
-        &exchange,
-        PositiveReal::ONE,
-        PositiveReal::ONE,
-        &mut losses,
-    );
+    let scales = resolve_unit_scales_for_test(&exchange, &mut losses);
     assert_eq!(
         scales.length.get(&8).copied().map(PositiveReal::get),
         Some(25.4)
@@ -726,12 +756,7 @@ fn indirect_representation_items_inherit_the_root_context_units() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('indirect units'),'2;1');FILE_NAME('indirect-units','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);#3=(CONVERSION_BASED_UNIT('inch',#2) LENGTH_UNIT() NAMED_UNIT(*));#4=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#3)) REPRESENTATION_CONTEXT('model','3D'));#5=CARTESIAN_POINT('point',(1.,0.,0.));#6=DIRECTION('direction',(1.,0.,0.));#7=VECTOR('vector',#6,2.);#8=LINE('line',#5,#7);#9=SHAPE_REPRESENTATION('line',(#8),#4);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("parse indirect units");
     let mut losses = Vec::new();
-    let scales = super::super::resolve_unit_scales(
-        &exchange,
-        PositiveReal::ONE,
-        PositiveReal::ONE,
-        &mut losses,
-    );
+    let scales = resolve_unit_scales_for_test(&exchange, &mut losses);
     assert_eq!(
         scales.length.get(&5).copied().map(PositiveReal::get),
         Some(25.4)
@@ -750,12 +775,7 @@ fn generic_representation_relationships_do_not_transfer_unit_contexts() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('related units'),'2;1');FILE_NAME('related-units','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);#3=(CONVERSION_BASED_UNIT('inch',#2) LENGTH_UNIT() NAMED_UNIT(*));#4=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#3)) REPRESENTATION_CONTEXT('source','3D'));#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('related','3D'));#6=CARTESIAN_POINT('source',(1.,0.,0.));#7=SHAPE_REPRESENTATION('source',(#6),#4);#8=CARTESIAN_POINT('related',(1.,0.,0.));#9=SHAPE_REPRESENTATION('related',(#8),#5);#10=REPRESENTATION_RELATIONSHIP('related representations','',#7,#9);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("parse related units");
     let mut losses = Vec::new();
-    let scales = super::super::resolve_unit_scales(
-        &exchange,
-        PositiveReal::ONE,
-        PositiveReal::ONE,
-        &mut losses,
-    );
+    let scales = resolve_unit_scales_for_test(&exchange, &mut losses);
     assert_eq!(
         scales.length.get(&6).copied().map(PositiveReal::get),
         Some(25.4)
@@ -770,12 +790,7 @@ fn shared_representation_items_reject_conflicting_context_units() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('shared units'),'2;1');FILE_NAME('shared-units','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);#3=(CONVERSION_BASED_UNIT('inch',#2) LENGTH_UNIT() NAMED_UNIT(*));#4=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('metric','3D'));#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#3)) REPRESENTATION_CONTEXT('inch','3D'));#6=CARTESIAN_POINT('shared',(1.,0.,0.));#7=SHAPE_REPRESENTATION('metric',(#6),#4);#8=SHAPE_REPRESENTATION('inch',(#6),#5);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("parse shared units");
     let mut losses = Vec::new();
-    let scales = super::super::resolve_unit_scales(
-        &exchange,
-        PositiveReal::ONE,
-        PositiveReal::ONE,
-        &mut losses,
-    );
+    let scales = resolve_unit_scales_for_test(&exchange, &mut losses);
     assert_eq!(scales.length.get(&6).copied().map(PositiveReal::get), None);
     assert!(losses
         .iter()

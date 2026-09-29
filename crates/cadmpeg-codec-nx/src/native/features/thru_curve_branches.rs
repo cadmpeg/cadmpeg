@@ -13,8 +13,10 @@ use crate::om::thru_curve_state::ThruCurveBranchItems;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU8;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "GroupWire", into = "GroupWire")]
+mod borrowed_wires;
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "GroupWire")]
 pub(in crate::native) struct FeatureThruCurveConstructionBranchGroup {
     id: String,
     operation_label: String,
@@ -57,6 +59,7 @@ struct ReferenceWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureThruCurveConstructionBranchGroup> for GroupWire {
     fn from(value: FeatureThruCurveConstructionBranchGroup) -> Self {
         let branches = value
@@ -180,20 +183,36 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
 }
 
 pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureThruCurveConstructionBranchGroup> {
-    let indexed = container.indexed_om_sections();
+) -> Result<Vec<FeatureThruCurveConstructionBranchGroup>, cadmpeg_core::CodecError> {
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut groups = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(group) = thru_curve_payload_branch_group(record.payload_view()) else {
+            if failure.is_some() {
                 return;
+            }
+            let group = match thru_curve_payload_branch_group(ctx, record.payload_view()) {
+                Ok(Some(group)) => group,
+                Ok(None) => return,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
-            let Ok(frame) = group.resolve(entry_offset, |token| {
+            let frame = match group.resolve(ctx, entry_offset, |token| {
                 unique_offset_data_block(&indexed, token.value())
-            }) else {
-                return;
+            }) {
+                Ok(Some(frame)) => frame,
+                Ok(None) => return,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let operation_key = format!("{section_key}-{operation_ordinal:010}");
             groups.push(FeatureThruCurveConstructionBranchGroup {
@@ -204,8 +223,11 @@ pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
                 frame,
             });
         },
-    );
-    groups
+    )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    Ok(groups)
 }
 
 #[cfg(test)]
@@ -214,7 +236,7 @@ mod tests {
 
     // Group count at 100. The standard branch occupies 24 bytes and the
     // extended branch occupies 40 bytes. The adjacent terminator occupies 9.
-    const WIRE: &str = concat!(
+    pub(super) const WIRE: &str = concat!(
         r#"{"id":"g","operation_label":"o","declared_count":3,"branches":["#,
         r#"{"ordinal":0,"mode":255,"declared_count":3,"state_lane":[0,0,0,0,0,0],"members":["#,
         r#"{"ordinal":0,"object_index":0,"raw_object_index":[240,0],"data_block":"","source_offset":104},"#,

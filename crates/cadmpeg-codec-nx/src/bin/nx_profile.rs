@@ -539,6 +539,7 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
         }
     }
     let validation_errors = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .map_err(cadmpeg_core::CodecError::from)?
         .findings
         .iter()
         .filter(|finding| finding.severity >= Severity::Error)

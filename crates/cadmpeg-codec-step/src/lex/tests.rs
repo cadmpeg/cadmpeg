@@ -7,6 +7,25 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+#[test]
+fn binary_value_copy_refuses_collection_limit() {
+    let value = super::BinaryValue {
+        unused_bits: 0,
+        data: vec![0x12, 0x34].into_boxed_slice(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+    assert!(matches!(
+        value.try_clone_for_decode(Some(&ctx), "step_binary_value_copy"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_binary_value_copy"
+    ));
+}
+
 fn lex_under_policy(
     input: &[u8],
     policy: DecodePolicy,
@@ -14,8 +33,7 @@ fn lex_under_policy(
 ) -> Result<super::TokenKind, CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy)?;
-    let mut lexer = super::Lexer::new(input);
-    lexer.set_context(Some(&ctx));
+    let mut lexer = super::Lexer::with_context(input, &ctx);
     if transient {
         lexer.set_transient_literals();
     }
@@ -23,6 +41,48 @@ fn lex_under_policy(
         .next_token()
         .map_err(super::LexError::into_codec_error)?;
     Ok(token.expect("nonempty token input").kind)
+}
+
+#[test]
+fn normalized_name_refuses_retained_byte_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let error = lex_under_policy(b"ABC", policy, false)
+        .expect_err("three name bytes exceed two retained bytes");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "step_lex_normalized_retained"
+    ));
+}
+
+#[test]
+fn normalized_number_refuses_temporary_byte_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 2;
+    let error = lex_under_policy(b"123", policy, false)
+        .expect_err("three number bytes exceed two temporary bytes");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "step_lex_normalized_temp"
+    ));
+}
+
+#[test]
+fn quoted_string_refuses_collection_item_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let error = lex_under_policy(b"'abc'", policy, false)
+        .expect_err("three string bytes exceed two collection items");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "step_string_lexeme_items"
+    ));
 }
 
 #[test]

@@ -523,7 +523,7 @@ fn decode_selects_dominant_rmfastload_body() {
             .map(String::as_str),
         Some("rmfastload_object_id_membership")
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.findings.is_empty(),
         "findings: {:?}",

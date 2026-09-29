@@ -14,13 +14,28 @@
 use cadmpeg_test_support::wire;
 
 use super::super::{
-    bind_mesh_feature_definitions, design_projection_gaps, face_selection_is_resolved,
-    feature_definition_is_incomplete, incomplete_feature_families, mesh_attribute_channels,
-    mesh_texture_assignments, report_design_projection_gaps, MeshProjection,
+    bind_mesh_feature_definitions, face_selection_is_resolved, feature_definition_is_incomplete,
+    incomplete_feature_families, mesh_attribute_channels, mesh_texture_assignments,
+    report_design_projection_gaps, MeshProjection,
 };
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 use crate::records::feature::scope::DesignParameterScope;
+
+fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    run(&ctx)
+}
+
+fn design_projection_gaps(
+    ir: &cadmpeg_ir::document::CadIr,
+    native: &F3dNative,
+) -> super::super::DesignProjectionGaps {
+    with_test_ctx(|ctx| super::super::design_projection_gaps(ctx, ir, native).unwrap())
+}
 
 #[test]
 fn active_face_substitutions_have_a_distinct_loss_note() {
@@ -61,7 +76,11 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         transfer_ledger: Default::default(),
     };
 
-    report_design_projection_gaps(&mut report, &ir, &native);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    report_design_projection_gaps(&ctx, &mut report, &ir, &native).unwrap();
 
     let loss = report
         .losses
@@ -118,7 +137,8 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         )]),
     };
 
-    bind_mesh_feature_definitions(&mut features, &[scope], &projection).unwrap();
+    with_test_ctx(|ctx| bind_mesh_feature_definitions(ctx, &mut features, &[scope], &projection))
+        .unwrap();
 
     assert_eq!(
         *features[0].evaluation.definition(),
@@ -134,6 +154,78 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
 }
 
 #[test]
+fn mesh_feature_tessellation_collection_refuses_limit() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+
+    let scope_id = "f3d:Design/BulkStream.dat:design-parameter-scope#10";
+    let scope = DesignParameterScope::empty(
+        scope_id,
+        crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature,
+        10,
+    );
+    let mut features = vec![Feature {
+        id: FeatureId::mint("test:model:feature#mesh-import-limit").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("Base Mesh Feature".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "Base Mesh Feature".into(),
+                parameters: Default::default(),
+            }),
+        ),
+        native_ref: Some(scope_id.into()),
+    }];
+    let projection = MeshProjection {
+        count: 1,
+        tessellations_by_scope: std::collections::HashMap::from([(
+            ("f3d:Design/BulkStream.dat".into(), 10),
+            vec!["tessellation:one".into()],
+        )]),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        bind_mesh_feature_definitions(&ctx, &mut features, &[scope], &projection).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D mesh feature tessellations")
+    );
+}
+
+#[test]
+fn mesh_feature_tessellation_lookup_refuses_scoped_limit() {
+    let projection = MeshProjection {
+        count: 0,
+        tessellations_by_scope: std::collections::HashMap::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::mesh_feature_tessellations(
+        &ctx,
+        &projection,
+        "f3d:Design/BulkStream.dat",
+        10,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "look up F3D mesh feature tessellations")
+    );
+}
+
+#[test]
 fn mesh_texture_ids_resolve_through_design_table_order() {
     use cadmpeg_ir::assets::AssetId;
     use cadmpeg_ir::tessellation::TessellationTextureAssignment;
@@ -146,7 +238,7 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
         ("resource:third".into(), first.clone()),
     ];
     assert_eq!(
-        mesh_texture_assignments(Some(&[0, 2, 1, 3, 2]), &textures, 5)
+        with_test_ctx(|ctx| mesh_texture_assignments(ctx, Some(&[0, 2, 1, 3, 2]), &textures, 5))
             .expect("texture assignments"),
         vec![
             TessellationTextureAssignment {
@@ -167,16 +259,99 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
         ]
     );
     assert!(matches!(
-        mesh_texture_assignments(
+        with_test_ctx(|ctx| mesh_texture_assignments(
+            ctx,
             Some(&[2]),
             &[(
                 "resource:only".into(),
                 AssetId::mint("synthetic:test:id#asset:only").expect("identity grammar")
             )],
             1,
-        ),
+        )),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
+}
+
+#[test]
+fn mesh_texture_assignments_report_collection_limit() {
+    let asset =
+        cadmpeg_ir::assets::AssetId::mint("synthetic:test:id#asset:one").expect("identity grammar");
+    let textures = [("resource:one".into(), asset)];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    let error = mesh_texture_assignments(&ctx, Some(&[1]), &textures, 1)
+        .expect_err("one texture group exceeds the collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "f3d mesh texture assignments")
+    );
+}
+
+fn one_mesh_texture() -> [(String, cadmpeg_ir::assets::AssetId); 1] {
+    [(
+        "resource:one".into(),
+        cadmpeg_ir::assets::AssetId::mint("synthetic:test:id#asset:one").unwrap(),
+    )]
+}
+
+#[test]
+fn mesh_texture_triangle_group_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D mesh texture triangles")
+    );
+}
+
+#[test]
+fn mesh_texture_output_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D mesh texture assignments")
+    );
+}
+
+#[test]
+fn mesh_texture_source_id_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D mesh texture source ID")
+    );
+}
+
+#[test]
+fn mesh_texture_asset_id_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from("resource:one".len()).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = mesh_texture_assignments(&ctx, Some(&[1]), &one_mesh_texture(), 1).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D mesh texture asset ID")
+    );
 }
 
 #[test]
@@ -193,7 +368,10 @@ fn indexed_mesh_channels_project_default_and_override_selectors() {
         addressing: crate::paramesh::MeshAttributeAddressing::Corner(vec![0, 2]),
     };
     let mut unresolved = std::collections::BTreeMap::new();
-    let channels = mesh_attribute_channels(&[attribute], 3, &[[0, 1, 2]], &mut unresolved);
+    let channels = crate::test_support::with_decode_context(|ctx| {
+        mesh_attribute_channels(ctx, &[attribute], 3, &[[0, 1, 2]], &mut unresolved)
+            .expect("mesh attribute budget")
+    });
 
     assert!(unresolved.is_empty());
     assert_eq!(channels.len(), 1);
@@ -1050,9 +1228,98 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
         "Canvas",
     ));
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
-        incomplete_feature_families(&ir),
+        incomplete_feature_families(&ctx, &ir).unwrap(),
         std::collections::BTreeMap::from([("EdgeFlange", 2), ("Hem", 1)])
+    );
+}
+
+#[test]
+fn incomplete_feature_family_index_refuses_collection_limit() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.features.push(Feature {
+        id: FeatureId::mint("synthetic:test:feature#1").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("EdgeFlange".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "EdgeFlange".into(),
+                parameters: Default::default(),
+            }),
+        ),
+        native_ref: None,
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = incomplete_feature_families(&ctx, &ir).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index incomplete F3D feature families")
+    );
+}
+
+#[test]
+fn projection_loss_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut report = cadmpeg_ir::codec::DecodeBody::new(
+        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+    );
+    let error = super::super::push_decode_loss(
+        &ctx,
+        &mut report,
+        crate::loss::F3dLossCode::FeatureDefinitionIncomplete,
+        format_args!("one incomplete feature"),
+        "collect F3D projection losses",
+        "retain F3D projection loss",
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D projection losses")
+    );
+}
+
+#[test]
+fn projection_loss_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut report = cadmpeg_ir::codec::DecodeBody::new(
+        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+    );
+    let error = super::super::push_decode_loss(
+        &ctx,
+        &mut report,
+        crate::loss::F3dLossCode::FeatureDefinitionIncomplete,
+        format_args!("one incomplete feature"),
+        "collect F3D projection losses",
+        "retain F3D projection loss",
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D projection loss")
     );
 }
 

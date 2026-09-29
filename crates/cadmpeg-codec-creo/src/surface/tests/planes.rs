@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use super::counted_parameter_scalar_slots;
 use super::named_prototype_records;
 use super::named_surface_value;
 use super::parameter_records;
@@ -10,7 +11,6 @@ use crate::scalar;
 use crate::surface::admitted_counted_parameter_body;
 use crate::surface::complete_plane_compact_scalar_suffix;
 use crate::surface::complete_plane_local_system_slots;
-use crate::surface::counted_parameter_scalar_slots;
 use crate::surface::decode_row_scalar;
 use crate::surface::first_compound_close;
 use crate::surface::frame_bound_outline_planes;

@@ -23,8 +23,7 @@ fn decal_mapping_modes_preserve_all_bytes_with_canonical_known_mode() {
     }
 }
 
-#[test]
-fn decal_image_wire_derives_consecutive_records_and_scope_offsets() {
+fn decal_wire_fixture() -> serde_json::Value {
     let base = serde_json::json!({
         "id": "decal", "scope_record_index": 23, "asset_reference_offset": 222,
         "mapping_mode": 96, "mapping_mode_offset": 232, "target_group_record_index": 24,
@@ -33,6 +32,60 @@ fn decal_image_wire_derives_consecutive_records_and_scope_offsets() {
         "asset_entity_reference_offset": 120, "name_class_tag": "279", "name_record_index": 18,
         "name_byte_offset": 130, "name_frame_length": 41, "asset_name": "mark.png", "asset_name_offset": 155
     });
+    base
+}
+
+fn decal_image_fixture() -> super::DesignDecalImage {
+    let mut wire = decal_wire_fixture();
+    wire["id"] = serde_json::json!("f3d:native:decal#0");
+    serde_json::from_value(wire).unwrap()
+}
+
+#[test]
+fn decal_image_borrowed_wire_matches_owned_wire_bytes() {
+    let image = decal_image_fixture();
+    let owned = super::DesignDecalImageWire::from(image.clone());
+    assert_eq!(
+        serde_json::to_vec(&image).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn decal_image_native_retained_limit_refuses_before_record_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let image = decal_image_fixture();
+    let arena_name = "design_decal_images";
+    let needed = serde_json::to_vec(&image).unwrap().len() + arena_name.len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    super::DECAL_IMAGE_CLONE_COUNT.with(|count| count.set(0));
+    let error = namespace
+        .set_arena(&limited, arena_name, std::slice::from_ref(&image))
+        .unwrap_err();
+    super::DECAL_IMAGE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    namespace
+        .set_arena(&service, arena_name, std::slice::from_ref(&image))
+        .unwrap();
+    assert_eq!(namespace.arenas()[arena_name].len(), 1);
+}
+
+#[test]
+fn decal_image_wire_derives_consecutive_records_and_scope_offsets() {
+    let base = decal_wire_fixture();
     for mode in [0, 0x60, 0x61, 0xff] {
         let mut value = base.clone();
         value["mapping_mode"] = serde_json::json!(mode);

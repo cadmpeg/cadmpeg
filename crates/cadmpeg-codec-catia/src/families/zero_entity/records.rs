@@ -972,7 +972,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
                         .uv_endpoints
                         .map(|endpoints| endpoints.map(|uv| uv[0]));
                 }
-                support.model_midpoint = support.pcurve.as_ref().and_then(|pcurve| {
+                let midpoint_input = support.pcurve.as_ref().and_then(|pcurve| {
                     let PcurveGeometry::Nurbs { nurbs } = pcurve else {
                         return None;
                     };
@@ -981,15 +981,23 @@ pub(crate) fn zero_entity_support_runs_in_range(
                     if start >= end {
                         return None;
                     }
-                    let uv = pcurve_uv(pcurve, start.midpoint(end)).ok()?;
-                    zero_entity_surface_point(&carrier_geometry, [uv.u, uv.v])
+                    Some((pcurve, start.midpoint(end)))
                 });
-                support.model_endpoints = support.uv_endpoints.and_then(|endpoints| {
+                if let Some((pcurve, parameter)) = midpoint_input {
+                    if let Some(uv) =
+                        cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(pcurve, parameter))?
+                    {
+                        support.model_midpoint =
+                            zero_entity_surface_point(&carrier_geometry, [uv.u, uv.v])?;
+                    }
+                }
+                if let Some(endpoints) = support.uv_endpoints {
                     let [first, second] = endpoints.map(|uv| {
                         zero_entity_surface_point(&carrier_geometry, uv.map(FiniteReal::get))
                     });
-                    Some([first?, second?])
-                });
+                    support.model_endpoints =
+                        first?.zip(second?).map(|(first, second)| [first, second]);
+                }
                 crate::resource::push(
                     ctx,
                     &mut supports,
@@ -1922,7 +1930,12 @@ fn zero_entity_model_curve(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if { constant_coordinate(0).is_some() } =>
             {
-                let point = zero_entity_surface_point(surface, [constant_coordinate(0)?, 0.0])?;
+                let point = match zero_entity_surface_point(surface, [constant_coordinate(0)?, 0.0])
+                {
+                    Ok(Some(point)) => point,
+                    Ok(None) => return None,
+                    Err(limit) => return Some(Err(limit.into())),
+                };
                 Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Line(
                         cadmpeg_ir::geometry::analytic::LineCurve::new(
@@ -1970,10 +1983,15 @@ fn zero_entity_model_curve(
                     angle.cos() * ref_direction.y + angle.sin() * transverse.y,
                     angle.cos() * ref_direction.z + angle.sin() * transverse.z,
                 );
+                let point = match zero_entity_surface_point(surface, [angle, 0.0]) {
+                    Ok(Some(point)) => point,
+                    Ok(None) => return None,
+                    Err(limit) => return Some(Err(limit.into())),
+                };
                 Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Line(
                         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                            zero_entity_surface_point(surface, [angle, 0.0])?.get(),
+                            point.get(),
                             cadmpeg_ir::math::Vector3::new(
                                 half_angle.cos() * axis.x + half_angle.sin() * radial.x,
                                 half_angle.cos() * axis.y + half_angle.sin() * radial.y,
@@ -2236,9 +2254,7 @@ fn zero_entity_surface_isocurve(
         })?,
         "catia_zero_isocurve_checked_poles",
     )?;
-    Ok(cadmpeg_ir::eval::nurbs_surface_isocurve(
-        surface, axis, parameter,
-    ))
+    cadmpeg_ir::eval::nurbs_surface_isocurve(surface, axis, parameter).map_err(Into::into)
 }
 
 fn zero_entity_model_curve_construction(
@@ -2319,7 +2335,10 @@ fn zero_entity_model_curve_construction(
     ))
 }
 
-fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Option<FinitePoint3> {
+fn zero_entity_surface_point(
+    geometry: &SurfaceGeometry,
+    [u, v]: [f64; 2],
+) -> Result<Option<FinitePoint3>, cadmpeg_core::decode::ResourceLimit> {
     let point = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
@@ -2403,11 +2422,11 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
             )
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-            return nurbs_surface_point(surface, u, v).ok();
+            return cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(surface, u, v));
         }
-        _ => return None,
+        _ => return Ok(None),
     };
-    FinitePoint3::new(point)
+    Ok(FinitePoint3::new(point))
 }
 
 /// Decode complete `5e1a` allocation tuples.
@@ -3516,6 +3535,7 @@ mod tests {
                     + pitch.z * revolution_fraction,
             );
             let surface_point = zero_entity_surface_point(&surface, [angle, 1.0 + fraction])
+                .expect("evaluator allocation succeeds")
                 .expect("finite cone point");
             assert!((construction_point.x - surface_point.x).abs() < 1.0e-12);
             assert!((construction_point.y - surface_point.y).abs() < 1.0e-12);
@@ -3556,8 +3576,9 @@ mod tests {
         .expect("cone latitude");
         for index in 0..2 {
             let curve_point = curve_point(&curve, parameters[index].get()).expect("circle point");
-            let surface_point =
-                zero_entity_surface_point(&surface, endpoints[index]).expect("cone point");
+            let surface_point = zero_entity_surface_point(&surface, endpoints[index])
+                .expect("evaluator allocation succeeds")
+                .expect("cone point");
             assert!((curve_point.x - surface_point.x).abs() < 1.0e-12);
             assert!((curve_point.y - surface_point.y).abs() < 1.0e-12);
             assert!((curve_point.z - surface_point.z).abs() < 1.0e-12);
@@ -3685,12 +3706,15 @@ mod tests {
                 .expect("valid TorusSurface fixture"),
         ));
 
-        let cylinder_point =
-            zero_entity_surface_point(&cylinder, [std::f64::consts::PI, 3.0]).expect("cylinder");
-        let cone_point =
-            zero_entity_surface_point(&cone, [std::f64::consts::FRAC_PI_2, 3.0]).expect("cone");
+        let cylinder_point = zero_entity_surface_point(&cylinder, [std::f64::consts::PI, 3.0])
+            .expect("evaluator allocation succeeds")
+            .expect("cylinder");
+        let cone_point = zero_entity_surface_point(&cone, [std::f64::consts::FRAC_PI_2, 3.0])
+            .expect("evaluator allocation succeeds")
+            .expect("cone");
         let torus_point =
             zero_entity_surface_point(&torus, [2.0 * std::f64::consts::PI, std::f64::consts::PI])
+                .expect("evaluator allocation succeeds")
                 .expect("torus");
 
         assert!(cylinder_point.x.abs() < 1.0e-12);

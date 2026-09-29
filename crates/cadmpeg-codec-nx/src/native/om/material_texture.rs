@@ -17,8 +17,8 @@ pub(in crate::native::om) enum TiffByteOrder {
     BigEndian,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "TextureWire", into = "TextureWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "TextureWire")]
 pub(in crate::native) struct MaterialTextureAsset {
     pub(in crate::native) id: String,
     pub(super) byte_order: TiffByteOrder,
@@ -27,6 +27,36 @@ pub(in crate::native) struct MaterialTextureAsset {
     pub(in crate::native) sha256: crate::native::hex::Sha256Hex,
     source_entry: String,
     pub(in crate::native) source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct TextureRef<'a> {
+    id: &'a str,
+    name: &'a str,
+    byte_order: TiffByteOrder,
+    version: u16,
+    first_ifd_offset: u32,
+    byte_len: u64,
+    sha256: &'a crate::native::hex::Sha256Hex,
+    source_entry: &'a str,
+    source_offset: u64,
+}
+
+impl Serialize for MaterialTextureAsset {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        TextureRef {
+            id: &self.id,
+            name: self.name(),
+            byte_order: self.byte_order,
+            version: TIFF_VERSION,
+            first_ifd_offset: self.first_ifd_offset,
+            byte_len: self.byte_len,
+            sha256: &self.sha256,
+            source_entry: &self.source_entry,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl MaterialTextureAsset {
@@ -71,6 +101,7 @@ impl MaterialTextureAsset {
         &self.source_entry
     }
 
+    #[cfg(test)]
     pub(super) fn first_ifd_offset(&self) -> u32 {
         self.first_ifd_offset
     }
@@ -93,6 +124,7 @@ struct TextureWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<MaterialTextureAsset> for TextureWire {
     fn from(value: MaterialTextureAsset) -> Self {
         Self {
@@ -182,6 +214,10 @@ mod tests {
         let value: MaterialTextureAsset = serde_json::from_str(json).unwrap();
         assert_eq!(value.storage_path(), "materialsTif/Steel");
         assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        assert_eq!(
+            serde_json::to_vec(&value).unwrap(),
+            serde_json::to_vec(&super::TextureWire::from(value.clone())).unwrap()
+        );
         for (field, invalid) in [
             ("name", serde_json::json!("Other")),
             ("version", serde_json::json!(43)),
@@ -195,5 +231,18 @@ mod tests {
             wire[field] = invalid;
             assert!(serde_json::from_value::<MaterialTextureAsset>(wire).is_err());
         }
+    }
+
+    #[test]
+    fn material_texture_native_limit_refuses_before_name_copy() {
+        let wire = serde_json::json!({
+            "id": "nx:container:material-texture#0", "name": "Steel",
+            "byte_order": "little_endian", "version": 42,
+            "first_ifd_offset": 8, "byte_len": 10,
+            "sha256": "d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa",
+            "source_entry": "/Root/materialsTif/Steel", "source_offset": 20
+        });
+        let value: MaterialTextureAsset = serde_json::from_value(wire.clone()).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(&value, wire);
     }
 }

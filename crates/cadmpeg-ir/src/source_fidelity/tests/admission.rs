@@ -78,6 +78,120 @@ fn attachment_refuses_an_identity_already_owned_by_another_native_namespace() {
 }
 
 #[test]
+fn charged_native_unknown_attachment_preserves_product_and_retained_wire() {
+    let mut prior = CadIr::empty();
+    prior
+        .set_native_unknowns(
+            "synthetic",
+            &[crate::NativeUnknownRecord {
+                id: id("prior"),
+                links: vec![],
+            }],
+        )
+        .expect("prior native unknown");
+    let incoming = vec![
+        UnknownRecord::retained(id("a"), 2, vec![1, 2], vec![id("prior").to_string()]),
+        UnknownRecord::retained(id("b"), 5, vec![3], vec![]),
+    ];
+    let mut expected_ir = prior.clone();
+    let mut expected_fidelity = SourceFidelity::default();
+    expected_fidelity
+        .attach_native_unknown_records(&mut expected_ir, "synthetic", incoming.clone())
+        .expect("plain attachment");
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let mut actual_ir = prior;
+    let mut actual_fidelity = SourceFidelity::default();
+    actual_fidelity
+        .attach_native_unknown_records_for_decode(&mut actual_ir, "synthetic", incoming, &ctx)
+        .expect("charged attachment");
+    assert_eq!(actual_ir, expected_ir);
+    assert_eq!(actual_fidelity, expected_fidelity);
+}
+
+#[test]
+fn charged_native_unknown_attachment_refuses_retained_limit_atomically() {
+    let mut ir = CadIr::empty();
+    let mut fidelity = SourceFidelity::default();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let error = fidelity
+        .attach_native_unknown_records_for_decode(
+            &mut ir,
+            "synthetic",
+            vec![UnknownRecord::retained(id("a"), 0, vec![1], vec![])],
+            &ctx,
+        )
+        .expect_err("retained identity refusal");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    assert_eq!(ir, CadIr::empty());
+    assert_eq!(fidelity, SourceFidelity::default());
+}
+
+fn charged_unknown_limit_error(
+    policy: &cadmpeg_core::decode::DecodePolicy,
+) -> cadmpeg_core::CodecError {
+    let mut ir = CadIr::empty();
+    ir.set_native_unknowns(
+        "synthetic",
+        &[crate::NativeUnknownRecord {
+            id: id("prior"),
+            links: vec![
+                crate::ids::Identity::new(id("target").to_string()).expect("identity grammar")
+            ],
+        }],
+    )
+    .expect("prior native unknown");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, policy)
+        .expect("test context");
+    SourceFidelity::default()
+        .attach_native_unknown_records_for_decode(
+            &mut ir,
+            "synthetic",
+            vec![UnknownRecord::retained(id("a"), 0, vec![1], vec![])],
+            &ctx,
+        )
+        .expect_err("native unknown budget refusal")
+}
+
+#[test]
+fn charged_native_unknown_attachment_refuses_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    assert!(matches!(
+        charged_unknown_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
+}
+
+#[test]
+fn charged_native_unknown_attachment_refuses_nesting_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    assert!(matches!(
+        charged_unknown_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
+}
+
+#[test]
+fn charged_native_unknown_attachment_refuses_work_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    assert!(matches!(
+        charged_unknown_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
+}
+
+#[test]
 fn complete_sidecar_requires_the_current_ir_version_on_both_read_routes() {
     let valid = sidecar_wire();
     assert_eq!(valid["ir_version"], crate::IR_VERSION);

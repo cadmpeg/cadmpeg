@@ -899,7 +899,7 @@ fn a_native_circle_range_reads_from_the_finite_support_when_its_partner_overflow
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(0.0, -1.0, 0.0),
         ),
-        Some([0.0, 1.5 * std::f64::consts::PI])
+        Ok(Some([0.0, 1.5 * std::f64::consts::PI]))
     );
 }
 
@@ -921,7 +921,7 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_partner_overflo
         .collect::<Vec<_>>();
     assert_eq!(
         standard_native_support_endpoint_pair(&native, &points, &[0, 1], None),
-        Some([0, 1])
+        Ok(Some([0, 1]))
     );
 }
 
@@ -957,6 +957,6 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
         .collect::<Vec<_>>();
     assert_eq!(
         standard_native_support_endpoint_pair(&native, &points, &[0, 1], None),
-        Some([0, 1])
+        Ok(Some([0, 1]))
     );
 }

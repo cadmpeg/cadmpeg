@@ -313,15 +313,9 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     let scan = crate::card::scan(&written).expect("generated IGES cards scan");
     let (global, _) =
         crate::test_support::parse_global(&scan).expect("generated Global record parses");
-    assert_eq!(
-        global.sender_product().as_deref(),
-        Some(WRITER_SENDER_PRODUCT)
-    );
-    assert_eq!(
-        global.native_file_name().as_deref(),
-        Some(WRITER_NATIVE_FILE_NAME)
-    );
-    assert_eq!(global.units_name().as_deref(), Some(WRITER_UNITS_NAME));
+    assert_eq!(global.sender_product(), Some(WRITER_SENDER_PRODUCT));
+    assert_eq!(global.native_file_name(), Some(WRITER_NATIVE_FILE_NAME));
+    assert_eq!(global.units_name(), Some(WRITER_UNITS_NAME));
     assert_eq!(
         global
             .declared_version()
@@ -855,7 +849,7 @@ fn generated_reals_round_trip_without_writer_quantization() {
 fn generated_parameter_cards_preserve_field_boundaries() {
     let token = number(real(f64::MAX));
     let parameters = format!("128,{token},{token},{token},{token};");
-    let fragments = crate::parameter::layout_parameter_cards(parameters.as_bytes())
+    let fragments = crate::parameter::layout_parameter_cards(parameters.as_bytes(), None)
         .expect("ordinary generated real tokens fit one card");
     assert!(fragments.len() > 1);
     assert!(fragments.iter().all(|fragment| fragment.len() <= 64));
@@ -870,7 +864,7 @@ fn generated_parameter_cards_preserve_field_boundaries() {
 #[test]
 fn generated_parameter_field_wider_than_a_card_is_refused() {
     let parameters = format!("{};", "1".repeat(65));
-    let error = crate::parameter::layout_parameter_cards(parameters.as_bytes())
+    let error = crate::parameter::layout_parameter_cards(parameters.as_bytes(), None)
         .expect_err("a field wider than the data area must fail");
     assert!(error.to_string().contains("field exceeds one card"));
 }

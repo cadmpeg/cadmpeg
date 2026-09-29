@@ -1555,6 +1555,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
     assert_eq!(ir.model.vertices.len(), 6);
     assert_eq!(ir.model.pcurves.len(), 2);
     let unsorted_arenas = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .filter(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder)
@@ -1564,7 +1565,8 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         "one component cannot unsort this many arenas: {unsorted_arenas}"
     );
 
-    assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
+    assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
+        .expect("resource allocation did not fail"));
     assert_eq!(
         ir.model
             .faces
@@ -1668,6 +1670,7 @@ fn tensor_surface_contraction_preserves_exact_isocurve() {
         cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
         0.25,
     )
+    .expect("resource allocation did not fail")
     .expect("u isocurve");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots(), surface.v_knots());

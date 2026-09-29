@@ -889,7 +889,7 @@ pub(super) fn standard_oriented_native_support_pcurves(
         ])
     };
     let Some(native_pair) =
-        standard_native_support_endpoint_pair(native, points, &endpoint_pair, Some(endpoint_pair))
+        standard_native_support_endpoint_pair(native, points, &endpoint_pair, Some(endpoint_pair))?
     else {
         return Ok(Some(copy_native()?));
     };
@@ -1045,7 +1045,7 @@ pub(super) fn build_standard_edge_curve(
                         let reference = cadmpeg_ir::geometry::derive_reference_direction(
                             *candidate_axis.as_raw(),
                         );
-                        let range = standard_circle_param_range(
+                        let mut range = standard_circle_param_range(
                             ctx,
                             ir,
                             bindings,
@@ -1059,10 +1059,10 @@ pub(super) fn build_standard_edge_curve(
                             start,
                             end,
                             refusal,
-                        )?
-                        .or_else(|| {
-                            native_support.and_then(|native| {
-                                native_support_circle_param_range(
+                        )?;
+                        if range.is_none() {
+                            if let Some(native) = native_support {
+                                range = native_support_circle_param_range(
                                     native,
                                     center,
                                     radius,
@@ -1070,9 +1070,9 @@ pub(super) fn build_standard_edge_curve(
                                     reference,
                                     start,
                                     end,
-                                )
-                            })
-                        });
+                                )?;
+                            }
+                        }
                         if let Some(range) = range.and_then(crate::nurbs::canonical_periodic_range)
                         {
                             if selected.is_some() {
@@ -1874,65 +1874,72 @@ pub(super) fn native_support_circle_param_range(
     ref_direction: Vector3,
     start: Point3,
     end: Point3,
-) -> Option<[f64; 2]> {
-    const GEOMETRY_TOLERANCE: f64 = 2e-3;
+) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<[f64; 2], cadmpeg_core::decode::ResourceLimit>> {
+        const GEOMETRY_TOLERANCE: f64 = 2e-3;
 
-    let parameters = [
-        support.parameter_range[0],
-        0.5 * (support.parameter_range[0] + support.parameter_range[1]),
-        support.parameter_range[1],
-    ];
-    let lift = |carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
-                pcurve: &PcurveGeometry| {
-        let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) = carrier
-        else {
-            return None;
+        let parameters = [
+            support.parameter_range[0],
+            0.5 * (support.parameter_range[0] + support.parameter_range[1]),
+            support.parameter_range[1],
+        ];
+        let lift = |carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
+                    pcurve: &PcurveGeometry| {
+            let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) = carrier
+            else {
+                return None;
+            };
+            let carrier_axis = standard_circle_axis_from_carrier(center, radius, surface)?;
+            (carrier_axis.as_raw().dot(axis) >= 0.9999).then_some(())?;
+            // A non-finite lift is measured as a finite one is.
+            Some(super::lifted_standard_support_parameters(
+                surface, pcurve, parameters,
+            ))
         };
-        let carrier_axis = standard_circle_axis_from_carrier(center, radius, surface)?;
-        (carrier_axis.as_raw().dot(axis) >= 0.9999).then_some(())?;
-        // A non-finite lift is measured as a finite one is.
-        Some(parameters.map(|parameter| {
-            let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).ok()?;
-            match cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v) {
-                Ok(point) => Some(point.get()),
-                Err(failure) => failure.non_finite(),
-            }
-        }))
-    };
-    let [first_start, first_middle, first_end] = lift(&support.carriers[0], &support.pcurves[0])?;
-    let [second_start, second_middle, second_end] =
-        lift(&support.carriers[1], &support.pcurves[1])?;
-    let first = [first_start?, first_middle?, first_end?];
-    let second = [second_start?, second_middle?, second_end?];
-    if first
-        .iter()
-        .zip(&second)
-        .any(|(left, right)| left.distance_squared(*right).sqrt() > SUPPORT_AGREEMENT_TOLERANCE)
-    {
-        return None;
-    }
-    let endpoint_error = |left: Point3, right: Point3| left.distance_squared(right).sqrt();
-    let source_forward = endpoint_error(first[0], start) <= GEOMETRY_TOLERANCE
-        && endpoint_error(first[2], end) <= GEOMETRY_TOLERANCE;
-    let source_reversed = endpoint_error(first[0], end) <= GEOMETRY_TOLERANCE
-        && endpoint_error(first[2], start) <= GEOMETRY_TOLERANCE;
-    if source_forward == source_reversed {
-        return None;
-    }
-    let witness = first[1];
-    let transverse = axis.cross(ref_direction);
-    let angle = |point: Point3| {
-        let radial = point.vector_from(center);
-        let axial = radial.dot(axis);
-        let radial_length = radial.norm();
-        (axial.abs() <= GEOMETRY_TOLERANCE && (radial_length - radius).abs() <= GEOMETRY_TOLERANCE)
-            .then(|| radial.dot(transverse).atan2(radial.dot(ref_direction)))
-    };
-    let start_angle = angle(start)?;
-    let end_angle = unwrap_angle(angle(end)?, start_angle);
-    let witness_angle = angle(witness)?;
-    let selected_end = witness_arc_end(start_angle, end_angle, witness_angle)?;
-    Some([start_angle, selected_end])
+        let [first_start, first_middle, first_end] =
+            match lift(&support.carriers[0], &support.pcurves[0])? {
+                Ok(points) => points,
+                Err(limit) => return Some(Err(limit)),
+            };
+        let [second_start, second_middle, second_end] =
+            match lift(&support.carriers[1], &support.pcurves[1])? {
+                Ok(points) => points,
+                Err(limit) => return Some(Err(limit)),
+            };
+        let first = [first_start?, first_middle?, first_end?];
+        let second = [second_start?, second_middle?, second_end?];
+        if first
+            .iter()
+            .zip(&second)
+            .any(|(left, right)| left.distance_squared(*right).sqrt() > SUPPORT_AGREEMENT_TOLERANCE)
+        {
+            return None;
+        }
+        let endpoint_error = |left: Point3, right: Point3| left.distance_squared(right).sqrt();
+        let source_forward = endpoint_error(first[0], start) <= GEOMETRY_TOLERANCE
+            && endpoint_error(first[2], end) <= GEOMETRY_TOLERANCE;
+        let source_reversed = endpoint_error(first[0], end) <= GEOMETRY_TOLERANCE
+            && endpoint_error(first[2], start) <= GEOMETRY_TOLERANCE;
+        if source_forward == source_reversed {
+            return None;
+        }
+        let witness = first[1];
+        let transverse = axis.cross(ref_direction);
+        let angle = |point: Point3| {
+            let radial = point.vector_from(center);
+            let axial = radial.dot(axis);
+            let radial_length = radial.norm();
+            (axial.abs() <= GEOMETRY_TOLERANCE
+                && (radial_length - radius).abs() <= GEOMETRY_TOLERANCE)
+                .then(|| radial.dot(transverse).atan2(radial.dot(ref_direction)))
+        };
+        let start_angle = angle(start)?;
+        let end_angle = unwrap_angle(angle(end)?, start_angle);
+        let witness_angle = angle(witness)?;
+        let selected_end = witness_arc_end(start_angle, end_angle, witness_angle)?;
+        Some(Ok([start_angle, selected_end]))
+    })()
+    .transpose()
 }
 
 pub(super) fn attach_standard_circles(

@@ -198,7 +198,7 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
                 &carrier.geometry,
                 SurfaceGeometry::Procedural { construction, .. } if construction == &procedural.id
             ));
-            assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
         }
     }
 }
@@ -228,7 +228,7 @@ fn decode_resolves_surface_curve_to_its_basis_curve() {
         result.ir().model.edges[0].curve(),
         Some(&result.ir().model.curves[0].id)
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -292,7 +292,7 @@ fn decode_emits_rolling_ball_blend_surface() {
             .map(|association| association.object_id.as_str()),
         Some(records[0].id.as_str())
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -345,7 +345,7 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
         loss.code.category() == LossCategory::Geometry
             && loss.message.starts_with("1 surface-intersection record(s)")
     }));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -384,7 +384,7 @@ fn decode_preserves_deltas_intersection_data_curve() {
             .model
             .procedural_curve_owner(&result.ir().model.procedural_curves[0].id)
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -500,7 +500,7 @@ fn decode_emits_charted_surface_intersection_construction() {
         loss.code.category() == LossCategory::Geometry
             && loss.message.contains("surface-intersection record(s)")
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -565,7 +565,7 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
     assert_eq!(records[0].state.basis(), 9);
     assert_eq!(records[0].state.points(), [[0.0; 3]; 2]);
     assert_eq!(records[0].state.parameters(), [0.000_25, 0.000_75]);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]

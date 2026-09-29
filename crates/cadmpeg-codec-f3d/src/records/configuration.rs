@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted configuration documents and their authored variant order.
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
@@ -8,12 +9,30 @@ use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
 /// JSON configuration payload stored in a Fusion design-configuration entry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DesignConfigurationWire", into = "DesignConfigurationWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignConfigurationWire")]
 pub(crate) struct DesignConfiguration {
     entry_name: String,
     identity_scope: cadmpeg_ir::ids::IdentityComponent,
     payload: ConfigurationPayload,
+}
+
+#[cfg(test)]
+thread_local! {
+    static CONFIGURATION_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignConfiguration {
+    fn clone(&self) -> Self {
+        CONFIGURATION_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            entry_name: self.entry_name.clone(),
+            identity_scope: self.identity_scope.clone(),
+            payload: self.payload.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,6 +81,42 @@ impl ConfigurationScalar {
         }
     }
 
+    pub(crate) fn text_charged(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        struct ScalarText<'a>(&'a ConfigurationScalar);
+        impl std::fmt::Display for ScalarText<'_> {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self.0 {
+                    ConfigurationScalar::Null => formatter.write_str("null"),
+                    ConfigurationScalar::Bool(value) => std::fmt::Display::fmt(value, formatter),
+                    ConfigurationScalar::Number(value) => std::fmt::Display::fmt(value, formatter),
+                    ConfigurationScalar::String(value) => formatter.write_str(value),
+                }
+            }
+        }
+        struct Length(usize);
+        impl std::fmt::Write for Length {
+            fn write_str(&mut self, value: &str) -> std::fmt::Result {
+                self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
+                Ok(())
+            }
+        }
+        let operation = "project F3D configuration scalar text";
+        let display = ScalarText(self);
+        let args = format_args!("{display}");
+        let mut length = Length(0);
+        std::fmt::write(&mut length, args)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+        let bytes =
+            u64::try_from(length.0).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+        ctx.charge_retained(bytes, operation)?;
+        let mut text = String::new();
+        text.try_reserve(length.0)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+        std::fmt::write(&mut text, args)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+        Ok(text)
+    }
+
     fn value(&self) -> Value {
         match self {
             Self::Null => Value::Null,
@@ -73,7 +128,12 @@ impl ConfigurationScalar {
 }
 
 impl ConfigurationVariant {
-    fn admit(entry_name: &str, name: &str, value: Value) -> Result<Self, CodecError> {
+    fn admit(
+        ctx: Option<&DecodeContext<'_>>,
+        entry_name: &str,
+        name: &str,
+        value: Value,
+    ) -> Result<Self, CodecError> {
         let Value::Object(mut fields) = value else {
             return Err(CodecError::malformed(format_args!(
                 "F3D configuration variant `{name}` must be an object: {entry_name}"
@@ -94,6 +154,9 @@ impl ConfigurationVariant {
                             )));
                         }
                     };
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "admit configuration parameter")?;
+                    }
                     admitted.insert(key, value);
                 }
                 Some(admitted)
@@ -111,15 +174,22 @@ impl ConfigurationVariant {
         ))
         };
         let suppressed = match fields.remove("suppressed") {
-            Some(Value::Array(values)) => Some(
-                values
-                    .into_iter()
-                    .map(|value| match value {
-                        Value::String(value) => Ok(value),
-                        _ => Err(suppressed_error()),
-                    })
-                    .collect::<Result<_, _>>()?,
-            ),
+            Some(Value::Array(values)) => {
+                let mut suppressed = Vec::new();
+                for value in values {
+                    let Value::String(value) = value else {
+                        return Err(suppressed_error());
+                    };
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "admit suppressed configuration member")?;
+                        suppressed.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("admit suppressed configuration member", 0, 1)
+                        })?;
+                    }
+                    suppressed.push(value);
+                }
+                Some(suppressed)
+            }
             Some(_) => return Err(suppressed_error()),
             None => None,
         };
@@ -191,6 +261,200 @@ struct DesignConfigurationWire {
     payload: Value,
 }
 
+struct ConfigurationIdentity<'a>(&'a DesignConfiguration);
+
+impl std::fmt::Display for ConfigurationIdentity<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use std::fmt::Write;
+
+        write!(formatter, "f3d:{}:entry#", self.0.identity_scope.as_str())?;
+        for character in self.0.entry_name.chars() {
+            if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+                let mut bytes = [0; 4];
+                for byte in character.encode_utf8(&mut bytes).as_bytes() {
+                    write!(formatter, "%{byte:02X}")?;
+                }
+            } else {
+                formatter.write_char(character)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Serialize for ConfigurationIdentity<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+struct ConfigurationOrder<'a>(&'a DesignConfiguration);
+
+impl Serialize for ConfigurationOrder<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match &self.0.payload {
+            ConfigurationPayload::Table {
+                variants: Some(variants),
+                ..
+            } if variants.explicit_order => {
+                serializer.collect_seq(variants.entries.iter().map(|(name, _)| name))
+            }
+            _ => serializer.collect_seq(std::iter::empty::<&String>()),
+        }
+    }
+}
+
+impl Serialize for ConfigurationScalar {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Null => serializer.serialize_none(),
+            Self::Bool(value) => serializer.serialize_bool(*value),
+            Self::Number(value) => value.serialize(serializer),
+            Self::String(value) => serializer.serialize_str(value),
+        }
+    }
+}
+
+struct ConfigurationVariantView<'a>(&'a ConfigurationVariant);
+
+impl Serialize for ConfigurationVariantView<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let variant = self.0;
+        let mut map = serializer.serialize_map(Some(
+            variant.extensions.len()
+                + usize::from(variant.material.is_some())
+                + usize::from(variant.parameters.is_some())
+                + usize::from(variant.suppressed.is_some()),
+        ))?;
+        let mut material_written = false;
+        let mut parameters_written = false;
+        let mut suppressed_written = false;
+        for (name, value) in &variant.extensions {
+            if name.as_str() > "material" && !material_written {
+                if let Some(material) = &variant.material {
+                    map.serialize_entry("material", material)?;
+                }
+                material_written = true;
+            }
+            if name.as_str() > "parameters" && !parameters_written {
+                if let Some(parameters) = &variant.parameters {
+                    map.serialize_entry("parameters", parameters)?;
+                }
+                parameters_written = true;
+            }
+            if name.as_str() > "suppressed" && !suppressed_written {
+                if let Some(suppressed) = &variant.suppressed {
+                    map.serialize_entry("suppressed", suppressed)?;
+                }
+                suppressed_written = true;
+            }
+            map.serialize_entry(name, value)?;
+        }
+        if !material_written {
+            if let Some(material) = &variant.material {
+                map.serialize_entry("material", material)?;
+            }
+        }
+        if !parameters_written {
+            if let Some(parameters) = &variant.parameters {
+                map.serialize_entry("parameters", parameters)?;
+            }
+        }
+        if !suppressed_written {
+            if let Some(suppressed) = &variant.suppressed {
+                map.serialize_entry("suppressed", suppressed)?;
+            }
+        }
+        map.end()
+    }
+}
+
+struct ConfigurationPayloadView<'a>(&'a ConfigurationPayload);
+
+struct SortedConfigurationVariants<'a>(&'a [(String, ConfigurationVariant)]);
+
+impl Serialize for SortedConfigurationVariants<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        let mut previous: Option<&str> = None;
+        while let Some((name, variant)) = self
+            .0
+            .iter()
+            .filter(|(name, _)| previous.is_none_or(|previous| name.as_str() > previous))
+            .min_by(|(left, _), (right, _)| left.cmp(right))
+        {
+            map.serialize_entry(name, &ConfigurationVariantView(variant))?;
+            previous = Some(name);
+        }
+        map.end()
+    }
+}
+
+impl Serialize for ConfigurationPayloadView<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            ConfigurationPayload::Rule(fields) => fields.serialize(serializer),
+            ConfigurationPayload::Table {
+                active,
+                variants,
+                extensions,
+            } => {
+                let mut map = serializer.serialize_map(Some(
+                    extensions.len()
+                        + usize::from(active.is_some())
+                        + usize::from(variants.is_some()),
+                ))?;
+                let mut active_written = false;
+                let mut variants_written = false;
+                for (name, value) in extensions {
+                    if name.as_str() > "active" && !active_written {
+                        if let Some(active) = active {
+                            map.serialize_entry("active", active)?;
+                        }
+                        active_written = true;
+                    }
+                    if name.as_str() > "configurations" && !variants_written {
+                        if let Some(variants) = variants {
+                            map.serialize_entry(
+                                "configurations",
+                                &SortedConfigurationVariants(&variants.entries),
+                            )?;
+                        }
+                        variants_written = true;
+                    }
+                    map.serialize_entry(name, value)?;
+                }
+                if !active_written {
+                    if let Some(active) = active {
+                        map.serialize_entry("active", active)?;
+                    }
+                }
+                if !variants_written {
+                    if let Some(variants) = variants {
+                        map.serialize_entry(
+                            "configurations",
+                            &SortedConfigurationVariants(&variants.entries),
+                        )?;
+                    }
+                }
+                map.end()
+            }
+        }
+    }
+}
+
+impl Serialize for DesignConfiguration {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(5))?;
+        map.serialize_entry("id", &ConfigurationIdentity(self))?;
+        map.serialize_entry("entry_name", &self.entry_name)?;
+        map.serialize_entry("kind", &self.kind())?;
+        map.serialize_entry("variant_order", &ConfigurationOrder(self))?;
+        map.serialize_entry("payload", &ConfigurationPayloadView(&self.payload))?;
+        map.end()
+    }
+}
+
 /// Native Fusion design-configuration entry family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -202,6 +466,26 @@ pub(crate) enum DesignConfigurationKind {
 impl DesignConfiguration {
     /// Admit the entry identity, object payload, and authored variant order.
     pub(crate) fn try_new(
+        entry_name: String,
+        kind: DesignConfigurationKind,
+        variant_order: Vec<String>,
+        payload: Map<String, Value>,
+    ) -> Result<Self, CodecError> {
+        Self::try_new_with_context(None, entry_name, kind, variant_order, payload)
+    }
+
+    pub(crate) fn try_new_charged(
+        ctx: &DecodeContext<'_>,
+        entry_name: String,
+        kind: DesignConfigurationKind,
+        variant_order: Vec<String>,
+        payload: Map<String, Value>,
+    ) -> Result<Self, CodecError> {
+        Self::try_new_with_context(Some(ctx), entry_name, kind, variant_order, payload)
+    }
+
+    fn try_new_with_context(
+        ctx: Option<&DecodeContext<'_>>,
         entry_name: String,
         kind: DesignConfigurationKind,
         variant_order: Vec<String>,
@@ -263,21 +547,40 @@ impl DesignConfiguration {
         };
         let variants = match variants {
             Some(variants) => {
-                let mut variants = variants
-                    .into_iter()
-                    .map(|(name, value)| {
-                        ConfigurationVariant::admit(&entry_name, &name, value)
-                            .map(|value| (name, value))
-                    })
-                    .collect::<Result<BTreeMap<_, _>, _>>()?;
+                let mut admitted = BTreeMap::new();
+                for (name, value) in variants {
+                    let value = ConfigurationVariant::admit(ctx, &entry_name, &name, value)?;
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "admit configuration variant")?;
+                    }
+                    admitted.insert(name, value);
+                }
+                let mut variants = admitted;
                 let explicit_order = !variant_order.is_empty();
                 let entries = if !explicit_order && variants.len() <= 1 {
-                    variants.into_iter().collect()
+                    let mut entries = Vec::new();
+                    for variant in variants {
+                        if let Some(ctx) = ctx {
+                            ctx.charge_collection_items(1, "order configuration variants")?;
+                            entries.try_reserve(1).map_err(|_| {
+                                ctx.refuse_codec_limit("order configuration variants", 0, 1)
+                            })?;
+                        }
+                        entries.push(variant);
+                    }
+                    entries
                 } else {
-                    let entries = variant_order
-                        .into_iter()
-                        .map(|name| variants.remove_entry(&name).ok_or_else(&invalid_order))
-                        .collect::<Result<_, _>>()?;
+                    let mut entries = Vec::new();
+                    for name in variant_order {
+                        let variant = variants.remove_entry(&name).ok_or_else(&invalid_order)?;
+                        if let Some(ctx) = ctx {
+                            ctx.charge_collection_items(1, "order configuration variants")?;
+                            entries.try_reserve(1).map_err(|_| {
+                                ctx.refuse_codec_limit("order configuration variants", 0, 1)
+                            })?;
+                        }
+                        entries.push(variant);
+                    }
                     if !variants.is_empty() {
                         return Err(invalid_order());
                     }
@@ -304,6 +607,10 @@ impl DesignConfiguration {
 
     pub(crate) fn id(&self) -> String {
         crate::ids::configuration_entry_id(&self.entry_name, &self.identity_scope)
+    }
+
+    pub(crate) fn id_charged(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        crate::ids::configuration_entry_id_charged(ctx, &self.entry_name, &self.identity_scope)
     }
 
     pub(crate) fn entry_name(&self) -> &String {
@@ -343,6 +650,7 @@ impl DesignConfiguration {
     }
 
     /// The native wire keeps a missing legacy order as an empty list.
+    #[cfg(test)]
     pub(crate) fn variant_order(&self) -> Vec<String> {
         match &self.payload {
             ConfigurationPayload::Table {
@@ -429,6 +737,7 @@ impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
     }
 }
 
+#[cfg(test)]
 impl From<DesignConfiguration> for DesignConfigurationWire {
     fn from(value: DesignConfiguration) -> Self {
         Self {
@@ -447,7 +756,7 @@ impl Serialize for OrderedConfigurationVariants<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(Some(self.0.len()))?;
         for (name, value) in self.0 {
-            map.serialize_entry(name, &value.payload())?;
+            map.serialize_entry(name, &ConfigurationVariantView(value))?;
         }
         map.end()
     }

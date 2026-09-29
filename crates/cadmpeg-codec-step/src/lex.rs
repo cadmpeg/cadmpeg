@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use cadmpeg_core::decode::{alloc_filled, u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{alloc_filled, u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 /// The entity or value occurrence class.
@@ -82,6 +82,34 @@ pub(crate) struct BinaryValue {
 }
 
 impl BinaryValue {
+    pub(crate) fn try_clone_for_decode(
+        &self,
+        ctx: Option<&DecodeContext<'_>>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(u64_from_index(self.data.len()), operation)?;
+        }
+        let mut data = Vec::new();
+        data.try_reserve_exact(self.data.len()).map_err(|_| {
+            ctx.map_or_else(
+                || {
+                    cadmpeg_core::decode::refuse_local_limit(
+                        operation,
+                        0,
+                        u64_from_index(self.data.len()),
+                    )
+                },
+                |ctx| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.data.len())),
+            )
+        })?;
+        data.extend_from_slice(&self.data);
+        Ok(Self {
+            unused_bits: self.unused_bits,
+            data: data.into_boxed_slice(),
+        })
+    }
+
     pub(crate) fn bit_len(&self) -> usize {
         self.data.len() * 8 - usize::from(self.unused_bits)
     }
@@ -116,6 +144,7 @@ impl LexError {
 }
 
 /// Tokenize one complete clear-text exchange structure.
+#[cfg(test)]
 pub(crate) fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
     let mut lexer = Lexer::new(input);
     let mut tokens = Vec::new();
@@ -161,8 +190,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         }
     }
 
-    pub(crate) fn set_context(&mut self, budget: Option<&'ctx DecodeContext<'arena>>) {
-        self.budget = budget;
+    pub(crate) fn with_context(input: &'a [u8], ctx: &'ctx DecodeContext<'arena>) -> Self {
+        let mut lexer = Self::new(input);
+        lexer.budget = Some(ctx);
+        lexer
     }
 
     pub(crate) fn set_transient_literals(&mut self) {
@@ -407,7 +438,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             }
             b'!' => self.user_name()?,
             b'+' | b'-' | b'0'..=b'9' | b'.' => self.number()?,
-            b if b.is_ascii_alphabetic() || b == b'_' => TokenKind::Name(self.name()),
+            b if b.is_ascii_alphabetic() || b == b'_' => TokenKind::Name(self.name()?),
             _ => return Err(Self::error(start, "unexpected byte")),
         };
         Ok(Token {
@@ -424,7 +455,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         kind
     }
 
-    fn name(&mut self) -> String {
+    fn name(&mut self) -> Result<String, LexError> {
         let start = self.at;
         self.at += 1;
         while self.input.get(self.at).is_some_and(|b| {
@@ -432,7 +463,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         }) {
             self.at += 1;
         }
-        self.normalized(start, self.at).to_ascii_uppercase()
+        let (mut name, _) = self.normalized(start, self.at, LiteralStorage::Retained)?;
+        name.make_ascii_uppercase();
+        Ok(name)
     }
 
     fn tag_name(&mut self) -> Result<TokenKind, LexError> {
@@ -450,7 +483,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         }) {
             self.at += 1;
         }
-        Ok(TokenKind::TagName(self.normalized(start, self.at)))
+        let (name, _) = self.normalized(start, self.at, LiteralStorage::Retained)?;
+        Ok(TokenKind::TagName(name))
     }
 
     fn user_name(&mut self) -> Result<TokenKind, LexError> {
@@ -464,7 +498,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         {
             return Err(Self::error(start, "user-defined name has no identifier"));
         }
-        Ok(TokenKind::UserName(self.name()))
+        Ok(TokenKind::UserName(self.name()?))
     }
 
     fn occurrence(&mut self, prefix: OccurrencePrefix) -> Result<TokenKind, LexError> {
@@ -481,8 +515,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                         break;
                     }
                 }
-                let value = self
-                    .normalized(digits, self.at)
+                let (raw, _temporary) =
+                    self.normalized(digits, self.at, LiteralStorage::Transient)?;
+                let value = raw
                     .parse::<u64>()
                     .ok()
                     .ok_or_else(|| Self::error(start, "instance name is out of range"))?;
@@ -504,7 +539,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                         break;
                     }
                 }
-                let name = self.normalized(name_start, self.at).to_ascii_uppercase();
+                let (mut name, _) =
+                    self.normalized(name_start, self.at, LiteralStorage::Retained)?;
+                name.make_ascii_uppercase();
                 match prefix {
                     OccurrencePrefix::Entity => Ok(TokenKind::ConstantEntity(name)),
                     OccurrencePrefix::Value => Ok(TokenKind::ConstantValue(name)),
@@ -546,20 +583,20 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 _ => break,
             }
         }
-        let mut raw = self.normalized(start, self.at);
+        let (mut raw, _temporary) = self.normalized(start, self.at, LiteralStorage::Transient)?;
         if exponent && raw.ends_with('.') {
             raw.pop();
         }
         if dot || exponent {
-            let parsed = if raw
-                .as_bytes()
-                .iter()
-                .any(|byte| matches!(byte, b'D' | b'd'))
-            {
-                raw.replace(['D', 'd'], "E").parse()
-            } else {
-                raw.parse()
-            };
+            raw.make_ascii_uppercase();
+            let mut index = 0;
+            while index < raw.len() {
+                if raw.as_bytes()[index] == b'D' {
+                    raw.replace_range(index..=index, "E");
+                }
+                index += 1;
+            }
+            let parsed = raw.parse();
             parsed
                 .map(TokenKind::Real)
                 .map_err(|_| Self::error(start, "invalid real"))
@@ -586,7 +623,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         if self.input.get(self.at) != Some(&b'.') {
             return Err(Self::error(start, "unterminated enumeration"));
         }
-        let name = self.normalized(name_start, self.at).to_ascii_uppercase();
+        let (mut name, _) = self.normalized(name_start, self.at, LiteralStorage::Retained)?;
+        name.make_ascii_uppercase();
         self.at += 1;
         Ok(TokenKind::Enumeration(name))
     }
@@ -602,7 +640,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             match self.input.get(self.at).copied() {
                 Some(b'\'') => {
                     if let Some(end) = self.match_exact_ignoring_controls(self.at, b"''") {
-                        bytes.extend_from_slice(b"''");
+                        self.extend_string_bytes(&mut bytes, b"''", start)?;
                         self.at = end;
                     } else {
                         self.at += 1;
@@ -628,15 +666,15 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                         } else {
                             b"\\F\\"
                         };
-                        bytes.extend_from_slice(directive);
+                        self.extend_string_bytes(&mut bytes, directive, start)?;
                         self.at = end;
                     } else {
-                        bytes.push(b'\\');
+                        self.extend_string_bytes(&mut bytes, b"\\", start)?;
                         self.at += 1;
                     }
                 }
                 Some(byte) => {
-                    bytes.push(byte);
+                    self.extend_string_bytes(&mut bytes, &[byte], start)?;
                     self.at += 1;
                 }
                 None => return Err(Self::error(start, "unterminated string")),
@@ -830,12 +868,77 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         self.input.get(at).copied()
     }
 
-    fn normalized(&self, start: usize, end: usize) -> String {
-        self.input[start..end]
+    fn normalized(
+        &self,
+        start: usize,
+        end: usize,
+        storage: LiteralStorage,
+    ) -> Result<(String, Option<ScopedReservation<'_>>), LexError> {
+        let byte_count = self.input[start..end]
             .iter()
             .filter(|byte| !byte.is_ascii_control())
-            .map(|byte| char::from(*byte))
-            .collect()
+            .map(|byte| char::from(*byte).len_utf8())
+            .sum::<usize>();
+        let operation = match storage {
+            LiteralStorage::Retained => "step_lex_normalized_retained",
+            LiteralStorage::Transient => "step_lex_normalized_temp",
+        };
+        let reservation = if let Some(ctx) = self.budget {
+            match storage {
+                LiteralStorage::Retained => {
+                    ctx.charge_retained(u64_from_index(byte_count), operation)
+                        .map_err(|error| Self::resource_error(start, error))?;
+                    None
+                }
+                LiteralStorage::Transient => Some(
+                    ctx.reserve_scoped(u64_from_index(byte_count), operation)
+                        .map_err(|error| Self::resource_error(start, error))?,
+                ),
+            }
+        } else {
+            None
+        };
+        let mut output = String::new();
+        output.try_reserve_exact(byte_count).map_err(|_| {
+            Self::resource_error(start, self.allocation_refusal(operation, byte_count))
+        })?;
+        for &byte in &self.input[start..end] {
+            if !byte.is_ascii_control() {
+                output.push(char::from(byte));
+            }
+        }
+        Ok((output, reservation))
+    }
+
+    fn extend_string_bytes(
+        &self,
+        output: &mut Vec<u8>,
+        bytes: &[u8],
+        start: usize,
+    ) -> Result<(), LexError> {
+        if let Some(ctx) = self.budget {
+            ctx.charge_collection_items(u64_from_index(bytes.len()), "step_string_lexeme_items")
+                .map_err(|error| Self::resource_error(start, error))?;
+            ctx.charge_retained(u64_from_index(bytes.len()), "step_string_lexeme_retained")
+                .map_err(|error| Self::resource_error(start, error))?;
+        }
+        output.try_reserve(bytes.len()).map_err(|_| {
+            Self::resource_error(
+                start,
+                self.allocation_refusal("step_string_lexeme_items", bytes.len()),
+            )
+        })?;
+        output.extend_from_slice(bytes);
+        Ok(())
+    }
+
+    fn allocation_refusal(&self, operation: &'static str, requested: usize) -> CodecError {
+        match self.budget {
+            Some(ctx) => ctx.refuse_codec_limit(operation, 0, u64_from_index(requested)),
+            None => {
+                cadmpeg_core::decode::refuse_local_limit(operation, 0, u64_from_index(requested))
+            }
+        }
     }
 
     fn print_control_end(&self, at: usize) -> Option<usize> {

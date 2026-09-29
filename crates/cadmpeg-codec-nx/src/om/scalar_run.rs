@@ -75,7 +75,7 @@ impl<F: ScalarFrame, O> FramedScalarRun<F, O> {
             })
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (u64, &F::Atom, &O)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (u64, &F::Atom, &O)> + Clone {
         let mut at = self.offset + self.form.prefix_len();
         self.values.iter().map(move |(atom, location)| {
             let offset = at;
@@ -86,21 +86,22 @@ impl<F: ScalarFrame, O> FramedScalarRun<F, O> {
 
     pub(crate) fn try_map_locations<P>(
         self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         mut map: impl FnMut(u64, O) -> Option<P>,
-    ) -> Option<FramedScalarRun<F, P>> {
+    ) -> Result<Option<FramedScalarRun<F, P>>, cadmpeg_core::CodecError> {
         let mut at = self.offset + self.form.prefix_len();
-        let values = self
-            .values
-            .map(|(atom, location)| {
-                let offset = at;
-                at += atom.width();
-                Some((atom, map(offset, location)?))
-            })
-            .transpose()?;
-        Some(FramedScalarRun {
+        let values = self.values.try_map_charged(ctx, |(atom, location)| {
+            let offset = at;
+            at += atom.width();
+            Some((atom, map(offset, location)?))
+        })?;
+        let Some(values) = values else {
+            return Ok(None);
+        };
+        Ok(Some(FramedScalarRun {
             form: self.form,
             offset: self.offset,
             values,
-        })
+        }))
     }
 }

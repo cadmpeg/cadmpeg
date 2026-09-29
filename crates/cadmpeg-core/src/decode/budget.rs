@@ -76,6 +76,7 @@ impl DecodeBudget {
             amount,
             operation,
         )
+        .map_err(Into::into)
     }
 
     pub(super) fn decompressed_used(&self) -> u64 {
@@ -102,13 +103,13 @@ impl DecodeBudget {
         limit: u64,
         amount: u64,
         operation: &'static str,
-    ) -> Result<(), CodecError> {
+    ) -> Result<(), ResourceLimit> {
         if let Some(resource) = self.fuse.get() {
-            return Err(CodecError::ResourceLimit(resource));
+            return Err(resource);
         }
         let before = used.get();
         if amount > limit.saturating_sub(before) {
-            return Err(self.refuse(
+            return Err(self.refuse_limit(
                 dimension,
                 ResourceFailure::BudgetExceeded,
                 limit,
@@ -121,7 +122,7 @@ impl DecodeBudget {
         Ok(())
     }
 
-    pub(super) fn refuse(
+    fn refuse_limit(
         &self,
         dimension: ResourceDimension,
         reason: ResourceFailure,
@@ -129,7 +130,7 @@ impl DecodeBudget {
         used: u64,
         additional: u64,
         operation: &'static str,
-    ) -> CodecError {
+    ) -> ResourceLimit {
         let resource = ResourceLimit {
             dimension,
             reason,
@@ -139,7 +140,20 @@ impl DecodeBudget {
             operation,
         };
         self.fuse.set(Some(resource));
-        CodecError::ResourceLimit(resource)
+        resource
+    }
+
+    pub(super) fn refuse(
+        &self,
+        dimension: ResourceDimension,
+        reason: ResourceFailure,
+        limit: u64,
+        used: u64,
+        additional: u64,
+        operation: &'static str,
+    ) -> CodecError {
+        self.refuse_limit(dimension, reason, limit, used, additional, operation)
+            .into()
     }
 
     pub(super) fn reserve_scoped(
@@ -147,6 +161,15 @@ impl DecodeBudget {
         bytes: u64,
         operation: &'static str,
     ) -> Result<ScopedReservation<'_>, CodecError> {
+        self.reserve_scoped_limit(bytes, operation)
+            .map_err(Into::into)
+    }
+
+    pub(super) fn reserve_scoped_limit(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<ScopedReservation<'_>, ResourceLimit> {
         self.charge(
             ResourceDimension::MaterializedBytes,
             &self.materialized,
@@ -166,6 +189,15 @@ impl DecodeBudget {
         bytes: u64,
         operation: &'static str,
     ) -> Result<(), CodecError> {
+        self.charge_retained_limit(bytes, operation)
+            .map_err(Into::into)
+    }
+
+    pub(super) fn charge_retained_limit(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
         self.charge(
             ResourceDimension::RetainedBytes,
             &self.retained,
@@ -181,7 +213,16 @@ impl DecodeBudget {
         charged: u64,
         operation: &'static str,
     ) -> CodecError {
-        self.refuse(
+        self.retained_allocation_failed_limit(charged, operation)
+            .into()
+    }
+
+    pub(super) fn retained_allocation_failed_limit(
+        &self,
+        charged: u64,
+        operation: &'static str,
+    ) -> ResourceLimit {
+        self.refuse_limit(
             ResourceDimension::RetainedBytes,
             ResourceFailure::AllocationFailed,
             self.retained_allowance(),
@@ -203,6 +244,7 @@ impl DecodeBudget {
             count,
             operation,
         )
+        .map_err(Into::into)
     }
 
     pub(super) fn charge_collection_items(
@@ -210,6 +252,15 @@ impl DecodeBudget {
         count: u64,
         operation: &'static str,
     ) -> Result<(), CodecError> {
+        self.charge_collection_items_limit(count, operation)
+            .map_err(Into::into)
+    }
+
+    pub(super) fn charge_collection_items_limit(
+        &self,
+        count: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
         self.charge(
             ResourceDimension::CollectionItems,
             &self.collection_items,
@@ -245,6 +296,7 @@ impl DecodeBudget {
             units,
             operation,
         )
+        .map_err(Into::into)
     }
 }
 

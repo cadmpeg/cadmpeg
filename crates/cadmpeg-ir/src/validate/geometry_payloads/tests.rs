@@ -15,7 +15,8 @@ fn tessellation_counts_must_be_consistent() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.tessellations.push(
         Tessellation::new(
-            "synthetic:test:tessellation#invalid-counts",
+            crate::tessellation::TessellationId::mint("synthetic:test:tessellation#invalid-counts")
+                .expect("valid identity"),
             TessellationMesh::List {
                 vertices: vec![
                     Point3::new(0.0, 0.0, 0.0),
@@ -32,7 +33,7 @@ fn tessellation_counts_must_be_consistent() {
         ]),
     );
     ir.finalize();
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report
         .findings
         .iter()
@@ -50,7 +51,8 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
 
     let texture = AssetId::mint("synthetic:test:asset#mesh-texture").expect("identity grammar");
     let valid = Tessellation::new(
-        "synthetic:test:tessellation#valid-groups",
+        crate::tessellation::TessellationId::mint("synthetic:test:tessellation#valid-groups")
+            .expect("valid identity"),
         TessellationMesh::List {
             vertices: vec![
                 Point3::new(0.0, 0.0, 0.0),
@@ -114,7 +116,7 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
     );
     ir.model.tessellations.extend([valid, invalid_texture]);
     ir.finalize();
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     let errors_for = |entity: &str| {
         report
             .findings
@@ -152,6 +154,6 @@ fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
         )
         .unwrap(),
     ));
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }

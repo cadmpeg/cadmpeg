@@ -354,7 +354,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
 }
 
 #[test]
-fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
+fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_allocation_limits() {
     use crate::native::features::holes::FeatureSimpleHoleTemplate;
     use crate::native::features::holes::SimpleHoleEndTreatment;
     use crate::native::features::holes::SimpleHoleExtent;
@@ -376,6 +376,11 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
 
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
 
+    let default_arena = cadmpeg_core::decode::DecodeArena::new();
+    let default_policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (default_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &default_arena, &default_policy)
+            .unwrap();
     let operation = "counterbore".to_string();
     let template = FeatureSimpleHoleTemplate {
         id: "template-counterbore".into(),
@@ -596,8 +601,26 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         &cylinders[1],
         0,
     ));
-    assert!(counterbore_cylinders(&ir, &body_faces).is_some());
-    let projection = counterbore_body_projection(&ir, &operations, &outputs)
+    assert!(counterbore_cylinders(&default_ctx, &ir, &body_faces)
+        .unwrap()
+        .is_some());
+    for admitted_items in [1, 5] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = admitted_items;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = counterbore_body_projection(&ctx, &ir, &operations, &outputs)
+            .err()
+            .expect("counterbore candidate and assignment allocations exceed item limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+        ));
+    }
+    let projection = counterbore_body_projection(&default_ctx, &ir, &operations, &outputs)
+        .unwrap()
         .expect("coaxial counterbore witness");
     assert_eq!(projection.outputs, outputs);
     assert_eq!(
@@ -614,12 +637,14 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             },
         )])
     );
-    let inferred = counterbore_body_projection(&ir, &operations, &BTreeMap::new())
+    let inferred = counterbore_body_projection(&default_ctx, &ir, &operations, &BTreeMap::new())
+        .unwrap()
         .expect("unique connected solid counterbore witness");
     assert_eq!(inferred.outputs, outputs);
     assert_eq!(inferred.counterbores, projection.counterbores);
     assert_eq!(
-        counterbore_axis_placements_for_operations(&ir, &operations, &outputs),
+        counterbore_axis_placements_for_operations(&default_ctx, &ir, &operations, &outputs)
+            .unwrap(),
         BTreeMap::from([(
             operation.clone(),
             HolePlacement::Axis {
@@ -675,11 +700,20 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             });
         })
         .unwrap();
-    assert!(counterbore_body_projection(&missing_shoulder, &operations, &outputs).is_none());
+    assert!(
+        counterbore_body_projection(&default_ctx, &missing_shoulder, &operations, &outputs)
+            .unwrap()
+            .is_none()
+    );
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
-    assert!(counterbore_body_projection(&sheet, &operations, &outputs).is_none());
+    assert!(
+        counterbore_body_projection(&default_ctx, &sheet, &operations, &outputs)
+            .unwrap()
+            .is_none()
+    );
     assert!(counterbore_body_projection(
+        &default_ctx,
         &ir,
         &[operation.clone(), "second-operation".into()],
         &BTreeMap::from([
@@ -687,6 +721,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             ("second-operation".into(), vec![body]),
         ]),
     )
+    .unwrap()
     .is_none());
 }
 

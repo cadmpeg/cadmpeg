@@ -12,9 +12,11 @@ use crate::om::surface_branches::{
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU8;
 
+mod borrowed_wires;
+
 /// One exact counted branch in a bounded surface-feature payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "SurfaceBranchWire", into = "SurfaceBranchWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "SurfaceBranchWire")]
 pub(in crate::native) struct FeatureSurfaceConstructionBranch {
     id: String,
     pub(in crate::native) operation_label: String,
@@ -60,6 +62,7 @@ struct SurfaceBranchWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureSurfaceConstructionBranch> for SurfaceBranchWire {
     fn from(value: FeatureSurfaceConstructionBranch) -> Self {
         let branch = &value.references;
@@ -160,31 +163,56 @@ impl TryFrom<SurfaceBranchWire> for FeatureSurfaceConstructionBranch {
 
 /// Resolve branch references without assigning section or guide semantics.
 pub(in crate::native) fn feature_surface_construction_branches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureSurfaceConstructionBranch> {
-    let indexed = container.indexed_om_sections();
+) -> Result<Vec<FeatureSurfaceConstructionBranch>, cadmpeg_core::CodecError> {
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut branches = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(group) = surface_feature_payload_branches(record.payload_view()) else {
+            if failure.is_some() {
                 return;
+            }
+            let group = match surface_feature_payload_branches(ctx, record.payload_view()) {
+                Ok(Some(group)) => group,
+                Ok(None) => return,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let family = group.family;
             let header_code = group.header_code;
-            branches.extend(group.into_branches().into_iter().enumerate().filter_map(|(ordinal, branch)| {
-                let order = u8::try_from(ordinal + 1).ok().and_then(NonZeroU8::new)?;
-                let references = branch.resolve(entry_offset, |token| unique_offset_data_block(&indexed, token.value())).ok()?;
-                Some(FeatureSurfaceConstructionBranch {
+            for (ordinal, branch) in group.into_branches().into_iter().enumerate() {
+                let Some(order) = u8::try_from(ordinal + 1).ok().and_then(NonZeroU8::new) else {
+                    continue;
+                };
+                let references = match branch.resolve(ctx, entry_offset, |token| {
+                    unique_offset_data_block(&indexed, token.value())
+                }) {
+                    Ok(Some(references)) => references,
+                    Ok(None) => continue,
+                    Err(error) => {
+                        failure = Some(error);
+                        return;
+                    }
+                };
+                branches.push(FeatureSurfaceConstructionBranch {
                     id: format!("nx:feature-history:surface-construction-branch#{section_key}-{operation_ordinal:010}-{ordinal:010}"),
                     operation_label: operation_label.clone(), order, family, header_code, references,
-                })
-            }));
+                });
+            }
         },
-    );
-    branches
+    )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    Ok(branches)
 }
 
 #[cfg(test)]

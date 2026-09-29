@@ -17,7 +17,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::tessellation::{Tessellation, TessellationId};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
@@ -50,7 +50,7 @@ pub(in super::super) fn build_container_ir(
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
 ) -> Result<BuiltIr, CodecError> {
-    let (meta, coverage) = source_meta(scan, classification)?;
+    let (meta, coverage) = source_meta(ctx, scan, classification)?;
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
     emit_legacy_arenas(ctx, scan, &mut ir, &mut annotations)?;
@@ -449,10 +449,13 @@ fn transfer_display_tessellations(
         .principal_unit
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     for strip in &scan.primitives.triangle_strips {
-        let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
+        let id = TessellationId::compose(
+            &cadmpeg_ir::identity_namespace!("creo", "solid_primdata", "tessellation"),
+            strip.offset,
+        );
         annotate(
             annotations,
-            &id,
+            id.as_str(),
             "SolidPrimdata",
             strip.offset as u64,
             "display_triangle_strip",
@@ -657,7 +660,7 @@ pub(in super::super) fn build_ir(
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
 ) -> Result<BuiltIr, CodecError> {
-    let (meta, mut coverage) = source_meta(scan, classification)?;
+    let (meta, mut coverage) = source_meta(ctx, scan, classification)?;
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
     let mut transfer_losses = Vec::new();

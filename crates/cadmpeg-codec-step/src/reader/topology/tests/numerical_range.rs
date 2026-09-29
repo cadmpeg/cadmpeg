@@ -1,8 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::*;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::Point2;
+
+fn with_context<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+    run(&ctx)
+}
 fn plane() -> (cadmpeg_ir::CadIr, SurfaceId) {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let id = SurfaceId::mint("test:audit:surface#1").unwrap();
@@ -35,8 +44,13 @@ fn numerical_0922b_pcurve_knot_units() {
             )
             .unwrap(),
         };
-        let seeds = pcurve_selection_seeds(&index, &id, &p, &ir.model.surfaces[0].geometry);
-        let r = pcurve_surface_closest(&index, &id, &p, Point3::new(0.3, 0., 0.), &seeds).unwrap();
+        let seeds = with_context(|ctx| {
+            pcurve_selection_seeds(&index, &id, &p, &ir.model.surfaces[0].geometry, ctx)
+        })
+        .expect("seed collection fits policy");
+        let r = pcurve_surface_closest(&index, &id, &p, Point3::new(0.3, 0., 0.), &seeds)
+            .expect("resource allocation did not fail")
+            .unwrap();
         println!("STEP d{d:e}, result{r:?}, x={}", r.1 / d);
         assert!(r.0 < 1e-14);
         assert!((r.1 / d - 0.3).abs() < 1e-14);
@@ -62,9 +76,15 @@ fn pcurve_selection_keeps_interior_knots_and_seeds_in_a_wide_finite_domain() {
         .unwrap(),
     };
     let mut fractions = Vec::new();
-    pcurve_parameter_break_fractions(&pcurve, [-f64::MAX, f64::MAX], &mut fractions);
+    with_context(|ctx| {
+        pcurve_parameter_break_fractions(&pcurve, [-f64::MAX, f64::MAX], &mut fractions, ctx)
+    })
+    .expect("break fractions fit policy");
     assert_eq!(fractions, vec![0.5]);
-    let seeds = pcurve_selection_seeds(&index, &id, &pcurve, &ir.model.surfaces[0].geometry);
+    let seeds = with_context(|ctx| {
+        pcurve_selection_seeds(&index, &id, &pcurve, &ir.model.surfaces[0].geometry, ctx)
+    })
+    .expect("seed collection fits policy");
     assert!(seeds
         .iter()
         .any(|seed| (seed / f64::MAX + 0.5).abs() < f64::EPSILON));
@@ -102,7 +122,10 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
         .expect("line pcurve"),
     );
     let index = ModelIndex::new_model_only(&ir);
-    let seeds = pcurve_selection_seeds(&index, &id, &pcurve, &ir.model.surfaces[0].geometry);
+    let seeds = with_context(|ctx| {
+        pcurve_selection_seeds(&index, &id, &pcurve, &ir.model.surfaces[0].geometry, ctx)
+    })
+    .expect("seed collection fits policy");
     assert!(seeds
         .iter()
         .any(|seed| (seed / max + 0.5).abs() <= 8.0 * f64::EPSILON));
@@ -145,7 +168,7 @@ fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
     );
     let lower = -9.0e307;
     let upper = 9.0e307;
-    assert!(pcurve_locus_witness(
+    assert!(with_context(|ctx| pcurve_locus_witness(
         &index,
         &exchange,
         &edge,
@@ -159,7 +182,53 @@ fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
         Point3::new(lower, 0.0, 0.0),
         Point3::new(upper, 0.0, 0.0),
         COINCIDENCE_TOLERANCE,
-    ));
+        ctx,
+    ))
+    .expect("resource allocation did not fail"));
+}
+
+#[test]
+fn pcurve_locus_fractions_refuse_collection_limit() {
+    let (mut ir, surface_id) = plane();
+    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        id: CurveId::from(ids::data(kind!("curve"), 54)),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("finite line"),
+        )),
+        source_object: None,
+    });
+    let index = ModelIndex::new_model_only(&ir);
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#54=LINE('',#55,#56);#55=DUMMY();#56=DUMMY();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid line reference");
+    let edge = EdgeDef::Curve {
+        start: 1,
+        end: 2,
+        curve: 54,
+        same: true,
+    };
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .expect("finite pcurve"),
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
+    assert!(matches!(pcurve_locus_witness(
+        &index, &exchange, &edge, &surface_id, &pcurve,
+        PcurveEndpointFit { start_parameter: 0.0, end_parameter: 1.0, max_residual: 0.0 },
+        Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0),
+        COINCIDENCE_TOLERANCE, &ctx,
+    ), Err(PcurveSelectionFailure::Resource(CodecError::ResourceLimit(refusal)))
+        if refusal.operation == "step_pcurve_locus_fractions"));
 }
 
 #[test]
@@ -197,6 +266,7 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
             &[midpoint],
             COINCIDENCE_TOLERANCE,
         )
+        .expect("resource allocation did not fail")
         .is_some());
     }
     let (exchange, _) =
@@ -215,7 +285,7 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
         )
         .expect("finite pcurve"),
     );
-    assert!(pcurve_locus_witness(
+    assert!(with_context(|ctx| pcurve_locus_witness(
         &index,
         &exchange,
         &edge,
@@ -229,7 +299,9 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
         Point3::new(0.5, 0.0, 0.0),
         Point3::new(0.6, 0.0, 0.0),
         COINCIDENCE_TOLERANCE,
-    ));
+        ctx,
+    ))
+    .expect("resource allocation did not fail"));
 }
 
 #[test]
@@ -247,7 +319,8 @@ fn numerical_0922b_pcurve_retains_finite_seed_when_step_overflows() {
         .unwrap(),
     };
     assert_eq!(
-        mapped_pcurve_closest(&index, &id, &pcurve, Point3::new(1e200, 0., 0.), 0.),
+        mapped_pcurve_closest(&index, &id, &pcurve, Point3::new(1e200, 0., 0.), 0.)
+            .expect("resource allocation did not fail"),
         Some((1e200, 0.))
     );
 }
@@ -287,7 +360,8 @@ fn a_declared_pcurve_fit_with_an_overflowing_end_is_measured_at_its_finite_end()
             [-1., 1.],
             Point3::new(0., 0., 0.),
             Point3::new(7., 7., 7.),
-        ),
+        )
+        .expect("resource allocation did not fail"),
         Some(0.)
     );
 }
@@ -315,7 +389,9 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
         target_parameter,
         0.,
     );
-    let (error, parameter) = mapped_pcurve_closest(&index, &id, &parabola, target, 1e152).unwrap();
+    let (error, parameter) = mapped_pcurve_closest(&index, &id, &parabola, target, 1e152)
+        .expect("resource allocation did not fail")
+        .unwrap();
     assert!(
         (parameter / target_parameter - 1.).abs() < 1e-6,
         "{parameter}"
@@ -360,7 +436,8 @@ fn a_declared_pcurve_fit_with_an_overflowing_placed_end_misses_by_an_infinite_di
             [-1., 1.],
             Point3::new(0., 0., 0.),
             Point3::new(7., 7., 7.),
-        ),
+        )
+        .expect("resource allocation did not fail"),
         Some(f64::INFINITY)
     );
 }
@@ -386,7 +463,8 @@ fn a_declared_pcurve_fit_with_an_overflowing_line_end_is_measured_at_its_finite_
             [-1., 1.],
             Point3::new(0., 0., 0.),
             Point3::new(7., 7., 7.),
-        ),
+        )
+        .expect("resource allocation did not fail"),
         Some(0.)
     );
 }

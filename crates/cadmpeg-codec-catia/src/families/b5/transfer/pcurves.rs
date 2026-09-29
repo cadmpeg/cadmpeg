@@ -647,9 +647,7 @@ pub(super) fn nurbs_isocurve(
         .and_then(|bytes| u64::try_from(bytes).ok())
         .ok_or_else(|| ctx.refuse_codec_limit("catia_b5_isocurve_temporary", u64::MAX, u64::MAX))?;
     let _temporary = ctx.reserve_scoped(temporary_bytes, "catia_b5_isocurve_temporary")?;
-    Ok(cadmpeg_ir::eval::nurbs_surface_isocurve(
-        surface, fixed.0, fixed.1,
-    ))
+    cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed.0, fixed.1).map_err(Into::into)
 }
 
 fn constant_coordinate(points: &[FiniteVector<2>], dimension: usize) -> Option<f64> {

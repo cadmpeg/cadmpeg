@@ -1219,7 +1219,8 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     };
 
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None),
+        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None)
+            .expect("evaluator allocation succeeds"),
         Some([0, 1])
     );
     assert_eq!(
@@ -1249,7 +1250,8 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         ])
     );
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], Some([0, 2])),
+        standard_native_support_endpoint_pair(&native, &points, &[0, 1], Some([0, 2]))
+            .expect("evaluator allocation succeeds"),
         None
     );
 
@@ -1262,7 +1264,8 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         .expect("valid LinePcurve fixture"),
     );
     assert_eq!(
-        standard_native_support_endpoint_pair(&reversed, &points, &[0, 1], None),
+        standard_native_support_endpoint_pair(&reversed, &points, &[0, 1], None)
+            .expect("evaluator allocation succeeds"),
         Some([0, 1])
     );
 
@@ -1273,7 +1276,8 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         None,
     ));
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1, 2], None),
+        standard_native_support_endpoint_pair(&native, &points, &[0, 1, 2], None)
+            .expect("evaluator allocation succeeds"),
         None
     );
 
@@ -1286,7 +1290,8 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         .expect("valid LinePcurve fixture"),
     );
     assert_eq!(
-        standard_native_support_endpoint_pair(&disagreeing, &points, &[0, 1], None),
+        standard_native_support_endpoint_pair(&disagreeing, &points, &[0, 1], None)
+            .expect("evaluator allocation succeeds"),
         None
     );
 }
@@ -1375,7 +1380,7 @@ fn standard_native_reverse_label_refuses_materialized_limit() {
     };
     assert_eq!(
         standard_native_support_endpoint_pair(&native, &points, &[0, 1], Some([0, 1])),
-        Some([0, 1])
+        Ok(Some([0, 1]))
     );
     let limited = crate::test_support::with_materialized_limit(0, |ctx| {
         standard_oriented_native_support_pcurves(
@@ -1835,7 +1840,8 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
             Vector3::new(1.0, 0.0, 0.0),
             start,
             end,
-        ),
+        )
+        .expect("evaluator allocation succeeds"),
         Some([0.0, 1.5 * std::f64::consts::PI])
     );
     let mut disagreeing = native.clone();
@@ -1855,6 +1861,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
         start,
         end,
     )
+    .expect("evaluator allocation succeeds")
     .is_none());
     assert!(native_support_circle_param_range(
         &native,
@@ -1865,6 +1872,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
         start,
         end,
     )
+    .expect("evaluator allocation succeeds")
     .is_none());
 
     let mut ir = CadIr::empty();
@@ -1905,3 +1913,14 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
 
 mod face_evidence;
 mod surface_intersections;
+
+#[test]
+fn line_pair_constraint_rejects_pairs_beyond_edge_roles() {
+    let constraint = crate::test_support::with_service_context(|ctx| {
+        super::super::StandardLinePairConstraint::new(ctx, &[], &[], &[])
+    })
+    .expect("service budget admits line constraint");
+    assert!(constraint.edge_pairs(&[None]).is_none());
+}
+
+mod overflowing_support;

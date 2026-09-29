@@ -348,7 +348,14 @@ refusal,
                 Ok(transferred) => transferred,
                 Err(error) => return Some(Err(error)),
             };
-            transferred && neutral_model_is_admissible(&mut topology_ir, &unknowns)
+            if transferred {
+                match neutral_model_is_admissible(&mut topology_ir, &unknowns) {
+                    Ok(admissible) => admissible,
+                    Err(limit) => return Some(Err(limit.into())),
+                }
+            } else {
+                false
+            }
         } else {
             false
         };
@@ -424,10 +431,14 @@ refusal,
     .transpose()
 }
 
-fn e5_source_ordinal(id: &str) -> usize {
-    id.rsplit_once('#')
+fn e5_source_ordinal(id: &str) -> (bool, usize) {
+    match id
+        .rsplit_once('#')
         .and_then(|(_, ordinal)| ordinal.parse().ok())
-        .unwrap_or(usize::MAX)
+    {
+        Some(ordinal) => (false, ordinal),
+        None => (true, 0),
+    }
 }
 
 fn derive_e5_vertices(
@@ -3297,7 +3308,7 @@ fn e5_lift_plane_nurbs(
         crate::resource::copy_knot_vector(ctx, nurbs.knots(), "catia_e5_boundary_lifted_knots")?;
     crate::nurbs::note_refusal(
         ctx,
-        NurbsCurve::from_admitted_parts(nurbs.degree(), knots, poles, nurbs.periodic()),
+        NurbsCurve::new(nurbs.degree(), knots, poles, nurbs.periodic()),
         refusal,
         format_args!(
             "e5 boundary curve lifted from the pcurve on surface record {surface_record_id}"

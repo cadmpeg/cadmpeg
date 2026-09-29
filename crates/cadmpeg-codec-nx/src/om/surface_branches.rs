@@ -5,7 +5,21 @@ use super::branch_items::BranchItems;
 use super::discriminators::SurfaceBranchMode;
 use super::operation_record::OperationPayload;
 use super::reference_index::PayloadIndexToken;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Deserializer, Serialize};
+
+fn reserve_surface_item<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), operation)?;
+    values
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
@@ -45,6 +59,7 @@ impl SurfaceSuffix {
         Ok(Self(bytes))
     }
 
+    #[cfg(test)]
     pub(crate) fn into_vec(self) -> Vec<u8> {
         self.0
     }
@@ -147,18 +162,18 @@ impl<B> SurfaceBranch<B> {
 impl SurfaceBranch<()> {
     pub(crate) fn resolve<B>(
         self,
+        ctx: &DecodeContext<'_>,
         file_base: u64,
         mut target: impl FnMut(PayloadIndexToken) -> B,
-    ) -> Result<SurfaceBranch<B>, &'static str> {
-        let offset = self
-            .offset
-            .checked_add(file_base)
-            .ok_or("source_offset: surface branch frame overflows")?;
+    ) -> Result<Option<SurfaceBranch<B>>, CodecError> {
+        let Some(offset) = self.offset.checked_add(file_base) else {
+            return Ok(None);
+        };
         let members = self
             .members
-            .map_indexed(|_, (token, ())| (token, target(token)));
+            .map_indexed_charged(ctx, |_, (token, ())| (token, target(token)))?;
         let terminal = (self.terminal.0, target(self.terminal.0));
-        SurfaceBranch::new(
+        Ok(SurfaceBranch::new(
             offset,
             self.mode,
             self.witnessed,
@@ -166,6 +181,7 @@ impl SurfaceBranch<()> {
             terminal,
             self.suffix,
         )
+        .ok())
     }
 }
 
@@ -184,39 +200,43 @@ impl SurfaceFeaturePayloadBranches {
 }
 
 fn surface_feature_branch_paths(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     payload_offset: usize,
     at: usize,
     remaining: u8,
     terminator: &[u8],
-) -> Vec<Vec<SurfaceBranch<()>>> {
+) -> Result<Vec<Vec<SurfaceBranch<()>>>, CodecError> {
+    let _depth = ctx.enter_nested("NX surface branch path")?;
+    ctx.charge_work(1, "scan NX surface branch path")?;
     if remaining == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Some(mode) = payload
         .get(at)
         .copied()
         .and_then(|value| SurfaceBranchMode::try_from(value).ok())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if payload.get(at + 1) != Some(&0x01) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Some(declared_count @ 2..) = payload.get(at + 2).copied() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut cursor = at + 3;
-    let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
+    let mut members = Vec::new();
     for _ in 1..declared_count {
         let Some(token) = payload.get(cursor..).and_then(PayloadIndexToken::read) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         cursor += token.raw().len();
+        reserve_surface_item(ctx, &mut members, "NX surface branch members")?;
         members.push((token, ()));
     }
     let Ok(members) = BranchItems::new(members) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let witnessed = payload.get(cursor..cursor + 2) == Some(&[0x01, declared_count]);
     if witnessed {
@@ -228,74 +248,97 @@ fn surface_feature_branch_paths(
         5
     };
     let Some(zero_lane) = payload.get(cursor..cursor + zero_count) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if !zero_lane.iter().all(|&byte| byte == 0) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     cursor += zero_count;
     if payload.get(cursor..cursor + 3) != Some(&[0xff, 0x01, 0x02]) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     cursor += 3;
     let Some(terminal) = payload.get(cursor..).and_then(PayloadIndexToken::read) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     cursor += terminal.raw().len();
     if payload.get(cursor) != Some(&0x00) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     cursor += 1;
 
     let mut paths = Vec::new();
     for suffix_len in 1..=5 {
+        ctx.charge_work(1, "scan NX surface branch suffix")?;
         let Some(suffix) = payload.get(cursor..cursor + suffix_len) else {
             continue;
         };
         let next = cursor + suffix_len;
         let continuations = if remaining == 1 {
-            (payload.get(next..next + terminator.len()) == Some(terminator))
-                .then_some(Vec::new())
-                .into_iter()
-                .collect::<Vec<_>>()
+            let mut continuations = Vec::new();
+            if payload.get(next..next + terminator.len()) == Some(terminator) {
+                reserve_surface_item(ctx, &mut continuations, "NX surface terminal paths")?;
+                continuations.push(Vec::new());
+            }
+            continuations
         } else {
-            surface_feature_branch_paths(payload, payload_offset, next, remaining - 1, terminator)
+            surface_feature_branch_paths(
+                ctx,
+                payload,
+                payload_offset,
+                next,
+                remaining - 1,
+                terminator,
+            )?
         };
         if continuations.is_empty() {
             continue;
         }
-        let Ok(suffix) = SurfaceSuffix::new(suffix.to_vec()) else {
-            continue;
-        };
-        let Some(offset) = (payload_offset as u64).checked_add(at as u64) else {
-            continue;
-        };
-        let Ok(branch) = SurfaceBranch::new(
-            offset,
-            mode,
-            witnessed,
-            members.clone(),
-            (terminal, ()),
-            suffix,
-        ) else {
+        let Some(offset) = u64_from_index(payload_offset).checked_add(u64_from_index(at)) else {
             continue;
         };
         for mut continuation in continuations {
-            continuation.insert(0, branch.clone());
+            let mut member_copy = Vec::new();
+            for member in members.as_slice().iter().copied() {
+                reserve_surface_item(ctx, &mut member_copy, "NX surface branch member copy")?;
+                member_copy.push(member);
+            }
+            let Ok(member_copy) = BranchItems::new(member_copy) else {
+                continue;
+            };
+            ctx.charge_collection_items(u64_from_index(suffix.len()), "NX surface suffix bytes")?;
+            let suffix_copy = ctx.copy_retained(suffix, "NX surface suffix bytes")?;
+            let Ok(suffix_copy) = SurfaceSuffix::new(suffix_copy) else {
+                continue;
+            };
+            let Ok(branch) = SurfaceBranch::new(
+                offset,
+                mode,
+                witnessed,
+                member_copy,
+                (terminal, ()),
+                suffix_copy,
+            ) else {
+                continue;
+            };
+            reserve_surface_item(ctx, &mut continuation, "NX surface branch path entries")?;
+            continuation.insert(0, branch);
+            reserve_surface_item(ctx, &mut paths, "NX surface branch paths")?;
             paths.push(continuation);
             if paths.len() == 2 {
-                return paths;
+                return Ok(paths);
             }
         }
     }
-    paths
+    Ok(paths)
 }
 
 /// Decode the unique exactly framed counted branch group in a bounded `SKIN`
 /// or `Studio Surface` payload.
 pub(crate) fn surface_feature_payload_branches(
+    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Option<SurfaceFeaturePayloadBranches> {
+) -> Result<Option<SurfaceFeaturePayloadBranches>, CodecError> {
     const SKIN_TERMINATOR: [u8; 11] = [
         0x00, 0x00, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01,
     ];
@@ -303,8 +346,12 @@ pub(crate) fn surface_feature_payload_branches(
     let terminator = match record.name() {
         "SKIN" => &SKIN_TERMINATOR[..],
         "Studio Surface" => &STUDIO_TERMINATOR[..],
-        _ => return None,
+        _ => return Ok(None),
     };
+    ctx.charge_work(
+        u64_from_index(record.payload().len()),
+        "scan NX surface branch groups",
+    )?;
     let mut candidate = None;
     for start in 0..record.payload().len().saturating_sub(6) {
         if record.payload().get(start..start + 2) != Some(&[0xa0, 0x5a]) {
@@ -328,26 +375,30 @@ pub(crate) fn surface_feature_payload_branches(
             continue;
         };
         let paths = surface_feature_branch_paths(
+            ctx,
             record.payload(),
             record.payload_offset(),
             start + 6,
             declared_group_count,
             terminator,
-        );
-        let [branches] = paths.as_slice() else {
+        )?;
+        if paths.len() != 1 {
+            continue;
+        }
+        let Some(branches) = paths.into_iter().next() else {
             continue;
         };
         let group = SurfaceFeaturePayloadBranches {
             family,
             header_code,
-            branches: branches.clone(),
+            branches,
         };
         if candidate.is_some() {
-            return None;
+            return Ok(None);
         }
         candidate = Some(group);
     }
-    candidate
+    Ok(candidate)
 }
 
 #[cfg(test)]

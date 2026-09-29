@@ -56,6 +56,7 @@ pub(super) enum EncodingWire {
     },
 }
 
+#[cfg(test)]
 impl From<RmDisplayColorAssignmentEncoding> for EncodingWire {
     fn from(value: RmDisplayColorAssignmentEncoding) -> Self {
         match value {
@@ -204,7 +205,8 @@ impl TryFrom<RmDisplayColorAssignmentWire> for RmDisplayColorAssignment {
     fn try_from(wire: RmDisplayColorAssignmentWire) -> Result<Self, Self::Error> {
         let color_index =
             PaletteIndex::new(wire.color_index).ok_or("color_index: must be in 1..=216")?;
-        if color_index.display_raw() != wire.raw_color_index {
+        let (raw, width) = color_index.display_token();
+        if raw[..width] != wire.raw_color_index {
             return Err("raw_color_index differs from color_index display token".into());
         }
         let frame = DisplayColorFrame::new(wire.encoding, color_index)
@@ -226,6 +228,7 @@ impl TryFrom<RmDisplayColorAssignmentWire> for RmDisplayColorAssignment {
     }
 }
 
+#[cfg(test)]
 impl From<RmDisplayColorAssignment> for RmDisplayColorAssignmentWire {
     fn from(value: RmDisplayColorAssignment) -> Self {
         let source_offset = value.frame.offset();

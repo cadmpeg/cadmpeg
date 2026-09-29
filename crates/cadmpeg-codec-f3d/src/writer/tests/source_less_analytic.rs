@@ -113,6 +113,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .unwrap();
     });
     retained.model.configurations = crate::design::configurations::project_configurations(
+        None,
         &f3d_native(&retained).design_configurations,
     )
     .expect("edited configuration order");
@@ -1134,7 +1135,8 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
     source_less.model.curves.pop();
     source_less.model.tessellations.push(
         Tessellation::new(
-            "generated:test:tessellation#0",
+            cadmpeg_ir::tessellation::TessellationId::mint("generated:test:tessellation#0")
+                .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: vec![
                     Point3::new(0.0, 0.0, 0.0),
@@ -1431,6 +1433,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     assert!(round_trip.ir().model.edges[0].curve().is_some());
     assert!(
         !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::Annotations)
@@ -1508,6 +1511,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
     );
     assert!(
         !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::Annotations)

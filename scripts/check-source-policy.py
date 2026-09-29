@@ -31,6 +31,10 @@ class Finding:
 
 FROM_ENDIAN = re.compile(r"\bfrom_(?:le|be)_bytes\b")
 MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTILINE)
+INTEGER_CLAMP = re.compile(
+    r"\bunwrap_or(?:_else\s*\(\s*\|_?\|\s*|\s*\(\s*)"
+    r"[ui](?:8|16|32|64|128|size)::(?:MAX|MIN)\s*\)"
+)
 LOSS_NOTE_LIT = re.compile(r"\bLossNote\s*\{")
 LOSS_NOTE_PATH = r"(?:::\s*)?(?:(?:r#)?[^\W\d]\w*\s*::\s*)*(?:r#)?(?P<name>LossNote)"
 LOSS_NOTE_RETURN = re.compile(r"->\s*" + LOSS_NOTE_PATH + r"\s*\{")
@@ -40,8 +44,11 @@ LOSS_NOTE_TRAIT_IMPL = re.compile(r"\bfor\s+" + LOSS_NOTE_PATH + r"\s*\{")
 BARE_TOLERANCE = re.compile(
     r"(?<![0-9A-Za-z_.])1(?:\.0+)?[eE]-(?:6|7|8|9|10|11|12)\b"
 )
+# A whole-file pattern anchored at a line start takes its indentation with [^\S\n]*, never
+# \s*: production_source blanks test code to whitespace, and \s* would run through every
+# following blank line and backtrack, making the scan quadratic in the blanked length.
 NAMED_TOLERANCE_DECL = re.compile(
-    r"^\s*(?:(?:pub(?:\([^)]*\))?|unsafe)\s+)*"
+    r"^[^\S\n]*(?:(?:pub(?:\([^)]*\))?|unsafe)\s+)*"
     r"(?:const|static)(?:\s+mut)?\s+[A-Za-z_][A-Za-z0-9_]*"
     r"\s*(?::[^=;]+)?=\s*",
     re.MULTILINE,
@@ -498,6 +505,9 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
     for match in MALFORMED_FORMAT.finditer(code):
         report("formatted_malformed_error", code.count("\n", 0, match.start()) + 1,
                "Use a structured codec error instead of Malformed(format!(...)).")
+    for match in INTEGER_CLAMP.finditer(code):
+        report("integer_clamp", code.count("\n", 0, match.start()) + 1,
+               "Do not clamp to an integer bound. Widen a usize with cadmpeg_core::decode::u64_from_index, or return the refusal.")
     declarations = {match.end() for match in NAMED_TOLERANCE_DECL.finditer(code)}
     for match in BARE_TOLERANCE.finditer(code):
         if match.start() not in declarations:
@@ -610,7 +620,7 @@ PATH_ONLY_ITEM = re.compile(
     r"(?:(?:unsafe|async|extern\s+\"[^\"]*\")\s+)*"
     r"(?:fn|const|static)\b"
 )
-REEXPORT_USE = re.compile(r"^\s*pub(?:\s*\([^)]*\))?\s+use\s+(?P<path>[^;]*);", re.MULTILINE)
+REEXPORT_USE = re.compile(r"^[^\S\n]*pub(?:\s*\([^)]*\))?\s+use\s+(?P<path>[^;]*);", re.MULTILINE)
 IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -740,7 +750,7 @@ RUST_TYPE_PATH = re.compile(
     r"^(?:::)?[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*$"
 )
 USE_IMPORT = re.compile(
-    r"^\s*(?:pub(?:\([^)]*\))?\s+)?use\s+"
+    r"^[^\S\n]*(?:pub(?:\([^)]*\))?\s+)?use\s+"
     r"(?P<path>(?:::)?[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)"
     r"(?:\s+as\s+(?P<alias>[A-Za-z_][A-Za-z0-9_]*))?\s*;",
     re.MULTILINE,

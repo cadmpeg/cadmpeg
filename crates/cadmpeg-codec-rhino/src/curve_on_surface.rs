@@ -26,6 +26,7 @@ pub(crate) struct CurveOnSurface {
 }
 
 fn class(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -33,7 +34,7 @@ fn class(
 ) -> Result<crate::objects::ClassDescriptor, GeometryError> {
     let start = reader.position();
     let wrapper = chunk_at(data, start, reader.end(), archive, false)?;
-    let class = parse_class_wrapper(data, start..wrapper.next_offset(), archive, warnings)?;
+    let class = parse_class_wrapper(ctx, data, start..wrapper.next_offset(), archive, warnings)?;
     reader.skip(wrapper.next_offset() - start)?;
     Ok(class)
 }
@@ -48,7 +49,7 @@ pub(crate) fn decode(
 ) -> Result<CurveOnSurface, GeometryError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let mut warnings = Diagnostics::new();
-    let c2 = class(data, &mut reader, archive, &mut warnings)?;
+    let c2 = class(ctx, data, &mut reader, archive, &mut warnings)?;
     let decoded = crate::curves::decode_inner_2d(
         ctx,
         data,
@@ -77,7 +78,7 @@ pub(crate) fn decode(
         }
     };
     let model_curve = if has_model_curve {
-        let c3 = class(data, &mut reader, archive, &mut warnings)?;
+        let c3 = class(ctx, data, &mut reader, archive, &mut warnings)?;
         if c3.class_uuid == CLASS {
             return Err(GeometryError::malformed(
                 reader.position(),
@@ -103,7 +104,7 @@ pub(crate) fn decode(
     } else {
         None
     };
-    let support = class(data, &mut reader, archive, &mut warnings)?;
+    let support = class(ctx, data, &mut reader, archive, &mut warnings)?;
     if !crate::curves::surface_class(support.class_uuid) {
         return Err(GeometryError::malformed(
             reader.position(),

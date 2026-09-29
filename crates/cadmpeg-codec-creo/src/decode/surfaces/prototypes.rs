@@ -59,18 +59,25 @@ fn prototype_parameter_array(
 }
 
 fn prototype_spline_nurbs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &crate::surface::SurfacePrototypeRecord,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<NurbsSurface> {
-    interpolation_spline_surface(
-        &crate::interpolation_grid::InterpolationGrid::try_new(
+) -> Result<Option<NurbsSurface>, cadmpeg_core::CodecError> {
+    let Some(grid) = (|| {
+        crate::interpolation_grid::InterpolationGrid::try_new(
             prototype_vector_array(record, "i_points")?,
             prototype_parameter_array(record, "u_params")?,
             prototype_parameter_array(record, "v_params")?,
             prototype_vector_array(record, "end_u_tangts")?,
             prototype_vector_array(record, "end_v_tangts")?,
             <[[f64; 3]; 4]>::try_from(prototype_vector_array(record, "end_uv_deriv")?).ok()?,
-        )?,
+        )
+    })() else {
+        return Ok(None);
+    };
+    interpolation_spline_surface(
+        ctx,
+        &grid,
         &format!(
             "VisibGeom surface prototype record at offset {}",
             record.offset
@@ -412,7 +419,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             }
             SupportedPrototype::Spline(_) => {
                 let mut refusal = crate::lane_refusal::LaneRefusals::new();
-                let nurbs = prototype_spline_nurbs(record, &mut refusal);
+                let nurbs = prototype_spline_nurbs(ctx, record, &mut refusal)?;
                 let refused = refusal.take_records();
                 let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
                     if !refused.is_empty() {
@@ -550,13 +557,14 @@ pub(in super::super) fn transfer_positional_spline_replays(
         };
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let nurbs = interpolation_spline_surface(
+            ctx,
             &replay,
             &format!(
                 "VisibGeom surface row {} positional spline replay at offset {}",
                 row.id, parameter.body_offset
             ),
             &mut refusal,
-        );
+        )?;
         let refused = refusal.take_records();
         let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
             if !refused.is_empty() {
@@ -704,6 +712,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             {
                 let mut refusal = crate::lane_refusal::LaneRefusals::new();
                 let nurbs = interpolation_spline_surface(
+                    ctx,
                     spline,
                     &format!(
                         "legacy {}{} spline carrier at offset {}",
@@ -712,7 +721,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                         carrier.offset
                     ),
                     &mut refusal,
-                );
+                )?;
                 let refused = refusal.take_records();
                 let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
                     if !refused.is_empty() {

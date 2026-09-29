@@ -4,10 +4,12 @@
 use crate::document::{ArenaName, EntityRewrite, Model, SourceMeta};
 use crate::examples::unit_cube;
 use crate::geometry::{
+    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
     SurfaceGeometry,
 };
+
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
@@ -66,6 +68,90 @@ fn charged_procedural_curve_attachment_refuses_before_construction_copy() {
         }
     ));
     assert_eq!(model.procedural_curves.len(), 1);
+}
+
+#[test]
+fn procedural_surface_attachment_moves_the_solved_knot_storage() {
+    let surface_id = SurfaceId::mint("test:model:surface#move-cache").unwrap();
+    let procedural_id =
+        ProceduralSurfaceId::mint("test:model:surface-construction#move-cache").unwrap();
+    let carrier = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .unwrap();
+    let original_knot_storage = carrier.u_knots().as_ptr();
+    let mut model = Model::default();
+    model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(carrier)),
+        source_object: None,
+    });
+    model
+        .add_procedural_surface(
+            surface_id,
+            ProceduralSurface::new(
+                procedural_id,
+                ProceduralSurfaceDefinition::Unknown {
+                    record: None,
+                    cache: None,
+                },
+                None,
+            ),
+        )
+        .unwrap();
+    let Some(SolvedSurfaceGeometry::Nurbs(cached)) = model.surfaces[0].geometry.solved_cache()
+    else {
+        panic!("expected the attached NURBS cache");
+    };
+    assert_eq!(cached.u_knots().as_ptr(), original_knot_storage);
+}
+
+#[test]
+fn procedural_curve_attachment_moves_the_solved_knot_storage() {
+    let curve_id = CurveId::mint("test:model:curve#move-cache").unwrap();
+    let procedural_id =
+        ProceduralCurveId::mint("test:model:curve-construction#move-cache").unwrap();
+    let carrier = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    let original_knot_storage = carrier.knots().as_ptr();
+    let mut model = Model::default();
+    model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(carrier)),
+        source_object: None,
+    });
+    model
+        .add_procedural_curve(
+            curve_id,
+            ProceduralCurve::new(
+                procedural_id,
+                ProceduralCurveDefinition::Unknown {
+                    native_kind: None,
+                    record: None,
+                    cache: None,
+                },
+            ),
+        )
+        .unwrap();
+    let Some(SolvedCurveGeometry::Nurbs(cached)) = model.curves[0].geometry.solved_cache() else {
+        panic!("expected the attached NURBS cache");
+    };
+    assert_eq!(cached.knots().as_ptr(), original_knot_storage);
 }
 
 struct SerdeIdentity;
@@ -129,7 +215,7 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
 #[test]
 fn arena_registry_drives_counts_and_diff_dispatch() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     let diff_kinds = diff(&ir, &ir)
         .per_arena
         .into_iter()
@@ -786,4 +872,36 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
     let json = serde_json::to_string(&value).unwrap();
     let error = CadIr::from_json(&json).unwrap_err().to_string();
     assert!(error.contains("missing field `suppressed`"), "{error}");
+}
+
+#[test]
+fn geometry_snapshot_matches_filtered_model_wire_without_intermediate_tree() {
+    let model = super::Model::default();
+    let mut baseline = serde_json::to_value(&model).expect("model serializes");
+    let object = baseline.as_object_mut().expect("model is an object");
+    object.retain(|key, _| {
+        matches!(
+            key.as_str(),
+            "bodies"
+                | "regions"
+                | "shells"
+                | "faces"
+                | "loops"
+                | "coedges"
+                | "edges"
+                | "vertices"
+                | "points"
+                | "surfaces"
+                | "curves"
+                | "procedural_curves"
+                | "procedural_surfaces"
+                | "pcurves"
+                | "tessellations"
+        )
+    });
+    object.insert("kind".into(), serde_json::json!("brep"));
+    assert_eq!(
+        serde_json::to_string(&model.geometry_snapshot("brep")).expect("snapshot serializes"),
+        serde_json::to_string(&baseline).expect("baseline serializes"),
+    );
 }

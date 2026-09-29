@@ -632,7 +632,35 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let paired_at = group_bytes.len();
     indexed_header(&mut group_bytes, *b"259", 100);
 
-    let mut group = parse_extrude_selection_group(&group_bytes, &scope, 0, &record)
+    for (limit, operation) in [
+        (1, "parse F3D extrude selection members"),
+        (2, "parse F3D extrude selection member offsets"),
+    ] {
+        let limit_arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut limit_policy = cadmpeg_core::decode::DecodePolicy::service();
+        limit_policy.limits.max_collection_items = limit;
+        let limit_ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &group_bytes,
+            &limit_arena,
+            &limit_policy,
+        )
+        .expect("group limit context")
+        .0;
+        let error = parse_extrude_selection_group(&limit_ctx, &group_bytes, &scope, 0, &record)
+            .expect_err("member run exceeds collection limit");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            if refusal.operation == operation)
+        );
+    }
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&group_bytes, &arena, &policy)
+        .expect("group decode context")
+        .0;
+    let mut group = parse_extrude_selection_group(&ctx, &group_bytes, &scope, 0, &record)
+        .expect("group decode resources")
         .expect("counted Extrude selection group");
     assert_eq!(
         group
@@ -894,11 +922,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
+                ctx: None,
             }
             .scoped(&[]),
             None,
             None,
-        ),
+        ).unwrap(),
         cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
             sketch: ref actual_sketch,
             ref profiles,
@@ -967,11 +996,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
+                ctx: None,
             }
             .scoped(&[]),
             None,
             None,
-        ),
+        ).unwrap(),
         cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
             sketch: ref actual_sketch,
             ref profiles,
@@ -993,11 +1023,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
+                ctx: None,
             }
             .scoped(&[]),
             None,
             None,
-        ),
+        ).unwrap(),
         cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchSelection {
             sketch: ref actual_sketch,
             selections: ref actual_selections,
@@ -1023,11 +1054,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
+                ctx: None,
             }
             .scoped(&[]),
             None,
             None,
-        ),
+        ).unwrap(),
         cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
             sketch: ref actual_sketch,
             ref profiles,

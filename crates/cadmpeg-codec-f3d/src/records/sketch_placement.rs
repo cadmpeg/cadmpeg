@@ -10,7 +10,7 @@ cadmpeg_core::named_optional_field!(deserialize_scope_record_index, u32, "scope_
 cadmpeg_core::named_optional_field!(deserialize_transform_offset, u64, "transform_offset");
 cadmpeg_core::named_optional_field!(deserialize_visibility, DesignSketchVisibility, "visibility");
 /// Typed sketch-container visibility bound to a Design sketch entity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     try_from = "DesignSketchVisibilityWire",
     into = "DesignSketchVisibilityWire"
@@ -84,11 +84,9 @@ impl From<DesignSketchVisibility> for DesignSketchVisibilityWire {
 }
 
 /// Local-to-model placement frame referenced by a Design sketch scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignSketchPlacementWire",
-    into = "DesignSketchPlacementWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignSketchPlacementWire")]
 pub(crate) struct DesignSketchPlacement {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -106,6 +104,28 @@ pub(crate) struct DesignSketchPlacement {
     pub(crate) paired_class_tag: DesignClassTag,
     /// Source layout and its checked placement matrix and byte extent.
     pub(crate) frame: DesignSketchFrame,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SKETCH_PLACEMENT_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignSketchPlacement {
+    fn clone(&self) -> Self {
+        SKETCH_PLACEMENT_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            scope_record_index: self.scope_record_index,
+            entity_id: self.entity_id.clone(),
+            visibility: self.visibility,
+            class_tag: self.class_tag.clone(),
+            record_index: self.record_index,
+            paired_class_tag: self.paired_class_tag.clone(),
+            frame: self.frame.clone(),
+        }
+    }
 }
 
 pub(crate) fn valid_sketch_transform(transform: &[[f64; 4]; 4]) -> bool {
@@ -349,6 +369,47 @@ struct DesignSketchPlacementWire {
     member_run_head: bool,
 }
 
+impl Serialize for DesignSketchPlacement {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            scope_record_index: Option<u32>,
+            entity_id: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            visibility: Option<DesignSketchVisibility>,
+            byte_offset: u64,
+            class_tag: &'a str,
+            record_index: u32,
+            frame_length: u64,
+            transform: [[f64; 4]; 4],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            transform_offset: Option<u64>,
+            paired_class_tag: &'a str,
+            paired_byte_offset: u64,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            member_run_head: bool,
+        }
+        WireRef {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            entity_id: self.entity_id.as_str(),
+            visibility: self.visibility,
+            byte_offset: self.byte_offset(),
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index,
+            frame_length: self.frame_length(),
+            transform: *self.transform(),
+            transform_offset: self.transform_offset(),
+            paired_class_tag: self.paired_class_tag.as_str(),
+            paired_byte_offset: self.paired_byte_offset(),
+            member_run_head: self.member_run_head(),
+        }
+        .serialize(serializer)
+    }
+}
+
 impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
     type Error = String;
     fn try_from(wire: DesignSketchPlacementWire) -> Result<Self, Self::Error> {
@@ -401,6 +462,7 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
     }
 }
 
+#[cfg(test)]
 impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
     fn from(value: DesignSketchPlacement) -> Self {
         let byte_offset = value.byte_offset();
@@ -426,3 +488,6 @@ impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

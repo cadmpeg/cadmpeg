@@ -272,7 +272,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
             })
         {
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
-            let Some(nurbs) = saved_spline_nurbs(spline, &mut refusal) else {
+            let Some(nurbs) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
                 let records = refusal.take_records();
                 losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(
                     if records.is_empty() {
@@ -550,7 +550,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let Some(order_table) = &definition.order_table else {
             continue;
         };
-        let points = resolved_section_points(definition);
+        let points = resolved_section_points(ctx, definition)?;
         let solved = definition
             .trim_entities
             .iter()
@@ -724,7 +724,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             .map(|value| value * (span.upper() - span.lower()));
         for (native_surface_id, internal_id, spline) in splines {
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
-            let Some(section_curve) = saved_spline_nurbs(spline, &mut refusal) else {
+            let Some(section_curve) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
                 let records = refusal.take_records();
                 losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(
                     if records.is_empty() {
