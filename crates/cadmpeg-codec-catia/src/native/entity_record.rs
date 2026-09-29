@@ -6,8 +6,9 @@ use super::{
     CatiaDefinitionSchemaSelection, CatiaDefinitionValue, CatiaEntitySuffixFraming,
     CatiaEntitySuffixSchemaSelection, CatiaEntitySuffixValue, CatiaEntityValueSchemaSelection,
     CatiaFormulaRelation, CatiaParameterValue, CatiaRangeInterval, CatiaReferenceSignature,
-    CatiaRelationExpression, CatiaRelationExpressionWire, CatiaRelationProgramInstance,
-    CatiaRelationTypeSignature, CatiaSchemaConfigurationRecord,
+    CatiaEntityReference, CatiaRelationExpression, CatiaRelationExpressionWire,
+    CatiaRelationProgramInstance, CatiaRelationProgramInstanceWire, CatiaRelationTypeSignature,
+    CatiaSchemaConfigurationRecord,
     CatiaSchemaConfigurationRowLink,
 };
 use crate::{entity_table, value_block};
@@ -434,7 +435,7 @@ pub(super) struct CatiaEntityRecordWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_relation_program_instance"
     )]
-    relation_program_instance: Option<CatiaRelationProgramInstance>,
+    relation_program_instance: Option<CatiaRelationProgramInstanceWire>,
     #[serde(
         default,
         alias = "configuration_record",
@@ -503,7 +504,12 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
             Some(CatiaEntityValueProduction::RelationExpression(expression)) => expression.signature(),
             _ => None,
         };
-        Self::from_with_views(value, value_fields, value_packets, signature)
+        let output_entity = match value.object_production.as_ref() {
+            Some(CatiaEntityObjectProduction::RelationProgramInstance(instance)) =>
+                instance.output_entity().cloned(),
+            _ => None,
+        };
+        Self::from_with_views(value, value_fields, value_packets, signature, output_entity)
     }
 }
 
@@ -522,7 +528,12 @@ impl CatiaEntityRecordWire {
             Some(CatiaEntityValueProduction::RelationExpression(expression)) => expression.signature_charged(ctx)?,
             _ => None,
         };
-        Ok(Self::from_with_views(value, value_fields, value_packets, signature))
+        let output_entity = match value.object_production.as_ref() {
+            Some(CatiaEntityObjectProduction::RelationProgramInstance(instance)) =>
+                instance.output_entity().map(|entity| entity.copy_charged(ctx)).transpose()?,
+            _ => None,
+        };
+        Ok(Self::from_with_views(value, value_fields, value_packets, signature, output_entity))
     }
 
     fn from_with_views(
@@ -530,6 +541,7 @@ impl CatiaEntityRecordWire {
         value_fields: Vec<value_block::ValueField>,
         value_packets: Vec<entity_table::EntityValuePacket>,
         signature: Option<CatiaRelationTypeSignature>,
+        output_entity: Option<CatiaEntityReference>,
     ) -> Self {
         let byte_len = value.byte_len();
         let (
@@ -640,7 +652,8 @@ impl CatiaEntityRecordWire {
             constraint_range,
             definition_value,
             definition_chain_value,
-            relation_program_instance,
+            relation_program_instance: relation_program_instance.map(|instance|
+                CatiaRelationProgramInstanceWire::from_with_output(instance, output_entity)),
             schema_configuration_record,
             schema_configuration_row_link,
             formula_relation,
@@ -722,7 +735,7 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             wire.formula_relation,
         ) {
             (Some(value), None, None, None) => {
-                Some(CatiaEntityObjectProduction::RelationProgramInstance(value))
+                Some(CatiaEntityObjectProduction::RelationProgramInstance(value.try_into()?))
             }
             (None, Some(value), None, None) => Some(
                 CatiaEntityObjectProduction::SchemaConfigurationRecord(value),
@@ -894,7 +907,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(
     deserialize_relation_program_instance,
-    CatiaRelationProgramInstance,
+    CatiaRelationProgramInstanceWire,
     "relation_program_instance"
 );
 cadmpeg_core::named_optional_field!(

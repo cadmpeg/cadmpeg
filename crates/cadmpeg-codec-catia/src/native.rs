@@ -2619,7 +2619,7 @@ impl CatiaRelationProgramInstance {
 }
 
 #[derive(Serialize, Deserialize)]
-struct CatiaRelationProgramInstanceWire {
+pub(super) struct CatiaRelationProgramInstanceWire {
     #[serde(default)]
     framing: CatiaRelationProgramInstanceFramingTag,
     #[serde(default)]
@@ -2656,6 +2656,15 @@ enum CatiaRelationProgramInstanceFramingTag {
 impl From<CatiaRelationProgramInstance> for CatiaRelationProgramInstanceWire {
     fn from(value: CatiaRelationProgramInstance) -> Self {
         let output_entity = value.output_entity().cloned();
+        Self::from_with_output(value, output_entity)
+    }
+}
+
+impl CatiaRelationProgramInstanceWire {
+    fn from_with_output(
+        value: CatiaRelationProgramInstance,
+        output_entity: Option<CatiaEntityReference>,
+    ) -> Self {
         let (framing, lead12_context_entity, lead54_trailing_entity) = match value.framing {
             CatiaRelationProgramInstanceFraming::Lead12 { context_entity } => (
                 CatiaRelationProgramInstanceFramingTag::Lead12,

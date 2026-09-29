@@ -231,6 +231,24 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
 }
 
 #[test]
+fn relation_program_output_wire_refuses_retained_copy() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_program_instance_class(1, 1, 1, 2, "paramout"),
+    );
+    let record = &native.entity_records[1];
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::CatiaEntityRecordWire::from_charged(ctx, record.clone())
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_reference_entity"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::CatiaEntityRecordWire::from_charged(ctx, record.clone())
+    }).expect("service profile admits the output reference");
+    let wire = serde_json::to_value(admitted).expect("serialize admitted wire");
+    assert_eq!(wire["relation_program_instance"]["output_entity"]["class_name"], "paramout");
+}
+
+#[test]
 fn relation_program_inputs_require_complete_unique_signature_bindings() {
     let resolve = |signature: &crate::native::CatiaRelationTypeSignature,
                    dependencies: &[crate::native::CatiaRelationParameterDependency]| {
