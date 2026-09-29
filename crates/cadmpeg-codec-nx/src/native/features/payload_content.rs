@@ -24,7 +24,10 @@ pub(super) struct FeaturePayloadContent<B> {
 }
 
 impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
-    pub(super) fn new(blocks: B, sha256: cadmpeg_ir::hash::digest::Sha256Digest) -> Result<Self, String> {
+    pub(super) fn new(
+        blocks: B,
+        sha256: cadmpeg_ir::hash::digest::Sha256Digest,
+    ) -> Result<Self, String> {
         blocks
             .as_ref()
             .iter()
@@ -307,9 +310,10 @@ mod tests {
                 source_offset: 0,
             },
         ];
-        assert!(
-            FeaturePayloadContent::new(blocks, cadmpeg_ir::hash::digest::Sha256Digest::digest(b"hash"))
-                .is_err()
-        );
+        assert!(FeaturePayloadContent::new(
+            blocks,
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(b"hash")
+        )
+        .is_err());
     }
 }

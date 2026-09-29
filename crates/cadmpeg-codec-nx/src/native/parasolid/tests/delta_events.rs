@@ -322,7 +322,9 @@ fn deltas_events_retain_terminal_null_references() {
     assert_eq!(trailer.inflated_offset, trailer_offset as u64);
     assert_eq!(
         serde_json::to_value(trailer).unwrap()["sha256"],
-        serde_json::json!(cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[trailer_offset..]).as_str())
+        serde_json::json!(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[trailer_offset..]).as_str()
+        )
     );
     assert_eq!(events.residual_spans.len(), 1);
     assert_eq!(events.residual_spans[0].inflated_offset, 0);

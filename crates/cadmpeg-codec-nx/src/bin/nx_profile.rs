@@ -16,8 +16,8 @@ use cadmpeg_codec_nx::{
     UnsupportedBodyCensusReason,
 };
 use cadmpeg_ir::appearance::AppearanceTarget;
-use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::loss::LossCategory;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::{report::Severity, CadIr};

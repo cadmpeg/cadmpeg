@@ -3448,7 +3448,11 @@ pub(super) fn display_jt_segments(
                 };
                 Some(DisplayJtCompression {
                     envelope,
-                    inflated_sha256: Sha256Digest::digest_for_decode(budget.0, &inflated, "retain DisplayJT hash")?,
+                    inflated_sha256: Sha256Digest::digest_for_decode(
+                        budget.0,
+                        &inflated,
+                        "retain DisplayJT hash",
+                    )?,
                 })
             } else {
                 None
@@ -3477,7 +3481,11 @@ pub(super) fn display_jt_segments(
                 segment_id,
                 segment_type,
                 segment_byte_len: header_byte_len,
-                payload_sha256: Sha256Digest::digest_for_decode(ctx, payload, "retain DisplayJT hash")?,
+                payload_sha256: Sha256Digest::digest_for_decode(
+                    ctx,
+                    payload,
+                    "retain DisplayJT hash",
+                )?,
                 compression,
                 source_offset: document.source_offset + u64::from(entry.segment_offset),
             });
@@ -3530,7 +3538,11 @@ pub(super) fn display_jt_shape_lod_elements(
                 object_type_id: element.object_type_id,
                 object_id: element.object_id,
                 body_byte_len: element.body.len() as u32,
-                body_sha256: Sha256Digest::digest_for_decode(ctx, element.body, "retain DisplayJT hash")?,
+                body_sha256: Sha256Digest::digest_for_decode(
+                    ctx,
+                    element.body,
+                    "retain DisplayJT hash",
+                )?,
                 source_offset: segment.source_offset + 24 + element.offset as u64,
             });
         }
@@ -3586,7 +3598,11 @@ pub(super) fn display_jt_tri_strip_lod_headers(
             vertex_records_object_id,
             compressed_lod_version,
             compressed_representation_byte_len: compressed_representation.len() as u32,
-            compressed_representation_sha256: Sha256Digest::digest_for_decode(ctx, compressed_representation, "retain DisplayJT hash")?,
+            compressed_representation_sha256: Sha256Digest::digest_for_decode(
+                ctx,
+                compressed_representation,
+                "retain DisplayJT hash",
+            )?,
             source_offset: element.source_offset + 25,
         });
     }
@@ -3857,7 +3873,11 @@ pub(super) fn display_jt_topology_packet_sequences(
                 component_ranges,
                 component_quantization_bits,
                 compressed_components_byte_len,
-                compressed_components_sha256: Sha256Digest::digest_for_decode(ctx, compressed_components, "retain DisplayJT hash")?,
+                compressed_components_sha256: Sha256Digest::digest_for_decode(
+                    ctx,
+                    compressed_components,
+                    "retain DisplayJT hash",
+                )?,
                 source_offset: representation_source_offset
                     + u64::from(topology_byte_len)
                     + vertex_header_byte_len_u64,
@@ -3892,7 +3912,11 @@ pub(super) fn display_jt_topology_packet_sequences(
             topological_vertex_count,
             vertex_attribute_count,
             compressed_arrays_byte_len,
-            compressed_arrays_sha256: Sha256Digest::digest_for_decode(ctx, arrays, "retain DisplayJT hash")?,
+            compressed_arrays_sha256: Sha256Digest::digest_for_decode(
+                ctx,
+                arrays,
+                "retain DisplayJT hash",
+            )?,
             source_offset: representation_source_offset + u64::from(topology_byte_len),
         });
     }
@@ -5016,7 +5040,11 @@ pub(super) fn display_jt_base_node_data(
                 flags,
                 attribute_object_ids,
                 family_data_byte_len: family_data.len() as u32,
-                family_data_sha256: Sha256Digest::digest_for_decode(budget.0, family_data, "retain DisplayJT hash")?,
+                family_data_sha256: Sha256Digest::digest_for_decode(
+                    budget.0,
+                    family_data,
+                    "retain DisplayJT hash",
+                )?,
                 source_offset: segment.source_offset + 24,
             });
         }
@@ -5091,7 +5119,11 @@ pub(super) fn display_jt_group_node_data(
                 version,
                 child_object_ids,
                 family_data_byte_len: family_data.len() as u32,
-                family_data_sha256: Sha256Digest::digest_for_decode(budget.0, family_data, "retain DisplayJT hash")?,
+                family_data_sha256: Sha256Digest::digest_for_decode(
+                    budget.0,
+                    family_data,
+                    "retain DisplayJT hash",
+                )?,
                 source_offset: segment.source_offset + 24,
             });
         }

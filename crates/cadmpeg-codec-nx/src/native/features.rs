@@ -4096,7 +4096,9 @@ pub(super) fn feature_operation_records(
                     )?,
                     ordinal,
                     sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(record.bytes()),
-                    payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(record.payload()),
+                    payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
+                        record.payload(),
+                    ),
                     stable_identity,
                     span,
                 })

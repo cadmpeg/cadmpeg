@@ -345,8 +345,8 @@ use std::io::Write;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
-use cadmpeg_ir::hash::digest::Sha256Digest;
 use super::{DisplayJtMaterialAttribute, DisplayJtPartitionBounds, FiniteBinary32, UnitBinary32};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::topology::Color;
 
 const EPS_JT_TRANSFORMED_VERTEX: f64 = 1.0e-6;
