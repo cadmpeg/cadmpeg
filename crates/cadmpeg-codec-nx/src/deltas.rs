@@ -1232,16 +1232,7 @@ fn inline_schema_declaration(
                 };
                 return Some(InlineSchemaDeclaration {
                     fields: InlineSchemaFields::Type38 {
-                        state: Type38State::new(
-                            xmt,
-                            node_id,
-                            leading_references,
-                            leading_statuses,
-                            marker,
-                            linked_references,
-                            state_references,
-                            numeric_values,
-                        )
+                        state: Type38State::new(crate::deltas::type38_state::Type38StateParts { xmt: xmt, node_id: node_id, leading_references: leading_references, leading_statuses: leading_statuses, marker: marker, linked_references: &linked_references, state_references: &state_references, numeric_values: numeric_values })
                         .ok()?,
                     },
                     offset,
@@ -1253,16 +1244,7 @@ fn inline_schema_declaration(
             (end <= gap_end).then_some(())?;
             return Some(InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type38 {
-                    state: Type38State::new(
-                        xmt,
-                        node_id,
-                        leading_references,
-                        leading_statuses,
-                        marker,
-                        linked_references,
-                        state_references,
-                        None,
-                    )
+                    state: Type38State::new(crate::deltas::type38_state::Type38StateParts { xmt: xmt, node_id: node_id, leading_references: leading_references, leading_statuses: leading_statuses, marker: marker, linked_references: &linked_references, state_references: &state_references, numeric_values: None })
                     .ok()?,
                 },
                 offset,
@@ -4159,27 +4141,18 @@ mod inline_schema_tests {
             census.inline_schema_declarations,
             [InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type38 {
-                    state: Type38State::new(
-                        40_000u32.try_into().unwrap(),
-                        17,
-                        [1, 7, 8, 9, 1],
-                        [1; 5],
-                        IntersectionMarker::Type2d,
-                        [11u32, 12]
+                    state: Type38State::new(crate::deltas::type38_state::Type38StateParts { xmt: 40_000u32.try_into().unwrap(), node_id: 17, leading_references: [1, 7, 8, 9, 1], leading_statuses: [1; 5], marker: IntersectionMarker::Type2d, linked_references: &[11u32, 12]
                             .into_iter()
                             .map(|value| value.try_into().unwrap())
-                            .collect(),
-                        [40_003u32, 40_002, 40_001]
+                            .collect::<Vec<_>>(), state_references: &[40_003u32, 40_002, 40_001]
                             .into_iter()
                             .map(|value| value.try_into().unwrap())
-                            .collect(),
-                        Some(
+                            .collect::<Vec<_>>(), numeric_values: Some(
                             FiniteVector::new([
                                 0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0
                             ])
                             .unwrap()
-                        ),
-                    )
+                        ) })
                     .unwrap(),
                 },
                 offset: 0,
