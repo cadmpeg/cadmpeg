@@ -1015,38 +1015,50 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             }) {
                 continue;
             }
-            entities.push(
-                SketchEntity::new(
-                    match SketchEntityId::mint(format!(
-                        "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}",
-                        relation.offset
-                    )) {
-                        Ok(id) => id,
-                        Err(_) => continue,
-                    },
-                    (*sketch).clone(),
-                    match cadmpeg_ir::scalar::PositiveLength::try_from(
-                        Length::new(radius).ok_or_else(|| {
-                            cadmpeg_core::CodecError::Malformed(
-                                "SolidWorks projected length must be finite".into(),
-                            )
-                        })?,
+            let entity_id = ctx.format_retained(
+                format_args!(
+                    "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}",
+                    relation.offset
+                ),
+                "format SLDPRT dimensioned point identity",
+            )?;
+            let Ok(entity_id) = SketchEntityId::mint(entity_id) else {
+                continue;
+            };
+            let Some(geometry) = cadmpeg_ir::scalar::PositiveLength::try_from(
+                Length::new(radius).ok_or_else(|| {
+                    cadmpeg_core::CodecError::Malformed(
+                        "SolidWorks projected length must be finite".into(),
                     )
-                    .ok()
-                    .and_then(|radius| {
-                        SketchGeometry::from_parts(SketchGeometryDefinition::Circle {
-                            center,
-                            radius,
-                        })
-                        .ok()
-                    }) {
-                        Some(geometry) => geometry,
-                        None => continue,
-                    },
-                )
-                .with_construction(construction)
-                .with_native_ref(Some(marker.id().to_string()))
-                .with_geometry_ref(Some(relation.id.clone())),
+                })?,
+            )
+            .ok()
+            .and_then(|radius| {
+                SketchGeometry::from_parts(SketchGeometryDefinition::Circle { center, radius }).ok()
+            }) else {
+                continue;
+            };
+            let sketch_id = ctx.format_retained(
+                format_args!("{}", sketch.as_str()),
+                "copy SLDPRT dimensioned point sketch",
+            )?;
+            let Ok(sketch_id) = cadmpeg_ir::sketches::SketchId::mint(sketch_id) else {
+                continue;
+            };
+            let native_ref = ctx.format_retained(
+                format_args!("{}", marker.id()),
+                "copy SLDPRT dimensioned point marker reference",
+            )?;
+            let geometry_ref = ctx.format_retained(
+                format_args!("{}", relation.id),
+                "copy SLDPRT dimensioned point relation reference",
+            )?;
+            ctx.reserve_collection_vec(entities, 1, "append SLDPRT dimensioned point circle")?;
+            entities.push(
+                SketchEntity::new(entity_id, sketch_id, geometry)
+                    .with_construction(construction)
+                    .with_native_ref(Some(native_ref))
+                    .with_geometry_ref(Some(geometry_ref)),
             );
         }
     }
