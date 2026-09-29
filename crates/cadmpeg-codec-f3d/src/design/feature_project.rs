@@ -4707,24 +4707,10 @@ pub(crate) fn bind_form_cages(
         };
         let bytes = scan.entry_bytes(stream)?;
         let records = IndexedRecordOffsets::build(ctx, bytes)?;
-        let cage_lists = scope
-            .reference_members()
-            .values()
-            .filter_map(|record_index| {
-                form_cage_objects(bytes, &records, *record_index, scope.record_index)
-            })
-            .collect::<Vec<_>>();
-        let cage_counts = scope
-            .reference_members()
-            .values()
-            .filter_map(|record_index| {
-                form_cage_objects(bytes, &records, *record_index, scope.record_index)
-                    .map(|objects| objects.len())
-                    .or_else(|| {
-                        legacy_form_cage_count(bytes, &records, *record_index, scope.record_index)
-                    })
-            })
-            .collect::<Vec<_>>();
+        let (cage_lists, cage_counts) = form_cage_lists(
+            ctx, bytes, &records,
+            scope.reference_members().values().copied(), scope.record_index,
+        )?;
         if scope.class_tag.as_str() == "325" {
             if let Some(cage_objects) = form_class_325_cage_objects(
                 bytes,
@@ -5428,11 +5414,13 @@ fn form_class_325_cage_surface(
 }
 
 fn form_cage_objects(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     scope_record_index: u32,
-) -> Option<Vec<u32>> {
+) -> Result<Option<Vec<u32>>, CodecError> {
+    let parsed = (|| -> Option<(usize, usize)> {
     let mut frames = records
         .frames(record_index)
         .filter(|(_, paired)| matches!(bytes.get(paired + 4..paired + 7), Some(b"258" | b"264")));
@@ -5450,19 +5438,55 @@ fn form_cage_objects(
     if paired.checked_sub(offset)? != 88usize.checked_add(11usize.checked_mul(count)?)? {
         return None;
     }
-    let mut cursor = offset.checked_add(36)?;
-    let mut objects = Vec::with_capacity(count);
+    Some((count, offset.checked_add(36)?))
+    })();
+    let Some((count, mut cursor)) = parsed else { return Ok(None); };
+    ctx.charge_collection_items(
+        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit("f3d form cage object", 0, 1))?,
+        "f3d form cage object",
+    )?;
+    let mut objects = Vec::new();
+    objects.try_reserve(count).map_err(|_| ctx.refuse_codec_limit(
+        "f3d form cage object", 0, 1,
+    ))?;
     for _ in 0..count {
         if bytes.get(cursor) != Some(&1) {
-            return None;
+            return Ok(None);
         }
-        objects.push(u32::try_from(View::u64_le_at(bytes, cursor + 1)?).ok()?);
-        if bytes.get(cursor + 9..cursor + 11)? != [0, 0] {
-            return None;
+        let Some(object) = View::u64_le_at(bytes, cursor + 1)
+            .and_then(|value| u32::try_from(value).ok()) else { return Ok(None); };
+        objects.push(object);
+        if bytes.get(cursor + 9..cursor + 11) != Some(&[0, 0][..]) {
+            return Ok(None);
         }
-        cursor = cursor.checked_add(11)?;
+        let Some(next) = cursor.checked_add(11) else { return Ok(None); };
+        cursor = next;
     }
-    Some(objects)
+    Ok(Some(objects))
+}
+
+fn form_cage_lists(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    references: impl Iterator<Item = u32>,
+    scope_record_index: u32,
+) -> Result<(Vec<Vec<u32>>, Vec<usize>), CodecError> {
+    let mut lists = Vec::new();
+    let mut counts = Vec::new();
+    for record_index in references {
+        let objects = form_cage_objects(ctx, bytes, records, record_index, scope_record_index)?;
+        let count = objects.as_ref().map(Vec::len).or_else(|| {
+            legacy_form_cage_count(bytes, records, record_index, scope_record_index)
+        });
+        if let Some(objects) = objects {
+            push_feature_item(Some(ctx), &mut lists, objects, "f3d form cage list")?;
+        }
+        if let Some(count) = count {
+            push_feature_item(Some(ctx), &mut counts, count, "f3d form cage count")?;
+        }
+    }
+    Ok((lists, counts))
 }
 
 fn form_cage_surface(

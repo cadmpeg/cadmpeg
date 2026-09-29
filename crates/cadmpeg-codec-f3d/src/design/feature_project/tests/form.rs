@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::feature_project::{
-    distinct_form_cage_ids, form_cage_objects, form_cage_serializers, form_cage_surface, form_class_325_cage_objects,
+    distinct_form_cage_ids, form_cage_lists, form_cage_objects, form_cage_serializers, form_cage_surface, form_class_325_cage_objects,
     form_class_325_cage_surface, form_class_328_envelope, legacy_form_cage_count,
     project_parameter_design,
 };
@@ -34,6 +34,10 @@ fn indexed_frame(class: &[u8; 3], record_index: u32, length: usize) -> Vec<u8> {
 
 #[test]
 fn reads_owned_cage_objects() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).unwrap();
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"402");
@@ -54,22 +58,24 @@ fn reads_owned_cage_objects() {
     bytes.extend_from_slice(&2196u64.to_le_bytes());
     assert_eq!(
         form_cage_objects(
+            &ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             2196,
             2190,
-        ),
+        ).unwrap(),
         Some(vec![8300, 8303])
     );
     let mut alternate_pair = bytes.clone();
     alternate_pair[110 + 4..110 + 7].copy_from_slice(b"258");
     assert_eq!(
         form_cage_objects(
+            &ctx,
             &alternate_pair,
             &crate::design::test_support::indexed_record_offsets_for_test(&alternate_pair),
             2196,
             2190,
-        ),
+        ).unwrap(),
         Some(vec![8300, 8303])
     );
 
@@ -88,17 +94,22 @@ fn reads_owned_cage_objects() {
     empty.extend_from_slice(&2196u64.to_le_bytes());
     assert_eq!(
         form_cage_objects(
+            &ctx,
             &empty,
             &crate::design::test_support::indexed_record_offsets_for_test(&empty),
             2196,
             2190,
-        ),
+        ).unwrap(),
         Some(Vec::new())
     );
 }
 
 #[test]
 fn reads_single_cage_list_with_opaque_tail() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).unwrap();
     let mut list = indexed_frame(b"415", 2196, 99);
     list[21] = 1;
     list[22..30].copy_from_slice(&2190u64.to_le_bytes());
@@ -111,13 +122,62 @@ fn reads_single_cage_list_with_opaque_tail() {
 
     assert_eq!(
         form_cage_objects(
+            &ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             2196,
             2190,
-        ),
+        ).unwrap(),
         Some(vec![8300])
     );
+}
+
+fn assert_form_cage_collection_refusal(limit: u64, operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"402");
+    bytes.extend_from_slice(&2196u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.push(1);
+    bytes.extend_from_slice(&2190u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for reference in [8300u64, 8303] {
+        bytes.push(1);
+        bytes.extend_from_slice(&reference.to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+    }
+    bytes.resize(110, 0);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"264");
+    bytes.extend_from_slice(&2196u64.to_le_bytes());
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = form_cage_lists(&ctx, &bytes, &records, [2196].into_iter(), 2190);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
+        if failure.operation == operation
+            && failure.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn form_cage_object_refuses_collection_limit() {
+    assert_form_cage_collection_refusal(1, "f3d form cage object");
+}
+
+#[test]
+fn form_cage_list_refuses_collection_limit() {
+    assert_form_cage_collection_refusal(2, "f3d form cage list");
+}
+
+#[test]
+fn form_cage_count_refuses_collection_limit() {
+    assert_form_cage_collection_refusal(3, "f3d form cage count");
 }
 
 #[test]
