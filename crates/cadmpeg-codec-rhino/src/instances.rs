@@ -417,7 +417,7 @@ fn members(
         reader.position(),
     )?;
     let count = bytes / 16;
-    let mut values = crate::chunks::admitted_vec(ctx, count, "Rhino instance member UUIDs")?;
+    let mut values = ctx.collection_vec(count, "Rhino instance member UUIDs").map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         values.push(uuid(reader)?);
     }
@@ -706,7 +706,7 @@ fn skip_object_array(
             "object array exceeds item limit",
         ));
     }
-    crate::chunks::reserve_admitted_vec(ctx, ranges, count, "Rhino reference object ranges")?;
+    ctx.reserve_vec(ranges, count, "Rhino reference object ranges").map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
         if chunk.short() {
@@ -790,12 +790,7 @@ fn reference_settings<'a>(
                     "reference parent layer is short-framed",
                 ));
             }
-            crate::chunks::reserve_admitted_vec(
-                ctx,
-                &mut children,
-                1,
-                "Rhino reference parent layer range",
-            )?;
+            ctx.reserve_vec(&mut children, 1, "Rhino reference parent layer range").map_err(crate::chunks::FramingError::from)?;
             children.push(parent.range());
             implementation_payload
                 .skip(parent.next_offset() - implementation_payload.position())?;
@@ -938,7 +933,7 @@ fn parse_v6(
     let component_start = reader.position();
     let (index, id, name) = model_component(ctx, data, &mut reader, archive, warnings)?;
     let mut outer_children =
-        crate::chunks::admitted_vec(ctx, 1, "Rhino instance definition checksum children")?;
+        ctx.collection_vec(1, "Rhino instance definition checksum children").map_err(crate::chunks::FramingError::from)?;
     outer_children.push(component_start..reader.position());
     if id.is_nil() {
         return Err(FramingError::structural(
@@ -949,12 +944,7 @@ fn parse_v6(
     let kind = v6_definition_kind(reader.u32()?);
     let units_start = reader.position();
     let units = unit_detail(ctx, data, &mut reader, archive, warnings)?;
-    crate::chunks::reserve_admitted_vec(
-        ctx,
-        &mut outer_children,
-        1,
-        "Rhino instance definition checksum children",
-    )?;
+    ctx.reserve_vec(&mut outer_children, 1, "Rhino instance definition checksum children").map_err(crate::chunks::FramingError::from)?;
     outer_children.push(units_start..reader.position());
     let description = utf16_retained(ctx, &mut reader, "Rhino instance description")?;
     let url = utf16_retained(ctx, &mut reader, "Rhino instance URL")?;
@@ -985,18 +975,13 @@ fn parse_v6(
         }
         let reference = file_reference(ctx, data, &mut linked, archive, warnings)?;
         let mut linked_children =
-            crate::chunks::admitted_vec(ctx, 1, "Rhino linked definition checksum children")?;
+            ctx.collection_vec(1, "Rhino linked definition checksum children").map_err(crate::chunks::FramingError::from)?;
         linked_children.push(reference.source_range.clone());
         linked_depth = linked.i32()?;
         linked_appearance = linked.u32()?;
         if linked.bool()? {
             let range = reference_settings(ctx, data, &mut linked, archive, warnings)?;
-            crate::chunks::reserve_admitted_vec(
-                ctx,
-                &mut linked_children,
-                1,
-                "Rhino linked definition checksum children",
-            )?;
+            ctx.reserve_vec(&mut linked_children, 1, "Rhino linked definition checksum children").map_err(crate::chunks::FramingError::from)?;
             linked_children.push(range);
         }
         linked.skip_remaining()?;
@@ -1008,12 +993,7 @@ fn parse_v6(
             "linked type",
             warnings,
         )?;
-        crate::chunks::reserve_admitted_vec(
-            ctx,
-            &mut outer_children,
-            1,
-            "Rhino instance definition checksum children",
-        )?;
+        ctx.reserve_vec(&mut outer_children, 1, "Rhino instance definition checksum children").map_err(crate::chunks::FramingError::from)?;
         outer_children.push(linked_chunk.range());
         Some(reference)
     } else {

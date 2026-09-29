@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::hash::Hash;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -55,14 +55,7 @@ pub(crate) fn admitted_json(
         .map_err(|error| CodecError::malformed(error.to_string()))?;
     ctx.charge_retained(u64_from_index(count.0), operation)?;
     let mut bytes = Vec::new();
-    bytes.try_reserve_exact(count.0).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::RetainedBytes,
-            u64::MAX,
-            u64_from_index(count.0),
-            operation,
-        ))
-    })?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bytes, count.0, operation)?;
     serde_json::to_writer(&mut bytes, value)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
     String::from_utf8(bytes).map_err(|error| CodecError::malformed(error.to_string()))
@@ -93,14 +86,7 @@ pub(crate) fn admitted_canonical_json(
         .map_err(|error| CodecError::malformed(error.to_string()))?;
     let _temporary = ctx.reserve_scoped(u64_from_index(count.0), operation)?;
     let mut raw = Vec::new();
-    raw.try_reserve_exact(count.0).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::MaterializedBytes,
-            u64::MAX,
-            u64_from_index(count.0),
-            operation,
-        ))
-    })?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut raw, count.0, operation)?;
     serde_json::to_writer(&mut raw, value)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
     let _tree = ctx.reserve_scoped(u64_from_index(count.0), operation)?;
@@ -167,17 +153,7 @@ impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
         serde::de::DeserializeSeed::deserialize(self.0, decoder)
     }
     fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        let mut copy = String::new();
-        copy.try_reserve_exact(value.len()).map_err(|_| {
-            self.0
-                .fail(CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                    ResourceDimension::MaterializedBytes,
-                    u64::MAX,
-                    u64_from_index(value.len()),
-                    self.0.operation,
-                )))
-        })?;
-        copy.push_str(value);
+        let copy = DecodeContext::copy_admitted_text(value, self.0.operation).map_err(|error| self.0.fail(error))?;
         Ok(serde_json::Value::String(copy))
     }
     fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
@@ -228,17 +204,7 @@ impl serde::de::Visitor<'_> for CanonicalKeyVisitor<'_, '_> {
         formatter.write_str("a JSON object key")
     }
     fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        let mut copy = String::new();
-        copy.try_reserve_exact(value.len()).map_err(|_| {
-            self.0
-                .fail(CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                    ResourceDimension::MaterializedBytes,
-                    u64::MAX,
-                    u64_from_index(value.len()),
-                    self.0.operation,
-                )))
-        })?;
-        copy.push_str(value);
+        let copy = DecodeContext::copy_admitted_text(value, self.0.operation).map_err(|error| self.0.fail(error))?;
         Ok(copy)
     }
     fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {

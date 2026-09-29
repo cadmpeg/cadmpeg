@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::ops::Range;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
@@ -121,60 +121,13 @@ impl fmt::Display for SubdError {
 
 impl std::error::Error for SubdError {}
 
-fn reserve_subd_vec<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    additional: usize,
-    operation: &'static str,
-) -> Result<(), SubdError> {
-    ctx.charge_collection_items(u64_from_index(additional), operation)
-        .map_err(|error| match error {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => SubdError::Resource(limit),
-            other => SubdError::Unpositioned {
-                message: other.to_string(),
-            },
-        })?;
-    values.try_reserve(additional).map_err(|_| {
-        SubdError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            u64::MAX,
-            u64_from_index(additional),
-            operation,
-        ))
-    })
-}
-
-fn charged_subd_vec<T>(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, SubdError> {
-    let mut values = Vec::new();
-    reserve_subd_vec(ctx, &mut values, count, operation)?;
-    Ok(values)
-}
-
 fn charged_subd_map<K: Eq + std::hash::Hash, V>(
     ctx: &DecodeContext<'_>,
     count: usize,
     operation: &'static str,
 ) -> Result<HashMap<K, V>, SubdError> {
-    ctx.charge_collection_items(u64_from_index(count), operation)
-        .map_err(|error| match error {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => SubdError::Resource(limit),
-            other => SubdError::Unpositioned {
-                message: other.to_string(),
-            },
-        })?;
     let mut values = HashMap::new();
-    values.try_reserve(count).map_err(|_| {
-        SubdError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            u64::MAX,
-            u64_from_index(count),
-            operation,
-        ))
-    })?;
+    ctx.reserve_map(&mut values, count, operation)?;
     Ok(values)
 }
 
@@ -183,22 +136,8 @@ fn charged_subd_set<T: Eq + std::hash::Hash>(
     count: usize,
     operation: &'static str,
 ) -> Result<HashSet<T>, SubdError> {
-    ctx.charge_collection_items(u64_from_index(count), operation)
-        .map_err(|error| match error {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => SubdError::Resource(limit),
-            other => SubdError::Unpositioned {
-                message: other.to_string(),
-            },
-        })?;
     let mut values = HashSet::new();
-    values.try_reserve(count).map_err(|_| {
-        SubdError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            u64::MAX,
-            u64_from_index(count),
-            operation,
-        ))
-    })?;
+    ctx.reserve_set(&mut values, count, operation)?;
     Ok(values)
 }
 
@@ -212,31 +151,17 @@ fn insert_incidence(
     if values.contains(&value) {
         return Ok(false);
     }
-    reserve_subd_set(ctx, values, 1, "Rhino SubD incidence members")?;
+    ctx.reserve_set(values, 1, "Rhino SubD incidence members").map_err(SubdError::from)?;
     Ok(values.insert(value))
 }
 
-fn reserve_subd_set<T: Eq + std::hash::Hash>(
-    ctx: &DecodeContext<'_>,
-    values: &mut HashSet<T>,
-    additional: usize,
-    operation: &'static str,
-) -> Result<(), SubdError> {
-    ctx.charge_collection_items(u64_from_index(additional), operation)
-        .map_err(|error| match error {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => SubdError::Resource(limit),
-            other => SubdError::Unpositioned {
-                message: other.to_string(),
-            },
-        })?;
-    values.try_reserve(additional).map_err(|_| {
-        SubdError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            u64::MAX,
-            u64_from_index(additional),
-            operation,
-        ))
-    })
+impl From<cadmpeg_core::CodecError> for SubdError {
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        match error {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit),
+            other => Self::Unpositioned { message: other.to_string() },
+        }
+    }
 }
 
 impl From<FramingError> for SubdError {
@@ -505,7 +430,7 @@ fn read_subdimple(
     for expected_level in 0..level_count {
         let start = reader.position();
         let level = read_level(ctx, reader, archive, expected_level, warnings)?;
-        reserve_subd_vec(ctx, &mut children, 1, "Rhino SubD child ranges")?;
+        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges").map_err(SubdError::from)?;
         children.push(start..reader.position());
         validate_level(ctx, &level, expected_level)?;
         if expected_level == 0 {
@@ -517,13 +442,13 @@ fn read_subdimple(
         reader.u8()?;
         let start = reader.position();
         read_mapping_tag(ctx, reader, archive, warnings)?;
-        reserve_subd_vec(ctx, &mut children, 1, "Rhino SubD child ranges")?;
+        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges").map_err(SubdError::from)?;
         children.push(start..reader.position());
     }
     if minor >= 2 {
         let start = reader.position();
         read_symmetry(ctx, reader, archive, enum_diagnostics, warnings)?;
-        reserve_subd_vec(ctx, &mut children, 1, "Rhino SubD child ranges")?;
+        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges").map_err(SubdError::from)?;
         children.push(start..reader.position());
     }
     if minor >= 3 {
@@ -535,7 +460,7 @@ fn read_subdimple(
         reader.bool()?;
         let start = reader.position();
         read_subd_hash(ctx, reader, archive, warnings)?;
-        reserve_subd_vec(ctx, &mut children, 1, "Rhino SubD child ranges")?;
+        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges").map_err(SubdError::from)?;
         children.push(start..reader.position());
     }
 
@@ -600,7 +525,7 @@ fn read_level(
         ));
     }
 
-    let mut vertices = charged_subd_vec(ctx, vertex_count, "Rhino SubD level vertices")?;
+    let mut vertices = ctx.collection_vec(vertex_count, "Rhino SubD level vertices").map_err(SubdError::from)?;
     for archive_id in partitions[0]..partitions[1] {
         vertices.push(read_vertex(
             ctx,
@@ -610,7 +535,7 @@ fn read_level(
             level_index,
         )?);
     }
-    let mut edges = charged_subd_vec(ctx, edge_count, "Rhino SubD level edges")?;
+    let mut edges = ctx.collection_vec(edge_count, "Rhino SubD level edges").map_err(SubdError::from)?;
     for archive_id in partitions[1]..partitions[2] {
         edges.push(read_edge(
             ctx,
@@ -620,7 +545,7 @@ fn read_level(
             level_index,
         )?);
     }
-    let mut faces = charged_subd_vec(ctx, face_count, "Rhino SubD level faces")?;
+    let mut faces = ctx.collection_vec(face_count, "Rhino SubD level faces").map_err(SubdError::from)?;
     for archive_id in partitions[2]..partitions[3] {
         faces.push(read_face(
             ctx,
@@ -1032,7 +957,7 @@ fn read_pointers(
             "SubD pointer count exceeds bounded cap",
         ));
     }
-    let mut pointers = charged_subd_vec(ctx, count, "Rhino SubD component pointers")?;
+    let mut pointers = ctx.collection_vec(count, "Rhino SubD component pointers").map_err(SubdError::from)?;
     for _ in 0..count {
         pointers.push(read_pointer(reader, allow_null)?);
     }
@@ -1296,7 +1221,7 @@ fn materialize(
             .map_err(|_| malformed(edge.base.source_offset, "SubD edge index overflow"))?;
         edge_indices.insert(edge.base.archive_id, index);
     }
-    let mut vertices = charged_subd_vec(ctx, level.vertices.len(), "Rhino SubD vertices")?;
+    let mut vertices = ctx.collection_vec(level.vertices.len(), "Rhino SubD vertices").map_err(SubdError::from)?;
     for vertex in level.vertices {
         let tag = vertex.tag.ok_or_else(|| {
             malformed(
@@ -1321,7 +1246,7 @@ fn materialize(
             None,
         ));
     }
-    let mut edges = charged_subd_vec(ctx, level.edges.len(), "Rhino SubD edges")?;
+    let mut edges = ctx.collection_vec(level.edges.len(), "Rhino SubD edges").map_err(SubdError::from)?;
     for edge in level.edges {
         let tag = edge.tag.ok_or_else(|| {
             malformed(
@@ -1351,9 +1276,9 @@ fn materialize(
             .map_err(|error| malformed(edge.base.source_offset, error.to_string()))?,
         );
     }
-    let mut faces = charged_subd_vec(ctx, level.faces.len(), "Rhino SubD faces")?;
+    let mut faces = ctx.collection_vec(level.faces.len(), "Rhino SubD faces").map_err(SubdError::from)?;
     for face in level.faces {
-        let mut face_edges = charged_subd_vec(ctx, face.edges.len(), "Rhino SubD face edges")?;
+        let mut face_edges = ctx.collection_vec(face.edges.len(), "Rhino SubD face edges").map_err(SubdError::from)?;
         for edge in face.edges {
             face_edges.push(SubdEdgeUse {
                 edge: *edge_indices
@@ -1521,7 +1446,7 @@ fn read_symmetry(
     let symmetry_type = match SubdSymmetry::parse(reader.u8()?) {
         SubdSymmetry::Absent => return finish_direct_chunk(ctx, parent, &chunk, reader, warnings),
         SubdSymmetry::Invalid(raw) => {
-            reserve_subd_vec(ctx, enum_diagnostics, 1, "Rhino SubD enum diagnostics")?;
+            ctx.reserve_vec(enum_diagnostics, 1, "Rhino SubD enum diagnostics").map_err(SubdError::from)?;
             enum_diagnostics.push(SubdEnumDiagnostic::SymmetryType(raw));
             return finish_direct_chunk(ctx, parent, &chunk, reader, warnings);
         }
@@ -1568,7 +1493,7 @@ fn read_symmetry(
     if version >= 2 {
         let coordinate_system = reader.u8()?;
         if coordinate_system > 2 {
-            reserve_subd_vec(ctx, enum_diagnostics, 1, "Rhino SubD enum diagnostics")?;
+            ctx.reserve_vec(enum_diagnostics, 1, "Rhino SubD enum diagnostics").map_err(SubdError::from)?;
             enum_diagnostics.push(SubdEnumDiagnostic::SymmetryCoordinateSystem(
                 coordinate_system,
             ));

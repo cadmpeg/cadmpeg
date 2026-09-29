@@ -157,39 +157,6 @@ impl From<cadmpeg_core::CodecError> for FramingError {
     }
 }
 
-/// Allocates a count-driven decode vector after charging the active session.
-pub(crate) fn admitted_vec<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, FramingError> {
-    let mut values = Vec::new();
-    reserve_admitted_vec(ctx, &mut values, count, operation)?;
-    Ok(values)
-}
-
-/// Charges and reserves additional entries in a decode vector before growth.
-pub(crate) fn reserve_admitted_vec<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    values: &mut Vec<T>,
-    additional: usize,
-    operation: &'static str,
-) -> Result<(), FramingError> {
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(additional), operation)
-        .map_err(|error| match error {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
-            error => FramingError::unpositioned(error.to_string()),
-        })?;
-    values.try_reserve(additional).map_err(|_| {
-        FramingError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            u64::MAX,
-            cadmpeg_core::decode::u64_from_index(additional),
-            operation,
-        ))
-    })
-}
-
 impl FramingError {
     pub(crate) fn structural(offset: usize, message: impl Into<String>) -> Self {
         Self::Structural {
@@ -919,7 +886,7 @@ pub(crate) fn checksum_children_through_class_end(
                 value: i128::from(cadmpeg_core::decode::u64_from_index(children.len())),
             });
         }
-        reserve_admitted_vec(ctx, &mut children, 1, "Rhino class-end checksum children")?;
+        ctx.reserve_vec(&mut children, 1, "Rhino class-end checksum children").map_err(crate::chunks::FramingError::from)?;
         children.push(child.range());
         reader.skip(child.next_offset() - start)?;
         if child.typecode == TCODE_CLASS_END {

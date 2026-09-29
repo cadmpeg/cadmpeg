@@ -21,15 +21,7 @@ fn reserve_map<K: Eq + std::hash::Hash, V>(
     map: &mut HashMap<K, V>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    map.try_reserve(1).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            u64::MAX,
-            1,
-            operation,
-        ))
-    })
+    ctx.reserve_map(map, 1, operation)
 }
 
 #[derive(Debug, Serialize)]
@@ -147,8 +139,7 @@ fn external_record(
         return Ok(None);
     }
     let definition = definition_id(ctx, definition_uuid)?;
-    let mut links = Vec::new();
-    ctx.reserve_vec(&mut links, 1, "Rhino external reference links")?;
+    let mut links = ctx.collection_vec(1, "Rhino external reference links")?;
     links.push(definition);
     let (full_path, relative_path, relative_path_preferred) = match link {
         LinkSource::None => return Ok(None),
@@ -308,15 +299,7 @@ pub(crate) fn install(
     let mut definition_ids = HashSet::new();
     for definition in scan.definitions.definitions() {
         if !definition_ids.contains(&definition.id()) {
-            ctx.charge_collection_items(1, "Rhino product definition keys")?;
-            definition_ids.try_reserve(1).map_err(|_| {
-                CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                    u64::MAX,
-                    1,
-                    "Rhino product definition keys",
-                ))
-            })?;
+            ctx.reserve_set(&mut definition_ids, 1, "Rhino product definition keys")?;
         }
         definition_ids.insert(definition.id());
         for member in &definition.members {
@@ -411,8 +394,7 @@ pub(crate) fn install(
                 "Rhino occurrence key",
             )?
         };
-        let mut links = Vec::new();
-        ctx.reserve_vec(&mut links, 1, "Rhino occurrence links")?;
+        let mut links = ctx.collection_vec(1, "Rhino occurrence links")?;
         links.push(object_record);
         if definition_ids.contains(&reference.definition_id()) {
             ctx.reserve_vec(&mut links, 1, "Rhino occurrence links")?;

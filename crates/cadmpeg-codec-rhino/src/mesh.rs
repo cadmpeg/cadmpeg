@@ -430,11 +430,7 @@ pub(crate) fn decode(
             if count == vertex_count {
                 if let Some(bytes) = bytes {
                     let values = parse_f64_points(expand.ctx(), &bytes)?;
-                    let mut finite = crate::curves::charged_vec(
-                        expand.ctx(),
-                        values.len(),
-                        "Rhino mesh admitted double vertices",
-                    )?;
+                    let mut finite = expand.ctx().collection_vec(values.len(), "Rhino mesh admitted double vertices").map_err(crate::curves::GeometryError::from)?;
                     let mut valid = true;
                     for point in &values {
                         if let Some(point) =
@@ -592,11 +588,7 @@ pub(crate) fn decode(
         face_sha1: native_face_sha1(&faces),
         vertex_sha1: native_vertex_sha1(&decoded.vertices),
     };
-    let mut vertices = crate::curves::charged_vec(
-        expand.ctx(),
-        decoded.vertices.len(),
-        "Rhino mesh scaled vertices",
-    )?;
+    let mut vertices = expand.ctx().collection_vec(decoded.vertices.len(), "Rhino mesh scaled vertices").map_err(crate::curves::GeometryError::from)?;
     let mut append = |point: [f64; 3]| -> Result<(), GeometryError> {
         vertices.push(FinitePoint3::from_coordinates(
             crate::wire::scaled_coordinate(point[0], scale)
@@ -750,7 +742,7 @@ fn read_faces(
         .and_then(|value| value.checked_mul(width.bytes()))
         .ok_or_else(|| error(reader.position(), "mesh face byte count overflow"))?;
     let raw = reader.take(bytes)?;
-    let mut result = crate::curves::charged_vec(ctx, faces, "Rhino mesh faces")?;
+    let mut result = ctx.collection_vec(faces, "Rhino mesh faces").map_err(crate::curves::GeometryError::from)?;
     for face in 0..faces {
         let mut indices = [0_u32; 4];
         for (slot, index) in indices.iter_mut().enumerate() {
@@ -789,7 +781,7 @@ pub(crate) fn triangulate_faces<P: Copy>(
     });
     let triangle_count = triangle_count
         .ok_or_else(|| GeometryError::unpositioned("mesh triangle count overflow"))?;
-    let mut triangles = crate::curves::charged_vec(ctx, triangle_count, "Rhino mesh triangles")?;
+    let mut triangles = ctx.collection_vec(triangle_count, "Rhino mesh triangles").map_err(crate::curves::GeometryError::from)?;
     for face in faces {
         if unique_face_vertices(face) == 3 {
             let mut unique = [0_u32; 3];
@@ -1460,7 +1452,7 @@ fn read_v5_double_vertices(
     let _double_crc = reader.u32()?;
     let array_count = checked_u32(&mut reader, MAX_MESH_VERTICES)?;
     let mut values =
-        crate::curves::charged_vec(ctx, array_count, "Rhino V5 mesh double vertex values")?;
+        ctx.collection_vec(array_count, "Rhino V5 mesh double vertex values").map_err(crate::curves::GeometryError::from)?;
     for _ in 0..array_count {
         values.push([reader.f64()?, reader.f64()?, reader.f64()?]);
     }
@@ -1469,7 +1461,7 @@ fn read_v5_double_vertices(
         return Ok(None);
     }
     let mut finite =
-        crate::curves::charged_vec(ctx, values.len(), "Rhino V5 mesh admitted double vertices")?;
+        ctx.collection_vec(values.len(), "Rhino V5 mesh admitted double vertices").map_err(crate::curves::GeometryError::from)?;
     for point in &values {
         let Some(point) = FinitePoint3::new(Point3::new(point[0], point[1], point[2])) else {
             return Ok(None);
@@ -1610,7 +1602,7 @@ fn parse_f32_points(
     }
     let mut view = View::over_retained(bytes);
     let count = bytes.len() / 12;
-    let mut points = crate::curves::charged_vec(ctx, count, "Rhino mesh f32 points")?;
+    let mut points = ctx.collection_vec(count, "Rhino mesh f32 points").map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
         let point = [view.f32_le(), view.f32_le(), view.f32_le()];
         let [Some(x), Some(y), Some(z)] = point else {
@@ -1634,7 +1626,7 @@ fn parse_f32_vectors(
     bytes: &[u8],
 ) -> Result<Vec<FiniteVector3>, GeometryError> {
     let points = parse_f32_points(ctx, bytes)?;
-    let mut vectors = crate::curves::charged_vec(ctx, points.len(), "Rhino mesh f32 normals")?;
+    let mut vectors = ctx.collection_vec(points.len(), "Rhino mesh f32 normals").map_err(crate::curves::GeometryError::from)?;
     vectors.extend(
         points
             .into_iter()
@@ -1651,7 +1643,7 @@ fn parse_f64_points(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<[f64; 3
     }
     let mut view = View::over_retained(bytes);
     let count = bytes.len() / 24;
-    let mut points = crate::curves::charged_vec(ctx, count, "Rhino mesh f64 points")?;
+    let mut points = ctx.collection_vec(count, "Rhino mesh f64 points").map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
         let point = [view.f64_le(), view.f64_le(), view.f64_le()];
         let [Some(x), Some(y), Some(z)] = point else {

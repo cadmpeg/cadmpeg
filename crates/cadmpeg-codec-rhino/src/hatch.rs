@@ -394,10 +394,9 @@ fn parse_gradient_userdata(
     let count = usize::try_from(count).map_err(|_| FramingError::Overflow {
         offset: count_offset,
     })?;
-    let mut colors = Vec::new();
-    colors
-        .try_reserve_exact(count)
-        .map_err(|_| GeometryError::malformed(count_offset, "gradient color allocation refused"))?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+    let mut colors = ctx.collection_vec(count, "Rhino gradient color stops")?;
     for index in 0..count {
         let stop_offset = reader.position();
         let stop = chunk_at(data, stop_offset, outer.body().end, archive, false)?;
