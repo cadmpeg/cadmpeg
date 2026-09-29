@@ -956,34 +956,65 @@ pub(crate) fn project_relation_solved_line_geometry(
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
-    let sketches_by_feature = features
-        .iter()
-        .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-                },
-            ) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            Some((feature.native_ref.as_deref()?, sketch.clone()))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut sketches_by_feature = HashMap::new();
+    for feature in features {
+        let operation = "index SLDPRT solved-line sketches";
+        ctx.charge_work(1, operation)?;
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            },
+        ) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        if !sketches_by_feature.contains_key(native_ref) {
+            ctx.charge_collection_items(1, operation)?;
+            sketches_by_feature.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        let sketch_id = copy_planar_sketch_id(ctx, sketch)?;
+        sketches_by_feature.insert(native_ref, sketch_id);
+    }
     let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
-    let parameters_by_id = parameters
-        .iter()
-        .map(|parameter| (&parameter.id, parameter))
-        .collect::<HashMap<_, _>>();
+    let mut parameters_by_id = HashMap::new();
+    for parameter in parameters {
+        let operation = "index SLDPRT solved-line parameters";
+        ctx.charge_work(1, operation)?;
+        if !parameters_by_id.contains_key(&parameter.id) {
+            ctx.charge_collection_items(1, operation)?;
+            parameters_by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        parameters_by_id.insert(&parameter.id, parameter);
+    }
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
-    let markers_by_id = lanes
-        .iter()
-        .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id(), marker))
-        .collect::<HashMap<_, _>>();
+    let mut markers_by_id = HashMap::new();
+    for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
+        let operation = "index SLDPRT solved-line markers";
+        ctx.charge_work(1, operation)?;
+        if !markers_by_id.contains_key(marker.id()) {
+            ctx.charge_collection_items(1, operation)?;
+            markers_by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        markers_by_id.insert(marker.id(), marker);
+    }
 
     for lane in lanes {
-        let marker_roster = lane.sketch_entities.iter().collect::<Vec<_>>();
+        let mut marker_roster = Vec::new();
+        ctx.reserve_collection_vec(
+            &mut marker_roster,
+            lane.sketch_entities.len(),
+            "collect SLDPRT solved-line marker roster",
+        )?;
+        marker_roster.extend(lane.sketch_entities.iter());
         for relation in &lane.relation_instances {
             let [first_operand, second_operand] = relation.operands.as_slice() else {
                 continue;
@@ -1062,18 +1093,24 @@ pub(crate) fn project_relation_solved_line_geometry(
             if !expected.is_finite() || expected < 0.0 {
                 continue;
             }
-            let mut points = lane
-                .sketch_entities
-                .iter()
-                .filter(|marker| {
-                    marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str())
-                        && marker.coordinates_m.is_some()
-                        && matches!(
-                            marker.kind(),
-                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                        )
-                })
-                .collect::<Vec<_>>();
+            let mut points = Vec::new();
+            for marker in &lane.sketch_entities {
+                ctx.charge_work(1, "scan SLDPRT solved-line point markers")?;
+                if marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str())
+                    && marker.coordinates_m.is_some()
+                    && matches!(
+                        marker.kind(),
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                    )
+                {
+                    ctx.reserve_collection_vec(
+                        &mut points,
+                        1,
+                        "collect SLDPRT solved-line point markers",
+                    )?;
+                    points.push(marker);
+                }
+            }
             points.sort_by_key(|marker| marker.offset());
             let endpoint_line_markers = |operand_index: usize| {
                 relation_operand_marker(relation, operand_index, sketch, &markers_by_id)
