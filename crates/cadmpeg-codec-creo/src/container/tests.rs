@@ -1374,6 +1374,34 @@ fn scan_reads_namespace_counts() {
 }
 
 #[test]
+fn geometry_array_census_overflow_error_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let entry = b"srf_array\0\xf8\xbf\xff";
+    let count = (u32::MAX / 16_383) + 1;
+    let mut region = Vec::new();
+    region.reserve(entry.len() * count as usize);
+    for _ in 0..count {
+        region.extend_from_slice(entry);
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::read_array_count(&ctx, &region, b"srf_array")
+        .expect_err("sum exceeds the 32-bit census");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo geometry array census error"));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = super::read_array_count(ctx, &region, b"srf_array")
+            .expect_err("sum exceeds the 32-bit census");
+        assert!(error.to_string().contains("32-bit census"));
+        Ok::<(), cadmpeg_core::CodecError>(())
+    }).expect("service error text admitted");
+}
+
+#[test]
 fn scan_sums_concatenated_depdb_surface_namespaces() {
     let mut payload = visibgeom_payload(3, 4);
     payload.extend_from_slice(&visibgeom_payload(5, 6));
