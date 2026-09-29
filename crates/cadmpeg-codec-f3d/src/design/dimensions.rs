@@ -568,118 +568,115 @@ fn project_all_dimension_constraints(
                             source_parameter: &DesignParameter,
                             indices: &[u32],
                             parameter: cadmpeg_ir::features::ParameterId|
-     -> Option<Definition> {
+     -> Result<Option<Definition>, CodecError> {
         if !design_dimension_unit(source_parameter) {
-            return None;
+            return Ok(None);
         }
         let source_kind = source_parameter.source_kind();
         let evaluated_value = source_parameter.evaluated_value().get();
-        let entities = indices
-            .iter()
-            .map(|record_index| projected.get(&(scope, *record_index)).copied())
-            .collect::<Option<Vec<_>>>()?;
+        let mut entities = Vec::new();
+        for record_index in indices {
+            let Some(entity) = projected.get(&(scope, *record_index)).copied() else {
+                return Ok(None);
+            };
+            push_dimension_item(ctx, &mut entities, entity,
+                "f3d exact dimension entity")?;
+        }
         if let [entity] = entities.as_slice() {
+            let copied = copy_dimension_parameter_id(ctx, &parameter,
+                "f3d exact radial parameter id")?;
             if let Some(definition) =
-                radial_dimension_definition(entity, source_kind, evaluated_value, parameter.clone())
+                radial_dimension_definition(entity, source_kind, evaluated_value, copied)
             {
-                return Some(definition);
+                return Ok(Some(definition));
             }
         }
         if let [first, second] = entities.as_slice() {
             if first.id() == second.id() {
-                return None;
+                return Ok(None);
             }
         }
         if source_kind.starts_with("Linear Dimension") && entities.len() == 2 {
             let evaluated_mm = evaluated_value * 10.0;
+            let copied = copy_dimension_parameter_id(ctx, &parameter,
+                "f3d exact directional parameter id")?;
             if let Some(definition) = directional_point_dimension(
-                &entities,
-                evaluated_mm,
-                parameter.clone(),
-                linear_tolerance,
+                &entities, evaluated_mm, copied, linear_tolerance,
             ) {
-                return Some(definition);
+                return Ok(Some(definition));
             }
             if point_line_separation(entities[0], entities[1], evaluated_mm, linear_tolerance)
                 || parallel_line_separation(
-                    entities[0],
-                    entities[1],
-                    evaluated_mm,
-                    linear_tolerance,
+                    entities[0], entities[1], evaluated_mm, linear_tolerance,
                 )
                 || concentric_circle_separation(
-                    entities[0],
-                    entities[1],
-                    evaluated_mm,
-                    linear_tolerance,
+                    entities[0], entities[1], evaluated_mm, linear_tolerance,
                 )
             {
-                return Some(Definition::Distance {
-                    entities: entities.iter().map(|entity| entity.id().clone()).collect(),
-                    parameter,
-                });
+                let mut ids = Vec::new();
+                for entity in &entities {
+                    let id = copy_dimension_entity_id(ctx, entity.id(),
+                        "f3d exact distance entity id")?;
+                    push_dimension_item(ctx, &mut ids, id,
+                        "f3d exact distance entity")?;
+                }
+                return Ok(Some(Definition::Distance { entities: ids, parameter }));
             }
             let (
-                SketchGeometryDefinition::Point {
-                    position: first_position,
-                },
-                SketchGeometryDefinition::Point {
-                    position: second_position,
-                },
+                SketchGeometryDefinition::Point { position: first_position },
+                SketchGeometryDefinition::Point { position: second_position },
             ) = (
                 entities[0].geometry.definition(),
                 entities[1].geometry.definition(),
-            )
-            else {
-                return None;
+            ) else {
+                return Ok(None);
             };
             let measured =
                 (first_position.u - second_position.u).hypot(first_position.v - second_position.v);
             if linear_measurement_matches(measured, evaluated_mm, linear_tolerance) {
-                return Some(Definition::DistanceLoci {
-                    first: cadmpeg_ir::sketches::SketchLocus::Entity(entities[0].id().clone()),
-                    second: cadmpeg_ir::sketches::SketchLocus::Entity(entities[1].id().clone()),
+                return Ok(Some(Definition::DistanceLoci {
+                    first: cadmpeg_ir::sketches::SketchLocus::Entity(
+                        copy_dimension_entity_id(ctx, entities[0].id(),
+                            "f3d exact first distance locus id")?),
+                    second: cadmpeg_ir::sketches::SketchLocus::Entity(
+                        copy_dimension_entity_id(ctx, entities[1].id(),
+                            "f3d exact second distance locus id")?),
                     parameter,
-                });
+                }));
             }
-            return None;
+            return Ok(None);
         }
         if source_kind.starts_with("Angular Dimension")
             && entities.len() == 2
             && entities.iter().all(|entity| {
-                matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Line { .. }
-                )
+                matches!(*entity.geometry.definition(), SketchGeometryDefinition::Line { .. })
             })
             && line_angle_matches(
-                &entities[0].geometry,
-                &entities[1].geometry,
-                evaluated_value,
+                &entities[0].geometry, &entities[1].geometry, evaluated_value,
             )
         {
-            return Some(Definition::Angle {
-                first: entities[0].id().clone(),
-                second: entities[1].id().clone(),
+            return Ok(Some(Definition::Angle {
+                first: copy_dimension_entity_id(ctx, entities[0].id(),
+                    "f3d exact first angle entity id")?,
+                second: copy_dimension_entity_id(ctx, entities[1].id(),
+                    "f3d exact second angle entity id")?,
                 parameter,
-            });
+            }));
         }
         if source_kind.starts_with("Angular Dimension") && entities.len() == 2 {
-            let (first, second) =
-                indirect_angular_lines(scope, &entities, evaluated_value, &projected)?;
-            return Some(Definition::Angle {
-                first,
-                second,
-                parameter,
-            });
+            let Some((first, second)) =
+                indirect_angular_lines(scope, &entities, evaluated_value, &projected) else {
+                return Ok(None);
+            };
+            return Ok(Some(Definition::Angle { first, second, parameter }));
         }
-        None
+        Ok(None)
     };
     let exact_group_definition = |scope: &str,
                                   group: &DesignDimensionLocusGroup,
                                   parameter: &DesignParameter,
                                   parameter_id: cadmpeg_ir::features::ParameterId|
-     -> Option<Result<Definition, cadmpeg_core::decode::ResourceLimit>> {
+     -> Option<Result<Definition, CodecError>> {
         if !design_dimension_unit(parameter) {
             return None;
         }
@@ -698,10 +695,10 @@ fn project_all_dimension_constraints(
                 .iter()
                 .map(|locus| locus.geometry_record_index)
                 .collect::<Vec<_>>();
-            if let Some(definition) =
-                exact_definition(scope, parameter, &indices, parameter_id.clone())
-            {
-                return Some(Ok(definition));
+            match exact_definition(scope, parameter, &indices, parameter_id.clone()) {
+                Ok(Some(definition)) => return Some(Ok(definition)),
+                Ok(None) => {},
+                Err(error) => return Some(Err(error)),
             }
         }
         if group.state == 0 {
@@ -714,7 +711,7 @@ fn project_all_dimension_constraints(
                 return Some(Ok(definition));
             }
             if let Some(definition) = exact_counted_dimension_relation(&locus_entities).transpose() {
-                return Some(definition);
+                return Some(definition.map_err(CodecError::ResourceLimit));
             }
         }
         if let Some(definition) = radial_locus_dimension_definition(
@@ -788,7 +785,7 @@ fn project_all_dimension_constraints(
             let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
             match exact_group_definition(scope, group, parameter, parameter_id.clone()) {
                 Some(Ok(_)) => return None,
-                Some(Err(error)) => return Some(Err(CodecError::ResourceLimit(error))),
+                Some(Err(error)) => return Some(Err(error)),
                 None => {}
             }
             let locus_entities = group
@@ -826,20 +823,21 @@ fn project_all_dimension_constraints(
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .collect::<HashSet<_>>();
-    let exact_pair_companions = pairs
-        .iter()
-        .filter_map(|pair| {
-            let scope = native_stream(&pair.id)?;
-            let (parameter, parameter_id) =
-                parameter_for(scope, pair.governing_companion_record_index)?;
+    let mut exact_pair_companions = HashSet::new();
+    for pair in pairs {
+            let Some(scope) = native_stream(&pair.id) else { continue; };
+            let Some((parameter, parameter_id)) =
+                parameter_for(scope, pair.governing_companion_record_index) else { continue; };
             let indices = [
                 pair.loci()[0].geometry_index(),
                 pair.loci()[1].geometry_index(),
             ];
-            exact_definition(scope, parameter, &indices, parameter_id)
-                .map(|_| (scope.to_owned(), pair.governing_companion_record_index))
-        })
-        .collect::<HashSet<_>>();
+            if exact_definition(scope, parameter, &indices, parameter_id)?.is_some() {
+                insert_dimension_set(ctx, &mut exact_pair_companions,
+                    (scope, pair.governing_companion_record_index),
+                    "f3d exact pair companion")?;
+            }
+    }
     let parameterized_offset_companions = groups
         .iter()
         .filter_map(|group| {
@@ -886,7 +884,7 @@ fn project_all_dimension_constraints(
         let Some((parameter, parameter_id)) =
             parameter_for(scope, group.companion_record_index) else { continue; };
         let definition = exact_group_definition(scope, group, parameter, parameter_id.clone())
-            .transpose().map_err(CodecError::ResourceLimit)?;
+            .transpose()?;
         if definition.as_ref()
             .is_none_or(|definition| constraint_parameters(definition).contains(&&parameter_id)) {
             insert_dimension_set(ctx, &mut projected_dimension_companions,
@@ -903,7 +901,7 @@ fn project_all_dimension_constraints(
             {
                 return None;
             }
-            if exact_pair_companions.contains(&(scope.to_owned(), group.companion_record_index)) {
+            if exact_pair_companions.contains(&(scope, group.companion_record_index)) {
                 return None;
             }
             let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
@@ -922,7 +920,7 @@ fn project_all_dimension_constraints(
             };
             let exact = match exact_group_definition(scope, group, parameter, parameter_id.clone()).transpose() {
                 Ok(definition) => definition,
-                Err(error) => return Some(Err(CodecError::ResourceLimit(error))),
+                Err(error) => return Some(Err(error)),
             };
             let definition = if let Some(definition) = exact {
                 definition
@@ -1001,7 +999,7 @@ fn project_all_dimension_constraints(
             let Some(sketch) = sketch_for_geometry(scope, &indices,
                 "f3d dimension pair sketch id")? else { continue; };
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair");
-            let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())
+            let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())?
                 .or_else(|| {
                     let [first_index, second_index] = indices;
                     let first = projected.get(&(scope, first_index))?;
@@ -1081,7 +1079,10 @@ fn project_all_dimension_constraints(
                 Err(error) => return Some(Err(error)),
             };
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "annotation");
-            let exact = exact_definition(scope, parameter, &indices, parameter_id.clone())
+            let exact = match exact_definition(scope, parameter, &indices, parameter_id.clone()) {
+                Ok(definition) => definition,
+                Err(error) => return Some(Err(error)),
+            }
                 .or_else(|| {
                     annotation_offset_dimension_definition(
                         frame,
