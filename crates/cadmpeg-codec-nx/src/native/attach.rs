@@ -2313,22 +2313,38 @@ fn attach_feature_operations(
         &simple_hole_diameters,
         &simple_hole_chamfers,
     )?;
-    let feature_ids_by_operation = labels
-        .iter()
-        .filter(|label| {
-            projects_neutral_feature(&label.value)
-                && !hole_packages.internal_operations.contains(&label.id)
-        })
-        .filter_map(|label| {
-            let key = label
-                .id
-                .strip_prefix("nx:feature-history:operation-label#")
-                .unwrap_or(label.id.as_str());
-            let id: FeatureId = IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-                .try_id(&cadmpeg_ir::identity_component!("feature"), key)?;
-            Some((label.id.as_str(), id))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut feature_ids_by_operation = BTreeMap::new();
+    let mut feature_id_reservation = ctx.reserve_scoped(0, "NX operation feature identities")?;
+    for label in labels {
+        ctx.charge_work(1, "NX operation feature identity scan")?;
+        if !projects_neutral_feature(&label.value)
+            || hole_packages.internal_operations.contains(&label.id)
+        {
+            continue;
+        }
+        let key = label.id.strip_prefix("nx:feature-history:operation-label#")
+            .unwrap_or(label.id.as_str());
+        if key.is_empty() || key.contains('#') || key.chars().any(char::is_whitespace) {
+            continue;
+        }
+        const PREFIX: &str = "nx:feature-history:feature#";
+        let id_len = PREFIX.len().checked_add(key.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX operation feature identity", 0, cadmpeg_core::decode::u64_from_index(key.len())))?;
+        let mut id_text = String::new();
+        ctx.charge_work(1, "NX operation feature identity index")?;
+        if !feature_ids_by_operation.contains_key(label.id.as_str()) {
+            ctx.charge_collection_items(1, "NX operation feature identity index")?;
+            feature_id_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, FeatureId)>()))?;
+        }
+        feature_id_reservation.grow(cadmpeg_core::decode::u64_from_index(id_len))?;
+        id_text.try_reserve_exact(id_len).map_err(|_| ctx.refuse_codec_limit("NX operation feature identity", 0, cadmpeg_core::decode::u64_from_index(id_len)))?;
+        id_text.push_str(PREFIX);
+        id_text.push_str(key);
+        let Ok(id) = FeatureId::mint(id_text) else {
+            continue;
+        };
+        feature_ids_by_operation.insert(label.id.as_str(), id);
+    }
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterBinding>>::new();
     for binding in parameter_bindings {
@@ -2361,12 +2377,21 @@ fn attach_feature_operations(
         };
         push_grouped_operation(ctx, &mut group_reservation, &mut payload_strings_by_operation, *operation, || value, 0)?;
     }
-    let parameter_owners = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
-        .collect::<BTreeMap<_, _>>();
+    let mut parameter_owners = BTreeMap::new();
+    let mut parameter_owner_reservation = ctx.reserve_scoped(0, "NX parameter owner index")?;
+    for parameter in &ir.model.parameters {
+        ctx.charge_work(1, "NX parameter owner index")?;
+        let owner_len = parameter.owner.as_ref().map_or(0, |owner| owner.as_str().len());
+        let bytes = std::mem::size_of::<(ParameterId, Option<FeatureId>)>()
+            .checked_add(parameter.id.as_str().len())
+            .and_then(|bytes| bytes.checked_add(owner_len))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX parameter owner index", 0, cadmpeg_core::decode::u64_from_index(owner_len)))?;
+        if !parameter_owners.contains_key(&parameter.id) {
+            ctx.charge_collection_items(1, "NX parameter owner index")?;
+        }
+        parameter_owner_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+        parameter_owners.insert(parameter.id.clone(), parameter.owner.clone());
+    }
     let annotation_base_order = id_from_index(ir.model.semantic_annotations.len());
     for (annotation_ordinal, label) in labels
         .iter()
