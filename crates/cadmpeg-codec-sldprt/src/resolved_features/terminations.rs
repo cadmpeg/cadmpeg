@@ -812,31 +812,28 @@ pub(crate) fn project_surface_sweep_profiles(
                         .cloned()
                         .map(PlanarProfileRef::Feature)
                 });
-            let generated = (start..end.saturating_sub(6))
-                .filter(|offset| {
-                    lane.native_payload.get(*offset..*offset + 2) == Some(&wrapper_token)
-                        && lane.native_payload.get(*offset + 4..*offset + 9)
-                            == Some(&[0x2b, 0x80, 0x02, 0, 0])
-                        && offset.checked_sub(2).is_none_or(|prefix| {
-                            lane.native_payload.get(prefix..*offset) != Some(&[1, 0])
-                        })
-                })
-                .filter_map(|wrapper| {
-                    let candidates = (wrapper + 4..end.saturating_sub(16))
-                        .filter(|marker| {
-                            lane.native_payload.get(*marker..*marker + 16)
-                                == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-                        })
-                        .filter_map(|marker| {
-                            component_reference_curve_path_at(&lane.native_payload, marker)
-                                .map(|components| (marker, components))
-                        })
-                        .collect::<Vec<_>>();
-                    let [(_, components)] = candidates.as_slice() else {
-                        return None;
-                    };
-                    let owner = component_path_terminal_feature(components, &history_features)?;
-                    let feature_id = feature_ids_by_native.get(owner.as_str())?.clone();
+            let mut generated = Vec::new();
+            if let Some(scan_end) = end.checked_sub(6) {
+                for wrapper in start..scan_end {
+                    ctx.charge_work(1, "project SLDPRT surface sweep profile")?;
+                    if lane.native_payload.get(wrapper..wrapper + 2) != Some(&wrapper_token)
+                        || lane.native_payload.get(wrapper + 4..wrapper + 9) != Some(&[0x2b, 0x80, 0x02, 0, 0])
+                        || wrapper.checked_sub(2).is_some_and(|prefix| lane.native_payload.get(prefix..wrapper) == Some(&[1, 0])) { continue; }
+                    let mut candidates = Vec::new();
+                    if let Some(marker_end) = end.checked_sub(16) {
+                        for marker in wrapper + 4..marker_end {
+                            ctx.charge_work(1, "project SLDPRT surface sweep profile")?;
+                            if lane.native_payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice()) { continue; }
+                            if let Some(components) = component_reference_curve_path_at(&lane.native_payload, marker) {
+                                ctx.reserve_collection_vec(&mut candidates, 1, "project SLDPRT surface sweep profile")?;
+                                candidates.push((marker, components));
+                            }
+                        }
+                    }
+                    let [(_, components)] = candidates.as_slice() else { continue; };
+                    let Some(owner) = component_path_terminal_feature(ctx, components, &history_features)? else { continue; };
+                    let candidate = (|| {
+                        let feature_id = feature_ids_by_native.get(owner.as_str())?.clone();
                     let local_id = components
                         .iter()
                         .map(|component| {
@@ -857,8 +854,13 @@ pub(crate) fn project_surface_sweep_profiles(
                         .ok()?,
                         components.clone(),
                     ))
-                })
-                .collect::<Vec<_>>();
+                    })();
+                    if let Some(candidate) = candidate {
+                        ctx.reserve_collection_vec(&mut generated, 1, "project SLDPRT surface sweep profile")?;
+                        generated.push(candidate);
+                    }
+                }
+            }
             let profile = match (direct, generated.as_slice()) {
                 (Some(profile), []) => profile,
                 (None, [(profile, _)]) => profile.clone(),
@@ -993,6 +995,7 @@ fn compact_body_null_slot_at(payload: &[u8], end: usize) -> bool {
 }
 
 pub(crate) fn project_compact_combine_paths(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -1021,6 +1024,7 @@ pub(crate) fn project_compact_combine_paths(
             continue;
         };
         let project = |native: &str| {
+            let components = (|| {
             let (prefix, offset) = native.rsplit_once(':')?;
             let offset = offset.parse::<usize>().ok()?;
             let lane_key = prefix.rsplit_once(':')?.1;
@@ -1030,8 +1034,12 @@ pub(crate) fn project_compact_combine_paths(
                     .map_or(lane.id.as_str(), |(_, key)| key)
                     == lane_key
             })?;
-            let components = compact_body_component_path_at(&lane.native_payload, offset)?;
-            let producer = component_path_terminal_feature(&components, &history_features)?;
+            compact_body_component_path_at(&lane.native_payload, offset)
+
+            })();
+            let Some(components) = components else { return Ok::<_, cadmpeg_core::CodecError>(None); };
+            let Some(producer) = component_path_terminal_feature(ctx, &components, &history_features)? else { return Ok(None); };
+            Ok((|| {
             let feature = feature_ids_by_native.get(&producer)?.clone();
             let local_id = components
                 .iter()
@@ -1054,25 +1062,24 @@ pub(crate) fn project_compact_combine_paths(
                 components,
                 feature,
             ))
+            })())
         };
         let (
             Some((target, target_components, target_owner)),
             Some((tools, tool_components, tool_owner)),
-        ) = (project(target), project(tools))
+        ) = (project(target)?, project(tools)?)
         else {
             continue;
         };
-        let mut dependencies = target_components
-            .iter()
-            .chain(&tool_components)
-            .filter_map(|component| {
-                let native = component_path_terminal_feature(
-                    std::slice::from_ref(component),
-                    &history_features,
-                )?;
-                feature_ids_by_native.get(&native).cloned()
-            })
-            .collect::<Vec<_>>();
+        let mut dependencies = Vec::new();
+        for component in target_components.iter().chain(&tool_components) {
+            let Some(native) = component_path_terminal_feature(ctx, std::slice::from_ref(component), &history_features)? else { continue; };
+            if let Some(feature) = feature_ids_by_native.get(&native) {
+                ctx.reserve_collection_vec(&mut dependencies, 1, "project SLDPRT combine dependencies")?;
+                dependencies.push(feature.clone());
+            }
+        }
+        ctx.reserve_collection_vec(&mut dependencies, 2, "project SLDPRT combine dependencies")?;
         dependencies.push(target_owner);
         dependencies.push(tool_owner);
         dependencies.sort_by_key(|dependency| {

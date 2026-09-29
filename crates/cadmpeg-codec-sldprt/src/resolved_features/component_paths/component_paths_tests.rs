@@ -63,10 +63,10 @@ fn component_path_type_identities_name_ordered_features() {
         vec!["producer", "other"]
     );
     assert_eq!(
-        component_path_terminal_feature(
+        component_path_terminal_feature(&ctx, 
             &mixed,
             &[feature("producer", "42"), feature("other", "43")]
-        ),
+        ).unwrap(),
         Some("other".into())
     );
     assert_eq!(
@@ -87,10 +87,10 @@ fn component_path_type_identities_name_ordered_features() {
         local_id: Some(5),
     });
     assert_eq!(
-        component_path_terminal_feature(
+        component_path_terminal_feature(&ctx, 
             &mixed,
             &[feature("producer", "42"), feature("other", "43")]
-        ),
+        ).unwrap(),
         Some("other".into())
     );
 

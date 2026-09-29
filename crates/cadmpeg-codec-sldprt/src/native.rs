@@ -1584,14 +1584,12 @@ fn surface_selection_disagrees_with_payload(
             record.terminal_feature_ref.as_deref(),
             surface_features,
         )? != record.producer_feature_refs
-        || usize::try_from(record.offset).ok().and_then(|offset| {
-            crate::resolved_features::selections::surface_selection_terminal_feature_at(
-                &lane.native_payload,
-                offset,
-                &record.components,
-                surface_features,
-            )
-        }) != record.terminal_feature_ref)
+        || match usize::try_from(record.offset) {
+            Ok(offset) => crate::resolved_features::selections::surface_selection_terminal_feature_at(
+                ctx, &lane.native_payload, offset, &record.components, surface_features,
+            )?,
+            Err(_) => None,
+        } != record.terminal_feature_ref)
 }
 
 fn relation_instance_shape_valid(

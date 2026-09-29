@@ -744,11 +744,12 @@ pub(super) fn compact_surface_selections(
                 None
             };
             let terminal_feature_ref = surface_selection_terminal_feature_at(
+                ctx,
                 &lane.native_payload,
                 offset,
                 &components,
                 &history_features,
-            );
+            )?;
             let producer_feature_refs = surface_selection_producer_features(
                     ctx,
                 &components,
@@ -2719,21 +2720,26 @@ pub(crate) fn compact_edge_producer_features_at(
 }
 
 pub(crate) fn surface_selection_terminal_feature_at(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     marker: usize,
     components: &[FeatureInputComponentPathEntry],
     features: &[crate::records::Feature],
-) -> Option<String> {
-    compact_single_face_reference_record_at(payload, marker)
-        .and_then(|(_, source)| source)
-        .and_then(|source| {
-            let mut matches = features
-                .iter()
-                .filter(|candidate| candidate.source_value() == Some(source));
-            let feature = matches.next()?;
-            matches.next().is_none().then(|| feature.id.clone())
-        })
-        .or_else(|| component_path_terminal_feature(components, features))
+) -> Result<Option<String>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT surface selection terminal";
+    if let Some(source) = compact_single_face_reference_record_at(payload, marker).and_then(|(_, source)| source) {
+        let mut found = None;
+        for feature in features {
+            ctx.charge_work(1, OPERATION)?;
+            if feature.source_value() != Some(source) { continue; }
+            if found.is_some() { found = None; break; }
+            found = Some(feature);
+        }
+        if let Some(feature) = found {
+            return Ok(Some(copy_selection_text(ctx, &feature.id, OPERATION)?));
+        }
+    }
+    component_path_terminal_feature(ctx, components, features)
 }
 
 fn compact_homogeneous_edge_ids(
