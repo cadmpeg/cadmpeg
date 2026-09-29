@@ -2449,12 +2449,13 @@ fn cut_with_surface_selection_pair<'a>(
 /// Resolve an attached thread face when its persistent cylinder reference
 /// cannot bind directly to a generated face.
 pub(crate) fn project_unbound_cosmetic_thread_faces(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     faces: &[Face],
     surfaces: &[Surface],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -2615,71 +2616,89 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
             };
             let diameter = diameter.get();
 
-            let selected = unique_cylindrical_face(diameter * 0.5, faces, surfaces).or_else(|| {
-                native
-                    .as_ref()
-                    .and_then(|_| unique_topological_cylindrical_face(faces, surfaces))
-            });
+            let selected = match unique_cylindrical_face(ctx, diameter * 0.5, faces, surfaces)? {
+                Some(selected) => Some(selected),
+                None if native.is_some() => unique_topological_cylindrical_face(ctx, faces, surfaces)?,
+                None => None,
+            };
             let Some(selected) = selected else {
                 break 'feature_edit;
             };
+            let mut selected_faces = Vec::new();
+            ctx.reserve_collection_vec(&mut selected_faces, 1, "project SLDPRT unbound cosmetic thread face")?;
+            selected_faces.push(selected);
             *face = match native {
                 Some(native) => cadmpeg_ir::features::FaceSelection::Resolved {
-                    faces: vec![selected],
+                    faces: selected_faces,
                     native,
                 },
-                None => cadmpeg_ir::features::FaceSelection::Faces(vec![selected]),
+                None => cadmpeg_ir::features::FaceSelection::Faces(selected_faces),
             };
         }
         feature.evaluation.set_definition(definition);
     }
+    Ok(())
 }
 
-fn unique_cylindrical_face(radius: f64, faces: &[Face], surfaces: &[Surface]) -> Option<FaceId> {
+fn unique_cylindrical_face(
+    ctx: &DecodeContext<'_>,
+    radius: f64,
+    faces: &[Face],
+    surfaces: &[Surface],
+) -> Result<Option<FaceId>, cadmpeg_core::CodecError> {
     if !radius.is_finite() || radius <= 0.0 {
-        return None;
+        return Ok(None);
     }
     let tolerance = (radius.abs() * EPS_PROJECTIONS_UNIQUE_CYLINDRICAL_FACE_E9)
         .max(EPS_PROJECTIONS_UNIQUE_CYLINDRICAL_FACE_E9);
-    let cylindrical = surfaces
-        .iter()
-        .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
-                if {
-                    let candidate = cylinder_surface.radius().get();
-                    (candidate - radius).abs() <= tolerance
-                } =>
-            {
-                Some(&surface.id)
+    unique_matching_face(ctx, faces, surfaces, "find unique SLDPRT cylindrical face", |surface| {
+        match surface.geometry {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
+                (cylinder_surface.radius().get() - radius).abs() <= tolerance
             }
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
-    let mut candidates = faces
-        .iter()
-        .filter(|face| cylindrical.contains(&face.surface))
-        .map(|face| face.id.clone());
-    let selected = candidates.next()?;
-    candidates.next().is_none().then_some(selected)
+            _ => false,
+        }
+    })
 }
 
-fn unique_topological_cylindrical_face(faces: &[Face], surfaces: &[Surface]) -> Option<FaceId> {
-    let cylindrical = surfaces
-        .iter()
-        .filter_map(|surface| {
-            matches!(
-                surface.geometry,
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
-            )
-            .then_some(&surface.id)
-        })
-        .collect::<HashSet<_>>();
-    let mut candidates = faces
-        .iter()
-        .filter(|face| cylindrical.contains(&face.surface))
-        .map(|face| face.id.clone());
-    let selected = candidates.next()?;
-    candidates.next().is_none().then_some(selected)
+fn unique_matching_face(
+    ctx: &DecodeContext<'_>,
+    faces: &[Face],
+    surfaces: &[Surface],
+    operation: &'static str,
+    mut matches_surface: impl FnMut(&Surface) -> bool,
+) -> Result<Option<FaceId>, cadmpeg_core::CodecError> {
+    let mut selected = None;
+    for face in faces {
+        for surface in surfaces {
+            ctx.charge_work(1, operation)?;
+            if face.surface != surface.id || !matches_surface(surface) {
+                continue;
+            }
+            if selected.is_some() {
+                return Ok(None);
+            }
+            selected = Some(&face.id);
+            break;
+        }
+    }
+    selected.map(|id| {
+        let text = ctx.format_retained(format_args!("{}", id.as_str()), operation)?;
+        FaceId::mint(text).map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT face id"))
+    }).transpose()
+}
+
+fn unique_topological_cylindrical_face(
+    ctx: &DecodeContext<'_>,
+    faces: &[Face],
+    surfaces: &[Surface],
+) -> Result<Option<FaceId>, cadmpeg_core::CodecError> {
+    unique_matching_face(ctx, faces, surfaces, "find unique SLDPRT topological cylinder face", |surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+        )
+    })
 }
 
 /// Resolve frame-only offset-plane supports when exactly one B-rep face lies
@@ -2747,20 +2766,14 @@ fn unique_planar_face(
             .max(origin.y.abs())
             .max(origin.z.abs())
             .max(1.0);
-    let mut selected = None;
-    for face in faces {
-        for surface in surfaces {
-            ctx.charge_work(1, OPERATION)?;
-            if face.surface != surface.id {
-                continue;
-            }
-            let planar = match surface.geometry {
+    unique_matching_face(ctx, faces, surfaces, OPERATION, |surface| {
+        match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let candidate_origin = plane_surface.origin().get();
                 let candidate_normal = *plane_surface.frame().axis().as_raw();
                 let candidate_length = candidate_normal.norm();
                 if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
-                    continue;
+                    return false;
                 }
                 let alignment = (normal.x * candidate_normal.x
                     + normal.y * candidate_normal.y
@@ -2778,20 +2791,8 @@ fn unique_planar_face(
                     && distance.abs() <= tolerance
             }
             _ => false,
-            };
-            if planar {
-                if selected.is_some() {
-                    return Ok(None);
-                }
-                selected = Some(&face.id);
-                break;
-            }
         }
-    }
-    selected.map(|id| {
-        let text = ctx.format_retained(format_args!("{}", id.as_str()), OPERATION)?;
-        FaceId::mint(text).map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT face id"))
-    }).transpose()
+    })
 }
 
 #[cfg(test)]

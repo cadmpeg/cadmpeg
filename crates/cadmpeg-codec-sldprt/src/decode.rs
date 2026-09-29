@@ -3116,12 +3116,13 @@ fn build_geometry_ir(
     )?;
     mark_active_configuration(&mut ir);
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
+        ctx,
         &mut ir.model.features,
         &histories,
         &all_lanes,
         &ir.model.faces,
         &ir.model.surfaces,
-    );
+    )?;
     crate::resolved_features::projections::project_unbound_offset_plane_faces(
         ctx,
         &mut ir.model.features,
@@ -4296,12 +4297,13 @@ fn build_metadata_ir(
         &sketch_lanes,
     )?;
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
+        ctx,
         &mut ir.model.features,
         &histories,
         &lanes,
         &ir.model.faces,
         &ir.model.surfaces,
-    );
+    )?;
     crate::resolved_features::projections::project_unbound_offset_plane_faces(
         ctx,
         &mut ir.model.features,

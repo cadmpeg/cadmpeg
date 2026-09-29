@@ -5,6 +5,7 @@ use super::super::{
     full_round_fillet_selection_triple,
     project_compact_body_selections, project_compact_edge_selections,
     project_compact_surface_selections,
+    project_unbound_cosmetic_thread_faces,
     project_unbound_offset_plane_faces,
 };
 use crate::records::{FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputLane, FeatureInputSurfaceSelection, FeatureInputSurfaceSelectionKind};
@@ -61,6 +62,123 @@ fn offset_plane_fixture() -> (
         },
     ));
     (vec![feature], vec![face], vec![surface])
+}
+
+fn cosmetic_fallback_fixture() -> (
+    Vec<cadmpeg_ir::features::Feature>,
+    Vec<crate::records::FeatureHistory>,
+    Vec<cadmpeg_ir::topology::Face>,
+    Vec<cadmpeg_ir::geometry::Surface>,
+) {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::topology::{Face, Sense};
+
+    let surface = cadmpeg_ir::geometry::Surface {
+        id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+            ).expect("cylindrical test surface"),
+        )),
+        source_object: None,
+    };
+    let face = Face {
+        id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        surface: surface.id.clone(),
+        sense: Sense::Forward,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+    };
+    let history = crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![crate::records::Feature {
+            id: "thread-native".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: None,
+            ordinal: 0,
+            name: "thread-native".into(),
+            kind: "Feature".into(),
+            input_class: None,
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    };
+    let mut feature = compact_edge_projection_feature();
+    feature.native_ref = Some("thread-native".into());
+    feature.evaluation.set_definition(FeatureDefinition::Operation(
+        FeatureOperation::CosmeticThread {
+            face: cadmpeg_ir::features::FaceSelection::Unresolved,
+            diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).expect("diameter")),
+            extent: None,
+        },
+    ));
+    (vec![feature], vec![history], vec![face], vec![surface])
+}
+
+#[test]
+fn unbound_cosmetic_thread_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (mut features, histories, faces, surfaces) = cosmetic_fallback_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = project_unbound_cosmetic_thread_faces(&ctx, &mut features, &histories, &[], &faces, &surfaces)
+        .expect_err("cylindrical scan exceeds work limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "find unique SLDPRT cylindrical face"));
+}
+
+#[test]
+fn unbound_cosmetic_thread_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (mut features, histories, faces, surfaces) = cosmetic_fallback_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = project_unbound_cosmetic_thread_faces(&ctx, &mut features, &histories, &[], &faces, &surfaces)
+        .expect_err("cylindrical face ID exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "find unique SLDPRT cylindrical face"));
+}
+
+#[test]
+fn unbound_cosmetic_thread_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (mut features, histories, faces, surfaces) = cosmetic_fallback_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = project_unbound_cosmetic_thread_faces(&ctx, &mut features, &histories, &[], &faces, &surfaces)
+        .expect_err("cylindrical face slot exceeds collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "project SLDPRT unbound cosmetic thread face"));
 }
 
 #[test]
