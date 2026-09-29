@@ -429,3 +429,27 @@ fn edge_assignment_reference_candidate_refuses_collection_limit() {
     }
     panic!("no assignment reference refusal");
 }
+
+#[test]
+fn corroborated_edge_candidate_refuses_collection_limit() {
+    let selectors = [crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
+        selector: 0,
+        clauses: Vec::new(),
+        incidence_matching_edge_slots: vec![17, 18],
+        boundary_count_matching_edge_slots: Vec::new(),
+    }];
+    for limit in 0..16 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match crate::design::edge_resolve::edge_assignment_candidates(
+            &selectors, [&[17, 18][..]], Some(&ctx)) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d corroborated edge candidate" => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            other => panic!("expected corroborated edge refusal: {other:?}"),
+        }
+    }
+    panic!("no corroborated edge refusal");
+}
