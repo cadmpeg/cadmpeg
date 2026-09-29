@@ -1394,11 +1394,17 @@ fn project_all_dimension_constraints(
             })
         },
     ));
-    let projected_parameters = constraints
-        .iter()
-        .flat_map(|constraint| constraint_parameters(constraint.definition.kind()))
-        .cloned()
-        .collect::<HashSet<_>>();
+    let mut projected_parameters = HashSet::new();
+    for constraint in &constraints {
+        for parameter in constraint_parameters(constraint.definition.kind()) {
+            if !projected_parameters.contains(parameter) {
+                let id = copy_dimension_parameter_id(ctx, parameter,
+                    "f3d projected dimension parameter id")?;
+                insert_dimension_set(ctx, &mut projected_parameters, id,
+                    "f3d projected dimension parameter")?;
+            }
+        }
+    }
     let container_only_payload_companions = container_only_dimension_companions(
         ctx,
         pairs,
