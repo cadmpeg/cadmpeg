@@ -102,7 +102,7 @@ fn native_dimensioned_circle_construction_state(
         return None;
     }
     let [cu, cv] = center.coordinates_m?.get();
-    let mut states = Vec::new();
+    let mut state = None;
     for lane in lanes {
         if !lane.sketch_entities.iter().any(|marker| {
             marker.id() == center.id() && marker.feature_ref.as_deref() == Some(feature)
@@ -127,16 +127,14 @@ fn native_dimensioned_circle_construction_state(
                 continue;
             };
             if same_dimension_length((ru - cu).hypot(rv - cv) * 1000.0, radius) {
-                states.push(construction);
+                if state.is_some_and(|previous| previous != construction) {
+                    return None;
+                }
+                state = Some(construction);
             }
         }
     }
-    states.sort_unstable();
-    states.dedup();
-    match states.as_slice() {
-        [state] => Some(*state),
-        _ => None,
-    }
+    state
 }
 
 fn native_radial_record_for_marker(
@@ -186,7 +184,7 @@ fn unique_native_radial_witness(
     else {
         return false;
     };
-    let candidates = lane
+    let candidate_count = lane
         .sketch_entities
         .iter()
         .filter(|candidate| {
@@ -207,8 +205,9 @@ fn unique_native_radial_witness(
             let radius = (ru - cu).hypot(rv - cv) * 1000.0;
             radius.is_finite() && same_dimension_length(radius, expected_radius)
         })
-        .collect::<Vec<_>>();
-    candidates.len() == 1
+        .take(2)
+        .count();
+    candidate_count == 1
 }
 
 fn dimensioned_arc_native_geometry(
