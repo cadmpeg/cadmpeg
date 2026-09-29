@@ -3102,13 +3102,14 @@ fn build_geometry_ir(
         },
     )?;
     crate::resolved_features::holes::project_bore_backed_position_sketches(
+        ctx,
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
         &ir.model.surfaces,
         &histories,
         &all_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,
         &mut ir.model.sketch_constraints,
@@ -4323,13 +4324,14 @@ fn build_metadata_ir(
         },
     )?;
     crate::resolved_features::holes::project_bore_backed_position_sketches(
+        ctx,
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
         &ir.model.surfaces,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,
         &mut ir.model.sketch_constraints,
