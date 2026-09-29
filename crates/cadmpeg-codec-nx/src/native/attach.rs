@@ -2332,33 +2332,24 @@ fn attach_feature_operations(
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterBinding>>::new();
     for binding in parameter_bindings {
-        parameter_bindings_by_operation
-            .entry(binding.operation_label.as_str())
-            .or_default()
-            .push(binding);
+        push_grouped_operation(ctx, &mut group_reservation, &mut parameter_bindings_by_operation, binding.operation_label.as_str(), || binding, 0)?;
     }
     let mut parameter_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterUse>>::new();
     for parameter_use in parameter_uses {
-        parameter_uses_by_operation
-            .entry(parameter_use.operation_label.as_str())
-            .or_default()
-            .push(parameter_use);
+        push_grouped_operation(ctx, &mut group_reservation, &mut parameter_uses_by_operation, parameter_use.operation_label.as_str(), || parameter_use, 0)?;
     }
-    let operation_labels_by_record = operation_records
+    let operation_labels_by_record = last_record_index(ctx, operation_records
         .iter()
         .map(|record| (record.id.as_str(), record.operation_label.as_str()))
-        .collect::<BTreeMap<_, _>>();
+        )?;
     let mut body_writes_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyWrite>>::new();
     for (write, operation_label) in operation_body_writes
         .iter()
         .filter_map(|write| write.operation_label.as_deref().map(|label| (write, label)))
     {
-        body_writes_by_operation
-            .entry(operation_label)
-            .or_default()
-            .push(write);
+        push_grouped_operation(ctx, &mut group_reservation, &mut body_writes_by_operation, operation_label, || write, 0)?;
     }
     let mut body_identity_writers = BTreeMap::<u8, FeatureId>::new();
     let mut payload_strings_by_operation =
@@ -2368,10 +2359,7 @@ fn attach_feature_operations(
         else {
             continue;
         };
-        payload_strings_by_operation
-            .entry(operation)
-            .or_default()
-            .push(value);
+        push_grouped_operation(ctx, &mut group_reservation, &mut payload_strings_by_operation, *operation, || value, 0)?;
     }
     let parameter_owners = ir
         .model
