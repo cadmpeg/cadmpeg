@@ -89,6 +89,35 @@ fn standard_population_entity_rewrite_refuses_collection_limit() {
 }
 
 #[test]
+fn standard_population_identity_refuses_retained_limit() {
+    use super::super::StandardPopulationScope;
+    use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::{Body, BodyKind};
+    let body = Body {
+        id: BodyId::mint("catia:standard:body#0").expect("identity"),
+        kind: BodyKind::Solid,
+        regions: Vec::new(), transform: None, name: None, color: None, visible: None,
+    };
+    let mut found = false;
+    for cap in 0..=4096 {
+        let result = crate::test_support::with_retained_limit(cap, |ctx| {
+            StandardPopulationScope { scope: "population-1", ctx }.rewrite(body.clone())
+        });
+        match result {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_standard_population_identity" => {
+                    found = true;
+                    break;
+                }
+            Ok(_) => break,
+            _ => {}
+        }
+    }
+    assert!(found, "retained sweep must reach the rewritten identity");
+}
+
+#[test]
 fn standard_initial_carrier_identity_refuses_retained_limit() {
     let file = standard_catpart();
     let scan = crate::test_support::with_service_context(|ctx| {
