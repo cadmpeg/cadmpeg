@@ -1029,7 +1029,7 @@ pub(crate) fn expression_records_with_model_name(
         }
         if lines.len() == index_from_u32(count) {
             let prohibited_constructs = curve_equation_prohibited_constructs(ctx, &lines)?;
-            let mut solve_program = curve_expression_solve_program(&lines);
+            let mut solve_program = curve_expression_solve_program(ctx, &lines)?;
             let mut evaluation = evaluate_expression_program_details(
                 ctx,
                 &lines,
@@ -1220,16 +1220,23 @@ impl ExternalRelationSymbols {
     }
 }
 
-fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAssignment> {
+fn expression_assignment(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    line: &CurveExpressionLine,
+) -> Result<Option<CurveExpressionAssignment>, cadmpeg_core::CodecError> {
     let source = line.text.trim();
     if source.starts_with("/*") {
-        return None;
+        return Ok(None);
     }
-    let (name, expression) = split_expression_assignment(source)?;
-    let target = expression_assignment_target(name.trim())?;
+    let Some((name, expression)) = split_expression_assignment(source) else {
+        return Ok(None);
+    };
+    let Some(target) = expression_assignment_target(name.trim()) else {
+        return Ok(None);
+    };
     let expression = expression.trim();
     if expression.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut dependencies = Vec::<String>::new();
     if let CurveExpressionTarget::TableCell {
@@ -1238,28 +1245,41 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
         column,
     } = &target
     {
-        dependencies.push(parameter.clone());
-        extend_expression_dependencies(&mut dependencies, row)?;
+        ctx.try_reserve_items(&mut dependencies, 1, "creo expression dependency names")?;
+        dependencies.push(ctx.copy_retained_text(parameter, "creo expression dependency text")?);
+        if extend_expression_dependencies(ctx, &mut dependencies, row)?.is_none() {
+            return Ok(None);
+        }
         if let Some(column) = column {
-            extend_expression_dependencies(&mut dependencies, column)?;
+            if extend_expression_dependencies(ctx, &mut dependencies, column)?.is_none() {
+                return Ok(None);
+            }
         }
     } else if let CurveExpressionTarget::FunctionWrite { arguments, .. } = &target {
         for argument in arguments {
-            extend_expression_dependencies(&mut dependencies, argument)?;
+            if extend_expression_dependencies(ctx, &mut dependencies, argument)?.is_none() {
+                return Ok(None);
+            }
         }
     }
-    extend_expression_dependencies(&mut dependencies, expression)?;
-    Some(CurveExpressionAssignment {
+    if extend_expression_dependencies(ctx, &mut dependencies, expression)?.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(CurveExpressionAssignment {
         target,
-        expression: expression.to_owned(),
+        expression: ctx.copy_retained_text(expression, "creo expression assignment text")?,
         dependencies,
         value: None,
         activation: CurveExpressionActivation::Active,
         offset: line.offset,
-    })
+    }))
 }
 
-fn extend_expression_dependencies(dependencies: &mut Vec<String>, expression: &str) -> Option<()> {
+fn extend_expression_dependencies(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    dependencies: &mut Vec<String>,
+    expression: &str,
+) -> Result<Option<()>, cadmpeg_core::CodecError> {
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
@@ -1309,7 +1329,10 @@ fn extend_expression_dependencies(dependencies: &mut Vec<String>, expression: &s
             }
         } else if bytes[cursor] == b'_' || bytes[cursor].is_ascii_alphabetic() {
             let start = cursor;
-            cursor = expression_identifier_end(bytes, start)?;
+            let Some(end) = expression_identifier_end(bytes, start) else {
+                return Ok(None);
+            };
+            cursor = end;
             let dependency = &expression[start..cursor];
             let mut following = cursor;
             while bytes.get(following).is_some_and(u8::is_ascii_whitespace) {
@@ -1324,13 +1347,14 @@ fn extend_expression_dependencies(dependencies: &mut Vec<String>, expression: &s
                     .iter()
                     .any(|existing| existing.eq_ignore_ascii_case(dependency))
             {
-                dependencies.push(dependency.to_owned());
+                ctx.try_reserve_items(dependencies, 1, "creo expression dependency names")?;
+                dependencies.push(ctx.copy_retained_text(dependency, "creo expression dependency text")?);
             }
         } else {
             cursor += 1;
         }
     }
-    Some(())
+    Ok(Some(()))
 }
 
 fn split_expression_assignment(source: &str) -> Option<(&str, &str)> {
@@ -1386,13 +1410,17 @@ struct PendingCurveExpressionSolveStatement {
     line_index: usize,
 }
 
-fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpressionSolveProgram {
+fn curve_expression_solve_program(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    lines: &[CurveExpressionLine],
+) -> Result<CurveExpressionSolveProgram, cadmpeg_core::CodecError> {
     let mut program = CurveExpressionSolveProgram::default();
     let mut pending = None::<PendingCurveExpressionSolveBlock>;
     for (index, line) in lines.iter().enumerate() {
         let source = line.text.trim();
         let Some(block) = pending.as_mut() else {
             if starts_relation_keyword(source, "solve") {
+                ctx.charge_collection_items(1, "creo solve line index nodes")?;
                 program.line_indices.insert(index);
                 pending = Some(PendingCurveExpressionSolveBlock {
                     statements: Vec::new(),
@@ -1400,12 +1428,14 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                     valid: source.eq_ignore_ascii_case("solve"),
                 });
             } else if starts_relation_keyword(source, "for") {
+                ctx.charge_collection_items(1, "creo solve line index nodes")?;
                 program.line_indices.insert(index);
                 program.unresolved_control = true;
             }
             continue;
         };
 
+        ctx.charge_collection_items(1, "creo solve line index nodes")?;
         program.line_indices.insert(index);
         if starts_relation_keyword(source, "solve") {
             program.unresolved_control = true;
@@ -1425,9 +1455,12 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                             .iter()
                             .any(|unknown| unknown.name.eq_ignore_ascii_case(dependency))
                     }) {
+                        ctx.try_reserve_items(&mut equations, 1, "creo solve equations")?;
                         equations.push(statement.equation);
                     } else if let Some(assignment) = statement.assignment {
+                        ctx.try_reserve_items(&mut assignment_line_indices, 1, "creo solve assignment indices")?;
                         assignment_line_indices.push(statement.line_index);
+                        ctx.try_reserve_items(&mut assignments, 1, "creo solve assignments")?;
                         assignments.push(assignment);
                     } else {
                         block.valid = false;
@@ -1435,9 +1468,14 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                 }
             }
             if let Some(unknowns) = unknowns.filter(|_| block.valid && !equations.is_empty()) {
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(assignment_line_indices.len()),
+                    "creo executable solve line index nodes",
+                )?;
                 program
                     .executable_line_indices
                     .extend(assignment_line_indices);
+                ctx.try_reserve_items(&mut program.blocks, 1, "creo solve blocks")?;
                 program.blocks.push(CurveExpressionSolveBlock {
                     equations,
                     assignments,
@@ -1466,28 +1504,29 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
             continue;
         }
         let mut dependencies = Vec::new();
-        if extend_expression_dependencies(&mut dependencies, left).is_none()
-            || extend_expression_dependencies(&mut dependencies, right).is_none()
+        if extend_expression_dependencies(ctx, &mut dependencies, left)?.is_none()
+            || extend_expression_dependencies(ctx, &mut dependencies, right)?.is_none()
         {
             program.unresolved_control = true;
             block.valid = false;
             continue;
         }
+        ctx.try_reserve_items(&mut block.statements, 1, "creo pending solve statements")?;
         block.statements.push(PendingCurveExpressionSolveStatement {
             equation: CurveExpressionEquation {
-                left: left.to_owned(),
-                right: right.to_owned(),
+                left: ctx.copy_retained_text(left, "creo solve equation left")?,
+                right: ctx.copy_retained_text(right, "creo solve equation right")?,
                 dependencies,
                 offset: line.offset,
             },
-            assignment: expression_assignment(line),
+            assignment: expression_assignment(ctx, line)?,
             line_index: index,
         });
     }
     if pending.is_some() {
         program.unresolved_control = true;
     }
-    program
+    Ok(program)
 }
 
 fn curve_expression_solve_unknowns(source: &str) -> Option<Vec<SolveUnknown>> {
@@ -1844,24 +1883,25 @@ fn evaluate_expression_program_details(
     model_name: Option<&str>,
     external_symbols: &ExternalRelationSymbols,
 ) -> Result<CurveExpressionEvaluation, cadmpeg_core::CodecError> {
-    let solve_program = curve_expression_solve_program(lines);
+    let solve_program = curve_expression_solve_program(ctx, lines)?;
     let solve_line_is_executable = |index: &usize| {
         !solve_program.line_indices.contains(index)
             || solve_program.executable_line_indices.contains(index)
     };
     if !expression_program_control_is_valid(ctx, lines)? {
+        let mut assignments = Vec::new();
+        for (index, line) in lines.iter().enumerate() {
+            if !solve_line_is_executable(&index) {
+                continue;
+            }
+            if let Some(mut assignment) = expression_assignment(ctx, line)? {
+                assignment.activation = CurveExpressionActivation::Conditional;
+                ctx.try_reserve_items(&mut assignments, 1, "creo conditional expression assignments")?;
+                assignments.push(assignment);
+            }
+        }
         return Ok(CurveExpressionEvaluation {
-            assignments: lines
-                .iter()
-                .enumerate()
-                .filter(|(index, _)| solve_line_is_executable(index))
-                .map(|(_, line)| line)
-                .filter_map(expression_assignment)
-                .map(|mut assignment| {
-                    assignment.activation = CurveExpressionActivation::Conditional;
-                    assignment
-                })
-                .collect(),
+            assignments,
             solve_solutions: BTreeMap::new(),
         });
     }
@@ -1871,18 +1911,16 @@ fn evaluate_expression_program_details(
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
-    existing_symbols.extend(
-        lines
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| solve_line_is_executable(index))
-            .filter_map(|(_, line)| expression_assignment(line))
-            .filter_map(|assignment| {
-                assignment
-                    .scalar_target()
-                    .map(|(name, _)| expression_identifier_key(name))
-            }),
-    );
+    for (index, line) in lines.iter().enumerate() {
+        if !solve_line_is_executable(&index) {
+            continue;
+        }
+        if let Some(assignment) = expression_assignment(ctx, line)? {
+            if let Some((name, _)) = assignment.scalar_target() {
+                existing_symbols.insert(expression_identifier_key(name));
+            }
+        }
+    }
     existing_symbols.extend(
         solve_program
             .blocks
@@ -2031,7 +2069,7 @@ fn evaluate_expression_program_details(
             activity = stack.end();
             continue;
         }
-        let Some(mut assignment) = expression_assignment(line) else {
+        let Some(mut assignment) = expression_assignment(ctx, line)? else {
             continue;
         };
         assignment.activation = activity;
