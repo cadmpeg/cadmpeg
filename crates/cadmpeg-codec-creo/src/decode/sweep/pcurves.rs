@@ -83,7 +83,7 @@ pub(super) fn add_extrusion_pcurve(
     )?;
     ctx.charge_entities(1, "admit Creo model pcurves")?;
     let pcurve = Pcurve {
-        id: id.clone(),
+        id: id.copy_admitted(ctx, "creo extrusion pcurve identity copy")?,
         geometry,
         metadata: PcurveMetadata::general(
             None,

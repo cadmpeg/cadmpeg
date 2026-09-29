@@ -1,9 +1,59 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{nurbs_sense_sample, revolution_boundary_pcurve};
+use super::{add_extrusion_pcurve, nurbs_sense_sample, revolution_boundary_pcurve, PcurveAdmission};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
 use cadmpeg_ir::features::RevolutionAxis;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::ids::PcurveId;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::AnnotationBuilder;
+
+#[test]
+fn extrusion_pcurve_identity_copy_refuses_below_retained_limit() {
+    let id = PcurveId::mint("creo:feature:extrusion#7:pcurve:cap")
+        .expect("identity grammar");
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ).expect("plane"),
+    ));
+    let geometry = PcurveGeometry::Line(LinePcurve::try_new(
+        Point2::new(0.0, 0.0), Point2::new(1.0, 0.0),
+    ).expect("line"));
+    let source = crate::decode::source_carriers::SourceUnitCarriers::default();
+    let mut reached = false;
+    for limit in 0..512 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = add_extrusion_pcurve(
+            &ctx, &mut CadIr::empty(), &mut AnnotationBuilder::new(),
+            PcurveAdmission::Pending(&source, &surface), id.clone(), 0, geometry.clone(),
+        );
+        if matches!(result, Err(CodecError::ResourceLimit(resource))
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo extrusion pcurve identity copy")
+        {
+            reached = true;
+            break;
+        }
+    }
+    assert!(reached, "pcurve identity copy was not reached");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let result = add_extrusion_pcurve(
+        &ctx, &mut CadIr::empty(), &mut AnnotationBuilder::new(),
+        PcurveAdmission::Pending(&source, &surface), id.clone(), 0, geometry,
+    ).expect("service pcurve");
+    assert_eq!(result, id);
+}
 
 #[test]
 fn revolution_nurbs_sense_samples_a_wide_finite_parameter_range() {

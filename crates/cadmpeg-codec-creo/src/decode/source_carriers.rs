@@ -596,11 +596,14 @@ impl SourceUnitCarriers {
         scales: Option<[f64; 2]>,
     ) -> Result<(), CodecError> {
         if let Some(scales) = scales {
-            pcurve.geometry.try_scale_coordinates(scales).map_err(|_| {
-                CodecError::NotImplemented(format!(
-                    "Creo pcurve cannot be represented after unit normalization with scales {scales:?}"
-                ))
-            })?;
+            if pcurve.geometry.try_scale_coordinates(scales).is_err() {
+                return Err(CodecError::NotImplemented(ctx.format_retained(
+                    format_args!(
+                        "Creo pcurve cannot be represented after unit normalization with scales {scales:?}"
+                    ),
+                    "creo normalized pcurve refusal text",
+                )?));
+            }
         }
         ctx.try_reserve_items(&mut ir.model.pcurves, 1, "creo model pcurves")?;
         ir.model.pcurves.push(pcurve);
@@ -2381,5 +2384,38 @@ mod tests {
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.pcurves.is_empty());
             });
+    }
+
+    #[test]
+    fn pcurve_normalization_failure_text_refuses_below_retained_limit() {
+        let make_pcurve = || cadmpeg_ir::geometry::pcurve::Pcurve {
+            id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1")
+                .expect("identity grammar"),
+            geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                    cadmpeg_ir::math::Point2::new(f64::MAX, 0.0),
+                    cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                ).expect("finite pcurve"),
+            ),
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(None, None, None),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = SourceUnitCarriers::push_pcurve(
+            &ctx, &mut CadIr::empty(), make_pcurve(), Some([25.4, 25.4]),
+        ).expect_err("text refused before formatting");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo normalized pcurve refusal text"));
+
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = SourceUnitCarriers::push_pcurve(
+            &ctx, &mut CadIr::empty(), make_pcurve(), Some([25.4, 25.4]),
+        ).expect_err("overflow remains not implemented");
+        assert_eq!(error.to_string(), "not implemented yet: Creo pcurve cannot be represented after unit normalization with scales [25.4, 25.4]");
     }
 }
