@@ -62,6 +62,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{Sketch, SketchConstraint, SketchEntity, SketchGeometry};
+use cadmpeg_ir::sketches::SketchEntityId;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -555,14 +556,8 @@ pub(in super::super) fn transfer_sketches(
                 .with_native_ref(Some(sketch_native_ref(&sketch_id))),
             );
         }
-        let emitted_entity_ids = entities
-            .iter()
-            .map(|entity| entity.id().clone())
-            .collect::<BTreeSet<_>>();
-        let emitted_entity_geometry = entities
-            .iter()
-            .map(|entity| (entity.id().clone(), entity.geometry.clone()))
-            .collect::<BTreeMap<_, _>>();
+        let (emitted_entity_ids, emitted_entity_geometry) =
+            emitted_entity_views(ctx, &entities)?;
         let verhor_definitions = segments
             .iter()
             .filter_map(|segment| {
@@ -961,3 +956,24 @@ pub(in super::super) fn transfer_sketches(
     }
     Ok(coverage)
 }
+
+fn emitted_entity_views(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    entities: &[SketchEntity],
+) -> Result<(BTreeSet<SketchEntityId>, BTreeMap<SketchEntityId, SketchGeometry>), cadmpeg_core::CodecError> {
+    let mut ids = BTreeSet::new();
+    let mut geometry = BTreeMap::new();
+    for entity in entities {
+        ctx.charge_collection_items(1, "creo emitted sketch entity ID nodes")?;
+        ids.insert(entity.id().copy_admitted(ctx, "creo emitted sketch entity IDs")?);
+        ctx.charge_collection_items(1, "creo emitted sketch geometry nodes")?;
+        geometry.insert(
+            entity.id().copy_admitted(ctx, "creo emitted sketch geometry keys")?,
+            entity.geometry.copy_admitted(ctx, "creo emitted sketch geometry")?,
+        );
+    }
+    Ok((ids, geometry))
+}
+
+#[cfg(test)]
+mod tests;
