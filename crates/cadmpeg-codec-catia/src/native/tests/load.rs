@@ -24,6 +24,68 @@ use crate::test_support::test_object_graph::{
 use crate::CatiaCodec;
 
 #[test]
+fn alias_row_borrowed_wire_preserves_json_bytes() {
+    let native = crate::native::CatiaNative::decode(&surface_alias_stream());
+    let row = native.alias_rows.first().expect("alias row");
+    let owned: crate::native::CatiaAliasRowWire = row.clone().into();
+    assert_eq!(
+        serde_json::to_vec(row).expect("borrowed alias JSON"),
+        serde_json::to_vec(&owned).expect("owned alias JSON")
+    );
+}
+
+#[test]
+fn alias_row_retained_limit_refuses_json_record() {
+    let native = crate::native::CatiaNative::decode(&surface_alias_stream());
+    let row = native.alias_rows.first().expect("alias row");
+    let arena_name = "alias_rows";
+    let json_len = serde_json::to_vec(row).expect("alias JSON").len();
+    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let refused = crate::test_support::with_retained_limit(limit, |ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace.set_arena(ctx, arena_name, std::slice::from_ref(row))
+    });
+    let error = refused.expect_err("record exceeds retained-byte limit");
+    assert!(error.to_string().contains("RetainedBytes"), "{error}");
+    crate::test_support::with_service_context(|ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace.set_arena(ctx, arena_name, std::slice::from_ref(row))
+            .expect("service profile admits alias row");
+    });
+}
+
+#[test]
+fn value_schema_selection_borrowed_wire_preserves_json_bytes() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
+    let selection = native.value_blocks[0].schema_selections.first().expect("selection");
+    let owned: crate::native::CatiaValueSchemaSelectionWire = selection.clone().into();
+    assert_eq!(
+        serde_json::to_vec(selection).expect("borrowed selection JSON"),
+        serde_json::to_vec(&owned).expect("owned selection JSON")
+    );
+}
+
+#[test]
+fn value_schema_selection_retained_limit_refuses_json_record() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
+    let selection = native.value_blocks[0].schema_selections.first().expect("selection");
+    let arena_name = "value_schema_selections";
+    let json_len = serde_json::to_vec(selection).expect("selection JSON").len();
+    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let refused = crate::test_support::with_retained_limit(limit, |ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace.set_arena(ctx, arena_name, std::slice::from_ref(selection))
+    });
+    let error = refused.expect_err("record exceeds retained-byte limit");
+    assert!(error.to_string().contains("RetainedBytes"), "{error}");
+    crate::test_support::with_service_context(|ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace.set_arena(ctx, arena_name, std::slice::from_ref(selection))
+            .expect("service profile admits selection");
+    });
+}
+
+#[test]
 fn native_projection_refuses_catalog_header_and_flattened_entry_growth() {
     let mut native = super::super::CatiaNative::default();
     native.catalogs.push(super::super::CatiaCatalog {

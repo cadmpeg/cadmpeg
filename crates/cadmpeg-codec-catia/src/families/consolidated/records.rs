@@ -243,11 +243,8 @@ impl From<Class25ScalarMarker> for u8 {
     }
 }
 /// Scalar tail with the arity selected by its marker.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "Class25ScalarSegmentWire",
-    into = "Class25ScalarSegmentWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "Class25ScalarSegmentWire")]
 pub(crate) enum Class25ScalarSegment {
     M82Five(Box<[FiniteReal; 5]>),
     M82Six(Box<[FiniteReal; 6]>),
@@ -261,6 +258,29 @@ pub(crate) enum Class25ScalarSegment {
 struct Class25ScalarSegmentWire {
     marker: Class25ScalarMarker,
     trailing: Vec<FiniteReal>,
+}
+#[derive(Serialize)]
+struct Class25ScalarSegmentWireRef<'a> {
+    marker: Class25ScalarMarker,
+    trailing: &'a [FiniteReal],
+}
+
+impl Serialize for Class25ScalarSegment {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let (marker, trailing): (_, &[FiniteReal]) = match self {
+            Self::M82Five(lane) => (Class25ScalarMarker::M82, &lane[..]),
+            Self::M82Six(lane) => (Class25ScalarMarker::M82, &lane[..]),
+            Self::M82Seven(lane) => (Class25ScalarMarker::M82, &lane[..]),
+            Self::M83Eight(lane) => (Class25ScalarMarker::M83, &lane[..]),
+            Self::M83Nine(lane) => (Class25ScalarMarker::M83, &lane[..]),
+            Self::M89(lane) => (Class25ScalarMarker::M89, &lane[..]),
+            Self::M8b(lane) => (Class25ScalarMarker::M8b, &lane[..]),
+        };
+        Class25ScalarSegmentWireRef { marker, trailing }.serialize(serializer)
+    }
 }
 impl TryFrom<Class25ScalarSegmentWire> for Class25ScalarSegment {
     type Error = String;
@@ -285,6 +305,7 @@ impl TryFrom<Class25ScalarSegmentWire> for Class25ScalarSegment {
         .ok_or_else(|| "trailing arity does not match marker".to_owned())
     }
 }
+#[cfg(test)]
 impl From<Class25ScalarSegment> for Class25ScalarSegmentWire {
     fn from(value: Class25ScalarSegment) -> Self {
         fn into_vec<const N: usize>(lane: Box<[FiniteReal; N]>) -> Vec<FiniteReal> {
@@ -2333,6 +2354,47 @@ mod tests {
     use crate::wire::records::ConsolidatedPcurve;
 
     use super::{nurbs_carrier_offset, pcurve_matches_circle, ConsolidatedEdgeDefinitionData};
+
+    fn scalar_segment() -> super::Class25ScalarSegment {
+        let value = cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite scalar");
+        super::Class25ScalarSegment::M82Five(Box::new([value; 5]))
+    }
+
+    #[test]
+    fn class25_scalar_segment_borrowed_wire_preserves_json_bytes() {
+        let segment = scalar_segment();
+        let owned: super::Class25ScalarSegmentWire = segment.clone().into();
+        assert_eq!(
+            serde_json::to_vec(&segment).expect("borrowed segment JSON"),
+            serde_json::to_vec(&owned).expect("owned segment JSON")
+        );
+    }
+
+    #[test]
+    fn class25_scalar_segment_retained_limit_refuses_json_record() {
+        let segment = scalar_segment();
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            #[serde(flatten)]
+            segment: &'a super::Class25ScalarSegment,
+        }
+        let record = Record { id: "catia:test:segment#0", segment: &segment };
+        let arena_name = "scalar_segments";
+        let json_len = serde_json::to_vec(&record).expect("segment JSON").len();
+        let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+        let refused = crate::test_support::with_retained_limit(limit, |ctx| {
+            let mut namespace = cadmpeg_ir::NativeNamespace::default();
+            namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+        });
+        let error = refused.expect_err("segment exceeds retained-byte limit");
+        assert!(error.to_string().contains("RetainedBytes"), "{error}");
+        crate::test_support::with_service_context(|ctx| {
+            let mut namespace = cadmpeg_ir::NativeNamespace::default();
+            namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+                .expect("service profile admits segment");
+        });
+    }
 
     #[test]
     fn nurbs_carrier_offset_preserves_tiny_nonzero_distance() {
