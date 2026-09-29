@@ -193,7 +193,14 @@ impl TrailingPointerAnalysis {
         match self {
             Self::Macro => 0,
             Self::Unambiguous(_) => {
-                primary_end.map_or_else(|| structural_pointer_group_candidates(record).len(), |_| 1)
+                primary_end.map_or_else(
+                    || crate::test_support::with_service_context(&[], |ctx| {
+                        structural_pointer_group_candidates_with_context(record, ctx)
+                            .expect("test-only pointer candidate allocation")
+                            .len()
+                    }),
+                    |_| 1,
+                )
             }
             Self::Ambiguous { candidates, .. } => *candidates,
             Self::SingleInvalid(_) => 1,
@@ -583,29 +590,6 @@ fn analyze_trailing_pointer_groups_for_global_table_with_context(
     )
 }
 
-#[cfg(test)]
-fn analyze_trailing_pointer_groups_for_global_table(
-    record: &ParameterRecord,
-    directory: &BTreeMap<u32, &DirectoryEntry>,
-    global_table: GlobalTable,
-) -> TrailingPointerAnalysis {
-    crate::test_support::with_service_context(&[], |ctx| {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
-            record, directory, global_table, ctx,
-        ).expect("test-only trailing pointer analysis")
-    })
-}
-
-#[cfg(test)]
-// Existing boundary fixtures use the fully specified later-profile default;
-// every production caller supplies the resolved file global_table explicitly.
-fn analyze_trailing_pointer_groups(
-    record: &ParameterRecord,
-    directory: &BTreeMap<u32, &DirectoryEntry>,
-) -> TrailingPointerAnalysis {
-    analyze_trailing_pointer_groups_for_global_table(record, directory, GlobalTable::V5Later)
-}
-
 fn analyze_trailing_pointer_groups_with_records_for_global_table(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
@@ -633,19 +617,6 @@ fn analyze_trailing_pointer_groups_with_records_for_global_table(
     let primary_end =
         entity_primary_end_with_records_for_global_table(record, directory, records, global_table);
     analyze_trailing_pointer_groups_from_end(record, directory, primary_end, ctx)
-}
-
-#[cfg(test)]
-fn analyze_trailing_pointer_groups_with_records(
-    record: &ParameterRecord,
-    directory: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
-) -> TrailingPointerAnalysis {
-    crate::test_support::with_service_context(&[], |ctx| {
-        analyze_trailing_pointer_groups_with_records_for_global_table(
-            record, directory, records, GlobalTable::V5Later, ctx,
-        ).expect("test-only trailing pointer analysis")
-    })
 }
 
 fn analyze_trailing_pointer_groups_from_end(
@@ -2543,14 +2514,6 @@ fn structural_pointer_group_candidates_with_context(
     Ok(candidates)
 }
 
-#[cfg(test)]
-fn structural_pointer_group_candidates(record: &ParameterRecord) -> Vec<PointerGroupCandidate> {
-    crate::test_support::with_service_context(&[], |ctx| {
-        structural_pointer_group_candidates_with_context(record, ctx)
-            .expect("test-only pointer candidate allocation")
-    })
-}
-
 fn non_integer_prefix(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
@@ -2633,18 +2596,6 @@ fn groups_for_candidate_with_context(
         association_pointers,
         property_pointers,
     }))
-}
-
-#[cfg(test)]
-fn groups_for_candidate(
-    record: &ParameterRecord,
-    directory: &BTreeMap<u32, &DirectoryEntry>,
-    candidate: PointerGroupCandidate,
-) -> Option<TrailingPointerGroups> {
-    crate::test_support::with_service_context(&[], |ctx| {
-        groups_for_candidate_with_context(record, directory, candidate, ctx)
-            .expect("test-only trailing pointer allocation")
-    })
 }
 
 /// Why one entity's Parameter Data has no typed tokens.
@@ -3198,6 +3149,7 @@ fn macro_keyword(bytes: &[u8], span: &Range<usize>, keyword: &[u8]) -> bool {
 /// stream. Statement spans exclude their record delimiters; `record_end`
 /// points immediately after the terminating `ENDM` delimiter, so the caller
 /// can retain any remaining card bytes as the ordinary Parameter Data comment.
+#[derive(Debug)]
 pub(crate) enum MacroDataError {
     Defect(ParameterDefect, usize),
     Refusal(CodecError),
@@ -3323,19 +3275,6 @@ pub(crate) fn macro_parameter_data_with_context(
         cursor = record_end;
     }
     Err((ParameterDefect::MacroTerminatorMissing, start).into())
-}
-
-#[cfg(test)]
-pub(crate) fn macro_parameter_data(
-    bytes: &[u8],
-    parameter_delimiter: u8,
-    record_delimiter: u8,
-) -> Result<MacroParameterData, (ParameterDefect, usize)> {
-    crate::test_support::with_service_context(bytes, |ctx| match macro_parameter_data_with_context(bytes, parameter_delimiter, record_delimiter, ctx) {
-        Ok(data) => Ok(data),
-        Err(MacroDataError::Defect(defect, offset)) => Err((defect, offset)),
-        Err(MacroDataError::Refusal(error)) => panic!("test-only macro allocation: {error}"),
-    })
 }
 
 fn tokenize_macro(

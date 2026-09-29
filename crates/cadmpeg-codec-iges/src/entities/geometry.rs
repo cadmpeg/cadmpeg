@@ -1333,7 +1333,7 @@ pub(super) fn admit<T>(
     match result {
         Ok(value) => Ok(Some(value)),
         Err(message) => {
-            super::push_optional_entity_loss(ctx, losses, entry, format_args!("{message}"))?;
+            super::push_entity_loss(ctx, losses, entry, format_args!("{message}"))?;
             Ok(None)
         }
     }
@@ -1571,7 +1571,7 @@ pub(crate) fn project_geometry(
     let mut losses = Vec::new();
     for entry in directory {
         let Some(use_flag) = entry.status.use_flag(global_table) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1583,7 +1583,7 @@ pub(crate) fn project_geometry(
             continue;
         };
         if !base_geometry_use_flag_valid(entry.entity_type, entry.form, use_flag, global_table) {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!(
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!(
                     "Entity Use Flag {:02} is outside the IGES 4.0 base geometry values 00, 01, 02, and 05",
                     entry.status.use_flag_code()
                 ))?;
@@ -1593,7 +1593,7 @@ pub(crate) fn project_geometry(
             entry.line_font,
             global_table,
         ) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1658,7 +1658,7 @@ pub(crate) fn project_geometry(
         .filter(|entry| entry.entity_type == 123 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1668,7 +1668,7 @@ pub(crate) fn project_geometry(
         };
         let components = [record.number(1), record.number(2), record.number(3)];
         let [Some(x), Some(y), Some(z)] = components else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1678,7 +1678,7 @@ pub(crate) fn project_geometry(
         };
         let direction = Vector3::new(x, y, z);
         if !is_finite_nonzero_vector(direction) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1687,7 +1687,7 @@ pub(crate) fn project_geometry(
             continue;
         }
         if !entry.status.is_physically_dependent() {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1696,7 +1696,7 @@ pub(crate) fn project_geometry(
             continue;
         }
         if entry.transform != 0 {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1713,7 +1713,7 @@ pub(crate) fn project_geometry(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1730,7 +1730,7 @@ pub(crate) fn project_geometry(
             }
         }
         if let Some(index) = malformed {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1751,7 +1751,7 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -1764,7 +1764,7 @@ pub(crate) fn project_geometry(
             .apply_vector(Vector3::new(1.0, 0.0, 0.0))
             .map(cadmpeg_ir::features::FiniteVector3::get)
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1776,7 +1776,7 @@ pub(crate) fn project_geometry(
             .apply_vector(Vector3::new(0.0, 1.0, 0.0))
             .map(cadmpeg_ir::features::FiniteVector3::get)
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1792,7 +1792,7 @@ pub(crate) fn project_geometry(
             || (scale_x - scale_y).abs() > scale_tolerance
             || basis_x.dot(basis_y).abs() > scale_x * scale_y * COMPUTATION_TOLERANCE
         {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1802,7 +1802,7 @@ pub(crate) fn project_geometry(
         }
         let Some(center) = transform.apply_point(Point3::new(values[1], values[2], values[0]))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1812,7 +1812,7 @@ pub(crate) fn project_geometry(
         };
         let Some(start) = transform.apply_point(Point3::new(values[3], values[4], values[0]))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1821,7 +1821,7 @@ pub(crate) fn project_geometry(
             continue;
         };
         let Some(end) = transform.apply_point(Point3::new(values[5], values[6], values[0])) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1837,7 +1837,7 @@ pub(crate) fn project_geometry(
             let n = start_delta.norm();
             (n.is_finite() && n > 0.0).then(|| start_delta.scale(1.0 / n))
         }) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1852,7 +1852,7 @@ pub(crate) fn project_geometry(
             let n = v.norm();
             (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
         }) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1866,7 +1866,7 @@ pub(crate) fn project_geometry(
             .minimum_resolution_mm()
             .max(radius.max(end_radius).max(1.0) * COMPUTATION_TOLERANCE);
         if !end_radius.is_finite() || (end_radius - radius).abs() > radius_tolerance {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1878,7 +1878,7 @@ pub(crate) fn project_geometry(
             let n = end_delta.norm();
             (n.is_finite() && n > 0.0).then(|| end_delta.scale(1.0 / n))
         }) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1987,7 +1987,7 @@ pub(crate) fn project_geometry(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1997,7 +1997,7 @@ pub(crate) fn project_geometry(
         };
         let coordinates = [record.number(1), record.number(2), record.number(3)];
         let [Some(x), Some(y), Some(z)] = coordinates else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2021,7 +2021,7 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2032,7 +2032,7 @@ pub(crate) fn project_geometry(
         };
         let Some(position) = transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2084,7 +2084,7 @@ pub(crate) fn project_geometry(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2094,7 +2094,7 @@ pub(crate) fn project_geometry(
         };
         let coordinates = [record.number(1), record.number(2)];
         let [Some(x), Some(y)] = coordinates else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2103,7 +2103,7 @@ pub(crate) fn project_geometry(
             continue;
         };
         let Some(x) = FiniteReal::new(x) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2112,7 +2112,7 @@ pub(crate) fn project_geometry(
             continue;
         };
         let Some(y) = FiniteReal::new(y) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2160,7 +2160,7 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2172,7 +2172,7 @@ pub(crate) fn project_geometry(
         let Some(position) =
             transform.apply_point(Point3::new(x.get() * factor, y.get() * factor, 0.0))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2224,7 +2224,7 @@ pub(crate) fn project_geometry(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2241,7 +2241,7 @@ pub(crate) fn project_geometry(
             }
         }
         if let Some(index) = malformed {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2262,7 +2262,7 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2274,7 +2274,7 @@ pub(crate) fn project_geometry(
         let Some(start) =
             transform.apply_point(Point3::new(coordinates[0], coordinates[1], coordinates[2]))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2285,7 +2285,7 @@ pub(crate) fn project_geometry(
         let Some(end) =
             transform.apply_point(Point3::new(coordinates[3], coordinates[4], coordinates[5]))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2296,7 +2296,7 @@ pub(crate) fn project_geometry(
         let delta = end.vector_from(start.get());
         let length = delta.norm();
         if !length.is_finite() || length <= 0.0 {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2389,7 +2389,7 @@ pub(crate) fn project_geometry(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2398,7 +2398,7 @@ pub(crate) fn project_geometry(
             continue;
         };
         let Some(k) = record.count(1) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2410,7 +2410,7 @@ pub(crate) fn project_geometry(
             .integer(2)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2420,7 +2420,7 @@ pub(crate) fn project_geometry(
         };
         let degree_usize = index_from_u32(degree);
         if k < degree_usize {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2435,7 +2435,7 @@ pub(crate) fn project_geometry(
             record.integer(6),
         ];
         if flags.iter().any(|flag| !matches!(flag, Some(0 | 1))) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2444,7 +2444,7 @@ pub(crate) fn project_geometry(
             continue;
         }
         let Some(control_count) = k.checked_add(1) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2456,7 +2456,7 @@ pub(crate) fn project_geometry(
             .checked_add(degree_usize)
             .and_then(|value| value.checked_add(1))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2466,7 +2466,7 @@ pub(crate) fn project_geometry(
         };
         let knot_start = 7_usize;
         let Some(weight_start) = knot_start.checked_add(knot_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2475,7 +2475,7 @@ pub(crate) fn project_geometry(
             continue;
         };
         let Some(pole_start) = weight_start.checked_add(control_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2484,7 +2484,7 @@ pub(crate) fn project_geometry(
             continue;
         };
         let Some(pole_value_count) = control_count.checked_mul(3) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2493,7 +2493,7 @@ pub(crate) fn project_geometry(
             continue;
         };
         let Some(range_start) = pole_start.checked_add(pole_value_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2516,7 +2516,7 @@ pub(crate) fn project_geometry(
         let Some(finite_knots) =
             collect_numbers(knot_start, knot_count, "iges NURBS source knots")?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2529,7 +2529,7 @@ pub(crate) fn project_geometry(
         let mut raw_knots = ctx.collection_vec(finite_knots.len(), "iges NURBS admitted knots")?;
         raw_knots.extend(finite_knots.into_iter().map(FiniteReal::get));
         let Ok(knots) = KnotVector::new(raw_knots) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2540,7 +2540,7 @@ pub(crate) fn project_geometry(
         let Some(native_weights) =
             collect_numbers(weight_start, control_count, "iges NURBS source weights")?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2555,7 +2555,7 @@ pub(crate) fn project_geometry(
             "iges NURBS positive weights",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2583,7 +2583,7 @@ pub(crate) fn project_geometry(
         });
         let polynomial = flags[2] == Some(1);
         if polynomial && !equal_weights {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2592,7 +2592,7 @@ pub(crate) fn project_geometry(
             continue;
         }
         if !polynomial && equal_weights {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2606,7 +2606,7 @@ pub(crate) fn project_geometry(
         let Some(native_poles) =
             collect_numbers(pole_start, pole_value_count, "iges NURBS source poles")?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2616,7 +2616,7 @@ pub(crate) fn project_geometry(
         };
         let Some(mut parameter_range) = collect_numbers(range_start, 2, "iges NURBS source range")?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2652,7 +2652,7 @@ pub(crate) fn project_geometry(
                 },
             );
         let Some(parameter_interval) = parameter_interval else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2672,7 +2672,7 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2692,7 +2692,7 @@ pub(crate) fn project_geometry(
             "iges NURBS placed controls",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2716,7 +2716,7 @@ pub(crate) fn project_geometry(
         let planar = flags[0] == Some(1);
         if planar {
             let Some(normal_start) = range_start.checked_add(2) else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2726,7 +2726,7 @@ pub(crate) fn project_geometry(
             };
             let Some(normal_values) = collect_numbers(normal_start, 3, "iges NURBS source normal")?
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2740,7 +2740,7 @@ pub(crate) fn project_geometry(
                 normal_values[2].get(),
             );
             if declared_unit_vector(record, normal_start, normal_definition, precision).is_none() {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2749,7 +2749,7 @@ pub(crate) fn project_geometry(
                 continue;
             }
             let Some(normal) = transform.apply_vector(normal_definition) else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2767,7 +2767,7 @@ pub(crate) fn project_geometry(
                 )
                 || matches!(plane, ControlPointPlane::NonPlanar)
             {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2779,7 +2779,7 @@ pub(crate) fn project_geometry(
                 continue;
             }
         } else if matches!(plane, ControlPointPlane::Unique) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2806,7 +2806,7 @@ pub(crate) fn project_geometry(
             }) {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2820,7 +2820,7 @@ pub(crate) fn project_geometry(
             parameter_range[0].get(),
         ))?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2833,7 +2833,7 @@ pub(crate) fn project_geometry(
             parameter_range[1].get(),
         ))?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2845,7 +2845,7 @@ pub(crate) fn project_geometry(
         let resolution = global.minimum_resolution_mm();
         let closed = endpoint_distance == 0.0 || endpoint_distance < resolution;
         if flags[1] != Some(i64::from(closed)) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,

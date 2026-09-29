@@ -1978,7 +1978,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 142 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1990,7 +1990,7 @@ pub(super) fn project(
             .integer(5)
             .filter(|value| matches!(value, 0..=3) && matches!(record.integer(1), Some(0..=3)))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2002,7 +2002,7 @@ pub(super) fn project(
             continue;
         };
         let Some(surface) = pointer(record, 2) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2021,7 +2021,7 @@ pub(super) fn project(
             .integer(3)
             .is_none_or(|value| value != 0 && pcurve.is_none())
         {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2030,7 +2030,7 @@ pub(super) fn project(
             continue;
         }
         let Some(model_curve) = pointer(record, 4) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2043,7 +2043,7 @@ pub(super) fn project(
                 entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
             })
         }) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2082,7 +2082,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 141 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2091,7 +2091,7 @@ pub(super) fn project(
             continue;
         };
         let Some(boundary_type) = record.integer(1).filter(|value| matches!(value, 0 | 1)) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2100,7 +2100,7 @@ pub(super) fn project(
             continue;
         };
         let Some(preference) = record.integer(2).filter(|value| matches!(value, 0..=3)) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2109,7 +2109,7 @@ pub(super) fn project(
             continue;
         };
         let Some(surface) = pointer(record, 3) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2118,7 +2118,7 @@ pub(super) fn project(
             continue;
         };
         let Some(segment_count) = record.count(4).filter(|count| *count > 0) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2131,7 +2131,7 @@ pub(super) fn project(
         let mut valid = true;
         for _ in 0..segment_count {
             let Some(model_curve) = pointer(record, index) else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2144,7 +2144,7 @@ pub(super) fn project(
                 Some(1) => Sense::Forward,
                 Some(2) => Sense::Reversed,
                 _ => {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2155,7 +2155,7 @@ pub(super) fn project(
                 }
             };
             let Some(pcurve_count) = record.count(index + 2) else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2167,7 +2167,7 @@ pub(super) fn project(
             if (boundary_type == 0 && pcurve_count != 0)
                 || (boundary_type == 1 && pcurve_count == 0)
             {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "boundary pcurve collection cardinality disagrees with its representation type"))?;
+                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "boundary pcurve collection cardinality disagrees with its representation type"))?;
                 valid = false;
                 break;
             }
@@ -2180,7 +2180,7 @@ pub(super) fn project(
                 if entries.get(&pcurve).is_none_or(|entry| {
                     entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
                 }) {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2192,7 +2192,7 @@ pub(super) fn project(
                 pcurves.push(pcurve);
             }
             if pcurves.len() != pcurve_count {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2230,7 +2230,7 @@ pub(super) fn project(
         let factor = global.length_factor_mm();
         let carrier_agreement_tolerance = global.minimum_resolution_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2251,7 +2251,7 @@ pub(super) fn project(
             mut valid,
         ) = if surface_kind == BoundarySurfaceKind::Trimmed {
             let Some(surface) = pointer(record, 1) else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2264,7 +2264,7 @@ pub(super) fn project(
                 1 => Some(true),
                 _ => None,
             }) else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2273,7 +2273,7 @@ pub(super) fn project(
                 continue;
             };
             let Some(inner_count) = record.count(3) else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2293,7 +2293,7 @@ pub(super) fn project(
             let mut explicit_outer_sequence = None;
             if has_explicit_outer {
                 let Some(outer) = pointer(record, 4) else {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2305,7 +2305,7 @@ pub(super) fn project(
                     .get(&outer)
                     .is_none_or(|target| target.entity_type != 142 || target.form != 0)
                 {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface outer-boundary pointer does not target a Type 142 Form 0 entity"))?;
+                    super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface outer-boundary pointer does not target a Type 142 Form 0 entity"))?;
                     continue;
                 }
                 sequences.push(outer);
@@ -2314,13 +2314,13 @@ pub(super) fn project(
                 record.value(4),
                 None | Some(TokenValue::Omitted | TokenValue::Integer(0))
             ) {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface parameter-domain outer-boundary pointer is neither zero nor omitted"))?;
+                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface parameter-domain outer-boundary pointer is neither zero nor omitted"))?;
                 continue;
             }
             let mut valid = true;
             for index in 0..inner_count {
                 let Some(sequence) = pointer(record, 5 + index) else {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2333,7 +2333,7 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 142 || target.form != 0)
                 {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface inner-boundary pointer does not target a Type 142 Form 0 entity"))?;
+                    super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface inner-boundary pointer does not target a Type 142 Form 0 entity"))?;
                     valid = false;
                     break;
                 }
@@ -2349,7 +2349,7 @@ pub(super) fn project(
         } else {
             let Some(representation) = record.integer(1).filter(|value| matches!(value, 0 | 1))
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2358,7 +2358,7 @@ pub(super) fn project(
                 continue;
             };
             let Some(surface) = pointer(record, 2) else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2367,7 +2367,7 @@ pub(super) fn project(
                 continue;
             };
             let Some(count) = record.count(3).filter(|count| *count > 0) else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2379,7 +2379,7 @@ pub(super) fn project(
             let mut valid = true;
             for index in 0..count {
                 let Some(sequence) = pointer(record, 4 + index) else {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2392,7 +2392,7 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 141 || target.form != 0)
                 {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "bounded-surface boundary pointer does not target a Type 141 Form 0 entity"))?;
+                    super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "bounded-surface boundary pointer does not target a Type 141 Form 0 entity"))?;
                     valid = false;
                     break;
                 }
@@ -2410,7 +2410,7 @@ pub(super) fn project(
                 }) {
                     sequences.push(sequence);
                 } else {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2432,17 +2432,28 @@ pub(super) fn project(
             crate::ids::surface_admitted(&crate::ids::Stem::directory(surface_sequence), ctx)?;
         let Some(support_geometry) = carrier_index
             .surfaces(surface_id.as_str())
-            .map(|surface| {
-                if let Some(cache) = surface.geometry.solved_cache() {
-                    super::geometry_copy::copy_solved_surface(cache, ctx)
-                        .map(SurfaceGeometry::Solved)
-                } else {
-                    super::geometry_copy::copy_surface_geometry(&surface.geometry, ctx)
-                }
+            .map(|surface| match &surface.geometry {
+                SurfaceGeometry::Solved(solved) => solved
+                    .try_clone_for_decode(ctx, "iges copied support surface")
+                    .map(SurfaceGeometry::Solved),
+                SurfaceGeometry::Procedural {
+                    cache: Some(solved),
+                    ..
+                } => solved
+                    .try_clone_for_decode(ctx, "iges copied support surface")
+                    .map(SurfaceGeometry::Solved),
+                SurfaceGeometry::Procedural {
+                    construction,
+                    cache: None,
+                } => Ok(SurfaceGeometry::Procedural {
+                    construction: construction
+                        .try_clone_for_decode(ctx, "iges copied support construction ID")?,
+                    cache: None,
+                }),
             })
             .transpose()?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2480,7 +2491,7 @@ pub(super) fn project(
         let mut face_tolerance = 0.0_f64;
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
             let Some(boundary) = boundaries.get(&sequence) else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2490,7 +2501,7 @@ pub(super) fn project(
                 break;
             };
             if boundary.surface != surface_sequence {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2510,7 +2521,7 @@ pub(super) fn project(
                     ctx,
                 )?;
                 let Some(candidates) = edges_by_curve.get(&model_curve_id) else {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2560,7 +2571,7 @@ pub(super) fn project(
                 }
                 if let Some(error) = pcurve_refusal {
                     let error = error.non_resource()?;
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2572,7 +2583,7 @@ pub(super) fn project(
                 let mut pcurves = match pcurves {
                     Some(pcurves) => pcurves,
                     None if segment.parameter_curves_authoritative => {
-                        super::push_optional_entity_loss(
+                        super::push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -2637,7 +2648,7 @@ pub(super) fn project(
                 ) {
                     Ok(selected) => selected,
                     Err(BoundaryEdgeSelectionError::MissingEndpoints) => {
-                        super::push_optional_entity_loss(
+                        super::push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -2647,7 +2658,7 @@ pub(super) fn project(
                         break;
                     }
                     Err(BoundaryEdgeSelectionError::InvalidRange) => {
-                        super::push_optional_entity_loss(
+                        super::push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -2660,7 +2671,7 @@ pub(super) fn project(
                         break;
                     }
                     Err(BoundaryEdgeSelectionError::Ambiguous) => {
-                        super::push_optional_entity_loss(
+                        super::push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -2673,7 +2684,7 @@ pub(super) fn project(
                         break;
                     }
                     Err(BoundaryEdgeSelectionError::PcurveDisagreement) => {
-                        super::push_optional_entity_loss(
+                        super::push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -2737,7 +2748,7 @@ pub(super) fn project(
                 let (next_start, _) = traversal(&items[(index + 1) % items.len()]);
                 !close(end.get(), next_start.get(), sewing_tolerance)
             }) {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2788,7 +2799,7 @@ pub(super) fn project(
             let Some(checked_sewing_tolerance) =
                 cadmpeg_ir::scalar::PositiveReal::new(sewing_tolerance)
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2816,7 +2827,7 @@ pub(super) fn project(
                 Err(BoundaryVertexCreationError::Cluster(
                     BoundaryVertexClusterError::NonTransitive,
                 )) => {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2851,7 +2862,7 @@ pub(super) fn project(
                 ) {
                     Ok(carrier) => carrier,
                     Err(error) => {
-                        super::push_optional_entity_loss(
+                        super::push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -2877,7 +2888,7 @@ pub(super) fn project(
                     .iter()
                     .any(|(_, range)| cadmpeg_ir::units::FiniteVector::new(*range).is_none())
                 {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2953,7 +2964,7 @@ pub(super) fn project(
             let Ok(ring) =
                 cadmpeg_ir::topology::LoopRing::try_new_for_decode(ctx, coedge_ids, Vec::new())?
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3000,7 +3011,7 @@ pub(super) fn project(
             )
         });
         if linear_relationship == Some(false) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3032,7 +3043,7 @@ pub(super) fn project(
                 source_object: Some(match source_object(entry, ctx) {
                     Ok(source) => source,
                     Err(error) => {
-                        super::push_optional_entity_loss(
+                        super::push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -3048,7 +3059,7 @@ pub(super) fn project(
             {
                 Ok(record_bounds) => record_bounds,
                 Err(error) => {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -3091,7 +3102,7 @@ pub(super) fn project(
         };
         let checked_face_tolerance = if face_tolerance > 0.0 {
             let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(face_tolerance) else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3173,7 +3184,7 @@ pub(super) fn project(
             .commit_model_admitted(candidate, ctx)?
             .is_err()
         {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,

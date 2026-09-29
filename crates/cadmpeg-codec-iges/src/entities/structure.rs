@@ -2485,7 +2485,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2695,7 +2695,7 @@ pub(super) fn project(
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2712,7 +2712,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2804,7 +2804,7 @@ pub(super) fn project(
                 )?;
             }
         } else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "attribute-table definition header, value type, value, or display link is invalid"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "attribute-table definition header, value type, value, or display link is invalid"))?;
         }
     }
 
@@ -2813,7 +2813,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2863,7 +2863,7 @@ pub(super) fn project(
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2880,7 +2880,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 316 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2924,13 +2924,13 @@ pub(super) fn project(
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "units count, type/value pair, scale factor, uniqueness, or Directory fields are invalid"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "units count, type/value pair, scale factor, uniqueness, or Directory fields are invalid"))?;
         }
     }
 
     for entry in directory.iter().filter(|entry| entry.entity_type == 302) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2968,7 +2968,7 @@ pub(super) fn project(
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "associativity form, class count, class flags, item layout, or Directory fields are invalid"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "associativity form, class count, class flags, item layout, or Directory fields are invalid"))?;
         }
     }
 
@@ -2977,7 +2977,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3011,7 +3011,7 @@ pub(super) fn project(
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3028,7 +3028,7 @@ pub(super) fn project(
             && matches!(entry.form, 2 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | 13 | 16 | 21)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3087,7 +3087,7 @@ pub(super) fn project(
                         legacy_face_candidates.push((entry, candidate));
                     }
                     Ok(None) => {}
-                    Err(reason) => super::push_optional_entity_loss(
+                    Err(reason) => super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -3096,7 +3096,7 @@ pub(super) fn project(
                 }
             }
         } else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "predefined associativity counts, class layout, links, back pointers, or structure are invalid"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "predefined associativity counts, class layout, links, back pointers, or structure are invalid"))?;
         }
     }
 
@@ -3162,7 +3162,7 @@ pub(super) fn project(
                             )?;
                             legacy_face_candidates.push((entry, candidate));
                         }
-                        Err(reason) => super::push_optional_entity_loss(
+                        Err(reason) => super::push_entity_loss(
                             ctx,
                             &mut losses,
                             entry,
@@ -3170,7 +3170,7 @@ pub(super) fn project(
                         )?,
                     }
                 }
-                Err(reason) => super::push_optional_entity_loss(
+                Err(reason) => super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3185,7 +3185,7 @@ pub(super) fn project(
                 global.minimum_resolution_mm(),
                 ctx,
             ) {
-                Ok(_) => super::push_optional_entity_loss(
+                Ok(_) => super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3193,7 +3193,7 @@ pub(super) fn project(
                         "negative bounded plane requires an enclosing positive plane face"
                     ),
                 )?,
-                Err(reason) => super::push_optional_entity_loss(
+                Err(reason) => super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3210,7 +3210,7 @@ pub(super) fn project(
             .commit_model_admitted(candidate, ctx)?
             .is_err()
         {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3259,7 +3259,7 @@ pub(super) fn project(
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "flow class counts, flags, typed links, required back pointers, continuation tree, or directory status is invalid"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "flow class counts, flags, typed links, required back pointers, continuation tree, or directory status is invalid"))?;
         }
     }
 
@@ -3268,7 +3268,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3289,7 +3289,7 @@ pub(super) fn project(
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3325,7 +3325,7 @@ pub(super) fn project(
         .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3387,7 +3387,7 @@ pub(super) fn project(
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3404,7 +3404,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 132 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3473,7 +3473,7 @@ pub(super) fn project(
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3491,7 +3491,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3511,7 +3511,7 @@ pub(super) fn project(
                 "iges solid instance index nodes",
             )?;
         } else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3543,7 +3543,7 @@ pub(super) fn project(
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3560,7 +3560,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3569,7 +3569,7 @@ pub(super) fn project(
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3596,7 +3596,7 @@ pub(super) fn project(
             items.push(item);
         }
         if !items_valid {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3675,7 +3675,7 @@ pub(super) fn project(
             || cyclic
             || !own_transform_valid
         {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3700,7 +3700,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 308 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3724,7 +3724,7 @@ pub(super) fn project(
             None => None,
         };
         let (Some(depth), Some(members)) = (depth, members) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3767,7 +3767,7 @@ pub(super) fn project(
                 PlacementRejection::MissingRecord,
                 "iges placement rejection nodes",
             )?;
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3811,7 +3811,7 @@ pub(super) fn project(
                     "iges placement rejection nodes",
                 )?;
             }
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3841,7 +3841,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 320 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3869,7 +3869,7 @@ pub(super) fn project(
             .zip(members)
             .map(|((depth, member_count), members)| (depth, member_count, members))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3899,7 +3899,7 @@ pub(super) fn project(
             "iges network definition connect points",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3946,7 +3946,7 @@ pub(super) fn project(
                 PlacementRejection::MissingRecord,
                 "iges placement rejection nodes",
             )?;
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -4017,7 +4017,7 @@ pub(super) fn project(
                     "iges placement rejection nodes",
                 )?;
             }
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -4077,7 +4077,7 @@ pub(super) fn project(
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -4103,7 +4103,7 @@ pub(super) fn project(
             placement_rejections
                 .entry(*sequence)
                 .or_insert(PlacementRejection::InvalidDefinition);
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -4145,7 +4145,7 @@ pub(super) fn project(
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -4187,7 +4187,7 @@ pub(super) fn project(
                     PlacementRejection::InvalidDefinition
                 },
             );
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,

@@ -35,7 +35,7 @@ fn push_attributed_loss(
     Ok(())
 }
 
-fn push_optional_entity_loss(
+fn push_entity_loss(
     ctx: &DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
     entry: &DirectoryEntry,
@@ -51,16 +51,6 @@ fn push_optional_entity_loss(
                 entry.entity_type, entry.form
             ),
         )
-}
-
-fn push_optional_attributed_loss(
-    ctx: &DecodeContext<'_>,
-    losses: &mut Vec<LossNote>,
-    entry: &DirectoryEntry,
-    code: IgesLossCode,
-    message: fmt::Arguments<'_>,
-) -> Result<(), CodecError> {
-    push_attributed_loss(ctx, losses, entry, code, message)
 }
 
 fn non_resource_error(
@@ -189,7 +179,6 @@ mod csg;
 pub(crate) mod curve_conversion;
 pub(crate) mod drawing;
 pub(crate) mod geometry;
-mod geometry_copy;
 mod offsets;
 mod presentation;
 mod splines;
