@@ -63,27 +63,6 @@ fn reserve_product_items<T>(
     })
 }
 
-fn clone_product_text(
-    value: &str,
-    ctx: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    if let Some(ctx) = ctx {
-        return ctx.copy_retained_text(value, operation);
-    }
-    let mut copy = String::new();
-    copy.try_reserve_exact(value.len()).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-            cadmpeg_core::decode::ResourceDimension::Codec(operation),
-            0,
-            cadmpeg_core::decode::u64_from_index(value.len()),
-            operation,
-        ))
-    })?;
-    copy.push_str(value);
-    Ok(copy)
-}
-
 fn insert_product_map<K: Ord, V>(
     values: &mut BTreeMap<K, V>,
     key: K,
@@ -369,13 +348,13 @@ pub(super) fn decode(
             let definition_description = definition
                 .and_then(|definition| definition_descriptions.get(&definition))
                 .map(|text| {
-                    clone_product_text(text, ctx, "step_product_definition_description_copy")
+                    match ctx { Some(ctx) => ctx.copy_retained_text(text, "step_product_definition_description_copy"), None => crate::parse::copy_unmetered_text(text, "step_product_definition_description_copy") }
                 })
                 .transpose()?;
             let description = if definition_count <= 1 {
                 product_description
                     .as_deref()
-                    .map(|text| clone_product_text(text, ctx, "step_product_description_copy"))
+                    .map(|text| match ctx { Some(ctx) => ctx.copy_retained_text(text, "step_product_description_copy"), None => crate::parse::copy_unmetered_text(text, "step_product_description_copy") })
                     .transpose()?
                     .or(definition_description)
             } else {
@@ -383,7 +362,7 @@ pub(super) fn decode(
                     Some(description) => Some(description),
                     None => product_description
                         .as_deref()
-                        .map(|text| clone_product_text(text, ctx, "step_product_description_copy"))
+                        .map(|text| match ctx { Some(ctx) => ctx.copy_retained_text(text, "step_product_description_copy"), None => crate::parse::copy_unmetered_text(text, "step_product_description_copy") })
                         .transpose()?,
                 }
             };
@@ -442,18 +421,14 @@ pub(super) fn decode(
                 kind: ProductDefinitionKind::Part,
                 source_name: name
                     .as_deref()
-                    .map(|text| clone_product_text(text, ctx, "step_product_source_name_copy"))
+                    .map(|text| match ctx { Some(ctx) => ctx.copy_retained_text(text, "step_product_source_name_copy"), None => crate::parse::copy_unmetered_text(text, "step_product_source_name_copy") })
                     .transpose()?,
                 label: name
                     .as_deref()
-                    .map(|text| clone_product_text(text, ctx, "step_product_label_copy"))
+                    .map(|text| match ctx { Some(ctx) => ctx.copy_retained_text(text, "step_product_label_copy"), None => crate::parse::copy_unmetered_text(text, "step_product_label_copy") })
                     .transpose()?,
                 description,
-                part_number: Some(clone_product_text(
-                    &product_id,
-                    ctx,
-                    "step_product_part_number_copy",
-                )?),
+                part_number: Some(match ctx { Some(ctx) => ctx.copy_retained_text(&product_id, "step_product_part_number_copy"), None => crate::parse::copy_unmetered_text(&product_id, "step_product_part_number_copy") }?),
                 bom_properties: BTreeMap::new(),
                 bodies,
                 native_ref: Some(
@@ -762,7 +737,7 @@ pub(super) fn decode(
                 name: usage
                     .name
                     .as_deref()
-                    .map(|text| clone_product_text(text, ctx, "step_product_occurrence_name_copy"))
+                    .map(|text| match ctx { Some(ctx) => ctx.copy_retained_text(text, "step_product_occurrence_name_copy"), None => crate::parse::copy_unmetered_text(text, "step_product_occurrence_name_copy") })
                     .transpose()?,
                 visible: None,
                 link: None,

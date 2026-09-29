@@ -726,7 +726,7 @@ pub(super) fn decode(
                 .first()
                 .and_then(ValueExt::enumeration)
                 .map(|name| {
-                    let mut name = clone_pmi_text(name, ctx, "step_pmi_defined_area_unit_text")?;
+                    let mut name = match ctx { Some(ctx) => ctx.copy_retained_text(name, "step_pmi_defined_area_unit_text"), None => crate::parse::copy_unmetered_text(name, "step_pmi_defined_area_unit_text") }?;
                     name.make_ascii_lowercase();
                     Ok::<_, CodecError>(name)
                 })
@@ -1481,7 +1481,7 @@ fn clone_pmi_modifiers(
 ) -> Result<Vec<String>, CodecError> {
     let mut copy = Vec::new();
     for value in values {
-        let text = clone_pmi_text(value, ctx, "step_pmi_datum_modifier_copy")?;
+        let text = match ctx { Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy"), None => crate::parse::copy_unmetered_text(value, "step_pmi_datum_modifier_copy") }?;
         push_pmi_vec(&mut copy, text, ctx, "step_pmi_datum_modifier_items")?;
     }
     Ok(copy)
@@ -1569,7 +1569,7 @@ fn modifier_text(
         .transpose()?;
     match value {
         Value::Enumeration(value) => {
-            let mut text = clone_pmi_text(value, ctx, "step_pmi_datum_modifier_text")?;
+            let mut text = match ctx { Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_modifier_text"), None => crate::parse::copy_unmetered_text(value, "step_pmi_datum_modifier_text") }?;
             text.make_ascii_lowercase();
             Ok(Some(text))
         }
@@ -1864,33 +1864,12 @@ fn pmi_id(id: u64) -> PmiId {
     PmiId::from(ids::presentation(kind!("pmi"), id))
 }
 
-fn clone_pmi_text(
-    value: &str,
-    ctx: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    if let Some(ctx) = ctx {
-        return ctx.copy_retained_text(value, operation);
-    }
-    let mut copy = String::new();
-    copy.try_reserve_exact(value.len()).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-            cadmpeg_core::decode::ResourceDimension::Codec(operation),
-            0,
-            cadmpeg_core::decode::u64_from_index(value.len()),
-            operation,
-        ))
-    })?;
-    copy.push_str(value);
-    Ok(copy)
-}
-
 fn copy_pmi_identity<T: From<Identity>>(
     value: &str,
     ctx: Option<&DecodeContext<'_>>,
     operation: &'static str,
 ) -> Result<T, CodecError> {
-    let copy = clone_pmi_text(value, ctx, operation)?;
+    let copy = match ctx { Some(ctx) => ctx.copy_retained_text(value, operation), None => crate::parse::copy_unmetered_text(value, operation) }?;
     let identity = Identity::new(copy)
         .map_err(|_| CodecError::malformed("STEP PMI target has an invalid identity"))?;
     Ok(T::from(identity))
@@ -1927,7 +1906,7 @@ fn copy_pmi_target(
             occurrence: copy_pmi_identity(occurrence.as_str(), ctx, operation)?,
         },
         PmiTarget::ShapeAspect { source_id } => {
-            let copy = clone_pmi_text(source_id.as_str(), ctx, operation)?;
+            let copy = match ctx { Some(ctx) => ctx.copy_retained_text(source_id.as_str(), operation), None => crate::parse::copy_unmetered_text(source_id.as_str(), operation) }?;
             let source_id = cadmpeg_core::text::NonBlankString::new(copy)
                 .ok_or_else(|| CodecError::malformed("STEP PMI target has a blank source ID"))?;
             PmiTarget::ShapeAspect { source_id }
@@ -1951,11 +1930,7 @@ fn datum_target_form(
     } else if form.eq_ignore_ascii_case("circular curve") {
         Ok(DatumTargetForm::CircularCurve)
     } else {
-        Ok(DatumTargetForm::Other(clone_pmi_text(
-            value,
-            ctx,
-            "step_pmi_datum_target_form_copy",
-        )?))
+        Ok(DatumTargetForm::Other(match ctx { Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_target_form_copy"), None => crate::parse::copy_unmetered_text(value, "step_pmi_datum_target_form_copy") }?))
     }
 }
 
@@ -2160,7 +2135,7 @@ fn dimension_kind(
         "DIAMETER_SIZE" => Some(DimensionKind::Diameter),
         "RADIUS_SIZE" => Some(DimensionKind::Radius),
         name if name.ends_with("_SIZE") || name.ends_with("_LOCATION") => {
-            let mut name = clone_pmi_text(name, ctx, "step_pmi_other_dimension_name")?;
+            let mut name = match ctx { Some(ctx) => ctx.copy_retained_text(name, "step_pmi_other_dimension_name"), None => crate::parse::copy_unmetered_text(name, "step_pmi_other_dimension_name") }?;
             name.make_ascii_lowercase();
             Some(DimensionKind::Other(name))
         }
@@ -2229,7 +2204,7 @@ fn modifier_values(
         .transpose()?;
     match value {
         Value::Enumeration(value) => {
-            let mut text = clone_pmi_text(value, ctx, "step_pmi_modifier_text")?;
+            let mut text = match ctx { Some(ctx) => ctx.copy_retained_text(value, "step_pmi_modifier_text"), None => crate::parse::copy_unmetered_text(value, "step_pmi_modifier_text") }?;
             text.make_ascii_lowercase();
             push_pmi_vec(output, text, ctx, "step_pmi_modifier_items")?;
         }

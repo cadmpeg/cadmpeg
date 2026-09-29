@@ -1232,31 +1232,10 @@ fn clone_presentation_identity<T: From<Identity>>(
     ctx: Option<&DecodeContext<'_>>,
     operation: &'static str,
 ) -> Result<T, CodecError> {
-    let copy = clone_presentation_text(value, ctx, operation)?;
+    let copy = match ctx { Some(ctx) => ctx.copy_retained_text(value, operation), None => crate::parse::copy_unmetered_text(value, operation) }?;
     Identity::new(copy)
         .map(T::from)
         .map_err(|_| CodecError::malformed("presentation identity is invalid"))
-}
-
-fn clone_presentation_text(
-    value: &str,
-    ctx: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    if let Some(ctx) = ctx {
-        return ctx.copy_retained_text(value, operation);
-    }
-    let mut copy = String::new();
-    copy.try_reserve_exact(value.len()).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-            cadmpeg_core::decode::ResourceDimension::Codec(operation),
-            0,
-            cadmpeg_core::decode::u64_from_index(value.len()),
-            operation,
-        ))
-    })?;
-    copy.push_str(value);
-    Ok(copy)
 }
 
 fn push_presentation_vec<T>(
@@ -1357,7 +1336,7 @@ fn collect_identity_indices<'a>(
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, operation)?;
         }
-        let copy = clone_presentation_text(identity, ctx, operation)?;
+        let copy = match ctx { Some(ctx) => ctx.copy_retained_text(identity, operation), None => crate::parse::copy_unmetered_text(identity, operation) }?;
         result.insert(copy, index);
     }
     Ok(result)
@@ -1577,7 +1556,7 @@ fn clone_color_resolution(
                 name: candidate
                     .name
                     .as_deref()
-                    .map(|name| clone_presentation_text(name, ctx, operation))
+                    .map(|name| match ctx { Some(ctx) => ctx.copy_retained_text(name, operation), None => crate::parse::copy_unmetered_text(name, operation) })
                     .transpose()?,
             }))
         }

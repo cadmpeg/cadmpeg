@@ -61,25 +61,18 @@ pub(crate) enum Value {
     Typed(String, Box<Value>),
 }
 
-fn copy_parser_text(
-    value: &str,
-    budget: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    if let Some(ctx) = budget {
-        return ctx.copy_retained_text(value, operation);
-    }
-    let mut copied = String::new();
-    copied.try_reserve_exact(value.len()).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+pub(crate) fn copy_unmetered_text(value: &str, operation: &'static str) -> Result<String, CodecError> {
+    let mut copy = String::new();
+    copy.try_reserve_exact(value.len()).map_err(|_| CodecError::ResourceLimit(
+        cadmpeg_core::decode::ResourceLimit::allocation_failed(
             cadmpeg_core::decode::ResourceDimension::Codec(operation),
             0,
-            u64_from_index(value.len()),
+            cadmpeg_core::decode::u64_from_index(value.len()),
             operation,
-        ))
-    })?;
-    copied.push_str(value);
-    Ok(copied)
+        )
+    ))?;
+    copy.push_str(value);
+    Ok(copy)
 }
 
 fn copy_parser_bytes(
@@ -112,17 +105,17 @@ fn try_clone_value(
         Value::Reference(id) => Value::Reference(*id),
         Value::ValueReference(id) => Value::ValueReference(*id),
         Value::ConstantEntity(text) => {
-            Value::ConstantEntity(copy_parser_text(text, budget, operation)?)
+            Value::ConstantEntity(match budget { Some(ctx) => ctx.copy_retained_text(text, operation), None => crate::parse::copy_unmetered_text(text, operation) }?)
         }
         Value::ConstantValue(text) => {
-            Value::ConstantValue(copy_parser_text(text, budget, operation)?)
+            Value::ConstantValue(match budget { Some(ctx) => ctx.copy_retained_text(text, operation), None => crate::parse::copy_unmetered_text(text, operation) }?)
         }
         Value::Integer(value) => Value::Integer(*value),
         Value::Real(value) => Value::Real(*value),
-        Value::Enumeration(text) => Value::Enumeration(copy_parser_text(text, budget, operation)?),
+        Value::Enumeration(text) => Value::Enumeration(match budget { Some(ctx) => ctx.copy_retained_text(text, operation), None => crate::parse::copy_unmetered_text(text, operation) }?),
         Value::String(bytes) => Value::String(copy_parser_bytes(bytes, budget, operation)?),
         Value::Binary(binary) => Value::Binary(binary.try_clone_for_decode(budget, operation)?),
-        Value::Resource(text) => Value::Resource(copy_parser_text(text, budget, operation)?),
+        Value::Resource(text) => Value::Resource(match budget { Some(ctx) => ctx.copy_retained_text(text, operation), None => crate::parse::copy_unmetered_text(text, operation) }?),
         Value::Omitted => Value::Omitted,
         Value::Derived => Value::Derived,
         Value::List(values) => {
@@ -143,7 +136,7 @@ fn try_clone_value(
                 ctx.charge_collection_items(1, operation)?;
             }
             Value::Typed(
-                copy_parser_text(name, budget, operation)?,
+                match budget { Some(ctx) => ctx.copy_retained_text(name, operation), None => crate::parse::copy_unmetered_text(name, operation) }?,
                 Box::new(try_clone_value(nested, budget, operation)?),
             )
         }
@@ -1154,7 +1147,7 @@ impl Parser<'_, '_, '_> {
             let mut anchor_bindings = BTreeMap::new();
             for anchor in &anchors {
                 anchor_bindings.insert(
-                    copy_parser_text(&anchor.name, self.budget, "step_anchor_binding_name_copy")
+                    match self.budget { Some(ctx) => ctx.copy_retained_text(&anchor.name, "step_anchor_binding_name_copy"), None => crate::parse::copy_unmetered_text(&anchor.name, "step_anchor_binding_name_copy") }
                         .map_err(ParseError::Resource)?,
                     try_clone_value(&anchor.value, self.budget, "step_anchor_binding_value_copy")
                         .map_err(ParseError::Resource)?,
@@ -2011,7 +2004,7 @@ fn validate_header_sections(
                 }
                 let section_copy = section
                     .as_deref()
-                    .map(|value| copy_parser_text(value, budget, "step_section_language_name_copy"))
+                    .map(|value| match budget { Some(ctx) => ctx.copy_retained_text(value, "step_section_language_name_copy"), None => crate::parse::copy_unmetered_text(value, "step_section_language_name_copy") })
                     .transpose()
                     .map_err(ValidationError::Resource)?;
                 if !language_sections.insert(section_copy) {
@@ -2041,7 +2034,7 @@ fn validate_header_sections(
                 }
                 let section_copy = section
                     .as_deref()
-                    .map(|value| copy_parser_text(value, budget, "step_section_context_name_copy"))
+                    .map(|value| match budget { Some(ctx) => ctx.copy_retained_text(value, "step_section_context_name_copy"), None => crate::parse::copy_unmetered_text(value, "step_section_context_name_copy") })
                     .transpose()
                     .map_err(ValidationError::Resource)?;
                 if !context_sections.insert(section_copy) {
@@ -2804,7 +2797,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         .ok_or("anchor typed storage exceeds u64")?,
                 )?;
                 let value = Value::Typed(
-                    copy_parser_text(name, self.budget, "step_anchor_typed_name_copy")
+                    match self.budget { Some(ctx) => ctx.copy_retained_text(name, "step_anchor_typed_name_copy"), None => crate::parse::copy_unmetered_text(name, "step_anchor_typed_name_copy") }
                         .map_err(ResolveError::Resource)?,
                     Box::new(value),
                 );
@@ -2936,7 +2929,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                     .ok_or("reference typed storage exceeds u64")?;
                 self.admit_copy(1, bytes)?;
                 Ok(Value::Typed(
-                    copy_parser_text(name, self.budget, "step_reference_typed_name_copy")
+                    match self.budget { Some(ctx) => ctx.copy_retained_text(name, "step_reference_typed_name_copy"), None => crate::parse::copy_unmetered_text(name, "step_reference_typed_name_copy") }
                         .map_err(ResolveError::Resource)?,
                     Box::new(resolved),
                 ))
@@ -3043,7 +3036,7 @@ fn resolve_local_references(
     let mut anchor_bindings = BTreeMap::new();
     for anchor in anchors.iter() {
         anchor_bindings.insert(
-            copy_parser_text(&anchor.name, budget, "step_reference_anchor_name_copy")
+            match budget { Some(ctx) => ctx.copy_retained_text(&anchor.name, "step_reference_anchor_name_copy"), None => crate::parse::copy_unmetered_text(&anchor.name, "step_reference_anchor_name_copy") }
                 .map_err(ResolveError::Resource)?,
             try_clone_value(&anchor.value, budget, "step_reference_anchor_value_copy")
                 .map_err(ResolveError::Resource)?,
