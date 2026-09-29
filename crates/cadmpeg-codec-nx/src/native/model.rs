@@ -1220,7 +1220,7 @@ impl NativeModel {
         let feature_operation_body_reference_lanes =
             feature_operation_body_reference_lanes(ctx, container)?;
         let feature_extrude_construction_profiles =
-            feature_extrude_construction_profiles(&feature_extrude_profile_references);
+            feature_extrude_construction_profiles(ctx, &feature_extrude_profile_references)?;
         let feature_extrude_payload_32_branches =
             feature_extrude_payload_32_branches(ctx, container)?;
         let feature_extrude_32_constructions = feature_extrude_32_constructions(

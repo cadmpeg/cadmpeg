@@ -9323,46 +9323,86 @@ pub(super) fn feature_operation_body_reference_lanes(
 
 /// Join the two exact encodings of an extrusion construction profile.
 pub(super) fn feature_extrude_construction_profiles(
+    ctx: &DecodeContext<'_>,
     references: &[FeatureExtrudeProfileReference],
-) -> Vec<FeatureExtrudeConstructionProfile> {
-    let mut references_by_operation = BTreeMap::<&str, Vec<&FeatureExtrudeProfileReference>>::new();
+) -> Result<Vec<FeatureExtrudeConstructionProfile>, CodecError> {
+    let mut operations = BTreeSet::new();
+    let mut operation_reservation = ctx.reserve_scoped(0, "NX extrude profile operations")?;
     for reference in references {
-        references_by_operation
-            .entry(reference.operation_label.as_str())
-            .or_default()
-            .push(reference);
+        ctx.charge_collection_items(1, "NX extrude profile operations")?;
+        operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&str>() * 4))?;
+        operations.insert(reference.operation_label.as_str());
     }
     let mut profiles = Vec::new();
-    for (operation_label, mut operation_references) in references_by_operation {
+    for operation_label in operations {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(references.len()),
+            "join NX extrude profile references")?;
+        let mut operation_references = Vec::new();
+        let mut reference_reservation = ctx.reserve_scoped(0, "NX extrude profile reference order")?;
+        for reference in references.iter().filter(|reference| {
+            reference.operation_label == operation_label
+        }) {
+            ctx.charge_collection_items(1, "NX extrude profile reference order")?;
+            reference_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<&FeatureExtrudeProfileReference>()))?;
+            operation_references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX extrude profile reference order", 0, 1))?;
+            operation_references.push(reference);
+        }
+        let sort_work = operation_references.len().checked_mul(operation_references.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("sort NX extrude profile references", 0, 1))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sort_work),
+            "sort NX extrude profile references")?;
         operation_references.sort_by_key(|reference| reference.ordinal);
         if operation_references
             .iter()
             .enumerate()
-            .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
+            .any(|(ordinal, reference)| u32::try_from(ordinal) != Ok(reference.ordinal))
         {
             continue;
         }
-        let Some(references) = operation_references
-            .iter()
-            .map(|reference| {
-                Some(FeatureExtrudeConstructionProfileReference {
-                    object_index: reference.token.value(),
-                    data_block: reference.data_block.clone()?,
-                    profile_source_offset: reference.source_offset,
-                    witness_source_offset: reference.witness_source_offset?,
-                })
-            })
-            .collect::<Option<Vec<_>>>()
-        else {
+        if operation_references.iter().any(|reference| {
+            reference.data_block.is_none() || reference.witness_source_offset.is_none()
+        }) {
             continue;
-        };
+        }
+        let mut profile_references = Vec::new();
+        for reference in operation_references {
+            let Some((block, witness_source_offset)) = reference.data_block.as_deref()
+                .zip(reference.witness_source_offset) else {
+                continue;
+            };
+            let data_block = copy_operation_text(ctx, block,
+                "NX extrude construction profile block")?;
+            ctx.charge_collection_items(1, "NX extrude construction profile references")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureExtrudeConstructionProfileReference>()),
+                "NX extrude construction profile references")?;
+            profile_references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX extrude construction profile references", 0, 1))?;
+            profile_references.push(FeatureExtrudeConstructionProfileReference {
+                    object_index: reference.token.value(),
+                    data_block,
+                    profile_source_offset: reference.source_offset,
+                    witness_source_offset,
+            });
+        }
+        let id = replace_operation_text(ctx, operation_label, "operation-label",
+            "extrude-construction-profile", "NX extrude construction profile identity")?;
+        let operation_label = copy_operation_text(ctx, operation_label,
+            "NX extrude construction profile operation")?;
+        ctx.charge_collection_items(1, "NX extrude construction profiles")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureExtrudeConstructionProfile>()),
+            "NX extrude construction profiles")?;
+        profiles.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX extrude construction profiles", 0, 1))?;
         profiles.push(FeatureExtrudeConstructionProfile {
-            id: operation_label.replacen("operation-label", "extrude-construction-profile", 1),
-            operation_label: operation_label.to_string(),
-            references,
+            id, operation_label, references: profile_references,
         });
     }
-    profiles
+    Ok(profiles)
 }
 
 /// Decode structured `32` branches following extrusion body-reference fields.
