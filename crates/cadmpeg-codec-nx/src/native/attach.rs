@@ -4073,7 +4073,7 @@ fn attach_feature_operations(
         let operation_parameter_uses = parameter_uses_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
-        let native_parameters = native_feature_parameters(operation_parameter_uses, expressions);
+        let native_parameters = native_feature_parameters(ctx, operation_parameter_uses, expressions)?;
         let sketch = (label.value == "SKETCH")
             .then(|| {
                 attach_sketch_graph(
@@ -7173,29 +7173,28 @@ fn symbolic_thread_feature_definition() -> FeatureDefinition {
 }
 
 fn native_feature_parameters(
+    ctx: &DecodeContext<'_>,
     uses: &[&crate::native::features::FeatureParameterUse],
     expressions: &[crate::native::om::Expression],
-) -> BTreeMap<String, String> {
-    let by_id = expressions
-        .iter()
-        .map(|expression| (expression.id.as_str(), expression))
-        .collect::<BTreeMap<_, _>>();
+) -> Result<BTreeMap<String, String>, CodecError> {
     let mut parameters = BTreeMap::new();
     for parameter_use in uses {
-        let Some(expression) = by_id.get(parameter_use.expression.as_str()) else {
-            return BTreeMap::new();
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(expressions.len()), "NX native parameter expression lookup")?;
+        let Some(expression) = expressions.iter().rev().find(|expression| expression.id == parameter_use.expression) else {
+            return Ok(BTreeMap::new());
         };
-        if parameters
-            .insert(
-                expression.name.as_str().to_string(),
-                expression.expression.clone(),
-            )
-            .is_some()
-        {
-            return BTreeMap::new();
+        if parameters.contains_key(expression.name.as_str()) {
+            return Ok(BTreeMap::new());
         }
+        let bytes = std::mem::size_of::<(String, String)>()
+            .checked_add(expression.name.as_str().len())
+            .and_then(|bytes| bytes.checked_add(expression.expression.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX native feature parameter", 0, cadmpeg_core::decode::u64_from_index(expression.expression.len())))?;
+        ctx.charge_collection_items(1, "NX native feature parameter")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX native feature parameter")?;
+        parameters.insert(expression.name.as_str().to_owned(), expression.expression.clone());
     }
-    parameters
+    Ok(parameters)
 }
 
 /// Resolve explicit hole outputs only from the proven segment-body namespace.

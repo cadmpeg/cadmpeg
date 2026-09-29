@@ -1157,7 +1157,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         parameter_use("use-b", "expression-b"),
     ];
     let use_refs = uses.iter().collect::<Vec<_>>();
-    let parameters = native_feature_parameters(&use_refs, &expressions);
+    let parameters = crate::test_support::with_decode_context(|ctx| native_feature_parameters(ctx, &use_refs, &expressions)).unwrap();
     assert_eq!(
         parameters,
         std::collections::BTreeMap::from([
@@ -1238,11 +1238,62 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         expression("expression-a", "p1_length", "1"),
         expression("expression-b", "p1_length", "2"),
     ];
-    assert!(native_feature_parameters(&use_refs, &duplicate_expressions).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| native_feature_parameters(ctx, &use_refs, &duplicate_expressions)).unwrap().is_empty());
     let unresolved = [parameter_use("use-c", "missing")];
     assert!(
-        native_feature_parameters(&unresolved.iter().collect::<Vec<_>>(), &expressions,).is_empty()
+        crate::test_support::with_decode_context(|ctx| native_feature_parameters(ctx, &unresolved.iter().collect::<Vec<_>>(), &expressions)).unwrap().is_empty()
     );
+}
+
+fn native_parameter_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let expression = crate::native::om::Expression {
+        id: "expression".into(),
+        owner: None,
+        declaration: None,
+        name: crate::om::parameter_name::ParameterName::new("length".into()),
+        unit: crate::native::om::ExpressionUnit::Millimeter,
+        expression: "12.5".into(),
+        value: None,
+        source_entry: "entry".into(),
+        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table").unwrap(),
+        source_offset: 0,
+    };
+    let use_ = crate::native::features::FeatureParameterUse {
+        id: "use".into(),
+        operation_label: "operation".into(),
+        expression: "expression".into(),
+        bindings: Vec::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let parameters = native_feature_parameters(&ctx, &[&use_], &[expression])?;
+    assert_eq!(parameters["length"], "12.5");
+    Ok(())
+}
+
+#[test]
+fn native_parameter_refuses_collection_limit() {
+    let error = native_parameter_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn native_parameter_refuses_retained_limit() {
+    let error = native_parameter_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn native_parameter_refuses_work_limit() {
+    let error = native_parameter_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
