@@ -235,6 +235,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let mut ambiguous_topologies = input_topologies.clone();
 
     bind_feature_face_selections(
+        None,
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
         std::slice::from_ref(&scope),
@@ -243,7 +244,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         &operands,
         &[],
         std::slice::from_ref(&history),
-    );
+    ).expect("history face binding resource budget");
 
     let FeatureDefinition::Operation(FeatureOperation::KnitSurface {
         faces:
@@ -273,6 +274,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     assert_eq!(input_topologies[0].faces.as_slice(), faces.as_slice());
 
     bind_feature_face_selections(
+        None,
         std::slice::from_mut(&mut ambiguous_feature),
         &mut ambiguous_topologies,
         std::slice::from_ref(&scope),
@@ -281,7 +283,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         &ambiguous_operands,
         &[],
         std::slice::from_ref(&history),
-    );
+    ).expect("history face binding resource budget");
     assert!(matches!(
         ambiguous_feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::KnitSurface {

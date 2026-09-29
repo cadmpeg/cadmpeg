@@ -185,6 +185,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
     }];
 
     super::super::bind_feature_face_selections(
+        None,
         &mut features,
         &mut [],
         &[scope],
@@ -193,7 +194,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         &[],
         &[],
         &[history],
-    );
+    ).expect("history face binding resource budget");
 
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -904,6 +905,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     };
 
     bind_feature_face_selections(
+        None,
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
         &[scope],
@@ -912,7 +914,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         &[],
         &[],
         &[history],
-    );
+    ).expect("history face binding resource budget");
 
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         face:

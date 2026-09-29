@@ -2555,6 +2555,7 @@ impl<'a> F3dDecodeSession<'a> {
             },
         )?;
         crate::history::bind_feature_face_selections(
+            Some(ctx),
             &mut self.ir.model.features,
             &mut self.ir.model.feature_input_topologies,
             &self.native.design_parameter_scopes,
@@ -2563,7 +2564,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_entity_selection_operands,
             &self.native.design_body_recipe_operands,
             &self.native.asm_histories,
-        );
+        )?;
         crate::history::bind_feature_path_selections(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
