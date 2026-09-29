@@ -9055,8 +9055,8 @@ mod profile_tests {
                 entity(
                     &format!("test:test:entity#{ordinal}"),
                     SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                        start: Point2::new(ordinal as f64 * 10.0, 0.0),
-                        end: Point2::new(ordinal as f64 * 10.0 + 1.0, 0.0),
+                        start: Point2::new(f64::from(ordinal) * 10.0, 0.0),
+                        end: Point2::new(f64::from(ordinal) * 10.0 + 1.0, 0.0),
                     })
                     .unwrap(),
                 )
@@ -9342,7 +9342,7 @@ mod profile_tests {
                     &format!("test:test:entity#{}", ordinal + 1),
                     SketchGeometry::try_from(SketchGeometryDefinition::Line {
                         start: Point2::new(0.0, 0.0),
-                        end: Point2::new(ordinal as f64 + 1.0, 1.0),
+                        end: Point2::new(f64::from(ordinal) + 1.0, 1.0),
                     })
                     .unwrap(),
                 )

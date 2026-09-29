@@ -234,7 +234,7 @@ fn semantic_loss_message_refuses(
     let length: usize = parts.iter().map(|part| part.len()).sum();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = length as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(length) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(
@@ -270,7 +270,7 @@ fn semantic_loss_source_tag_refuses_at_retained_limit() {
     let tag = "fcstd:native:object#Sketch";
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = (message_len + tag.len()) as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(message_len + tag.len()) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(matches!(super::push_semantic_loss(&ctx, &mut Vec::new(),

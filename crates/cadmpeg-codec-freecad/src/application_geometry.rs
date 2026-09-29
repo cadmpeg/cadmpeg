@@ -613,7 +613,7 @@ pub(crate) mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes =
-            crate::native::model_id("point", &property.id, "0").len() as u64 - 1;
+            cadmpeg_core::decode::u64_from_index(crate::native::model_id("point", &property.id, "0").len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&points, &arena, &policy)
             .expect("root points are within the input limit");
         assert!(matches!(parse_points(&ctx, &property, &points),
@@ -626,7 +626,7 @@ pub(crate) mod tests {
         let property = resource_test_property();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = property.owner.len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(property.owner.len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within the input limit");
         assert!(

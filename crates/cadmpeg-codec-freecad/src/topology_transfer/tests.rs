@@ -1303,9 +1303,9 @@ Co 1001000 +2 0 *
         Some(4.0)
     );
     let color = result.ir().model.bodies[0].color.expect("shape color");
-    assert!((color.r() - 0x33 as f32 / 255.0).abs() < EPS_COLOR_COMPONENT);
-    assert!((color.g() - 0x66 as f32 / 255.0).abs() < EPS_COLOR_COMPONENT);
-    assert!((color.b() - 0x99 as f32 / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.r() - f32::from(0x33_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.g() - f32::from(0x66_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.b() - f32::from(0x99_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
     assert!((color.a() - 0.75).abs() < EPS_COLOR_COMPONENT);
     let shape_material = result
         .ir()
