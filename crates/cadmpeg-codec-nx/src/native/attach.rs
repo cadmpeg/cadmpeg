@@ -3650,13 +3650,18 @@ fn attach_feature_operations(
                 offset_store_primary_body,
                 &output_kinds,
             );
+            let construction_profile = extrude_construction_profiles_by_operation
+                .get(label.id.as_str())
+                .map(|profile| profile.id.as_str());
+            let structured_construction = extrude_32_constructions_by_operation
+                .get(label.id.as_str())
+                .map(|construction| construction.id.as_str());
+            if let (Some(profile), None) | (None, Some(profile)) = (construction_profile, structured_construction) {
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(profile.len()), "NX extrude construction profile")?;
+            }
             Some(extrude_feature_definition(
-                extrude_construction_profiles_by_operation
-                    .get(label.id.as_str())
-                    .map(|profile| profile.id.as_str()),
-                extrude_32_constructions_by_operation
-                    .get(label.id.as_str())
-                    .map(|construction| construction.id.as_str()),
+                construction_profile,
+                structured_construction,
                 op,
                 &output_kinds,
             ))
@@ -6083,12 +6088,9 @@ fn extrude_feature_definition(
     op: BooleanOp,
     output_kinds: &[cadmpeg_ir::topology::BodyKind],
 ) -> FeatureDefinition {
-    let constructions = [construction_profile, structured_construction]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    let profile = match constructions.as_slice() {
-        [construction] => ProfileRef::Planar(PlanarProfileRef::Native((*construction).to_string())),
+    let profile = match (construction_profile, structured_construction) {
+        (Some(construction), None) | (None, Some(construction)) =>
+            ProfileRef::Planar(PlanarProfileRef::Native(construction.to_string())),
         _ => ProfileRef::Planar(PlanarProfileRef::Unresolved("EXTRUDE".to_string())),
     };
     let solid = match output_kinds {
