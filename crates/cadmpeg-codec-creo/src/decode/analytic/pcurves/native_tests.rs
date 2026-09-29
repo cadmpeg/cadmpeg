@@ -514,6 +514,10 @@ fn authoritative_native_endpoint_survives_conflicting_inferred_domain() {
 
 #[test]
 fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
+    let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
             2,
@@ -529,7 +533,7 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
         .expect("valid boundary NURBS"),
     ));
     assert_eq!(
-        nonperiodic_nurbs_endpoint_points(&geometry),
+        nonperiodic_nurbs_endpoint_points(&evaluation_ctx, &geometry).expect("evaluation resources"),
         Some([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
     );
 
@@ -549,9 +553,9 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
         .expect("admitted periodic fixture");
     };
     assert!(
-        nonperiodic_nurbs_endpoint_points(&CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        nonperiodic_nurbs_endpoint_points(&evaluation_ctx, &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             periodic
-        )))
+        ))).expect("evaluation resources")
         .is_none()
     );
 }
@@ -613,43 +617,55 @@ fn assert_pcurve_matches_curve(
 
 #[test]
 fn orients_uv_endpoints_by_the_coedge_traversal() {
+    let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+
     let endpoints = [[2.0, 4.0], [5.0, 7.0]];
     assert_eq!(
-        oriented_native_pcurve_endpoints(&plane(), endpoints, [[5.0, 7.0, 3.0], [2.0, 4.0, 3.0]],),
+        oriented_native_pcurve_endpoints(&evaluation_ctx, &plane(), endpoints, [[5.0, 7.0, 3.0], [2.0, 4.0, 3.0]],).expect("evaluation resources"),
         Some([endpoints[1], endpoints[0]])
     );
 }
 
 #[test]
 fn withholds_uv_endpoints_that_do_not_map_to_the_edge() {
+    let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+
     assert_eq!(
-        oriented_native_pcurve_endpoints(
+        oriented_native_pcurve_endpoints(&evaluation_ctx,
             &plane(),
             [[2.0, 4.0], [5.0, 7.0]],
             [[2.0, 4.0, 3.0], [9.0, 7.0, 3.0]],
-        ),
+        ).expect("evaluation resources"),
         None
     );
 }
 
 #[test]
 fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
+    let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+
     let traversal = [[2.0, 4.0, 3.0], [5.0, 7.0, 3.0]];
     let endpoints = [[2.0, 4.0], [5.0, 7.0]];
     assert_eq!(
-        unique_oriented_native_pcurve(
+        unique_oriented_native_pcurve(&evaluation_ctx,
             &plane(),
             &[(endpoints, 20), ([endpoints[1], endpoints[0]], 10)],
             traversal,
-        ),
+        ).expect("evaluation resources"),
         Some((endpoints, 10))
     );
     assert_eq!(
-        unique_oriented_native_pcurve(
+        unique_oriented_native_pcurve(&evaluation_ctx,
             &plane(),
             &[(endpoints, 20), ([[2.0, 4.0], [5.0, 8.0]], 10)],
             traversal,
-        ),
+        ).expect("evaluation resources"),
         Some((endpoints, 20))
     );
 
@@ -663,7 +679,7 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
         .expect("valid CylinderSurface fixture"),
     ));
     assert_eq!(
-        unique_oriented_native_pcurve(
+        unique_oriented_native_pcurve(&evaluation_ctx,
             &cylinder,
             &[
                 ([[0.0, 0.0], [std::f64::consts::FRAC_PI_2, 0.0]], 10),
@@ -676,7 +692,7 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
                 ),
             ],
             [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-        ),
+        ).expect("evaluation resources"),
         None
     );
 }

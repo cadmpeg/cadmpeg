@@ -13,6 +13,10 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 
+macro_rules! require_some {
+    ($value:expr) => { match $value { Some(value) => value, None => return Ok(None) } };
+}
+
 const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-9;
 const EPS_PARAMETER_SCALE: f64 = 1.0e-12;
 const EPS_FULL_TURN: f64 = 1.0e-12;
@@ -54,8 +58,8 @@ fn sketch_geometry_endpoints(
             let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
             let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
             let (Ok(first), Ok(last)) = (
-                cadmpeg_ir::eval::curve_point(&carrier, lower),
-                cadmpeg_ir::eval::curve_point(&carrier, upper),
+                cadmpeg_ir::eval::admitted::curve_point(ctx, &carrier, lower)?,
+                cadmpeg_ir::eval::admitted::curve_point(ctx, &carrier, upper)?,
             ) else {
                 return Ok(None);
             };
@@ -916,13 +920,13 @@ struct NurbsProfileSpan<'a> {
     depth: usize,
 }
 
-fn nurbs_profile_point(nurbs: &NurbsCurve, parameter: f64) -> Option<[f64; 2]> {
-    let parameter = cadmpeg_ir::eval::map_nurbs_curve_parameter(
+fn nurbs_profile_point(ctx: &cadmpeg_core::decode::DecodeContext<'_>, nurbs: &NurbsCurve, parameter: f64) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+    let parameter = require_some!(cadmpeg_ir::eval::map_nurbs_curve_parameter(
         nurbs,
-        cadmpeg_ir::scalar::FiniteReal::new(parameter)?,
-    )?;
-    let point = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, parameter.get()).ok()?;
-    Some([point.x, point.y])
+        require_some!(cadmpeg_ir::scalar::FiniteReal::new(parameter)),
+    ));
+    let point = require_some!(cadmpeg_ir::eval::admitted::nurbs_curve_point_at(ctx, nurbs, parameter.get())?.ok());
+    Ok(Some([point.x, point.y]))
 }
 
 fn append_nurbs_profile_span(
@@ -949,9 +953,9 @@ fn append_nurbs_profile_span(
     let first_quarter = span.start + (span.end - span.start) * 0.25;
     let third_quarter = span.start + (span.end - span.start) * 0.75;
     let (Some(middle_point), Some(first_quarter_point), Some(third_quarter_point)) = (
-        nurbs_profile_point(span.nurbs, middle),
-        nurbs_profile_point(span.nurbs, first_quarter),
-        nurbs_profile_point(span.nurbs, third_quarter),
+        nurbs_profile_point(ctx, span.nurbs, middle)?,
+        nurbs_profile_point(ctx, span.nurbs, first_quarter)?,
+        nurbs_profile_point(ctx, span.nurbs, third_quarter)?,
     ) else {
         return Ok(None);
     };
@@ -1012,7 +1016,7 @@ fn nurbs_profile_polyline(
         return Ok(None);
     };
     let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
-    let Some(first) = nurbs_profile_point(nurbs, lower) else {
+    let Some(first) = nurbs_profile_point(ctx, nurbs, lower)? else {
         return Ok(None);
     };
     let mut points = Vec::new();
@@ -1025,8 +1029,8 @@ fn nurbs_profile_polyline(
             continue;
         }
         let (Some(start_point), Some(end_point)) = (
-            nurbs_profile_point(nurbs, start),
-            nurbs_profile_point(nurbs, end),
+            nurbs_profile_point(ctx, nurbs, start)?,
+            nurbs_profile_point(ctx, nurbs, end)?,
         ) else {
             return Ok(None);
         };
@@ -1108,8 +1112,8 @@ fn nurbs_profile_signed_area_twice(
         {
             let parameter = middle + half_width * node;
             let (Ok(point), Ok(tangent)) = (
-                cadmpeg_ir::eval::curve_point(&carrier, parameter),
-                cadmpeg_ir::eval::curve_tangent(&carrier, parameter),
+                cadmpeg_ir::eval::admitted::curve_point(ctx, &carrier, parameter)?,
+                cadmpeg_ir::eval::admitted::curve_tangent(ctx, &carrier, parameter)?,
             ) else {
                 return Ok(None);
             };
@@ -1362,3 +1366,6 @@ pub(in super::super) fn ordered_extrusion_profiles(
     profiles.swap(0, *outer);
     Ok(Some(profiles))
 }
+
+#[cfg(test)]
+mod evaluation_tests;

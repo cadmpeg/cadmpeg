@@ -377,8 +377,8 @@ pub(in super::super) fn revolution_face_sense(
             cadmpeg_ir::scalar::FiniteReal::raw_array(require_some!(nurbs_intrinsic_parameter_range(&nurbs)));
         let (parameter, u_epsilon) = nurbs_sense_sample(lower, upper);
         let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
-        let point = require_some!(cadmpeg_ir::eval::curve_point(&carrier, parameter).ok());
-        let tangent = require_some!(cadmpeg_ir::eval::curve_tangent(&carrier, parameter).ok());
+        let point = require_some!(cadmpeg_ir::eval::admitted::curve_point(ctx, &carrier, parameter)?.ok());
+        let tangent = require_some!(cadmpeg_ir::eval::admitted::curve_tangent(ctx, &carrier, parameter)?.ok());
         ([point.x, point.y], [tangent.x, tangent.y], 0.5, u_epsilon)
     } else if let Some((center, radius, start, delta)) = profile_arc(segment) {
         let angle = start + 0.5 * delta;
@@ -424,13 +424,13 @@ pub(in super::super) fn revolution_face_sense(
     } else {
         require_some!(revolution_boundary_pcurve(ctx, surface, model_point, axis, record, refusal)?)
     };
-    let uv = require_some!(cadmpeg_ir::eval::pcurve_uv(&pcurve, pcurve_parameter).ok());
-    let before_u = require_some!(cadmpeg_ir::eval::surface_point(surface, uv.u - u_epsilon, uv.v).ok());
-    let after_u = require_some!(cadmpeg_ir::eval::surface_point(surface, uv.u + u_epsilon, uv.v).ok());
+    let uv = require_some!(cadmpeg_ir::eval::admitted::pcurve_uv(ctx, &pcurve, pcurve_parameter)?.ok());
+    let before_u = require_some!(cadmpeg_ir::eval::admitted::surface_point(ctx, surface, uv.u - u_epsilon, uv.v)?.ok());
+    let after_u = require_some!(cadmpeg_ir::eval::admitted::surface_point(ctx, surface, uv.u + u_epsilon, uv.v)?.ok());
     let before_v =
-        require_some!(cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v - EPS_SURFACE_DIFFERENCE_STEP).ok());
+        require_some!(cadmpeg_ir::eval::admitted::surface_point(ctx, surface, uv.u, uv.v - EPS_SURFACE_DIFFERENCE_STEP)?.ok());
     let after_v =
-        require_some!(cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v + EPS_SURFACE_DIFFERENCE_STEP).ok());
+        require_some!(cadmpeg_ir::eval::admitted::surface_point(ctx, surface, uv.u, uv.v + EPS_SURFACE_DIFFERENCE_STEP)?.ok());
     let du = [
         after_u.x - before_u.x,
         after_u.y - before_u.y,

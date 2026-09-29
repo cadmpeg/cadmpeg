@@ -1325,11 +1325,15 @@ fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<us
 
 /// Non-zero basis function values at `t` for the given span (Cox–de Boor).
 /// Scratch contains `degree + 1` values, at most the admitted control count.
-fn bspline_basis(scratch: &admitted::Scratch<'_, '_>, knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Vec<f64>> {
+fn bspline_basis(scratch: &admitted::Scratch<'_, '_>, knots: &[f64], degree: usize, span: usize, t: f64) -> Option<admitted::SupportValues<f64>> {
     let finite_t = FiniteReal::new(t);
     let support = degree.checked_add(1)?;
-    scratch.work(support.checked_mul(support)?, "IR B-spline basis work")?;
-    let mut values = scratch.filled(degree.checked_add(1)?, 0.0, "IR B-spline basis")?;
+    let mut values = if support <= 2 {
+        admitted::SupportValues::Inline { values: [0.0; 2], len: support }
+    } else {
+        scratch.work(support.checked_mul(support)?, "IR B-spline basis work")?;
+        admitted::SupportValues::Heap(scratch.filled(support, 0.0, "IR B-spline basis")?)
+    };
     values[0] = 1.0;
     for j in 1..=degree {
         let mut saved = 0.0;
@@ -1613,8 +1617,12 @@ fn local_poles(scratch: &admitted::Scratch<'_, '_>,
     span: usize,
     degree: usize,
     pole: impl Fn(usize) -> Option<FinitePoint3>,
-) -> Option<Vec<FinitePoint3>> {
-    scratch.collect((span - degree..=span).map(pole), "IR local NURBS poles")
+) -> Option<admitted::SupportValues<FinitePoint3>> {
+    match degree {
+        0 => { let point = pole(span)?; Some(admitted::SupportValues::Inline { values: [point; 2], len: 1 }) },
+        1 => Some(admitted::SupportValues::Inline { values: [pole(span - 1)?, pole(span)?], len: 2 }),
+        _ => scratch.collect((span - degree..=span).map(pole), "IR local NURBS poles").map(admitted::SupportValues::Heap),
+    }
 }
 
 /// The homogeneous sum of `poles`, the first of which is global pole `first`,
@@ -2522,7 +2530,7 @@ struct NurbsSurfaceLocal<'a> {
     degrees: [usize; 2],
     spans: [usize; 2],
     parameters: [f64; 2],
-    bases: [Vec<f64>; 2],
+    bases: [admitted::SupportValues<f64>; 2],
     base: Homogeneous,
     point: [FiniteReal; 3],
 }
@@ -2689,7 +2697,7 @@ fn nurbs_surface_local<'a>(scratch: &admitted::Scratch<'_, '_>,
     let v_basis = bspline_basis(scratch, surface.v_knots(), v_degree, v_span, v_at).ok_or(unreached)?;
     if !u_basis
         .iter()
-        .chain(&v_basis)
+        .chain(v_basis.iter())
         .all(|value| value.is_finite())
     {
         return Err(unreached);

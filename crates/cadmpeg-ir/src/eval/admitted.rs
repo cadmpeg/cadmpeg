@@ -15,6 +15,31 @@ use crate::math::{Point2, Point3};
 use crate::scalar::FiniteReal;
 use crate::units::FinitePoint2;
 
+/// A basis or pole window with fixed storage for constant and linear spans.
+pub(super) enum SupportValues<T> {
+    Inline { values: [T; 2], len: usize },
+    Heap(Vec<T>),
+}
+
+impl<T> std::ops::Deref for SupportValues<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        match self {
+            Self::Inline { values, len } => &values[..*len],
+            Self::Heap(values) => values,
+        }
+    }
+}
+
+impl<T> std::ops::DerefMut for SupportValues<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        match self {
+            Self::Inline { values, len } => &mut values[..*len],
+            Self::Heap(values) => values,
+        }
+    }
+}
+
 /// Scratch admission shared by one evaluation and its recursive calls.
 pub(super) struct Scratch<'ctx, 'arena> {
     context: Option<&'ctx DecodeContext<'arena>>,
