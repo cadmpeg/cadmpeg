@@ -683,6 +683,35 @@ fn circular_pcurve_refuses_each_counted_lane_before_allocation() {
 }
 
 #[test]
+fn overflowing_circular_pcurve_refuses_before_error_text_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let mut policy = DecodePolicy::service();
+    const REASON: &str = "control_points contains a non-finite point";
+    policy.limits.max_retained_bytes = u64::try_from(REASON.len()).expect("reason length") - 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    let mut refusal = crate::lane_refusal::LaneRefusals::new();
+    let error = super::circular_pcurve(
+        &ctx, [f64::MAX, f64::MAX], f64::MAX, 0.0, std::f64::consts::TAU,
+        &"extrusion feature 11 cap", &mut refusal,
+    ).expect_err("need minus one refuses before error text");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("retained refusal expected"); };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "creo circular pcurve refusal text");
+    assert_eq!(limit.used, 0);
+    assert_eq!(limit.limit + 1, limit.additional);
+    assert!(refusal.take_records().is_empty());
+    let absent = crate::decode::with_test_decode_ctx(|ctx| super::circular_pcurve(
+        ctx, [f64::MAX, f64::MAX], f64::MAX, 0.0, std::f64::consts::TAU,
+        &"extrusion feature 11 cap", &mut refusal,
+    )).expect("service refusal text is admitted");
+    assert!(absent.is_none());
+    assert_eq!(refusal.take_records(), [format!(
+        "creo circular pcurve record for extrusion feature 11 cap: {REASON}"
+    )]);
+}
+
+#[test]
 fn two_refused_circular_pcurves_state_two_records_each_naming_its_instance() {
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
     let first = crate::decode::with_test_decode_ctx(|ctx| super::circular_pcurve(
