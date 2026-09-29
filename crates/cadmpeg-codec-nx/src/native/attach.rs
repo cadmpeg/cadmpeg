@@ -28,7 +28,7 @@ use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     SketchPlacement,
 };
-use cadmpeg_ir::topology::{BodyKind, Coedge, Color, Face, FaceLoops, Sense};
+use cadmpeg_ir::topology::{BodyKind, Color, Face, FaceLoops, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{
@@ -8599,60 +8599,39 @@ fn simple_hole_chamfers(
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<BTreeMap<String, HoleKind>, CodecError> {
-    let template_counts = templates
-        .iter()
-        .fold(BTreeMap::new(), |mut counts, template| {
-            *counts
-                .entry(template.operation_label.as_str())
-                .or_insert(0usize) += 1;
-            counts
-        });
-    let operations = templates
-        .iter()
-        .filter(|template| {
+    let mut operations = Vec::new();
+    let mut operation_reservation = ctx.reserve_scoped(0, "NX chamfer selected operations")?;
+    for template in templates {
+        ctx.charge_work(1, "NX chamfer template scan")?;
+        if !(
             template.form == crate::native::features::holes::SimpleHoleForm::Simple
                 && template.extent == crate::native::features::holes::SimpleHoleExtent::Through
                 && template.start_treatment
                     == crate::native::features::holes::SimpleHoleEndTreatment::Chamfer
                 && template.end_treatment
                     == crate::native::features::holes::SimpleHoleEndTreatment::Chamfer
-        })
-        .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
-        .map(|template| template.operation_label.clone())
-        .collect::<BTreeSet<_>>();
+        ) {
+            continue;
+        }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(templates.len()), "NX chamfer template identity scan")?;
+        if templates.iter().filter(|candidate| candidate.operation_label == template.operation_label).count() != 1 {
+            continue;
+        }
+        let bytes = std::mem::size_of::<String>().checked_add(template.operation_label.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX chamfer selected operations", 0, cadmpeg_core::decode::u64_from_index(template.operation_label.len())))?;
+        ctx.charge_collection_items(1, "NX chamfer selected operations")?;
+        operation_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+        reserve_attach_vec(ctx, &mut operations, 1, "NX chamfer selected operations")?;
+        operations.push(template.operation_label.clone());
+    }
     if operations.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let operations = operations.into_iter().collect::<Vec<_>>();
+    charge_hole_sort_work(ctx, operations.len())?;
+    operations.sort();
     let Some(operations_by_body) = hole_operations_by_body(ctx, ir, &operations, outputs)? else {
         return Ok(BTreeMap::new());
     };
-
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (&edge.id, edge.curve()))
-        .collect::<BTreeMap<_, _>>();
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
-    for coedge in &ir.model.coedges {
-        coedges_by_loop
-            .entry(&coedge.owner_loop)
-            .or_default()
-            .push(coedge);
-    }
 
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
@@ -8674,16 +8653,21 @@ fn simple_hole_chamfers(
         {
             return Ok(BTreeMap::new());
         }
+        let cone_count_bytes = bores.len().checked_mul(std::mem::size_of::<usize>())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX chamfer cone counts", 0, cadmpeg_core::decode::u64_from_index(bores.len())))?;
+        let _cone_count_reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(cone_count_bytes), "NX chamfer cone counts")?;
         let mut cone_counts =
             ctx.alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")?;
         let mut outer_radii = Vec::new();
         let mut included_angles = Vec::new();
+        let mut geometry_reservation = ctx.reserve_scoped(0, "NX chamfer cone geometry")?;
         for face in body_faces
             .into_iter()
             .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
         {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()), "NX chamfer cone surface scan")?;
             let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))) =
-                surfaces.get(&face.surface).copied()
+                ir.model.surfaces.iter().rev().find(|surface| surface.id == face.surface).map(|surface| &surface.geometry)
             else {
                 continue;
             };
@@ -8724,23 +8708,28 @@ fn simple_hole_chamfers(
             cone_counts[bore_ordinal] += 1;
 
             let mut radii = [None, None];
-            for (radius_count, radius) in face
-                .loops
-                .iter()
-                .flat_map(|loop_id| coedges_by_loop.get(loop_id).into_iter().flatten())
-                .filter_map(|coedge| edges.get(&coedge.edge).copied().flatten())
-                .filter_map(|curve_id| match curves.get(curve_id)? {
-                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                        Some(circle_curve.radius().get())
+            let Some(loops) = face_two_loops(face) else {
+                return Ok(BTreeMap::new());
+            };
+            let mut radius_count = 0;
+            for loop_id in loops {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.coedges.len()), "NX chamfer coedge scan")?;
+                for coedge in ir.model.coedges.iter().filter(|coedge| coedge.owner_loop == *loop_id) {
+                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.edges.len()), "NX chamfer edge lookup")?;
+                    let Some(curve_id) = ir.model.edges.iter().rev().find(|edge| edge.id == coedge.edge).and_then(|edge| edge.curve()) else {
+                        continue;
+                    };
+                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.curves.len()), "NX chamfer curve lookup")?;
+                    let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) = ir.model.curves.iter().rev().find(|curve| curve.id == *curve_id).map(|curve| &curve.geometry) else {
+                        continue;
+                    };
+                    let radius = circle_curve.radius().get();
+                    if radius_count == radii.len() {
+                        return Ok(BTreeMap::new());
                     }
-                    _ => None,
-                })
-                .enumerate()
-            {
-                if radius_count == radii.len() {
-                    return Ok(BTreeMap::new());
+                    radii[radius_count] = Some(radius);
+                    radius_count += 1;
                 }
-                radii[radius_count] = Some(radius);
             }
             let [Some(mut inner), Some(mut outer)] = radii else {
                 return Ok(BTreeMap::new());
@@ -8752,6 +8741,7 @@ fn simple_hole_chamfers(
                 return Ok(BTreeMap::new());
             }
             ctx.charge_collection_items(2, "nx chamfer cone geometry")?;
+            geometry_reservation.grow(cadmpeg_core::decode::u64_from_index(2 * std::mem::size_of::<f64>()))?;
             reserve_attach_vec(ctx, &mut outer_radii, 1, "nx chamfer outer radii")?;
             reserve_attach_vec(ctx, &mut included_angles, 1, "nx chamfer included angles")?;
             outer_radii.push(outer);
@@ -8763,6 +8753,8 @@ fn simple_hole_chamfers(
         {
             return Ok(BTreeMap::new());
         }
+        charge_hole_sort_work(ctx, outer_radii.len())?;
+        charge_hole_sort_work(ctx, included_angles.len())?;
         outer_radii.sort_by(f64::total_cmp);
         included_angles.sort_by(f64::total_cmp);
         let (Some(&widest), Some(&narrowest), Some(&largest), Some(&smallest)) = (
@@ -8787,11 +8779,13 @@ fn simple_hole_chamfers(
             return Ok(BTreeMap::new());
         };
         let treatment = HoleKind::Chamfer { diameter, angle };
-        treatments.extend(
-            operations
-                .into_iter()
-                .map(|operation| (operation, treatment)),
-        );
+        for operation in operations {
+            let bytes = std::mem::size_of::<(String, HoleKind)>().checked_add(operation.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("NX chamfer treatments", 0, cadmpeg_core::decode::u64_from_index(operation.len())))?;
+            ctx.charge_collection_items(1, "NX chamfer treatments")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX chamfer treatments")?;
+            treatments.insert(operation, treatment);
+        }
     }
     Ok(treatments)
 }
