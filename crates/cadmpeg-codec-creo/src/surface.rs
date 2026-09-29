@@ -3451,6 +3451,9 @@ fn parsed_named_surface_value(
             values.clear();
             break;
         };
+        if let Err(error) = ctx.try_reserve_items(&mut values, 1, "creo named surface scalar sequence") {
+            return Some(Err(error));
+        }
         values.push(value);
         cursor = next;
     }
