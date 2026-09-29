@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::dimensions::{
-    project_dimension_constraints, retain_planar_dimension_constraints, DimensionConstraintInputs,
+    container_only_dimension_companions, project_dimension_constraints,
+    retain_planar_dimension_constraints, DimensionConstraintInputs,
 };
 use crate::design::test_support::parameter_record;
 use crate::records::parameters::{DesignParameter, DesignParameterOwner, DesignParameterOwnerWire};
+use crate::records::dimensions::{
+    DesignDimensionAnnotationOperand, DesignDimensionLocusPair, DesignDimensionLocusPairDraft,
+};
 use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::sketch_placement::{DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -193,4 +197,63 @@ fn planar_dimension_output_refuses_collection_limit() {
             && failure.dimension == ResourceDimension::CollectionItems));
     let output = retain_planar_dimension_constraints(None, &[], &[], vec![constraint.clone()]).unwrap();
     assert_eq!(output, [constraint]);
+}
+
+fn companion_pair() -> DesignDimensionLocusPair {
+    DesignDimensionLocusPair::try_new(DesignDimensionLocusPairDraft {
+        id: "f3d:Design/BulkStream.dat:design-dimension-locus-pair#31".to_owned(),
+        companion_record_index: 30,
+        governing_companion_record_index: 99,
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("423".to_owned()).unwrap(),
+        record_index: 31,
+        frame_length: 100,
+        opaque_index: None,
+        loci: [
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: None,
+                geometry_reference_offset: 25,
+                role: 14,
+                role_offset: 35,
+            },
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: std::num::NonZeroU32::new(40),
+                geometry_reference_offset: 40,
+                role: 3,
+                role_offset: 50,
+            },
+        ],
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_byte_offset: 100,
+    }).unwrap()
+}
+
+fn assert_companion_refusal(limit: u64, operation: &'static str) {
+    let pair = companion_pair();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let pairs = [pair];
+    let result = container_only_dimension_companions(
+        Some(&ctx), &pairs, &[], &[], &[], &[],
+    );
+    assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
+        if failure.operation == operation
+            && failure.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn physical_dimension_companion_refuses_collection_limit() {
+    assert_companion_refusal(0, "f3d physical dimension companion");
+}
+
+#[test]
+fn governed_dimension_companion_refuses_collection_limit() {
+    assert_companion_refusal(1, "f3d governed dimension companion");
+}
+
+#[test]
+fn container_only_dimension_companion_refuses_collection_limit() {
+    assert_companion_refusal(2, "f3d container-only dimension companion");
 }
