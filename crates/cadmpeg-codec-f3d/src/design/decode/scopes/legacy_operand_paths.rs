@@ -197,15 +197,11 @@ pub(super) fn exact_legacy_class_383_operand_paths(
     {
         return None;
     }
-    CLASS_383_OPERAND_SPECS
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, spec)| {
-            exact_legacy_class_383_operand_path(bytes, records, scope, &frames[ordinal], spec)
-        })
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()
+    let [first, second] = CLASS_383_OPERAND_SPECS;
+    Some([
+        exact_legacy_class_383_operand_path(bytes, records, scope, &frames[0], first)?,
+        exact_legacy_class_383_operand_path(bytes, records, scope, &frames[1], second)?,
+    ])
 }
 
 fn exact_legacy_class_383_operand_path(

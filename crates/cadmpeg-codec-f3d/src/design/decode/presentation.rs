@@ -493,22 +493,22 @@ fn bare_presentation_material(
             continue;
         }
 
-        let mut name_ends = vec![node_reference_at];
+        let mut after_name = None;
         if let Some(name_at) = skip_zeros(bytes, node_reference_at, end) {
-            if let Some((_, after_name)) = lp_utf16_bounded_charged(ctx, bytes, name_at, 1..=256)? {
-                name_ends.push(after_name);
+            if let Some((_, end)) = lp_utf16_bounded_charged(ctx, bytes, name_at, 1..=256)? {
+                after_name = Some(end);
             }
         }
-        let mut visual_offsets = name_ends
-            .into_iter()
-            .filter_map(|name_end| record_tail_visual_offset(bytes, name_end, end))
-            .collect::<Vec<_>>();
-        visual_offsets.sort_unstable();
-        visual_offsets.dedup();
-        let [visual_at] = visual_offsets.as_slice() else {
+        let mut visual_offsets = [Some(node_reference_at), after_name]
+            .into_iter().flatten()
+            .filter_map(|name_end| record_tail_visual_offset(bytes, name_end, end));
+        let Some(visual_at) = visual_offsets.next() else {
             continue;
         };
-        let Some((visual_guid, after_visual)) = lp_utf16_bounded_charged(ctx, bytes, *visual_at, 1..=256)? else {
+        if visual_offsets.any(|offset| offset != visual_at) {
+            continue;
+        }
+        let Some((visual_guid, after_visual)) = lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256)? else {
             continue;
         };
         let Ok(visual_guid) = crate::records::references::DesignVisualToken::try_from(visual_guid)
@@ -537,7 +537,7 @@ fn bare_presentation_material(
             physical_token,
             physical_token_offset: (token_at + 4) as u64,
             visual_guid,
-            visual_guid_offset: (*visual_at + 4) as u64,
+            visual_guid_offset: (visual_at + 4) as u64,
             visual_preset: None,
         });
     }

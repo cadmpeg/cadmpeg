@@ -954,7 +954,7 @@ fn project_all_dimension_constraints(
         let definition = exact_group_definition(scope, group, parameter, copied)
             .transpose()?;
         if definition.as_ref()
-            .is_none_or(|definition| constraint_parameters(definition).contains(&&parameter_id)) {
+            .is_none_or(|definition| constraint_parameters(definition).any(|id| id == &parameter_id)) {
             insert_dimension_set(ctx, &mut projected_dimension_companions,
                 (scope, group.companion_record_index),
                 "f3d projected group companion")?;
@@ -2695,18 +2695,18 @@ fn owner_scoped_radial_dimension_definition(
 
 pub(crate) fn constraint_parameters(
     definition: &cadmpeg_ir::sketches::SketchConstraintDefinitionInput,
-) -> Vec<&cadmpeg_ir::features::ParameterId> {
+) -> impl Iterator<Item = &cadmpeg_ir::features::ParameterId> {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
-    match definition {
+    let parameters = match definition {
         Definition::Offset { parameter, .. } => {
-            parameter.iter().map(|parameter| &parameter.id).collect()
+            [parameter.as_ref().map(|parameter| &parameter.id), None, None, None]
         }
-        Definition::Native { parameter, .. } => parameter.iter().collect(),
+        Definition::Native { parameter, .. } => [parameter.as_ref(), None, None, None],
         Definition::PolarDistance {
             distance_parameter, ..
-        } => distance_parameter.iter().collect(),
-        Definition::DistanceLociValue { parameter, .. } => parameter.iter().collect(),
+        } => [distance_parameter.as_ref(), None, None, None],
+        Definition::DistanceLociValue { parameter, .. } => [parameter.as_ref(), None, None, None],
         Definition::Distance { parameter, .. }
         | Definition::DistanceLoci { parameter, .. }
         | Definition::HorizontalDistance { parameter, .. }
@@ -2721,27 +2721,18 @@ pub(crate) fn constraint_parameters(
         | Definition::Diameter { parameter, .. }
         | Definition::RepeatedDiameter { parameter, .. }
         | Definition::SnellsLaw { parameter, .. }
-        | Definition::Weight { parameter, .. } => vec![parameter],
-        Definition::RectangularPattern { pattern } => pattern
-            .directions()
-            .iter()
-            .flat_map(|direction| {
-                [
-                    direction
-                        .distance
-                        .as_ref()
-                        .map(cadmpeg_ir::sketches::SketchPatternDistance::parameter),
-                    direction.count_parameter.as_ref(),
-                ]
-                .into_iter()
-                .flatten()
-            })
-            .collect(),
+        | Definition::Weight { parameter, .. } => [Some(parameter), None, None, None],
+        Definition::RectangularPattern { pattern } => {
+            let [first, second] = pattern.directions();
+            [
+                first.distance.as_ref().map(cadmpeg_ir::sketches::SketchPatternDistance::parameter),
+                first.count_parameter.as_ref(),
+                second.distance.as_ref().map(cadmpeg_ir::sketches::SketchPatternDistance::parameter),
+                second.count_parameter.as_ref(),
+            ]
+        }
         Definition::CircularPattern { pattern } => {
-            [pattern.angle_parameter(), pattern.count_parameter()]
-                .into_iter()
-                .flatten()
-                .collect()
+            [pattern.angle_parameter(), pattern.count_parameter(), None, None]
         }
         Definition::Disabled {}
         | Definition::Coincident { .. }
@@ -2778,8 +2769,9 @@ pub(crate) fn constraint_parameters(
         | Definition::PointOnObject { .. }
         | Definition::InternalAlignment { .. }
         | Definition::Group { .. }
-        | Definition::Text { .. } => Vec::new(),
-    }
+        | Definition::Text { .. } => [None; 4],
+    };
+    parameters.into_iter().flatten()
 }
 
 /// Attach single-locus offset dimensions to uniquely matching typed offset
