@@ -3329,27 +3329,29 @@ impl SymbolicRelationDimension {
     }
 
     fn scale(self, factor: i8) -> Option<Self> {
+        let [length, mass, time, angle, temperature] = self.axes;
         Some(Self {
-            axes: self
-                .axes
-                .into_iter()
-                .map(|axis| axis.scale(factor))
-                .collect::<Option<Vec<_>>>()?
-                .try_into()
-                .ok()?,
+            axes: [
+                length.scale(factor)?,
+                mass.scale(factor)?,
+                time.scale(factor)?,
+                angle.scale(factor)?,
+                temperature.scale(factor)?,
+            ],
         })
     }
 
     fn root(self, degree: i16) -> Option<Self> {
         (degree > 0).then_some(())?;
+        let [length, mass, time, angle, temperature] = self.axes;
         Some(Self {
-            axes: self
-                .axes
-                .into_iter()
-                .map(|axis| axis.divide_exact(degree))
-                .collect::<Option<Vec<_>>>()?
-                .try_into()
-                .ok()?,
+            axes: [
+                length.divide_exact(degree)?,
+                mass.divide_exact(degree)?,
+                time.divide_exact(degree)?,
+                angle.divide_exact(degree)?,
+                temperature.divide_exact(degree)?,
+            ],
         })
     }
 
