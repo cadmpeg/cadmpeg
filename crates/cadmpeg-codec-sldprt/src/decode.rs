@@ -5277,6 +5277,20 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
 fn brep_local_sha256_in_place(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<String, CodecError> {
     use std::mem::take;
 
+    let comparisons = ir
+        .model
+        .appearance_bindings
+        .len()
+        .checked_mul(ir.model.appearances.len())
+        .and_then(|pairs| pairs.checked_add(ir.model.appearance_bindings.len()))
+        .and_then(|count| count.checked_add(ir.model.appearances.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("filter SLDPRT digest appearances", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(
+        u64::try_from(comparisons).map_err(|_| {
+            ctx.refuse_codec_limit("filter SLDPRT digest appearances", u64::MAX - 1, u64::MAX)
+        })?,
+        "filter SLDPRT digest appearances",
+    )?;
     let mut saved_body_display = Vec::new();
     ctx.reserve_collection_vec(
         &mut saved_body_display,
@@ -5333,8 +5347,10 @@ mod digest_tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId, FaceId};
     use cadmpeg_ir::topology::{Body, BodyKind};
+    use std::collections::BTreeMap;
 
     fn named_body_document() -> CadIr {
         let mut ir = CadIr::empty();
@@ -5373,6 +5389,27 @@ mod digest_tests {
         brep_local_sha256_in_place(&ctx, &mut ir).unwrap();
         assert_eq!(ir.model.bodies[0], original);
     }
+
+    #[test]
+    fn digest_appearance_filter_refuses_work_limit() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"digest", &arena, &policy).unwrap();
+        let mut ir = CadIr::empty();
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: AppearanceBindingId::mint("synthetic:test:id#digest-binding").unwrap(),
+            target: AppearanceTarget::Face(FaceId::mint("synthetic:test:id#digest-face").unwrap()),
+            appearance: AppearanceId::mint("synthetic:test:id#digest-appearance").unwrap(),
+            source_entity_id: None,
+            object_type: None,
+            visible: None,
+            channels: BTreeMap::new(),
+        });
+        let error = brep_local_sha256_in_place(&ctx, &mut ir).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(_)));
+        assert_eq!(ir.model.appearance_bindings.len(), 1);
+    }
 }
 
 /// Normalize and hash one B-rep partition; both digest entry points share it.
@@ -5393,23 +5430,15 @@ fn brep_partition_sha256(
         body.name = None;
         body.color = None;
     });
-    let face_appearances = normalized
-        .model
-        .appearance_bindings
-        .iter()
-        .filter_map(|binding| {
-            matches!(binding.target, AppearanceTarget::Face(_))
-                .then_some(binding.appearance.clone())
-        })
-        .collect::<std::collections::HashSet<_>>();
     normalized
         .model
         .appearance_bindings
         .retain(|binding| matches!(binding.target, AppearanceTarget::Face(_)));
+    let bindings = &normalized.model.appearance_bindings;
     normalized
         .model
         .appearances
-        .retain(|appearance| face_appearances.contains(&appearance.id));
+        .retain(|appearance| bindings.iter().any(|binding| binding.appearance == appearance.id));
     Ok((
         cadmpeg_ir::hash::canonical_json_sha256(&normalized)?,
         normalized.model,
