@@ -217,10 +217,7 @@ impl AsmBrep {
     ) -> Result<(), cadmpeg_core::CodecError> {
         macro_rules! append_vecs {
             ($($field:ident),+ $(,)?) => {
-                $(crate::decode_alloc::append_vec(
-                    ctx, &mut self.$field, &mut other.$field,
-                    concat!("ASM append ", stringify!($field)),
-                )?;)+
+                $(ctx.append_vec(&mut self.$field, &mut other.$field, concat!("ASM append ", stringify!($field)))?;)+
             };
         }
         append_vecs!(
@@ -275,7 +272,7 @@ pub fn collect_owned_ids(
                 .map(|(_, value)| value)
                 .and_then(value_string)
             {
-                crate::decode_alloc::insert_string_set(ctx, out, id, "ASM owned ids")?;
+                ctx.insert_string_set(out, id, "ASM owned ids")?;
             }
             for (key, value) in fields {
                 collect_owned_ids(ctx, key, out)?;
@@ -356,12 +353,7 @@ fn insert_adjacency(
         out.insert(key, HashSet::new());
     }
     if let Some(references) = out.get_mut(owner) {
-        crate::decode_alloc::insert_string_set(
-            ctx,
-            references,
-            reference,
-            "ASM adjacency references",
-        )?;
+        ctx.insert_string_set(references, reference, "ASM adjacency references")?;
     }
     Ok(())
 }
@@ -389,7 +381,7 @@ pub fn collect_references(
     let _depth = ctx.enter_nested("collect ASM references")?;
     match value {
         Value::String(id) if owned.contains(id) => {
-            crate::decode_alloc::insert_string_set(ctx, out, id, "ASM references")?;
+            ctx.insert_string_set(out, id, "ASM references")?;
         }
         Value::Seq(items) => {
             for item in items {

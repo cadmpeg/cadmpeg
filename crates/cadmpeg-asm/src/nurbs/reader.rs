@@ -37,17 +37,9 @@ impl ReadPoles3 {
         rational: bool,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         if rational {
-            Ok(Self::Rational(crate::decode_alloc::counted_vec(
-                ctx,
-                count,
-                "ASM rational NURBS poles",
-            )?))
+            Ok(Self::Rational(ctx.collection_vec(count, "ASM rational NURBS poles")?))
         } else {
-            Ok(Self::Polynomial(crate::decode_alloc::counted_vec(
-                ctx,
-                count,
-                "ASM polynomial NURBS poles",
-            )?))
+            Ok(Self::Polynomial(ctx.collection_vec(count, "ASM polynomial NURBS poles")?))
         }
     }
 
@@ -111,16 +103,12 @@ impl ReadPoles3 {
         ) -> Option<Result<Vec<Vec<T>>, cadmpeg_core::CodecError>> {
             (flat.len() == u_count.checked_mul(v_count)?).then_some(())?;
             let mut rows =
-                match crate::decode_alloc::counted_vec(ctx, u_count, "ASM NURBS grid rows") {
+                match ctx.collection_vec(u_count, "ASM NURBS grid rows") {
                     Ok(rows) => rows,
                     Err(error) => return Some(Err(error)),
                 };
             for u in 0..u_count {
-                let mut row = match crate::decode_alloc::counted_vec(
-                    ctx,
-                    v_count,
-                    "ASM NURBS grid row poles",
-                ) {
+                let mut row = match ctx.collection_vec(v_count, "ASM NURBS grid row poles") {
                     Ok(row) => row,
                     Err(error) => return Some(Err(error)),
                 };

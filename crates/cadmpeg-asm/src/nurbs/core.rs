@@ -234,23 +234,14 @@ where
     ) -> Option<Result<T, cadmpeg_core::CodecError>>,
 {
     let mut seen = std::collections::HashSet::new();
-    let mut pending = propagate_resource!(crate::decode_alloc::counted_vec(
-        ctx,
-        1,
-        "ASM subtype search stack",
-    ));
+    let mut pending = propagate_resource!(ctx.collection_vec(1, "ASM subtype search stack"));
     pending.push(toks::subtype_refs(toks));
     while let Some(references) = pending.last_mut() {
         let Some(index) = references.next() else {
             pending.pop();
             continue;
         };
-        if !propagate_resource!(crate::decode_alloc::insert_hash_set(
-            ctx,
-            &mut seen,
-            index,
-            "ASM subtype search visited",
-        )) {
+        if !propagate_resource!(ctx.insert_hash_set(&mut seen, index, "ASM subtype search visited")) {
             continue;
         }
         // The doc states what the index means. `docs/formats/asm.md`: "A named
@@ -267,12 +258,7 @@ where
         if let Some(decoded) = decode_scope(ctx, target) {
             return Some(decoded);
         }
-        propagate_resource!(crate::decode_alloc::push_vec(
-            ctx,
-            &mut pending,
-            toks::subtype_refs(target.tokens()),
-            "ASM subtype search stack",
-        ));
+        propagate_resource!(ctx.push_vec(&mut pending, toks::subtype_refs(target.tokens()), "ASM subtype search stack"));
     }
     None
 }

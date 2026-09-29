@@ -165,7 +165,7 @@ impl<'a> Cur<'a> {
             return None;
         };
         let mut values =
-            match crate::decode_alloc::counted_vec(ctx, count, "ASM counted float array") {
+            match ctx.collection_vec(count, "ASM counted float array") {
                 Ok(values) => values,
                 Err(error) => return Some(Err(error)),
             };
@@ -227,11 +227,11 @@ pub(super) fn take_knot_table(
     n: usize,
     degree: i64,
 ) -> Option<Result<(Vec<f64>, usize), cadmpeg_core::CodecError>> {
-    let mut values = match crate::decode_alloc::counted_vec(ctx, n, "ASM unique knot values") {
+    let mut values = match ctx.collection_vec(n, "ASM unique knot values") {
         Ok(values) => values,
         Err(error) => return Some(Err(error)),
     };
-    let mut mults = match crate::decode_alloc::counted_vec(ctx, n, "ASM knot multiplicities") {
+    let mut mults = match ctx.collection_vec(n, "ASM knot multiplicities") {
         Ok(mults) => mults,
         Err(error) => return Some(Err(error)),
     };
@@ -241,7 +241,7 @@ pub(super) fn take_knot_table(
     }
     let expansion = checked_knot_layout(&mults, degree)?;
     let mut expanded =
-        match crate::decode_alloc::counted_vec(ctx, expansion.expanded_len(), "ASM expanded knots")
+        match ctx.collection_vec(expansion.expanded_len(), "ASM expanded knots")
         {
             Ok(expanded) => expanded,
             Err(error) => return Some(Err(error)),
@@ -309,7 +309,7 @@ fn walk_owned_markers(
             },
             _ => {
                 if depth == 0 && marker_at(toks, pos).is_some() {
-                    crate::decode_alloc::push_vec(ctx, &mut out, pos, "ASM owned spline markers")?;
+                    ctx.push_vec(&mut out, pos, "ASM owned spline markers")?;
                 }
             }
         }
@@ -335,12 +335,7 @@ pub(super) fn owned_subtype_defs<'a>(
             Token::SubtypeOpen => {
                 if depth == 0 {
                     if let Some(Token::Ident(name) | Token::SubIdent(name)) = toks.get(pos + 1) {
-                        if let Err(error) = crate::decode_alloc::push_vec(
-                            ctx,
-                            &mut owned,
-                            (pos, name.as_str()),
-                            "ASM owned subtype definitions",
-                        ) {
+                        if let Err(error) = ctx.push_vec(&mut owned, (pos, name.as_str()), "ASM owned subtype definitions") {
                             return Some(Err(error));
                         }
                     }
@@ -464,12 +459,7 @@ pub(super) fn cache_scope<'a>(
             Err(error) => return Some(Err(error)),
         };
         if !markers.is_empty() {
-            if let Err(error) = crate::decode_alloc::push_vec(
-                ctx,
-                &mut cache_bearing,
-                scope.tokens(),
-                "ASM cache bearing scopes",
-            ) {
+            if let Err(error) = ctx.push_vec(&mut cache_bearing, scope.tokens(), "ASM cache bearing scopes") {
                 return Some(Err(error));
             }
         }

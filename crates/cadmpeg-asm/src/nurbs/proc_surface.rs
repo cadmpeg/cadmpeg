@@ -1655,11 +1655,7 @@ fn compound_loft_scale(
     if count > 100_000 {
         return None;
     }
-    let mut members = propagate_resource!(crate::decode_alloc::counted_vec(
-        ctx,
-        count,
-        "ASM compound loft scale members",
-    ));
+    let mut members = propagate_resource!(ctx.collection_vec(count, "ASM compound loft scale members"));
     for _ in 0..count {
         let type_code = cur.take_long()?;
         let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
@@ -1673,11 +1669,7 @@ fn compound_loft_scale(
     if auxiliary_count > 100_000 {
         return None;
     }
-    let mut auxiliaries = propagate_resource!(crate::decode_alloc::counted_vec(
-        ctx,
-        auxiliary_count,
-        "ASM compound loft scale auxiliaries",
-    ));
+    let mut auxiliaries = propagate_resource!(ctx.collection_vec(auxiliary_count, "ASM compound loft scale auxiliaries"));
     for _ in 0..auxiliary_count {
         let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
         cur.set_pos(curve_end);
@@ -1839,7 +1831,7 @@ fn revision_loft_section(
     let count = usize::try_from(cur.take_long()?).ok()?;
     // Each entry consumes at least one double token for its parameter.
     let count = bounded_len(count as u64, 1, cur.rest().len())?;
-    let mut entries = match crate::decode_alloc::counted_vec(ctx, count, "ASM loft sections") {
+    let mut entries = match ctx.collection_vec(count, "ASM loft sections") {
         Ok(entries) => entries,
         Err(error) => return Some(Err(error)),
     };
@@ -1849,7 +1841,7 @@ fn revision_loft_section(
         // Each member consumes at least its type-code token.
         let member_count = bounded_len(member_count as u64, 1, cur.rest().len())?;
         let mut profile =
-            match crate::decode_alloc::counted_vec(ctx, member_count, "ASM loft profile members") {
+            match ctx.collection_vec(member_count, "ASM loft profile members") {
                 Ok(profile) => profile,
                 Err(error) => return Some(Err(error)),
             };
@@ -1891,11 +1883,7 @@ fn revision_loft_section(
         let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
         // Each auxiliary consumes at least its curve-block marker token.
         let auxiliary_count = bounded_len(auxiliary_count as u64, 1, cur.rest().len())?;
-        let mut auxiliaries = match crate::decode_alloc::counted_vec(
-            ctx,
-            auxiliary_count,
-            "ASM loft auxiliary curves",
-        ) {
+        let mut auxiliaries = match ctx.collection_vec(auxiliary_count, "ASM loft auxiliary curves") {
             Ok(auxiliaries) => auxiliaries,
             Err(error) => return Some(Err(error)),
         };
@@ -1951,20 +1939,12 @@ fn loft_subdata_form(
         .checked_add(usize::from(revision && type_code != 211))?;
     let tokens_per_row = pairs_per_row.checked_mul(2)?;
     let rows_to_read = bounded_len(rows_to_read as u64, tokens_per_row, cur.rest().len())?;
-    let mut rows = propagate_resource!(crate::decode_alloc::counted_vec(
-        ctx,
-        rows_to_read,
-        "ASM loft subdata rows",
-    ));
+    let mut rows = propagate_resource!(ctx.collection_vec(rows_to_read, "ASM loft subdata rows"));
     for _ in 0..rows_to_read {
         let parameters = [cur.take_f64()?, cur.take_f64()?];
         let mut columns = Vec::new();
         if type_code != 211 {
-            columns = propagate_resource!(crate::decode_alloc::counted_vec(
-                ctx,
-                columns_to_read,
-                "ASM loft subdata columns",
-            ));
+            columns = propagate_resource!(ctx.collection_vec(columns_to_read, "ASM loft subdata columns"));
             for _ in 0..columns_to_read {
                 columns.push([cur.take_f64()?, cur.take_f64()?]);
             }
@@ -2035,21 +2015,13 @@ fn loft_section(
     let count = usize::try_from(cur.take_long()?).ok()?;
     // Each entry consumes at least one double token for its parameter.
     let count = bounded_len(count as u64, 1, cur.rest().len())?;
-    let mut entries = propagate_resource!(crate::decode_alloc::counted_vec(
-        ctx,
-        count,
-        "ASM legacy loft sections",
-    ));
+    let mut entries = propagate_resource!(ctx.collection_vec(count, "ASM legacy loft sections"));
     for _ in 0..count {
         let parameter = cur.take_f64()?;
         let member_count = usize::try_from(cur.take_long()?).ok()?;
         // Each member consumes at least its type-code token.
         let member_count = bounded_len(member_count as u64, 1, cur.rest().len())?;
-        let mut profile = propagate_resource!(crate::decode_alloc::counted_vec(
-            ctx,
-            member_count,
-            "ASM legacy loft profile members",
-        ));
+        let mut profile = propagate_resource!(ctx.collection_vec(member_count, "ASM legacy loft profile members"));
         for _ in 0..member_count {
             let type_code = cur.take_long()?;
             let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
@@ -2065,11 +2037,7 @@ fn loft_section(
         let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
         // Each auxiliary consumes at least its curve-block marker token.
         let auxiliary_count = bounded_len(auxiliary_count as u64, 1, cur.rest().len())?;
-        let mut auxiliaries = propagate_resource!(crate::decode_alloc::counted_vec(
-            ctx,
-            auxiliary_count,
-            "ASM legacy loft auxiliary curves",
-        ));
+        let mut auxiliaries = propagate_resource!(ctx.collection_vec(auxiliary_count, "ASM legacy loft auxiliary curves"));
         for _ in 0..auxiliary_count {
             let (auxiliary, auxiliary_end) =
                 propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
@@ -2180,41 +2148,16 @@ fn loft_spl_sur(
     while toks::marker_at(span, cur.pos()).is_none() {
         match cur.peek()? {
             Token::True | Token::False => {
-                propagate_resource!(crate::decode_alloc::push_vec(
-                    ctx,
-                    &mut bridge,
-                    LoftBridgeToken::Boolean(cur.take_bool()?),
-                    "ASM loft bridge token",
-                ));
+                propagate_resource!(ctx.push_vec(&mut bridge, LoftBridgeToken::Boolean(cur.take_bool()?), "ASM loft bridge token"));
             }
-            Token::Long(_) => propagate_resource!(crate::decode_alloc::push_vec(
-                ctx,
-                &mut bridge,
-                LoftBridgeToken::Integer(cur.take_long()?),
-                "ASM loft bridge token",
-            )),
-            Token::Double(_) => propagate_resource!(crate::decode_alloc::push_vec(
-                ctx,
-                &mut bridge,
-                LoftBridgeToken::Double(cur.take_f64()?),
-                "ASM loft bridge token",
-            )),
-            Token::Enum(_) => propagate_resource!(crate::decode_alloc::push_vec(
-                ctx,
-                &mut bridge,
-                LoftBridgeToken::Enum(cur.take_enum()?),
-                "ASM loft bridge token",
-            )),
+            Token::Long(_) => propagate_resource!(ctx.push_vec(&mut bridge, LoftBridgeToken::Integer(cur.take_long()?), "ASM loft bridge token")),
+            Token::Double(_) => propagate_resource!(ctx.push_vec(&mut bridge, LoftBridgeToken::Double(cur.take_f64()?), "ASM loft bridge token")),
+            Token::Enum(_) => propagate_resource!(ctx.push_vec(&mut bridge, LoftBridgeToken::Enum(cur.take_enum()?), "ASM loft bridge token")),
             Token::Str(_) => {
                 let value = cur.take_str()?;
                 let value =
                     propagate_resource!(ctx.copy_retained_text(value, "ASM loft bridge text"));
-                propagate_resource!(crate::decode_alloc::push_vec(
-                    ctx,
-                    &mut bridge,
-                    LoftBridgeToken::Text(value),
-                    "ASM loft bridge token",
-                ));
+                propagate_resource!(ctx.push_vec(&mut bridge, LoftBridgeToken::Text(value), "ASM loft bridge token"));
             }
             _ => return None,
         }
@@ -2249,11 +2192,7 @@ fn revision_cl_scale(
     let member_count = usize::try_from(cur.take_long()?).ok()?;
     // Each member consumes at least its type-code token.
     let member_count = bounded_len(member_count as u64, 1, cur.rest().len())?;
-    let mut profile = match crate::decode_alloc::counted_vec(
-        ctx,
-        member_count,
-        "ASM revision compound loft profile members",
-    ) {
+    let mut profile = match ctx.collection_vec(member_count, "ASM revision compound loft profile members") {
         Ok(profile) => profile,
         Err(error) => return Some(Err(error)),
     };
@@ -2295,11 +2234,7 @@ fn revision_cl_scale(
     let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
     // Each auxiliary consumes at least its curve-block marker token.
     let auxiliary_count = bounded_len(auxiliary_count as u64, 1, cur.rest().len())?;
-    let mut auxiliaries = match crate::decode_alloc::counted_vec(
-        ctx,
-        auxiliary_count,
-        "ASM revision compound loft auxiliary curves",
-    ) {
+    let mut auxiliaries = match ctx.collection_vec(auxiliary_count, "ASM revision compound loft auxiliary curves") {
         Ok(auxiliaries) => auxiliaries,
         Err(error) => return Some(Err(error)),
     };
@@ -2342,11 +2277,7 @@ fn revision_compound_loft(
     let entry_count = usize::try_from(cur.take_long()?).ok()?;
     // Each entry consumes at least its member-count token.
     let entry_count = bounded_len(entry_count as u64, 1, cur.rest().len())?;
-    let mut entries = match crate::decode_alloc::counted_vec(
-        ctx,
-        entry_count,
-        "ASM revision compound loft sections",
-    ) {
+    let mut entries = match ctx.collection_vec(entry_count, "ASM revision compound loft sections") {
         Ok(entries) => entries,
         Err(error) => return Some(Err(error)),
     };
@@ -2797,11 +2728,7 @@ fn law_expression_resolving(
                 "VEC" | "DSURF" => 3,
                 _ => return None,
             };
-            let mut operands = propagate_resource!(crate::decode_alloc::counted_vec(
-                ctx,
-                arity,
-                "ASM law operands",
-            ));
+            let mut operands = propagate_resource!(ctx.collection_vec(arity, "ASM law operands"));
             for _ in 0..arity {
                 operands.push(propagate_resource!(law_expression_resolving(
                     ctx,
@@ -2838,11 +2765,7 @@ fn law_formula_resolving(
     if count > 100_000 {
         return None;
     }
-    let mut variables = propagate_resource!(crate::decode_alloc::counted_vec(
-        ctx,
-        count,
-        "ASM law formula variables",
-    ));
+    let mut variables = propagate_resource!(ctx.collection_vec(count, "ASM law formula variables"));
     for _ in 0..count {
         variables.push(propagate_resource!(law_expression_resolving(
             ctx, cur, 0, resolver
@@ -2890,11 +2813,7 @@ fn skin_spl_sur(
         if profile_count > 100_000 {
             return None;
         }
-        let mut profiles = propagate_resource!(crate::decode_alloc::counted_vec(
-            ctx,
-            profile_count,
-            "ASM skin surface profiles",
-        ));
+        let mut profiles = propagate_resource!(ctx.collection_vec(profile_count, "ASM skin surface profiles"));
         for _ in 0..profile_count {
             let type_code = cur.take_long()?;
             let (curve, curve_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
@@ -2969,11 +2888,7 @@ pub(super) fn law_spl_sur(
     if count > 100_000 {
         return None;
     }
-    let mut additional = propagate_resource!(crate::decode_alloc::counted_vec(
-        ctx,
-        count,
-        "ASM law surface additional formulas",
-    ));
+    let mut additional = propagate_resource!(ctx.collection_vec(count, "ASM law surface additional formulas"));
     for _ in 0..count {
         additional.push(propagate_resource!(law_formula(ctx, &mut cur)?));
     }
@@ -3678,11 +3593,7 @@ fn comp_spl_sur(
         None
     };
     let parameters = propagate_resource!(cur.take_float_array(ctx)?);
-    let mut components = propagate_resource!(crate::decode_alloc::counted_vec(
-        ctx,
-        parameters.len(),
-        "ASM compound surface components",
-    ));
+    let mut components = propagate_resource!(ctx.collection_vec(parameters.len(), "ASM compound surface components"));
     for parameter in parameters {
         components.push(cadmpeg_ir::geometry::CompoundComponent {
             parameter,
@@ -4307,11 +4218,7 @@ pub(crate) fn copy_revision_discontinuities(
             ctx.refuse_codec_limit("ASM revision discontinuities", u64::MAX, u64::MAX)
         })?;
         ctx.charge_retained(bytes, "ASM revision discontinuities")?;
-        crate::decode_alloc::collect_vec(
-            ctx,
-            source.iter().copied(),
-            "ASM revision discontinuities",
-        )
+        ctx.collect_vec(source.iter().copied(), "ASM revision discontinuities")
     }
     Ok([
         copy_lane(ctx, &source[0])?,
@@ -4453,11 +4360,7 @@ fn defm_spl_sur(
         1 => {
             let frame = Box::new(deformable_surface_frame(&mut cur)?);
             let count = usize::try_from(cur.take_long()?).ok()?;
-            let mut parameter_triples = propagate_resource!(crate::decode_alloc::counted_vec(
-                ctx,
-                count,
-                "ASM deformable surface parameter triples",
-            ));
+            let mut parameter_triples = propagate_resource!(ctx.collection_vec(count, "ASM deformable surface parameter triples"));
             for _ in 0..count {
                 parameter_triples.push([cur.take_f64()?, cur.take_f64()?, cur.take_f64()?]);
             }
@@ -4491,11 +4394,7 @@ fn defm_spl_sur(
             let frame_parameter = cur.take_f64()?;
             let flags = [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?];
             let count = usize::try_from(cur.take_long()?).ok()?;
-            let mut parameter_triples = propagate_resource!(crate::decode_alloc::counted_vec(
-                ctx,
-                count,
-                "ASM deformable surface curve parameter triples",
-            ));
+            let mut parameter_triples = propagate_resource!(ctx.collection_vec(count, "ASM deformable surface curve parameter triples"));
             for _ in 0..count {
                 parameter_triples.push([cur.take_f64()?, cur.take_f64()?, cur.take_f64()?]);
             }
@@ -4757,12 +4656,7 @@ fn resolve_t_spline_subtransform(
     if seen.contains(&index) {
         return None;
     }
-    propagate_resource!(crate::decode_alloc::push_vec(
-        ctx,
-        seen,
-        index,
-        "ASM t spline references",
-    ));
+    propagate_resource!(ctx.push_vec(seen, index, "ASM t spline references"));
     let span = table.span(index)?.tokens();
     let start = usize::from(matches!(span.first(), Some(Token::SubtypeOpen)));
     let decoded = propagate_resource!(t_spline_subtransform(ctx, &mut Cur::at(span, start))?);
@@ -4847,12 +4741,7 @@ fn procedural_resolving_refs(
         // the stream rather than skipping the reference and reading the one
         // behind it.
         let target = table.span(index)?.tokens();
-        propagate_resource!(crate::decode_alloc::push_vec(
-            ctx,
-            seen,
-            index,
-            "ASM procedural surface references",
-        ));
+        propagate_resource!(ctx.push_vec(seen, index, "ASM procedural surface references"));
         if let Some(decoded) = procedural_resolving_refs(ctx, target, table, seen) {
             return Some(decoded);
         }

@@ -93,28 +93,18 @@ pub fn transfer_into_ir<'ir>(
     } = brep;
 
     let before = ir.model.entity_count();
-    crate::decode_alloc::extend_vec(ctx, &mut ir.model.bodies, bodies, "ASM transfer bodies")?;
-    crate::decode_alloc::extend_vec(ctx, &mut ir.model.regions, regions, "ASM transfer regions")?;
-    crate::decode_alloc::extend_vec(ctx, &mut ir.model.shells, shells, "ASM transfer shells")?;
-    crate::decode_alloc::extend_vec(ctx, &mut ir.model.faces, faces, "ASM transfer faces")?;
-    crate::decode_alloc::extend_vec(ctx, &mut ir.model.loops, loops, "ASM transfer loops")?;
-    crate::decode_alloc::extend_vec(ctx, &mut ir.model.coedges, coedges, "ASM transfer coedges")?;
-    crate::decode_alloc::extend_vec(ctx, &mut ir.model.edges, edges, "ASM transfer edges")?;
-    crate::decode_alloc::extend_vec(
-        ctx,
-        &mut ir.model.vertices,
-        vertices,
-        "ASM transfer vertices",
-    )?;
-    crate::decode_alloc::extend_vec(ctx, &mut ir.model.points, points, "ASM transfer points")?;
-    crate::decode_alloc::extend_vec(
-        ctx,
-        &mut ir.model.surfaces,
-        surfaces,
-        "ASM transfer surfaces",
-    )?;
-    crate::decode_alloc::extend_vec(ctx, &mut ir.model.curves, curves, "ASM transfer curves")?;
-    crate::decode_alloc::extend_vec(ctx, &mut ir.model.pcurves, pcurves, "ASM transfer pcurves")?;
+    ctx.extend_vec(&mut ir.model.bodies, bodies, "ASM transfer bodies")?;
+    ctx.extend_vec(&mut ir.model.regions, regions, "ASM transfer regions")?;
+    ctx.extend_vec(&mut ir.model.shells, shells, "ASM transfer shells")?;
+    ctx.extend_vec(&mut ir.model.faces, faces, "ASM transfer faces")?;
+    ctx.extend_vec(&mut ir.model.loops, loops, "ASM transfer loops")?;
+    ctx.extend_vec(&mut ir.model.coedges, coedges, "ASM transfer coedges")?;
+    ctx.extend_vec(&mut ir.model.edges, edges, "ASM transfer edges")?;
+    ctx.extend_vec(&mut ir.model.vertices, vertices, "ASM transfer vertices")?;
+    ctx.extend_vec(&mut ir.model.points, points, "ASM transfer points")?;
+    ctx.extend_vec(&mut ir.model.surfaces, surfaces, "ASM transfer surfaces")?;
+    ctx.extend_vec(&mut ir.model.curves, curves, "ASM transfer curves")?;
+    ctx.extend_vec(&mut ir.model.pcurves, pcurves, "ASM transfer pcurves")?;
     for (owner, procedural) in procedural_surfaces {
         ir.model
             .add_procedural_surface(owner, procedural)
@@ -125,12 +115,7 @@ pub fn transfer_into_ir<'ir>(
             .add_procedural_curve(owner, procedural)
             .map_err(|error| CodecError::malformed(error.to_string()))?;
     }
-    crate::decode_alloc::extend_vec(
-        ctx,
-        &mut ir.model.attributes,
-        attributes,
-        "ASM transfer attributes",
-    )?;
+    ctx.extend_vec(&mut ir.model.attributes, attributes, "ASM transfer attributes")?;
     // Every transfer above appends entities; procedural attachment removes none.
     ctx.charge_entities(
         (ir.model.entity_count() - before) as u64,
