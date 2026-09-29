@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::edge_resolve::feature_input_topology_id;
-use crate::design::feature_project::project_split_face;
+use crate::design::feature_project::{project_split, project_split_face};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::{
@@ -65,6 +65,158 @@ fn group(
         },
     )
     .unwrap()
+}
+
+fn split_body_scope() -> DesignParameterScope {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#77",
+        crate::records::feature::scope::DesignFeatureKind::Split,
+        77,
+    );
+    scope.try_edit(|draft| {
+        draft.reference_members =
+            crate::records::identity::ReferenceRun::unlocated(vec![100, 101, 102, 103]);
+        draft.layout_fixture_references();
+        draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+        draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+        draft.layout_fixture_tail();
+    }).unwrap();
+    scope
+}
+
+fn split_body_groups(tool_role: DesignOperandRole) -> [DesignConstructionOperandGroup; 2] {
+    [
+        group(77, 0, 100, vec![101], tool_role),
+        group(77, 2, 102, vec![103], DesignOperandRole::BODIES_A),
+    ]
+}
+
+fn split_body_face_tool() -> crate::records::topology::face::DesignFaceOperand {
+    use crate::records::recipes::ConstructionRecipeKind;
+    crate::records::topology::face::DesignFaceOperand::try_new(
+        crate::records::topology::face::DesignFaceOperandDraft {
+            id: "f3d:Design/BulkStream.dat:face-operand#101".into(),
+            scope_record_index: 77,
+            scope_reference_ordinal: 1,
+            group: Some(crate::records::topology::body_recipe::DesignOperandGroup {
+                group_record_index: 100,
+                group_member_ordinal: 0,
+            }),
+            record_index: 101,
+            byte_offset: 1200,
+            class_tag: "297".to_owned().try_into().unwrap(),
+            paired_byte_offset: 1250,
+            paired_class_tag: "259".to_owned().try_into().unwrap(),
+            recipe_record_index: 104,
+            recipe_record_byte_offset: 1300,
+            recipe_id: "f3d:Design/BulkStream.dat:recipe#104".into(),
+            recipe_prefix_offset: 1311,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: Vec::new(),
+            recipe_kind: ConstructionRecipeKind::Face,
+            recipe_program_offset: 1350,
+            recipe_program: vec![0, -1],
+            recipe_nodes: Vec::new(),
+            candidate_faces: Vec::new(),
+            unreferenced_candidate_faces: Vec::new(),
+            alternate_selector_candidate_faces: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            changed_candidate_faces: Vec::new(),
+            historical_support_contexts: Vec::new(),
+            resolved_face_slots: Vec::new(),
+            resolved_active_face: None,
+            next_record_index: 105,
+            next_byte_offset: 1411,
+        },
+    ).unwrap()
+}
+
+fn assert_split_body_refusal(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::face::DesignFaceOperand],
+    operation: &'static str,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for limit in 0..192 {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(
+            project_split(Some(&ctx), scope, groups, operands),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == operation
+        ) {
+            return;
+        }
+    }
+    panic!("no SplitBody refusal at {operation}");
+}
+
+#[test]
+fn split_body_path_tool_group_id_refuses_retained_limit() {
+    let scope = split_body_scope();
+    let groups = split_body_groups(DesignOperandRole::ROLE_0X21);
+    let definition = project_split(None, &scope, &groups, &[]).unwrap().unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            tools: FaceSelection::Native(ref tool), ..
+        }) if tool == &groups[0].id
+    ));
+    assert_split_body_refusal(&scope, &groups, &[], "f3d SplitBody path tool group id");
+}
+
+#[test]
+fn split_body_target_group_id_refuses_retained_limit() {
+    let scope = split_body_scope();
+    let groups = split_body_groups(DesignOperandRole::ROLE_0X21);
+    assert_split_body_refusal(&scope, &groups, &[], "f3d SplitBody target group id");
+}
+
+#[test]
+fn split_body_face_tool_id_refuses_retained_limit() {
+    let scope = split_body_scope();
+    let groups = split_body_groups(DesignOperandRole::ROLE_0X9);
+    let tool = split_body_face_tool();
+    let definition = project_split(None, &scope, &groups, std::slice::from_ref(&tool))
+        .unwrap().unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            tools: FaceSelection::Native(ref native), ..
+        }) if native == &tool.id
+    ));
+    assert_split_body_refusal(
+        &scope, &groups, std::slice::from_ref(&tool), "f3d SplitBody face tool id",
+    );
+}
+
+#[test]
+fn split_body_historical_face_tool_id_refuses_retained_limit() {
+    let mut scope = split_body_scope();
+    scope.try_edit(|draft| {
+        draft.previous_history_state_id = Some(7);
+        draft.layout_fixture_tail();
+    }).unwrap();
+    let groups = split_body_groups(DesignOperandRole::ROLE_0X9);
+    let mut tool = split_body_face_tool();
+    tool.resolved_face_slots = vec![42];
+    let definition = project_split(None, &scope, &groups, std::slice::from_ref(&tool))
+        .unwrap().unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            tools: FaceSelection::Historical { ref native, .. }, ..
+        }) if native.as_str() == tool.id
+    ));
+    assert_split_body_refusal(
+        &scope, &groups, std::slice::from_ref(&tool),
+        "f3d SplitBody historical face tool id",
+    );
 }
 
 #[test]

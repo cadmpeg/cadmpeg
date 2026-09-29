@@ -1150,7 +1150,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::Hole) => project_hole(ctx, scope, &parameters, face_operands)?
                     .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Split) => {
-                    project_split(scope, construction_groups, face_operands).unwrap_or_else(|| {
+                    project_split(ctx, scope, construction_groups, face_operands)?.unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
                             parameters: BTreeMap::new(),
@@ -8672,12 +8672,14 @@ pub(crate) fn bind_surface_trim_cell_selections(
 }
 
 pub(super) fn project_split(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
 
+    let parsed = (|| {
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Split
         || scope.reference_members().len() < 4
     {
@@ -8689,11 +8691,14 @@ pub(super) fn project_split(
         .filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
-    groups.sort_by_key(|group| group.scope_reference_ordinal);
-    let [tool_group, targets] = groups.as_slice() else {
+        });
+    let (Some(first), Some(second), None) = (groups.next(), groups.next(), groups.next()) else {
         return None;
+    };
+    let (tool_group, targets) = if first.scope_reference_ordinal <= second.scope_reference_ordinal {
+        (first, second)
+    } else {
+        (second, first)
     };
     let target_ordinal = tool_group.members().len().checked_add(1)?;
     let tool_members = scope.reference_members().values_in(1..target_ordinal)?;
@@ -8721,6 +8726,9 @@ pub(super) fn project_split(
     {
         return None;
     }
+    Some((stream, tool_group, targets))
+    })();
+    let Some((stream, tool_group, targets)) = parsed else { return Ok(None); };
     let tools = match tool_group.role() {
         DesignOperandRole::ROLE_0X9 => {
             let [crate::records::identity::Located {
@@ -8728,9 +8736,9 @@ pub(super) fn project_split(
                 ..
             }] = tool_group.members()
             else {
-                return None;
+                return Ok(None);
             };
-            let matching_tools = face_operands
+            let tool = unique_feature_match(face_operands
                 .iter()
                 .filter(|operand| {
                     native_stream(&operand.id) == Some(stream)
@@ -8740,33 +8748,36 @@ pub(super) fn project_split(
                         && operand.recipe_kind == ConstructionRecipeKind::Face
                         && operand.recipe_program.as_slice() == [0, -1]
                         && operand.recipe_nodes.is_empty()
-                })
-                .collect::<Vec<_>>();
-            let [tool] = matching_tools.as_slice() else {
-                return None;
+                }));
+            let Some(tool) = tool else {
+                return Ok(None);
             };
             let mut tools = resolved_historical_face_operand(scope, tool)
                 .or_else(|| direct_face_selection(scope, face_operands))
-                .unwrap_or_else(|| FaceSelection::Native(tool.id.clone()));
+                .unwrap_or_else(|| FaceSelection::Native(String::new()));
             match &mut tools {
                 FaceSelection::Resolved { native, .. } | FaceSelection::Native(native) => {
-                    native.clone_from(&tool.id);
+                    *native = copy_feature_text(ctx, &tool.id, "f3d SplitBody face tool id")?;
                 }
                 FaceSelection::Historical { native, .. }
                 | FaceSelection::HistoricalPartial { native, .. } => {
-                    *native = cadmpeg_core::text::NonBlankString::new(tool.id.clone())?;
+                    *native = or_none!(cadmpeg_core::text::NonBlankString::new(
+                        copy_feature_text(ctx, &tool.id, "f3d SplitBody historical face tool id")?
+                    ));
                 }
                 _ => {}
             }
             tools
         }
-        DesignOperandRole::ROLE_0X21 => FaceSelection::Native(tool_group.id.clone()),
-        _ => return None,
+        DesignOperandRole::ROLE_0X21 => FaceSelection::Native(copy_feature_text(
+            ctx, &tool_group.id, "f3d SplitBody path tool group id")?),
+        _ => return Ok(None),
     };
-    Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
-        targets: BodySelection::Native(targets.id.clone()),
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        targets: BodySelection::Native(copy_feature_text(
+            ctx, &targets.id, "f3d SplitBody target group id")?),
         tools,
-    }))
+    })))
 }
 
 fn project_split_face(
