@@ -21,6 +21,26 @@ impl Sha256Hex {
         Self(cadmpeg_ir::hash::sha256_hex(bytes))
     }
 
+    pub(super) fn digest_charged(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        bytes: &[u8],
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), operation)?;
+        ctx.charge_retained(64, operation)?;
+        let digest = cadmpeg_ir::hash::sha256(bytes);
+        let mut encoded = String::new();
+        encoded
+            .try_reserve_exact(64)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 64))?;
+        for byte in digest {
+            encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+            encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+        Ok(Self(encoded))
+    }
+
     /// The digest of a completed SHA-256 computation.
     #[must_use]
     pub fn from_digest(digest: [u8; 32]) -> Self {

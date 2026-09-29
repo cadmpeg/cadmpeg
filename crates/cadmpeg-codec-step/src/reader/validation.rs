@@ -77,7 +77,7 @@ pub(super) fn decode(
                     id,
                     "validation property name",
                     StepLossCode::MetadataStringInvalid,
-                    Some(ctx),
+                    ctx,
                 )
             })
             .transpose()?
@@ -97,7 +97,7 @@ pub(super) fn decode(
                         id,
                         "validation property description",
                         StepLossCode::MetadataStringInvalid,
-                        Some(ctx),
+                        ctx,
                     )
                 })
                 .transpose()?
@@ -312,7 +312,7 @@ fn measure_scale(
                 break;
             };
             let Some(base) =
-                super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new(), Some(ctx))?
+                super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new(), ctx)?
             else {
                 scale = None;
                 break;

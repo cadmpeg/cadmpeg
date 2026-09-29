@@ -17,8 +17,9 @@ use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::loss::StepLossCode;
-use crate::parse::Value;
+use crate::parse::{parse_inner, Value};
 use crate::test_support::exchange::{decode_inline, decode_inline_result};
+use crate::test_support::with_service_context;
 use crate::StepCodec;
 
 mod retained_body;
@@ -44,7 +45,8 @@ fn decode_tessellation_under_policy(
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
     );
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("test exchange parses");
+    let (exchange, _) =
+        with_service_context(source.as_bytes(), parse_inner).expect("test exchange parses");
     let mut ir = CadIr::empty();
     let topology_arena = DecodeArena::new();
     let (topology_ctx, _) = DecodeContext::from_root_bytes(
@@ -226,7 +228,8 @@ fn product_link_refusal(admitted: u64, operation: &'static str) {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;{PRODUCT_LINKS}ENDSEC;END-ISO-10303-21;"
     );
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("product links parse");
+    let (exchange, _) =
+        with_service_context(source.as_bytes(), parse_inner).expect("product links parse");
     let arena = DecodeArena::new();
     let service = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &service)
@@ -283,8 +286,8 @@ fn tessellation_relationship_expansion_charges_the_pending_item() {
 
 #[test]
 fn tessellation_product_items_charge_before_insertion() {
-    let (exchange, _) =
-        crate::parse::parse(PRODUCT_ITEMS_SOURCE.as_bytes()).expect("product items parse");
+    let (exchange, _) = with_service_context(PRODUCT_ITEMS_SOURCE.as_bytes(), parse_inner)
+        .expect("product items parse");
     let arena = DecodeArena::new();
     let service = DecodePolicy::service();
     let (ctx, _) =
@@ -311,8 +314,8 @@ fn tessellation_product_items_charge_before_insertion() {
 
 #[test]
 fn tessellation_representation_items_charge_before_collection() {
-    let (exchange, _) =
-        crate::parse::parse(PRODUCT_ITEMS_SOURCE.as_bytes()).expect("product items parse");
+    let (exchange, _) = with_service_context(PRODUCT_ITEMS_SOURCE.as_bytes(), parse_inner)
+        .expect("product items parse");
     let arena = DecodeArena::new();
     let service = DecodePolicy::service();
     let (ctx, _) =

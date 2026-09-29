@@ -6,8 +6,60 @@ use crate::om::roll_forward::{GroupTableFooter, OperationStateGroup, OperationSt
 use crate::om::state_group::{
     OperationStateGroupCount, OperationStateGroupOpener, StateGroupMembers,
 };
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
+use std::fmt::Write;
+
+fn decimal_len(mut value: usize) -> usize {
+    let mut length = 1;
+    while value >= 10 {
+        value /= 10;
+        length += 1;
+    }
+    length
+}
+
+fn retained_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
+    ctx.charge_retained(
+        u64_from_index(text.len()),
+        "retain NX roll-forward table text",
+    )?;
+    let mut owned = String::new();
+    owned
+        .try_reserve_exact(text.len())
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX roll-forward table text", 0, 1))?;
+    owned.push_str(text);
+    Ok(owned)
+}
+
+fn group_id(ctx: &DecodeContext<'_>, section: usize, ordinal: u32) -> Result<String, CodecError> {
+    let section_digits = decimal_len(section).max(10);
+    let ordinal_digits = decimal_len(
+        usize::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX roll-forward group ordinal", 0, 1))?,
+    )
+    .max(10);
+    let length = "nx:feature-history:roll-forward-state-group#-"
+        .len()
+        .checked_add(section_digits)
+        .and_then(|length| length.checked_add(ordinal_digits))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX roll-forward group identity length", 0, 1))?;
+    ctx.charge_retained(
+        u64_from_index(length),
+        "retain NX roll-forward group identity",
+    )?;
+    let mut id = String::new();
+    id.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX roll-forward group identity", 0, 1))?;
+    write!(
+        id,
+        "nx:feature-history:roll-forward-state-group#{section:010}-{ordinal:010}"
+    )
+    .map_err(|_| ctx.refuse_codec_limit("write NX roll-forward group identity", 0, 1))?;
+    Ok(id)
+}
 
 /// One counted `m_rollForwardStates` group from a feature-history section.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -217,30 +269,38 @@ struct OmRollForwardStateTableWire {
 
 impl OmRollForwardStateTable {
     pub(super) fn from_frames(
+        ctx: &DecodeContext<'_>,
         section_ordinal: usize,
         section_link: &str,
         source_entry: &str,
         table_footer: GroupTableFooter,
         table_end_offset: u64,
-        frames: Vec<OperationStateGroup<u64>>,
-    ) -> Result<Self, &'static str> {
-        let groups = frames
-            .into_iter()
-            .enumerate()
-            .map(|(ordinal, frame)| {
-                let ordinal = u32::try_from(ordinal)
-                    .map_err(|_| "ordinal exceeds the roll-forward group range")?;
-                Ok(OmRollForwardStateGroup {
-                    id: format!(
-                        "nx:feature-history:roll-forward-state-group#{section_ordinal:010}-{ordinal:010}"
-                    ),
-                    frame,
-                })
-            })
-            .collect::<Result<Vec<_>, &'static str>>()?;
+        frames: impl IntoIterator<Item = OperationStateGroup<u64>>,
+    ) -> Result<Self, CodecError> {
+        let mut groups = Vec::new();
+        for (ordinal, frame) in frames.into_iter().enumerate() {
+            let ordinal = u32::try_from(ordinal).map_err(|_| {
+                CodecError::malformed(format!(
+                    "{}: ordinal exceeds the roll-forward group range",
+                    crate::loss::NxLossCode::RollForwardTableRejected.code()
+                ))
+            })?;
+            ctx.charge_collection_items(1, "NX roll-forward state groups")?;
+            ctx.charge_retained(
+                u64_from_index(std::mem::size_of::<OmRollForwardStateGroup>()),
+                "retain NX roll-forward state groups",
+            )?;
+            groups.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX roll-forward state groups", 0, 1)
+            })?;
+            groups.push(OmRollForwardStateGroup {
+                id: group_id(ctx, section_ordinal, ordinal)?,
+                frame,
+            });
+        }
         Ok(Self {
-            section_link: section_link.to_owned(),
-            source_entry: source_entry.to_owned(),
+            section_link: retained_text(ctx, section_link)?,
+            source_entry: retained_text(ctx, source_entry)?,
             table_footer,
             table_end_offset,
             groups,
@@ -292,6 +352,32 @@ impl TryFrom<OmRollForwardStateTableWire> for OmRollForwardStateTable {
 #[cfg(test)]
 mod tests {
     use super::OmRollForwardStateGroup;
+
+    #[test]
+    fn roll_forward_frame_conversion_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let group: OmRollForwardStateGroup = serde_json::from_str(
+            r#"{"id":"group","opener":[1,0],"count_prefix":null,"declared_count":0,"rows":[],"source_offset":0}"#,
+        ).unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::OmRollForwardStateTable::from_frames(
+            &ctx,
+            0,
+            "section",
+            "entry",
+            super::GroupTableFooter::try_from(&[][..]).unwrap(),
+            8,
+            [group.frame],
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems)
+        );
+    }
 
     #[test]
     fn table_wire_carries_the_table_facts_once() {

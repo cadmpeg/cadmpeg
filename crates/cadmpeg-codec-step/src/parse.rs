@@ -60,87 +60,44 @@ pub(crate) enum Value {
     Typed(String, Box<Value>),
 }
 
-fn copy_parser_bytes(
-    value: &[u8],
-    budget: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-) -> Result<Vec<u8>, CodecError> {
-    if let Some(ctx) = budget {
-        ctx.charge_collection_items(u64_from_index(value.len()), operation)?;
-    }
-    let mut copied = Vec::new();
-    copied.try_reserve_exact(value.len()).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-            cadmpeg_core::decode::ResourceDimension::Codec(operation),
-            0,
-            u64_from_index(value.len()),
-            operation,
-        ))
-    })?;
-    copied.extend_from_slice(value);
-    Ok(copied)
-}
-
 fn try_clone_value(
     value: &Value,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<Value, CodecError> {
-    let _depth = budget
-        .map(|ctx| ctx.enter_nested("step_value_copy_depth"))
-        .transpose()?;
+    let _depth = budget.enter_nested("step_value_copy_depth")?;
     Ok(match value {
         Value::Reference(id) => Value::Reference(*id),
         Value::ExternalReference(id) => Value::ExternalReference(*id),
-        Value::ConstantEntity(text) => Value::ConstantEntity(match budget {
-            Some(ctx) => ctx.copy_retained_text(text, operation),
-            None => Ok::<String, CodecError>(text.to_owned()),
-        }?),
-        Value::ExpressValueConstant(text) => Value::ExpressValueConstant(match budget {
-            Some(ctx) => ctx.copy_retained_text(text, operation),
-            None => Ok::<String, CodecError>(text.to_owned()),
-        }?),
+        Value::ConstantEntity(text) => {
+            Value::ConstantEntity(budget.copy_retained_text(text, operation)?)
+        }
+        Value::ExpressValueConstant(text) => {
+            Value::ExpressValueConstant(budget.copy_retained_text(text, operation)?)
+        }
         Value::Integer(value) => Value::Integer(*value),
         Value::Real(value) => Value::Real(*value),
-        Value::Enumeration(text) => Value::Enumeration(match budget {
-            Some(ctx) => ctx.copy_retained_text(text, operation),
-            None => Ok::<String, CodecError>(text.to_owned()),
-        }?),
-        Value::String(bytes) => Value::String(copy_parser_bytes(bytes, budget, operation)?),
+        Value::Enumeration(text) => Value::Enumeration(budget.copy_retained_text(text, operation)?),
+        Value::String(bytes) => {
+            let mut copied = budget.collection_vec(bytes.len(), operation)?;
+            copied.extend_from_slice(bytes);
+            Value::String(copied)
+        }
         Value::Binary(binary) => Value::Binary(binary.try_clone_for_decode(budget, operation)?),
-        Value::Resource(text) => Value::Resource(match budget {
-            Some(ctx) => ctx.copy_retained_text(text, operation),
-            None => Ok::<String, CodecError>(text.to_owned()),
-        }?),
+        Value::Resource(text) => Value::Resource(budget.copy_retained_text(text, operation)?),
         Value::Omitted => Value::Omitted,
         Value::Derived => Value::Derived,
         Value::List(values) => {
-            if let Some(ctx) = budget {
-                ctx.charge_collection_items(u64_from_index(values.len()), operation)?;
-            }
-            let mut copied = Vec::new();
-            copied.try_reserve_exact(values.len()).map_err(|_| {
-                CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                    0,
-                    u64_from_index(values.len()),
-                    operation,
-                ))
-            })?;
+            let mut copied = budget.collection_vec(values.len(), operation)?;
             for value in values {
                 copied.push(try_clone_value(value, budget, operation)?);
             }
             Value::List(copied)
         }
         Value::Typed(name, nested) => {
-            if let Some(ctx) = budget {
-                ctx.charge_collection_items(1, operation)?;
-            }
+            budget.charge_collection_items(1, operation)?;
             Value::Typed(
-                match budget {
-                    Some(ctx) => ctx.copy_retained_text(name, operation),
-                    None => Ok::<String, CodecError>(name.to_owned()),
-                }?,
+                budget.copy_retained_text(name, operation)?,
                 Box::new(try_clone_value(nested, budget, operation)?),
             )
         }
@@ -161,7 +118,7 @@ pub(crate) mod partials {
 
     /// The nonempty partial population of one entity instance.
     #[derive(Debug, Clone, PartialEq)]
-    pub(crate) struct RecordPartials(Vec<PartialRecord>);
+    pub(crate) struct RecordPartials(pub(super) Vec<PartialRecord>);
 
     impl RecordPartials {
         /// Builds the population of one simple entity instance.
@@ -172,20 +129,11 @@ pub(crate) mod partials {
 
         pub(super) fn single_charged(
             first: PartialRecord,
-            budget: Option<&DecodeContext<'_>>,
+            budget: &DecodeContext<'_>,
         ) -> Result<Self, ParseError> {
             let mut records = Vec::new();
-            super::push_charged(budget, &mut records, first, "step_parse_record_partials")?;
+            budget.push_vec(&mut records, first, "step_parse_record_partials")?;
             Ok(Self(records))
-        }
-
-        /// Append a partial without changing the nonempty population invariant.
-        pub(super) fn push_charged(
-            &mut self,
-            partial: PartialRecord,
-            budget: Option<&DecodeContext<'_>>,
-        ) -> Result<(), ParseError> {
-            super::push_charged(budget, &mut self.0, partial, "step_parse_record_partials")
         }
 
         /// Compact retained storage and report its allocation charge.
@@ -338,53 +286,58 @@ impl PartialEq for EntityIndex {
 impl EntityIndex {
     fn build(
         records: &BTreeMap<u64, RawRecord>,
-        budget: Option<&DecodeContext<'_>>,
+        budget: &DecodeContext<'_>,
     ) -> Result<Self, ParseError> {
         let mut index = HashMap::<String, Vec<u64>>::new();
         for (&id, record) in records {
             for partial in &record.partials {
                 if let Some(ids) = index.get_mut(partial.name.as_str()) {
-                    if let Some(ctx) = budget {
-                        ctx.charge_collection_items(1, "step_entity_index_ids")?;
-                    }
+                    budget.charge_collection_items(1, "step_entity_index_ids")?;
                     ids.try_reserve(1).map_err(|_| {
-                        ParseError::Resource(refuse_index(budget, "step_entity_index_ids"))
+                        ParseError::Resource(budget.refuse_codec_limit(
+                            "step_entity_index_ids",
+                            0,
+                            1,
+                        ))
                     })?;
                     ids.push(id);
                 } else {
-                    if let Some(ctx) = budget {
-                        ctx.charge_collection_items(1, "step_entity_index_names")?;
-                        ctx.charge_collection_items(1, "step_entity_index_ids")?;
-                        ctx.charge_retained(
-                            u64_from_index(partial.name.len()),
-                            "step_entity_index_name_storage",
-                        )?;
-                    }
+                    budget.charge_collection_items(1, "step_entity_index_names")?;
+                    budget.charge_collection_items(1, "step_entity_index_ids")?;
+                    budget.charge_retained(
+                        u64_from_index(partial.name.len()),
+                        "step_entity_index_name_storage",
+                    )?;
                     let mut name = String::new();
                     name.try_reserve_exact(partial.name.len()).map_err(|_| {
-                        ParseError::Resource(refuse_index(budget, "step_entity_index_names"))
+                        ParseError::Resource(budget.refuse_codec_limit(
+                            "step_entity_index_names",
+                            0,
+                            1,
+                        ))
                     })?;
                     name.push_str(&partial.name);
                     let mut ids = Vec::new();
                     ids.try_reserve_exact(1).map_err(|_| {
-                        ParseError::Resource(refuse_index(budget, "step_entity_index_ids"))
+                        ParseError::Resource(budget.refuse_codec_limit(
+                            "step_entity_index_ids",
+                            0,
+                            1,
+                        ))
                     })?;
                     ids.push(id);
                     index.try_reserve(1).map_err(|_| {
-                        ParseError::Resource(refuse_index(budget, "step_entity_index_names"))
+                        ParseError::Resource(budget.refuse_codec_limit(
+                            "step_entity_index_names",
+                            0,
+                            1,
+                        ))
                     })?;
                     index.insert(name, ids);
                 }
             }
         }
         Ok(Self(Arc::new(index)))
-    }
-}
-
-fn refuse_index(budget: Option<&DecodeContext<'_>>, operation: &'static str) -> CodecError {
-    match budget {
-        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
     }
 }
 
@@ -428,7 +381,7 @@ impl Exchange {
 
     pub(crate) fn joined_schema_identifiers(
         &self,
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
     ) -> Result<String, CodecError> {
         let operation = "step_schema_identifier_list";
         let len = self.schema_identifiers.iter().enumerate().try_fold(
@@ -438,14 +391,12 @@ impl Exchange {
                     .and_then(|sum| sum.checked_add(usize::from(index != 0)))
             },
         );
-        let len = len.ok_or_else(|| refuse_index(ctx, operation))?;
-        if let Some(ctx) = ctx {
-            ctx.charge_retained(u64_from_index(len), operation)?;
-        }
+        let len = len.ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+        ctx.charge_retained(u64_from_index(len), operation)?;
         let mut joined = String::new();
         joined
             .try_reserve_exact(len)
-            .map_err(|_| refuse_index(ctx, operation))?;
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
         for identifier in self.schema_identifiers() {
             if !joined.is_empty() {
                 joined.push(',');
@@ -458,7 +409,7 @@ impl Exchange {
     /// Numeric object-identifier components for the primary schema identifier.
     pub(crate) fn primary_schema_object_identifier(
         &self,
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
     ) -> Result<Option<Vec<u64>>, CodecError> {
         self.schema_identifiers
             .first()
@@ -475,15 +426,9 @@ impl Exchange {
     pub(crate) fn decode_string_with_context(
         &self,
         bytes: &[u8],
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
     ) -> Result<String, crate::strings::StringDecodeFailure> {
-        match ctx {
-            Some(ctx) => {
-                crate::strings::decode_with_context(bytes, self.implementation_level.level(), ctx)
-            }
-            None => crate::strings::decode_with_level(bytes, self.implementation_level.level())
-                .map_err(crate::strings::StringDecodeFailure::Invalid),
-        }
+        crate::strings::decode_with_context(bytes, self.implementation_level.level(), ctx)
     }
 
     /// Release the source graph and transfer its signature extents for retention.
@@ -591,29 +536,19 @@ pub(crate) struct ParseDiagnostic {
     pub(crate) message: String,
 }
 
-/// Parse one complete clear-text exchange structure and resolve DATA references.
-#[cfg(test)]
-pub(crate) fn parse(input: &[u8]) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
-    parse_inner(input, None)
-}
-
 /// Parse one exchange structure while charging the caller's decode session.
 pub(crate) fn parse_with_context(
     input: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>), CodecError> {
-    parse_inner(input, Some(ctx)).map_err(ParseError::into_codec_error)
+    parse_inner(input, ctx).map_err(ParseError::into_codec_error)
 }
 
-fn parse_inner(
+pub(crate) fn parse_inner(
     input: &[u8],
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
-    let lexer = if let Some(ctx) = budget {
-        Lexer::with_context(input, ctx)
-    } else {
-        Lexer::new(input)
-    };
+    let lexer = Lexer::new(input, budget);
     let mut parser = Parser {
         current: None,
         lexer,
@@ -644,40 +579,7 @@ struct Parser<'input, 'ctx, 'arena> {
     depth: usize,
     diagnostics: Vec<ParseDiagnostic>,
     omitted_entity_names: Option<(usize, NonZeroUsize)>,
-    budget: Option<&'ctx DecodeContext<'arena>>,
-}
-
-fn push_charged<T>(
-    budget: Option<&DecodeContext<'_>>,
-    values: &mut Vec<T>,
-    value: T,
-    operation: &'static str,
-) -> Result<(), ParseError> {
-    if let Some(ctx) = budget {
-        ctx.charge_collection_items(1, operation)?;
-    }
-    values.try_reserve(1).map_err(|_| {
-        ParseError::Resource(match budget {
-            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                    0,
-                    1,
-                    operation,
-                ),
-            ),
-            None => cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                    0,
-                    1,
-                    operation,
-                ),
-            ),
-        })
-    })?;
-    values.push(value);
-    Ok(())
+    budget: &'ctx DecodeContext<'arena>,
 }
 
 struct PartialNameList<'a>(&'a partials::RecordPartials);
@@ -853,12 +755,12 @@ impl Parser<'_, '_, '_> {
         while !self.peek_name("ENDSEC") {
             let offset = self.current_offset();
             let name = self.take_name()?;
-            self.charge_string_storage(&name, "step_parse_name_storage")?;
+            self.budget
+                .charge_retained(u64_from_index(name.capacity()), "step_parse_name_storage")?;
             let parameters = self.parameters()?;
-            self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
+            self.charge_vec_storage(&parameters, "step_parse_collection_storage")?;
             self.punct(&TokenKind::Semicolon)?;
-            push_charged(
-                self.budget,
+            self.budget.push_vec(
                 &mut header,
                 HeaderRecord {
                     name,
@@ -877,12 +779,8 @@ impl Parser<'_, '_, '_> {
         };
         let implementation_level = header_admission.implementation_level.level();
         if let Some(diagnostic) = header_diagnostic {
-            push_charged(
-                self.budget,
-                &mut self.diagnostics,
-                diagnostic,
-                "step_parse_diagnostics",
-            )?;
+            self.budget
+                .push_vec(&mut self.diagnostics, diagnostic, "step_parse_diagnostics")?;
         }
         for diagnostic in schema_object_identifier_diagnostics(
             &header_admission.schema_identifiers,
@@ -890,12 +788,8 @@ impl Parser<'_, '_, '_> {
             self.budget,
         ) {
             let diagnostic = diagnostic?;
-            push_charged(
-                self.budget,
-                &mut self.diagnostics,
-                diagnostic,
-                "step_parse_diagnostics",
-            )?;
+            self.budget
+                .push_vec(&mut self.diagnostics, diagnostic, "step_parse_diagnostics")?;
         }
         let schema_names_for_matching =
             schema_names_for_matching(&header_admission.schema_identifiers, self.budget)?;
@@ -926,7 +820,8 @@ impl Parser<'_, '_, '_> {
                 if !valid_anchor_name(&name) {
                     return self.err("anchor name must contain a non-digit character");
                 }
-                self.charge_string_storage(&name, "step_parse_name_storage")?;
+                self.budget
+                    .charge_retained(u64_from_index(name.capacity()), "step_parse_name_storage")?;
                 self.punct(&TokenKind::Equals)?;
                 let value = self.value()?;
                 if !is_anchor_item(&value) {
@@ -938,15 +833,17 @@ impl Parser<'_, '_, '_> {
                     let TokenKind::TagName(name) = self.next_kind()? else {
                         return self.err("expected anchor tag name");
                     };
-                    self.charge_string_storage(&name, "step_parse_name_storage")?;
+                    self.budget.charge_retained(
+                        u64_from_index(name.capacity()),
+                        "step_parse_name_storage",
+                    )?;
                     self.punct(&TokenKind::Colon)?;
                     let value = self.value()?;
                     if !is_anchor_item(&value) {
                         return self.err("invalid anchor tag item");
                     }
                     self.punct(&TokenKind::RBrace)?;
-                    push_charged(
-                        self.budget,
+                    self.budget.push_vec(
                         &mut tags,
                         AnchorTag { name, value },
                         "step_parse_anchor_tags",
@@ -955,8 +852,7 @@ impl Parser<'_, '_, '_> {
                 tags.shrink_to_fit();
                 self.charge_vec_storage(&tags, "step_anchor_tag_storage")?;
                 self.punct(&TokenKind::Semicolon)?;
-                push_charged(
-                    self.budget,
+                self.budget.push_vec(
                     &mut anchors,
                     AnchorEntry { name, value, tags },
                     "step_parse_anchors",
@@ -992,9 +888,8 @@ impl Parser<'_, '_, '_> {
                 if same_kind.contains(&id) {
                     return self.err("duplicate reference name");
                 }
-                if let Some(ctx) = self.budget {
-                    ctx.charge_collection_items(1, "step_parse_external_reference_ids")?;
-                }
+                self.budget
+                    .charge_collection_items(1, "step_parse_external_reference_ids")?;
                 same_kind.insert(id);
                 if other_kind.contains(&id) {
                     return self.err("duplicate external occurrence integer");
@@ -1003,10 +898,12 @@ impl Parser<'_, '_, '_> {
                 let TokenKind::Resource(uri) = self.next_kind()? else {
                     return self.err("expected reference URI");
                 };
-                self.charge_string_storage(&uri, "step_parse_reference_storage")?;
+                self.budget.charge_retained(
+                    u64_from_index(uri.capacity()),
+                    "step_parse_reference_storage",
+                )?;
                 self.punct(&TokenKind::Semicolon)?;
-                push_charged(
-                    self.budget,
+                self.budget.push_vec(
                     &mut reference_entries,
                     ReferenceEntry { name, uri },
                     "step_parse_reference_entries",
@@ -1035,7 +932,7 @@ impl Parser<'_, '_, '_> {
                     return self.err("2;1 forbids DATA section parameters");
                 }
                 let parameters = self.parameters()?;
-                self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
+                self.charge_vec_storage(&parameters, "step_parse_collection_storage")?;
                 if let Err(message) = valid_data_parameters(
                     &parameters,
                     &schema_names_for_matching,
@@ -1061,25 +958,24 @@ impl Parser<'_, '_, '_> {
             let mut ids = Vec::new();
             while !self.peek_name("ENDSEC") {
                 let (id, record) = self.record()?;
-                self.charge_retained(
+                self.budget.charge_retained(
                     btree_node_storage::<u64, RawRecord>()?,
                     "step_parse_record_table_storage",
                 )?;
                 if records.contains_key(&id) {
                     return self.err("duplicate instance name");
                 }
-                if let Some(ctx) = self.budget {
-                    ctx.charge_collection_items(1, "step_parse_record_table_items")?;
-                }
+                self.budget
+                    .charge_collection_items(1, "step_parse_record_table_items")?;
                 records.insert(id, record);
-                push_charged(self.budget, &mut ids, id, "step_parse_section_ids")?;
+                self.budget
+                    .push_vec(&mut ids, id, "step_parse_section_ids")?;
             }
             self.name("ENDSEC")?;
             self.punct(&TokenKind::Semicolon)?;
             ids.shrink_to_fit();
             self.charge_vec_storage(&ids, "step_parse_section_storage")?;
-            push_charged(
-                self.budget,
+            self.budget.push_vec(
                 &mut data,
                 DataSection {
                     parameters,
@@ -1128,12 +1024,8 @@ impl Parser<'_, '_, '_> {
             let span = start..self.previous_end();
             let payload = payload_start..payload_end;
             crate::signature::decode_payload(self.lexer.input(), &payload, self.budget)?;
-            push_charged(
-                self.budget,
-                &mut signatures,
-                span,
-                "step_parse_signature_spans",
-            )?;
+            self.budget
+                .push_vec(&mut signatures, span, "step_parse_signature_spans")?;
         }
         if self.current.is_some() {
             return self.err("tokens after exchange terminator");
@@ -1149,15 +1041,17 @@ impl Parser<'_, '_, '_> {
         }
         if !anchors.is_empty() {
             for anchor in &anchors {
-                self.charge_string_storage(&anchor.name, "step_anchor_binding_storage")?;
-                self.charge_retained(
+                self.budget.charge_retained(
+                    u64_from_index(anchor.name.capacity()),
+                    "step_anchor_binding_storage",
+                )?;
+                self.budget.charge_retained(
                     value_storage_bytes(&anchor.value)?,
                     "step_anchor_binding_value_copy",
                 )?;
-                if let Some(ctx) = self.budget {
-                    ctx.charge_collection_items(1, "step_anchor_binding_items")?;
-                }
-                self.charge_retained(
+                self.budget
+                    .charge_collection_items(1, "step_anchor_binding_items")?;
+                self.budget.charge_retained(
                     btree_node_storage::<String, Value>()?,
                     "step_anchor_binding_storage",
                 )?;
@@ -1165,13 +1059,8 @@ impl Parser<'_, '_, '_> {
             let mut anchor_bindings = BTreeMap::new();
             for anchor in &anchors {
                 anchor_bindings.insert(
-                    match self.budget {
-                        Some(ctx) => {
-                            ctx.copy_retained_text(&anchor.name, "step_anchor_binding_name_copy")
-                        }
-                        None => Ok::<String, CodecError>(anchor.name.clone()),
-                    }
-                    .map_err(ParseError::Resource)?,
+                    self.budget
+                        .copy_retained_text(&anchor.name, "step_anchor_binding_name_copy")?,
                     try_clone_value(&anchor.value, self.budget, "step_anchor_binding_value_copy")
                         .map_err(ParseError::Resource)?,
                 );
@@ -1227,19 +1116,19 @@ impl Parser<'_, '_, '_> {
         for record in records.values_mut() {
             if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
                 let parameters = &mut record.partials[0].parameters;
-                if let Some(ctx) = self.budget {
-                    ctx.charge_collection_items(1, "step_omitted_name_recovery_item")?;
-                    if parameters.len() == parameters.capacity() {
-                        ctx.charge_retained(
-                            u64_from_index(size_of::<Value>()),
-                            "step_omitted_name_recovery_storage",
-                        )?;
-                    }
+                self.budget
+                    .charge_collection_items(1, "step_omitted_name_recovery_item")?;
+                if parameters.len() == parameters.capacity() {
+                    self.budget.charge_retained(
+                        u64_from_index(size_of::<Value>()),
+                        "step_omitted_name_recovery_storage",
+                    )?;
                 }
                 parameters.try_reserve_exact(1).map_err(|_| {
-                    ParseError::Resource(refuse_index(
-                        self.budget,
+                    ParseError::Resource(self.budget.refuse_codec_limit(
                         "step_omitted_name_recovery_storage",
+                        0,
+                        1,
                     ))
                 })?;
                 record.partials[0]
@@ -1329,9 +1218,7 @@ impl Parser<'_, '_, '_> {
             return self.err("resource values are only valid in edition-3 anchor items");
         }
         if let Some((offset, count)) = self.omitted_entity_names {
-            push_charged(
-                self.budget,
-                &mut self.diagnostics,
+            self.budget.push_vec(&mut self.diagnostics,
                 ParseDiagnostic {
                     offset,
                     kind: ParseDiagnosticKind::OmittedEntityName,
@@ -1349,7 +1236,8 @@ impl Parser<'_, '_, '_> {
             compact_vec(&mut data)?,
             compact_vec(&mut signatures)?,
         ] {
-            self.charge_retained(capacity, "step_parse_exchange_storage")?;
+            self.budget
+                .charge_retained(capacity, "step_parse_exchange_storage")?;
         }
         let entity_ids = EntityIndex::build(&records, self.budget)?;
         Ok((
@@ -1374,20 +1262,20 @@ impl Parser<'_, '_, '_> {
             return self.err("expected instance name");
         };
         self.punct(&TokenKind::Equals)?;
-        self.charge_entities(1, "step_parse_record")?;
+        self.budget.charge_entities(1, "step_parse_record")?;
         let mut partials = if self.peek(&TokenKind::LParen) {
             self.next_kind()?;
             let first = self.partial()?;
             let mut parts = partials::RecordPartials::single_charged(first, self.budget)?;
             while !self.peek(&TokenKind::RParen) {
                 let partial = self.partial()?;
-                parts.push_charged(partial, self.budget)?;
+                self.budget
+                    .push_vec(&mut parts.0, partial, "step_parse_record_partials")?;
             }
             self.next_kind()?;
             let mut canonical_names = Vec::new();
             for part in &parts {
-                push_charged(
-                    self.budget,
+                self.budget.push_vec(
                     &mut canonical_names,
                     part.name.as_str(),
                     "step_parse_canonical_partial_names",
@@ -1404,17 +1292,12 @@ impl Parser<'_, '_, '_> {
                 .windows(2)
                 .all(|window| window[0].name < window[1].name)
             {
-                let message = format_parser_text(
-                    self.budget,
-                    "step_parse_complex_partial_diagnostic_text",
-                    format_args!(
+                let message = self.budget.format_retained(format_args!(
                         "complex partial records are not alphabetical: observed ({}), expected ({})",
                         PartialNameList(&parts),
                         SortedPartialNameList(&canonical_names),
-                    ),
-                )?;
-                push_charged(
-                    self.budget,
+                    ), "step_parse_complex_partial_diagnostic_text")?;
+                self.budget.push_vec(
                     &mut self.diagnostics,
                     ParseDiagnostic {
                         offset: start,
@@ -1429,7 +1312,8 @@ impl Parser<'_, '_, '_> {
             let first = self.partial()?;
             partials::RecordPartials::single_charged(first, self.budget)?
         };
-        self.charge_retained(partials.compact_storage()?, "step_parse_record_storage")?;
+        self.budget
+            .charge_retained(partials.compact_storage()?, "step_parse_record_storage")?;
         self.punct(&TokenKind::Semicolon)?;
         Ok((
             id,
@@ -1442,19 +1326,17 @@ impl Parser<'_, '_, '_> {
 
     fn partial(&mut self) -> Result<PartialRecord, ParseError> {
         let name = self.take_name()?;
-        self.charge_string_storage(&name, "step_parse_name_storage")?;
+        self.budget
+            .charge_retained(u64_from_index(name.capacity()), "step_parse_name_storage")?;
         let parameters = self.parameters()?;
-        self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
+        self.charge_vec_storage(&parameters, "step_parse_collection_storage")?;
         Ok(PartialRecord { name, parameters })
     }
 
     fn parameters(&mut self) -> Result<Vec<Value>, ParseError> {
         const MAX_VALUE_DEPTH: usize = 256;
         let budget = self.budget;
-        let _nested = budget
-            .map(|ctx| ctx.enter_nested("step_parse_parameter_nesting"))
-            .transpose()
-            .map_err(ParseError::Resource)?;
+        let _nested = budget.enter_nested("step_parse_parameter_nesting")?;
         if self.depth >= recursion_cap(budget, MAX_VALUE_DEPTH) {
             return self.err("parameter nesting exceeds 256 levels");
         }
@@ -1476,7 +1358,8 @@ impl Parser<'_, '_, '_> {
         }
         loop {
             let value = self.value()?;
-            push_charged(self.budget, &mut values, value, "step_parse_parameter")?;
+            self.budget
+                .push_vec(&mut values, value, "step_parse_parameter")?;
             if self.peek(&TokenKind::Comma) {
                 self.next_kind()?;
             } else {
@@ -1520,21 +1403,20 @@ impl Parser<'_, '_, '_> {
                 TokenKind::Omitted => Value::Omitted,
                 TokenKind::Derived => Value::Derived,
                 TokenKind::Name(name) => self.typed_parameter(name)?,
-                TokenKind::UserName(name) => self.typed_parameter(format_parser_text(
-                    self.budget,
-                    "step_parse_user_name_prefix",
-                    format_args!("!{name}"),
-                )?)?,
+                TokenKind::UserName(name) => self.typed_parameter(
+                    self.budget
+                        .format_retained(format_args!("!{name}"), "step_parse_user_name_prefix")?,
+                )?,
                 _ => return self.err("expected parameter value"),
             }
         };
-        let value_bytes =
-            if self.budget.is_some() && matches!(&value, Value::Binary(_) | Value::Resource(_)) {
-                u64_from_index(size_of::<Value>())
-            } else {
-                value_node_storage_bytes(&value)?
-            };
-        self.charge_retained(value_bytes, "step_parse_value_storage")?;
+        let value_bytes = if matches!(&value, Value::Binary(_) | Value::Resource(_)) {
+            u64_from_index(size_of::<Value>())
+        } else {
+            value_node_storage_bytes(&value)?
+        };
+        self.budget
+            .charge_retained(value_bytes, "step_parse_value_storage")?;
         Ok(value)
     }
 
@@ -1550,11 +1432,9 @@ impl Parser<'_, '_, '_> {
     fn take_name(&mut self) -> Result<String, ParseError> {
         match self.next_kind()? {
             TokenKind::Name(name) => Ok(name),
-            TokenKind::UserName(name) => Ok(format_parser_text(
-                self.budget,
-                "step_parse_user_name_prefix",
-                format_args!("!{name}"),
-            )?),
+            TokenKind::UserName(name) => Ok(self
+                .budget
+                .format_retained(format_args!("!{name}"), "step_parse_user_name_prefix")?),
             _ => self.err("expected name"),
         }
     }
@@ -1563,10 +1443,9 @@ impl Parser<'_, '_, '_> {
         if actual == expected {
             Ok(())
         } else {
-            let message = format_parser_text(
-                self.budget,
-                "step_parse_expected_name_error",
+            let message = self.budget.format_retained(
                 format_args!("expected {expected}, found {actual}"),
+                "step_parse_expected_name_error",
             )?;
             Err(ParseError::Syntax {
                 offset: self.current_offset(),
@@ -1601,51 +1480,20 @@ impl Parser<'_, '_, '_> {
     fn lex_next(&mut self) -> Result<Option<Token>, ParseError> {
         let token = self.lexer.next_token()?;
         if token.is_some() {
-            self.charge_work(1, "step_lex_token")?;
+            self.budget.charge_work(1, "step_lex_token")?;
         }
         Ok(token)
-    }
-    fn charge_work(&self, units: u64, operation: &'static str) -> Result<(), ParseError> {
-        self.budget
-            .map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
-            .map_err(ParseError::Resource)
-    }
-    fn charge_entities(&self, count: u64, operation: &'static str) -> Result<(), ParseError> {
-        self.budget
-            .map_or(Ok(()), |ctx| ctx.charge_entities(count, operation))
-            .map_err(ParseError::Resource)
-    }
-    fn charge_retained(&self, bytes: u64, operation: &'static str) -> Result<(), ParseError> {
-        self.budget
-            .map_or(Ok(()), |ctx| ctx.charge_retained(bytes, operation))
-            .map_err(ParseError::Resource)
-    }
-    fn charge_value_vec_storage(
-        &self,
-        values: &Vec<Value>,
-        operation: &'static str,
-    ) -> Result<(), ParseError> {
-        self.charge_retained(
-            allocation_bytes(values.capacity(), size_of::<Value>())?,
-            operation,
-        )
-    }
-    fn charge_string_storage(
-        &self,
-        value: &String,
-        operation: &'static str,
-    ) -> Result<(), ParseError> {
-        self.charge_retained(u64_from_index(value.capacity()), operation)
     }
     fn charge_vec_storage<T>(
         &self,
         values: &Vec<T>,
         operation: &'static str,
     ) -> Result<(), ParseError> {
-        self.charge_retained(
+        self.budget.charge_retained(
             allocation_bytes(values.capacity(), size_of::<T>())?,
             operation,
-        )
+        )?;
+        Ok(())
     }
     fn current_offset(&self) -> usize {
         self.current
@@ -1756,30 +1604,9 @@ fn invalid<T>(message: &'static str) -> Result<T, ValidationError> {
     Err(ValidationError::Invalid(message))
 }
 
-fn format_parser_text(
-    budget: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-    arguments: fmt::Arguments<'_>,
-) -> Result<String, CodecError> {
-    match budget {
-        Some(ctx) => ctx.format_retained(arguments, operation),
-        None => Ok(arguments.to_string()),
-    }
-}
-
-fn push_validated<T>(
-    budget: Option<&DecodeContext<'_>>,
-    values: &mut Vec<T>,
-    value: T,
-    operation: &'static str,
-) -> Result<(), ValidationError> {
-    push_charged(budget, values, value, operation)
-        .map_err(|error| ValidationError::Resource(error.into_codec_error()))
-}
-
 fn validate_header(
     header: &[HeaderRecord],
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<(HeaderAdmission, Option<ParseDiagnostic>), ValidationError> {
     const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
     let [description_record, file_name_record, schema_record, ..] = header else {
@@ -1820,14 +1647,10 @@ fn validate_header(
         Some(ParseDiagnostic {
             offset: description_record.offset,
             kind: ParseDiagnosticKind::ImplementationLevelUnverified,
-            message: format_parser_text(
-                budget,
-                "step_implementation_level_diagnostic_text",
-                format_args!(
+            message: budget.format_retained(format_args!(
                     "FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar",
                     declaration.text()
-                ),
-            )?,
+                ), "step_implementation_level_diagnostic_text")?,
         })
     } else {
         None
@@ -1909,13 +1732,11 @@ fn validate_header(
             return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
         let trimmed = identifier.trim();
-        if let Some(ctx) = budget {
-            ctx.charge_retained(
-                u64_from_index(trimmed.len()),
-                "step_schema_identifier_normalized",
-            )?;
-            ctx.charge_collection_items(1, "step_schema_identifier_names")?;
-        }
+        budget.charge_retained(
+            u64_from_index(trimmed.len()),
+            "step_schema_identifier_normalized",
+        )?;
+        budget.charge_collection_items(1, "step_schema_identifier_names")?;
         let normalized = trimmed.to_ascii_uppercase();
         if !normalized_identifiers.insert(normalized) {
             return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
@@ -1923,7 +1744,9 @@ fn validate_header(
         let Some(identifier) = AdmittedSchemaIdentifier::admit(identifier) else {
             return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
-        push_validated(budget, &mut admitted, identifier, "step_schema_identifiers")?;
+        budget
+            .push_vec(&mut admitted, identifier, "step_schema_identifiers")
+            .map_err(ValidationError::Resource)?;
     }
     Ok((
         HeaderAdmission {
@@ -1939,7 +1762,7 @@ fn validate_header(
 fn schema_object_identifier_diagnostics<'a>(
     admitted: &'a [AdmittedSchemaIdentifier],
     offset: usize,
-    budget: Option<&'a DecodeContext<'_>>,
+    budget: &'a DecodeContext<'_>,
 ) -> impl Iterator<Item = Result<ParseDiagnostic, CodecError>> + 'a {
     admitted
         .iter()
@@ -1947,13 +1770,9 @@ fn schema_object_identifier_diagnostics<'a>(
             AdmittedSchemaIdentifier::Valid { .. } => None,
             AdmittedSchemaIdentifier::ObjectIdentifierOutOfRange {
                 name, component, ..
-            } => Some(format_parser_text(
-                budget,
-                "step_schema_oid_diagnostic_text",
-                format_args!(
+            } => Some(budget.format_retained(format_args!(
                     "FILE_SCHEMA identifier {name} has an out-of-range object identifier component {component}; the object identifier is not admitted"
-                ),
-            )
+                ), "step_schema_oid_diagnostic_text")
             .map(|message| ParseDiagnostic {
                 offset,
                 kind: ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange,
@@ -1971,7 +1790,7 @@ fn validate_header_sections(
     implementation_level: ImplementationLevel,
     header: &[HeaderRecord],
     schema_identifiers: &[String],
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<Vec<HeaderDataReferences>, ValidationError> {
     let has = |name: &str| header.iter().any(|record| record.name == name);
     if implementation_level == ImplementationLevel::LegacyEdition1 && has("FILE_POPULATION") {
@@ -2024,12 +1843,13 @@ fn validate_header_sections(
                     budget,
                 )
                 .map_err(|error| error.with_message("FILE_POPULATION has invalid parameters"))?;
-                push_validated(
-                    budget,
-                    &mut references,
-                    HeaderDataReferences::FilePopulation(sections),
-                    "step_header_data_references",
-                )?;
+                budget
+                    .push_vec(
+                        &mut references,
+                        HeaderDataReferences::FilePopulation(sections),
+                        "step_header_data_references",
+                    )
+                    .map_err(ValidationError::Resource)?;
             }
             "SECTION_LANGUAGE" => {
                 let section =
@@ -2037,20 +1857,15 @@ fn validate_header_sections(
                         .map_err(|error| {
                             error.with_message("SECTION_LANGUAGE has invalid parameters")
                         })?;
-                if let Some(ctx) = budget {
-                    ctx.charge_collection_items(1, "step_section_language_names")?;
-                    ctx.charge_retained(
-                        u64_from_index(section.as_ref().map_or(0, String::len)),
-                        "step_section_language_name_copy",
-                    )?;
-                }
+                budget.charge_collection_items(1, "step_section_language_names")?;
+                budget.charge_retained(
+                    u64_from_index(section.as_ref().map_or(0, String::len)),
+                    "step_section_language_name_copy",
+                )?;
                 let section_copy = section
                     .as_deref()
-                    .map(|value| match budget {
-                        Some(ctx) => {
-                            ctx.copy_retained_text(value, "step_section_language_name_copy")
-                        }
-                        None => Ok::<String, CodecError>(value.to_owned()),
+                    .map(|value| {
+                        budget.copy_retained_text(value, "step_section_language_name_copy")
                     })
                     .transpose()
                     .map_err(ValidationError::Resource)?;
@@ -2058,12 +1873,13 @@ fn validate_header_sections(
                     return invalid("HEADER contains duplicate SECTION_LANGUAGE section");
                 }
                 if let Some(section) = section {
-                    push_validated(
-                        budget,
-                        &mut references,
-                        HeaderDataReferences::Section(section),
-                        "step_header_data_references",
-                    )?;
+                    budget
+                        .push_vec(
+                            &mut references,
+                            HeaderDataReferences::Section(section),
+                            "step_header_data_references",
+                        )
+                        .map_err(ValidationError::Resource)?;
                 }
             }
             "SECTION_CONTEXT" => {
@@ -2072,33 +1888,27 @@ fn validate_header_sections(
                         .map_err(|error| {
                             error.with_message("SECTION_CONTEXT has invalid parameters")
                         })?;
-                if let Some(ctx) = budget {
-                    ctx.charge_collection_items(1, "step_section_context_names")?;
-                    ctx.charge_retained(
-                        u64_from_index(section.as_ref().map_or(0, String::len)),
-                        "step_section_context_name_copy",
-                    )?;
-                }
+                budget.charge_collection_items(1, "step_section_context_names")?;
+                budget.charge_retained(
+                    u64_from_index(section.as_ref().map_or(0, String::len)),
+                    "step_section_context_name_copy",
+                )?;
                 let section_copy = section
                     .as_deref()
-                    .map(|value| match budget {
-                        Some(ctx) => {
-                            ctx.copy_retained_text(value, "step_section_context_name_copy")
-                        }
-                        None => Ok::<String, CodecError>(value.to_owned()),
-                    })
+                    .map(|value| budget.copy_retained_text(value, "step_section_context_name_copy"))
                     .transpose()
                     .map_err(ValidationError::Resource)?;
                 if !context_sections.insert(section_copy) {
                     return invalid("HEADER contains duplicate SECTION_CONTEXT section");
                 }
                 if let Some(section) = section {
-                    push_validated(
-                        budget,
-                        &mut references,
-                        HeaderDataReferences::Section(section),
-                        "step_header_data_references",
-                    )?;
+                    budget
+                        .push_vec(
+                            &mut references,
+                            HeaderDataReferences::Section(section),
+                            "step_header_data_references",
+                        )
+                        .map_err(ValidationError::Resource)?;
                 }
             }
             _ => return invalid("HEADER contains an unsupported entity"),
@@ -2110,7 +1920,7 @@ fn validate_header_sections(
 fn valid_schema_population(
     parameters: &[Value],
     implementation_level: ImplementationLevel,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let [Value::List(identifications)] = parameters else {
         return Ok(false);
@@ -2139,7 +1949,7 @@ fn admit_file_population(
     parameters: &[Value],
     schema_identifiers: &[String],
     implementation_level: ImplementationLevel,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<BTreeSet<String>, ValidationError> {
     let [Value::String(schema), Value::String(determination), governed_sections] = parameters
     else {
@@ -2162,9 +1972,7 @@ fn admit_file_population(
                 let Some(section) = decoded_string(section, implementation_level, budget)? else {
                     return invalid("FILE_POPULATION has invalid parameters");
                 };
-                if let Some(ctx) = budget {
-                    ctx.charge_collection_items(1, "step_file_population_sections")?;
-                }
+                budget.charge_collection_items(1, "step_file_population_sections")?;
                 if !names.insert(section) {
                     return invalid("FILE_POPULATION has invalid parameters");
                 }
@@ -2178,7 +1986,7 @@ fn admit_file_population(
 fn valid_section_language(
     parameters: &[Value],
     implementation_level: ImplementationLevel,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<Option<String>, ValidationError> {
     let [section, language] = parameters else {
         return invalid("SECTION_LANGUAGE has invalid parameters");
@@ -2195,7 +2003,7 @@ fn valid_section_language(
 fn valid_section_context(
     parameters: &[Value],
     implementation_level: ImplementationLevel,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<Option<String>, ValidationError> {
     let [section, Value::List(contexts)] = parameters else {
         return invalid("SECTION_CONTEXT has invalid parameters");
@@ -2214,7 +2022,7 @@ fn valid_section_context(
 fn valid_optional_section_name(
     value: &Value,
     implementation_level: ImplementationLevel,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<Option<String>, ValidationError> {
     match value {
         Value::Omitted => Ok(None),
@@ -2227,7 +2035,7 @@ fn valid_optional_section_name(
 fn is_decodable_string(
     value: &Value,
     implementation_level: ImplementationLevel,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     Ok(decoded_string(value, implementation_level, budget)?.is_some())
 }
@@ -2235,7 +2043,7 @@ fn is_decodable_string(
 fn is_decodable_string_list(
     value: Option<&Value>,
     implementation_level: ImplementationLevel,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let Some(Value::List(values)) = value else {
         return Ok(false);
@@ -2254,7 +2062,7 @@ fn is_decodable_string_list(
 fn is_decodable_string_or_omitted(
     value: &Value,
     implementation_level: ImplementationLevel,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     if matches!(value, Value::Omitted) {
         return Ok(true);
@@ -2266,7 +2074,7 @@ fn string_within_limit(
     value: &Value,
     implementation_level: ImplementationLevel,
     limit: usize,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     Ok(decoded_string(value, implementation_level, budget)?
         .is_some_and(|value| value.chars().count() <= limit))
@@ -2276,7 +2084,7 @@ fn string_list_within_limit(
     value: Option<&Value>,
     implementation_level: ImplementationLevel,
     limit: usize,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let Some(Value::List(values)) = value else {
         return Ok(false);
@@ -2296,7 +2104,7 @@ fn string_or_omitted_within_limit(
     value: &Value,
     implementation_level: ImplementationLevel,
     limit: usize,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     if matches!(value, Value::Omitted) {
         return Ok(true);
@@ -2307,7 +2115,7 @@ fn string_or_omitted_within_limit(
 fn valid_optional_timestamp(
     value: &Value,
     implementation_level: ImplementationLevel,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     match value {
         Value::Omitted => Ok(true),
@@ -2406,7 +2214,7 @@ fn parse_ascii_digits(bytes: &[u8]) -> usize {
 fn valid_optional_base64(
     value: &Value,
     implementation_level: ImplementationLevel,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     match value {
         Value::Omitted => Ok(true),
@@ -2451,7 +2259,7 @@ fn valid_base64_text(bytes: &[u8]) -> bool {
 fn decoded_string(
     value: &Value,
     implementation_level: ImplementationLevel,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
     let Value::String(bytes) = value else {
         return Ok(None);
@@ -2462,13 +2270,9 @@ fn decoded_string(
 fn decoded_bytes(
     bytes: &[u8],
     implementation_level: ImplementationLevel,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
-    let result = match budget {
-        Some(ctx) => crate::strings::decode_with_context(bytes, implementation_level, ctx),
-        None => crate::strings::decode_with_level(bytes, implementation_level)
-            .map_err(crate::strings::StringDecodeFailure::Invalid),
-    };
+    let result = crate::strings::decode_with_context(bytes, implementation_level, budget);
     match result {
         Ok(value) => Ok(Some(value)),
         Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(None),
@@ -2479,12 +2283,10 @@ fn decoded_bytes(
 fn schema_identifier_matches(
     schema_identifiers: &[String],
     schema_name: &str,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let trimmed = schema_name.trim();
-    if let Some(ctx) = budget {
-        ctx.charge_retained(u64_from_index(trimmed.len()), "step_schema_name_matching")?;
-    }
+    budget.charge_retained(u64_from_index(trimmed.len()), "step_schema_name_matching")?;
     let schema_name = trimmed.to_ascii_uppercase();
     Ok(schema_identifiers.iter().any(|identifier| {
         let identifier = identifier.trim();
@@ -2522,7 +2324,7 @@ fn valid_data_parameters(
     schema_identifiers: &[String],
     implementation_level: ImplementationLevel,
     section_names: &mut BTreeSet<String>,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<(), ValidationError> {
     let [Value::String(section_name), Value::List(schema)] = parameters else {
         return invalid("DATA section parameters must contain a name and one schema");
@@ -2533,9 +2335,7 @@ fn valid_data_parameters(
     let Some(section_name) = decoded_bytes(section_name, implementation_level, budget)? else {
         return invalid("DATA section parameters contain an invalid string");
     };
-    if let Some(ctx) = budget {
-        ctx.charge_collection_items(1, "step_data_section_names")?;
-    }
+    budget.charge_collection_items(1, "step_data_section_names")?;
     if !section_names.insert(section_name) {
         return invalid("DATA section names must be unique");
     }
@@ -2553,16 +2353,13 @@ fn valid_data_parameters(
 /// The admitted `FILE_SCHEMA` identifiers, for schema-name matching.
 fn schema_names_for_matching(
     admitted: &[AdmittedSchemaIdentifier],
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<Vec<String>, ParseError> {
     let mut names = Vec::new();
     for identifier in admitted {
         let source = identifier.text();
-        if let Some(ctx) = budget {
-            ctx.charge_retained(u64_from_index(source.len()), "step_schema_matching_name")?;
-        }
-        push_charged(
-            budget,
+        budget.charge_retained(u64_from_index(source.len()), "step_schema_matching_name")?;
+        budget.push_vec(
             &mut names,
             source.to_ascii_uppercase(),
             "step_schema_matching_names",
@@ -2638,15 +2435,13 @@ impl From<CodecError> for ResolveError {
     }
 }
 
-fn collection_cap(budget: Option<&DecodeContext<'_>>, format_cap: usize) -> usize {
-    budget
-        .and_then(|ctx| usize::try_from(ctx.policy().limits.max_collection_items).ok())
+fn collection_cap(budget: &DecodeContext<'_>, format_cap: usize) -> usize {
+    usize::try_from(budget.policy().limits.max_collection_items)
         .map_or(format_cap, |policy| policy.min(format_cap))
 }
 
-fn recursion_cap(budget: Option<&DecodeContext<'_>>, format_cap: usize) -> usize {
-    budget
-        .and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
+fn recursion_cap(budget: &DecodeContext<'_>, format_cap: usize) -> usize {
+    usize::try_from(budget.policy().limits.max_recursion_depth)
         .map_or(format_cap, |policy| policy.min(format_cap))
 }
 
@@ -2654,17 +2449,14 @@ struct AnchorResolver<'a, 'ctx, 'arena> {
     anchors: &'a BTreeMap<String, Value>,
     memo: BTreeMap<&'a str, (Value, usize)>,
     remaining_nodes: usize,
-    budget: Option<&'ctx DecodeContext<'arena>>,
+    budget: &'ctx DecodeContext<'arena>,
 }
 
 impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     const MAX_EXPANDED_NODES: usize = 1_000_000;
     const MAX_REFERENCE_DEPTH: usize = 256;
 
-    fn new(
-        anchors: &'a BTreeMap<String, Value>,
-        budget: Option<&'ctx DecodeContext<'arena>>,
-    ) -> Self {
+    fn new(anchors: &'a BTreeMap<String, Value>, budget: &'ctx DecodeContext<'arena>) -> Self {
         Self {
             anchors,
             memo: BTreeMap::new(),
@@ -2687,28 +2479,22 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
 
     fn charge_nodes(&self, count: usize) -> Result<(), ResolveError> {
         let count = u64_from_index(count);
-        if let Some(budget) = self.budget {
-            budget
-                .charge_collection_items(count, "step_anchor_materialization")
-                .map_err(ResolveError::Resource)?;
-            budget
-                .charge_work(count, "step_anchor_materialization")
-                .map_err(ResolveError::Resource)?;
-        }
+        self.budget
+            .charge_collection_items(count, "step_anchor_materialization")
+            .map_err(ResolveError::Resource)?;
+        self.budget
+            .charge_work(count, "step_anchor_materialization")
+            .map_err(ResolveError::Resource)?;
         Ok(())
     }
 
     fn charge_storage(&self, value: &Value) -> Result<(), ResolveError> {
-        self.charge_storage_bytes(value_storage_bytes(value)?)
-    }
-
-    fn charge_storage_bytes(&self, bytes: u64) -> Result<(), ResolveError> {
-        if let Some(budget) = self.budget {
-            budget
-                .charge_retained(bytes, "step_anchor_materialization_storage")
-                .map_err(ResolveError::Resource)?;
-        }
-        Ok(())
+        self.budget
+            .charge_retained(
+                value_storage_bytes(value)?,
+                "step_anchor_materialization_storage",
+            )
+            .map_err(ResolveError::Resource)
     }
 
     fn resolve(
@@ -2720,8 +2506,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     ) -> Result<(Value, usize, usize), ResolveError> {
         let _nested = self
             .budget
-            .map(|ctx| ctx.enter_nested("step_anchor_reference"))
-            .transpose()
+            .enter_nested("step_anchor_reference")
             .map_err(ResolveError::Resource)?;
         if depth >= recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH) {
             return Err("expanded anchor graph exceeds its node or depth limit".into());
@@ -2743,32 +2528,32 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     ));
                 }
                 if stack.contains(&name) {
-                    let message = format_parser_text(
-                        self.budget,
-                        "step_cyclic_anchor_error_text",
-                        format_args!("cyclic anchor binding <{name}>"),
-                    )
-                    .map_err(ResolveError::Resource)?;
+                    let message = self
+                        .budget
+                        .format_retained(
+                            format_args!("cyclic anchor binding <{name}>"),
+                            "step_cyclic_anchor_error_text",
+                        )
+                        .map_err(ResolveError::Resource)?;
                     return Err(message.into());
                 }
                 value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget)?;
-                if let Some(context) = self.budget {
-                    context
-                        .charge_collection_items(1, "step_anchor_reference_stack")
+                self.budget
+                    .charge_collection_items(1, "step_anchor_reference_stack")
+                    .map_err(ResolveError::Resource)?;
+                if stack.len() == stack.capacity() {
+                    self.budget
+                        .charge_retained(
+                            u64_from_index(size_of::<&str>()),
+                            "step_anchor_reference_stack_storage",
+                        )
                         .map_err(ResolveError::Resource)?;
-                    if stack.len() == stack.capacity() {
-                        context
-                            .charge_retained(
-                                u64_from_index(size_of::<&str>()),
-                                "step_anchor_reference_stack_storage",
-                            )
-                            .map_err(ResolveError::Resource)?;
-                    }
                 }
                 stack.try_reserve(1).map_err(|_| {
-                    ResolveError::Resource(refuse_index(
-                        self.budget,
+                    ResolveError::Resource(self.budget.refuse_codec_limit(
                         "step_anchor_reference_stack_storage",
+                        0,
+                        1,
                     ))
                 })?;
                 stack.push(name);
@@ -2780,17 +2565,15 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 }
                 self.charge_nodes(nodes)?;
                 self.charge_storage(&value)?;
-                if let Some(context) = self.budget {
-                    context
-                        .charge_collection_items(1, "step_anchor_memo_entry")
-                        .map_err(ResolveError::Resource)?;
-                    context
-                        .charge_retained(
-                            btree_node_storage::<&str, (Value, usize)>()?,
-                            "step_anchor_memo_storage",
-                        )
-                        .map_err(ResolveError::Resource)?;
-                }
+                self.budget
+                    .charge_collection_items(1, "step_anchor_memo_entry")
+                    .map_err(ResolveError::Resource)?;
+                self.budget
+                    .charge_retained(
+                        btree_node_storage::<&str, (Value, usize)>()?,
+                        "step_anchor_memo_storage",
+                    )
+                    .map_err(ResolveError::Resource)?;
                 self.memo.insert(
                     name,
                     (
@@ -2805,46 +2588,20 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         match value {
             Value::List(values) => {
                 self.charge_nodes(1)?;
-                if let Some(context) = self.budget {
-                    context
-                        .charge_collection_items(
-                            u64_from_index(values.len()),
-                            "step_anchor_list_items",
-                        )
-                        .map_err(ResolveError::Resource)?;
-                }
-                self.charge_storage_bytes(
-                    u64_from_index(size_of::<Value>())
-                        .checked_add(allocation_bytes(values.len(), size_of::<Value>())?)
-                        .ok_or("anchor list storage exceeds u64")?,
-                )?;
+                self.budget
+                    .charge_retained(
+                        u64_from_index(size_of::<Value>())
+                            .checked_add(allocation_bytes(values.len(), size_of::<Value>())?)
+                            .ok_or("anchor list storage exceeds u64")?,
+                        "step_anchor_materialization_storage",
+                    )
+                    .map_err(ResolveError::Resource)?;
                 let mut nodes = 1usize;
                 let mut expanded_nodes = 0usize;
-                let mut resolved = Vec::new();
-                resolved.try_reserve_exact(values.len()).map_err(|_| {
-                    ResolveError::Resource(match self.budget {
-                        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
-                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                                cadmpeg_core::decode::ResourceDimension::Codec(
-                                    "step_anchor_list_items",
-                                ),
-                                0,
-                                1,
-                                "step_anchor_list_items",
-                            ),
-                        ),
-                        None => cadmpeg_core::CodecError::ResourceLimit(
-                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                                cadmpeg_core::decode::ResourceDimension::Codec(
-                                    "step_anchor_list_items",
-                                ),
-                                0,
-                                1,
-                                "step_anchor_list_items",
-                            ),
-                        ),
-                    })
-                })?;
+                let mut resolved = self
+                    .budget
+                    .collection_vec(values.len(), "step_anchor_list_items")
+                    .map_err(ResolveError::Resource)?;
                 for value in values {
                     let remaining = budget
                         .checked_sub(expanded_nodes)
@@ -2865,17 +2622,18 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 self.charge_nodes(1)?;
                 let (value, nodes, expanded_nodes) =
                     self.resolve(value, stack, budget, depth + 1)?;
-                self.charge_storage_bytes(
-                    allocation_bytes(2, size_of::<Value>())?
-                        .checked_add(u64_from_index(name.len()))
-                        .ok_or("anchor typed storage exceeds u64")?,
-                )?;
+                self.budget
+                    .charge_retained(
+                        allocation_bytes(2, size_of::<Value>())?
+                            .checked_add(u64_from_index(name.len()))
+                            .ok_or("anchor typed storage exceeds u64")?,
+                        "step_anchor_materialization_storage",
+                    )
+                    .map_err(ResolveError::Resource)?;
                 let value = Value::Typed(
-                    match self.budget {
-                        Some(ctx) => ctx.copy_retained_text(name, "step_anchor_typed_name_copy"),
-                        None => Ok::<String, CodecError>(name.to_owned()),
-                    }
-                    .map_err(ResolveError::Resource)?,
+                    self.budget
+                        .copy_retained_text(name, "step_anchor_typed_name_copy")
+                        .map_err(ResolveError::Resource)?,
                     Box::new(value),
                 );
                 Ok((value, nodes + 1, expanded_nodes))
@@ -2899,7 +2657,7 @@ struct ReferenceResolver<'a, 'ctx, 'arena> {
     anchors: &'a BTreeMap<String, Value>,
     stack: Vec<ReferenceName>,
     remaining_nodes: usize,
-    budget: Option<&'ctx DecodeContext<'arena>>,
+    budget: &'ctx DecodeContext<'arena>,
 }
 
 impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
@@ -2909,22 +2667,20 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     fn new(
         references: &'a [ReferenceEntry],
         anchors: &'a BTreeMap<String, Value>,
-        budget: Option<&'ctx DecodeContext<'arena>>,
+        budget: &'ctx DecodeContext<'arena>,
     ) -> Result<Self, ResolveError> {
-        if let Some(context) = budget {
-            context
-                .charge_collection_items(
-                    u64_from_index(references.len()),
-                    "step_reference_binding_items",
-                )
-                .map_err(ResolveError::Resource)?;
-            let bytes = btree_node_storage::<ReferenceName, &str>()?
-                .checked_mul(u64_from_index(references.len()))
-                .ok_or("reference binding storage exceeds u64")?;
-            context
-                .charge_retained(bytes, "step_reference_binding_storage")
-                .map_err(ResolveError::Resource)?;
-        }
+        budget
+            .charge_collection_items(
+                u64_from_index(references.len()),
+                "step_reference_binding_items",
+            )
+            .map_err(ResolveError::Resource)?;
+        let bytes = btree_node_storage::<ReferenceName, &str>()?
+            .checked_mul(u64_from_index(references.len()))
+            .ok_or("reference binding storage exceeds u64")?;
+        budget
+            .charge_retained(bytes, "step_reference_binding_storage")
+            .map_err(ResolveError::Resource)?;
         Ok(Self {
             bindings: references
                 .iter()
@@ -2938,17 +2694,15 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     }
 
     fn admit_copy(&self, nodes: u64, bytes: u64) -> Result<(), ResolveError> {
-        if let Some(context) = self.budget {
-            context
-                .charge_collection_items(nodes, "step_reference_materialization")
-                .map_err(ResolveError::Resource)?;
-            context
-                .charge_work(nodes, "step_reference_materialization")
-                .map_err(ResolveError::Resource)?;
-            context
-                .charge_retained(bytes, "step_reference_materialization_storage")
-                .map_err(ResolveError::Resource)?;
-        }
+        self.budget
+            .charge_collection_items(nodes, "step_reference_materialization")
+            .map_err(ResolveError::Resource)?;
+        self.budget
+            .charge_work(nodes, "step_reference_materialization")
+            .map_err(ResolveError::Resource)?;
+        self.budget
+            .charge_retained(bytes, "step_reference_materialization_storage")
+            .map_err(ResolveError::Resource)?;
         Ok(())
     }
 
@@ -2961,8 +2715,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     fn resolve_value(&mut self, value: &Value, depth: usize) -> Result<Value, ResolveError> {
         let _nested = self
             .budget
-            .map(|ctx| ctx.enter_nested("step_reference_expansion"))
-            .transpose()
+            .enter_nested("step_reference_expansion")
             .map_err(ResolveError::Resource)?;
         if depth >= recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH) {
             return Err("REFERENCE expansion exceeds its depth limit".into());
@@ -2975,43 +2728,14 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 self.resolve_occurrence(ReferenceName::Value(*id), value, depth)
             }
             Value::List(values) => {
-                if let Some(context) = self.budget {
-                    context
-                        .charge_collection_items(
-                            u64_from_index(values.len()),
-                            "step_reference_list_items",
-                        )
-                        .map_err(ResolveError::Resource)?;
-                }
                 let bytes = u64_from_index(size_of::<Value>())
                     .checked_add(allocation_bytes(values.len(), size_of::<Value>())?)
                     .ok_or("reference list storage exceeds u64")?;
                 self.admit_copy(1, bytes)?;
-                let mut resolved = Vec::new();
-                resolved.try_reserve_exact(values.len()).map_err(|_| {
-                    ResolveError::Resource(match self.budget {
-                        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
-                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                                cadmpeg_core::decode::ResourceDimension::Codec(
-                                    "step_reference_list_items",
-                                ),
-                                0,
-                                1,
-                                "step_reference_list_items",
-                            ),
-                        ),
-                        None => cadmpeg_core::CodecError::ResourceLimit(
-                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                                cadmpeg_core::decode::ResourceDimension::Codec(
-                                    "step_reference_list_items",
-                                ),
-                                0,
-                                1,
-                                "step_reference_list_items",
-                            ),
-                        ),
-                    })
-                })?;
+                let mut resolved = self
+                    .budget
+                    .collection_vec(values.len(), "step_reference_list_items")
+                    .map_err(ResolveError::Resource)?;
                 for value in values {
                     resolved.push(self.resolve_value(value, depth + 1)?);
                 }
@@ -3024,11 +2748,9 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                     .ok_or("reference typed storage exceeds u64")?;
                 self.admit_copy(1, bytes)?;
                 Ok(Value::Typed(
-                    match self.budget {
-                        Some(ctx) => ctx.copy_retained_text(name, "step_reference_typed_name_copy"),
-                        None => Ok::<String, CodecError>(name.to_owned()),
-                    }
-                    .map_err(ResolveError::Resource)?,
+                    self.budget
+                        .copy_retained_text(name, "step_reference_typed_name_copy")
+                        .map_err(ResolveError::Resource)?,
                     Box::new(resolved),
                 ))
             }
@@ -3061,21 +2783,23 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 Ok(Value::Omitted)
             };
         };
-        if let Some(context) = self.budget {
-            context
-                .charge_collection_items(1, "step_reference_stack")
+        self.budget
+            .charge_collection_items(1, "step_reference_stack")
+            .map_err(ResolveError::Resource)?;
+        if self.stack.len() == self.stack.capacity() {
+            self.budget
+                .charge_retained(
+                    u64_from_index(size_of::<ReferenceName>()),
+                    "step_reference_stack_storage",
+                )
                 .map_err(ResolveError::Resource)?;
-            if self.stack.len() == self.stack.capacity() {
-                context
-                    .charge_retained(
-                        u64_from_index(size_of::<ReferenceName>()),
-                        "step_reference_stack_storage",
-                    )
-                    .map_err(ResolveError::Resource)?;
-            }
         }
         self.stack.try_reserve(1).map_err(|_| {
-            ResolveError::Resource(refuse_index(self.budget, "step_reference_stack_storage"))
+            ResolveError::Resource(self.budget.refuse_codec_limit(
+                "step_reference_stack_storage",
+                0,
+                1,
+            ))
         })?;
         self.stack.push(key);
         let resolved = self.resolve_value(anchor, depth + 1);
@@ -3108,41 +2832,35 @@ fn resolve_local_references(
     anchors: &mut [AnchorEntry],
     records: &mut BTreeMap<u64, RawRecord>,
     references: &[ReferenceEntry],
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<(), ResolveError> {
     if references.is_empty() {
         return Ok(());
     }
-    if let Some(context) = budget {
-        context
-            .charge_collection_items(
-                u64_from_index(anchors.len()),
-                "step_reference_anchor_copies",
-            )
-            .map_err(ResolveError::Resource)?;
-        let bytes = anchors.iter().try_fold(0u64, |total, anchor| {
-            total
-                .checked_add(u64_from_index(anchor.name.len()))
-                .ok_or_else(storage_overflow)?
-                .checked_add(value_storage_bytes(&anchor.value)?)
-                .ok_or_else(storage_overflow)?
-                .checked_add(btree_node_storage::<String, Value>()?)
-                .ok_or_else(storage_overflow)
-        })?;
-        context
-            .charge_retained(bytes, "step_reference_anchor_copy_storage")
-            .map_err(ResolveError::Resource)?;
-    }
+    budget
+        .charge_collection_items(
+            u64_from_index(anchors.len()),
+            "step_reference_anchor_copies",
+        )
+        .map_err(ResolveError::Resource)?;
+    let bytes = anchors.iter().try_fold(0u64, |total, anchor| {
+        total
+            .checked_add(u64_from_index(anchor.name.len()))
+            .ok_or_else(storage_overflow)?
+            .checked_add(value_storage_bytes(&anchor.value)?)
+            .ok_or_else(storage_overflow)?
+            .checked_add(btree_node_storage::<String, Value>()?)
+            .ok_or_else(storage_overflow)
+    })?;
+    budget
+        .charge_retained(bytes, "step_reference_anchor_copy_storage")
+        .map_err(ResolveError::Resource)?;
     let mut anchor_bindings = BTreeMap::new();
     for anchor in anchors.iter() {
         anchor_bindings.insert(
-            match budget {
-                Some(ctx) => {
-                    ctx.copy_retained_text(&anchor.name, "step_reference_anchor_name_copy")
-                }
-                None => Ok::<String, CodecError>(anchor.name.clone()),
-            }
-            .map_err(ResolveError::Resource)?,
+            budget
+                .copy_retained_text(&anchor.name, "step_reference_anchor_name_copy")
+                .map_err(ResolveError::Resource)?,
             try_clone_value(&anchor.value, budget, "step_reference_anchor_value_copy")
                 .map_err(ResolveError::Resource)?,
         );
@@ -3186,17 +2904,16 @@ fn is_uuid_fragment(fragment: &str) -> bool {
 fn value_node_count(
     value: &Value,
     limit: usize,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<usize, ResolveError> {
     fn visit(
         value: &Value,
         remaining: &mut usize,
-        budget: Option<&DecodeContext<'_>>,
+        budget: &DecodeContext<'_>,
         depth: usize,
     ) -> Result<(), ResolveError> {
         let _depth_guard = budget
-            .map(|ctx| ctx.enter_nested("step_value_node_count"))
-            .transpose()
+            .enter_nested("step_value_node_count")
             .map_err(ResolveError::Resource)?;
         if depth >= 256 {
             return Err("REFERENCE expansion exceeds 1000000 nodes".into());
@@ -3204,11 +2921,9 @@ fn value_node_count(
         *remaining = remaining
             .checked_sub(1)
             .ok_or("REFERENCE expansion exceeds 1000000 nodes")?;
-        if let Some(context) = budget {
-            context
-                .charge_work(1, "step_value_node_count")
-                .map_err(ResolveError::Resource)?;
-        }
+        budget
+            .charge_work(1, "step_value_node_count")
+            .map_err(ResolveError::Resource)?;
         match value {
             Value::List(values) => {
                 for child in values {
@@ -3230,25 +2945,25 @@ fn references(
     value: &Value,
     entity_out: &mut Vec<u64>,
     value_out: &mut Vec<u64>,
-    budget: Option<&DecodeContext<'_>>,
+    budget: &DecodeContext<'_>,
 ) -> Result<(), ParseError> {
     let mut pending = Vec::new();
-    push_charged(budget, &mut pending, value, "step_parse_reference_pending")?;
+    budget.push_vec(&mut pending, value, "step_parse_reference_pending")?;
     while let Some(value) = pending.pop() {
         match value {
             Value::Reference(id) => {
-                push_charged(budget, entity_out, *id, "step_parse_reference_ids")?;
+                budget.push_vec(entity_out, *id, "step_parse_reference_ids")?;
             }
             Value::ExternalReference(id) => {
-                push_charged(budget, value_out, *id, "step_parse_value_reference_ids")?;
+                budget.push_vec(value_out, *id, "step_parse_value_reference_ids")?;
             }
             Value::List(values) => {
                 for child in values.iter().rev() {
-                    push_charged(budget, &mut pending, child, "step_parse_reference_pending")?;
+                    budget.push_vec(&mut pending, child, "step_parse_reference_pending")?;
                 }
             }
             Value::Typed(_, value) => {
-                push_charged(budget, &mut pending, value, "step_parse_reference_pending")?;
+                budget.push_vec(&mut pending, value, "step_parse_reference_pending")?;
             }
             _ => {}
         }

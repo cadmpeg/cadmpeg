@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::attach::enlarge_feature_definition;
+use crate::native::attach::feature_projection::enlarge_feature_definition;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SurfaceExtension};
 
 #[test]

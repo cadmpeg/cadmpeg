@@ -119,10 +119,10 @@ fn inspect_summary_refuses_attribute_node_at_collection_limit() {
     let scan = one_preview_summary_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
+    policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     let error = crate::inspect::summarize(&ctx, &scan)
-        .expect_err("one attribute exceeds the three view and entry items");
+        .expect_err("one attribute exceeds the summary entry item");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -270,10 +270,10 @@ fn inspect_summary_refuses_combined_storage_note_slot_at_collection_limit() {
     let scan = invalid_legacy_storage_summary_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 8;
+    policy.limits.max_collection_items = 6;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     let error = crate::inspect::summarize(&ctx, &scan)
-        .expect_err("entry, views, attributes, storage and two scan notes use eight slots");
+        .expect_err("entry, attributes, storage and two scan notes use six slots");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -289,10 +289,10 @@ fn inspect_summary_refuses_storage_note_slot_at_collection_limit() {
     let scan = invalid_legacy_storage_summary_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
+    policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     let error = crate::inspect::summarize(&ctx, &scan)
-        .expect_err("the entry, views, and attributes use five slots");
+        .expect_err("the entry and attributes use three slots");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)

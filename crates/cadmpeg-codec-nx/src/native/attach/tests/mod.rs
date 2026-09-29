@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::attach::hole_body_projection;
-use crate::native::attach::simple_hole_operations;
+use crate::native::attach::feature_projection::hole_body_projection;
+use crate::native::attach::feature_projection::simple_hole_operations;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::scalar::Length;
@@ -12,7 +12,12 @@ fn hole_diameters_for_operations(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, Length> {
-    hole_body_projection(ir, operations, outputs)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    hole_body_projection(&ctx, ir, operations, outputs)
+        .expect("hole witness resource budget")
         .map(|projection| projection.diameters)
         .unwrap_or_default()
 }
@@ -28,7 +33,13 @@ fn simple_hole_diameters(
         .enumerate()
         .map(|(position, template)| (template.operation_label.as_str(), position))
         .collect::<BTreeMap<_, _>>();
-    let Some(operations) = simple_hole_operations(templates, groups, &operation_positions) else {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Some(operations) = simple_hole_operations(&ctx, templates, groups, &operation_positions)
+        .expect("simple hole operation resource budget")
+    else {
         return BTreeMap::new();
     };
     hole_diameters_for_operations(ir, &operations, outputs)
@@ -40,6 +51,7 @@ mod brep;
 mod bridge_curve;
 mod cone;
 mod configuration;
+mod configuration_attachment;
 mod copy_face;
 mod cylinder;
 mod delete_face;
@@ -48,12 +60,16 @@ mod extract_datum_axis;
 mod extract_face;
 mod fill_hole;
 mod holes_offsets_and_attributes;
+mod indexing;
 mod linked_face;
+mod material_assets;
 mod mirror_face;
 mod move_face;
 mod move_object;
 mod operation_sources;
 mod operations_and_holes;
+mod part_attributes;
+mod preview_assets;
 mod shell;
 mod sketches;
 mod sphere;
@@ -63,3 +79,4 @@ mod thread;
 mod through_curve_mesh;
 mod topology_optimization;
 mod trim_body;
+mod unknowns;

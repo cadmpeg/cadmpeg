@@ -27,7 +27,8 @@ fn drawing_owned_refuses(operation: &str) {
     use cadmpeg_core::CodecError;
 
     let (exchange, _) =
-        crate::parse::parse(DRAWING_OWNED_SOURCE).expect("valid drawing owned source");
+        crate::test_support::with_service_context(DRAWING_OWNED_SOURCE, crate::parse::parse_inner)
+            .expect("valid drawing owned source");
     let refused = (0..=16).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -35,7 +36,7 @@ fn drawing_owned_refuses(operation: &str) {
         let (ctx, _) = DecodeContext::from_root_bytes(DRAWING_OWNED_SOURCE, &arena, &policy)
             .expect("root fits selected policy");
         matches!(
-            super::drawing_owned_items(&exchange, Some(&ctx)),
+            super::drawing_owned_items(&exchange, &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == operation
@@ -65,14 +66,15 @@ fn drawing_reference_walk_refuses_depth_limit() {
     use cadmpeg_core::CodecError;
 
     let (exchange, _) =
-        crate::parse::parse(DRAWING_OWNED_SOURCE).expect("valid drawing owned source");
+        crate::test_support::with_service_context(DRAWING_OWNED_SOURCE, crate::parse::parse_inner)
+            .expect("valid drawing owned source");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(DRAWING_OWNED_SOURCE, &arena, &policy)
         .expect("root fits selected policy");
     assert!(matches!(
-        super::drawing_owned_items(&exchange, Some(&ctx)),
+        super::drawing_owned_items(&exchange, &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_drawing_reference_walk"
@@ -90,7 +92,8 @@ fn pending_occurrence_refuses_caller_collection_limit() {
     let id =
         cadmpeg_ir::ids::OccurrenceId::mint("step:data:occurrence#1").expect("valid occurrence id");
     let mut pending = std::collections::VecDeque::new();
-    let error = super::enqueue_occurrence(&mut pending, 1, id, Some(&ctx))
+    let error = ctx
+        .push_back(&mut pending, (1, id), "step_pending_occurrence")
         .expect_err("one pending occurrence exceeds zero collection items");
     assert!(matches!(
         error,
@@ -107,7 +110,9 @@ fn product_collection_refuses_source(source: &[u8], operation: &str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("valid product exchange");
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid product exchange");
     let refused = (0..=1024).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -331,7 +336,7 @@ fn product_typed_claims_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits collection policy");
     assert!(matches!(
-        super::claim_product_typed(&mut std::collections::HashSet::new(), 1, Some(&ctx)),
+        ctx.insert_hash_set(&mut std::collections::HashSet::new(), 1, "step_product_typed_claims").map(|_| ()),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_product_typed_claims"
@@ -343,8 +348,11 @@ fn product_string_text_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, diagnostics) =
-        crate::parse::parse(PRODUCT_STRING_LIMIT_SOURCE).expect("valid product exchange");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(
+        PRODUCT_STRING_LIMIT_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid product exchange");
     let arena = DecodeArena::new();
     let refused = (0..512).any(|limit| {
         let mut policy = DecodePolicy::service();
@@ -371,7 +379,9 @@ fn product_retained_refuses_source(source: &[u8], operation: &str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("valid product exchange");
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid product exchange");
     let refused = (0..=4096).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -437,8 +447,11 @@ fn product_usage_entries_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, diagnostics) =
-        crate::parse::parse(PRODUCT_STRING_LIMIT_SOURCE).expect("valid product exchange");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(
+        PRODUCT_STRING_LIMIT_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid product exchange");
     let arena = DecodeArena::new();
     let refused = (0..512).any(|limit| {
         let mut policy = DecodePolicy::service();

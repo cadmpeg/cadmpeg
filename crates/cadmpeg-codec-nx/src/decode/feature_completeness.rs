@@ -94,15 +94,7 @@ pub(crate) fn active_configuration_state_is_incomplete(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
 ) -> bool {
-    if ir.model.features.iter().any(|feature| {
-        feature.suppressed.is_none_or(|suppressed| {
-            configuration
-                .feature_states
-                .get(&feature.id)
-                .is_some_and(|state| state.evaluation.is_suppressed())
-                != suppressed
-        })
-    }) {
+    if configuration_suppression_differs(ir, configuration) {
         return true;
     }
     let Some(bodies) = configuration.bodies.as_deref() else {
@@ -116,6 +108,63 @@ pub(crate) fn active_configuration_state_is_incomplete(
         };
         active_features
     };
+    configuration_state_differs(ir, configuration, &required_features)
+}
+
+/// Decode-time form of [`active_configuration_state_is_incomplete`]: the
+/// active-feature closure is charged to the decode budget.
+pub(crate) fn active_configuration_state_is_incomplete_for_decode(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::DesignConfiguration,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if configuration_suppression_differs(ir, configuration) {
+        return Ok(true);
+    }
+    let Some(bodies) = configuration.bodies.as_deref() else {
+        return Ok(true);
+    };
+    let required_features = if ir.model.features.is_empty() {
+        BTreeMap::new()
+    } else {
+        let Ok(active_features) =
+            crate::native::history::active_feature_closure_for_decode(ctx, ir, bodies)?
+        else {
+            return Ok(true);
+        };
+        active_features
+    };
+    Ok(configuration_state_differs(
+        ir,
+        configuration,
+        &required_features,
+    ))
+}
+
+/// Whether a feature's suppression differs from the configuration's
+/// suppression state, or the feature has no suppression state.
+fn configuration_suppression_differs(
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::DesignConfiguration,
+) -> bool {
+    ir.model.features.iter().any(|feature| {
+        feature.suppressed.is_none_or(|suppressed| {
+            configuration
+                .feature_states
+                .get(&feature.id)
+                .is_some_and(|state| state.evaluation.is_suppressed())
+                != suppressed
+        })
+    })
+}
+
+/// Whether the configuration's feature states and parameter values differ
+/// from the model for the active features and every suppressed feature.
+fn configuration_state_differs(
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::DesignConfiguration,
+    required_features: &BTreeMap<cadmpeg_ir::features::FeatureId, usize>,
+) -> bool {
     let mut suppressed_only = ir.model.features.iter().enumerate().filter(|(_, feature)| {
         feature.suppressed == Some(true) && !required_features.contains_key(&feature.id)
     });
