@@ -7330,7 +7330,6 @@ pub(super) fn offset_store_named_points(
         let Some((_, _, records)) = section.as_offset_only() else {
             continue;
         };
-        let section_key = format!("nx:om-data-blocks-{section_ordinal}");
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         for ordinal in 0..records.len() {
             let Some(point) = crate::om::offset_store_named_point(
@@ -7360,15 +7359,35 @@ pub(super) fn offset_store_named_points(
             }) else {
                 continue;
             };
+            let point_ordinal = ordinal.checked_add(1).ok_or_else(||
+                ctx.refuse_codec_limit("NX named point ordinal", 0, 1))?;
+            let id = format_charged_text(ctx,
+                format_args!("nx:offset-store:named-point#{section_ordinal}-{point_ordinal}"),
+                "NX named point identity")?;
+            let mut data_blocks = Vec::new();
+            for relative in 0..point.block_count {
+                let block_ordinal = ordinal.checked_add(relative)
+                    .and_then(|ordinal| ordinal.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX named point block ordinal", 0, 1))?;
+                let block_id = format_charged_text(ctx,
+                    format_args!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
+                    "NX named point data block identity")?;
+                ctx.charge_collection_items(1, "NX named point data blocks")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<String>()), "NX named point data blocks")?;
+                data_blocks.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX named point data blocks", 0, 1))?;
+                data_blocks.push(block_id);
+            }
+            ctx.charge_collection_items(1, "NX named points")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<OffsetStoreNamedPoint>()), "NX named points")?;
+            points.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX named points", 0, 1))?;
             points.push(OffsetStoreNamedPoint {
-                id: format!(
-                    "nx:offset-store:named-point#{section_ordinal}-{}",
-                    ordinal + 1
-                ),
+                id,
                 name: point.name,
-                data_blocks: (0..point.block_count)
-                    .map(|relative| format!("{section_key}:block#{}", ordinal + relative + 1))
-                    .collect(),
+                data_blocks,
                 values: [first, second],
                 source_offset: first_source,
             });

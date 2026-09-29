@@ -9,6 +9,7 @@ mod datum_payload_limits;
 mod frame_admission;
 mod lane_wire;
 mod link_order;
+mod named_point_limits;
 mod operation_identity;
 mod reference_admission;
 mod record_wire;
