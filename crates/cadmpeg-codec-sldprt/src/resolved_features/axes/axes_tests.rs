@@ -26,6 +26,52 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchId};
 use std::collections::{BTreeMap, HashSet};
 
+fn compact_line_reference_directions_test(
+    payload: &[u8],
+    object_start: usize,
+    object_end: usize,
+    excluded_handles: &[usize],
+) -> Vec<cadmpeg_ir::units::UnitVector3> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("line reference test input fits service policy");
+    compact_line_reference_directions(&ctx, payload, object_start, object_end, excluded_handles)
+        .expect("line reference test scan succeeds")
+}
+
+#[test]
+fn declared_line_reference_directions_refuse_collection_limit() {
+    let mut payload = vec![0; 240];
+    payload[136..144].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+    payload[148..152].copy_from_slice(&[0xf8, 0x2a, 0, 0]);
+    payload[200..208].copy_from_slice(&1.0f64.to_le_bytes());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("line reference input fits root policy");
+    let error = super::declared_line_reference_directions(&ctx, &payload, 0, payload.len())
+        .expect_err("declared direction requires one collection item");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn compact_line_reference_directions_refuse_work_limit() {
+    let payload = vec![0; 80];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("line reference input fits root policy");
+    let error = compact_line_reference_directions(&ctx, &payload, 0, payload.len(), &[])
+        .expect_err("one compact handle scan requires work");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
 fn revolution_line_reference_inputs(
     payload: &[u8],
     object_start: usize,
@@ -65,7 +111,7 @@ fn compact_line_reference_rejects_conflicting_eight_and_nine_scalar_directions()
         payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
 
-    assert!(compact_line_reference_directions(&payload, 0, payload.len(), &[]).is_empty());
+    assert!(compact_line_reference_directions_test(&payload, 0, payload.len(), &[]).is_empty());
 }
 
 #[test]
@@ -87,7 +133,7 @@ fn compact_line_reference_rejects_conflicting_layout_candidates() {
     payload[116..118].copy_from_slice(&0x8200u16.to_le_bytes());
     payload[134..136].copy_from_slice(&[0xff; 2]);
 
-    assert!(compact_line_reference_directions(&payload, 0, payload.len(), &[]).is_empty());
+    assert!(compact_line_reference_directions_test(&payload, 0, payload.len(), &[]).is_empty());
 }
 
 #[test]

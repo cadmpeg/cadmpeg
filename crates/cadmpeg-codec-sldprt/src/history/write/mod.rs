@@ -302,6 +302,7 @@ fn project_feature_model_with_native_inputs(
     let mut projection = project_feature_model(&histories)?;
     let features = &mut projection.features;
     crate::resolved_features::bindings::bind_pattern_inputs(
+        &ctx,
         features,
         &histories,
         &native.feature_input_lanes,

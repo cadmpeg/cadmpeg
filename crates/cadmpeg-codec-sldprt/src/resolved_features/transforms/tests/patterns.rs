@@ -46,7 +46,12 @@ fn declared_line_reference_directions(
     class_offset: u64,
     object_end: usize,
 ) -> Vec<Vector3> {
-    typed_declared_line_reference_directions(payload, class_offset, object_end)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).expect("line reference test input fits service policy");
+    typed_declared_line_reference_directions(&ctx, payload, class_offset, object_end)
+        .expect("line reference test scan succeeds")
         .into_iter()
         .map(|direction| *direction.as_raw())
         .collect()
@@ -58,8 +63,26 @@ fn compact_line_reference_direction(
     object_end: usize,
     excluded_handles: &[usize],
 ) -> Option<Vector3> {
-    typed_compact_line_reference_direction(payload, object_start, object_end, excluded_handles)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).expect("line reference test input fits service policy");
+    typed_compact_line_reference_direction(&ctx, payload, object_start, object_end, excluded_handles)
+        .expect("line reference test scan succeeds")
         .map(|direction| *direction.as_raw())
+}
+
+fn bind_pattern_inputs_test(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let bytes = lanes.first().map_or(&[][..], |lane| lane.native_payload.as_slice());
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    bind_pattern_inputs(&ctx, features, histories, lanes)
 }
 
 fn linear_pattern_display_directions(
@@ -548,7 +571,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             .all(|id| known.contains(id)));
     };
 
-    bind_pattern_inputs(
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
@@ -572,7 +595,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         }));
-    bind_pattern_inputs(
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
@@ -610,7 +633,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             seeds.clear();
         }
     });
-    bind_pattern_inputs(
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&history),
         &[ambiguous_lane],
@@ -639,7 +662,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             })
             .unwrap(),
         }));
-    bind_pattern_inputs(
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&linear_history),
         std::slice::from_ref(&lane),
@@ -680,7 +703,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     *direction = None;
     *pattern = PatternKind::new(transform).unwrap();
     updated_features_evaluation.set_definition(updated_features_definition);
-    bind_pattern_inputs(
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&linear_history),
         std::slice::from_ref(&lane),
@@ -730,7 +753,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             })
             .unwrap(),
         }));
-    bind_pattern_inputs(
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&derived_history),
         std::slice::from_ref(&derived_lane),
@@ -776,7 +799,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             seeds: Vec::new(),
             pattern: PatternKind::UNRESOLVED_LINEAR,
         }));
-    bind_pattern_inputs(
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&derived_history),
         std::slice::from_ref(&derived_lane),
@@ -843,7 +866,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             seeds: Vec::new(),
             pattern: PatternKind::UNRESOLVED_MIRROR,
         }));
-    bind_pattern_inputs(
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
@@ -882,7 +905,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             })
             .unwrap(),
         }));
-    bind_pattern_inputs(
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
@@ -907,7 +930,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             seeds: Vec::new(),
             pattern: PatternKind::UNRESOLVED_MIRROR,
         }));
-    bind_pattern_inputs(
+    bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),

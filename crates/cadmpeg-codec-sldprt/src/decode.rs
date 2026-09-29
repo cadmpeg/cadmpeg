@@ -2802,6 +2802,7 @@ fn build_geometry_ir(
         &brep.surfaces,
     );
     crate::resolved_features::bindings::bind_pattern_inputs(
+        ctx,
         &mut ir.model.features,
         &histories,
         &lanes,
@@ -4123,6 +4124,7 @@ fn build_metadata_ir(
         &ir.model.surfaces,
     );
     crate::resolved_features::bindings::bind_pattern_inputs(
+        ctx,
         &mut ir.model.features,
         &histories,
         &lanes,
@@ -4355,6 +4357,7 @@ fn project_design_history(
     crate::history::project::project_feature_model(&semantic_projection)?
         .install(&mut ir.model, losses);
     crate::resolved_features::bindings::bind_pattern_inputs(
+        ctx,
         &mut ir.model.features,
         &semantic_projection,
         lanes,
@@ -4369,9 +4372,10 @@ fn project_design_history(
         crate::history::project::project_configurations_charged(ctx, &semantic_projection)?;
     let mut parameter_projection = histories.to_vec();
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(
+        ctx,
         &mut parameter_projection,
         lanes,
-    );
+    )?;
     crate::history::configuration::enrich_history_parameters_values_only(
         ctx,
         &mut parameter_projection,
