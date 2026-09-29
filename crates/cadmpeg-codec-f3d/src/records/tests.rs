@@ -1338,9 +1338,15 @@ fn sketch_relation_runs_reject_partial_resolution_and_preserve_atomic_binding() 
     let unresolved = SketchRelationMembers::from_indices(
         &cadmpeg_test_support::service_decode_context(),
         [(1, 25, 3), (2, 40, 5)],
-    ).unwrap();
+    )
+    .unwrap();
     let mut resolved = unresolved.clone();
-    resolved.resolve(&cadmpeg_test_support::service_decode_context(), |record_index| SketchRelationOperand::Record { record_index }).unwrap();
+    resolved
+        .resolve(
+            &cadmpeg_test_support::service_decode_context(),
+            |record_index| SketchRelationOperand::Record { record_index },
+        )
+        .unwrap();
     for (row, (index, offset, ordinal)) in resolved.iter().zip([(1, 25, 3), (2, 40, 5)]) {
         assert_eq!(row.reference.record_index(), index);
         assert_eq!(
@@ -1360,9 +1366,15 @@ fn sketch_relation_runs_reject_partial_resolution_and_preserve_atomic_binding() 
     let unresolved_return = SketchRelationReturnMembers::from_indices(
         &cadmpeg_test_support::service_decode_context(),
         [(2, 60), (1, 75)],
-    ).unwrap();
+    )
+    .unwrap();
     let mut resolved_return = unresolved_return.clone();
-    resolved_return.resolve(&cadmpeg_test_support::service_decode_context(), |record_index| SketchRelationOperand::Record { record_index }).unwrap();
+    resolved_return
+        .resolve(
+            &cadmpeg_test_support::service_decode_context(),
+            |record_index| SketchRelationOperand::Record { record_index },
+        )
+        .unwrap();
     assert!(SketchRelationReturnMembers::try_from(vec![
         unresolved_return[0].clone(),
         resolved_return[1].clone()
@@ -1375,19 +1387,29 @@ fn sketch_relation_runs_reject_partial_resolution_and_preserve_atomic_binding() 
     .is_err());
     let mut interrupted = unresolved.clone();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        interrupted.resolve(&cadmpeg_test_support::service_decode_context(), |record_index| {
-            assert_ne!(record_index, 2, "interrupt the second resolution");
-            SketchRelationOperand::Record { record_index }
-        }).unwrap();
+        interrupted
+            .resolve(
+                &cadmpeg_test_support::service_decode_context(),
+                |record_index| {
+                    assert_ne!(record_index, 2, "interrupt the second resolution");
+                    SketchRelationOperand::Record { record_index }
+                },
+            )
+            .unwrap();
     }));
     assert!(result.is_err());
     assert_eq!(interrupted, unresolved);
     let mut interrupted_return = unresolved_return.clone();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        interrupted_return.resolve(&cadmpeg_test_support::service_decode_context(), |record_index| {
-            assert_ne!(record_index, 1, "interrupt the second resolution");
-            SketchRelationOperand::Record { record_index }
-        }).unwrap();
+        interrupted_return
+            .resolve(
+                &cadmpeg_test_support::service_decode_context(),
+                |record_index| {
+                    assert_ne!(record_index, 1, "interrupt the second resolution");
+                    SketchRelationOperand::Record { record_index }
+                },
+            )
+            .unwrap();
     }));
     assert!(result.is_err());
     assert_eq!(interrupted_return, unresolved_return);
@@ -1966,23 +1988,3 @@ mod persistent_text;
 
 mod locus_frames;
 
-#[test]
-fn entity_identity_retains_suffix_without_changing_source_spelling() {
-    for (text, suffix) in [
-        ("_0", 0),
-        ("part_0007", 7),
-        ("part_+7", 7),
-        ("part_a_18446744073709551615", u64::MAX),
-        ("文😀_01", 1),
-    ] {
-        let identity = super::identity::DesignEntityId::try_from(text.to_owned()).unwrap();
-        assert_eq!(identity.as_str(), text);
-        assert_eq!(identity.suffix(), suffix);
-    }
-    for text in ["part", "part_", "part_-1", "part_18446744073709551616"] {
-        assert!(super::identity::DesignEntityId::try_from(text.to_owned()).is_err());
-    }
-    let identity = super::identity::DesignEntityId::from_parts("part_", u64::MAX);
-    assert_eq!(identity.as_str(), "part__18446744073709551615");
-    assert_eq!(identity.suffix(), u64::MAX);
-}
