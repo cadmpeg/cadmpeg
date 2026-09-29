@@ -2145,41 +2145,35 @@ pub(crate) fn project_hole_topology_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     topology: &HoleTopology<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_collection_items(features.len() as u64, "SLDPRT hole diameter lookup")?;
-    let diameter_counts = features
-        .iter()
-        .filter(|feature| feature.suppressed != Some(true))
-        .filter_map(|feature| match feature.evaluation.definition() {
-            FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) => {
-                match (&shape.diameter(),) {
-                    (Some(diameter),) => {
-                        let diameter = diameter.get();
-                        Some(diameter.to_bits())
-                    }
-                    _ => None,
-                }
-            }
-            _ => None,
-        })
-        .fold(HashMap::<u64, usize>::new(), |mut counts, diameter| {
-            *counts.entry(diameter).or_default() += 1;
-            counts
-        });
-    ctx.charge_collection_items(features.len() as u64, "SLDPRT unresolved hole lookup")?;
-    let unresolved = features
-        .iter()
-        .enumerate()
-        .filter(|(_, feature)| feature.suppressed != Some(true))
-        .filter_map(|(index, feature)| match feature.evaluation.definition() {
-            FeatureDefinition::Operation(FeatureOperation::Hole {
-                placements, shape, ..
-            }) => match (&shape.diameter(),) {
-                (Some(diameter),) if placements.is_none() => Some((index, *diameter)),
-                _ => None,
-            },
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    const DIAMETER_LOOKUP: &str = "index SLDPRT hole diameters";
+    let mut diameter_counts = HashMap::<u64, usize>::new();
+    let mut unresolved = Vec::new();
+    for (index, feature) in features.iter().enumerate() {
+        ctx.charge_work(1, DIAMETER_LOOKUP)?;
+        if feature.suppressed == Some(true) {
+            continue;
+        }
+        let FeatureDefinition::Operation(FeatureOperation::Hole {
+            placements, shape, ..
+        }) = feature.evaluation.definition() else {
+            continue;
+        };
+        let Some(diameter) = shape.diameter() else {
+            continue;
+        };
+        let key = diameter.get().to_bits();
+        if !diameter_counts.contains_key(&key) {
+            ctx.charge_collection_items(1, DIAMETER_LOOKUP)?;
+            diameter_counts.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(DIAMETER_LOOKUP, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        *diameter_counts.entry(key).or_default() += 1;
+        if placements.is_none() {
+            ctx.reserve_collection_vec(&mut unresolved, 1, "collect SLDPRT unresolved holes")?;
+            unresolved.push((index, diameter));
+        }
+    }
 
     for (unresolved_index, diameter) in unresolved {
         let diameter = diameter.get();
@@ -2195,24 +2189,24 @@ pub(crate) fn project_hole_topology_axes(
             continue;
         }
 
-        ctx.charge_collection_items(features.len() as u64, "SLDPRT counterbore siblings")?;
-        let siblings = features
-            .iter()
-            .enumerate()
-            .filter(|(_, feature)| feature.suppressed != Some(true))
-            .filter(|(_, feature)| {
-                same_hole_construction(
+        let mut siblings = Vec::new();
+        for (index, feature) in features.iter().enumerate() {
+            ctx.charge_work(1, "scan SLDPRT counterbore siblings")?;
+            if feature.suppressed == Some(true)
+                || !same_hole_construction(
                     features[unresolved_index].evaluation.definition(),
                     feature.evaluation.definition(),
                 )
-            })
-            .filter_map(|(index, feature)| match feature.evaluation.definition() {
-                FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) => {
-                    Some((index, placements))
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
+            {
+                continue;
+            }
+            if let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+                feature.evaluation.definition()
+            {
+                ctx.reserve_collection_vec(&mut siblings, 1, "collect SLDPRT counterbore siblings")?;
+                siblings.push((index, placements));
+            }
+        }
         if siblings.len() < 2
             || siblings
                 .iter()
@@ -2223,14 +2217,18 @@ pub(crate) fn project_hole_topology_axes(
             continue;
         }
 
-        ctx.charge_collection_items(
-            candidates.len() as u64,
-            "SLDPRT counterbore candidate keys",
-        )?;
-        let candidate_keys = candidates
-            .iter()
-            .filter_map(hole_axis_key)
-            .collect::<HashSet<_>>();
+        const CANDIDATE_KEYS: &str = "index SLDPRT counterbore candidate axes";
+        let mut candidate_keys = HashSet::new();
+        for key in candidates.iter().filter_map(hole_axis_key) {
+            ctx.charge_work(1, CANDIDATE_KEYS)?;
+            if !candidate_keys.contains(&key) {
+                ctx.charge_collection_items(1, CANDIDATE_KEYS)?;
+                candidate_keys.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(CANDIDATE_KEYS, u64::MAX - 1, u64::MAX)
+                })?;
+            }
+            candidate_keys.insert(key);
+        }
         if candidate_keys.len() != candidates.len() {
             continue;
         }
@@ -2250,10 +2248,15 @@ pub(crate) fn project_hole_topology_axes(
                     complete = false;
                     break;
                 };
-                if !candidate_keys.contains(&key) || !claimed.insert(key) {
+                if !candidate_keys.contains(&key) || claimed.contains(&key) {
                     complete = false;
                     break;
                 }
+                ctx.charge_collection_items(1, "claim SLDPRT counterbore axis")?;
+                claimed.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("claim SLDPRT counterbore axis", u64::MAX - 1, u64::MAX)
+                })?;
+                claimed.insert(key);
             }
             if !complete {
                 break;
@@ -2263,14 +2266,14 @@ pub(crate) fn project_hole_topology_axes(
             continue;
         }
 
-        ctx.charge_collection_items(
-            candidates.len() as u64,
-            "SLDPRT residual counterbore axes",
-        )?;
-        let residual = candidates
-            .into_iter()
-            .filter(|placement| hole_axis_key(placement).is_some_and(|key| !claimed.contains(&key)))
-            .collect::<Vec<_>>();
+        let mut residual = Vec::new();
+        for placement in candidates {
+            ctx.charge_work(1, "select SLDPRT residual counterbore axes")?;
+            if hole_axis_key(&placement).is_some_and(|key| !claimed.contains(&key)) {
+                ctx.reserve_collection_vec(&mut residual, 1, "collect SLDPRT residual counterbore axes")?;
+                residual.push(placement);
+            }
+        }
         if residual.is_empty() {
             continue;
         }

@@ -37,6 +37,50 @@ use crate::resolved_features::holes::seeded_drilled_bore_candidates;
 use crate::resolved_features::holes::HoleTopology;
 
 #[test]
+fn hole_topology_axes_refuse_unresolved_collection_growth() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let topology = HoleTopology {
+        surfaces: &[],
+        faces: &[],
+        loops: &[],
+        coedges: &[],
+        edges: &[],
+        vertices: &[],
+        points: &[],
+    };
+    let error = project_hole_topology_axes(&ctx, &mut [model_hole()], &topology)
+        .expect_err("hole lookup and unresolved record require two collection items");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT unresolved holes"));
+}
+
+#[test]
+fn hole_topology_axes_refuse_lookup_work() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let topology = HoleTopology {
+        surfaces: &[],
+        faces: &[],
+        loops: &[],
+        coedges: &[],
+        edges: &[],
+        vertices: &[],
+        points: &[],
+    };
+    let error = project_hole_topology_axes(&ctx, &mut [model_hole()], &topology)
+        .expect_err("one hole lookup requires work admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "index SLDPRT hole diameters"));
+}
+
+#[test]
 fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
     let plane_frame = SketchPlaneFrame::from_frame(
         (
