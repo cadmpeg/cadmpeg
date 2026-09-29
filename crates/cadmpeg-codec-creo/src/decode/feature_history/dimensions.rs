@@ -77,6 +77,7 @@ fn push_feature_source_parameter(
         .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))
 }
 
+#[cfg(test)]
 pub(in super::super) fn feature_dimension_parameter_id(
     sketch: &SketchId,
     external_id: u32,
@@ -87,6 +88,7 @@ pub(in super::super) fn feature_dimension_parameter_id(
     ))
 }
 
+#[cfg(test)]
 pub(in super::super) fn feature_dimension_parameter_row_id(
     sketch: &SketchId,
     external_id: u32,
@@ -134,6 +136,7 @@ fn feature_dimension_parameter_row_id_admitted(
     Ok(ParameterId::try_from(text).ok())
 }
 
+#[cfg(test)]
 pub(in super::super) fn resolved_feature_dimension_parameter<'a>(
     sketch: &SketchId,
     table: &'a crate::feature::definitions::FeatureDimensionTable,

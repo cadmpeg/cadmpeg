@@ -515,7 +515,9 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
             }
         };
-        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
+        let id = crate::identity::compose_checked::<SurfaceId>(
+            ctx, &crate::identity::VISIBGEOM_SURFACE, row.id, "creo decoded model identity",
+        )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -671,7 +673,9 @@ pub(in super::super) fn transfer_positional_spline_replays(
             }
             continue;
         };
-        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
+        let id = crate::identity::compose_checked::<SurfaceId>(
+            ctx, &crate::identity::VISIBGEOM_SURFACE, row.id, "creo decoded model identity",
+        )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -856,7 +860,9 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             LegacySurfaceNamespace::Visible => &crate::identity::VISIBGEOM_SURFACE,
             LegacySurfaceNamespace::NonVisible => &crate::identity::NOVISGEOM_SURFACE,
         };
-        let id = SurfaceId::compose(namespace, carrier.surface_id);
+        let id = crate::identity::compose_checked::<SurfaceId>(
+            ctx, namespace, carrier.surface_id, "creo decoded model identity",
+        )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }

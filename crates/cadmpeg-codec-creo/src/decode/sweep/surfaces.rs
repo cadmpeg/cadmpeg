@@ -40,7 +40,7 @@ const EPS_COPLANAR_RESIDUAL: f64 = 1.0e-9;
 const EPS_RADIAL_SPEED: f64 = 1.0e-10;
 const EPS_AXIAL_RATE: f64 = 1.0e-10;
 const EPS_MAJOR_RADIUS: f64 = 1.0e-10;
-use cadmpeg_ir::ids::{CurveId, IdentityKey, ProceduralSurfaceId, SurfaceId};
+use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
@@ -315,17 +315,16 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 }
                 continue;
             };
-            let suffix_key = spline
-                .entity_id
-                .map_or_else(
-                    || IdentityKey::try_new(format!("offset{}", spline.offset)),
-                    |entity_id| Ok(IdentityKey::from(entity_id)),
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            let curve_id = CurveId::compose(
-                &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
-                IdentityKey::from(definition.identity.id()).colon(suffix_key.clone()),
-            );
+            let (suffix, _suffix_reservation) = if let Some(entity_id) = spline.entity_id {
+                ctx.format_scoped(entity_id, "creo saved spline identity suffix")?
+            } else {
+                ctx.format_scoped(format_args!("offset{}", spline.offset), "creo saved spline identity suffix")?
+            };
+            let curve_id = crate::identity::compose_checked::<CurveId>(
+                ctx, &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
+                format_args!("{}:{suffix}", definition.identity.id()),
+                "creo saved spline curve identity",
+            )?;
             if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 continue;
             }
@@ -353,7 +352,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
                         ctx,
                         format_args!(
                             "FeatDefs:saved_spline#{}",
-                            suffix_key.as_str()
+                            suffix
                         ),
                         "creo source object identity",
                     )?,
@@ -617,10 +616,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             ) else {
                 continue;
             };
-            let id = SurfaceId::compose(
-                &crate::identity::VISIBGEOM_SURFACE,
-                IdentityKey::from(surface_id),
-            );
+            let id = crate::identity::compose_checked::<SurfaceId>(
+                ctx, &crate::identity::VISIBGEOM_SURFACE, surface_id,
+                "creo extrusion surface identity",
+            )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -686,10 +685,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             ) {
                 continue;
             }
-            let id = SurfaceId::compose(
-                &crate::identity::VISIBGEOM_SURFACE,
-                IdentityKey::from(native_surface_id),
-            );
+            let id = crate::identity::compose_checked::<SurfaceId>(
+                ctx, &crate::identity::VISIBGEOM_SURFACE, native_surface_id,
+                "creo extrusion surface identity",
+            )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -802,11 +801,11 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 }
                 continue;
             };
-            let suffix_key = IdentityKey::from(internal_id);
-            let curve_id = CurveId::compose(
-                &crate::identity::FEATURE_EXTRUSION_DIRECTRIX,
-                IdentityKey::from(feature_id).colon(suffix_key.clone()),
-            );
+            let curve_id = crate::identity::compose_checked::<CurveId>(
+                ctx, &crate::identity::FEATURE_EXTRUSION_DIRECTRIX,
+                format_args!("{feature_id}:{internal_id}"),
+                "creo extrusion directrix identity",
+            )?;
             if !ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 annotate(ctx,
                     annotations,
@@ -831,7 +830,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         ctx,
                         format_args!(
                                 "FeatDefs:saved_spline#{}",
-                                suffix_key.as_str()
+                                internal_id
                             ),
                         "creo source object identity",
                     )?,
@@ -844,17 +843,18 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     },
                 )?;
             }
-            let surface_id = SurfaceId::compose(
-                &crate::identity::VISIBGEOM_SURFACE,
-                IdentityKey::from(native_surface_id),
-            );
+            let surface_id = crate::identity::compose_checked::<SurfaceId>(
+                ctx, &crate::identity::VISIBGEOM_SURFACE, native_surface_id,
+                "creo extrusion surface identity",
+            )?;
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
-            let procedural_id = ProceduralSurfaceId::compose(
-                &crate::identity::FEATURE_EXTRUSION_CONSTRUCTION,
-                IdentityKey::from(feature_id).colon(suffix_key),
-            );
+            let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
+                ctx, &crate::identity::FEATURE_EXTRUSION_CONSTRUCTION,
+                format_args!("{feature_id}:{internal_id}"),
+                "creo extrusion construction identity",
+            )?;
             annotate(ctx,
                 annotations,
                 &surface_id,

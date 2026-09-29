@@ -98,7 +98,9 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             continue;
         };
         for row in [first_row, second_row] {
-            let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
+            let id = crate::identity::compose_checked::<SurfaceId>(
+                ctx, &crate::identity::VISIBGEOM_SURFACE, row.id, "creo decoded model identity",
+            )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -209,7 +211,9 @@ pub(in super::super) fn transfer_positional_tori(
         let Some(frame) = record.positional_torus_frame() else {
             continue;
         };
-        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
+        let id = crate::identity::compose_checked::<SurfaceId>(
+            ctx, &crate::identity::VISIBGEOM_SURFACE, row.id, "creo decoded model identity",
+        )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -318,7 +322,9 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         ) else {
             continue;
         };
-        let surface_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, record.surface_id);
+        let surface_id = crate::identity::compose_checked::<SurfaceId>(
+            ctx, &crate::identity::VISIBGEOM_SURFACE, record.surface_id, "creo decoded model identity",
+        )?;
         if ir
             .model
             .surfaces
@@ -327,14 +333,14 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         {
             continue;
         }
-        let curve_id = CurveId::compose(
-            &crate::identity::VISIBGEOM_SURFACE_DIRECTRIX,
-            record.surface_id,
-        );
-        let procedural_id = ProceduralSurfaceId::compose(
-            &crate::identity::VISIBGEOM_SURFACE_EXTRUSION,
-            record.surface_id,
-        );
+        let curve_id = crate::identity::compose_checked::<CurveId>(
+            ctx, &crate::identity::VISIBGEOM_SURFACE_DIRECTRIX, record.surface_id,
+            "creo positional directrix identity",
+        )?;
+        let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
+            ctx, &crate::identity::VISIBGEOM_SURFACE_EXTRUSION, record.surface_id,
+            "creo positional extrusion identity",
+        )?;
         let Ok(line_curve) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::from(frame.directrix[0]),
             Vector3::from(u_axis),
@@ -570,11 +576,13 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             );
             continue;
         };
-        let curve_id = CurveId::compose(
-            &crate::identity::VISIBGEOM_TABULATED_DIRECTRIX,
-            replay.surface_id,
-        );
-        let surface_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, replay.surface_id);
+        let curve_id = crate::identity::compose_checked::<CurveId>(
+            ctx, &crate::identity::VISIBGEOM_TABULATED_DIRECTRIX, replay.surface_id,
+            "creo tabulated directrix identity",
+        )?;
+        let surface_id = crate::identity::compose_checked::<SurfaceId>(
+            ctx, &crate::identity::VISIBGEOM_SURFACE, replay.surface_id, "creo decoded model identity",
+        )?;
         if ir
             .model
             .surfaces
@@ -583,10 +591,10 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         {
             continue;
         }
-        let procedural_id = ProceduralSurfaceId::compose(
-            &crate::identity::VISIBGEOM_TABULATED_EXTRUSION,
-            replay.surface_id,
-        );
+        let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
+            ctx, &crate::identity::VISIBGEOM_TABULATED_EXTRUSION, replay.surface_id,
+            "creo tabulated extrusion identity",
+        )?;
         annotate(ctx,
             annotations,
             &curve_id,

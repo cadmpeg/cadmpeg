@@ -703,7 +703,10 @@ pub(in crate::decode) fn solve_topological_vertices(
         let Some(vertices) = edge_start_vertices.get(&row.id).copied() else {
             continue;
         };
-        let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, row.id);
+        let (id, _id_reservation) = crate::identity::compose_scoped::<CurveId>(
+            ctx, &crate::identity::VISIBGEOM_CURVE, row.id,
+            "creo vertex curve lookup identity",
+        )?;
         if !nurbs_endpoint_witnesses.contains(&id) {
             continue;
         }
@@ -724,7 +727,10 @@ pub(in crate::decode) fn solve_topological_vertices(
     // carrier equations for the vertex-domain solver.
     let mut analytic_curves = BTreeMap::new();
     for row in topology_rows {
-            let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, row.id);
+            let (id, _id_reservation) = crate::identity::compose_scoped::<CurveId>(
+                ctx, &crate::identity::VISIBGEOM_CURVE, row.id,
+                "creo vertex curve lookup identity",
+            )?;
             let Some(curve) = unique_model_curve(ir, &id) else {
                 continue;
             };

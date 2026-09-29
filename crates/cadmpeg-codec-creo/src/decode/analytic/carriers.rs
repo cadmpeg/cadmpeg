@@ -98,7 +98,9 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         .into_iter()
         .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)
     {
-        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
+        let id = crate::identity::compose_checked::<SurfaceId>(
+            ctx, &crate::identity::VISIBGEOM_SURFACE, row.id, "creo decoded model identity",
+        )?;
         let points = topology_bound_face_points(ctx, &solved_vertices, &vertex_faces, row.id)?;
         let mut boundary_curves = Vec::new();
         for half_edge in scan
@@ -109,7 +111,10 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             .flat_map(|lp| lp.half_edges.iter())
         {
             if unique_curve_ids.contains(&half_edge.curve_id) {
-                let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, half_edge.curve_id);
+                let (id, _id_reservation) = crate::identity::compose_scoped::<CurveId>(
+                    ctx, &crate::identity::VISIBGEOM_CURVE, half_edge.curve_id,
+                    "creo topology-bound curve lookup identity",
+                )?;
                 if let Some(curve) = exactly_one(ir.model.curves.iter().filter(|curve| curve.id == id)) {
                     ctx.try_reserve_items(
                         &mut boundary_curves,
@@ -163,7 +168,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                 .filter(|surface| surface.id == id)
             {
                 surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                    record: geometry_section_record(scan, row.offset),
+                    record: geometry_section_record(ctx, scan, row.offset)?,
                 });
             }
             annotate(ctx,
@@ -264,7 +269,9 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 LegacySurfaceNamespace::Visible => &crate::identity::VISIBGEOM_SURFACE,
                 LegacySurfaceNamespace::NonVisible => &crate::identity::NOVISGEOM_SURFACE,
             };
-            let id = SurfaceId::compose(identity_namespace, row.id);
+            let id = crate::identity::compose_checked::<SurfaceId>(
+                ctx, identity_namespace, row.id, "creo decoded model identity",
+            )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -291,7 +298,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 Surface {
                     id,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                        record: geometry_section_record(scan, row.offset),
+                        record: geometry_section_record(ctx, scan, row.offset)?,
                     }),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
@@ -319,7 +326,9 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
         }
     }
     for row in crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| row.id)? {
-        let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, row.id);
+        let id = crate::identity::compose_checked::<CurveId>(
+            ctx, &crate::identity::VISIBGEOM_CURVE, row.id, "creo decoded model identity",
+        )?;
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
@@ -338,7 +347,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             Curve {
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                    record: geometry_section_record(scan, row.offset),
+                    record: geometry_section_record(ctx, scan, row.offset)?,
                 }),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
@@ -613,19 +622,25 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
 }
 
 pub(in crate::decode) fn geometry_section_record(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     offset: usize,
-) -> Option<UnknownId> {
-    scan.framing
+) -> Result<Option<UnknownId>, cadmpeg_core::CodecError> {
+    let Some(section) = scan.framing
         .sections
         .iter()
         .filter(|section| section.role() == SectionRole::PsbGeometry)
-        .find_map(|section| {
-            section.contains(offset).then_some(())?;
-            let namespace =
-                cadmpeg_ir::ids::IdentityNamespace::new("creo", section.name(), "section").ok()?;
-            Some(UnknownId::compose(&namespace, section.offset()))
-        })
+        .find(|section| section.contains(offset)) else {
+            return Ok(None);
+        };
+    let Ok(namespace) =
+        cadmpeg_ir::ids::IdentityNamespace::new("creo", section.name(), "section") else {
+        return Ok(None);
+    };
+    crate::identity::compose_checked(
+        ctx, &namespace, section.offset(), "creo geometry section record identity",
+    )
+    .map(Some)
 }
 
 #[cfg(test)]

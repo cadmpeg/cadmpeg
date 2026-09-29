@@ -212,17 +212,18 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 }
                 crate::feature::definitions::FeatureSegmentKind::Point(_) => None,
             };
-            let surface_id = native_surface.map_or_else(
-                || {
-                    SurfaceId::compose(
-                        &crate::identity::FEATURE_REVOLUTION_SURFACE,
-                        cadmpeg_ir::ids::IdentityKey::from(feature_id)
-                            .colon(cadmpeg_ir::identity_key!("segment"))
-                            .then(segment.external_id),
-                    )
-                },
-                |id| SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, id),
-            );
+            let surface_id = if let Some(id) = native_surface {
+                crate::identity::compose_checked::<SurfaceId>(
+                    ctx, &crate::identity::VISIBGEOM_SURFACE, id,
+                    "creo revolution surface identity",
+                )?
+            } else {
+                crate::identity::compose_checked::<SurfaceId>(
+                    ctx, &crate::identity::FEATURE_REVOLUTION_SURFACE,
+                    format_args!("{feature_id}:segment{}", segment.external_id),
+                    "creo revolution surface identity",
+                )?
+            };
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
@@ -291,8 +292,10 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 ) else {
                     continue;
                 };
-                let surface_id =
-                    SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, native_surface);
+                let surface_id = crate::identity::compose_checked::<SurfaceId>(
+                    ctx, &crate::identity::VISIBGEOM_SURFACE, native_surface,
+                    "creo revolution surface identity",
+                )?;
                 if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                     continue;
                 }
@@ -337,21 +340,16 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 _ => None,
             })
         {
-            let suffix_key = match spline.entity_id {
-                Some(entity_id) => cadmpeg_ir::ids::IdentityKey::from(entity_id),
-                None => cadmpeg_ir::ids::IdentityKey::try_new(format!("offset{}", spline.offset))
-                    .map_err(|error| {
-                    cadmpeg_core::CodecError::malformed(format!(
-                        "FeatDefs saved spline identity at offset {}: {error}",
-                        spline.offset
-                    ))
-                })?,
+            let (suffix, _suffix_reservation) = if let Some(entity_id) = spline.entity_id {
+                ctx.format_scoped(entity_id, "creo revolved spline identity suffix")?
+            } else {
+                ctx.format_scoped(format_args!("offset{}", spline.offset), "creo revolved spline identity suffix")?
             };
-            let curve_id = CurveId::compose(
-                &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
-                cadmpeg_ir::ids::IdentityKey::from(definition.identity.id())
-                    .colon(suffix_key.clone()),
-            );
+            let curve_id = crate::identity::compose_checked::<CurveId>(
+                ctx, &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
+                format_args!("{}:{suffix}", definition.identity.id()),
+                "creo revolved spline curve identity",
+            )?;
             let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix))) =
                 exactly_one(ir.model.curves.iter().filter(|curve| curve.id == curve_id))
                     .map(|curve| source_carriers.curve_geometry(curve).clone())
@@ -388,12 +386,15 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             let Some(native_surface) = native_surface else {
                 continue;
             };
-            let surface_id =
-                SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, native_surface);
-            let procedural_id = ProceduralSurfaceId::compose(
-                &crate::identity::FEATURE_REVOLUTION_CONSTRUCTION,
-                cadmpeg_ir::ids::IdentityKey::from(feature_id).colon(suffix_key),
-            );
+            let surface_id = crate::identity::compose_checked::<SurfaceId>(
+                ctx, &crate::identity::VISIBGEOM_SURFACE, native_surface,
+                "creo revolution surface identity",
+            )?;
+            let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
+                ctx, &crate::identity::FEATURE_REVOLUTION_CONSTRUCTION,
+                format_args!("{feature_id}:{suffix}"),
+                "creo revolution construction identity",
+            )?;
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
@@ -549,19 +550,17 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 ctx.try_reserve_items(&mut pending, 1, "creo revolution vertex orbit candidates")?;
                 pending.push((
-                    CurveId::compose(
-                        &crate::identity::FEATURE_REVOLUTION_VERTEX_ORBIT,
-                        cadmpeg_ir::ids::IdentityKey::from(feature_id)
-                            .colon(cadmpeg_ir::identity_key!("profile"))
-                            .then(profile_index)
-                            .colon(cadmpeg_ir::identity_key!("vertex"))
-                            .then(vertex_index),
-                    ),
+                    crate::identity::compose_checked::<CurveId>(
+                        ctx, &crate::identity::FEATURE_REVOLUTION_VERTEX_ORBIT,
+                        format_args!("{feature_id}:profile{profile_index}:vertex{vertex_index}"),
+                        "creo revolution orbit identity",
+                    )?,
                     geometry,
                     transform.offset,
-                    format!(
-                        "FeatDefs:revolution#{feature_id}:profile{profile_index}:vertex{vertex_index}"
-                    ),
+                    ctx.format_retained(
+                        format_args!("FeatDefs:revolution#{feature_id}:profile{profile_index}:vertex{vertex_index}"),
+                        "creo revolution orbit source identity",
+                    )?,
                 ));
             }
         }
@@ -649,19 +648,17 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                 };
                 ctx.try_reserve_items(&mut pending, 1, "creo extrusion vertex orbit candidates")?;
                 pending.push((
-                    CurveId::compose(
-                        &crate::identity::FEATURE_EXTRUSION_VERTEX_ORBIT,
-                        cadmpeg_ir::ids::IdentityKey::from(feature_id)
-                            .colon(cadmpeg_ir::identity_key!("profile"))
-                            .then(profile_index)
-                            .colon(cadmpeg_ir::identity_key!("vertex"))
-                            .then(vertex_index),
-                    ),
+                    crate::identity::compose_checked::<CurveId>(
+                        ctx, &crate::identity::FEATURE_EXTRUSION_VERTEX_ORBIT,
+                        format_args!("{feature_id}:profile{profile_index}:vertex{vertex_index}"),
+                        "creo extrusion orbit identity",
+                    )?,
                     geometry,
                     transform.offset,
-                    format!(
-                        "FeatDefs:extrusion#{feature_id}:profile{profile_index}:vertex{vertex_index}"
-                    ),
+                    ctx.format_retained(
+                        format_args!("FeatDefs:extrusion#{feature_id}:profile{profile_index}:vertex{vertex_index}"),
+                        "creo extrusion orbit source identity",
+                    )?,
                 ));
             }
         }

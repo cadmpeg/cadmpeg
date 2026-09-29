@@ -285,6 +285,7 @@ pub(super) fn sketch_identity_key(sketch: &SketchId) -> Option<IdentityKey> {
     IdentityKey::try_new(sketch_identity_scope(sketch).to_owned()).ok()
 }
 
+#[cfg(test)]
 pub(super) fn sketch_entity_id(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,

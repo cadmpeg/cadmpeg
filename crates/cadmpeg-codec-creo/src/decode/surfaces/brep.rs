@@ -926,10 +926,16 @@ fn native_circle_loop_geometry(
     if first.curve_id == second.curve_id {
         return None;
     }
-    let first_id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, first.curve_id);
-    let second_id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, second.curve_id);
-    let first = exactly_one(model_curves.iter().filter(|curve| curve.id == first_id))?;
-    let second = exactly_one(model_curves.iter().filter(|curve| curve.id == second_id))?;
+    let first = exactly_one(model_curves.iter().filter(|curve| {
+        crate::identity::matches_numbered_identity(
+            curve.id.as_str(), "creo:visibgeom:curve#", first.curve_id,
+        )
+    }))?;
+    let second = exactly_one(model_curves.iter().filter(|curve| {
+        crate::identity::matches_numbered_identity(
+            curve.id.as_str(), "creo:visibgeom:curve#", second.curve_id,
+        )
+    }))?;
     let (
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve_2)),
@@ -2392,7 +2398,7 @@ pub(in super::super) fn transfer_native_brep(
                 Curve {
                     id: curve,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                        record: geometry_section_record(scan, offset),
+                        record: geometry_section_record(ctx, scan, offset)?,
                     }),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
@@ -2589,7 +2595,7 @@ pub(in super::super) fn transfer_native_brep(
                             "creo B-rep surface entity ID copies",
                         )?,
                         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                            record: geometry_section_record(scan, face_offset),
+                            record: geometry_section_record(ctx, scan, face_offset)?,
                         }),
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Creo,
@@ -2919,7 +2925,9 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         let Some(frame) = fc05_cap_pair_model_frame(scan, pair) else {
             continue;
         };
-        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, pair.surface_id);
+        let id = crate::identity::compose_checked::<SurfaceId>(
+            ctx, &crate::identity::VISIBGEOM_SURFACE, pair.surface_id, "creo decoded model identity",
+        )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -2988,7 +2996,9 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 pair.reference_direction_row_frame,
                 frame.axis_sign,
             );
-            let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, curve_id);
+            let id = crate::identity::compose_checked::<CurveId>(
+                ctx, &crate::identity::VISIBGEOM_CURVE, curve_id, "creo decoded model identity",
+            )?;
             if ir.model.curves.iter().any(|curve| curve.id == id) {
                 continue;
             }
