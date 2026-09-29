@@ -10,6 +10,7 @@ use crate::families::standard::decode::bind_standard_a5_owner_surfaces;
 use crate::families::standard::decode::combine_propagated_endpoint_pairs;
 use crate::families::standard::decode::corroborate_successor_endpoint_points;
 use crate::families::standard::decode::emit_standard_topology;
+use crate::families::standard::decode::standard_id;
 use crate::families::standard::decode::include_native_endpoint_pairs;
 use crate::families::standard::decode::intersection_line_direction;
 use crate::families::standard::decode::invariant_face_carrier_bindings;
@@ -46,6 +47,22 @@ use crate::families::standard::records::StandardSurfaceRecord;
 use crate::native::owner_numeric_tail::CatiaOwnerNumericTail;
 use crate::test_support::test_e5::{append_e5_record, e5_d8_rolling_ball_stream, e5_torus_stream};
 use cadmpeg_ir::document::CadIr;
+
+#[test]
+fn standard_topology_identity_refuses_retained_limit() {
+    use cadmpeg_ir::ids::LoopId;
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        standard_id(ctx, "loop", format_args!("0:0"), LoopId::mint,
+            "catia_standard_loop_identity")
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_standard_loop_identity"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        standard_id(ctx, "loop", format_args!("0:0"), LoopId::mint,
+            "catia_standard_loop_identity")
+    }).expect("service profile admits loop identity");
+    assert_eq!(admitted.as_str(), "catia:standard:loop#0:0");
+}
 use cadmpeg_ir::eval::curve_point;
 use cadmpeg_ir::eval::pcurve_uv;
 use cadmpeg_ir::eval::surface_point;
