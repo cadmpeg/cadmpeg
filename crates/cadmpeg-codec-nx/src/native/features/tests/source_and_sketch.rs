@@ -108,6 +108,9 @@ fn unique_offset_data_store_rejects_a_second_matching_section() {
 
 #[test]
 fn nx_feature_source_content_orders_payload_text() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let text = FeaturePayloadString {
         id: "text".into(),
         operation_record: "record".into(),
@@ -122,7 +125,7 @@ fn nx_feature_source_content_orders_payload_text() {
         value: crate::payload_text::PayloadText::new("Later".to_owned()).unwrap(),
         source_offset: 40,
     };
-    let content = crate::native::attach::feature_source_content(&[&later, &text]);
+    let content = crate::native::attach::feature_source_content(&ctx, &[&later, &text]).unwrap();
     assert!(matches!(
         &content[0],
         cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Through"
@@ -131,6 +134,55 @@ fn nx_feature_source_content_orders_payload_text() {
         &content[1],
         cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Later"
     ));
+}
+
+fn feature_source_text_with_limit(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    match dimension {
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+        _ => return Err(cadmpeg_core::CodecError::InvalidInput("unsupported source text test limit".to_string())),
+    }
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let text = FeaturePayloadString {
+        id: "text".into(),
+        operation_record: "record".into(),
+        ordinal: 0,
+        value: crate::payload_text::PayloadText::new("Through".to_owned()).unwrap(),
+        source_offset: 30,
+    };
+    let content = crate::native::attach::feature_source_content(&ctx, &[&text])?;
+    assert_eq!(content.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn feature_source_text_refuses_collection_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::CollectionItems;
+    assert!(matches!(feature_source_text_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+}
+
+#[test]
+fn feature_source_text_refuses_retained_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::RetainedBytes;
+    assert!(matches!(feature_source_text_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+}
+
+#[test]
+fn feature_source_text_refuses_scoped_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::MaterializedBytes;
+    assert!(matches!(feature_source_text_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+}
+
+#[test]
+fn feature_source_text_refuses_work_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::WorkUnits;
+    assert!(matches!(feature_source_text_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
 }
 
 #[test]

@@ -4114,7 +4114,7 @@ fn attach_feature_operations(
             .note(&id, &stream, label.source_offset)
             .tag("FEATURE_OPERATION");
         annotations.exactness(&id, Exactness::Derived);
-        let source_content = feature_source_content(operation_payload_string_records);
+        let source_content = feature_source_content(ctx, operation_payload_string_records)?;
         let mut referenced_parameters = operation_parameter_uses
             .iter()
             .filter_map(|parameter_use| expression_parameter_id(&parameter_use.expression))
@@ -6428,14 +6428,39 @@ fn uniform_face_sense(senses: &[Sense]) -> Option<Sense> {
 }
 
 pub(super) fn feature_source_content(
+    ctx: &DecodeContext<'_>,
     payload_strings: &[&crate::native::features::FeaturePayloadString],
-) -> cadmpeg_ir::features::FeatureContent {
-    let mut content = payload_strings
-        .iter()
-        .map(|value| (value.source_offset, value.value.as_str().to_owned()))
-        .collect::<Vec<_>>();
-    content.sort_by_key(|(offset, _)| *offset);
-    cadmpeg_ir::features::FeatureContent::text(content.into_iter().map(|(_, content)| content))
+) -> Result<cadmpeg_ir::features::FeatureContent, CodecError> {
+    let mut sorted = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX feature source text order")?;
+    for &value in payload_strings {
+        ctx.charge_collection_items(1, "NX feature source text order")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&crate::native::features::FeaturePayloadString>()))?;
+        reserve_attach_vec(ctx, &mut sorted, 1, "NX feature source text order")?;
+        sorted.push(value);
+    }
+    let count = sorted.len();
+    let passes = usize::try_from(usize::BITS - count.leading_zeros())
+        .map_err(|_| ctx.refuse_codec_limit("NX feature source text sort", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+    let work = count.checked_mul(passes)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX feature source text sort", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX feature source text sort")?;
+    sorted.sort_by_key(|value| value.source_offset);
+    let mut content = Vec::new();
+    for value in sorted {
+        let text = value.value.as_str();
+        let bytes = std::mem::size_of::<FeatureSourceContent>()
+            .checked_add(text.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX feature source text", 0, cadmpeg_core::decode::u64_from_index(text.len())))?;
+        ctx.charge_collection_items(1, "NX feature source text")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX feature source text")?;
+        let mut owned = String::new();
+        owned.try_reserve(text.len()).map_err(|_| ctx.refuse_codec_limit("allocate NX feature source text", 0, cadmpeg_core::decode::u64_from_index(text.len())))?;
+        owned.push_str(text);
+        reserve_attach_vec(ctx, &mut content, 1, "NX feature source text")?;
+        content.push(FeatureSourceContent::Text(owned));
+    }
+    cadmpeg_ir::features::FeatureContent::try_from(content).map_err(CodecError::malformed)
 }
 
 fn simple_hole_native_properties(
