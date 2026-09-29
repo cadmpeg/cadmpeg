@@ -6,7 +6,8 @@ use crate::decode::analytic::planes::{
     fc05_cylinder_model_witness,
     frame_bound_outline_plane_candidate, held_coordinate_plane,
     plane_candidate_pcurve_lies_on_carrier, plane_candidates, reconciled_model_plane,
-    stored_parameter_normal_candidates, topology_bound_line_plane, topology_bound_plane,
+    round_edge_envelopes_for_plane, stored_parameter_normal_candidates,
+    topology_bound_line_plane, topology_bound_plane,
     unique_round_edge_origin_candidate, BoundaryLine, PlaneCandidate, PlaneChart,
 };
 use crate::decode::surfaces::fc05_cap_pair_model_frame;
@@ -1748,6 +1749,116 @@ fn round_edge_origin_witness_selects_the_plane_with_an_incident_endpoint() {
         [0.0, -5.5, 0.0]
     );
     assert!(unique_round_edge_origin_candidate(&[positive, negative], &[]).is_none());
+}
+
+fn round_edge_envelope_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    for (id, kind) in [(1, crate::surface::SurfaceKind::Plane),
+        (2, crate::surface::SurfaceKind::Cylinder)] {
+        scan.surfaces.rows.push(crate::surface::SurfaceRow {
+            id, kind, feature_id: 4, reversed: false,
+            boundary_type: crate::surface::BoundaryType::Code01,
+            next_surface: 0, offset: id as usize,
+        });
+    }
+    scan.features.legacy_rounds.push(crate::legacy_feature::LegacyRoundFeature {
+        feature_id: 4,
+        radius: crate::legacy_feature::LegacyRoundRadius::NotPresent,
+        edge_ids: None,
+        offset: 3,
+    });
+    scan.curves.topology_rows.push(crate::curve::CurveTopologyRow {
+        id: 7, type_byte: 5, feature_id: 4, directions: [0; 2],
+        faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
+        next_edges: [0; 2], offset: 7,
+    });
+    let mut body = vec![0x34, 0xe0, 0x00];
+    body.extend_from_slice(&[0x56, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x00, 0x12, 0x68]);
+    body.extend_from_slice(&[0x6b, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x0f, 0xe4, 0x2f, 0x00, 0x00]);
+    body.extend_from_slice(&[0x0d, 0x2f, 0x00, 0x00, 0x0f]);
+    body.extend_from_slice(&[0xf7, 0x17]);
+    scan.surfaces.parameters.push(crate::surface::SurfaceParameterRecord {
+        surface_id: 2, body, scalar_tokens: Vec::new(), opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::Cylinder),
+        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+        offset: 2, body_offset: 2,
+    });
+    scan
+}
+
+fn round_edge_envelope_limit_error(limit: u64) -> CodecError {
+    let scan = round_edge_envelope_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    round_edge_envelopes_for_plane(&ctx, &scan, 1)
+        .err()
+        .expect("round-edge envelopes exceed collection limit")
+}
+
+#[test]
+fn round_edge_surface_row_node_refuses_collection_limit() {
+    let error = round_edge_envelope_limit_error(4);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo round-edge surface row nodes"));
+}
+
+#[test]
+fn round_edge_surface_count_node_refuses_collection_limit() {
+    let error = round_edge_envelope_limit_error(0);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row count nodes"));
+}
+
+#[test]
+fn round_edge_surface_projection_refuses_collection_limit() {
+    let error = round_edge_envelope_limit_error(2);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row projection"));
+}
+
+#[test]
+fn round_edge_topology_count_node_refuses_collection_limit() {
+    let error = round_edge_envelope_limit_error(6);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row count nodes"));
+}
+
+#[test]
+fn round_edge_topology_projection_refuses_collection_limit() {
+    let error = round_edge_envelope_limit_error(7);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row projection"));
+}
+
+#[test]
+fn round_edge_plane_envelope_refuses_collection_limit() {
+    let error = round_edge_envelope_limit_error(8);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo round-edge plane envelopes"));
+}
+
+#[test]
+fn round_edge_plane_envelope_preserves_type24_geometry() {
+    let scan = round_edge_envelope_scan();
+    let envelopes = crate::decode::with_test_decode_ctx(|ctx| {
+        round_edge_envelopes_for_plane(ctx, &scan, 1)
+    })
+    .expect("service round-edge envelopes admitted");
+    assert_eq!(envelopes.len(), 1);
+    assert_eq!(envelopes[0].vertices, [[0.0, 1.0, 2.0], [-1.0, 2.0, 0.0]]);
 }
 
 const SMALL_TANGENT_SPHERE_RADIUS: f64 = 1.0e-10;
