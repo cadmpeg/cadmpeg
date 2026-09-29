@@ -1102,3 +1102,50 @@ fn numerical_seventh_matrix_angle_preserves_shallow_rotations() {
         }
     }
 }
+
+fn feature_dependency_index_fixture() -> cadmpeg_ir::features::Feature {
+    use cadmpeg_ir::features::{Feature, FeatureEvaluation, FeatureId, FeatureDefinition, FeatureOperation};
+    Feature {
+        id: FeatureId::mint("f3d:model:feature#dependency-index").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Native { kind: "IndexTest".into(), parameters: Default::default() },
+        )),
+        native_ref: None,
+    }
+}
+
+fn assert_feature_dependency_index_refusal(operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    let feature = feature_dependency_index_fixture();
+    for limit in 0..3 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match super::super::ensure_feature_dependencies_precede(Some(&ctx), std::slice::from_ref(&feature)) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            other => panic!("expected {operation} refusal: {other:?}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn feature_dependency_ordinal_index_refuses_collection_limit() {
+    assert_feature_dependency_index_refusal("f3d feature dependency ordinal index");
+}
+
+#[test]
+fn feature_unique_ordinal_index_refuses_collection_limit() {
+    assert_feature_dependency_index_refusal("f3d feature unique ordinal index");
+}
