@@ -609,6 +609,7 @@ pub(crate) fn extract_segment_lineage(
     )?;
     let booleans = feature_boolean_operations(ctx, container)?;
     let statuses = segment_body_lineage_statuses(
+        ctx,
         &labels,
         &references,
         &body_data_block_uses,
@@ -617,7 +618,7 @@ pub(crate) fn extract_segment_lineage(
         &operands,
         &bindings,
         &inputs,
-    )
+    )?
     .unwrap_or_default();
     Ok(SegmentLineage {
         bindings,

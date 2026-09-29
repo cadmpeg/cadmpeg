@@ -73,7 +73,8 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
                 source_offset: u64::from(stream_ordinal),
             }
         };
-    let statuses = segment_body_lineage_statuses(
+    let statuses = crate::test_support::with_decode_context(|ctx| segment_body_lineage_statuses(
+        ctx,
         &labels,
         &references,
         &[],
@@ -91,7 +92,8 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
             binding("binding#1", 1, crate::parasolid::StreamKind::Plain, 20, 21),
         ],
         &[],
-    )
+    ))
+    .expect("admitted segment lineage statuses")
     .expect("required invariant");
     assert_eq!(statuses.len(), 2);
     assert!(statuses[0].terminal);
@@ -719,7 +721,8 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
         binding("binding#2", 2, 40, 20),
     ];
 
-    let statuses = segment_body_lineage_statuses(
+    let statuses = crate::test_support::with_decode_context(|ctx| segment_body_lineage_statuses(
+        ctx,
         &labels,
         &references,
         &[],
@@ -728,7 +731,8 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
         &[],
         &bindings,
         &[],
-    )
+    ))
+    .expect("admitted segment lineage statuses")
     .expect("required invariant");
     assert_eq!(statuses.len(), 3);
     assert!(statuses.iter().all(|status| !status.terminal));

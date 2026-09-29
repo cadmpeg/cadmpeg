@@ -350,6 +350,7 @@ pub(super) struct SegmentOmLink {
 /// within each section.
 #[allow(clippy::too_many_arguments)]
 fn terminal_feature_body_indices(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
@@ -358,7 +359,7 @@ fn terminal_feature_body_indices(
     operands: &[FeatureOperationBodyOperand],
     bindings: &[SegmentBodyBinding],
     inputs: &[FeatureInputBlock],
-) -> Option<BTreeSet<u32>> {
+) -> Result<Option<BTreeSet<u32>>, cadmpeg_core::CodecError> {
     let offset_store_references = data_block_uses
         .iter()
         .map(|use_| use_.feature_body_reference.as_str())
@@ -375,7 +376,7 @@ fn terminal_feature_body_indices(
         .map(|(_, reference)| reference)
         .collect::<Vec<_>>();
     if object_references.is_empty() && bindings.is_empty() {
-        return None;
+        return Ok(None);
     }
     let chronological_labels =
         crate::native::features::feature_operation_chronological_labels(labels);
@@ -384,9 +385,9 @@ fn terminal_feature_body_indices(
         .enumerate()
         .map(|(position, label)| (label.id.as_str(), position))
         .collect::<BTreeMap<_, _>>();
-    let aliases = body_alias_roots(bindings)?;
+    let Some(aliases) = body_alias_roots(bindings) else { return Ok(None) };
     let canonical = |identity: u32| aliases.get(&identity).copied().unwrap_or(identity);
-    let segment_boolean_operations = segment_boolean_operation_labels(booleans, data_blocks);
+    let segment_boolean_operations = segment_boolean_operation_labels(ctx, booleans, data_blocks)?;
     let operation_kinds = chronological_labels
         .iter()
         .map(|label| (label.id.as_str(), label.value.as_str()))
@@ -404,7 +405,7 @@ fn terminal_feature_body_indices(
             }
         };
         for reference in &object_references {
-            let position = *positions.get(reference.operation_label.as_str())?;
+            let Some(&position) = positions.get(reference.operation_label.as_str()) else { return Ok(None) };
             if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
                 continue;
             }
@@ -414,7 +415,7 @@ fn terminal_feature_body_indices(
             .iter()
             .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
         {
-            let position = *positions.get(operation.operation_label.as_str())?;
+            let Some(&position) = positions.get(operation.operation_label.as_str()) else { return Ok(None) };
             record_writer(canonical(operation.target.token.value()), position);
         }
     }
@@ -423,7 +424,7 @@ fn terminal_feature_body_indices(
         .iter()
         .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
     {
-        let position = *positions.get(operation.operation_label.as_str())?;
+        let Some(&position) = positions.get(operation.operation_label.as_str()) else { return Ok(None) };
         for tool in &operation.tools {
             let tool = canonical(tool.token.value());
             if last_writers
@@ -436,7 +437,7 @@ fn terminal_feature_body_indices(
     }
     for reference in &object_references {
         if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
-            let position = *positions.get(reference.operation_label.as_str())?;
+            let Some(&position) = positions.get(reference.operation_label.as_str()) else { return Ok(None) };
             let body = canonical(reference.body.value());
             if last_writers
                 .get(&body)
@@ -458,7 +459,7 @@ fn terminal_feature_body_indices(
         {
             continue;
         }
-        let position = *positions.get(operand.operation_label.as_str())?;
+        let Some(&position) = positions.get(operand.operation_label.as_str()) else { return Ok(None) };
         let body = canonical(operand.operand.atom.value());
         if last_writers
             .get(&body)
@@ -471,7 +472,7 @@ fn terminal_feature_body_indices(
         .into_keys()
         .filter(|body| !consumed.contains(body))
         .collect::<BTreeSet<_>>();
-    Some(
+    Ok(Some(
         object_references
             .iter()
             .map(|reference| reference.body.value())
@@ -482,12 +483,13 @@ fn terminal_feature_body_indices(
             )
             .filter(|identity| terminal_roots.contains(&canonical(*identity)))
             .collect(),
-    )
+    ))
 }
 
 /// Resolve one atomic terminal status for every segment-bound body image.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn segment_body_lineage_statuses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
@@ -496,8 +498,9 @@ pub(super) fn segment_body_lineage_statuses(
     operands: &[FeatureOperationBodyOperand],
     bindings: &[SegmentBodyBinding],
     inputs: &[FeatureInputBlock],
-) -> Option<Vec<SegmentBodyLineageStatus>> {
+) -> Result<Option<Vec<SegmentBodyLineageStatus>>, cadmpeg_core::CodecError> {
     let terminal = terminal_feature_body_indices(
+        ctx,
         labels,
         references,
         data_block_uses,
@@ -507,7 +510,8 @@ pub(super) fn segment_body_lineage_statuses(
         bindings,
         inputs,
     )?;
-    bindings
+    let Some(terminal) = terminal else { return Ok(None) };
+    Ok(bindings
         .iter()
         .map(|binding| {
             let statuses = [binding.body_object_index, binding.body_alias_object_index]
@@ -528,7 +532,7 @@ pub(super) fn segment_body_lineage_statuses(
                 source_offset: binding.source_offset,
             })
         })
-        .collect()
+        .collect())
 }
 
 /// Namespace proof for one Boolean's target and ordered tool participants.
@@ -547,55 +551,62 @@ pub(super) enum BooleanOffsetStoreResolution {
 /// A partial, duplicate, or cross-store offset-store relation is unresolved;
 /// it must not fall back to a segment-body alias with the same integer.
 pub(super) fn boolean_offset_store_resolution(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     operation: &FeatureBooleanOperation,
     data_blocks: &[DataBlock],
-) -> BooleanOffsetStoreResolution {
+) -> Result<BooleanOffsetStoreResolution, cadmpeg_core::CodecError> {
+    let participant_count = operation.tools.len().checked_add(1)
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX Boolean participants", 0, 1))?;
+    let work = participant_count.checked_mul(data_blocks.len())
+        .and_then(|count| count.checked_mul(2))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX Boolean participants", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "scan NX Boolean participants")?;
     let participants = std::iter::once(operation.target.token.value())
-        .chain(operation.tools.iter().map(|token| token.token.value()))
-        .collect::<Vec<_>>();
-    let mut blocks_by_ordinal = BTreeMap::<u32, Vec<&DataBlock>>::new();
-    for block in data_blocks {
-        if block.role != DataBlockRole::Column {
-            continue;
-        }
-        blocks_by_ordinal
-            .entry(block.block_ordinal)
-            .or_default()
-            .push(block);
-    }
+        .chain(operation.tools.iter().map(|token| token.token.value()));
     let mut has_offset_store_evidence = false;
-    let mut resolved = Vec::with_capacity(participants.len());
-    for object_index in &participants {
-        let Some(matches) = blocks_by_ordinal.get(object_index) else {
-            continue;
-        };
+    let mut resolved_count = 0usize;
+    let mut section_ordinal = None;
+    for object_index in participants.clone() {
+        let mut matches = data_blocks.iter().filter(|block| {
+            block.role == DataBlockRole::Column && block.block_ordinal == object_index
+        });
+        let Some(block) = matches.next() else { continue };
         has_offset_store_evidence = true;
-        let [block] = matches.as_slice() else {
-            return BooleanOffsetStoreResolution::Unresolved;
-        };
-        resolved.push((*object_index, *block));
+        if matches.next().is_some() || section_ordinal.is_some_and(|section| section != block.section_ordinal) {
+            return Ok(BooleanOffsetStoreResolution::Unresolved);
+        }
+        section_ordinal = Some(block.section_ordinal);
+        resolved_count += 1;
     }
     if !has_offset_store_evidence {
-        return BooleanOffsetStoreResolution::None;
+        return Ok(BooleanOffsetStoreResolution::None);
     }
-    if resolved.len() != participants.len() {
-        return BooleanOffsetStoreResolution::Unresolved;
+    if resolved_count != participant_count {
+        return Ok(BooleanOffsetStoreResolution::Unresolved);
     }
-    let Some(section_ordinal) = resolved.first().map(|(_, block)| block.section_ordinal) else {
-        return BooleanOffsetStoreResolution::Unresolved;
-    };
-    if resolved
-        .iter()
-        .any(|(_, block)| block.section_ordinal != section_ordinal)
-    {
-        return BooleanOffsetStoreResolution::Unresolved;
+    let mut complete = BTreeMap::new();
+    for object_index in participants {
+        let Some(block) = data_blocks.iter().find(|block| {
+            block.role == DataBlockRole::Column && block.block_ordinal == object_index
+        }) else {
+            return Ok(BooleanOffsetStoreResolution::Unresolved);
+        };
+        ctx.charge_collection_items(1, "NX Boolean offset-store participants")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, String)>() * 4),
+            "NX Boolean offset-store participant slots",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(block.id.len()),
+            "NX Boolean offset-store block identity",
+        )?;
+        let mut id = String::new();
+        id.try_reserve_exact(block.id.len())
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX Boolean offset-store block identity", 0, 1))?;
+        id.push_str(&block.id);
+        complete.insert(object_index, id);
     }
-    BooleanOffsetStoreResolution::Complete(
-        resolved
-            .into_iter()
-            .map(|(object_index, block)| (object_index, block.id.clone()))
-            .collect(),
-    )
+    Ok(BooleanOffsetStoreResolution::Complete(complete))
 }
 
 /// Return Boolean operations that are safe to treat as segment-object
@@ -604,19 +615,31 @@ pub(super) fn boolean_offset_store_resolution(
 /// namespaces is not an identity proof. Only operations with no offset-store
 /// participant evidence retain the native Boolean lineage rules.
 fn segment_boolean_operation_labels(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     booleans: &[FeatureBooleanOperation],
     data_blocks: &[DataBlock],
-) -> BTreeSet<String> {
-    booleans
-        .iter()
-        .filter(|operation| {
-            matches!(
-                boolean_offset_store_resolution(operation, data_blocks),
-                BooleanOffsetStoreResolution::None
-            )
-        })
-        .map(|operation| operation.operation_label.clone())
-        .collect()
+) -> Result<BTreeSet<String>, cadmpeg_core::CodecError> {
+    let mut labels = BTreeSet::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX segment Boolean operation labels")?;
+    for operation in booleans {
+        if !matches!(
+            boolean_offset_store_resolution(ctx, operation, data_blocks)?,
+            BooleanOffsetStoreResolution::None
+        ) {
+            continue;
+        }
+        ctx.charge_collection_items(1, "NX segment Boolean operation labels")?;
+        let bytes = (std::mem::size_of::<String>() * 4)
+            .checked_add(operation.operation_label.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX segment Boolean operation labels", 0, 1))?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+        let mut label = String::new();
+        label.try_reserve_exact(operation.operation_label.len())
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX segment Boolean operation label", 0, 1))?;
+        label.push_str(&operation.operation_label);
+        labels.insert(label);
+    }
+    Ok(labels)
 }
 
 /// Map each segment body identity to the smallest identity in its transitive alias component.
@@ -953,6 +976,20 @@ pub(super) fn segment_body_bindings(
 #[cfg(test)]
 mod tests {
     mod om_links;
+    macro_rules! terminal_feature_body_indices {
+        ($($argument:expr),* $(,)?) => {{
+            crate::test_support::with_decode_context(|ctx| {
+                super::terminal_feature_body_indices(ctx, $($argument),*)
+            }).expect("admitted terminal body lineage")
+        }};
+    }
+    macro_rules! segment_body_lineage_statuses {
+        ($($argument:expr),* $(,)?) => {{
+            crate::test_support::with_decode_context(|ctx| {
+                super::segment_body_lineage_statuses(ctx, $($argument),*)
+            }).expect("admitted segment lineage statuses")
+        }};
+    }
     use crate::test_support::test_om::segment_body_binding_payload;
     use crate::test_support::test_om::segment_body_binding_repeated_link_payload;
     use crate::test_support::test_om::segment_extended_wrapper_payload;
@@ -1499,7 +1536,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -1569,7 +1606,7 @@ mod tests {
         ];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &[],
                 &[],
@@ -1647,7 +1684,7 @@ mod tests {
         ];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -1694,7 +1731,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -1764,7 +1801,7 @@ mod tests {
         ];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -1811,7 +1848,7 @@ mod tests {
         };
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
 
-        let statuses = super::segment_body_lineage_statuses(
+        let statuses = segment_body_lineage_statuses!(
             &labels,
             &references,
             &[],
@@ -1866,7 +1903,7 @@ mod tests {
             source_offset: 0,
         }];
 
-        let statuses = super::segment_body_lineage_statuses(
+        let statuses = segment_body_lineage_statuses!(
             &labels,
             &references,
             &data_block_uses,
@@ -1936,7 +1973,7 @@ mod tests {
             source_offset: 0,
         }];
 
-        let statuses = super::segment_body_lineage_statuses(
+        let statuses = segment_body_lineage_statuses!(
             &labels,
             &references,
             &[],
@@ -2005,7 +2042,7 @@ mod tests {
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &[],
                 &[],
@@ -2072,7 +2109,7 @@ mod tests {
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &[],
                 &[],
@@ -2123,7 +2160,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -2174,7 +2211,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -2227,7 +2264,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -2289,7 +2326,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -2340,7 +2377,7 @@ mod tests {
             segment_body_bindings: vec!["binding#0".to_string()],
         }];
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &[],
                 &[],
@@ -2391,7 +2428,7 @@ mod tests {
             segment_body_bindings: Vec::new(),
         }];
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &[],
                 &[],
