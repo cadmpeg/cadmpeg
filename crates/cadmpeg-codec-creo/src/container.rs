@@ -693,11 +693,14 @@ fn scan_sections<'a>(
         if toc_delimited {
             let directory_end = hits.first().map_or(body_start, |(offset, _)| *offset);
             let Some(directory) = data.get(..directory_end) else {
-                return Err(CodecError::malformed(format!(
-                    "creo section `{name}` is TOC-delimited and its directory window ends at \
-                     {directory_end}, past the file length {}",
-                    data.len(),
-                )));
+                return Err(CodecError::malformed(ctx.format_retained(
+                    format_args!(
+                        "creo section `{name}` is TOC-delimited and its directory window ends at \
+                         {directory_end}, past the file length {}",
+                        data.len(),
+                    ),
+                    "creo section directory bounds error",
+                )?));
             };
             if !toc_lists_section(directory, name_bytes) {
                 continue;
@@ -1222,7 +1225,11 @@ fn identify_layout(
 /// (e.g. the `f3`/`f2` `crv_array` discriminators) are skipped before the
 /// required `f8` opener, whose compact-integer count is then decoded ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array),
 /// [§5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#5-topology-and-section-records)).
-fn read_array_count(region: &[u8], label: &[u8]) -> Result<Option<u32>, CodecError> {
+fn read_array_count(
+    ctx: &DecodeContext<'_>,
+    region: &[u8],
+    label: &[u8],
+) -> Result<Option<u32>, CodecError> {
     let mut from = 0;
     let mut total = 0u32;
     let mut found = false;
@@ -1237,12 +1244,15 @@ fn read_array_count(region: &[u8], label: &[u8]) -> Result<Option<u32>, CodecErr
                     Some(&psb::token::ARRAY_OPEN) => {
                         let (count, _) = psb::compact_int(region, p + 1);
                         let Some(sum) = total.checked_add(count) else {
-                            return Err(CodecError::malformed(format!(
-                                "creo `{}` namespace array at offset {pos} declares {count} \
-                                 entries, which added to the {total} already declared exceeds \
-                                 the 32-bit census",
-                                String::from_utf8_lossy(label),
-                            )));
+                            return Err(CodecError::malformed(ctx.format_retained(
+                                format_args!(
+                                    "creo `{}` namespace array at offset {pos} declares {count} \
+                                     entries, which added to the {total} already declared exceeds \
+                                     the 32-bit census",
+                                    String::from_utf8_lossy(label),
+                                ),
+                                "creo geometry array census error",
+                            )?));
                         };
                         total = sum;
                         found = true;
@@ -1259,7 +1269,7 @@ fn read_array_count(region: &[u8], label: &[u8]) -> Result<Option<u32>, CodecErr
 }
 
 /// Read the visible-geometry namespace census from the `VisibGeom` section body.
-fn geom_census(sections: &[ScannedSection<'_>]) -> Result<GeomCensus, CodecError> {
+fn geom_census(ctx: &DecodeContext<'_>, sections: &[ScannedSection<'_>]) -> Result<GeomCensus, CodecError> {
     let Some(vg) = sections
         .iter()
         .find(|s| s.section.name() == VISIBGEOM)
@@ -1269,8 +1279,8 @@ fn geom_census(sections: &[ScannedSection<'_>]) -> Result<GeomCensus, CodecError
     };
     let region = vg.region;
     Ok(GeomCensus {
-        srf_array_count: read_array_count(region, b"srf_array")?,
-        crv_array_count: read_array_count(region, b"crv_array")?,
+        srf_array_count: read_array_count(ctx, region, b"srf_array")?,
+        crv_array_count: read_array_count(ctx, region, b"crv_array")?,
     })
 }
 
@@ -2791,7 +2801,7 @@ pub(crate) fn scan_bytes<'a>(
         .transpose()?
         .unwrap_or_default();
     let model_geometry_sections = model_geometry_sections(ctx, &sections)?;
-    let census = geom_census(&sections)?;
+    let census = geom_census(ctx, &sections)?;
     let principal_unit = if let Some(unit) = binary_principal_unit(&data) {
         Some(unit)
     } else {

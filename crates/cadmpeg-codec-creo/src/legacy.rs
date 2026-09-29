@@ -1525,12 +1525,15 @@ fn scan_scope(
     range: Range<usize>,
 ) -> Result<Scope, CodecError> {
     if range.end > data.len() {
-        return Err(CodecError::malformed(format!(
-            "creo legacy persistence scope at offset {} declares end {}, past the file length {}",
-            range.start,
-            range.end,
-            data.len(),
-        )));
+        return Err(CodecError::malformed(ctx.format_retained(
+            format_args!(
+                "creo legacy persistence scope at offset {} declares end {}, past the file length {}",
+                range.start,
+                range.end,
+                data.len(),
+            ),
+            "creo legacy scope bounds error",
+        )?));
     }
     let mut declarations = Vec::<AttributeDeclaration>::new();
     let mut declaration_indices = BTreeMap::<u32, usize>::new();

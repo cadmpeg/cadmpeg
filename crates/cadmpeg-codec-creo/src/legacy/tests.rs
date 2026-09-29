@@ -23,6 +23,26 @@ use super::{
     StringValue, UnsignedPayload, ValueKind,
 };
 
+#[test]
+fn legacy_scope_bounds_error_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::scan_scope(&ctx, &[0], 0..2)
+        .expect_err("scope end exceeds source length");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo legacy scope bounds error"));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = super::scan_scope(ctx, &[0], 0..2)
+            .expect_err("scope end exceeds source length");
+        assert!(error.to_string().contains("past the file length"));
+        Ok::<(), cadmpeg_core::CodecError>(())
+    }).expect("service error text admitted");
+}
+
 mod string_admission;
 mod numeric_admission;
 
