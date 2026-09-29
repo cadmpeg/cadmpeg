@@ -1096,6 +1096,70 @@ impl ResolvedExtrusionSurface {
     }
 }
 
+fn copy_resolved_extrusion_support(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    support: &ResolvedExtrusionSupport,
+) -> Result<ResolvedExtrusionSupport, cadmpeg_core::CodecError> {
+    let surface = match &support.surface {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) =>
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                crate::resource::copy_nurbs_surface(ctx, nurbs,
+                    "catia_b5_extrusion_support_surface_copy")?)),
+        other => other.clone(),
+    };
+    Ok(ResolvedExtrusionSupport {
+        surface_object_id: support.surface_object_id,
+        surface,
+        pcurve: crate::resource::copy_pcurve_geometry(ctx, &support.pcurve,
+            "catia_b5_extrusion_support_pcurve_copy")?,
+        pcurve_parameter_range: support.pcurve_parameter_range,
+        curve: support.curve.as_ref().map(|curve| copy_lifted_curve(ctx, curve)).transpose()?,
+    })
+}
+
+pub(in crate::families) fn copy_resolved_extrusion_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &ResolvedExtrusionSurface,
+) -> Result<ResolvedExtrusionSurface, cadmpeg_core::CodecError> {
+    let directrix = match &value.directrix {
+        ResolvedExtrusionDirectrix::Intersection { supports, cache_fit_tolerance } => {
+            ctx.charge_retained(std::mem::size_of::<[ResolvedExtrusionSupport; 2]>() as u64,
+                "catia_b5_extrusion_support_pair_copy")?;
+            ResolvedExtrusionDirectrix::Intersection {
+                supports: Box::new([
+                    copy_resolved_extrusion_support(ctx, &supports[0])?,
+                    copy_resolved_extrusion_support(ctx, &supports[1])?,
+                ]),
+                cache_fit_tolerance: *cache_fit_tolerance,
+            }
+        }
+        ResolvedExtrusionDirectrix::SurfaceCurve { support, curve } =>
+            ResolvedExtrusionDirectrix::SurfaceCurve {
+                support: copy_resolved_extrusion_support(ctx, support)?,
+                curve: copy_lifted_curve(ctx, curve)?,
+            },
+        ResolvedExtrusionDirectrix::Offset {
+            source_object_id, support, source_curve, source_parameter_range,
+            distance, direction,
+        } => ResolvedExtrusionDirectrix::Offset {
+            source_object_id: *source_object_id,
+            support: copy_resolved_extrusion_support(ctx, support)?,
+            source_curve: copy_lifted_curve(ctx, source_curve)?,
+            source_parameter_range: *source_parameter_range,
+            distance: *distance,
+            direction: *direction,
+        },
+    };
+    Ok(ResolvedExtrusionSurface {
+        surface_object_id: value.surface_object_id,
+        directrix_object_id: value.directrix_object_id,
+        directrix_parameter_range: value.directrix_parameter_range,
+        direction: value.direction,
+        parameter_bounds: value.parameter_bounds,
+        directrix,
+    })
+}
+
 /// Exact support construction of a resolved offset surface.
 #[derive(Clone, PartialEq)]
 pub(in crate::families) enum ResolvedOffsetSupport {

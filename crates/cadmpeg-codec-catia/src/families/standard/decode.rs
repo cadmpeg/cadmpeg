@@ -1774,6 +1774,79 @@ fn copy_e5_surface_geometry(
     }
 }
 
+fn copy_standard_procedure(
+    ctx: &DecodeContext<'_>,
+    procedure: &StandardSurfaceProcedure,
+) -> Result<StandardSurfaceProcedure, CodecError> {
+    Ok(match procedure {
+        StandardSurfaceProcedure::RollingBall { carrier_object_id, definition, source } =>
+            StandardSurfaceProcedure::RollingBall {
+                carrier_object_id: *carrier_object_id,
+                definition: crate::families::b5::transfer::surfaces::copy_rolling_ball_definition(
+                    ctx, definition)?,
+                source: *source,
+            },
+        StandardSurfaceProcedure::Offset {
+            carrier_object_id, support_object_id, support, distance, parameter_bounds,
+        } => {
+            let support = match support {
+                crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(geometry) => {
+                    let geometry = match geometry {
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) =>
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                                crate::resource::copy_nurbs_surface(ctx, nurbs,
+                                    "catia_standard_offset_support_copy")?)),
+                        SurfaceGeometry::Solved(
+                            SolvedSurfaceGeometry::Plane(_) | SolvedSurfaceGeometry::Cylinder(_)
+                            | SolvedSurfaceGeometry::Cone(_) | SolvedSurfaceGeometry::Sphere(_)
+                            | SolvedSurfaceGeometry::Torus(_)) => geometry.clone(),
+                        _ => return Err(CodecError::malformed(
+                            "standard offset support has unexpected geometry")),
+                    };
+                    crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(geometry)
+                }
+                crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(extrusion) => {
+                    ctx.charge_retained(std::mem::size_of::<
+                        crate::families::b5::transfer::ResolvedExtrusionSurface>() as u64,
+                        "catia_standard_offset_extrusion_copy")?;
+                    crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(Box::new(
+                        crate::families::b5::transfer::copy_resolved_extrusion_surface(
+                            ctx, extrusion)?))
+                }
+            };
+            StandardSurfaceProcedure::Offset {
+                carrier_object_id: *carrier_object_id,
+                support_object_id: *support_object_id,
+                support,
+                distance: *distance,
+                parameter_bounds: *parameter_bounds,
+            }
+        }
+        StandardSurfaceProcedure::Extrusion(extrusion) => {
+            ctx.charge_retained(std::mem::size_of::<
+                crate::families::b5::transfer::ResolvedExtrusionSurface>() as u64,
+                "catia_standard_extrusion_plan_copy")?;
+            StandardSurfaceProcedure::Extrusion(Box::new(
+                crate::families::b5::transfer::copy_resolved_extrusion_surface(ctx, extrusion)?))
+        }
+        StandardSurfaceProcedure::Revolution(revolution) => {
+            ctx.charge_retained(std::mem::size_of::<
+                crate::families::b5::transfer::ResolvedRevolutionSurface>() as u64,
+                "catia_standard_revolution_plan_copy")?;
+            StandardSurfaceProcedure::Revolution(Box::new(
+                crate::families::b5::transfer::ResolvedRevolutionSurface {
+                    directrix: crate::resource::copy_nurbs_curve(ctx, &revolution.directrix,
+                        "catia_standard_revolution_directrix_copy")?,
+                    axis_origin: revolution.axis_origin,
+                    axis_direction: revolution.axis_direction,
+                    angular_interval: revolution.angular_interval,
+                    angular_parameter_interval: revolution.angular_parameter_interval,
+                    parameter_interval: revolution.parameter_interval,
+                }))
+        }
+    })
+}
+
 /// Join standard freeform faces to exact E5 class-`0xd8` rolling-ball jets.
 /// The face and wrapper identities are the same strict join used by analytic
 /// E5 carriers; only the underlying carrier decoder differs. The carrier's
@@ -2560,7 +2633,8 @@ fn try_decode_standard_population(
                     geometry,
                     source_object: Some(admitted!(cgm_source(ctx, "carrier", *tag))),
                 });
-                if let Some(procedure) = freeform_procedural_surfaces.get(tag).cloned() {
+                if let Some(procedure) = admitted!(freeform_procedural_surfaces.get(tag)
+                    .map(|procedure| copy_standard_procedure(ctx, procedure)).transpose()) {
                     admitted!(crate::resource::push(ctx, &mut procedural_surface_plans,
                         (i, id, *tag, procedure), "catia_standard_procedural_surface_plans"));
                 }
