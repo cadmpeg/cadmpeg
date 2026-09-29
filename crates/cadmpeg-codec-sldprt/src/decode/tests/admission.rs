@@ -983,3 +983,47 @@ fn metadata_regeneration_parent_refuses_work_limit() {
     assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
     assert_eq!(refusal.additional, 3);
 }
+
+fn composite_curve_source() -> Vec<u8> {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords",
+        br#"<Keywords><CompositeCurve Name="Composite" id="10" Segments="curve-a;curve-b"/></Keywords>"#,
+    ));
+    source
+}
+
+#[test]
+fn metadata_curve_projection_refuses_collection_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = collection_refusal_with_options(
+        &composite_curve_source(), options, "project SLDPRT composite curve segments",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(refusal.additional, 1);
+}
+
+#[test]
+fn metadata_curve_projection_refuses_retained_limit() {
+    let mut options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(
+        &composite_curve_source(), &mut options, "retain SLDPRT datum and curve reference",
+    );
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT datum and curve reference"
+    ));
+}
+
+#[test]
+fn metadata_curve_projection_refuses_work_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = work_refusal_with_options(
+        &composite_curve_source(), options, "project SLDPRT composite curve segments",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(refusal.additional, 1);
+}
