@@ -3,10 +3,7 @@
 
 use super::geometry::{resolve_transform, source_object};
 use super::push_attributed_loss;
-use crate::decode_resource::{
-    collect_optional_vec, collect_result_vec, insert_optional_btree_map, insert_optional_btree_set,
-    reserve_vec, reserve_vec_growth,
-};
+
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::parameter::ParameterRecord;
@@ -62,28 +59,13 @@ impl CopiousProjectionOutcome {
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
         for sequence in self.decoded {
-            insert_optional_btree_set(
-                Some(ctx),
-                decoded,
-                sequence,
-                "iges merged decoded sequences",
-            )?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), decoded, sequence, "iges merged decoded sequences")?;
         }
-        reserve_vec_growth(ctx, losses, self.losses.len(), "iges merged loss slots")?;
+        ctx.reserve_vec(losses, self.losses.len(), "iges merged loss slots")?;
         losses.extend(self.losses);
-        reserve_vec_growth(
-            ctx,
-            wire_edges,
-            self.wire_edges.len(),
-            "iges merged wire edge slots",
-        )?;
+        ctx.reserve_vec(wire_edges, self.wire_edges.len(), "iges merged wire edge slots")?;
         wire_edges.extend(self.wire_edges);
-        reserve_vec_growth(
-            ctx,
-            free_vertices,
-            self.free_vertices.len(),
-            "iges merged free vertex slots",
-        )?;
+        ctx.reserve_vec(free_vertices, self.free_vertices.len(), "iges merged free vertex slots")?;
         free_vertices.extend(self.free_vertices);
         Ok(())
     }
@@ -238,7 +220,7 @@ fn has_form_63_self_intersection(
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let planar_points =
-        collect_result_vec(ctx, points.len(), "iges copious planar points", |index| {
+        ctx.collect_indexed_vec(points.len(), "iges copious planar points", |index| {
             let point = points[index];
             Ok([point.x, point.y])
         })?;
@@ -257,23 +239,11 @@ pub(super) fn project(
 ) -> Result<CopiousProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        insert_optional_btree_map(
-            Some(ctx),
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges copious parameter index",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut records, record.directory_sequence, record, "iges copious parameter index")?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        insert_optional_btree_map(
-            Some(ctx),
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges copious directory index",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut entries, entry.sequence, entry, "iges copious directory index")?;
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -457,11 +427,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(values) = collect_optional_vec(
-            ctx,
-            (tuple_start..tuple_end).map(|index| record.number(index).and_then(FiniteReal::new)),
-            "iges copious tuple values",
-        )?
+        let Some(values) = ctx.collect_options((tuple_start..tuple_end).map(|index| record.number(index).and_then(FiniteReal::new)), "iges copious tuple values")?
         else {
             push_copious_loss(
                 ctx,
@@ -471,11 +437,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let definition_points = collect_result_vec(
-            ctx,
-            tuple_count,
-            "iges copious definition points",
-            |index| {
+        let definition_points = ctx.collect_indexed_vec(tuple_count, "iges copious definition points", |index| {
                 let tuple = &values[index * tuple_width..(index + 1) * tuple_width];
                 let z = match common_z {
                     Some(z) => z,
@@ -486,16 +448,11 @@ pub(super) fn project(
                     tuple[1].get() * factor,
                     z.get() * factor,
                 ))
-            },
-        )?;
-        let Some(positions) = collect_optional_vec(
-            ctx,
-            definition_points
+            })?;
+        let Some(positions) = ctx.collect_options(definition_points
                 .iter()
                 .copied()
-                .map(|point| transform.apply_point(point)),
-            "iges copious positioned points",
-        )?
+                .map(|point| transform.apply_point(point)), "iges copious positioned points")?
         else {
             push_copious_loss(
                 ctx,
@@ -537,7 +494,7 @@ pub(super) fn project(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
                     ctx,
                 )?;
-                reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges copious neutral points")?;
+                ctx.reserve_vec(&mut ir.model.points, 1, "iges copious neutral points")?;
                 crate::decode_resource::admit_optional_entities(
                     Some(ctx),
                     1,
@@ -552,12 +509,7 @@ pub(super) fn project(
                     position,
                     None,
                 ));
-                reserve_vec_growth(
-                    ctx,
-                    &mut ir.model.vertices,
-                    1,
-                    "iges copious neutral vertices",
-                )?;
+                ctx.reserve_vec(&mut ir.model.vertices, 1, "iges copious neutral vertices")?;
                 crate::decode_resource::admit_optional_entities(
                     Some(ctx),
                     1,
@@ -572,19 +524,14 @@ pub(super) fn project(
                     point,
                     tolerance: None,
                 });
-                reserve_vec_growth(ctx, &mut free_vertices, 1, "iges copious free vertices")?;
+                ctx.reserve_vec(&mut free_vertices, 1, "iges copious free vertices")?;
                 free_vertices.push(vertex);
             }
-            insert_optional_btree_set(
-                Some(ctx),
-                &mut decoded,
-                entry.sequence,
-                "iges copious decoded sequences",
-            )?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges copious decoded sequences")?;
             continue;
         }
         let points =
-            collect_result_vec(ctx, positions.len(), "iges copious path points", |index| {
+            ctx.collect_indexed_vec(positions.len(), "iges copious path points", |index| {
                 Ok(positions[index].get())
             })?;
         let resolution = global.minimum_resolution_mm();
@@ -634,7 +581,7 @@ pub(super) fn project(
             .len()
             .checked_add(2)
             .ok_or_else(|| refuse_local_limit("iges copious knots", u64::MAX, 1))?;
-        let mut knots = reserve_vec(ctx, knot_count, "iges copious knots")?;
+        let mut knots = ctx.collection_vec(knot_count, "iges copious knots")?;
         knots.extend([0.0, 0.0]);
         knots.extend((1..points.len() - 1).map(|value| value as f64));
         knots.extend([parameter_end, parameter_end]);
@@ -657,7 +604,7 @@ pub(super) fn project(
         };
         let curve = crate::ids::curve_admitted(&stem, ctx)?;
         let edge = crate::ids::edge_admitted(&stem, ctx)?;
-        reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges copious neutral points")?;
+        ctx.reserve_vec(&mut ir.model.points, 1, "iges copious neutral points")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model.points.push(Point::new(
             crate::decode_resource::clone_optional_identity(
@@ -668,12 +615,7 @@ pub(super) fn project(
             start,
             None,
         ));
-        reserve_vec_growth(
-            ctx,
-            &mut ir.model.vertices,
-            1,
-            "iges copious neutral vertices",
-        )?;
+        ctx.reserve_vec(&mut ir.model.vertices, 1, "iges copious neutral vertices")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model.vertices.push(Vertex {
             id: crate::decode_resource::clone_optional_identity(
@@ -685,7 +627,7 @@ pub(super) fn project(
             tolerance: topology_tolerance,
         });
         if entry.form != 63 {
-            reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges copious neutral points")?;
+            ctx.reserve_vec(&mut ir.model.points, 1, "iges copious neutral points")?;
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
             ir.model.points.push(Point::new(
                 crate::decode_resource::clone_optional_identity(
@@ -696,12 +638,7 @@ pub(super) fn project(
                 end,
                 None,
             ));
-            reserve_vec_growth(
-                ctx,
-                &mut ir.model.vertices,
-                1,
-                "iges copious neutral vertices",
-            )?;
+            ctx.reserve_vec(&mut ir.model.vertices, 1, "iges copious neutral vertices")?;
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
             ir.model.vertices.push(Vertex {
                 id: crate::decode_resource::clone_optional_identity(
@@ -714,19 +651,15 @@ pub(super) fn project(
             });
         }
         sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
-        let knots = collect_optional_vec(
-            ctx,
-            knots.into_iter().map(FiniteReal::new),
-            "iges copious finite knots",
-        )?
+        let knots = ctx.collect_options(knots.into_iter().map(FiniteReal::new), "iges copious finite knots")?
         .ok_or_else(|| CodecError::malformed("copious-data curve: knots must be finite"))?;
-        let mut raw_knots = reserve_vec(ctx, knots.len(), "iges copious admitted knots")?;
+        let mut raw_knots = ctx.collection_vec(knots.len(), "iges copious admitted knots")?;
         raw_knots.extend(knots.into_iter().map(FiniteReal::get));
         let nurbs = KnotVector::new(raw_knots).and_then(|knots| {
             NurbsPoles3::from_checked_lanes(positions, None)
                 .and_then(|poles| NurbsCurve::new(1, knots, poles, false))
         });
-        reserve_vec_growth(ctx, &mut ir.model.curves, 1, "iges copious neutral curves")?;
+        ctx.reserve_vec(&mut ir.model.curves, 1, "iges copious neutral curves")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model.curves.push(Curve {
             id: crate::decode_resource::clone_optional_identity(
@@ -739,7 +672,7 @@ pub(super) fn project(
             )?)),
             source_object: Some(source_object(entry, Some(ctx))?),
         });
-        reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges copious neutral edges")?;
+        ctx.reserve_vec(&mut ir.model.edges, 1, "iges copious neutral edges")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model.edges.push(Edge {
             id: crate::decode_resource::clone_optional_identity(
@@ -756,14 +689,9 @@ pub(super) fn project(
             end: end_vertex,
             tolerance: topology_tolerance,
         });
-        reserve_vec_growth(ctx, &mut wire_edges, 1, "iges copious wire edges")?;
+        ctx.reserve_vec(&mut wire_edges, 1, "iges copious wire edges")?;
         wire_edges.push(edge);
-        insert_optional_btree_set(
-            Some(ctx),
-            &mut decoded,
-            entry.sequence,
-            "iges copious decoded sequences",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges copious decoded sequences")?;
     }
 
     Ok(CopiousProjectionOutcome {

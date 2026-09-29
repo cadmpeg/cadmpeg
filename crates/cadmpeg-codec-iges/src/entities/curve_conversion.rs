@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact conversions from bounded analytic curves to NURBS carriers.
 
-use crate::decode_resource::reserve_optional_vec;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
@@ -71,8 +70,8 @@ pub(crate) fn elliptical_arc_nurbs(
     let transverse = axis.cross(major_direction);
     let spans = quarter_turn_spans(delta);
     let step = delta / spans as f64;
-    let mut knots = reserve_optional_vec(ctx, spans * 2 + 4, "iges analytic arc knots")?;
-    let mut poles = reserve_optional_vec(ctx, spans * 2 + 1, "iges analytic arc weighted poles")?;
+    let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, spans * 2 + 4, "iges analytic arc knots")?;
+    let mut poles = cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, spans * 2 + 1, "iges analytic arc weighted poles")?;
     for span in 0..spans {
         let start = if span == 0 {
             interval[0]
@@ -200,9 +199,9 @@ pub(crate) fn parabolic_arc_nurbs(
     {
         return Ok(None);
     }
-    let mut knots = reserve_optional_vec(ctx, 6, "iges parabolic arc knots")?;
+    let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, 6, "iges parabolic arc knots")?;
     knots.extend([start, start, start, end, end, end]);
-    let mut points = reserve_optional_vec(ctx, 3, "iges parabolic arc poles")?;
+    let mut points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, 3, "iges parabolic arc poles")?;
     for point in [start_point, middle_point, end_point] {
         points.push(finite_arc_point(point)?);
     }

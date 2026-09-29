@@ -3,9 +3,7 @@
 
 use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
-use crate::decode_resource::{
-    format_retained, insert_optional_btree_map, push_formatted_note, reserve_vec_growth,
-};
+
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -208,7 +206,7 @@ fn recovery_text(
     operation: &'static str,
 ) -> Result<String, CodecError> {
     match ctx {
-        Some(ctx) => format_retained(ctx, args, operation),
+        Some(ctx) => ctx.format_retained(args, operation),
         None => Ok(fmt::format(args)),
     }
 }
@@ -274,10 +272,8 @@ impl FramingRecoveries {
     pub(crate) fn notes(&self, ctx: &DecodeContext<'_>) -> Result<Vec<LossNote>, CodecError> {
         let mut notes = Vec::new();
         for ((section, defect), recovery) in &self.0 {
-            reserve_vec_growth(ctx, &mut notes, 1, "iges framing recovery loss slots")?;
-            let message = format_retained(
-                ctx,
-                format_args!(
+            ctx.reserve_vec(&mut notes, 1, "iges framing recovery loss slots")?;
+            let message = ctx.format_retained(format_args!(
                         "IGES {} section recovered {} from the card census: the first offending {} is at position {} in the section, which declared {}, and the decoder used {}; {} {} in this section required the same recovery",
                         section.name(),
                         defect.description(),
@@ -287,14 +283,8 @@ impl FramingRecoveries {
                         recovery.used,
                         recovery.count,
                         defect.unit(),
-                ),
-                "iges framing recovery loss message",
-            )?;
-            let tag = format_retained(
-                ctx,
-                format_args!("{}:framing", section.name()),
-                "iges framing recovery loss tag",
-            )?;
+                ), "iges framing recovery loss message")?;
+            let tag = ctx.format_retained(format_args!("{}:framing", section.name()), "iges framing recovery loss tag")?;
             let code = IgesLossCode::CardFramingRecovered;
             ctx.charge_retained(
                 4 + code.code().len() as u64,
@@ -740,18 +730,8 @@ fn summary_attribute(
     key: &'static str,
     value: String,
 ) -> Result<(), CodecError> {
-    let key = format_retained(
-        ctx,
-        format_args!("{key}"),
-        "iges card summary attribute key",
-    )?;
-    insert_optional_btree_map(
-        Some(ctx),
-        attributes,
-        key,
-        value,
-        "iges card summary attributes",
-    )?;
+    let key = ctx.format_retained(format_args!("{key}"), "iges card summary attribute key")?;
+    cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), attributes, key, value, "iges card summary attributes")?;
     Ok(())
 }
 
@@ -794,34 +774,22 @@ pub(crate) fn summarize(
         if line_count == 0 {
             continue;
         }
-        reserve_vec_growth(ctx, &mut entries, 1, "iges card summary entries")?;
+        ctx.reserve_vec(&mut entries, 1, "iges card summary entries")?;
         let mut attributes = BTreeMap::new();
         summary_attribute(
             ctx,
             &mut attributes,
             "cards",
-            format_retained(
-                ctx,
-                format_args!("{line_count}"),
-                "iges card summary card count",
-            )?,
+            ctx.format_retained(format_args!("{line_count}"), "iges card summary card count")?,
         )?;
         summary_attribute(
             ctx,
             &mut attributes,
             "line_endings",
-            format_retained(
-                ctx,
-                format_args!("{}", EndingSummary(endings)),
-                "iges card summary line endings",
-            )?,
+            ctx.format_retained(format_args!("{}", EndingSummary(endings)), "iges card summary line endings")?,
         )?;
         entries.push(ContainerEntry {
-            name: format_retained(
-                ctx,
-                format_args!("{}", section.name()),
-                "iges card summary section name",
-            )?,
+            name: ctx.format_retained(format_args!("{}", section.name()), "iges card summary section name")?,
             role: ContainerRole::Section,
             storage: EntryStorage::verbatim(VerbatimLabel::None, size),
             attributes,
@@ -859,37 +827,23 @@ pub(crate) fn summarize(
                     refuse_local_limit("iges card summary trailing size", u64::MAX, 1)
                 })?;
         }
-        reserve_vec_growth(ctx, &mut entries, 1, "iges card summary entries")?;
+        ctx.reserve_vec(&mut entries, 1, "iges card summary entries")?;
         let mut attributes = BTreeMap::new();
         summary_attribute(
             ctx,
             &mut attributes,
             "records",
-            format_retained(
-                ctx,
-                format_args!("{}", post_terminate.len()),
-                "iges card summary trailing count",
-            )?,
+            ctx.format_retained(format_args!("{}", post_terminate.len()), "iges card summary trailing count")?,
         )?;
         entries.push(ContainerEntry {
-            name: format_retained(
-                ctx,
-                format_args!("post-terminate"),
-                "iges card summary section name",
-            )?,
+            name: ctx.format_retained(format_args!("post-terminate"), "iges card summary section name")?,
             role: ContainerRole::RetainedTrailingRecords,
             storage: EntryStorage::verbatim(VerbatimLabel::None, size),
             attributes,
         });
     }
     let mut notes = Vec::new();
-    push_formatted_note(
-        ctx,
-        &mut notes,
-        format_args!("source_bytes={}", scan.source.len()),
-        "iges card summary notes",
-        "iges card summary note text",
-    )?;
+    ctx.push_formatted_retained(&mut notes, format_args!("source_bytes={}", scan.source.len()), "iges card summary notes", "iges card summary note text")?;
     Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(primary),
         cadmpeg_ir::ContainerKind::FixedAscii,

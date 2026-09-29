@@ -3121,7 +3121,7 @@ fn face_loop_order<'a>(
     ir: &'a CadIr,
     face: &cadmpeg_ir::topology::Face,
 ) -> Result<Vec<&'a Loop>, CodecError> {
-    let mut loops = Vec::with_capacity(face.loops.len());
+    let mut loops = Vec::new();
     for loop_id in &face.loops {
         let loop_ = ir
             .model
@@ -3298,7 +3298,7 @@ fn curve_on_surface_entity(
         edge_indices,
         pcurve_indices,
     } = request;
-    let mut model_children = Vec::with_capacity(loop_.coedges().len());
+    let mut model_children = Vec::new();
     let mut pcurve_children = Vec::new();
     for coedge_id in loop_.coedges() {
         let coedge = ir
@@ -3991,7 +3991,7 @@ fn reference_marker(index: usize) -> String {
 }
 
 fn resolve_entity_references(entities: &mut [Entity]) -> Result<(), CodecError> {
-    let mut directory_sequences = Vec::with_capacity(entities.len());
+    let mut directory_sequences = Vec::new();
     let mut expanded_index = 0_u32;
     for entity in entities.iter() {
         if entity.transform.is_some() {
@@ -4009,7 +4009,7 @@ fn resolve_entity_references(entities: &mut [Entity]) -> Result<(), CodecError> 
             .ok_or_else(|| CodecError::Malformed("IGES entity sequence overflows".into()))?;
     }
     for entity in entities {
-        let mut resolved = Vec::with_capacity(entity.parameter_body.len());
+        let mut resolved = Vec::new();
         let mut index = 0;
         while index < entity.parameter_body.len() {
             if entity.parameter_body[index] == b'@'
@@ -4154,7 +4154,7 @@ impl PcurveOrientationContext<'_> {
     }
 
     fn map(&self, uses: &[PcurveUse]) -> Result<Vec<(Point3, Point3)>, CodecError> {
-        let mut mapped = Vec::with_capacity(uses.len());
+        let mut mapped = Vec::new();
         for pcurve_use in uses {
             let pcurve = self
                 .ir
@@ -5931,7 +5931,7 @@ fn curve_reference_span_inner(
     }
     let result = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => {
-            let mut child_spans = Vec::with_capacity(segments.len());
+            let mut child_spans = Vec::new();
             let mut total = 0.0;
             for segment in segments {
                 let child = ir
@@ -7035,7 +7035,7 @@ fn polyline_parameters(polyline: &PolylineCurve) -> Result<PolylineParameters, C
 }
 
 fn polyline_knots(parameters: &PolylineParameters) -> Vec<f64> {
-    let mut knots = Vec::with_capacity(parameters.interior.len() + 4);
+    let mut knots = Vec::new();
     knots.extend([parameters.first; 2]);
     knots.extend_from_slice(&parameters.interior);
     knots.extend([parameters.last; 2]);
@@ -7107,8 +7107,8 @@ fn encode_file(
     );
     let global_cards = crate::global::layout_global_cards(&global, None)?;
     let global_count = global_cards.len();
-    let mut expanded = Vec::with_capacity(entities.len() * 2);
-    let mut expanded_index_by_entity = Vec::with_capacity(entities.len());
+    let mut expanded = Vec::new();
+    let mut expanded_index_by_entity = Vec::new();
     for (index, entity) in entities.iter().enumerate() {
         if let Some(placement) = entity.transform {
             let transform_parameters = placement
@@ -7152,7 +7152,7 @@ fn encode_file(
         .ok_or_else(|| CodecError::NotImplemented("IGES directory count overflows".into()))?;
     let directory_count = u32::try_from(directory_capacity)
         .map_err(|_| CodecError::NotImplemented("IGES directory count overflows".into()))?;
-    let mut directory = Vec::with_capacity(directory_capacity);
+    let mut directory = Vec::new();
     let mut parameters = Vec::new();
     for (index, (entity, transform_sequence, presentation)) in expanded.iter().enumerate() {
         let directory_sequence = u32::try_from(index)
@@ -7429,7 +7429,7 @@ fn civil_date_from_unix_days(days: i64) -> (i64, i64, i64) {
 }
 
 fn directory_card(fields: [String; 9], sequence: u32) -> Result<Vec<u8>, CodecError> {
-    let mut payload = Vec::with_capacity(72);
+    let mut payload = Vec::new();
     for field in fields {
         payload.extend_from_slice(&crate::directory::render_field(field.as_bytes())?);
     }

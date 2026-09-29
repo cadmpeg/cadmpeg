@@ -187,9 +187,8 @@ fn card(out: &mut Vec<u8>, data: &[u8], section: u8, sequence: u64) {
         data.len() <= CARD_DATA_COLUMNS,
         "card data exceeds the seventy-two data columns"
     );
-    let start = out.len();
     out.extend_from_slice(data);
-    out.resize(start + CARD_DATA_COLUMNS, b' ');
+    out.extend(std::iter::repeat(b' ').take(CARD_DATA_COLUMNS - data.len()));
     out.push(section);
     let mut field = [b' '; SEQUENCE_COLUMNS];
     right_aligned(&mut field, sequence);
@@ -333,7 +332,7 @@ fn composite_chains(scale: Scale) -> Vec<u8> {
     let nest_size = 8;
     let tiles = pool / children;
     assert!(tiles > nest_size, "the chain holds at least one nested run");
-    let mut entities = Vec::with_capacity(pool + tiles + overlapping + nests);
+    let mut entities = Vec::new();
     for index in 0..pool {
         entities.push(chain_segment(index));
     }
@@ -409,7 +408,7 @@ fn bilinear_patch(height: i64) -> String {
 fn trimmed_surfaces(scale: Scale) -> Vec<u8> {
     let blocks = scale.pick(1_400, 30);
     let inner_loops = 3;
-    let mut entities = Vec::with_capacity(blocks * (inner_loops * 3 + 5));
+    let mut entities = Vec::new();
     for block in 0..blocks {
         let base = entities.len();
         let height = (block as i64 % 200) * 5;
@@ -420,7 +419,7 @@ fn trimmed_surfaces(scale: Scale) -> Vec<u8> {
             PHYSICALLY_DEPENDENT,
             bilinear_patch(height),
         ));
-        let mut boundaries = Vec::with_capacity(inner_loops + 1);
+        let mut boundaries = Vec::new();
         for loop_index in 0..=inner_loops {
             let corners = if loop_index == 0 {
                 unit_square(1000, 0)
@@ -699,7 +698,7 @@ fn annotation_runs(scale: Scale) -> Vec<u8> {
 fn free_curve_soup(scale: Scale) -> Vec<u8> {
     let curves = scale.pick(20_000, 400);
     let path_points = scale.pick(24, 6);
-    let mut entities = Vec::with_capacity(curves);
+    let mut entities = Vec::new();
     for index in 0..curves {
         let step = index as i64;
         let plane = step % 61 * 250;
