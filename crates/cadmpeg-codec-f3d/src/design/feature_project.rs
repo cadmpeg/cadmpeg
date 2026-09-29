@@ -1903,7 +1903,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             let _ = parameter.dependencies.insert(dependency);
         }
     }
-    normalize_parameter_ordinals(&mut parameters);
+    normalize_parameter_ordinals(&mut parameters, &parameter_owners);
     for feature in &mut features {
         for parameter in parameters.iter().filter(|parameter| parameter.owner.as_ref() == Some(&feature.id)) {
             for dependency in &parameter.dependencies {
@@ -5672,13 +5672,12 @@ fn form_cage_serializers(
     Ok(FormCageSerializers { ordered, entries })
 }
 
-fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignParameter]) {
+fn normalize_parameter_ordinals(
+    parameters: &mut [cadmpeg_ir::features::DesignParameter],
+    owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
+) {
     use cadmpeg_ir::features::{FeatureId, ParameterId};
 
-    let owners = parameters
-        .iter()
-        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
-        .collect::<HashMap<_, _>>();
     let mut groups = HashMap::<Option<FeatureId>, Vec<usize>>::new();
     for (index, parameter) in parameters.iter().enumerate() {
         groups
