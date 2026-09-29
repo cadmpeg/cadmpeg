@@ -573,12 +573,13 @@ fn append_design_losses(
                 "{inferred_configurations} configuration state(s) are inferred from geometry partitions without native configuration definitions."
             )))?;
     }
-    let unresolved_configuration_parameter_lanes = native.as_ref().map_or(0, |native| {
+    let unresolved_configuration_parameter_lanes = if let Some(native) = native.as_ref() {
         crate::history::configuration::unresolved_configuration_lanes(
+            ctx,
             &ir.model.configurations,
             &native.feature_input_lanes,
-        )
-    });
+        )?
+    } else { 0 };
     if unresolved_configuration_parameter_lanes > 0 {
         push_report_loss(ctx, report, SldprtLossCode::ConfigLaneIdentityUnresolved.note(format!(
                 "{unresolved_configuration_parameter_lanes} configuration-scoped feature-input lane(s) have duplicate or unresolved configuration identity."

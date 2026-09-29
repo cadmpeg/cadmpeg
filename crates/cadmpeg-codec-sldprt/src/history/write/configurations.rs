@@ -310,6 +310,9 @@ fn patch_configuration_parameter_scalars(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), CodecError> {
+    let bytes = native.feature_input_lanes.iter().flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())?;
     let parameters = ir
         .model
         .parameters
@@ -323,7 +326,7 @@ fn patch_configuration_parameter_scalars(
         .map(|feature| (&feature.id, feature))
         .collect::<HashMap<_, _>>();
     for (configuration_index, lane_index) in
-        configuration_lane_assignments(&ir.model.configurations, &native.feature_input_lanes)
+        configuration_lane_assignments(&ctx, &ir.model.configurations, &native.feature_input_lanes)?
     {
         let configuration = &ir.model.configurations[configuration_index];
         let lane = &mut native.feature_input_lanes[lane_index];

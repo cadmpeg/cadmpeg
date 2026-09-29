@@ -204,7 +204,7 @@ pub(crate) fn project_configuration_design_states(
         configuration.feature_states.clear();
     }
     for (configuration_index, lane_index) in
-        configuration_lane_assignments(&ir.model.configurations, lanes)
+        configuration_lane_assignments(ctx, &ir.model.configurations, lanes)?
     {
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let mut projection = crate::records::charged_clone::clone_histories_charged(
@@ -399,7 +399,7 @@ pub(crate) fn bind_configuration_topology_selections(
     face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (configuration_index, lane_index) in
-        configuration_lane_assignments(&ir.model.configurations, lanes)
+        configuration_lane_assignments(ctx, &ir.model.configurations, lanes)?
     {
         let body_membership_resolved = ir.model.configurations[configuration_index]
             .bodies
@@ -496,7 +496,7 @@ pub(crate) fn project_configuration_sketch_states(
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     let mut losses = Vec::new();
     for (configuration_index, lane_index) in
-        configuration_lane_assignments(&ir.model.configurations, lanes)
+        configuration_lane_assignments(ctx, &ir.model.configurations, lanes)?
     {
         let surfaces = configuration_surface_carriers(ir, configuration_index);
         let scoped_lanes = &lanes[lane_index..=lane_index];
@@ -784,11 +784,7 @@ pub(crate) fn project_configuration_sketch_states(
             state.definition = feature.evaluation.definition().clone();
         }
     }
-    let scoped_configuration_indices =
-        configuration_lane_assignments(&ir.model.configurations, lanes)
-            .into_iter()
-            .map(|(configuration_index, _)| configuration_index)
-            .collect::<HashSet<_>>();
+    let scoped_configuration_indices = configuration_lane_assignments(ctx, &ir.model.configurations, lanes)?;
     let base = ir
         .model
         .features
@@ -798,7 +794,7 @@ pub(crate) fn project_configuration_sketch_states(
     for (configuration_index, configuration) in ir.model.configurations.iter_mut().enumerate() {
         // DI-55: a valid configuration lane owns its unresolved slots. The
         // document definition is a fallback only for an unscoped snapshot.
-        if scoped_configuration_indices.contains(&configuration_index) {
+        if scoped_configuration_indices.iter().any(|(assigned, _)| *assigned == configuration_index) {
             continue;
         }
         for (feature_id, state) in &mut configuration.feature_states {
@@ -1312,15 +1308,17 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
 }
 
 pub(super) fn configuration_lane_assignments(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     configurations: &[DesignConfiguration],
     lanes: &[crate::records::FeatureInputLane],
-) -> Vec<(usize, usize)> {
+) -> Result<Vec<(usize, usize)>, cadmpeg_core::CodecError> {
     let mut lanes_by_configuration = BTreeMap::<u32, Vec<usize>>::new();
     for (lane_index, lane) in lanes
         .iter()
         .enumerate()
         .filter(|(_, lane)| configuration_state_lane(lane))
     {
+        ctx.charge_work(1, "scan SLDPRT configuration lane identities")?;
         let Some(slot_index) = lane
             .configuration
             .as_deref()
@@ -1328,90 +1326,73 @@ pub(super) fn configuration_lane_assignments(
         else {
             continue;
         };
-        lanes_by_configuration
-            .entry(slot_index)
-            .or_default()
-            .push(lane_index);
+        if !lanes_by_configuration.contains_key(&slot_index) {
+            ctx.charge_collection_items(1, "index SLDPRT configuration lane identities")?;
+        }
+        let indices = lanes_by_configuration.entry(slot_index).or_default();
+        ctx.reserve_collection_vec(indices, 1, "collect SLDPRT configuration lane indices")?;
+        indices.push(lane_index);
     }
-    lanes_by_configuration
-        .into_iter()
-        .filter_map(|(slot_index, lane_indices)| {
-            let [lane_index] = lane_indices.as_slice() else {
-                return None;
-            };
-            Some((
-                configuration_index_for_slot(configurations, slot_index)?,
-                *lane_index,
-            ))
-        })
-        .collect()
+    let mut result = Vec::new();
+    for (slot_index, lane_indices) in lanes_by_configuration {
+        let [lane_index] = lane_indices.as_slice() else { continue; };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(configurations.len()), "match SLDPRT configuration lane identities")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(configurations.len()), "match SLDPRT configuration lane identities")?;
+        if let Some(configuration_index) = configuration_index_for_slot(configurations, slot_index) {
+            ctx.reserve_collection_vec(&mut result, 1, "collect SLDPRT configuration lane assignments")?;
+            result.push((configuration_index, *lane_index));
+        }
+    }
+    Ok(result)
 }
 
 fn configuration_index_for_slot(
     configurations: &[DesignConfiguration],
     slot_index: u32,
 ) -> Option<usize> {
-    let explicit_candidates = configurations
-        .iter()
-        .enumerate()
-        .filter(|(_, configuration)| {
-            configuration
-                .properties
-                .get("id")
-                .and_then(|value| value.parse::<u32>().ok())
-                == Some(slot_index)
-        })
-        .map(|(position, _)| position)
-        .collect::<Vec<_>>();
-    let candidates = if explicit_candidates.is_empty() {
-        configurations
-            .iter()
-            .enumerate()
-            .filter(|(_, configuration)| {
-                configuration
-                    .properties
-                    .get("id")
-                    .and_then(|value| value.parse::<u32>().ok())
-                    .is_none()
-                    && configuration.ordinal == slot_index
-            })
-            .map(|(position, _)| position)
-            .collect::<Vec<_>>()
-    } else {
-        explicit_candidates
-    };
-    let [configuration_index] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*configuration_index)
+    let mut explicit = configurations.iter().enumerate().filter(|(_, configuration)| {
+        configuration.properties.get("id").and_then(|value| value.parse::<u32>().ok()) == Some(slot_index)
+    }).map(|(index, _)| index);
+    if let Some(index) = explicit.next() {
+        return explicit.next().is_none().then_some(index);
+    }
+    let mut fallback = configurations.iter().enumerate().filter(|(_, configuration)| {
+        configuration.properties.get("id").and_then(|value| value.parse::<u32>().ok()).is_none()
+            && configuration.ordinal == slot_index
+    }).map(|(index, _)| index);
+    let index = fallback.next()?;
+    fallback.next().is_none().then_some(index)
 }
 
 pub(crate) fn unresolved_configuration_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     configurations: &[DesignConfiguration],
     lanes: &[crate::records::FeatureInputLane],
-) -> usize {
-    let assigned_lanes = configuration_lane_assignments(configurations, lanes)
-        .into_iter()
-        .map(|(_, lane_index)| lane_index)
-        .collect::<HashSet<_>>();
+) -> Result<usize, cadmpeg_core::CodecError> {
+    let assigned_lanes = configuration_lane_assignments(ctx, configurations, lanes)?;
     let mut occurrences = HashMap::<&str, usize>::new();
     for lane in lanes
         .iter()
         .filter(|lane| configuration_state_lane(lane))
         .filter_map(|lane| lane.configuration.as_deref())
     {
+        ctx.charge_work(1, "count SLDPRT configuration lane identities")?;
+        if !occurrences.contains_key(lane) {
+            ctx.charge_collection_items(1, "index SLDPRT configuration lane occurrences")?;
+            occurrences.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT configuration lane occurrences", u64::MAX - 1, u64::MAX))?;
+        }
         *occurrences.entry(lane).or_default() += 1;
     }
-    lanes
-        .iter()
-        .enumerate()
-        .filter(|(_, lane)| configuration_state_lane(lane))
-        .filter(|(lane_index, lane)| {
+    let mut count = 0;
+    for (lane_index, lane) in lanes.iter().enumerate().filter(|(_, lane)| configuration_state_lane(lane)) {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(assigned_lanes.len()), "count unresolved SLDPRT configuration lanes")?;
+        ctx.charge_work(1, "count unresolved SLDPRT configuration lanes")?;
+        if
             lane.configuration.as_deref().is_some_and(|slot| {
-                occurrences.get(slot).copied() != Some(1) || !assigned_lanes.contains(lane_index)
-            })
-        })
-        .count()
+                occurrences.get(slot).copied() != Some(1) || !assigned_lanes.iter().any(|(_, assigned)| *assigned == lane_index)
+            }) { count += 1; }
+    }
+    Ok(count)
 }
 
 fn configuration_state_lane(lane: &crate::records::FeatureInputLane) -> bool {
