@@ -107,7 +107,7 @@ pub(crate) fn bind_pattern_inputs(
     for lane in lanes {
         let discovered_identities;
         let generated_identities = if lane.generated_surface_identities.is_empty() {
-            discovered_identities = generated_surface_identities(lane);
+            discovered_identities = generated_surface_identities(ctx, lane)?;
             &discovered_identities
         } else {
             &lane.generated_surface_identities
@@ -1176,8 +1176,8 @@ pub(crate) fn finalize_lane_bindings(
     lane.relation_instances = relation_instances(ctx, histories, lane)?;
     lane.body_selections = compact_body_selections(ctx, histories, lane)?;
     lane.edge_selections = compact_edge_selections(histories, lane);
-    lane.surface_selections = compact_surface_selections(histories, lane);
-    lane.generated_surface_identities = generated_surface_identities(lane);
+    lane.surface_selections = compact_surface_selections(ctx, histories, lane)?;
+    lane.generated_surface_identities = generated_surface_identities(ctx, lane)?;
     Ok(())
 }
 

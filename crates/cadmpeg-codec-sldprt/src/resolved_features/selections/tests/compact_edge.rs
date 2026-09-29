@@ -823,6 +823,10 @@ fn compact_reference_list_preserves_reference_and_hop_boundaries() {
 
 #[test]
 fn compact_reference_list_accepts_unframed_surface_cut_targets() {
+    let identity_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (identity_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &identity_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 12;
     let prefix = [0xa7, 0x81, 0xa9, 0x01];
     let signature = |serial: u32, timestamp: u32| {
@@ -883,12 +887,13 @@ fn compact_reference_list_accepts_unframed_surface_cut_targets() {
         sketch_entities: Vec::new(),
     };
     let selections = operation_surface_selection_candidates(
+        &identity_ctx,
         FeatureClass::CutWithSurface,
         &lane,
         0,
         payload.len(),
         None,
-    );
+    ).unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].0, marker);
 }

@@ -150,6 +150,10 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
 
 #[test]
 fn operation_surface_selection_finds_marker_inside_class_body() {
+    let identity_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (identity_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &identity_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let class_name = "moCompSurfaceBody_c";
     let class_body = 6 + class_name.len();
     let marker = class_body + 43;
@@ -192,12 +196,13 @@ fn operation_surface_selection_finds_marker_inside_class_body() {
     };
 
     let selections = operation_surface_selection_candidates(
+        &identity_ctx,
         FeatureClass::TrimSurface,
         &lane,
         0,
         payload.len(),
         None,
-    );
+    ).unwrap();
 
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].0, marker);
@@ -206,6 +211,10 @@ fn operation_surface_selection_finds_marker_inside_class_body() {
 
 #[test]
 fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisions() {
+    let identity_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (identity_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &identity_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let class_name = "moCompFace_c";
     let class_body = 6 + class_name.len();
     let class_token = 0x802b_u16;
@@ -258,12 +267,13 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
     build_face(&mut one, first_body, 6);
     let lane = lane_for(one);
     let selections = operation_surface_selection_candidates(
+        &identity_ctx,
         FeatureClass::Dome,
         &lane,
         first_body,
         first_end,
         None,
-    );
+    ).unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].0, first_body + 68);
     assert_eq!(selections[0].1[0].local_id, Some(6));
@@ -276,12 +286,13 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
     build_face(&mut collision, second_body, 9);
     let lane = lane_for(collision);
     assert!(operation_surface_selection_candidates(
+        &identity_ctx,
         FeatureClass::Dome,
         &lane,
         first_body,
         collision_end,
         None,
-    )
+    ).unwrap()
     .is_empty());
 }
 
@@ -1406,6 +1417,10 @@ fn counted_surface_path_preserves_tagged_and_anonymous_nodes() {
 
 #[test]
 fn face_reference_plane_owns_its_counted_surface_path() {
+    let identity_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (identity_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &identity_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let class_name = "moFaceRefPlnData_c";
     let class_offset = 32;
     let class_body = class_offset + 6 + class_name.len();
@@ -1515,7 +1530,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
             native_feature("plane", 37, "moRefPlane_c"),
         ],
     }];
-    let selections = compact_surface_selections(&histories, &lane);
+    let selections = compact_surface_selections(&identity_ctx, &histories, &lane).unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].feature_ref, "plane");
     assert_eq!(
@@ -1610,6 +1625,10 @@ fn inline_surface_path_distinguishes_branch_and_selection_nodes() {
 
 #[test]
 fn projected_split_line_consumes_self_owned_surface_identity_paths() {
+    let identity_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (identity_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &identity_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let class_name = "moPLineSurfIdRep_c";
     let prefix = [0xc3, 0x80, 0xc5, 0x00];
     let signature = |source: u32, identity: u32| {
@@ -1661,12 +1680,13 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
     };
 
     let candidates = operation_surface_selection_candidates(
+        &identity_ctx,
         FeatureClass::SplitFace,
         &lane,
         0,
         payload.len(),
         Some(711),
-    );
+    ).unwrap();
     assert_eq!(candidates.len(), 1, "{candidates:#?}");
     assert_eq!(candidates[0].1.len(), 2);
     assert_eq!(
@@ -1679,17 +1699,22 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
     );
     assert_eq!(candidates[0].1[1].local_id, Some(3));
     assert!(operation_surface_selection_candidates(
+        &identity_ctx,
         FeatureClass::SplitFace,
         &lane,
         0,
         payload.len(),
         Some(712),
-    )
+    ).unwrap()
     .is_empty());
 }
 
 #[test]
 fn generated_surface_identities_are_producer_outputs() {
+    let identity_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (identity_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &identity_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let class_name = "moWzdHoleSurfIdRep_c";
     let prefix = [0xc3, 0x80, 0xc5, 0x00];
     let mut payload = CLASS_MARKER.to_vec();
@@ -1729,7 +1754,7 @@ fn generated_surface_identities_are_producer_outputs() {
         sketch_entities: Vec::new(),
     };
 
-    let identities = generated_surface_identities(&lane);
+    let identities = generated_surface_identities(&identity_ctx, &lane).unwrap();
 
     assert_eq!(identities.len(), 2, "{identities:#?}");
     assert!(identities.iter().all(|identity| {
