@@ -21,16 +21,36 @@ impl Sha256Digest {
         Self::from_bytes(Sha256::digest(bytes).into())
     }
 
+    /// Charge input hashing work and 64 retained bytes before allocating digest text.
+    pub fn digest_for_decode(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        bytes: &[u8],
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), operation)?;
+        let mut text = ctx.retained_string(64, operation)?;
+        let digest = super::sha256(bytes);
+        std::fmt::write(&mut text, format_args!("{}", super::LowerHex(&digest)))
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        Ok(Self(text))
+    }
+
     /// Encode the 32 bytes produced by a SHA-256 hasher.
     #[must_use]
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
-        Self(super::encode_hex(&bytes))
+        Self(super::LowerHex(&bytes).to_string())
     }
 
     /// Borrow the canonical hexadecimal spelling.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl From<Sha256Digest> for String {
+    fn from(digest: Sha256Digest) -> Self {
+        digest.0
     }
 }
 
@@ -88,6 +108,42 @@ impl schemars::JsonSchema for Sha256Digest {
 mod tests {
     use super::Sha256Digest;
 
+    #[test]
+    fn digest_for_decode_refuses_before_retained_allocation() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 63;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
+        let result = Sha256Digest::digest_for_decode(&ctx, b"abc", "digest test");
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "digest test" && limit.additional == 64));
+    }
+
+    #[test]
+    fn digest_for_decode_succeeds_under_service_profile() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
+        let digest = Sha256Digest::digest_for_decode(&ctx, b"abc", "digest test").unwrap();
+        assert_eq!(digest, Sha256Digest::digest(b"abc"));
+        assert_eq!(String::from(digest), Sha256Digest::digest(b"abc").as_str());
+    }
+
+    #[test]
+    fn digest_for_decode_refuses_hashing_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
+        assert!(matches!(Sha256Digest::digest_for_decode(&ctx, b"abc", "digest test"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 3));
+    }
+
     #[cfg(feature = "schema")]
     #[test]
     fn digest_schema_does_not_admit_a_trailing_line_break() {
@@ -117,6 +173,7 @@ mod tests {
             "A".repeat(64),
             "g".repeat(64),
             " ".repeat(64),
+            "é".repeat(32),
         ] {
             assert!(Sha256Digest::try_from(text.as_str()).is_err());
             assert!(serde_json::from_value::<Sha256Digest>(serde_json::json!(text)).is_err());
