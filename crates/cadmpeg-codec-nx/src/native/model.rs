@@ -1089,9 +1089,10 @@ impl NativeModel {
         let feature_datum_plane_descriptors =
             feature_datum_plane_descriptors(ctx, container, &feature_datum_plane_headers)?;
         let feature_datum_plane_csys_identity_uses = feature_datum_plane_csys_identity_uses(
+            ctx,
             &feature_datum_plane_descriptors,
             &feature_datum_csys_descriptors,
-        );
+        )?;
         let feature_datum_csys_block_uses =
             feature_datum_csys_block_uses(&feature_datum_csys_constructions, &feature_input_blocks);
         let feature_sketch_references = feature_sketch_references(ctx, container)?;

@@ -3787,6 +3787,28 @@ fn copy_operation_text(
     Ok(text)
 }
 
+fn format_charged_text(
+    ctx: &DecodeContext<'_>,
+    args: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    struct CountBytes(usize);
+    impl std::fmt::Write for CountBytes {
+        fn write_str(&mut self, text: &str) -> std::fmt::Result {
+            self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
+            Ok(())
+        }
+    }
+    let mut count = CountBytes(0);
+    std::fmt::write(&mut count, args).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(count.0), operation)?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count.0), operation)?;
+    let mut text = String::new();
+    text.try_reserve_exact(count.0).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    std::fmt::write(&mut text, args).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    Ok(text)
+}
+
 fn format_feature_history_id(
     ctx: &DecodeContext<'_>,
     kind: &'static str,
@@ -6123,12 +6145,26 @@ pub(super) fn feature_datum_csys_descriptors(
             else {
                 continue;
             };
+            let id = format_charged_text(ctx,
+                format_args!("{}-descriptor-{reference_ordinal}", construction.id),
+                "NX datum CSYS descriptor identity")?;
+            let operation_label = copy_operation_text(ctx, &construction.operation_label,
+                "NX datum CSYS descriptor operation label")?;
+            let construction_id = copy_operation_text(ctx, &construction.id,
+                "NX datum CSYS descriptor construction identity")?;
+            let data_block = copy_operation_text(ctx, data_block,
+                "NX datum CSYS descriptor data block")?;
+            ctx.charge_collection_items(1, "NX datum CSYS descriptors")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureDatumCsysDescriptor>()), "NX datum CSYS descriptors")?;
+            descriptors.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX datum CSYS descriptors", 0, 1))?;
             descriptors.push(FeatureDatumCsysDescriptor {
-                id: format!("{}-descriptor-{reference_ordinal}", construction.id),
-                operation_label: construction.operation_label.clone(),
-                construction: construction.id.clone(),
+                id,
+                operation_label,
+                construction: construction_id,
                 reference_ordinal: slot,
-                data_block: data_block.clone(),
+                data_block,
                 descriptor,
             });
         }
@@ -6138,33 +6174,52 @@ pub(super) fn feature_datum_csys_descriptors(
 
 /// Join equal typed descriptor identities across datum-plane and datum-CSYS history.
 pub(super) fn feature_datum_plane_csys_identity_uses(
+    ctx: &DecodeContext<'_>,
     plane_descriptors: &[FeatureDatumPlaneDescriptor],
     csys_descriptors: &[FeatureDatumCsysDescriptor],
-) -> Vec<FeatureDatumPlaneCsysIdentityUse> {
-    plane_descriptors
-        .iter()
-        .flat_map(|plane| {
-            csys_descriptors
-                .iter()
-                .filter(|csys| csys.descriptor.descriptor().identity().as_str() == plane.descriptor.identity())
-                .map(|csys| {
+) -> Result<Vec<FeatureDatumPlaneCsysIdentityUse>, CodecError> {
+    let work = plane_descriptors.len().checked_mul(csys_descriptors.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX datum descriptor identities", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work),
+        "join NX datum descriptor identities")?;
+    let mut uses = Vec::new();
+    for plane in plane_descriptors {
+        for csys in csys_descriptors {
+            if csys.descriptor.descriptor().identity().as_str() != plane.descriptor.identity() {
+                continue;
+            }
                     let plane_key = plane.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
                     let csys_key = csys.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-                    FeatureDatumPlaneCsysIdentityUse {
-                        id: format!(
-                            "nx:feature-history:datum-plane-csys-identity-use#{plane_key}-{csys_key}"
-                        ),
-                        identity: csys.descriptor.descriptor().identity().clone(),
-                        datum_plane_descriptor: plane.id.clone(),
-                        datum_plane_operation_label: plane.operation_label.clone(),
-                        datum_csys_descriptor: csys.id.clone(),
-                        datum_csys_operation_label: csys.operation_label.clone(),
-                        datum_csys_reference_ordinal: csys.reference_ordinal,
-                    }
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
+            let id = format_charged_text(ctx,
+                format_args!("nx:feature-history:datum-plane-csys-identity-use#{plane_key}-{csys_key}"),
+                "NX datum descriptor identity use")?;
+            let identity_text = copy_operation_text(ctx,
+                csys.descriptor.descriptor().identity().as_str(),
+                "NX datum descriptor shared identity")?;
+            let identity = CsysIdentity::try_from(identity_text).map_err(|error|
+                CodecError::Malformed(error.to_owned()))?;
+            let datum_plane_descriptor = copy_operation_text(ctx, &plane.id,
+                "NX datum identity plane descriptor")?;
+            let datum_plane_operation_label = copy_operation_text(ctx, &plane.operation_label,
+                "NX datum identity plane label")?;
+            let datum_csys_descriptor = copy_operation_text(ctx, &csys.id,
+                "NX datum identity CSYS descriptor")?;
+            let datum_csys_operation_label = copy_operation_text(ctx, &csys.operation_label,
+                "NX datum identity CSYS label")?;
+            ctx.charge_collection_items(1, "NX datum descriptor identity uses")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureDatumPlaneCsysIdentityUse>()),
+                "NX datum descriptor identity uses")?;
+            uses.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX datum descriptor identity uses", 0, 1))?;
+            uses.push(FeatureDatumPlaneCsysIdentityUse {
+                id, identity, datum_plane_descriptor, datum_plane_operation_label,
+                datum_csys_descriptor, datum_csys_operation_label,
+                datum_csys_reference_ordinal: csys.reference_ordinal,
+            });
+        }
+    }
+    Ok(uses)
 }
 
 /// Decode exact scalar-pair frames from reconstructed datum-plane payloads.
@@ -6223,12 +6278,28 @@ pub(super) fn feature_datum_plane_descriptors(
             let Some(descriptor) = crate::om::datum_plane_descriptor_block(ctx, bytes)? else {
                 continue;
             };
+            let id = format_charged_text(ctx,
+                format_args!("{}-descriptor-{ordinal:010}", header.id),
+                "NX datum plane descriptor identity")?;
+            let operation_label = copy_operation_text(ctx, &header.operation_label,
+                "NX datum plane descriptor operation label")?;
+            let datum_plane_header = copy_operation_text(ctx, &header.id,
+                "NX datum plane descriptor header identity")?;
+            let ordinal = u32::try_from(ordinal).map_err(|_|
+                ctx.refuse_codec_limit("NX datum plane descriptor ordinal", 0, 1))?;
+            let data_block = copy_operation_text(ctx, data_block,
+                "NX datum plane descriptor data block")?;
+            ctx.charge_collection_items(1, "NX datum plane descriptors")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureDatumPlaneDescriptor>()), "NX datum plane descriptors")?;
+            descriptors.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX datum plane descriptors", 0, 1))?;
             descriptors.push(FeatureDatumPlaneDescriptor {
-                id: format!("{}-descriptor-{ordinal:010}", header.id),
-                operation_label: header.operation_label.clone(),
-                datum_plane_header: header.id.clone(),
-                ordinal: ordinal as u32,
-                data_block: data_block.clone(),
+                id,
+                operation_label,
+                datum_plane_header,
+                ordinal,
+                data_block,
                 descriptor,
                 source_offset,
             });
