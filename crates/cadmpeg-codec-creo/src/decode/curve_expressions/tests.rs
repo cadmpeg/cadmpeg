@@ -677,6 +677,41 @@ fn curve_expression_helix_identities_refuse_retained_limit_at_each_copy() {
     }
 }
 
+fn dependency_keys_with_limits(
+    expression_lines: &[&str],
+    dimension_parameters: &std::collections::BTreeMap<String, cadmpeg_ir::features::ParameterId>,
+    policy: cadmpeg_core::decode::DecodePolicy,
+) -> Result<(), cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+
+    let mut payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8"
+        .to_vec();
+    payload.push(u8::try_from(expression_lines.len()).expect("test line count fits byte"));
+    for line in expression_lines {
+        payload.extend_from_slice(line.as_bytes());
+        payload.push(0);
+    }
+    let record = crate::curve::expression_records(&payload)
+        .pop()
+        .expect("complete curve expression");
+    let (by_name, unique) = crate::decode::with_test_decode_ctx(|ctx| {
+        super::curve_expression_assignment_indices(ctx, &record)
+    }).expect("service setup admits assignment maps");
+    let cyclic_edges = crate::decode::with_test_decode_ctx(|ctx| {
+        super::curve_expression_parameter_order(ctx, &record, &unique)
+    }).expect("service setup admits ordering").expect("executable assignments").1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("root bytes fit the configured limit");
+    for ordinal in 0..record.assignments.len() {
+        drop(super::curve_expression_parameter_dependencies(
+            &ctx, &record, ordinal, &by_name, &unique, &cyclic_edges, dimension_parameters,
+        )?);
+    }
+    Ok(())
+}
+
 #[test]
 fn curve_expression_dependency_keys_refuse_before_text_copy() {
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
@@ -689,7 +724,7 @@ fn curve_expression_dependency_keys_refuse_before_text_copy() {
     );
     let mut limited = DecodePolicy::service();
     limited.limits.max_materialized_bytes = 0;
-    let error = transfer_with_limits(&["a=1", "b=a+1"], &dimensions, limited)
+    let error = dependency_keys_with_limits(&["a=1", "b=a+1"], &dimensions, limited)
         .expect_err("the dependency lookup key needs another byte");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -786,7 +821,7 @@ fn curve_expression_dimension_key_refuses_before_text_copy() {
     )]);
     let mut limited = DecodePolicy::service();
     limited.limits.max_materialized_bytes = 0;
-    let error = transfer_with_limits(&["a=x+1"], &dimensions, limited)
+    let error = dependency_keys_with_limits(&["a=x+1"], &dimensions, limited)
         .expect_err("the dimension dependency lookup needs one temporary byte");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
