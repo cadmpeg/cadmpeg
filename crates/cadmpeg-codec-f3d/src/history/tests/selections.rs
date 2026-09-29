@@ -11,15 +11,16 @@
 )]
 
 use crate::history::{
-    active_brep_face_matches_source, selection::bind_edge_identity_history, bind_historical_entity_versions,
-    selection::bind_hole_selection_history, bind_profile_face_group_cardinality, bind_snapshot_revision_ids,
+    active_brep_face_matches_source, bind_historical_entity_versions,
+    bind_profile_face_group_cardinality, bind_snapshot_revision_ids,
     body_revision_without_topology_change, combine_recipe_family_tool_slots,
-    selection::complete_compact_edge_treatment_deletions, selection::entity_selection_face_candidates,
     grouped_reference_face_candidate, historical_body_slot, historical_record_archive,
     historical_transition, insert_only_active_record_count, materialize_record_table,
     pattern_combine_tool_slots, profile_face_group_cardinality_candidates,
-    singleton_body_revision_across_state_chain, singleton_revised_input_body_across_state_chain,
-    TopologyStableBodyRevision,
+    selection::bind_edge_identity_history, selection::bind_hole_selection_history,
+    selection::complete_compact_edge_treatment_deletions,
+    selection::entity_selection_face_candidates, singleton_body_revision_across_state_chain,
+    singleton_revised_input_body_across_state_chain, TopologyStableBodyRevision,
 };
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,

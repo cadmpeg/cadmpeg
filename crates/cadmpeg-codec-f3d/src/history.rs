@@ -3971,8 +3971,11 @@ pub(crate) fn bind_vertex_recipe_history(
     timelines: &[crate::records::entity_header::DesignFeatureTimeline],
     histories: &[AsmHistory],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let source_ordinals =
-        crate::design::feature_project::authored_scope_ordinals_per_stream(Some(ctx), scopes, timelines)?;
+    let source_ordinals = crate::design::feature_project::authored_scope_ordinals_per_stream(
+        Some(ctx),
+        scopes,
+        timelines,
+    )?;
     let mut input_states = HashMap::new();
     for scope in scopes.iter().filter(|scope| {
         matches!(
@@ -6748,8 +6751,11 @@ fn bind_profile_face_group_cardinality(
             None
         };
         let scoped_histories = scoped_history.map_or(histories, std::slice::from_ref);
-        let Some(profile_groups) =
-            crate::design::face_resolve::extrude_profile_group_roots(decode, scope, operand_groups)?
+        let Some(profile_groups) = crate::design::face_resolve::extrude_profile_group_roots(
+            decode,
+            scope,
+            operand_groups,
+        )?
         else {
             continue;
         };
