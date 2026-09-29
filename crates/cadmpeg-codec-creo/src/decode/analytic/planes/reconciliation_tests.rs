@@ -1481,22 +1481,22 @@ fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerSca
 fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
     let scan = stored_frame_branch_scan(false);
     let frame = &scan.planes.local_systems[0];
-    let candidates = stored_parameter_normal_candidates(frame).expect("ambiguous frame");
-    assert_eq!(candidates.len(), 2);
-    assert!(candidates.iter().any(|candidate| {
+    let (candidates, count) = stored_parameter_normal_candidates(frame).expect("ambiguous frame");
+    assert_eq!(count, 2);
+    assert!(candidates[..count].iter().any(|candidate| {
         candidate.equation.normal == [0.8, 0.0, 0.6]
             && candidate.chart.expect("chart").u_axis == [0.6, 0.0, -0.8]
     }));
-    assert!(candidates.iter().any(|candidate| {
+    assert!(candidates[..count].iter().any(|candidate| {
         candidate.equation.normal == [0.8, 0.0, -0.6]
             && candidate.chart.expect("chart").u_axis == [0.6, 0.0, 0.8]
     }));
 
     let mut nonzero_origin = frame.clone();
     nonzero_origin.slots[11] = Some(2.0);
-    let candidates = stored_parameter_normal_candidates(&nonzero_origin).expect("ambiguous frame");
-    assert_eq!(candidates.len(), 2);
-    assert!(candidates
+    let (candidates, count) = stored_parameter_normal_candidates(&nonzero_origin).expect("ambiguous frame");
+    assert_eq!(count, 2);
+    assert!(candidates[..count]
         .iter()
         .all(|candidate| candidate.equation.origin[2] == 2.0));
 
