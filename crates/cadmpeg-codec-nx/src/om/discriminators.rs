@@ -17,7 +17,9 @@ macro_rules! u8_discriminator {
         }
 
         impl From<$name> for u8 {
-            fn from(value: $name) -> Self { value as Self }
+            fn from(value: $name) -> Self {
+                match value { $($name::$variant => $value,)+ }
+            }
         }
 
         impl TryFrom<u8> for $name {

@@ -271,7 +271,8 @@ impl<T> CommonFrame<u64, T> {
             .map(|offset| self.offset + cadmpeg_core::decode::u64_from_index(offset))
     }
     pub(crate) fn object_index_offset(&self) -> u64 {
-        self.local_ordinal_offset() + cadmpeg_core::decode::u64_from_index(self.suffix.object_offset())
+        self.local_ordinal_offset()
+            + cadmpeg_core::decode::u64_from_index(self.suffix.object_offset())
     }
 }
 

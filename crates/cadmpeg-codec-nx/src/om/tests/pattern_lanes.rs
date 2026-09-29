@@ -33,7 +33,11 @@ fn om_pattern_counted_reference_lane_requires_exact_terminator() {
         0xff, 0xff, 0x01, 0xff,
     ];
     let references = [[0xf1, 0x06, 0xb1], [0xf1, 0x06, 0xb2], [0xf1, 0x06, 0xb3]];
-    let mut payload = vec![0xaa, 0x01, u8::try_from(references.len()).expect("fixture value fits u8") + 1];
+    let mut payload = vec![
+        0xaa,
+        0x01,
+        u8::try_from(references.len()).expect("fixture value fits u8") + 1,
+    ];
     for reference in &references {
         payload.extend_from_slice(reference);
     }
@@ -41,7 +45,10 @@ fn om_pattern_counted_reference_lane_requires_exact_terminator() {
     let payload_offset = 200;
     let record = OperationPayload::new(&payload, payload_offset, "Pattern Feature").unwrap();
     let lane = read_counted_pattern_test(record).expect("complete lane");
-    assert_eq!(lane.offset(), cadmpeg_core::decode::u64_from_index(payload_offset + 1));
+    assert_eq!(
+        lane.offset(),
+        cadmpeg_core::decode::u64_from_index(payload_offset + 1)
+    );
     assert_eq!(usize::from(lane.declared_count()), 4);
     assert_eq!(
         lane.iter()

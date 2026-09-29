@@ -179,14 +179,16 @@ impl Sextant {
     }
 
     fn from_hue_sixth(hue: f32) -> Option<Self> {
-        Some(match cadmpeg_core::convert::truncate_f64_to_u8(f64::from(hue))? {
-            0 => Self::Zero,
-            1 => Self::One,
-            2 => Self::Two,
-            3 => Self::Three,
-            4 => Self::Four,
-            _ => Self::Five,
-        })
+        Some(
+            match cadmpeg_core::convert::truncate_f64_to_u8(f64::from(hue))? {
+                0 => Self::Zero,
+                1 => Self::One,
+                2 => Self::Two,
+                3 => Self::Three,
+                4 => Self::Four,
+                _ => Self::Five,
+            },
+        )
     }
 
     fn is_odd(self) -> bool {
@@ -700,7 +702,8 @@ fn dequantize_uniform(code: u32, range: QuantizedRange, bits: u8) -> Option<Fini
         return None;
     }
     let step = (f64::from(range[1]) - f64::from(range[0])) / f64::from(maximum_code);
-    let value = cadmpeg_core::convert::f32_from_f64(f64::from(range[0]) + (f64::from(code) - 0.5) * step)?;
+    let value =
+        cadmpeg_core::convert::f32_from_f64(f64::from(range[0]) + (f64::from(code) - 0.5) * step)?;
     FiniteBinary32::new(value)
 }
 
@@ -1090,8 +1093,11 @@ fn decode_bitlength(
             bit_len: code_bit_len,
             bit: 0,
         };
-        let value_count =
-            cadmpeg_core::decode::bounded_len(cadmpeg_core::decode::u64_from_index(value_count), 1, MAX_ARITHMETIC_VALUES)?;
+        let value_count = cadmpeg_core::decode::bounded_len(
+            cadmpeg_core::decode::u64_from_index(value_count),
+            1,
+            MAX_ARITHMETIC_VALUES,
+        )?;
         propagate_resource!(ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(value_count),
             "decode JT bitlength symbols",
@@ -1212,10 +1218,11 @@ fn decode_int32_cdp2_inner(
             } else {
                 (1_u32 << shift) - 1
             };
-            if lsb
-                .iter()
-                .any(|value| u32::try_from(*value).ok().is_none_or(|value| value > low_mask))
-            {
+            if lsb.iter().any(|value| {
+                u32::try_from(*value)
+                    .ok()
+                    .is_none_or(|value| value > low_mask)
+            }) {
                 return None;
             }
             let mut values =

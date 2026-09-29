@@ -149,7 +149,9 @@ impl LocatedCsysDescriptor {
         source_offset: u64,
     ) -> Result<Self, &'static str> {
         source_offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(descriptor.prefix.len()))
+            .checked_add(cadmpeg_core::decode::u64_from_index(
+                descriptor.prefix.len(),
+            ))
             .ok_or("source_offset overflows identity_source_offset")?;
         Ok(Self {
             descriptor,

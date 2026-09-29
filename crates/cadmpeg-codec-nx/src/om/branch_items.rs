@@ -14,7 +14,8 @@ impl<T> BranchItems<T> {
         if !(1..=254).contains(&items.len()) {
             return Err("branch items must contain 1 through 254 entries");
         }
-        let count = u8::try_from(items.len() + 1).map_err(|_| "branch items must contain 1 through 254 entries")?;
+        let count = u8::try_from(items.len() + 1)
+            .map_err(|_| "branch items must contain 1 through 254 entries")?;
         Ok(Self(items, count))
     }
 
@@ -75,7 +76,10 @@ impl<T> BranchItems<T> {
 impl<T> BranchItems<Option<T>> {
     #[cfg(test)]
     pub(crate) fn transpose(self) -> Option<BranchItems<T>> {
-        Some(BranchItems(self.0.into_iter().collect::<Option<Vec<_>>>()?, self.1))
+        Some(BranchItems(
+            self.0.into_iter().collect::<Option<Vec<_>>>()?,
+            self.1,
+        ))
     }
 }
 

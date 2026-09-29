@@ -435,7 +435,11 @@ fn group_member_id(
     group_xmt: u32,
     ordinal: usize,
 ) -> Result<String, CodecError> {
-    let digits = |value: u64| value.checked_ilog10().map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1);
+    let digits = |value: u64| {
+        value
+            .checked_ilog10()
+            .map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1)
+    };
     let length = "nx:s"
         .len()
         .checked_add(digits(u64::from(partition_stream_ordinal)))
@@ -1264,7 +1268,11 @@ fn deltas_event_id(
     first: usize,
     second: Option<u32>,
 ) -> Result<String, CodecError> {
-    let digits = |value: u64| value.checked_ilog10().map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1);
+    let digits = |value: u64| {
+        value
+            .checked_ilog10()
+            .map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1)
+    };
     let length = "nx:s"
         .len()
         .checked_add(digits(cadmpeg_core::decode::u64_from_index(stream_ordinal)))
@@ -1764,7 +1772,10 @@ fn parasolid_record_id(
         )
         .and_then(|length| length.checked_add(1 + stem.len() + 1))
         .and_then(|length| {
-            length.checked_add(xmt.checked_ilog10().map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1))
+            length.checked_add(
+                xmt.checked_ilog10()
+                    .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
+            )
         })
         .ok_or_else(|| ctx.refuse_codec_limit("retain NX Parasolid record id", 0, 1))?;
     let mut id = ctx.retained_string(id_len, "retain NX Parasolid record id")?;
@@ -1789,7 +1800,10 @@ fn parasolid_offset_record_id(
         )
         .and_then(|length| length.checked_add(1 + stem.len() + 1))
         .and_then(|length| {
-            length.checked_add(xmt.checked_ilog10().map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1))
+            length.checked_add(
+                xmt.checked_ilog10()
+                    .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
+            )
         })
         .and_then(|length| length.checked_add(1))
         .and_then(|length| {
@@ -2554,7 +2568,8 @@ impl Serialize for ParasolidAttributeDefinition {
             action_codes: self.action_codes,
             field_names_xmt: XmtTarget::to_wire(self.field_names_xmt),
             legal_owner_flags: self.legal_owner_flags.padded(),
-            legal_owner_flag_count: u8::try_from(self.legal_owner_flags.as_slice().len()).map_err(serde::ser::Error::custom)?,
+            legal_owner_flag_count: u8::try_from(self.legal_owner_flags.as_slice().len())
+                .map_err(serde::ser::Error::custom)?,
             field_count: self.field_codes.len(),
             field_codes: &self.field_codes,
             inflated_offset: self.inflated_offset,
@@ -2605,7 +2620,8 @@ struct ParasolidAttributeDefinitionWire {
 impl From<ParasolidAttributeDefinition> for ParasolidAttributeDefinitionWire {
     fn from(value: ParasolidAttributeDefinition) -> Self {
         Self {
-            legal_owner_flag_count: u8::try_from(value.legal_owner_flags.as_slice().len()).expect("fixture value fits u8"),
+            legal_owner_flag_count: u8::try_from(value.legal_owner_flags.as_slice().len())
+                .expect("fixture value fits u8"),
             legal_owner_flags: value.legal_owner_flags.padded(),
             field_count: value.field_codes.len(),
             id: value.id,
@@ -3616,8 +3632,11 @@ pub(super) fn parasolid_topology_attribute_list_references(
                     1,
                     "NX topology attribute list references",
                 )?;
-                let digits =
-                    |value: u64| value.checked_ilog10().map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1);
+                let digits = |value: u64| {
+                    value
+                        .checked_ilog10()
+                        .map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1)
+                };
                 let length = "nx:s"
                     .len()
                     .checked_add(digits(cadmpeg_core::decode::u64_from_index(stream_ordinal)))
@@ -4027,7 +4046,11 @@ fn entity_51_use_id(
     entity: &ParasolidEntity51Record,
     reference_ordinal: u32,
 ) -> Result<String, CodecError> {
-    let digits = |value: u64| value.checked_ilog10().map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1);
+    let digits = |value: u64| {
+        value
+            .checked_ilog10()
+            .map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1)
+    };
     let length = "nx:s"
         .len()
         .checked_add(digits(u64::from(entity.stream_ordinal)))
@@ -4376,7 +4399,11 @@ pub(super) fn parasolid_topology_attribute_class_uses(
             let Some(Some(class_use)) = class_uses_by_entity.get(member.id.as_str()) else {
                 continue;
             };
-            let digits = |value: u64| value.checked_ilog10().map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1);
+            let digits = |value: u64| {
+                value
+                    .checked_ilog10()
+                    .map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1)
+            };
             let mut length = "nx:s"
                 .len()
                 .checked_add(digits(u64::from(reference.stream_ordinal)))
@@ -4490,7 +4517,11 @@ pub(super) fn parasolid_attribute_class_uses(
             continue;
         };
         ctx.reserve_retained_vec(&mut uses, 1, "NX attribute class uses")?;
-        let digits = |value: u64| value.checked_ilog10().map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1);
+        let digits = |value: u64| {
+            value
+                .checked_ilog10()
+                .map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1)
+        };
         let length = "nx:s"
             .len()
             .checked_add(digits(u64::from(entity.stream_ordinal)))
@@ -4684,7 +4715,9 @@ pub(super) fn parasolid_attribute_field_uses(
                 return None;
             };
             let field_ordinal = position.field_ordinal();
-            let field_code = *definition.field_codes.get(cadmpeg_core::decode::index_from_u32(field_ordinal))?;
+            let field_code = *definition
+                .field_codes
+                .get(cadmpeg_core::decode::index_from_u32(field_ordinal))?;
             (field_code == value_kind.field_code()).then_some(())?;
             let (_, class_key) = class_use.id.rsplit_once('#')?;
             Some((
@@ -4711,7 +4744,11 @@ pub(super) fn parasolid_attribute_field_uses(
         else {
             continue;
         };
-        let digits = |value: u64| value.checked_ilog10().map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1);
+        let digits = |value: u64| {
+            value
+                .checked_ilog10()
+                .map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1)
+        };
         let id_len = "nx:s"
             .len()
             .checked_add(digits(u64::from(stream_ordinal)))

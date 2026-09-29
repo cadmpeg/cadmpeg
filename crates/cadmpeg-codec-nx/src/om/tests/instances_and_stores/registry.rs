@@ -28,7 +28,10 @@ fn sample_color_table_bytes() -> Vec<u8> {
         if color_index < 128 {
             bytes.push(u8::try_from(color_index).expect("fixture value fits u8"));
         } else {
-            bytes.extend_from_slice(&[0x80, u8::try_from(color_index - 1).expect("fixture value fits u8")]);
+            bytes.extend_from_slice(&[
+                0x80,
+                u8::try_from(color_index - 1).expect("fixture value fits u8"),
+            ]);
         }
         bytes.extend_from_slice(&[0x01, 0x80, 0xc8]);
         if color_index == 2 {

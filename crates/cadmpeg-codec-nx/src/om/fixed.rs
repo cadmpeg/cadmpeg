@@ -9,7 +9,9 @@ pub(crate) struct Q155 {
 
 impl Q155 {
     pub(super) fn from_raw(raw: [u8; 7]) -> Option<Self> {
-        let unsigned = raw.into_iter().fold(0_u64, |value, byte| (value << 8) | u64::from(byte));
+        let unsigned = raw
+            .into_iter()
+            .fold(0_u64, |value, byte| (value << 8) | u64::from(byte));
         let signed = i64::try_from(unsigned).ok()?;
         let signed = if unsigned & (1_u64 << 55) == 0 {
             signed
@@ -17,15 +19,23 @@ impl Q155 {
             signed - (1_i64 << 56)
         };
         let value = cadmpeg_core::convert::f64_from_i64(signed)? / 36_028_797_018_963_968.0;
-        Some(Self { raw, value_bits: value.to_bits() })
+        Some(Self {
+            raw,
+            value_bits: value.to_bits(),
+        })
     }
 
-    pub(crate) fn raw(self) -> [u8; 7] { self.raw }
+    pub(crate) fn raw(self) -> [u8; 7] {
+        self.raw
+    }
 
-    pub(crate) fn value(self) -> f64 { f64::from_bits(self.value_bits) }
+    pub(crate) fn value(self) -> f64 {
+        f64::from_bits(self.value_bits)
+    }
 
     pub(crate) fn from_wire(value: f64, raw: [u8; 7]) -> Result<Self, &'static str> {
-        let scalar = Self::from_raw(raw).ok_or("signed Q1.55 raw_values must be exactly representable")?;
+        let scalar =
+            Self::from_raw(raw).ok_or("signed Q1.55 raw_values must be exactly representable")?;
         if scalar.value().to_bits() != value.to_bits() {
             return Err("values must match signed Q1.55 raw_values");
         }
@@ -116,7 +126,9 @@ impl super::scalar_run::ScalarFrame for Q155LaneFrame {
 mod numeric_tests {
     use super::Q155;
 
-    fn assert_refused(value: impl Into<Option<Q155>>) { assert!(value.into().is_none()); }
+    fn assert_refused(value: impl Into<Option<Q155>>) {
+        assert!(value.into().is_none());
+    }
 
     #[test]
     fn q155_refuses_inexact_positive_numerator() {

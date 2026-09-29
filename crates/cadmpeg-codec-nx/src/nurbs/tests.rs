@@ -427,7 +427,9 @@ fn nurbs_scanners_defer_unreferenced_lane_materialization() {
         let pos = index * 8;
         let reference = u16::try_from(index + 11).expect("fixture value fits u16");
         arrays[pos..pos + 2].copy_from_slice(&[0, 127]);
-        arrays[pos + 4..pos + 6].copy_from_slice(&(u16::try_from(ARRAY_COUNT).expect("fixture value fits u16")).to_be_bytes());
+        arrays[pos + 4..pos + 6].copy_from_slice(
+            &(u16::try_from(ARRAY_COUNT).expect("fixture value fits u16")).to_be_bytes(),
+        );
         arrays[pos + 6..pos + 8].copy_from_slice(&reference.to_be_bytes());
     }
     let parsed_arrays = crate::nurbs::arrays(&arrays);
@@ -445,7 +447,9 @@ fn nurbs_scanners_defer_unreferenced_lane_materialization() {
         let reference = u16::try_from(index + 11).expect("fixture value fits u16");
         payloads[pos..pos + 2].copy_from_slice(&[0, 135]);
         payloads[pos + 2..pos + 4].copy_from_slice(&reference.to_be_bytes());
-        payloads[pos + 9..pos + 13].copy_from_slice(&(u32::try_from(PAYLOAD_COUNT).expect("fixture value fits u32")).to_be_bytes());
+        payloads[pos + 9..pos + 13].copy_from_slice(
+            &(u32::try_from(PAYLOAD_COUNT).expect("fixture value fits u32")).to_be_bytes(),
+        );
         payloads[pos + 13..pos + 15].copy_from_slice(&1u16.to_be_bytes());
     }
     let parsed_payloads = crate::nurbs::curve_payloads(&payloads);
@@ -477,7 +481,11 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         put_ref(&mut descriptor, 4, degree);
         put_ref(&mut descriptor, 8, poles);
         put_ref(&mut descriptor, 10, 3);
-        put_ref(&mut descriptor, 14, u16::try_from(distinct).expect("fixture value fits u16"));
+        put_ref(
+            &mut descriptor,
+            14,
+            u16::try_from(distinct).expect("fixture value fits u16"),
+        );
         descriptor[16] = 2;
         descriptor[20] = 2;
         put_ref(&mut descriptor, 23, 42);
@@ -487,18 +495,28 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         let value_count = usize::from(poles) * 3;
         let mut payload = record(135, 15 + value_count * 8);
         put_ref(&mut payload, 2, 41);
-        payload[9..13].copy_from_slice(&(u32::try_from(value_count).expect("fixture value fits u32")).to_be_bytes());
+        payload[9..13].copy_from_slice(
+            &(u32::try_from(value_count).expect("fixture value fits u32")).to_be_bytes(),
+        );
         put_ref(&mut payload, 13, 1);
         for pole in 0..usize::from(poles) {
             let at = 15 + pole * 24;
-            put_f64(&mut payload, at, cadmpeg_core::convert::f64_from_index(pole).expect("fixture integer is exactly representable") * 0.01);
+            put_f64(
+                &mut payload,
+                at,
+                cadmpeg_core::convert::f64_from_index(pole)
+                    .expect("fixture integer is exactly representable")
+                    * 0.01,
+            );
             put_f64(&mut payload, at + 8, 0.0);
             put_f64(&mut payload, at + 16, 0.0);
         }
         stream.extend(payload);
 
         let mut multiplicities = record(127, 8 + distinct * 2);
-        multiplicities[4..6].copy_from_slice(&(u16::try_from(distinct).expect("fixture value fits u16")).to_be_bytes());
+        multiplicities[4..6].copy_from_slice(
+            &(u16::try_from(distinct).expect("fixture value fits u16")).to_be_bytes(),
+        );
         put_ref(&mut multiplicities, 6, 42);
         put_ref(&mut multiplicities, 8, degree + 1);
         for index in 1..distinct {
@@ -507,10 +525,17 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         stream.extend(multiplicities);
 
         let mut knots = record(128, 8 + distinct * 8);
-        knots[4..6].copy_from_slice(&(u16::try_from(distinct).expect("fixture value fits u16")).to_be_bytes());
+        knots[4..6].copy_from_slice(
+            &(u16::try_from(distinct).expect("fixture value fits u16")).to_be_bytes(),
+        );
         put_ref(&mut knots, 6, 43);
         for index in 0..distinct {
-            put_f64(&mut knots, 8 + index * 8, cadmpeg_core::convert::f64_from_index(index).expect("fixture integer is exactly representable"));
+            put_f64(
+                &mut knots,
+                8 + index * 8,
+                cadmpeg_core::convert::f64_from_index(index)
+                    .expect("fixture integer is exactly representable"),
+            );
         }
         stream.extend(knots);
         stream
@@ -538,8 +563,12 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         put_ref(&mut descriptor, 16, v_poles);
         descriptor[18] = 2;
         descriptor[19] = 2;
-        descriptor[20..24].copy_from_slice(&(u32::try_from(u_distinct).expect("fixture value fits u32")).to_be_bytes());
-        descriptor[24..28].copy_from_slice(&(u32::try_from(v_distinct).expect("fixture value fits u32")).to_be_bytes());
+        descriptor[20..24].copy_from_slice(
+            &(u32::try_from(u_distinct).expect("fixture value fits u32")).to_be_bytes(),
+        );
+        descriptor[24..28].copy_from_slice(
+            &(u32::try_from(v_distinct).expect("fixture value fits u32")).to_be_bytes(),
+        );
         put_ref(&mut descriptor, 36, 30);
         put_ref(&mut descriptor, 38, 31);
         put_ref(&mut descriptor, 40, 32);
@@ -552,13 +581,27 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         let mut payload = record(125, 97 + value_count * 8);
         put_ref(&mut payload, 2, 21);
         payload[90] = b'+';
-        payload[91..95].copy_from_slice(&(u32::try_from(value_count).expect("fixture value fits u32")).to_be_bytes());
+        payload[91..95].copy_from_slice(
+            &(u32::try_from(value_count).expect("fixture value fits u32")).to_be_bytes(),
+        );
         put_ref(&mut payload, 95, 1);
         for v in 0..usize::from(v_poles) {
             for u in 0..usize::from(u_poles) {
                 let at = 97 + (v * usize::from(u_poles) + u) * 24;
-                put_f64(&mut payload, at, cadmpeg_core::convert::f64_from_index(u).expect("fixture integer is exactly representable") * 0.001);
-                put_f64(&mut payload, at + 8, cadmpeg_core::convert::f64_from_index(v).expect("fixture integer is exactly representable") * 0.001);
+                put_f64(
+                    &mut payload,
+                    at,
+                    cadmpeg_core::convert::f64_from_index(u)
+                        .expect("fixture integer is exactly representable")
+                        * 0.001,
+                );
+                put_f64(
+                    &mut payload,
+                    at + 8,
+                    cadmpeg_core::convert::f64_from_index(v)
+                        .expect("fixture integer is exactly representable")
+                        * 0.001,
+                );
                 put_f64(&mut payload, at + 16, 0.0);
             }
         }
@@ -568,7 +611,9 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
             [(30, u_degree, u_distinct), (31, v_degree, v_distinct)]
         {
             let mut multiplicities = record(127, 8 + distinct * 2);
-            multiplicities[4..6].copy_from_slice(&(u16::try_from(distinct).expect("fixture value fits u16")).to_be_bytes());
+            multiplicities[4..6].copy_from_slice(
+                &(u16::try_from(distinct).expect("fixture value fits u16")).to_be_bytes(),
+            );
             put_ref(&mut multiplicities, 6, reference);
             put_ref(&mut multiplicities, 8, degree + 1);
             for index in 1..distinct {
@@ -578,10 +623,17 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
         }
         for (reference, distinct) in [(32, u_distinct), (33, v_distinct)] {
             let mut knots = record(128, 8 + distinct * 8);
-            knots[4..6].copy_from_slice(&(u16::try_from(distinct).expect("fixture value fits u16")).to_be_bytes());
+            knots[4..6].copy_from_slice(
+                &(u16::try_from(distinct).expect("fixture value fits u16")).to_be_bytes(),
+            );
             put_ref(&mut knots, 6, reference);
             for index in 0..distinct {
-                put_f64(&mut knots, 8 + index * 8, cadmpeg_core::convert::f64_from_index(index).expect("fixture integer is exactly representable"));
+                put_f64(
+                    &mut knots,
+                    8 + index * 8,
+                    cadmpeg_core::convert::f64_from_index(index)
+                        .expect("fixture integer is exactly representable"),
+                );
             }
             stream.extend(knots);
         }

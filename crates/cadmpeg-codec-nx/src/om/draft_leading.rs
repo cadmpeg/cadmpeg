@@ -63,7 +63,10 @@ checked_origin!(u64);
 
 impl DraftLeadingLane<(), usize> {
     pub(crate) fn into_absolute(self, base: u64) -> Option<DraftLeadingLane<(), u64>> {
-        DraftLeadingLane::<(), u64>::new(self.indices, base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset))?)
+        DraftLeadingLane::<(), u64>::new(
+            self.indices,
+            base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset))?,
+        )
     }
 }
 

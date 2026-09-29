@@ -665,7 +665,10 @@ fn repeated_scalar_block_reference_container() -> crate::container::Container<'s
         payload.extend_from_slice(&[0xf0, 0x03, 0xf0, 0x04]);
     }
     let template = b"Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer";
-    payload.extend_from_slice(&[0x04, u8::try_from(template.len() + 2).expect("fixture value fits u8")]);
+    payload.extend_from_slice(&[
+        0x04,
+        u8::try_from(template.len() + 2).expect("fixture value fits u8"),
+    ]);
     payload.extend_from_slice(template);
     payload.push(0);
     let store = (0..600).map(|_| b"A".as_slice()).collect::<Vec<_>>();
@@ -1186,7 +1189,10 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
             crate::native::features::reference::ConstructionReference {
                 token: crate::om::reference_index::ReferenceIndexToken::from_wire(
                     u32::try_from(index).expect("fixture value fits u32") + 1,
-                    &[0xf0, u8::try_from(index).expect("fixture value fits u8") + 1],
+                    &[
+                        0xf0,
+                        u8::try_from(index).expect("fixture value fits u8") + 1,
+                    ],
                 )
                 .unwrap(),
                 data_block: blocks[index].clone(),
@@ -1244,7 +1250,10 @@ fn package_use_inputs() -> (
             crate::native::features::reference::ConstructionReference {
                 token: crate::om::reference_index::ReferenceIndexToken::from_wire(
                     u32::try_from(index).expect("fixture value fits u32") + 1,
-                    &[0xf0, u8::try_from(index).expect("fixture value fits u8") + 1],
+                    &[
+                        0xf0,
+                        u8::try_from(index).expect("fixture value fits u8") + 1,
+                    ],
                 )
                 .unwrap(),
                 data_block: blocks[index].clone(),

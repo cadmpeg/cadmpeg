@@ -142,10 +142,7 @@ impl<F: Binary64PairForm, O: Copy + Add<Output = O> + From<u16>> Binary64Pair<F,
     }
     pub(crate) fn value_offsets(&self) -> [O; 2] {
         let first = self.offset + O::from(self.discriminator_byte_len);
-        [
-            first,
-            first + O::from(8 + self.separator_width),
-        ]
+        [first, first + O::from(8 + self.separator_width)]
     }
 }
 
@@ -153,8 +150,11 @@ impl<F: Binary64PairForm> Binary64Pair<F, u64> {
     pub(crate) fn new(form: F, offset: u64, values: [ShiftedBinary64; 2]) -> Option<Self> {
         let discriminator_byte_len = u16::try_from(form.discriminator().len()).ok()?;
         let separator_width = u16::try_from(form.separator_width()).ok()?;
-        offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(form.discriminator().len()) + 16 + cadmpeg_core::decode::u64_from_index(form.separator_width()))?;
+        offset.checked_add(
+            cadmpeg_core::decode::u64_from_index(form.discriminator().len())
+                + 16
+                + cadmpeg_core::decode::u64_from_index(form.separator_width()),
+        )?;
         Some(Self {
             form,
             offset,

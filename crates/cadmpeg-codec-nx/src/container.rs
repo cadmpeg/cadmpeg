@@ -453,7 +453,10 @@ impl<'a> Container<'a> {
                         )?;
                         blocks.insert(
                             offset_block_key(ctx, section_ordinal, 0)?,
-                            (control.bytes, entry_offset + cadmpeg_core::decode::u64_from_index(control.offset)),
+                            (
+                                control.bytes,
+                                entry_offset + cadmpeg_core::decode::u64_from_index(control.offset),
+                            ),
                         );
                         for (record_ordinal, block) in records.iter().enumerate() {
                             let ordinal = record_ordinal.checked_add(1).ok_or_else(|| {
@@ -470,7 +473,11 @@ impl<'a> Container<'a> {
                             )?;
                             blocks.insert(
                                 offset_block_key(ctx, section_ordinal, ordinal)?,
-                                (block.bytes, entry_offset + cadmpeg_core::decode::u64_from_index(block.offset)),
+                                (
+                                    block.bytes,
+                                    entry_offset
+                                        + cadmpeg_core::decode::u64_from_index(block.offset),
+                                ),
                             );
                         }
                     }
@@ -1639,10 +1646,16 @@ fn try_entry(
         (Some(off), Some(size)) => {
             let end = off.checked_add(size);
             match end {
-                Some(e) if size > 0 && e <= cadmpeg_core::decode::u64_from_index(data.len()) && off >= 8 => DirEntryBody::File {
-                    offset: off,
-                    len: size,
-                },
+                Some(e)
+                    if size > 0
+                        && e <= cadmpeg_core::decode::u64_from_index(data.len())
+                        && off >= 8 =>
+                {
+                    DirEntryBody::File {
+                        offset: off,
+                        len: size,
+                    }
+                }
                 _ => DirEntryBody::Directory,
             }
         }

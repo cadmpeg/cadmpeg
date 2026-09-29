@@ -140,7 +140,10 @@ impl Serialize for FeatureOperationCommonFrame {
         if let Some(value) = suffix.target().and_then(Option::as_deref) {
             wire.serialize_entry("data_block", value)?;
         }
-        wire.serialize_entry("byte_len", &(cadmpeg_core::decode::u64_from_index(frame.byte_len())))?;
+        wire.serialize_entry(
+            "byte_len",
+            &(cadmpeg_core::decode::u64_from_index(frame.byte_len())),
+        )?;
         wire.serialize_entry("source_offset", &frame.offset())?;
         wire.serialize_entry("index_source_offsets", &frame.index_offsets())?;
         wire.serialize_entry("state_source_offset", &frame.state_offset())?;

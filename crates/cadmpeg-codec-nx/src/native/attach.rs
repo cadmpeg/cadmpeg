@@ -7028,7 +7028,9 @@ fn stream_prefix(ordinal: u32, body_marker: bool) -> Result<([u8; 20], usize), C
     let mut digit_count = 0;
     let mut ordinal = ordinal;
     loop {
-        decimal[digit_count] = b'0' + u8::try_from(ordinal % 10).map_err(|_| CodecError::malformed("NX stream ordinal decimal digit exceeds u8"))?;
+        decimal[digit_count] = b'0'
+            + u8::try_from(ordinal % 10)
+                .map_err(|_| CodecError::malformed("NX stream ordinal decimal digit exceeds u8"))?;
         digit_count += 1;
         ordinal /= 10;
         if ordinal == 0 {
@@ -7512,9 +7514,9 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
                     .get(definition.id.as_str())
                     .and_then(Option::as_ref)
                     .and_then(|names| {
-                        names
-                            .fields
-                            .get(cadmpeg_core::decode::index_from_u32(field_use.position.field_ordinal()))
+                        names.fields.get(cadmpeg_core::decode::index_from_u32(
+                            field_use.position.field_ordinal(),
+                        ))
                     })
                     .map(|field| field.name.as_str())
                 else {

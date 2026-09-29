@@ -1399,7 +1399,14 @@ pub(super) fn annotate_node(
     node: &Node,
     tag: &str,
 ) -> Result<(), CodecError> {
-    super::annotations::note(ctx, annotations, id, stream, cadmpeg_core::decode::u64_from_index(node.pos), tag)
+    super::annotations::note(
+        ctx,
+        annotations,
+        id,
+        stream,
+        cadmpeg_core::decode::u64_from_index(node.pos),
+        tag,
+    )
 }
 
 pub(super) fn surface_tag(geometry: &SolvedSurfaceGeometry) -> &'static str {
@@ -2191,7 +2198,8 @@ mod tests {
     fn unknown_stream_metadata_refuses_digest_text_at_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("nx:container:parasolid#0".len());
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("nx:container:parasolid#0".len());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             unknown_stream_metadata(&ctx, 0, &preview_stream(Vec::new())),
@@ -2286,7 +2294,8 @@ mod tests {
         let expected = source_meta(&service_ctx, &scan, &dialects).unwrap();
         assert_eq!(expected.attributes["file_size"], "0");
         let mut limited_policy = DecodePolicy::service();
-        limited_policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(expected.attributes.len());
+        limited_policy.limits.max_collection_items =
+            cadmpeg_core::decode::u64_from_index(expected.attributes.len());
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
         assert!(matches!(

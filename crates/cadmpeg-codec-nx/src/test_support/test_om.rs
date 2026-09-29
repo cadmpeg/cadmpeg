@@ -164,8 +164,9 @@ pub(crate) fn segment_om_record_area_with_state_groups_and_counter_map() -> Vec<
             .try_into()
             .expect("record-area pointer"),
     );
-    payload[pointer_at..pointer_at + 4]
-        .copy_from_slice(&(pointer + u32::try_from(field.len()).expect("fixture value fits u32")).to_le_bytes());
+    payload[pointer_at..pointer_at + 4].copy_from_slice(
+        &(pointer + u32::try_from(field.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     let message_bytes = [
         0x03, 0x0f, b's', b't', b'a', b't', b'e', b' ', b'w', b'a', b'r', b'n', b'i', b'n', b'g',
         0x00, 0x00, 0x00, 0x00, 0x00, 0xaa, 0x60, 0x6b, 0x01, 0x00,
@@ -292,7 +293,9 @@ fn push_feature_operation(bytes: &mut Vec<u8>, object_indices: &[u8], label: &st
 pub(crate) fn composed_feature_history_section(operations: &[(&[u8], &str, Vec<u8>)]) -> Vec<u8> {
     let mut bytes = size_framed_om_section();
     let record_area = bytes.len() + 20;
-    bytes.extend_from_slice(&(u32::try_from(record_area).expect("fixture value fits u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(record_area).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.resize(record_area, 0);
     bytes.extend_from_slice(&13u32.to_le_bytes());
     bytes.extend_from_slice(&14u32.to_le_bytes());
@@ -318,7 +321,9 @@ fn composed_offset_store(records: &[&[u8]]) -> Vec<u8> {
     let index_start = bytes.len();
     let offset_count = records.len() + 2;
     bytes.resize(index_start + offset_count * 4, 0);
-    bytes.extend_from_slice(&(u32::try_from(records.len()).expect("fixture value fits u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(records.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     let mut offsets = Vec::with_capacity(offset_count);
     offsets.push(bytes.len());
     bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
@@ -328,8 +333,9 @@ fn composed_offset_store(records: &[&[u8]]) -> Vec<u8> {
     }
     offsets.push(bytes.len());
     for (index, offset) in offsets.iter().enumerate() {
-        bytes[index_start + index * 4..index_start + index * 4 + 4]
-            .copy_from_slice(&(u32::try_from(*offset).expect("fixture value fits u32")).to_le_bytes());
+        bytes[index_start + index * 4..index_start + index * 4 + 4].copy_from_slice(
+            &(u32::try_from(*offset).expect("fixture value fits u32")).to_le_bytes(),
+        );
     }
     bytes
 }
@@ -491,7 +497,10 @@ pub(super) fn composed_feature_history_inputs() -> ComposedInputs {
         payload.extend_from_slice(&shifted_f64_bytes(38.1));
         payload.extend_from_slice(&[0xf0, 0x03, 0xf0, 0x04]);
         let template = b"Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer";
-        payload.extend_from_slice(&[0x04, u8::try_from(template.len() + 2).expect("fixture value fits u8")]);
+        payload.extend_from_slice(&[
+            0x04,
+            u8::try_from(template.len() + 2).expect("fixture value fits u8"),
+        ]);
         payload.extend_from_slice(template);
         payload.push(0x00);
         payload
@@ -635,11 +644,18 @@ pub(crate) fn indexed_om_section() -> Vec<u8> {
     let root = b"\x04\x01\x0eNX 2027.3102\x00hostglobalvariables";
     let text = b"(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; ";
     let declaration_name = b"p8_CircularPattern_pattern_Circular_Dir_offset_angle";
-    let mut expression = vec![0x04, u8::try_from(declaration_name.len() + 2).expect("fixture value fits u8")];
+    let mut expression = vec![
+        0x04,
+        u8::try_from(declaration_name.len() + 2).expect("fixture value fits u8"),
+    ];
     expression.extend_from_slice(declaration_name);
     expression.push(0);
     expression.extend_from_slice(b"\x04\x05120\0");
-    expression.extend_from_slice(&[0x99, 0x04, u8::try_from(text.len() + 2).expect("fixture value fits u8")]);
+    expression.extend_from_slice(&[
+        0x99,
+        0x04,
+        u8::try_from(text.len() + 2).expect("fixture value fits u8"),
+    ]);
     expression.extend_from_slice(text);
     expression.push(0);
     expression.extend_from_slice(b"\x66\x32\x03\x0cSKETCH_001\0");
@@ -651,7 +667,12 @@ pub(crate) fn indexed_om_section() -> Vec<u8> {
     let first = table_end - base;
     let second = first + records[0].len();
     let end = second + records[1].len();
-    for value in [0u32, u32::try_from(first).expect("fixture value fits u32"), u32::try_from(second).expect("fixture value fits u32"), u32::try_from(end).expect("fixture value fits u32")] {
+    for value in [
+        0u32,
+        u32::try_from(first).expect("fixture value fits u32"),
+        u32::try_from(second).expect("fixture value fits u32"),
+        u32::try_from(end).expect("fixture value fits u32"),
+    ] {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -679,13 +700,18 @@ pub(crate) fn offset_only_indexed_om_section() -> Vec<u8> {
     let second = bytes.len();
     let text = b"(Number [mm]) length: 25; ";
     bytes.extend_from_slice(&[0x04, 0x00, 0x2a, 0x02, 0x0b]);
-    bytes.extend_from_slice(&[0x99, 0x04, u8::try_from(text.len() + 2).expect("fixture value fits u8")]);
+    bytes.extend_from_slice(&[
+        0x99,
+        0x04,
+        u8::try_from(text.len() + 2).expect("fixture value fits u8"),
+    ]);
     bytes.extend_from_slice(text);
     bytes.push(0);
     let end = bytes.len();
     for (index, offset) in [metadata, first, second, end].into_iter().enumerate() {
-        bytes[index_start + index * 4..index_start + index * 4 + 4]
-            .copy_from_slice(&(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes());
+        bytes[index_start + index * 4..index_start + index * 4 + 4].copy_from_slice(
+            &(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes(),
+        );
     }
     bytes
 }
@@ -711,13 +737,18 @@ pub(crate) fn offset_only_indexed_om_section_with_control(control_block: &[u8]) 
     let second = bytes.len();
     let text = b"(Number [mm]) length: 25; ";
     bytes.extend_from_slice(&[0x04, 0x00, 0x2a, 0x02, 0x0b]);
-    bytes.extend_from_slice(&[0x99, 0x04, u8::try_from(text.len() + 2).expect("fixture value fits u8")]);
+    bytes.extend_from_slice(&[
+        0x99,
+        0x04,
+        u8::try_from(text.len() + 2).expect("fixture value fits u8"),
+    ]);
     bytes.extend_from_slice(text);
     bytes.push(0);
     let end = bytes.len();
     for (index, offset) in [metadata, first, second, end].into_iter().enumerate() {
-        bytes[index_start + index * 4..index_start + index * 4 + 4]
-            .copy_from_slice(&(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes());
+        bytes[index_start + index * 4..index_start + index * 4 + 4].copy_from_slice(
+            &(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes(),
+        );
     }
     bytes
 }
@@ -750,8 +781,9 @@ pub(crate) fn offset_only_indexed_om_section_with_index_values() -> Vec<u8> {
     bytes.extend_from_slice(&[0xcc; 12]); // column record, no product marker
     let end = bytes.len();
     for (index, offset) in [metadata, first, second, end].into_iter().enumerate() {
-        bytes[index_start + index * 4..index_start + index * 4 + 4]
-            .copy_from_slice(&(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes());
+        bytes[index_start + index * 4..index_start + index * 4 + 4].copy_from_slice(
+            &(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes(),
+        );
     }
     bytes
 }
@@ -786,8 +818,9 @@ pub(crate) fn offset_only_indexed_om_section_with_named_point() -> Vec<u8> {
     bytes.extend_from_slice(&[0xbb; 8]); // trailing column record, no point payload
     let end = bytes.len();
     for (index, offset) in [metadata, first, second, end].into_iter().enumerate() {
-        bytes[index_start + index * 4..index_start + index * 4 + 4]
-            .copy_from_slice(&(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes());
+        bytes[index_start + index * 4..index_start + index * 4 + 4].copy_from_slice(
+            &(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes(),
+        );
     }
     bytes
 }
@@ -810,13 +843,18 @@ pub(crate) fn control_root_offset_only_indexed_om_section() -> Vec<u8> {
     let text = b"(Number [mm]) length: 25; ";
     bytes.extend_from_slice(b"hostglobalvariables");
     bytes.extend_from_slice(&[0x04, 0x00, 0x2a, 0x02, 0x0b]);
-    bytes.extend_from_slice(&[0x99, 0x04, u8::try_from(text.len() + 2).expect("fixture value fits u8")]);
+    bytes.extend_from_slice(&[
+        0x99,
+        0x04,
+        u8::try_from(text.len() + 2).expect("fixture value fits u8"),
+    ]);
     bytes.extend_from_slice(text);
     bytes.push(0);
     let end = bytes.len();
     for (index, offset) in [control, first, second, end].into_iter().enumerate() {
-        bytes[index_start + index * 4..index_start + index * 4 + 4]
-            .copy_from_slice(&(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes());
+        bytes[index_start + index * 4..index_start + index * 4 + 4].copy_from_slice(
+            &(u32::try_from(offset).expect("fixture value fits u32")).to_le_bytes(),
+        );
     }
     bytes
 }
@@ -889,7 +927,9 @@ pub(crate) fn size_framed_audit_trail_section_with_record_area() -> Vec<u8> {
     }
     bytes.extend_from_slice(b"unframed UGS::PayloadText");
     let record_area = bytes.len() + 20;
-    bytes.extend_from_slice(&(u32::try_from(record_area).expect("fixture value fits u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(record_area).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.resize(record_area, 0);
     bytes.extend_from_slice(&13u32.to_le_bytes());
     bytes.extend_from_slice(&14u32.to_le_bytes());
@@ -908,7 +948,9 @@ pub(crate) fn size_framed_audit_trail_section_with_record_area() -> Vec<u8> {
 pub(crate) fn size_framed_om_section_with_record_area() -> Vec<u8> {
     let mut bytes = size_framed_om_section();
     let record_area = bytes.len() + 20;
-    bytes.extend_from_slice(&(u32::try_from(record_area).expect("fixture value fits u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(record_area).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.resize(record_area, 0);
     bytes.extend_from_slice(&13u32.to_le_bytes());
     bytes.extend_from_slice(&14u32.to_le_bytes());

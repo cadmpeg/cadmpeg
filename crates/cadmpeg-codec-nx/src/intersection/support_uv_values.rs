@@ -53,10 +53,10 @@ impl SupportUvValues {
         packing: SupportUvPacking,
         values: Vec<f64>,
     ) -> Result<Option<Self>, CodecError> {
-        let Ok(wire_count) = u32::try_from(values.len()) else { return Ok(None); };
-        if values.len() < packing.width() * 2
-            || !values.len().is_multiple_of(packing.width())
-        {
+        let Ok(wire_count) = u32::try_from(values.len()) else {
+            return Ok(None);
+        };
+        if values.len() < packing.width() * 2 || !values.len().is_multiple_of(packing.width()) {
             return Ok(None);
         }
         let count = values.len();
@@ -83,7 +83,11 @@ impl SupportUvValues {
             .into_iter()
             .map(|value| FiniteReal::new(value).ok_or("values: scalars must be finite"))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self { packing, values, count })
+        Ok(Self {
+            packing,
+            values,
+            count,
+        })
     }
 
     pub(crate) fn count(&self) -> u32 {

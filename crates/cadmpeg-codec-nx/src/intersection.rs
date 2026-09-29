@@ -1156,7 +1156,9 @@ pub(crate) fn chart_source_record_at(
             head.f64_be(), head.f64_be(), head.u32_be(), head.f64_be(), head.f64_be(),
             head.f64_be(), head.f64_be(),
         ) else { continue; };
-        if cadmpeg_core::decode::index_from_u32(chart_count) != count || [e0, e1] != [MISSING_PARAMETER, MISSING_PARAMETER] {
+        if cadmpeg_core::decode::index_from_u32(chart_count) != count
+            || [e0, e1] != [MISSING_PARAMETER, MISSING_PARAMETER]
+        {
             continue;
         }
         let Ok(preamble_values) =

@@ -533,7 +533,9 @@ pub(crate) fn bspline_partition_stream() -> Vec<u8> {
 
     for (tag, reference, values) in [(127, 30, vec![2u16, 2]), (127, 31, vec![2, 2])] {
         let mut array = record(tag, 8 + values.len() * 2);
-        array[4..6].copy_from_slice(&(u16::try_from(values.len()).expect("fixture value fits u16")).to_be_bytes());
+        array[4..6].copy_from_slice(
+            &(u16::try_from(values.len()).expect("fixture value fits u16")).to_be_bytes(),
+        );
         put_ref(&mut array, 6, reference);
         for (index, value) in values.into_iter().enumerate() {
             put_ref(&mut array, 8 + index * 2, value);
@@ -658,7 +660,9 @@ pub(crate) fn extended_bspline_surface_stream() -> Vec<u8> {
     ] {
         let reference = encoded_xmt(reference);
         let mut array = record(tag, 6 + reference.len() + values.len() * 2);
-        array[4..6].copy_from_slice(&(u16::try_from(values.len()).expect("fixture value fits u16")).to_be_bytes());
+        array[4..6].copy_from_slice(
+            &(u16::try_from(values.len()).expect("fixture value fits u16")).to_be_bytes(),
+        );
         array[6..6 + reference.len()].copy_from_slice(&reference);
         for (index, value) in values.into_iter().enumerate() {
             put_ref(&mut array, 6 + reference.len() + index * 2, value);
@@ -982,11 +986,17 @@ pub(crate) fn fully_extend_common_header(stream: &mut Vec<u8>, marker: [u8; 4]) 
 /// negated remainder and a quotient.
 pub(crate) fn push_xmt(bytes: &mut Vec<u8>, reference: u32) {
     if i16::try_from(reference).is_ok() {
-        bytes.extend_from_slice(&(u16::try_from(reference).expect("fixture value fits u16")).to_be_bytes());
+        bytes.extend_from_slice(
+            &(u16::try_from(reference).expect("fixture value fits u16")).to_be_bytes(),
+        );
         return;
     }
     let quotient = reference / 32_767;
     let remainder = reference % 32_767;
-    bytes.extend_from_slice(&(-(i16::try_from(remainder).expect("fixture value fits i16"))).to_be_bytes());
-    bytes.extend_from_slice(&(u16::try_from(quotient).expect("fixture value fits u16")).to_be_bytes());
+    bytes.extend_from_slice(
+        &(-(i16::try_from(remainder).expect("fixture value fits i16"))).to_be_bytes(),
+    );
+    bytes.extend_from_slice(
+        &(u16::try_from(quotient).expect("fixture value fits u16")).to_be_bytes(),
+    );
 }

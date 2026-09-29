@@ -202,12 +202,18 @@ fn jt_int32_cdp2_decodes_empty_and_bitlength_packets() {
         }
         let mut packet = value_count.to_le_bytes().to_vec();
         packet.push(1);
-        packet.extend_from_slice(&(u32::try_from(bits.len()).expect("fixture value fits u32")).to_le_bytes());
+        packet.extend_from_slice(
+            &(u32::try_from(bits.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         packet.extend(code_words);
         packet
     };
     let field = |bits: &mut Vec<u8>, value: u32, width: u8| {
-        bits.extend((0..width).rev().map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")));
+        bits.extend(
+            (0..width)
+                .rev()
+                .map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")),
+        );
     };
 
     // Fixed-width mode: range [-1, 1], followed by codes for 1 and -1.
@@ -484,7 +490,11 @@ fn jt_uniform_dequantization_uses_the_full_unsigned_code_range() {
 fn jt_quantized_coordinates_reject_negative_codes_at_thirty_two_bits() {
     let mut code = Vec::new();
     let mut push = |value: u32, width: u8| {
-        code.extend((0..width).rev().map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")));
+        code.extend(
+            (0..width)
+                .rev()
+                .map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")),
+        );
     };
     push(0, 1);
     push(6, 6);
@@ -501,7 +511,9 @@ fn jt_quantized_coordinates_reject_negative_codes_at_thirty_two_bits() {
     word <<= 32 - code.len();
     let mut packet = 4_u32.to_le_bytes().to_vec();
     packet.push(1);
-    packet.extend_from_slice(&(u32::try_from(code.len()).expect("fixture value fits u32")).to_le_bytes());
+    packet.extend_from_slice(
+        &(u32::try_from(code.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     packet.extend_from_slice(&word.to_le_bytes());
     let mut array = Vec::new();
     for _ in 0..3 {
@@ -531,7 +543,11 @@ fn jt_hsv_colors_with_a_wrapped_hue_stay_in_the_sextant_table() {
 fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
     let mut code = Vec::new();
     let mut push = |value: u32, width: u8| {
-        code.extend((0..width).rev().map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")));
+        code.extend(
+            (0..width)
+                .rev()
+                .map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")),
+        );
     };
     push(0, 1);
     push(0, 6);
@@ -547,7 +563,9 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
     word <<= 32 - code.len();
     let mut packet = 4_u32.to_le_bytes().to_vec();
     packet.push(1);
-    packet.extend_from_slice(&(u32::try_from(code.len()).expect("fixture value fits u32")).to_le_bytes());
+    packet.extend_from_slice(
+        &(u32::try_from(code.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     packet.extend_from_slice(&word.to_le_bytes());
     let mut array = Vec::new();
     for _ in 0..3 {
@@ -568,7 +586,11 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
 fn jt_coordinate_array_refuses_scoped_component_storage() {
     let mut code = Vec::new();
     let mut push = |value: u32, width: u8| {
-        code.extend((0..width).rev().map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")));
+        code.extend(
+            (0..width)
+                .rev()
+                .map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")),
+        );
     };
     push(0, 1);
     push(0, 6);
@@ -584,7 +606,9 @@ fn jt_coordinate_array_refuses_scoped_component_storage() {
     word <<= 32 - code.len();
     let mut packet = 4_u32.to_le_bytes().to_vec();
     packet.push(1);
-    packet.extend_from_slice(&(u32::try_from(code.len()).expect("fixture value fits u32")).to_le_bytes());
+    packet.extend_from_slice(
+        &(u32::try_from(code.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     packet.extend_from_slice(&word.to_le_bytes());
     let mut array = Vec::new();
     for _ in 0..3 {
@@ -648,7 +672,11 @@ fn jt_deering_normal_applies_sextant_octant_and_code_bounds() {
 fn jt_quantized_texture_coordinates_decode_component_major_lag1_codes() {
     let mut code = Vec::new();
     let mut push = |value: u32, width: u8| {
-        code.extend((0..width).rev().map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")));
+        code.extend(
+            (0..width)
+                .rev()
+                .map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")),
+        );
     };
     push(0, 1);
     push(0, 6);
@@ -664,7 +692,9 @@ fn jt_quantized_texture_coordinates_decode_component_major_lag1_codes() {
     word <<= 32 - code.len();
     let mut packet = 4_u32.to_le_bytes().to_vec();
     packet.push(1);
-    packet.extend_from_slice(&(u32::try_from(code.len()).expect("fixture value fits u32")).to_le_bytes());
+    packet.extend_from_slice(
+        &(u32::try_from(code.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     packet.extend_from_slice(&word.to_le_bytes());
 
     let mut array = 4_u32.to_le_bytes().to_vec();
@@ -701,7 +731,11 @@ fn jt_quantized_texture_coordinates_decode_component_major_lag1_codes() {
 fn jt_quantized_colors_decode_rgb_and_hsv_quantizers() {
     let mut code = Vec::new();
     let mut push = |value: u32, width: u8| {
-        code.extend((0..width).rev().map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")));
+        code.extend(
+            (0..width)
+                .rev()
+                .map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")),
+        );
     };
     push(0, 1);
     push(0, 6);
@@ -717,7 +751,9 @@ fn jt_quantized_colors_decode_rgb_and_hsv_quantizers() {
     word <<= 32 - code.len();
     let mut packet = 4_u32.to_le_bytes().to_vec();
     packet.push(1);
-    packet.extend_from_slice(&(u32::try_from(code.len()).expect("fixture value fits u32")).to_le_bytes());
+    packet.extend_from_slice(
+        &(u32::try_from(code.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     packet.extend_from_slice(&word.to_le_bytes());
 
     let mut rgb = 4_u32.to_le_bytes().to_vec();
@@ -760,7 +796,11 @@ fn jt_quantized_colors_decode_rgb_and_hsv_quantizers() {
 fn jt_vertex_flags_require_a_complete_binary_value_packet() {
     let mut bits = vec![0];
     let mut field = |value: u32, width: u8| {
-        bits.extend((0..width).rev().map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")));
+        bits.extend(
+            (0..width)
+                .rev()
+                .map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")),
+        );
     };
     field(1, 6);
     field(2, 6);
@@ -776,7 +816,9 @@ fn jt_vertex_flags_require_a_complete_binary_value_packet() {
     word <<= 32 - bits.len();
     let mut packet = 3_u32.to_le_bytes().to_vec();
     packet.push(1);
-    packet.extend_from_slice(&(u32::try_from(bits.len()).expect("fixture value fits u32")).to_le_bytes());
+    packet.extend_from_slice(
+        &(u32::try_from(bits.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     packet.extend_from_slice(&word.to_le_bytes());
     let mut array = 3_u32.to_le_bytes().to_vec();
     array.extend_from_slice(&packet);
@@ -793,6 +835,7 @@ fn jt_vertex_flags_require_a_complete_binary_value_packet() {
 
 #[test]
 fn dequantization_refuses_value_below_binary32_range_before_rounding() {
-    let range = super::QuantizedRange::new(-f32::MAX, (-f32::MAX).next_up()).expect("finite ordered quantization range");
+    let range = super::QuantizedRange::new(-f32::MAX, (-f32::MAX).next_up())
+        .expect("finite ordered quantization range");
     assert!(super::dequantize_uniform(0, range, 2).is_none());
 }

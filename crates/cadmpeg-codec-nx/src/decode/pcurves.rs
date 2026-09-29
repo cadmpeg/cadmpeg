@@ -2738,7 +2738,9 @@ fn coincident_pcurve_pair_with_index(
         if !geometry_budget.charge() {
             return geometry_budget.resource_refusal().map_or(Ok(false), Err);
         }
-        let Some(middle) = finite_parameter_sample([start, end], 1, 2) else { return Ok(false); };
+        let Some(middle) = finite_parameter_sample([start, end], 1, 2) else {
+            return Ok(false);
+        };
         let Some(middle_separation) = separation(middle)? else {
             return Ok(false);
         };
@@ -3320,7 +3322,11 @@ fn transfer_intersection_pcurve_with_budget<'a>(
     )?;
     coarse.push(first);
     for sample_index in 1..=continuation_steps {
-        let Some(parameter) = finite_parameter_sample(parameter_range, sample_index, continuation_steps) else { return Ok(None); };
+        let Some(parameter) =
+            finite_parameter_sample(parameter_range, sample_index, continuation_steps)
+        else {
+            return Ok(None);
+        };
         let Some(sample) = transferred_pcurve_sample_with_budget(
             index,
             curve,
@@ -3698,7 +3704,12 @@ pub(super) fn blend_boundary_parameter_from_support_spine_with_index_and_budget(
     else {
         return Ok(None);
     };
-    let parameters = Point2::new(parameter, { let Some(value) = cadmpeg_core::convert::f64_from_index(boundary) else { return Ok(None); }; value });
+    let parameters = Point2::new(parameter, {
+        let Some(value) = cadmpeg_core::convert::f64_from_index(boundary) else {
+            return Ok(None);
+        };
+        value
+    });
     // The boundary invariants are the complete contact-free certificate. Test
     // them before evaluating the nested blend frame; the latter may recurse
     // through several NURBS supports and is only needed for a non-boundary
@@ -3881,7 +3892,15 @@ fn append_transferred_pcurve_segment_with_budget<'a>(
                 source_point
             };
             if let Some(contact) = blend_contact {
-                if uv.v.to_bits() == ({ let Some(value) = cadmpeg_core::convert::f64_from_index(contact.boundary) else { return Ok(false); }; value }).to_bits()
+                if uv.v.to_bits()
+                    == ({
+                        let Some(value) = cadmpeg_core::convert::f64_from_index(contact.boundary)
+                        else {
+                            return Ok(false);
+                        };
+                        value
+                    })
+                    .to_bits()
                     && blend_transfer_point_with_index(index, contact, uv.u, geometry_budget)?
                         .is_some_and(|target_point| {
                             Point3::distance(source_point, target_point) <= tolerance
@@ -4387,11 +4406,19 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
         if let Some(node) = graph.get(NodeKind::Edge, xmt) {
             charge_annotation_note(ctx, curve_id.as_str(), "TOLERANT_EDGE_INTERSECTION")?;
             annotations
-                .note(&curve_id, source_stream, cadmpeg_core::decode::u64_from_index(node.pos))
+                .note(
+                    &curve_id,
+                    source_stream,
+                    cadmpeg_core::decode::u64_from_index(node.pos),
+                )
                 .tag("TOLERANT_EDGE_INTERSECTION");
             charge_annotation_note(ctx, procedural_id.as_str(), "TOLERANT_EDGE_INTERSECTION")?;
             annotations
-                .note(&procedural_id, source_stream, cadmpeg_core::decode::u64_from_index(node.pos))
+                .note(
+                    &procedural_id,
+                    source_stream,
+                    cadmpeg_core::decode::u64_from_index(node.pos),
+                )
                 .tag("TOLERANT_EDGE_INTERSECTION");
         }
         charge_derived_field(ctx, curve_id.as_str(), "geometry")?;
@@ -4768,18 +4795,47 @@ mod tests {
         fn assert_refused(value: impl Into<Option<f64>>) {
             assert!(value.into().is_none());
         }
-        assert_refused(finite_parameter_sample([0.0, 1.0], 9_007_199_254_740_993, 9_007_199_254_740_994));
-        assert_refused(finite_parameter_sample([0.0, 1.0], 1, 9_007_199_254_740_993));
+        assert_refused(finite_parameter_sample(
+            [0.0, 1.0],
+            9_007_199_254_740_993,
+            9_007_199_254_740_994,
+        ));
+        assert_refused(finite_parameter_sample(
+            [0.0, 1.0],
+            1,
+            9_007_199_254_740_993,
+        ));
     }
 
     #[test]
     fn wide_pcurve_sample_grid_keeps_finite_quarter_points() {
         let range = [-f64::MAX, f64::MAX];
-        assert_eq!(finite_parameter_sample(range, 0, 4).expect("quarter sample indices are exact"), -f64::MAX);
-        assert!((finite_parameter_sample(range, 1, 4).expect("quarter sample indices are exact") / f64::MAX + 0.5).abs() <= f64::EPSILON);
-        assert_eq!(finite_parameter_sample(range, 2, 4).expect("quarter sample indices are exact"), 0.0);
-        assert!((finite_parameter_sample(range, 3, 4).expect("quarter sample indices are exact") / f64::MAX - 0.5).abs() <= f64::EPSILON);
-        assert_eq!(finite_parameter_sample(range, 4, 4).expect("quarter sample indices are exact"), f64::MAX);
+        assert_eq!(
+            finite_parameter_sample(range, 0, 4).expect("quarter sample indices are exact"),
+            -f64::MAX
+        );
+        assert!(
+            (finite_parameter_sample(range, 1, 4).expect("quarter sample indices are exact")
+                / f64::MAX
+                + 0.5)
+                .abs()
+                <= f64::EPSILON
+        );
+        assert_eq!(
+            finite_parameter_sample(range, 2, 4).expect("quarter sample indices are exact"),
+            0.0
+        );
+        assert!(
+            (finite_parameter_sample(range, 3, 4).expect("quarter sample indices are exact")
+                / f64::MAX
+                - 0.5)
+                .abs()
+                <= f64::EPSILON
+        );
+        assert_eq!(
+            finite_parameter_sample(range, 4, 4).expect("quarter sample indices are exact"),
+            f64::MAX
+        );
     }
 
     #[test]

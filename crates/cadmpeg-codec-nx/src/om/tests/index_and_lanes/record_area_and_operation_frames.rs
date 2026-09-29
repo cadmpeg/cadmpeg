@@ -19,7 +19,9 @@ fn legacy_feature_om_section_with_record_area() -> Vec<u8> {
     let pointer_offset = bytes.len();
     let record_area_offset = pointer_offset + 20;
     bytes.push(0x01);
-    bytes.extend_from_slice(&(u32::try_from(record_area_offset - 1).expect("fixture value fits u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(record_area_offset - 1).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.resize(record_area_offset, 0);
     bytes.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     bytes.extend_from_slice(b"\x01\x0eNX 1980.1700\0");
@@ -84,7 +86,9 @@ fn om_registry_uses_the_bounded_record_area_as_its_registry_end() {
     ]);
     let pointer_offset = bytes.len();
     let record_area_offset = pointer_offset + 20;
-    bytes.extend_from_slice(&(u32::try_from(record_area_offset).expect("fixture value fits u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(record_area_offset).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.resize(record_area_offset, 0);
     bytes.extend_from_slice(&[13, 0, 0, 0, 14, 0, 0, 0, 44, 0, 0, 0]);
     bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0");

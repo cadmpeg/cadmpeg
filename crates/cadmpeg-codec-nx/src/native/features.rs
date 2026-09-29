@@ -2155,7 +2155,9 @@ impl TryFrom<FeatureSketchPayloadScalarLaneWire> for FeatureSketchPayloadScalarL
             .first()
             .copied()
             .ok_or("values must contain a sketch scalar atom")?
-            .checked_sub(cadmpeg_core::decode::u64_from_index(wire.discriminator.len()))
+            .checked_sub(cadmpeg_core::decode::u64_from_index(
+                wire.discriminator.len(),
+            ))
             .ok_or("value_payload_offsets must follow the discriminator")?;
         let values = wire
             .values
@@ -3973,10 +3975,12 @@ pub(super) fn feature_boolean_operations(
                     kind,
                     target: crate::om::PayloadObjectReference {
                         token: operation.target.token,
-                        offset: entry_offset + cadmpeg_core::decode::u64_from_index(operation.target.offset),
+                        offset: entry_offset
+                            + cadmpeg_core::decode::u64_from_index(operation.target.offset),
                     },
                     tools,
-                    source_offset: entry_offset + cadmpeg_core::decode::u64_from_index(operation.offset),
+                    source_offset: entry_offset
+                        + cadmpeg_core::decode::u64_from_index(operation.offset),
                 })
             })();
             let item = match item {
@@ -4046,9 +4050,17 @@ pub(super) fn feature_operation_records(
             };
             let Some(span) = entry_offset
                 .checked_add(cadmpeg_core::decode::u64_from_index(record.offset()))
-                .zip(entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(record.payload_offset())))
+                .zip(
+                    entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(
+                        record.payload_offset(),
+                    )),
+                )
                 .and_then(|(start, payload)| {
-                    OperationRecordSpan::new(start, payload, cadmpeg_core::decode::u64_from_index(record.payload().len()))
+                    OperationRecordSpan::new(
+                        start,
+                        payload,
+                        cadmpeg_core::decode::u64_from_index(record.payload().len()),
+                    )
                 })
             else {
                 return;
@@ -4270,7 +4282,9 @@ pub(super) fn feature_operation_body_writes(
                 }
             };
             for (ordinal, write) in decoded.into_iter().enumerate() {
-                let Some(offset) = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(write.offset())) else {
+                let Some(offset) =
+                    entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(write.offset()))
+                else {
                     continue;
                 };
                 let Some(frame) = crate::om::body_write::BodyWriteFrame::<u64>::new(
@@ -6465,7 +6479,8 @@ fn construction_payload_frames<P, S, R>(
         else {
             continue;
         };
-        let source_offset = |relative: usize| joined.source_offset(cadmpeg_core::decode::u64_from_index(relative));
+        let source_offset =
+            |relative: usize| joined.source_offset(cadmpeg_core::decode::u64_from_index(relative));
         for (ordinal, row) in scan(joined.bytes())?.into_iter().enumerate() {
             let Some(record) = build(payload, ordinal, row, &source_offset)? else {
                 continue;
@@ -6537,7 +6552,10 @@ pub(super) fn feature_datum_csys_payload_fixed_pairs(
         |payload, ordinal, pair, source_offset| {
             let Some((position, source, first, second)) = (|| {
                 Some((
-                    PairPosition::new(pair.form, cadmpeg_core::decode::u64_from_index(pair.offset))?,
+                    PairPosition::new(
+                        pair.form,
+                        cadmpeg_core::decode::u64_from_index(pair.offset),
+                    )?,
                     source_offset(pair.offset)?,
                     source_offset(pair.value_offsets()[0])?,
                     source_offset(pair.value_offsets()[1])?,
@@ -7250,7 +7268,10 @@ pub(super) fn feature_sketch_payload_fixed_pairs(
         |payload, ordinal, pair, source_offset| {
             let Some((position, source, first, second)) = (|| {
                 Some((
-                    PairPosition::new(pair.form, cadmpeg_core::decode::u64_from_index(pair.offset))?,
+                    PairPosition::new(
+                        pair.form,
+                        cadmpeg_core::decode::u64_from_index(pair.offset),
+                    )?,
                     source_offset(pair.offset)?,
                     source_offset(pair.value_offsets()[0])?,
                     source_offset(pair.value_offsets()[1])?,
@@ -7292,7 +7313,10 @@ pub(super) fn feature_sketch_payload_mixed_pairs(
         |payload, ordinal, pair, source_offset| {
             let Some((position, source, first, second)) = (|| {
                 Some((
-                    PairPosition::new(MixedPairForm, cadmpeg_core::decode::u64_from_index(pair.offset))?,
+                    PairPosition::new(
+                        MixedPairForm,
+                        cadmpeg_core::decode::u64_from_index(pair.offset),
+                    )?,
                     source_offset(pair.offset)?,
                     source_offset(pair.value_offsets()[0])?,
                     source_offset(pair.value_offsets()[1])?,
@@ -7506,14 +7530,17 @@ pub(super) fn feature_sketch_payload_scalar_lanes(
         |payload| payload.content.blocks(),
         |bytes| crate::om::sketch_payload_scalar_lanes(ctx, bytes),
         |payload, ordinal, lane, source_offset| {
-            let Some(header_source) = usize::try_from(lane.offset()).ok().and_then(source_offset) else {
+            let Some(header_source) = usize::try_from(lane.offset()).ok().and_then(source_offset)
+            else {
                 return Ok(None);
             };
-            let Some(terminator_source) = usize::try_from(lane.end()).ok().and_then(source_offset) else {
+            let Some(terminator_source) = usize::try_from(lane.end()).ok().and_then(source_offset)
+            else {
                 return Ok(None);
             };
-            let Some(lane) =
-                lane.try_map_locations(ctx, |offset, ()| usize::try_from(offset).ok().and_then(source_offset))?
+            let Some(lane) = lane.try_map_locations(ctx, |offset, ()| {
+                usize::try_from(offset).ok().and_then(source_offset)
+            })?
             else {
                 return Ok(None);
             };
@@ -7980,12 +8007,17 @@ pub(super) fn offset_store_named_points(
                 continue;
             };
             let records = &records[ordinal..ordinal + point.block_count];
-            let first_source = entry_offset + cadmpeg_core::decode::u64_from_index(records[0].offset);
+            let first_source =
+                entry_offset + cadmpeg_core::decode::u64_from_index(records[0].offset);
             let value_source_offset = |payload_offset: usize| {
                 let mut relative = payload_offset;
                 for record in records {
                     if relative < record.bytes.len() {
-                        return Some(entry_offset + cadmpeg_core::decode::u64_from_index(record.offset) + cadmpeg_core::decode::u64_from_index(relative));
+                        return Some(
+                            entry_offset
+                                + cadmpeg_core::decode::u64_from_index(record.offset)
+                                + cadmpeg_core::decode::u64_from_index(relative),
+                        );
                     }
                     relative -= record.bytes.len();
                 }
@@ -8796,12 +8828,10 @@ fn visit_feature_history_sections(
         .enumerate()
     {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-            entry
-                .file_span()
-                .map_or(cadmpeg_core::decode::u64_from_index(section.offset), |(offset, _)| {
-                    offset + cadmpeg_core::decode::u64_from_index(section.offset)
-                })
-                == link.location.section_offset()
+            entry.file_span().map_or(
+                cadmpeg_core::decode::u64_from_index(section.offset),
+                |(offset, _)| offset + cadmpeg_core::decode::u64_from_index(section.offset),
+            ) == link.location.section_offset()
         }) else {
             continue;
         };

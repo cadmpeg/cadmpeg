@@ -18,7 +18,9 @@ impl<S: AsRef<str>> StateMessageText<S> {
         if text.as_str().len() > usize::from(u8::MAX) - 2 {
             return Err("text: length plus two must fit declared_length");
         }
-        let count = u8::try_from(text.as_str().len()).map_err(|_| "text: length plus two must fit declared_length")? + 2;
+        let count = u8::try_from(text.as_str().len())
+            .map_err(|_| "text: length plus two must fit declared_length")?
+            + 2;
         Ok(Self(text, count))
     }
 

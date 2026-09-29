@@ -1600,12 +1600,22 @@ fn journal_row(state_ordinal: u32, source_offset: u64) -> JournalRow {
         source_offset,
         1_700_000_000,
         crate::om::state_tagged_value::StateTaggedValue::read_at(
-            &[0xe0, 0, 0, 0, u8::try_from(state_ordinal).expect("fixture value fits u8")],
+            &[
+                0xe0,
+                0,
+                0,
+                0,
+                u8::try_from(state_ordinal).expect("fixture value fits u8"),
+            ],
             0,
         )
         .unwrap(),
         crate::om::state_index::StateIndexToken::read_at(&[12], 0).unwrap(),
-        crate::om::state_index::StateIndexToken::read_at(&[u8::try_from(state_ordinal).expect("fixture value fits u8")], 0).unwrap(),
+        crate::om::state_index::StateIndexToken::read_at(
+            &[u8::try_from(state_ordinal).expect("fixture value fits u8")],
+            0,
+        )
+        .unwrap(),
     )
     .unwrap()
 }

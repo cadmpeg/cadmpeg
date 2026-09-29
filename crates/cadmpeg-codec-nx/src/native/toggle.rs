@@ -517,7 +517,11 @@ fn assign_stable_toggle_identities(
         .checked_mul(std::mem::size_of::<(&ToggleId, usize)>() * 4)
         .and_then(|len| u64::try_from(len).ok())
         .ok_or_else(|| {
-            ctx.refuse_codec_limit("size NX saved toggle index", 0, cadmpeg_core::decode::u64_from_index(entries.len()))
+            ctx.refuse_codec_limit(
+                "size NX saved toggle index",
+                0,
+                cadmpeg_core::decode::u64_from_index(entries.len()),
+            )
         })?;
     let _reservation = ctx.reserve_scoped(scratch_bytes, "index NX saved toggle identities")?;
     let mut counts = BTreeMap::<ToggleId, usize>::new();
@@ -561,9 +565,13 @@ mod tests {
 
     fn stream(members: &[&str], trailer: [u8; 4]) -> Vec<u8> {
         let mut bytes = vec![1];
-        bytes.extend_from_slice(&(u32::try_from(members.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(members.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for member in members {
-            bytes.extend_from_slice(&(u16::try_from(member.len()).expect("fixture value fits u16")).to_le_bytes());
+            bytes.extend_from_slice(
+                &(u16::try_from(member.len()).expect("fixture value fits u16")).to_le_bytes(),
+            );
             bytes.extend_from_slice(member.as_bytes());
         }
         bytes.extend_from_slice(&trailer);
@@ -784,7 +792,8 @@ mod tests {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::SavedToggleEntry>());
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::SavedToggleEntry>());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
         assert!(
@@ -833,7 +842,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::SavedToggleEntry>()) - 1;
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::SavedToggleEntry>())
+                - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
         assert!(
@@ -849,10 +859,11 @@ mod tests {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::SavedToggleEntry>())
-            + 32
-            + cadmpeg_core::decode::u64_from_index("nx:saved-toggle:entry#0".len())
-            - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::SavedToggleEntry>())
+                + 32
+                + cadmpeg_core::decode::u64_from_index("nx:saved-toggle:entry#0".len())
+                - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
         assert!(
@@ -868,8 +879,9 @@ mod tests {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes =
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&super::ToggleId, usize)>() * 4 - 1);
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&super::ToggleId, usize)>() * 4 - 1,
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
         assert!(
@@ -885,11 +897,14 @@ mod tests {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::SavedToggleEntry>())
-            + 32
-            + cadmpeg_core::decode::u64_from_index("nx:saved-toggle:entry#0".len())
-            + cadmpeg_core::decode::u64_from_index("nx:saved-toggle:identity#0123456789abcdef0123456789abcdef".len())
-            - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::SavedToggleEntry>())
+                + 32
+                + cadmpeg_core::decode::u64_from_index("nx:saved-toggle:entry#0".len())
+                + cadmpeg_core::decode::u64_from_index(
+                    "nx:saved-toggle:identity#0123456789abcdef0123456789abcdef".len(),
+                )
+                - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::parse_saved_toggle_stream(&ctx, &bytes, 0).unwrap_err();
         assert!(

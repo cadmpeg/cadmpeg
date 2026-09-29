@@ -812,7 +812,9 @@ fn decode_assembly_reports_external_dependency() {
 }
 
 fn directory_retained_bytes(name: &str) -> u64 {
-    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<crate::container::DirEntry>() + name.len())
+    cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<crate::container::DirEntry>() + name.len(),
+    )
 }
 
 #[test]
@@ -821,8 +823,9 @@ fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
     stream.resize(8192, b'.');
     let file = prt_with_partition(&stream);
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes =
-        directory_retained_bytes("/Root/UG_PART/UG_PART") + cadmpeg_core::decode::u64_from_index(stream.len() * 2) + 4096;
+    options.policy.limits.max_retained_bytes = directory_retained_bytes("/Root/UG_PART/UG_PART")
+        + cadmpeg_core::decode::u64_from_index(stream.len() * 2)
+        + 4096;
 
     let result = NxCodec
         .decode(&mut Cursor::new(file), &options)
@@ -840,7 +843,8 @@ fn metadata_fallback_old_retained_limit_refuses_inflated_stream_after_directory(
     stream.resize(64, b'.');
     let file = prt_with_partition(&stream);
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(stream.len() * 2);
+    options.policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(stream.len() * 2);
     let error = NxCodec
         .decode(&mut Cursor::new(file), &options)
         .expect_err("directory bytes use part of the retained allowance");
@@ -1235,7 +1239,9 @@ fn decode_typed_saved_toggle_stream_is_not_retained_as_opaque() {
     let member = b"0123456789abcdef0123456789abcdef:Off";
     let mut toggle = vec![1];
     toggle.extend_from_slice(&1_u32.to_le_bytes());
-    toggle.extend_from_slice(&(u16::try_from(member.len()).expect("fixture value fits u16")).to_le_bytes());
+    toggle.extend_from_slice(
+        &(u16::try_from(member.len()).expect("fixture value fits u16")).to_le_bytes(),
+    );
     toggle.extend_from_slice(member);
     toggle.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
     let file = prt_with_named_payloads(&[("/Root/UG_PART/LastSavedToggleInfoStream", toggle)]);
@@ -1268,7 +1274,9 @@ fn container_only_retains_typed_saved_toggle_payload() {
     let member = b"0123456789abcdef0123456789abcdef:On";
     let mut toggle = vec![1];
     toggle.extend_from_slice(&1_u32.to_le_bytes());
-    toggle.extend_from_slice(&(u16::try_from(member.len()).expect("fixture value fits u16")).to_le_bytes());
+    toggle.extend_from_slice(
+        &(u16::try_from(member.len()).expect("fixture value fits u16")).to_le_bytes(),
+    );
     toggle.extend_from_slice(member);
     toggle.extend_from_slice(&[1, 2, 3, 4]);
     let toggle_len = cadmpeg_core::decode::u64_from_index(toggle.len());

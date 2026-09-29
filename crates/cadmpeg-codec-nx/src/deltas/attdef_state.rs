@@ -94,10 +94,13 @@ impl AttdefSlots {
         references.remove(0);
         let slot_count =
             u32::try_from(references.len()).map_err(|_| "references: too many slots")?;
-        let active_count = u32::try_from(references
-            .iter()
-            .take_while(|reference| **reference != 1)
-            .count()).map_err(|_| "references: too many slots")?;
+        let active_count = u32::try_from(
+            references
+                .iter()
+                .take_while(|reference| **reference != 1)
+                .count(),
+        )
+        .map_err(|_| "references: too many slots")?;
         Self::new(slot_count, active_count, references)
     }
     fn active_count(&self) -> u32 {

@@ -27,7 +27,9 @@ impl OperationTerminalDiscriminator {
         type_indices
             .iter()
             .chain(&trailing_indices)
-            .try_fold(start, |at, token| at.checked_add(cadmpeg_core::decode::u64_from_index(token.raw().len())))
+            .try_fold(start, |at, token| {
+                at.checked_add(cadmpeg_core::decode::u64_from_index(token.raw().len()))
+            })
             .ok_or("source_offset: terminal discriminator end overflows")?;
         Ok(Self {
             origin,

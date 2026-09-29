@@ -28,7 +28,10 @@ fn row_positions_follow_token_widths_and_bound_absolute_extent() {
                 assert_eq!(row.indices().map(|index| index.offset), index_offsets);
                 let base = u64::MAX - cadmpeg_core::decode::u64_from_index(bytes.len());
                 let absolute = row.into_absolute(base).unwrap();
-                assert_eq!(absolute.first_index().offset, base + cadmpeg_core::decode::u64_from_index(first_offset));
+                assert_eq!(
+                    absolute.first_index().offset,
+                    base + cadmpeg_core::decode::u64_from_index(first_offset)
+                );
                 assert_eq!(
                     absolute.indices().map(|index| index.offset),
                     index_offsets.map(|offset| base + cadmpeg_core::decode::u64_from_index(offset))
@@ -61,8 +64,14 @@ fn row_positions_follow_token_widths_and_bound_absolute_extent() {
                 assert_eq!(row.indices().map(|index| index.offset), index_offsets);
                 let base = u64::MAX - cadmpeg_core::decode::u64_from_index(bytes.len());
                 let absolute = row.into_absolute(base).unwrap();
-                assert_eq!(absolute.first_index().offset, base + cadmpeg_core::decode::u64_from_index(first_offset));
-                assert_eq!(absolute.target_index().offset, base + cadmpeg_core::decode::u64_from_index(target_offset));
+                assert_eq!(
+                    absolute.first_index().offset,
+                    base + cadmpeg_core::decode::u64_from_index(first_offset)
+                );
+                assert_eq!(
+                    absolute.target_index().offset,
+                    base + cadmpeg_core::decode::u64_from_index(target_offset)
+                );
                 assert_eq!(
                     absolute.indices().map(|index| index.offset),
                     index_offsets.map(|offset| base + cadmpeg_core::decode::u64_from_index(offset))
@@ -91,7 +100,10 @@ fn row_positions_follow_token_widths_and_bound_absolute_extent() {
                 assert_eq!(row.indices().map(|index| index.offset), index_offsets);
                 let base = u64::MAX - cadmpeg_core::decode::u64_from_index(bytes.len());
                 let absolute = row.into_absolute(base).unwrap();
-                assert_eq!(absolute.target_index().offset, base + cadmpeg_core::decode::u64_from_index(target_offset));
+                assert_eq!(
+                    absolute.target_index().offset,
+                    base + cadmpeg_core::decode::u64_from_index(target_offset)
+                );
                 assert_eq!(
                     absolute.indices().map(|index| index.offset),
                     index_offsets.map(|offset| base + cadmpeg_core::decode::u64_from_index(offset))

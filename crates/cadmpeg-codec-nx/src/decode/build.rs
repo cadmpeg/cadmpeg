@@ -260,21 +260,35 @@ pub(super) fn try_decode_geometry(
         .sum::<usize>();
     let transfer_limit = completion_transfer_budget_limit(chart_count);
     let support_uv_limit = support_uv_completion_budget_limit(chart_count);
-    let exact_transfer_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES));
+    let exact_transfer_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(
+        MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
+    ));
     let transfer_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(transfer_limit));
-    let support_uv_validation_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(support_uv_limit));
+    let support_uv_validation_budget =
+        ctx.work_budget(cadmpeg_core::decode::u64_from_index(support_uv_limit));
     let support_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(support_uv_limit));
-    let coupled_support_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(support_uv_limit));
-    let adaptive_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
-    let completion_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_PCURVE_COMPLETION_GEOMETRY_WORK));
-    let support_uv_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK));
-    let coupled_support_uv_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK));
-    let serialized_support_uv_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK));
+    let coupled_support_budget =
+        ctx.work_budget(cadmpeg_core::decode::u64_from_index(support_uv_limit));
+    let adaptive_geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+    );
+    let completion_geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_PCURVE_COMPLETION_GEOMETRY_WORK),
+    );
+    let support_uv_geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK),
+    );
+    let coupled_support_uv_geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK),
+    );
+    let serialized_support_uv_geometry_budget = GeometryWorkBudget::from_context(
+        ctx,
+        cadmpeg_core::decode::u64_from_index(MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK),
+    );
     let mut support_uv_lane_geometry_exhausted = false;
     let mut intersection_index = IntersectionIncidenceIndex::default();
     let mut model_endpoint_witnesses = EndpointWitnesses::new();

@@ -82,8 +82,9 @@ pub(in crate::native) fn feature_datum_plane_headers(
                 else {
                     return Ok(());
                 };
-                let Some(source_offset) = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(record.payload_offset()))
-                else {
+                let Some(source_offset) = entry_offset.checked_add(
+                    cadmpeg_core::decode::u64_from_index(record.payload_offset()),
+                ) else {
                     return Ok(());
                 };
                 let parsed = datum_plane_header::datum_plane_descriptor_reference_branch(

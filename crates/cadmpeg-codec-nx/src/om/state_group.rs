@@ -115,30 +115,36 @@ impl<R> StateGroupMembers<R> {
         self,
         mut map: impl FnMut(u8, R) -> Result<U, E>,
     ) -> Result<StateGroupMembers<U>, E> {
-        Ok(StateGroupMembers(match self.0 {
-            GroupBody::Empty => GroupBody::Empty,
-            GroupBody::CountedZero => GroupBody::CountedZero,
-            GroupBody::Counted(rows) => GroupBody::Counted(
-                rows.into_iter()
-                    .zip(0u8..=u8::MAX)
-                    .map(|(row, ordinal)| map(ordinal, row))
-                    .collect::<Result<_, _>>()?,
-            ),
-        }, self.1))
+        Ok(StateGroupMembers(
+            match self.0 {
+                GroupBody::Empty => GroupBody::Empty,
+                GroupBody::CountedZero => GroupBody::CountedZero,
+                GroupBody::Counted(rows) => GroupBody::Counted(
+                    rows.into_iter()
+                        .zip(0u8..=u8::MAX)
+                        .map(|(row, ordinal)| map(ordinal, row))
+                        .collect::<Result<_, _>>()?,
+                ),
+            },
+            self.1,
+        ))
     }
 
     #[cfg(test)]
     pub(super) fn map_rows<U>(self, mut map: impl FnMut(u8, R) -> U) -> StateGroupMembers<U> {
-        StateGroupMembers(match self.0 {
-            GroupBody::Empty => GroupBody::Empty,
-            GroupBody::CountedZero => GroupBody::CountedZero,
-            GroupBody::Counted(rows) => GroupBody::Counted(
-                rows.into_iter()
-                    .zip(0u8..=u8::MAX)
-                    .map(|(row, ordinal)| map(ordinal, row))
-                    .collect(),
-            ),
-        }, self.1)
+        StateGroupMembers(
+            match self.0 {
+                GroupBody::Empty => GroupBody::Empty,
+                GroupBody::CountedZero => GroupBody::CountedZero,
+                GroupBody::Counted(rows) => GroupBody::Counted(
+                    rows.into_iter()
+                        .zip(0u8..=u8::MAX)
+                        .map(|(row, ordinal)| map(ordinal, row))
+                        .collect(),
+                ),
+            },
+            self.1,
+        )
     }
 }
 

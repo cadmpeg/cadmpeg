@@ -102,7 +102,9 @@ pub(crate) fn prt_with_named_payloads(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
     );
     let mut spans = Vec::new();
     for (name, _) in entries {
-        file.extend_from_slice(&(u32::try_from(name.len()).expect("fixture value fits u32")).to_le_bytes());
+        file.extend_from_slice(
+            &(u32::try_from(name.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         file.extend_from_slice(name.as_bytes());
         spans.push(file.len());
         file.extend_from_slice(&[0; 16]);
@@ -110,8 +112,10 @@ pub(crate) fn prt_with_named_payloads(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
     for ((_, payload), span) in entries.iter().zip(spans) {
         let offset = file.len();
         file.extend_from_slice(payload);
-        file[span..span + 8].copy_from_slice(&(cadmpeg_core::decode::u64_from_index(offset)).to_le_bytes());
-        file[span + 8..span + 16].copy_from_slice(&(cadmpeg_core::decode::u64_from_index(payload.len())).to_le_bytes());
+        file[span..span + 8]
+            .copy_from_slice(&(cadmpeg_core::decode::u64_from_index(offset)).to_le_bytes());
+        file[span + 8..span + 16]
+            .copy_from_slice(&(cadmpeg_core::decode::u64_from_index(payload.len())).to_le_bytes());
     }
     let footer_offset = cadmpeg_core::decode::u64_from_index(file.len());
     file[0x11..0x17].copy_from_slice(&footer_offset.to_le_bytes()[..6]);

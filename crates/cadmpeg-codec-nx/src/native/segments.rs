@@ -871,10 +871,9 @@ pub(super) fn segment_om_links(
             } else {
                 continue;
             };
-            let Some(location) = entry_offset
-                .checked_add(relative_u64)
-                .and_then(|offset| OmLocation::new(offset, u32::try_from(separator_byte_len).ok()?))
-            else {
+            let Some(location) = entry_offset.checked_add(relative_u64).and_then(|offset| {
+                OmLocation::new(offset, u32::try_from(separator_byte_len).ok()?)
+            }) else {
                 continue;
             };
             ctx.reserve_retained_vec(&mut links, 1, "NX segment OM links")?;
