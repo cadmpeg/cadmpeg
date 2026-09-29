@@ -65,6 +65,10 @@ use crate::object_graph::{
 use crate::value_block;
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRecord};
 
+fn slice_is_empty<T>(values: &&[T]) -> bool {
+    values.is_empty()
+}
+
 /// Consolidated pcurve framing family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -221,11 +225,8 @@ struct CatiaOwnerBoundaryCycle {
 }
 
 /// Exact class-`0x62` consolidated owner packet.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "CatiaConsolidatedOwnerPacketWire",
-    into = "CatiaConsolidatedOwnerPacketWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "CatiaConsolidatedOwnerPacketWire")]
 pub(crate) struct CatiaConsolidatedOwnerPacket {
     /// Stable source identity.
     id: String,
@@ -293,6 +294,87 @@ struct CatiaConsolidatedOwnerPacketWire {
     boundary_cycle: Option<CatiaOwnerBoundaryCycle>,
 }
 
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum CatiaOwnerPacketPayloadWireRef<'a> {
+    FixedNine {
+        reference_encoding: CatiaOwnerReferenceEncoding,
+        references: &'a [u32; 9],
+        identity_encodings: &'a [CatiaOwnerIdentityEncoding; 9],
+        numeric_tail: &'a CatiaOwnerNumericTail,
+    },
+    Counted {
+        references: &'a [u32],
+        #[serde(with = "cadmpeg_ir::bytes")]
+        tail: &'a [u8],
+    },
+}
+
+#[derive(Serialize)]
+struct CatiaConsolidatedOwnerPacketWireRef<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    source_index: usize,
+    header_token: u32,
+    payload: CatiaOwnerPacketPayloadWireRef<'a>,
+    #[serde(skip_serializing_if = "slice_is_empty")]
+    identity_targets: &'a [CatiaOwnerIdentityTarget],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    face_node: &'a Option<CatiaFaceNodeRelation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owner_chart: Option<&'a CatiaOwnerChartRelation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    boundary_cycle: Option<&'a CatiaOwnerBoundaryCycle>,
+}
+
+impl Serialize for CatiaConsolidatedOwnerPacket {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let (payload, identity_targets, owner_chart, boundary_cycle) = match &self.payload {
+            CatiaOwnerPacketPayload::FixedNine {
+                reference_encoding,
+                references,
+                identity_encodings,
+                numeric_tail,
+                identity_targets,
+                owner_chart,
+                boundary_cycle,
+            } => (
+                CatiaOwnerPacketPayloadWireRef::FixedNine {
+                    reference_encoding: *reference_encoding,
+                    references,
+                    identity_encodings,
+                    numeric_tail,
+                },
+                identity_targets.as_slice(),
+                owner_chart.as_ref(),
+                boundary_cycle.as_ref(),
+            ),
+            CatiaOwnerPacketPayload::Counted { references, tail } => (
+                CatiaOwnerPacketPayloadWireRef::Counted { references, tail },
+                &[][..],
+                None,
+                None,
+            ),
+        };
+        CatiaConsolidatedOwnerPacketWireRef {
+            id: &self.id,
+            byte_offset: self.byte_offset,
+            source_index: self.source_index,
+            header_token: self.header_token,
+            payload,
+            identity_targets,
+            face_node: &self.face_node,
+            owner_chart,
+            boundary_cycle,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<CatiaConsolidatedOwnerPacket> for CatiaConsolidatedOwnerPacketWire {
     fn from(value: CatiaConsolidatedOwnerPacket) -> Self {
         let (identity_targets, owner_chart, boundary_cycle, payload) = match value.payload {
@@ -607,11 +689,8 @@ impl CatiaConsolidatedCylinderPayload {
 }
 
 /// One structurally complete consolidated `B:28` cylinder chart.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "CatiaConsolidatedCylinderWire",
-    into = "CatiaConsolidatedCylinderWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "CatiaConsolidatedCylinderWire")]
 pub(crate) struct CatiaConsolidatedCylinder {
     /// Stable native-record identity.
     id: String,
@@ -657,6 +736,65 @@ enum CatiaConsolidatedCylinderPayloadWire {
     },
 }
 
+#[derive(Serialize)]
+struct CatiaConsolidatedCylinderWireRef<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    layout: u8,
+    origin: &'a FiniteVector<3>,
+    radius: &'a cadmpeg_ir::scalar::PositiveLength,
+    u_range: &'a cadmpeg_ir::topology::IncreasingParameterInterval,
+    v_range: &'a cadmpeg_ir::topology::IncreasingParameterInterval,
+    payload: CatiaConsolidatedCylinderPayloadWire,
+}
+
+impl Serialize for CatiaConsolidatedCylinder {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let payload = match &self.payload {
+            CatiaConsolidatedCylinderPayload::Layout52 {
+                frame_token,
+                axis,
+                reference_direction,
+            }
+            | CatiaConsolidatedCylinderPayload::Layout5a {
+                frame_token,
+                axis,
+                reference_direction,
+            } => CatiaConsolidatedCylinderPayloadWire::Resolved {
+                frame_token: *frame_token,
+                axis: *axis,
+                reference_direction: *reference_direction,
+            },
+            CatiaConsolidatedCylinderPayload::RangeOrigin {
+                stored_vector,
+                axis,
+                reference_direction,
+                range_origin,
+            } => CatiaConsolidatedCylinderPayloadWire::RangeOrigin {
+                stored_vector: *stored_vector,
+                axis: *axis,
+                reference_direction: *reference_direction,
+                range_origin: *range_origin,
+            },
+        };
+        CatiaConsolidatedCylinderWireRef {
+            id: &self.id,
+            byte_offset: self.byte_offset,
+            layout: self.payload.layout(),
+            origin: &self.origin,
+            radius: &self.radius,
+            u_range: &self.u_range,
+            v_range: &self.v_range,
+            payload,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<CatiaConsolidatedCylinder> for CatiaConsolidatedCylinderWire {
     fn from(value: CatiaConsolidatedCylinder) -> Self {
         let layout = value.payload.layout();
@@ -828,11 +966,8 @@ impl CatiaConsolidatedParameterPointPayload {
 }
 
 /// One complete consolidated `B:18` parameter-space record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "CatiaConsolidatedParameterPointWire",
-    into = "CatiaConsolidatedParameterPointWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "CatiaConsolidatedParameterPointWire")]
 pub(crate) struct CatiaConsolidatedParameterPoint {
     /// Stable native-record identity.
     id: String,
@@ -859,6 +994,36 @@ struct CatiaConsolidatedParameterPointWire {
     payload: CatiaConsolidatedParameterPointPayload,
 }
 
+#[derive(Serialize)]
+struct CatiaConsolidatedParameterPointWireRef<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    byte_len: u64,
+    layout: u8,
+    prefix: u8,
+    control: u8,
+    payload: &'a CatiaConsolidatedParameterPointPayload,
+}
+
+impl Serialize for CatiaConsolidatedParameterPoint {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        CatiaConsolidatedParameterPointWireRef {
+            id: &self.id,
+            byte_offset: self.byte_offset,
+            byte_len: self.byte_len,
+            layout: self.payload.layout(),
+            prefix: self.prefix.as_u8(),
+            control: self.control,
+            payload: &self.payload,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<CatiaConsolidatedParameterPoint> for CatiaConsolidatedParameterPointWire {
     fn from(value: CatiaConsolidatedParameterPoint) -> Self {
         Self {
@@ -950,11 +1115,8 @@ impl CatiaConsolidatedPlaneCarrierPayload {
 }
 
 /// One complete consolidated `B:27` plane-carrier record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "CatiaConsolidatedPlaneCarrierWire",
-    into = "CatiaConsolidatedPlaneCarrierWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "CatiaConsolidatedPlaneCarrierWire")]
 pub(crate) struct CatiaConsolidatedPlaneCarrier {
     /// Stable native-record identity.
     id: String,
@@ -984,6 +1146,38 @@ struct CatiaConsolidatedPlaneCarrierWire {
     payload: CatiaConsolidatedPlaneCarrierPayload,
 }
 
+#[derive(Serialize)]
+struct CatiaConsolidatedPlaneCarrierWireRef<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    byte_len: u64,
+    width: ConsolidatedFrameWidth,
+    flag: ConsolidatedFrameFlag,
+    header_token: u32,
+    selector: u8,
+    payload: &'a CatiaConsolidatedPlaneCarrierPayload,
+}
+
+impl Serialize for CatiaConsolidatedPlaneCarrier {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        CatiaConsolidatedPlaneCarrierWireRef {
+            id: &self.id,
+            byte_offset: self.byte_offset,
+            byte_len: self.byte_len,
+            width: self.width,
+            flag: self.flag,
+            header_token: self.header_token,
+            selector: self.payload.selector(),
+            payload: &self.payload,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<CatiaConsolidatedPlaneCarrier> for CatiaConsolidatedPlaneCarrierWire {
     fn from(value: CatiaConsolidatedPlaneCarrier) -> Self {
         Self {
@@ -1345,7 +1539,7 @@ pub(crate) struct CatiaConsolidatedAnalyticCircleBinding {
 }
 
 /// Exact oriented-use allocation chain owned by one consolidated edge node.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     try_from = "CatiaConsolidatedEdgeUsesWire",
     into = "CatiaConsolidatedEdgeUsesWire"
@@ -1510,8 +1704,8 @@ pub(crate) struct CatiaPreviewImage {
 }
 
 /// One exact outer `01 00 04 00` alias-row core.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "CatiaAliasRowWire", into = "CatiaAliasRowWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "CatiaAliasRowWire")]
 pub(crate) struct CatiaAliasRow {
     /// Globally unique alias-row identity.
     id: String,
@@ -1597,6 +1791,59 @@ struct CatiaAliasRowWire {
     canonical_surface_tag: Option<u32>,
 }
 
+#[derive(Serialize)]
+struct CatiaAliasRowWireRef<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    lead: AliasLead,
+    lead_raw: u32,
+    tag: u32,
+    tag_raw: u32,
+    flag: u8,
+    f1: [u8; 3],
+    entity_record_ordinal: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    object_graph: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    object_record: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    design_object: Option<&'a str>,
+    f2: u32,
+    f3: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group: &'a Option<AliasGroupMembership>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    canonical_surface_tag: Option<u32>,
+}
+
+impl Serialize for CatiaAliasRow {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        CatiaAliasRowWireRef {
+            id: &self.id,
+            byte_offset: self.byte_offset,
+            lead: self.lead(),
+            lead_raw: self.lead_raw,
+            tag: self.tag(),
+            tag_raw: self.tag_raw,
+            flag: self.flag,
+            f1: self.f1,
+            entity_record_ordinal: self.entity_record_ordinal(),
+            object_graph: self.object_graph.as_deref(),
+            object_record: self.object_record.as_deref(),
+            design_object: self.design_object.as_deref(),
+            f2: self.f2,
+            f3: self.f3,
+            group: &self.group,
+            canonical_surface_tag: self.canonical_surface_tag,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<CatiaAliasRow> for CatiaAliasRowWire {
     fn from(value: CatiaAliasRow) -> Self {
         Self {
@@ -1788,11 +2035,8 @@ enum CatiaValueSchemaSelectionKind {
 }
 
 /// One `0x32` selector from a value block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "CatiaValueSchemaSelectionWire",
-    into = "CatiaValueSchemaSelectionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "CatiaValueSchemaSelectionWire")]
 pub(crate) struct CatiaValueSchemaSelection {
     /// Globally unique schema-selection identity.
     id: String,
@@ -1846,6 +2090,47 @@ struct CatiaValueSchemaSelectionWire {
     encoded_value: Vec<value_block::ValueField>,
 }
 
+#[derive(Serialize)]
+struct CatiaValueSchemaSelectionWireRef<'a> {
+    id: &'a str,
+    parent: &'a str,
+    offset: u64,
+    ordinal: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entry: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<&'a str>,
+    #[serde(skip_serializing_if = "slice_is_empty")]
+    encoded_value: &'a [value_block::ValueField],
+}
+
+impl Serialize for CatiaValueSchemaSelection {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let (entry, name, encoded_value) = match &self.kind {
+            CatiaValueSchemaSelectionKind::Selected(value) => (
+                Some(value.class.entry.as_str()),
+                Some(value.class.name.as_str()),
+                value.encoded_value.as_slice(),
+            ),
+            CatiaValueSchemaSelectionKind::Terminal => (None, None, &[][..]),
+        };
+        CatiaValueSchemaSelectionWireRef {
+            id: &self.id,
+            parent: &self.parent,
+            offset: self.offset,
+            ordinal: self.ordinal,
+            entry,
+            name,
+            encoded_value,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<CatiaValueSchemaSelection> for CatiaValueSchemaSelectionWire {
     fn from(value: CatiaValueSchemaSelection) -> Self {
         let (entry, name, encoded_value) = match value.kind {
