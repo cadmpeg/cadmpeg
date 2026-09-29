@@ -47,6 +47,16 @@ const EPS_PROJECTIONS_UNIQUE_CYLINDRICAL_FACE_E9: f64 = 1.0e-9;
 const EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E8: f64 = 1.0e-8;
 const EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E9: f64 = 1.0e-9;
 
+fn copy_projection_feature_id(
+    ctx: &DecodeContext<'_>,
+    source: &cadmpeg_ir::features::FeatureId,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::features::FeatureId, cadmpeg_core::CodecError> {
+    let text = ctx.format_retained(format_args!("{}", source.as_str()), operation)?;
+    cadmpeg_ir::features::FeatureId::mint(text)
+        .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))
+}
+
 pub(super) fn bind_circular_profile_by_dimension(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut [Sketch],
@@ -1420,11 +1430,7 @@ pub(crate) fn project_compact_surface_selections(
                                 .zip(selection.components.last())
                                 .and_then(|(producer, component)| Some((producer, component.local_id?)));
                             if let Some((producer, local_id)) = generated {
-                                let producer_text = ctx.format_retained(
-                                    format_args!("{}", producer.as_str()), OPERATION,
-                                )?;
-                                let producer_id = cadmpeg_ir::features::FeatureId::mint(producer_text)
-                                    .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
+                                let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
                                 let local_id_text = ctx.format_retained(
                                     format_args!("{local_id}"), OPERATION,
                                 )?;
@@ -1451,11 +1457,7 @@ pub(crate) fn project_compact_surface_selections(
                                 .filter(|producer| *producer != feature_id)
                             {
                                 if !dependencies.contains(producer) {
-                                    let dependency_text = ctx.format_retained(
-                                        format_args!("{}", producer.as_str()), OPERATION,
-                                    )?;
-                                    let dependency = cadmpeg_ir::features::FeatureId::mint(dependency_text)
-                                        .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
+                                    let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
                                     dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
                                 }
                             }
@@ -1515,11 +1517,7 @@ pub(crate) fn project_compact_surface_selections(
                                     cadmpeg_core::CodecError::malformed("cannot format SLDPRT surface cut body id")
                                 })?;
                             }
-                            let producer_text = ctx.format_retained(
-                                format_args!("{}", producer.as_str()), OPERATION,
-                            )?;
-                            let producer_id = cadmpeg_ir::features::FeatureId::mint(producer_text)
-                                .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
+                            let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
                             let Ok(body) =
                                 cadmpeg_ir::features::GeneratedBodyRef::new(producer_id, local_id)
                             else {
@@ -1532,11 +1530,7 @@ pub(crate) fn project_compact_surface_selections(
                             *targets = BodySelection::generated(bodies, native_copy)
                                 .unwrap_or(BodySelection::Native(target_native));
                             if !dependencies.contains(producer) {
-                                let dependency_text = ctx.format_retained(
-                                    format_args!("{}", producer.as_str()), OPERATION,
-                                )?;
-                                let dependency = cadmpeg_ir::features::FeatureId::mint(dependency_text)
-                                    .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
+                                let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
                                 dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
                             }
                         }
@@ -1550,11 +1544,7 @@ pub(crate) fn project_compact_surface_selections(
                                 component.local_id.map(|local_id| (producer, local_id))
                             });
                         if let Some((producer, local_id)) = tool_generated {
-                            let producer_text = ctx.format_retained(
-                                format_args!("{}", producer.as_str()), OPERATION,
-                            )?;
-                            let producer_id = cadmpeg_ir::features::FeatureId::mint(producer_text)
-                                .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
+                            let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
                             let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
                             let generated_face = cadmpeg_ir::features::GeneratedFaceRef::new(
                                 producer_id,
@@ -1571,11 +1561,7 @@ pub(crate) fn project_compact_surface_selections(
                                 FaceSelection::Native(tool_native)
                             };
                             if !dependencies.contains(producer) {
-                                let dependency_text = ctx.format_retained(
-                                    format_args!("{}", producer.as_str()), OPERATION,
-                                )?;
-                                let dependency = cadmpeg_ir::features::FeatureId::mint(dependency_text)
-                                    .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
+                                let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
                                 dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
                             }
                         }
@@ -1597,13 +1583,6 @@ pub(crate) fn project_compact_surface_selections(
                         else {
                             break 'feature_edit;
                         };
-                        let copy_id = |producer: &cadmpeg_ir::features::FeatureId| {
-                            let text = ctx.format_retained(
-                                format_args!("{}", producer.as_str()), OPERATION,
-                            )?;
-                            cadmpeg_ir::features::FeatureId::mint(text)
-                                .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))
-                        };
                         let [center_faces, side_one_faces, side_two_faces] =
                             [center_faces, side_one_faces, side_two_faces].map(|selection| -> Result<FaceSelection, cadmpeg_core::CodecError> {
                                 let native = compact_surface_selection_value_charged(ctx, &selection.components)?;
@@ -1620,11 +1599,11 @@ pub(crate) fn project_compact_surface_selections(
                                         if producer != feature_id
                                             && !dependencies.contains(producer)
                                         {
-                                            dependencies.try_insert_charged(copy_id(producer)?, ctx, OPERATION)?;
+                                            dependencies.try_insert_charged(copy_projection_feature_id(ctx, producer, OPERATION)?, ctx, OPERATION)?;
                                         }
                                         let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
                                         match cadmpeg_ir::features::GeneratedFaceRef::new(
-                                            copy_id(producer)?, local_id_text,
+                                            copy_projection_feature_id(ctx, producer, OPERATION)?, local_id_text,
                                         ) {
                                             Ok(face) => {
                                                 let mut faces = Vec::new();
@@ -1646,7 +1625,7 @@ pub(crate) fn project_compact_surface_selections(
                                     .filter(|producer| *producer != feature_id)
                                 {
                                     if !dependencies.contains(producer) {
-                                        dependencies.try_insert_charged(copy_id(producer)?, ctx, OPERATION)?;
+                                        dependencies.try_insert_charged(copy_projection_feature_id(ctx, producer, OPERATION)?, ctx, OPERATION)?;
                                     }
                                 }
                                 Ok(face)
@@ -1676,7 +1655,10 @@ pub(crate) fn project_compact_surface_selections(
                         })
                     ) && feature_selections.len() == 2
                     {
+                        const OPERATION: &str = "project SLDPRT datum plane dependencies";
                         for selection in feature_selections {
+                            ctx.charge_work(u64::try_from(selection.producer_feature_refs.len())
+                                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
                             for producer in selection
                                 .producer_feature_refs
                                 .iter()
@@ -1684,7 +1666,8 @@ pub(crate) fn project_compact_surface_selections(
                                 .filter(|producer| *producer != feature_id)
                             {
                                 if !dependencies.contains(producer) {
-                                    dependencies.insert(producer.clone());
+                                    let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
+                                    dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
                                 }
                             }
                         }
@@ -1706,6 +1689,7 @@ pub(crate) fn project_compact_surface_selections(
                         ..
                     }) = definition
                     {
+                        const OPERATION: &str = "project SLDPRT datum offset face";
                         let native = compact_surface_selection_value_charged(ctx, &selection.components)?;
                         let generated = selection
                             .terminal_feature_ref
@@ -1716,19 +1700,22 @@ pub(crate) fn project_compact_surface_selections(
                         let face = match generated {
                             Some((producer, local_id)) => {
                                 if !dependencies.contains(producer) {
-                                    dependencies.insert(producer.clone());
+                                    let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
+                                    dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
                                 }
-                                cadmpeg_ir::features::GeneratedFaceRef::new(
-                                    producer.clone(),
-                                    local_id.to_string(),
-                                )
-                                .and_then(|face| {
-                                    cadmpeg_ir::features::FaceSelection::generated(
-                                        vec![face],
-                                        native.clone(),
-                                    )
-                                })
-                                .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
+                                let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
+                                let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
+                                match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text) {
+                                    Ok(face) => {
+                                        let mut faces = Vec::new();
+                                        ctx.reserve_collection_vec(&mut faces, 1, OPERATION)?;
+                                        faces.push(face);
+                                        let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
+                                        cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
+                                            .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
+                                    }
+                                    Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
+                                }
                             }
                             None => cadmpeg_ir::features::FaceSelection::Native(native),
                         };
