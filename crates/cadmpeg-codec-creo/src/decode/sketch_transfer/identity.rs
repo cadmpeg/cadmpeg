@@ -2,10 +2,9 @@
 //! External ids and saved-section entity identity.
 
 use super::super::sketch::geometry::saved_section_entity_geometry;
-use super::super::sketch_ids::{sketch_entity_id, sketch_identity_scope, sketch_native_ref};
+use super::super::sketch_ids::{sketch_entity_id_admitted, sketch_identity_scope, sketch_native_ref_admitted};
 use super::super::sweep::nurbs::saved_spline_sketch_geometry;
 use crate::feature::segment_rows::SegmentRow;
-use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -165,12 +164,13 @@ fn saved_section_entity_identity(
 }
 
 pub(in super::super) fn unresolved_saved_section_entity(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     saved: &crate::feature::definitions::FeatureSavedEntity,
     unique_saved_ids: &BTreeSet<u32>,
     ambiguous_segment_ids: &BTreeSet<u32>,
-) -> Option<(SketchEntity, usize)> {
+) -> Result<Option<(SketchEntity, usize)>, cadmpeg_core::CodecError> {
     let (internal_id, offset, kind) = saved_section_entity_identity(saved);
     let unique_internal_id = internal_id.filter(|id| unique_saved_ids.contains(id));
     let external_id = if let Some(internal_id) = unique_internal_id {
@@ -181,53 +181,47 @@ pub(in super::super) fn unresolved_saved_section_entity(
         None
     };
     let suffix = if let Some(internal_id) = unique_internal_id {
-        external_id.map_or_else(
-            || match kind {
-                SavedSectionEntityKind::Spline | SavedSectionEntityKind::Dummy => {
-                    internal_id.to_string()
-                }
-                _ => format!("saved{internal_id}"),
+        match external_id {
+            Some(external_id) => ctx.format_retained(format_args!("{external_id}"), "creo unresolved saved entity suffix")?,
+            None => match kind {
+                SavedSectionEntityKind::Spline | SavedSectionEntityKind::Dummy => ctx.format_retained(format_args!("{internal_id}"), "creo unresolved saved entity suffix")?,
+                _ => ctx.format_retained(format_args!("saved{internal_id}"), "creo unresolved saved entity suffix")?,
             },
-            |external_id| external_id.to_string(),
-        )
+        }
     } else {
-        format!("saved:offset:{offset}")
+        ctx.format_retained(format_args!("saved:offset:{offset}"), "creo unresolved saved entity suffix")?
     };
-    let id = external_id.map_or_else(
-        || match kind {
-            SavedSectionEntityKind::Spline => {
-                let scope = IdentityKey::try_new(sketch_identity_scope(sketch).to_owned()).ok()?;
-                let suffix = IdentityKey::try_new(suffix.clone()).ok()?;
-                Some(SketchEntityId::compose(
-                    &crate::identity::FEATDEFS_SAVED_SPLINE,
-                    scope.colon(suffix),
-                ))
+    let id = if external_id.is_some() {
+        sketch_entity_id_admitted(ctx, sketch, &suffix)?
+    } else {
+        match kind {
+            SavedSectionEntityKind::Spline | SavedSectionEntityKind::Dummy => {
+                let namespace = if matches!(kind, SavedSectionEntityKind::Spline) {
+                    &crate::identity::FEATDEFS_SAVED_SPLINE
+                } else {
+                    &crate::identity::FEATDEFS_SAVED_DUMMY
+                };
+                let text = ctx.format_retained(
+                    format_args!("{}:{}:{}#{}:{suffix}", namespace.format(), namespace.scope(), namespace.kind(), sketch_identity_scope(sketch)),
+                    "creo unresolved saved entity identity",
+                )?;
+                SketchEntityId::try_from(text).ok()
             }
-            SavedSectionEntityKind::Dummy => {
-                let scope = IdentityKey::try_new(sketch_identity_scope(sketch).to_owned()).ok()?;
-                let suffix = IdentityKey::try_new(suffix.clone()).ok()?;
-                Some(SketchEntityId::compose(
-                    &crate::identity::FEATDEFS_SAVED_DUMMY,
-                    scope.colon(suffix),
-                ))
-            }
-            _ => sketch_entity_id(sketch, &suffix),
-        },
-        |external_id| sketch_entity_id(sketch, external_id),
-    )?;
-    Some((
+            _ => sketch_entity_id_admitted(ctx, sketch, &suffix)?,
+        }
+    };
+    let Some(id) = id else { return Ok(None); };
+    let native_kind = ctx.format_retained(format_args!("saved_{}", kind.name()), "creo unresolved saved native kind")?;
+    Ok(Some((
         SketchEntity::new(
             id,
-            sketch.clone(),
-            SketchGeometry::native(cadmpeg_core::text::NonBlankString::new(format!(
-                "saved_{}",
-                kind.name()
-            ))?),
+            sketch.copy_admitted(ctx, "creo unresolved saved sketch identity")?,
+            SketchGeometry::native(cadmpeg_core::text::NonBlankString::new(native_kind).ok_or_else(|| cadmpeg_core::CodecError::malformed("saved native kind must not be empty"))?),
         )
         .with_construction(true)
-        .with_native_ref(Some(sketch_native_ref(sketch))),
+        .with_native_ref(Some(sketch_native_ref_admitted(ctx, sketch)?)),
         offset,
-    ))
+    )))
 }
 
 pub(in super::super) fn unique_saved_section_internal_ids(
@@ -403,6 +397,52 @@ mod tests {
         saved_section_ordinary_geometry_allowed,
     };
     use crate::decode::tests::opaque;
+
+    #[test]
+    fn unresolved_saved_dummy_refuses_each_retained_field() {
+        let definition = definition(None);
+        let saved = crate::feature::definitions::FeatureSavedEntity::Dummy(
+            crate::feature::definitions::FeatureSavedDummy {
+                entity_id: None,
+                body: Vec::new(),
+                offset: 9,
+            },
+        );
+        let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#5")
+            .expect("valid sketch ID");
+        let fields = [
+            ("saved:offset:9", "creo unresolved saved entity suffix"),
+            ("creo:featdefs:saved_dummy#5:saved:offset:9", "creo unresolved saved entity identity"),
+            ("saved_dummy", "creo unresolved saved native kind"),
+            ("creo:model:sketch#5", "creo unresolved saved sketch identity"),
+            ("creo:featdefs:sketch#5", "creo sketch native reference"),
+        ];
+        let mut total = 0u64;
+        for (field, operation) in fields {
+            total += field.len() as u64;
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = total - 1;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root");
+            assert!(matches!(super::unresolved_saved_section_entity(
+                &ctx, &definition, &sketch, &saved,
+                &std::collections::BTreeSet::new(), &std::collections::BTreeSet::new(),
+            ), Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && refusal.operation == operation));
+        }
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let service = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &service)
+            .expect("empty root");
+        let (entity, offset) = super::unresolved_saved_section_entity(
+            &ctx, &definition, &sketch, &saved,
+            &std::collections::BTreeSet::new(), &std::collections::BTreeSet::new(),
+        ).expect("service admission").expect("saved dummy entity");
+        assert_eq!(offset, 9);
+        assert_eq!(entity.id().as_str(), "creo:featdefs:saved_dummy#5:saved:offset:9");
+    }
 
     #[test]
     fn section_entity_suffix_refuses_before_retained_formatting() {
