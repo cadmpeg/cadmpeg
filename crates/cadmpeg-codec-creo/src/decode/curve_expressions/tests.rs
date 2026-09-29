@@ -886,6 +886,155 @@ fn curve_expression_property_node_refuses_before_tree_insert() {
     ));
 }
 
+fn quantity_property_result(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>, cadmpeg_core::CodecError> {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01a=1\0";
+    let mut record = crate::curve::expression_records(payload)
+        .pop()
+        .expect("complete curve expression");
+    record.assignments[0].value = Some(crate::curve::CurveExpressionValue::Quantity(
+        crate::curve::CurveExpressionQuantity {
+            value: 3.5,
+            length_power: 1,
+            mass_power: 2,
+            time_power: 0,
+            angle_power: 0,
+            temperature_power: 0,
+        },
+    ));
+    let parameter_id = cadmpeg_ir::features::ParameterId::mint("test:test:parameter#a")
+        .expect("valid parameter ID");
+    super::curve_expression_properties(
+        ctx,
+        &record.assignments[0],
+        0,
+        "a",
+        &parameter_id,
+        &std::collections::BTreeMap::new(),
+        &std::collections::BTreeMap::new(),
+        &std::collections::BTreeMap::new(),
+        &std::collections::HashSet::new(),
+    )
+}
+
+#[test]
+fn curve_expression_source_ordinal_value_refuses_before_text() {
+    let error = with_retained_limit(0, quantity_property_result)
+        .expect_err("ordinal value needs one retained byte");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "creo curve-expression source ordinal value"));
+}
+
+#[test]
+fn curve_expression_activation_value_refuses_before_text() {
+    let prior = ("0".len() + "source_assignment_ordinal".len()) as u64;
+    let error = with_retained_limit(prior, quantity_property_result)
+        .expect_err("activation text follows the ordinal property");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "creo curve-expression activation value"));
+}
+
+#[test]
+fn curve_expression_canonical_value_refuses_before_text() {
+    let prior = ("0".len() + "source_assignment_ordinal".len()
+        + "active".len() + "activation".len()) as u64;
+    let error = with_retained_limit(prior, quantity_property_result)
+        .expect_err("canonical value follows the activation property");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "creo curve-expression canonical value"));
+}
+
+#[test]
+fn curve_expression_dimension_value_refuses_before_text() {
+    let prior = ("0".len() + "source_assignment_ordinal".len()
+        + "active".len() + "activation".len()
+        + "3.5".len() + "evaluated_canonical_value".len()) as u64;
+    let error = with_retained_limit(prior, quantity_property_result)
+        .expect_err("dimension value follows the canonical property");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "creo curve-expression dimension value"));
+}
+
+#[test]
+fn curve_expression_quantity_properties_keep_value_and_dimension() {
+    let properties = crate::decode::with_test_decode_ctx(quantity_property_result)
+        .expect("service resources admit quantity properties");
+    assert_eq!(properties.len(), 4);
+    assert_eq!(properties[&cadmpeg_core::nonblank_literal!("evaluated_canonical_value")], "3.5");
+    assert_eq!(properties[&cadmpeg_core::nonblank_literal!("evaluated_dimension")],
+        "length:1,mass:2,time:0,angle:0,temperature:0");
+}
+
+#[test]
+fn curve_expression_native_kind_refuses_before_text() {
+    let error = with_retained_limit(0, |ctx| super::native_curve_expression_definition(ctx, 7, 1))
+        .expect_err("native kind needs retained text");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "creo curve-expression native kind"));
+}
+
+#[test]
+fn curve_expression_native_entity_value_refuses_before_text() {
+    let prior = "CurveFromEquation".len() as u64;
+    let error = with_retained_limit(prior, |ctx| super::native_curve_expression_definition(ctx, 7, 1))
+        .expect_err("entity value needs one more retained byte");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "creo curve-expression native entity value"));
+}
+
+#[test]
+fn curve_expression_native_assignment_count_refuses_before_text() {
+    let prior = ("CurveFromEquation".len() + "7".len()) as u64;
+    let error = with_retained_limit(prior, |ctx| super::native_curve_expression_definition(ctx, 7, 1))
+        .expect_err("assignment count needs one more retained byte");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "creo curve-expression native assignment count"));
+}
+
+#[test]
+fn curve_expression_native_fallback_keeps_kind_and_values() {
+    let definition = crate::decode::with_test_decode_ctx(|ctx| {
+        super::native_curve_expression_definition(ctx, 7, 1)
+    })
+    .expect("service resources admit native definition");
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Native { kind, parameters },
+    ) = definition else {
+        panic!("native fallback definition");
+    };
+    assert_eq!(kind.as_str(), "CurveFromEquation");
+    assert_eq!(parameters[&cadmpeg_core::nonblank_literal!("entity_id")], "7");
+    assert_eq!(parameters[&cadmpeg_core::nonblank_literal!("assignment_count")], "1");
+}
+
+#[test]
+fn curve_expression_feature_name_refuses_before_text() {
+    let error = with_retained_limit(0, |ctx| super::curve_expression_feature_labels(ctx, 7))
+        .expect_err("feature name needs retained text");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "creo curve-expression feature name"));
+}
+
+#[test]
+fn curve_expression_feature_source_tag_refuses_before_text() {
+    let prior = "Curve Equation 7".len() as u64;
+    let error = with_retained_limit(prior, |ctx| super::curve_expression_feature_labels(ctx, 7))
+        .expect_err("source tag needs retained text");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "creo curve-expression feature source tag"));
+}
+
+#[test]
+fn curve_expression_feature_labels_keep_source_spelling() {
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| super::curve_expression_feature_labels(ctx, 7))
+            .expect("service resources admit labels"),
+        ("Curve Equation 7".to_string(), "crv_fr_eqn".to_string())
+    );
+}
+
 #[test]
 fn curve_expression_source_text_refuses_before_join() {
     let lines = [
@@ -976,12 +1125,12 @@ fn curve_expression_native_parameters_refuse_before_tree_creation() {
         1
     );
     let mut limited = cadmpeg_core::decode::DecodePolicy::service();
-    limited.limits.max_collection_items = 14;
+    limited.limits.max_collection_items = 19;
     let error = transfer_with_limits(&["a=1"], &dimensions, limited)
         .expect_err("the native parameter tree needs two more items");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "creo curve-expression native parameters"
-    ));
+    ), "{error:?}");
 }

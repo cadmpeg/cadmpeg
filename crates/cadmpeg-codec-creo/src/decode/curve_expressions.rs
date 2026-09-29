@@ -549,13 +549,19 @@ fn curve_expression_properties(
         ctx,
         &mut properties,
         "source_assignment_ordinal",
-        assignment_ordinal.to_string(),
+        ctx.format_retained(
+            format_args!("{assignment_ordinal}"),
+            "creo curve-expression source ordinal value",
+        )?,
     )?;
     insert_curve_expression_property(
         ctx,
         &mut properties,
         "activation",
-        assignment.activation.token().to_string(),
+        ctx.copy_retained_text(
+            assignment.activation.token(),
+            "creo curve-expression activation value",
+        )?,
     )?;
     if let Some(unit) = declared_unit {
         let unit = ctx.copy_retained_text(unit, "creo curve-expression declared unit")?;
@@ -566,20 +572,23 @@ fn curve_expression_properties(
             ctx,
             &mut properties,
             "evaluated_canonical_value",
-            quantity.value.to_string(),
+            ctx.format_retained(
+                format_args!("{}", quantity.value),
+                "creo curve-expression canonical value",
+            )?,
         )?;
         insert_curve_expression_property(
             ctx,
             &mut properties,
             "evaluated_dimension",
-            format!(
+            ctx.format_retained(format_args!(
                 "length:{},mass:{},time:{},angle:{},temperature:{}",
                 quantity.length_power,
                 quantity.mass_power,
                 quantity.time_power,
                 quantity.angle_power,
                 quantity.temperature_power
-            ),
+            ), "creo curve-expression dimension value")?,
         )?;
     }
     if parameter_name != assignment_name {
@@ -617,6 +626,52 @@ fn curve_expression_properties(
         parameter_id.as_str(),
         properties,
     )?)
+}
+
+fn native_curve_expression_definition(
+    ctx: &DecodeContext<'_>,
+    entity_id: u32,
+    assignment_count: usize,
+) -> Result<IrFeatureDefinition, CodecError> {
+    ctx.charge_collection_items(2, "creo curve-expression native parameters")?;
+    Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
+        kind: ctx.copy_retained_text(
+            "CurveFromEquation",
+            "creo curve-expression native kind",
+        )?.into(),
+        parameters: BTreeMap::from([
+            (
+                cadmpeg_core::nonblank_literal!("entity_id"),
+                ctx.format_retained(
+                    format_args!("{entity_id}"),
+                    "creo curve-expression native entity value",
+                )?,
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("assignment_count"),
+                ctx.format_retained(
+                    format_args!("{assignment_count}"),
+                    "creo curve-expression native assignment count",
+                )?,
+            ),
+        ]),
+    }))
+}
+
+fn curve_expression_feature_labels(
+    ctx: &DecodeContext<'_>,
+    entity_id: u32,
+) -> Result<(String, String), CodecError> {
+    Ok((
+        ctx.format_retained(
+            format_args!("Curve Equation {entity_id}"),
+            "creo curve-expression feature name",
+        )?,
+        ctx.copy_retained_text(
+            "crv_fr_eqn",
+            "creo curve-expression feature source tag",
+        )?,
+    ))
 }
 
 pub(super) fn transfer_curve_expression_features(
@@ -675,10 +730,13 @@ pub(super) fn transfer_curve_expression_features(
                 .get(assignment_ordinal)
                 .and_then(Option::as_ref)
             else {
-                return Err(cadmpeg_core::CodecError::malformed(format!(
-                    "curve expression record {} assignment {} has no parameter name",
-                    record.entity_id, assignment_ordinal
-                )));
+                return Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+                    format_args!(
+                        "curve expression record {} assignment {} has no parameter name",
+                        record.entity_id, assignment_ordinal
+                    ),
+                    "creo curve-expression missing name error",
+                )?));
             };
             let parameter_id = ParameterId::compose(
                 &crate::identity::DEPDB_CURVE_EXPRESSION_PARAMETER,
@@ -916,33 +974,21 @@ pub(super) fn transfer_curve_expression_features(
         let definition = if let Some(definition) = axis_definition {
             definition
         } else {
-            ctx.charge_collection_items(2, "creo curve-expression native parameters")?;
-            IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-                kind: "CurveFromEquation".into(),
-                parameters: BTreeMap::from([
-                    (
-                        cadmpeg_core::nonblank_literal!("entity_id"),
-                        record.entity_id.to_string(),
-                    ),
-                    (
-                        cadmpeg_core::nonblank_literal!("assignment_count"),
-                        record.assignments.len().to_string(),
-                    ),
-                ]),
-            })
+            native_curve_expression_definition(ctx, record.entity_id, record.assignments.len())?
         };
         ctx.charge_entities(1, "admit Creo model features")?;
+        let (name, source_tag) = curve_expression_feature_labels(ctx, record.entity_id)?;
         source_carriers.admit_feature(
             ctx,
             ir,
             Feature {
                 id: feature_id,
                 ordinal,
-                name: Some(format!("Curve Equation {}", record.entity_id)),
+                name: Some(name),
                 suppressed: Some(false),
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
-                source_tag: Some("crv_fr_eqn".to_string()),
+                source_tag: Some(source_tag),
                 source_text: Some(curve_expression_source_text(ctx, &record.lines)?),
                 source_content: source_content.try_into().map_err(|message: &'static str| {
                     cadmpeg_core::CodecError::Malformed(message.into())
