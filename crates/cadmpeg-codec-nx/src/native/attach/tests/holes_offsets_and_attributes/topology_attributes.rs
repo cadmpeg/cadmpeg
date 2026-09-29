@@ -23,7 +23,7 @@ fn attribute_field_name(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut reservation = ctx.reserve_scoped(0, "test Parasolid attribute names").unwrap();
     ParasolidAttributeNameIndex::new(&ctx, &mut reservation, class_uses, definitions, field_uses, field_names).unwrap()
-        .field_name(topology_reference, value_use)
+        .field_name(&ctx, topology_reference, value_use).unwrap()
 }
 
 fn attribute_name_index_with_limit(
@@ -175,6 +175,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     let mut annotations = AnnotationBuilder::new();
 
     attach_parasolid_topology_numeric_attributes(
+        &ctx,
         &mut ir,
         &sources,
         &topology_attribute_index,
@@ -627,14 +628,14 @@ fn topology_attribute_index_retains_linked_type_81_records() {
     assert_eq!(
         index
             .attribute_names
-            .field_name(&reference, "head-use")
+            .field_name(&ctx, &reference, "head-use").unwrap()
             .as_deref(),
         Some("CLASS.field_0.parasolid_type_2")
     );
     assert_eq!(
         index
             .attribute_names
-            .field_name(&reference, "child-use")
+            .field_name(&ctx, &reference, "child-use").unwrap()
             .as_deref(),
         Some("CLASS.field_0.parasolid_type_2")
     );
@@ -645,7 +646,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         doubles: &doubles,
     };
     let mut annotations = AnnotationBuilder::new();
-    attach_parasolid_topology_numeric_attributes(&mut ir, &sources, &index, &mut annotations)
+    attach_parasolid_topology_numeric_attributes(&ctx, &mut ir, &sources, &index, &mut annotations)
         .expect("valid exactness fields");
     let attributes = ir
         .model
@@ -786,6 +787,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         &[],
     ).unwrap();
     attach_parasolid_topology_structured_attributes(
+        &ctx,
         &mut ir,
         &sources,
         &topology_attribute_index,

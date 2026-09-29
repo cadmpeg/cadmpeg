@@ -307,6 +307,7 @@ pub(super) fn attach(
         &model.parasolid.parasolid_attribute_field_names,
     )?;
     attach_parasolid_topology_string_attributes(
+        ctx,
         ir,
         &ParasolidStringAttributeSources {
             string_uses: &model.parasolid.parasolid_entity_51_string_uses,
@@ -316,6 +317,7 @@ pub(super) fn attach(
         annotations,
     )?;
     attach_parasolid_topology_numeric_attributes(
+        ctx,
         ir,
         &ParasolidNumericAttributeSources {
             numeric_uses: &model.parasolid.parasolid_entity_51_numeric_uses,
@@ -326,6 +328,7 @@ pub(super) fn attach(
         annotations,
     )?;
     attach_parasolid_topology_structured_attributes(
+        ctx,
         ir,
         &ParasolidStructuredAttributeSources {
             structured_uses: &model.parasolid.parasolid_entity_51_structured_uses,
@@ -4894,6 +4897,7 @@ struct ParasolidStringAttributeSources<'a> {
 }
 
 fn attach_parasolid_topology_string_attributes(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     sources: &ParasolidStringAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
@@ -4946,7 +4950,7 @@ fn attach_parasolid_topology_string_attributes(
             );
             let name = attribute_index
                 .attribute_names
-                .field_name(reference, string_use.id.as_str());
+                .field_name(ctx, reference, string_use.id.as_str())?;
             ir.model.attributes.push(SourceAttribute {
                 id,
                 target: context.target.clone(),
@@ -5047,50 +5051,81 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
 
     fn field_name(
         &self,
+        ctx: &DecodeContext<'_>,
         topology_reference: &crate::native::parasolid::ParasolidTopologyAttributeListReference,
         value_use: &str,
-    ) -> Option<String> {
-        let field_use = self.fields_by_value_use.get(value_use)?.as_ref()?;
-        let class_use = self
+    ) -> Result<Option<String>, CodecError> {
+        let lookup_work = self.fields_by_value_use.len()
+            .checked_add(self.classes_by_entity.len())
+            .and_then(|count| count.checked_add(self.definitions_by_id.len()))
+            .and_then(|count| count.checked_add(self.field_names_by_definition.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid attribute field name lookup", 0, cadmpeg_core::decode::u64_from_index(self.fields_by_value_use.len())))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(lookup_work), "NX Parasolid attribute field name lookup")?;
+        let Some(field_use) = self.fields_by_value_use.get(value_use).and_then(Option::as_ref) else {
+            return Ok(None);
+        };
+        let Some(class_use) = self
             .classes_by_entity
             .get(&(
                 topology_reference.id.as_str(),
                 field_use.entity_51_record.as_str(),
-            ))?
-            .as_ref()?;
+            ))
+            .and_then(Option::as_ref) else {
+                return Ok(None);
+            };
         if field_use.attribute_class_use != class_use.attribute_class_use
             || field_use.attribute_definition != class_use.attribute_definition
         {
-            return None;
+            return Ok(None);
         }
-        let definition = self
+        let Some(definition) = self
             .definitions_by_id
-            .get(class_use.attribute_definition.as_str())?
-            .as_ref()?;
+            .get(class_use.attribute_definition.as_str())
+            .and_then(Option::as_ref) else {
+                return Ok(None);
+            };
+        let mut field_reservation = ctx.reserve_scoped(0, "NX Parasolid field name component")?;
         let field_name = match (definition.name.as_str(), field_use.position.field_ordinal()) {
-            ("SDL/TYSA_DENSITY", 0) => "density".to_string(),
-            ("SDL/TYSA_DENSITY", 1) => "units".to_string(),
+            ("SDL/TYSA_DENSITY", 0) => std::borrow::Cow::Borrowed("density"),
+            ("SDL/TYSA_DENSITY", 1) => std::borrow::Cow::Borrowed("units"),
             _ if self
                 .field_names_by_definition
                 .get(definition.id.as_str())
                 .and_then(Option::as_ref)
                 .is_some() =>
             {
-                self.field_names_by_definition
+                let Some(name) = self.field_names_by_definition
                     .get(definition.id.as_str())
-                    .and_then(Option::as_ref)?
-                    .fields
-                    .get(field_use.position.field_ordinal() as usize)?
-                    .name
-                    .clone()
+                    .and_then(Option::as_ref)
+                    .and_then(|names| names.fields.get(field_use.position.field_ordinal() as usize))
+                    .map(|field| field.name.as_str()) else {
+                        return Ok(None);
+                    };
+                std::borrow::Cow::Borrowed(name)
             }
-            _ => format!(
-                "field_{}.parasolid_type_{}",
-                field_use.position.field_ordinal(),
-                field_use.value_kind.field_code().code()
-            ),
+            _ => {
+                const BOUND: usize = 64;
+                field_reservation.grow(cadmpeg_core::decode::u64_from_index(BOUND))?;
+                let mut name = String::new();
+                name.try_reserve(BOUND).map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid field name component", 0, cadmpeg_core::decode::u64_from_index(BOUND)))?;
+                std::fmt::Write::write_fmt(&mut name, format_args!(
+                    "field_{}.parasolid_type_{}",
+                    field_use.position.field_ordinal(),
+                    field_use.value_kind.field_code().code()
+                )).map_err(|_| CodecError::malformed("NX Parasolid field name formatting failed"))?;
+                std::borrow::Cow::Owned(name)
+            }
         };
-        Some(format!("{}.{}", definition.name.as_str(), field_name))
+        let name_len = definition.name.as_str().len().checked_add(1)
+            .and_then(|bytes| bytes.checked_add(field_name.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid attribute field name", 0, cadmpeg_core::decode::u64_from_index(field_name.len())))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(name_len), "NX Parasolid attribute field name")?;
+        let mut name = String::new();
+        name.try_reserve(name_len).map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid attribute field name", 0, cadmpeg_core::decode::u64_from_index(name_len)))?;
+        name.push_str(definition.name.as_str());
+        name.push('.');
+        name.push_str(&field_name);
+        Ok(Some(name))
     }
 }
 
@@ -5318,6 +5353,7 @@ fn entity_suffix_key(entity: &str) -> Option<cadmpeg_ir::ids::IdentityKey> {
 }
 
 fn attach_parasolid_topology_numeric_attributes(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     sources: &ParasolidNumericAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
@@ -5406,7 +5442,7 @@ fn attach_parasolid_topology_numeric_attributes(
             );
             let name = attribute_index
                 .attribute_names
-                .field_name(reference, numeric_use.id.as_str());
+                .field_name(ctx, reference, numeric_use.id.as_str())?;
             ir.model.attributes.push(SourceAttribute {
                 id,
                 target: context.target.clone(),
@@ -5437,6 +5473,7 @@ struct ParasolidStructuredAttributeSources<'a> {
 }
 
 fn attach_parasolid_topology_structured_attributes(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     sources: &ParasolidStructuredAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
@@ -5578,7 +5615,7 @@ fn attach_parasolid_topology_structured_attributes(
             );
             let name = attribute_index
                 .attribute_names
-                .field_name(reference, structured_use.id.as_str());
+                .field_name(ctx, reference, structured_use.id.as_str())?;
             ir.model.attributes.push(SourceAttribute {
                 id,
                 target: context.target.clone(),
