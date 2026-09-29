@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::operands::construction_operand_group_is_retained;
-use crate::design::decode::operands::parse_construction_operand_group;
 use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
 use crate::design::feature_project::project_parameter_design;
@@ -26,6 +25,84 @@ use cadmpeg_ir::features::FaceSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::ids::FaceId;
+
+fn parse_construction_operand_group(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    ordinal: u32,
+    header: &RecordFrame,
+) -> ConstructionOperandGroupParse {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    crate::design::decode::operands::parse_construction_operand_group(
+        &ctx, bytes, scope, ordinal, header,
+    )
+}
+
+fn construction_group_parse_refuses_collection_limit(bytes: &[u8], operation: &str) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let scope = DesignParameterScope::empty(
+        "f3d:test:construction-group-scope#12",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        12,
+    );
+    let header = RecordFrame {
+        record_index: 100,
+        class_tag: crate::records::references::DesignClassTag::try_from("332".to_owned())
+            .expect("class tag"),
+        byte_offset: 0,
+    };
+    assert!(matches!(
+        crate::design::decode::operands::parse_construction_operand_group(&ctx, bytes, &scope, 0, &header),
+        ConstructionOperandGroupParse::Refused(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == operation
+    ));
+}
+
+#[test]
+fn construction_group_members_refuse_collection_limit() {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"332", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 101);
+    construction_group_parse_refuses_collection_limit(&bytes, "f3d construction operand members");
+}
+
+#[test]
+fn construction_group_auxiliary_refuses_collection_limit() {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"332", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 101);
+    construction_group_parse_refuses_collection_limit(
+        &bytes,
+        "f3d construction operand auxiliary record",
+    );
+}
+
+#[test]
+fn construction_group_trailing_refuses_collection_limit() {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"332", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 101);
+    construction_group_parse_refuses_collection_limit(
+        &bytes,
+        "f3d construction operand trailing records",
+    );
+}
 
 #[test]
 fn localized_edge_treatment_group_retention_is_language_independent() {
@@ -127,6 +204,61 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let group = parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
         .complete()
         .expect("counted Extrude operand group");
+    let id_len = crate::ids::native_scope("Design/BulkStream.dat").len()
+        + ":design-construction-operand-group#".len()
+        + 1;
+    for (collection_limit, retained_limit, dimension, operation) in [
+        (
+            0,
+            u64::MAX,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "f3d construction operand group output",
+        ),
+        (
+            u64::MAX,
+            0,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d native stream key",
+        ),
+        (
+            u64::MAX,
+            u64::try_from(id_len - 1).unwrap(),
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d construction operand group ID",
+        ),
+    ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = collection_limit;
+        policy.limits.max_retained_bytes = retained_limit;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let parsed =
+            parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
+                .complete()
+                .expect("counted Extrude operand group");
+        let mut out = Vec::new();
+        assert!(matches!(
+            crate::design::decode::operands::push_construction_operand_group(
+                &ctx, &mut out, Box::new(parsed), "Design/BulkStream.dat", 0,
+            ),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation
+        ));
+        assert!(out.is_empty());
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut unclosed = Vec::new();
+    assert!(matches!(
+        crate::design::decode::operands::push_unclosed_construction_operand(&ctx, &mut unclosed, 100),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == "f3d unclosed construction operand group"
+    ));
     assert_eq!(
         group
             .members()
@@ -769,11 +901,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .unwrap();
     let split_groups = [split_target_group.clone(), split_tool_group.clone()];
     assert!(matches!(
-        project_split(
+        project_split(None,
             &split_body_scope,
             &split_groups,
             std::slice::from_ref(&split_tool)
-        ),
+        ).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: cadmpeg_ir::features::BodySelection::Native(ref targets),
             tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
@@ -805,11 +937,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         alternate_selector_edges: Vec::new(),
     }];
     assert!(matches!(
-        project_split(
+        project_split(None,
             &historical_split_scope,
             &split_groups,
             std::slice::from_ref(&historical_split_tool)
-        ),
+        ).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             tools: FaceSelection::Historical { faces, native, .. },
             ..
@@ -842,10 +974,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .unwrap();
     assert!(matches!(
         project_split(
+            None,
             &multiple_targets_scope,
             &[split_tool_group.clone(), multiple_targets],
             std::slice::from_ref(&split_tool)
-        ),
+        )
+        .unwrap(),
         Some(FeatureDefinition::Operation(
             FeatureOperation::SplitBody { .. }
         ))
@@ -881,11 +1015,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .unwrap();
     split_target_group.scope_reference_ordinal = 3;
     assert!(matches!(
-        project_split(
+        project_split(None,
             &construction_tool_scope,
             &[split_target_group.clone(), construction_tool],
             &[]
-        ),
+        ).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
             ..
@@ -955,18 +1089,22 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         invalid_groups.push(vec![split_tool_group.clone(), target]);
     }
     assert!(invalid_groups.iter().all(|groups| project_split(
+        None,
         &split_body_scope,
         groups,
         std::slice::from_ref(&split_tool)
     )
+    .unwrap()
     .is_none()));
     let mut nonterminal_tool = split_tool.clone();
     nonterminal_tool.recipe_program = vec![0, -1, 2];
     assert!(project_split(
+        None,
         &split_body_scope,
         &split_groups,
         std::slice::from_ref(&nonterminal_tool)
     )
+    .unwrap()
     .is_none());
 
     let mut delete_scope = scope.clone();
@@ -1363,9 +1501,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         );
     assert_eq!(
         crate::design::feature_project::project_remove_body(
+            None,
             &remove_scope,
             std::slice::from_ref(&remove_group)
-        ),
+        )
+        .unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::DeleteBody {
                 bodies: cadmpeg_ir::features::BodySelection::Native(remove_group.id.clone()),
@@ -1412,9 +1552,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         );
     assert_eq!(
         crate::design::feature_project::project_surface_stitch(
+            None,
             &stitch_scope,
             std::slice::from_ref(&stitch_group)
-        ),
+        )
+        .unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::KnitSurface {
                 faces: cadmpeg_ir::features::FaceSelection::Native(stitch_scope.id),

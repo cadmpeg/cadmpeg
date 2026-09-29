@@ -295,6 +295,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let along = parameter("AlongDistance", "mm", 0.55);
     let taper = parameter("TaperAngle", "deg", 0.2);
     let blind = project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &taper)],
         &[],
@@ -302,6 +303,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed blind Extrude");
     assert!(matches!(
         &blind,
@@ -328,6 +330,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     };
     *solid_operation = false;
     let sheet = project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &taper)],
         &[],
@@ -335,6 +338,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed sheet Extrude");
     assert!(matches!(
         sheet,
@@ -366,6 +370,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             });
     }
     let symmetric = project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &taper)],
         &[],
@@ -373,6 +378,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed symmetric Extrude");
     assert!(matches!(
         symmetric,
@@ -391,6 +397,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedThroughAll);
     set_extrude_direction_reversed(&mut scope, true);
     let through_all = project_extrude(
+        None,
         &scope,
         &[(1, &taper)],
         &[],
@@ -398,6 +405,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed through-all Extrude");
     assert!(matches!(
         through_all,
@@ -415,6 +423,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_direction_reversed(&mut scope, false);
     set_extrude_extent(&mut scope, DesignExtrudeExtent::SymmetricThroughAll);
     let symmetric_through_all = project_extrude(
+        None,
         &scope,
         &[(1, &taper)],
         &[],
@@ -422,6 +431,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed symmetric through-all Extrude");
     assert!(matches!(
         symmetric_through_all,
@@ -512,6 +522,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     ));
     set_extrude_direction_reversed(&mut scope, true);
     assert!(project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &taper)],
         &[],
@@ -519,10 +530,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .is_none());
     set_extrude_direction_reversed(&mut scope, false);
     let unsupported = parameter("UnclassifiedControl", "mm", 1.0);
     assert!(project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &unsupported)],
         &[],
@@ -530,9 +543,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .is_none());
     let side_two_taper = parameter("Side2TaperAngle", "deg", -0.3);
     assert!(project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &side_two_taper)],
         &[],
@@ -540,9 +555,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .is_none());
     let invalid_taper = parameter("TaperAngle", "native-unit", 0.2);
     assert!(project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &invalid_taper)],
         &[],
@@ -550,6 +567,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .is_none());
     let mut owned_along = along.clone();
     owned_along.id = "f3d:Design/BulkStream.dat:parameter#45".into();
@@ -614,12 +632,14 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         native_ref: Some(placement.id.clone()),
     }];
     crate::design::feature_project::bind_sketch_feature_geometry(
+        None,
         &mut features,
         &scopes,
         std::slice::from_ref(&placement),
         &sketches,
         &[],
-    );
+    )
+    .unwrap();
     let sketch_feature = features
         .iter()
         .find(|feature| {
@@ -674,12 +694,14 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         native_ref: Some(placement.id.clone()),
     };
     crate::design::feature_project::bind_sketch_feature_geometry(
+        None,
         &mut spatial_features,
         &scopes,
         std::slice::from_ref(&placement),
         &[],
         std::slice::from_ref(&spatial_sketch),
-    );
+    )
+    .unwrap();
     let spatial_feature = spatial_features
         .iter()
         .find(|feature| {
@@ -732,12 +754,14 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         native_ref: Some(placement.id.clone()),
     };
     crate::design::feature_project::bind_sketch_feature_geometry(
+        None,
         &mut open_spatial_features,
         &scopes,
         std::slice::from_ref(&placement),
         &[],
         std::slice::from_ref(&open_spatial_sketch),
-    );
+    )
+    .unwrap();
     let open_spatial_extrude = open_spatial_features
         .iter()
         .find(|feature| {
@@ -813,6 +837,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     .unwrap();
     set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
     let target_body = project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &taper)],
         std::slice::from_ref(&body_group),
@@ -820,6 +845,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed target-body Extrude");
     assert!(matches!(
         target_body,
@@ -921,6 +947,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     )
     .unwrap();
     let unresolved_target_shape = project_extrude(
+        None,
         &scope,
         &[(0, &taper)],
         &[
@@ -932,6 +959,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         std::slice::from_ref(&target_shape_operand),
     )
+    .expect("projection resource budget")
     .expect("typed target-shape Extrude");
     assert!(matches!(
         unresolved_target_shape,
@@ -952,6 +980,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     target_shape_operand.resolved_body_slot = Some(3);
     target_shape_operand.resolved_body_face_slots = vec![12, 19, 27];
     let target_shape = project_extrude(
+        None,
         &scope,
         &[(0, &taper)],
         &[
@@ -963,6 +992,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         std::slice::from_ref(&target_shape_operand),
     )
+    .expect("projection resource budget")
     .expect("resolved target-shape Extrude");
     let feature = crate::ids::neutral_feature_id(&scope);
     let feature_key = feature.key();
@@ -983,7 +1013,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 },
             },
             ..
-        }) if state == &crate::design::edge_resolve::feature_input_topology_id(&feature, 7)
+        }) if state == &crate::ids::feature_input_topology_id(&feature, 7)
             && faces.as_slice() == [
                 crate::ids::history_input_face_id(&prefix, 12),
                 crate::ids::history_input_face_id(&prefix, 19),
@@ -1022,7 +1052,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     second_target_operand.resolved_body_face_slots = vec![30, 31];
     let operands = [target_shape_operand.clone(), second_target_operand.clone()];
     assert!(matches!(
-        resolved_body_recipe_shape(&scope, &multi_target_group, &operands),
+        resolved_body_recipe_shape(None, &scope, &multi_target_group, &operands).unwrap(),
         Some(FaceSelection::Historical { faces, .. })
             if faces.as_slice() == [
                 crate::ids::history_input_face_id(&prefix, 12),
@@ -1034,10 +1064,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     ));
     second_target_operand.resolved_body_state_id = Some(8);
     assert!(resolved_body_recipe_shape(
+        None,
         &scope,
         &multi_target_group,
         &[target_shape_operand.clone(), second_target_operand],
     )
+    .unwrap()
     .is_none());
 
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
@@ -1060,6 +1092,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     second_profile_group.record_index = 103;
     second_profile_group.scope_reference_ordinal = 1;
     let multiple_profiles = project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &taper)],
         &[first_profile_group.clone(), second_profile_group.clone()],
@@ -1067,6 +1100,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed multi-profile Extrude");
     assert!(matches!(
         multiple_profiles,
@@ -1078,6 +1112,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     ));
     second_profile_group.scope_reference_ordinal = 0;
     assert!(project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &taper)],
         &[first_profile_group, second_profile_group],
@@ -1085,6 +1120,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .is_none());
     if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
     | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
@@ -1100,6 +1136,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     profile_group.operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeProfile;
     let direct_profile_with_selection_group = project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &taper)],
         &[body_group.clone(), profile_group.clone()],
@@ -1107,6 +1144,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("direct sketch profile with a scoped selection group");
     assert!(matches!(
         direct_profile_with_selection_group,
@@ -1137,6 +1175,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     }
     let zero_side_offset = parameter("Side1Offset", "mm", 0.0);
     let hybrid = project_extrude(
+        None,
         &scope,
         &[(0, &zero_side_offset), (1, &taper)],
         &[body_group.clone(), profile_group.clone()],
@@ -1144,6 +1183,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed hybrid fixed-distance Extrude");
     assert!(matches!(
         hybrid,
@@ -1161,6 +1201,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     ));
     set_extrude_direction_reversed(&mut scope, true);
     let reversed_hybrid = project_extrude(
+        None,
         &scope,
         &[(0, &zero_side_offset), (1, &taper)],
         &[body_group.clone(), profile_group.clone()],
@@ -1168,6 +1209,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed reversed hybrid fixed-distance Extrude");
     assert!(matches!(
         reversed_hybrid,
@@ -1208,6 +1250,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         }
     }
     let reversed_native_profile = project_extrude(
+        None,
         &native_profile_scope,
         &[(0, &parameter("AlongDistance", "mm", -0.2)), (1, &taper)],
         &[body_group.clone(), profile_group.clone()],
@@ -1215,6 +1258,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         &[],
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed reversed Extrude with a native profile");
     assert!(matches!(
         reversed_native_profile,
@@ -1253,6 +1297,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     );
     set_extrude_start(&mut scope, DesignExtrudeStart::ProfilePlane);
     assert!(project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &taper)],
         &[body_group.clone(), face_group.clone()],
@@ -1260,10 +1305,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .is_none());
 
     let profile_offset = parameter("ProfileOffset", "mm", 0.1);
     assert!(project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &profile_offset)],
         std::slice::from_ref(&body_group),
@@ -1271,9 +1318,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .is_none());
     set_extrude_start(&mut scope, DesignExtrudeStart::OffsetProfilePlane);
     let offset_start = project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &profile_offset)],
         std::slice::from_ref(&body_group),
@@ -1281,6 +1330,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed offset-profile-plane Extrude");
     assert!(matches!(
         offset_start,
@@ -1296,6 +1346,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
     let against = parameter("AgainstDistance", "mm", -0.05);
     assert!(project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &against)],
         &[],
@@ -1303,9 +1354,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .is_none());
     set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistance);
     let two_sided = project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &against), (2, &side_two_taper)],
         &[],
@@ -1313,6 +1366,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed two-sided Extrude");
     assert!(matches!(
         two_sided,
@@ -1337,6 +1391,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     ));
     set_extrude_direction_reversed(&mut scope, true);
     assert!(project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &against), (2, &side_two_taper)],
         &[],
@@ -1344,12 +1399,14 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .is_none());
     set_extrude_direction_reversed(&mut scope, false);
 
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
     let reversed_along = parameter("AlongDistance", "mm", -0.6);
     let reversed = project_extrude(
+        None,
         &scope,
         &[(0, &reversed_along)],
         &[],
@@ -1357,6 +1414,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed reversed Extrude");
     assert!(matches!(
         reversed,
@@ -1384,6 +1442,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         };
     let side_offset = parameter("Side1Offset", "mm", 0.025);
     let to_face = project_extrude(
+        None,
         &scope,
         &[(0, &side_offset), (1, &taper)],
         &[body_group.clone(), face_group.clone()],
@@ -1391,6 +1450,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed reversed to-face Extrude");
     assert!(matches!(
         to_face,
@@ -1422,6 +1482,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         })
         .unwrap();
     let omitted_zero_offset = project_extrude(
+        None,
         &omitted_zero_offset_scope,
         &[(0, &taper)],
         &[body_group.clone(), face_group.clone()],
@@ -1429,6 +1490,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("class-330 face-target Extrude admits omitted zero offset");
     assert!(matches!(
         omitted_zero_offset,
@@ -1448,6 +1510,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     omitted_zero_offset_scope.class_tag =
         crate::records::references::DesignClassTag::try_from("331".to_owned()).unwrap();
     assert!(project_extrude(
+        None,
         &omitted_zero_offset_scope,
         &[(0, &taper)],
         &[body_group.clone(), face_group.clone()],
@@ -1455,6 +1518,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .is_none());
 
     set_extrude_direction_reversed(&mut scope, false);
@@ -1464,6 +1528,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     second_face_group.scope_reference_ordinal = 3;
     let second_side_offset = parameter("Side2Offset", "mm", 0.05);
     let two_sided_to_faces = project_extrude(
+        None,
         &scope,
         &[
             (0, &side_offset),
@@ -1480,6 +1545,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed two-sided face-target Extrude");
     assert!(matches!(
         two_sided_to_faces,
@@ -1509,6 +1575,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
     set_extrude_direction_reversed(&mut scope, true);
     let reversed_two_sided_to_faces = project_extrude(
+        None,
         &scope,
         &[
             (0, &side_offset),
@@ -1525,6 +1592,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed reversed two-sided face-target Extrude");
     assert!(matches!(
         reversed_two_sided_to_faces,
@@ -1538,6 +1606,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
     set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistanceToFace);
     let mixed_two_sided = project_extrude(
+        None,
         &scope,
         &[(0, &along), (1, &second_side_offset), (2, &side_two_taper)],
         &[body_group.clone(), face_group.clone()],
@@ -1545,6 +1614,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed mixed two-sided Extrude");
     assert!(matches!(
         mixed_two_sided,
@@ -1580,6 +1650,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             usage: DesignExtrudeFaceRole::Start,
         };
     let from_face = project_extrude(
+        None,
         &scope,
         &[
             (0, &parameter("ProfileOffset", "mm", 0.0)),
@@ -1591,6 +1662,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed selected-face start Extrude");
     assert!(matches!(
         from_face,
@@ -1607,6 +1679,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistance);
     set_extrude_direction_reversed(&mut scope, false);
     let from_face_two_sided = project_extrude(
+        None,
         &scope,
         &[
             (0, &parameter("ProfileOffset", "mm", 0.0)),
@@ -1618,6 +1691,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
     )
+    .expect("projection resource budget")
     .expect("typed selected-face-start two-sided Extrude");
     assert!(matches!(
         from_face_two_sided,
@@ -1712,7 +1786,15 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
     let expected_dependencies = [spatial_feature.id.clone(), planar_feature.id.clone()];
     let mut features = vec![planar_feature, spatial_feature, base_flange, loft];
 
-    crate::design::feature_project::bind_sketch_feature_geometry(&mut features, &[], &[], &[], &[]);
+    crate::design::feature_project::bind_sketch_feature_geometry(
+        None,
+        &mut features,
+        &[],
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
 
     assert_eq!(
         features[2].dependencies.as_slice(),

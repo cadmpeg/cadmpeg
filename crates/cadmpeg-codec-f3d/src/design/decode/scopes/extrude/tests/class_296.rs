@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::extrude::DesignExtrudeExtent;
 use crate::records::feature::extrude::DesignExtrudeOperation;
@@ -53,12 +52,14 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
 
     let parse_raw = |bytes: &[u8], class_tag: &str| {
         parse_parameter_scope(
+            &cadmpeg_test_support::service_decode_context(),
             bytes,
-            &IndexedRecordOffsets::build(bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             RECORD_INDEX,
             &crate::records::references::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
             0,
         )
+        .unwrap()
     };
     let parse = |bytes: &[u8], class_tag: &str| {
         parse_raw(bytes, class_tag).expect("class-296 one-sided-to-face scope envelope")
@@ -168,12 +169,14 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
     };
     let parse = |bytes: &[u8]| {
         parse_parameter_scope(
+            &cadmpeg_test_support::service_decode_context(),
             bytes,
-            &IndexedRecordOffsets::build(bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
         )
+        .unwrap()
         .expect("class-296 symmetric-distance scope envelope")
     };
     let scope = parse(&bytes);
@@ -302,12 +305,14 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
     };
     let parse = |bytes: &[u8]| {
         parse_parameter_scope(
+            &cadmpeg_test_support::service_decode_context(),
             bytes,
-            &IndexedRecordOffsets::build(bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
         )
+        .unwrap()
         .expect("class-296 two-sided-to-faces scope envelope")
     };
     let scope = parse(&bytes);
@@ -467,12 +472,14 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
     };
     let prologue = |bytes: &[u8]| {
         parse_parameter_scope(
+            &cadmpeg_test_support::service_decode_context(),
             bytes,
-            &IndexedRecordOffsets::build(bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
         )
+        .unwrap()
         .and_then(|scope| scope.extrude_prologue())
     };
     let assert_valid = |bytes: &[u8],
@@ -483,12 +490,14 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
                         face_extend: u32,
                         direction_reversed: bool| {
         let scope = parse_parameter_scope(
+            &cadmpeg_test_support::service_decode_context(),
             bytes,
-            &IndexedRecordOffsets::build(bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
         )
+        .unwrap()
         .expect("class-296 legacy one-sided scope");
         assert_eq!(scope.frame_length(), frame_length as u64);
         assert_eq!(

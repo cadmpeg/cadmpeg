@@ -1011,3 +1011,78 @@ fn assembly_axial_selector_native_retained_limit_refuses_before_clone() {
         || super::ASSEMBLY_AXIAL_SELECTOR_CLONE_COUNT.with(std::cell::Cell::get),
     );
 }
+fn continuation_path(record_index: u32, byte_offset: u64) -> super::DesignAssemblyOperandPath {
+    serde_json::from_value(serde_json::json!({
+        "link": {
+            "locator_reference_offset": 11, "locator_record_index": 10,
+            "locator_class_tag": "390", "locator_byte_offset": 100,
+            "locator_scope_reference_offset": 111, "wrapper_record_index": 20,
+            "wrapper_reference_offset": 122, "wrapper_class_tag": "397",
+            "wrapper_byte_offset": 200, "path_reference_offset": 211
+        },
+        "record_index": record_index,
+        "class_tag": "330",
+        "byte_offset": byte_offset,
+        "occurrence_guids": ["11111111-1111-1111-1111-111111111111"],
+        "occurrence_guid_offsets": [byte_offset + 10],
+        "identity_guids": [
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "cccccccc-cccc-cccc-cccc-cccccccccccc",
+            "dddddddd-dddd-dddd-dddd-dddddddddddd"
+        ],
+        "identity_guid_offsets": [
+            byte_offset + 100,
+            byte_offset + 180,
+            byte_offset + 260,
+            byte_offset + 340
+        ]
+    }))
+    .unwrap()
+}
+
+#[test]
+fn assembly_path_append_occurrences_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = continuation_path(30, 300)
+        .try_append(continuation_path(31, 1000), &ctx)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d assembly path appended occurrences")
+    );
+}
+
+#[test]
+fn assembly_path_append_identities_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = continuation_path(30, 300)
+        .try_append(continuation_path(31, 1000), &ctx)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d assembly path appended identities")
+    );
+
+    let arena = DecodeArena::new();
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let path = continuation_path(30, 300)
+        .try_append(continuation_path(31, 1000), &ctx)
+        .unwrap()
+        .unwrap();
+    assert_eq!(path.occurrence_guids().len(), 2);
+    assert_eq!(path.identity_guids().len(), 8);
+}

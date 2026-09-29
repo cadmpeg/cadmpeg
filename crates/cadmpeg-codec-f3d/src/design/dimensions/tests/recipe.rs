@@ -784,13 +784,13 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
         point("synthetic:test:id#unrelated", 10.0, 10.0),
     ];
     assert!(matches!(
-        crate::design::dimensions::recipe_linear_dimension_candidates(
+        crate::design::dimensions::recipe_linear_dimension_candidates(None,
             &entities,
             &sketch,
             2.0,
             &parameter,
             0.0,
-        ).as_slice(),
+        ).unwrap().as_slice(),
         [SketchConstraintDefinitionInput::VerticalDistance { first, second, parameter: actual }]
             if *first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap())
                 && *second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap())
@@ -798,11 +798,12 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
     ));
     entities.push(point("synthetic:test:id#ambiguous", 10.0, 8.0));
     let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
-        &entities, &sketch, 2.0, &parameter, 0.0,
-    );
+        None, &entities, &sketch, 2.0, &parameter, 0.0,
+    )
+    .unwrap();
     assert_eq!(candidates.len(), 2);
     assert_eq!(
-        crate::design::dimensions::recipe_dimension_candidate_entities(&candidates),
+        crate::design::dimensions::recipe_dimension_candidate_entities(None, &candidates).unwrap(),
         [
             SketchEntityId::mint("synthetic:test:id#first").unwrap(),
             SketchEntityId::mint("synthetic:test:id#second").unwrap(),
@@ -840,13 +841,13 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
         ),
     ];
     assert!(matches!(
-        crate::design::dimensions::recipe_linear_dimension_candidates(
+        crate::design::dimensions::recipe_linear_dimension_candidates(None,
             &entities,
             &sketch,
             2.0,
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             0.0,
-        ).as_slice(),
+        ).unwrap().as_slice(),
         [SketchConstraintDefinitionInput::Distance { entities, .. }]
             if entities.as_slice() == [SketchEntityId::mint("synthetic:test:id#first").unwrap(), SketchEntityId::mint("synthetic:test:id#second").unwrap()]
     ));
@@ -865,13 +866,13 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
         point("synthetic:test:id#second-end", Point2::new(5.0, 2.0)),
     ]);
     assert!(matches!(
-        crate::design::dimensions::recipe_linear_dimension_candidates(
+        crate::design::dimensions::recipe_linear_dimension_candidates(None,
             &entities_with_endpoints,
             &sketch,
             2.0,
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             0.0,
-        ).as_slice(),
+        ).unwrap().as_slice(),
         [SketchConstraintDefinitionInput::Distance { entities, .. }]
             if entities.as_slice() == [SketchEntityId::mint("synthetic:test:id#first").unwrap(), SketchEntityId::mint("synthetic:test:id#second").unwrap()]
     ));
@@ -909,13 +910,13 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
     )
     .unwrap();
     assert!(matches!(
-        crate::design::dimensions::unique_parallel_line_dimension_definition(
+        crate::design::dimensions::unique_parallel_line_dimension_definition(None,
             &entities,
             &sketch,
             &parameter,
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             0.0,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Distance {
             entities,
             ..
@@ -941,13 +942,13 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
         Point2::new(22.0, 4.0),
     ));
     assert!(matches!(
-        crate::design::dimensions::owner_scoped_parallel_line_set_dimension_definition(
+        crate::design::dimensions::owner_scoped_parallel_line_set_dimension_definition(None,
             &fragmented_entities,
             &sketch,
             &parameter,
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             1.0e-6,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::ParallelLineSetDistance {
             first,
             second,
@@ -970,13 +971,13 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
     let mut point_entities = entities.clone();
     point_entities.push(point);
     assert!(matches!(
-        crate::design::dimensions::unique_point_line_dimension_definition(
+        crate::design::dimensions::unique_point_line_dimension_definition(None,
             &point_entities,
             &sketch,
             &parameter,
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             1.0e-6,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Distance {
             entities,
             ..
@@ -991,6 +992,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
     ));
     assert!(
         crate::design::dimensions::unique_parallel_line_dimension_definition(
+            None,
             &entities,
             &sketch,
             &parameter,
@@ -998,11 +1000,14 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
                 .expect("identity grammar"),
             0.0,
         )
+        .transpose()
+        .unwrap()
         .is_none()
     );
     point_entities.push(entities.last().expect("third line").clone());
     assert!(
         crate::design::dimensions::unique_point_line_dimension_definition(
+            None,
             &point_entities,
             &sketch,
             &parameter,
@@ -1010,6 +1015,8 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
                 .expect("identity grammar"),
             1.0e-6,
         )
+        .transpose()
+        .unwrap()
         .is_none()
     );
 }
@@ -1046,15 +1053,16 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
         point("synthetic:test:id#off-carrier-vertical", 4.0, 2.0),
     ];
     let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
-        &entities, &sketch, 2.0, &parameter, 0.0,
-    );
+        None, &entities, &sketch, 2.0, &parameter, 0.0,
+    )
+    .unwrap();
     assert!(candidates.len() > 2);
     assert!(matches!(
-        crate::design::dimensions::recipe_extension_point_dimension(
+        crate::design::dimensions::recipe_extension_point_dimension(None,
             &candidates,
             &entities,
             &sketch,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::HorizontalDistance { first, second, parameter: actual })
             if first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#carrier-start").unwrap())
                 && second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#extension").unwrap())
@@ -1076,13 +1084,17 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
         ),
     ]);
     let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
-        &ambiguous, &sketch, 2.0, &parameter, 0.0,
-    );
+        None, &ambiguous, &sketch, 2.0, &parameter, 0.0,
+    )
+    .unwrap();
     assert!(crate::design::dimensions::recipe_extension_point_dimension(
+        None,
         &candidates,
         &ambiguous,
         &sketch,
     )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -1139,6 +1151,7 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
         circle("synthetic:test:id#inner-b", Point2::new(20.0, 0.0), 6.0),
     ];
     let definition = crate::design::dimensions::concentric_circle_dimension_definition(
+        None,
         &circles,
         &sketch,
         &parameter,
@@ -1146,6 +1159,8 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
             .expect("identity grammar"),
         0.0,
     )
+    .transpose()
+    .unwrap()
     .expect("two disjoint concentric pairs");
     assert!(matches!(
         definition,
@@ -1179,6 +1194,7 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
     ));
     assert!(
         crate::design::dimensions::concentric_circle_dimension_definition(
+            None,
             &circles,
             &sketch,
             &parameter,
@@ -1186,6 +1202,8 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
                 .expect("identity grammar"),
             0.0,
         )
+        .transpose()
+        .unwrap()
         .is_none()
     );
 }
@@ -1214,7 +1232,7 @@ fn expression_dependency_audit_counts_only_unprojected_same_stream_names() {
     ];
     let (_, mut projected) = project_parameter_design(&native, &[], &[], &[], &[], &[], &[], &[]);
     assert_eq!(
-        unresolved_parameter_expression_dependency_count(&native, &projected),
+        unresolved_parameter_expression_dependency_count(None, &native, &projected).unwrap(),
         0
     );
 
@@ -1225,7 +1243,95 @@ fn expression_dependency_audit_counts_only_unprojected_same_stream_names() {
         .dependencies
         .clear();
     assert_eq!(
-        unresolved_parameter_expression_dependency_count(&native, &projected),
+        unresolved_parameter_expression_dependency_count(None, &native, &projected).unwrap(),
         1
     );
 }
+
+fn assert_expression_audit_limit(operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let parameter = |stream: &str, record_index, expression: &str, name: &str| {
+        let mut parameter = parse_design_parameter_record(&parameter_record(
+            None,
+            expression,
+            "User Parameter",
+            Some("mm"),
+            name,
+            1.0,
+        ))
+        .expect("generated parameter");
+        parameter.id = format!("f3d:{stream}:parameter#{record_index}");
+        parameter.record_index = record_index;
+        parameter.source_ordinal = record_index;
+        parameter
+    };
+    let native = vec![
+        parameter("A", 1, "1 mm", "Width"),
+        parameter("A", 2, "Width + External", "Half"),
+        parameter("B", 1, "1 mm", "External"),
+    ];
+    let (_, projected) = project_parameter_design(&native, &[], &[], &[], &[], &[], &[], &[]);
+    let mut found = false;
+    for limit in 0..64 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(
+            unresolved_parameter_expression_dependency_count(Some(&ctx), &native, &projected),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension == ResourceDimension::CollectionItems
+        ) {
+            found = true;
+            break;
+        }
+    }
+    assert!(found, "no collection limit reached {operation}");
+}
+
+#[test]
+fn expression_native_parameter_index_refuses_collection_limit() {
+    assert_expression_audit_limit("f3d expression native parameter index");
+}
+
+#[test]
+fn expression_neutral_parameter_index_refuses_collection_limit() {
+    assert_expression_audit_limit("f3d expression neutral parameter index");
+}
+
+#[test]
+fn expression_stream_index_refuses_collection_limit() {
+    assert_expression_audit_limit("f3d expression stream index");
+}
+
+#[test]
+fn expression_stream_name_refuses_collection_limit() {
+    assert_expression_audit_limit("f3d expression stream name");
+}
+
+#[test]
+fn expression_dependency_name_refuses_collection_limit() {
+    assert_expression_audit_limit("f3d expression dependency name");
+}
+
+#[test]
+fn expression_identifier_refuses_collection_limit() {
+    assert_expression_audit_limit("f3d expression identifier");
+}
+
+mod refusal_recipe_linear_dimension_candidates;
+
+mod refusal_recipe_dimension_candidate_entities;
+
+mod refusal_recipe_extension_point_dimension;
+
+mod refusal_unique_parallel_line;
+
+mod refusal_unique_point_line;
+
+mod refusal_owner_scoped_parallel_line_set;
+
+mod refusal_concentric_circle;

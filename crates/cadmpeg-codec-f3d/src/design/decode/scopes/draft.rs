@@ -2,7 +2,6 @@
 //! Exact draft operation scopes.
 
 use super::shared_frames::exact_fixed_scalar;
-use crate::bytes::lp_utf16_bounded;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
@@ -10,6 +9,7 @@ use crate::ids::native_stream;
 use crate::records::feature::direct_face::DesignDraftOperation;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
+use cadmpeg_core::decode::View;
 
 pub(super) fn exact_draft_operation_with_owners(
     bytes: &[u8],
@@ -42,49 +42,60 @@ pub(super) fn exact_draft_operation_with_owners(
                     scalar.value_offset,
                 ));
             }
-            let owners = parameter_owners
-                .iter()
-                .filter(|owner| {
-                    owner.record_index() == *record_index
-                        && owner.scope_record_index() == scope.record_index
-                        && scope_stream
-                            .is_none_or(|stream| native_stream(owner.id()) == Some(stream))
-                })
-                .collect::<Vec<_>>();
-            let [owner] = owners.as_slice() else {
+            let mut owners = parameter_owners.iter().filter(|owner| {
+                owner.record_index() == *record_index
+                    && owner.scope_record_index() == scope.record_index
+                    && scope_stream.is_none_or(|stream| native_stream(owner.id()) == Some(stream))
+            });
+            let owner = owners.next()?;
+            if owners.next().is_some() {
                 return None;
-            };
+            }
             Some((
                 *record_index,
                 owner.local_ordinal(),
                 owner.evaluated_value(),
                 owner.evaluated_value_offset(),
             ))
-        })
-        .collect::<Vec<_>>();
-    lanes.sort_by_key(|(_, ordinal, _, _)| *ordinal);
-    let [(angle_record_index, angle_ordinal, angle, angle_offset), (opposite_angle_record_index, opposite_ordinal, opposite, opposite_offset)] =
-        lanes.as_slice()
+        });
+    let (Some(mut first), Some(mut second), None) = (lanes.next(), lanes.next(), lanes.next())
     else {
         return None;
     };
-    if *angle_ordinal != 0 || *opposite_ordinal != 1 || opposite.get() != 0.0 {
+    if first.1 > second.1 {
+        std::mem::swap(&mut first, &mut second);
+    }
+    let (angle_record_index, angle_ordinal, angle, angle_offset) = first;
+    let (opposite_angle_record_index, opposite_ordinal, opposite, opposite_offset) = second;
+    if angle_ordinal != 0 || opposite_ordinal != 1 || opposite.get() != 0.0 {
         return None;
     }
     Some(DesignDraftOperation {
-        angle: cadmpeg_ir::scalar::Angle::from_assigned_real(*angle),
-        angle_record_index: *angle_record_index,
-        angle_offset: *angle_offset,
-        opposite_angle_record_index: *opposite_angle_record_index,
-        opposite_angle_offset: *opposite_offset,
+        angle: cadmpeg_ir::scalar::Angle::from_assigned_real(angle),
+        angle_record_index,
+        angle_offset,
+        opposite_angle_record_index,
+        opposite_angle_offset: opposite_offset,
     })
 }
 
 pub(super) fn contains_consecutive_guid_pair(bytes: &[u8]) -> bool {
+    let relaxed_guid_end = |at: usize| {
+        let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+        if !(36..=38).contains(&count) {
+            return None;
+        }
+        let start = at.checked_add(4)?;
+        let end = start.checked_add(count.checked_mul(2)?)?;
+        let units = bytes.get(start..end)?;
+        units
+            .chunks_exact(2)
+            .all(|unit| {
+                unit[1] == 0 && (unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_'))
+            })
+            .then_some(end)
+    };
     (0..bytes.len()).any(|at| {
-        lp_utf16_bounded(bytes, at, 1..=256)
-            .filter(|(first, _)| crate::bytes::is_guid_relaxed(first))
-            .and_then(|(_, after_first)| lp_utf16_bounded(bytes, after_first, 1..=256))
-            .is_some_and(|(second, _)| crate::bytes::is_guid_relaxed(&second))
+        relaxed_guid_end(at).is_some_and(|after_first| relaxed_guid_end(after_first).is_some())
     })
 }
