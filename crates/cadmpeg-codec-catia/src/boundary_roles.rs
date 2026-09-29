@@ -152,23 +152,13 @@ pub(crate) fn classify_planar_boundaries(
     let unspecified = || -> Result<FaceLoops, CodecError> {
         let mut ids = Vec::new();
         for (id, _) in rows {
-            let id = crate::resource::copy_id(
-                ctx,
-                id.as_str(),
-                LoopId::mint,
-                "catia_boundary_unspecified_id_copy",
-            )?;
+            let id = id.try_clone_for_decode(ctx, "catia_boundary_unspecified_id_copy")?;
             ctx.push_vec(&mut ids, id, "catia_boundary_unspecified_ids")?;
         }
         Ok(FaceLoops::unspecified(ids))
     };
     if let [(single, _)] = rows {
-        let id = crate::resource::copy_id(
-            ctx,
-            single.as_str(),
-            LoopId::mint,
-            "catia_boundary_single_id_copy",
-        )?;
+        let id = single.try_clone_for_decode(ctx, "catia_boundary_single_id_copy")?;
         return Ok(FaceLoops::classified(id, Vec::new()));
     }
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
@@ -267,21 +257,11 @@ pub(crate) fn classify_planar_boundaries(
     let mut inner = Vec::new();
     for (index, (id, _)) in rows.iter().enumerate() {
         if index != outer {
-            let id = crate::resource::copy_id(
-                ctx,
-                id.as_str(),
-                LoopId::mint,
-                "catia_boundary_inner_id_copy",
-            )?;
+            let id = id.try_clone_for_decode(ctx, "catia_boundary_inner_id_copy")?;
             ctx.push_vec(&mut inner, id, "catia_boundary_inner_ids")?;
         }
     }
-    let outer_id = crate::resource::copy_id(
-        ctx,
-        outer_id.as_str(),
-        LoopId::mint,
-        "catia_boundary_outer_id_copy",
-    )?;
+    let outer_id = outer_id.try_clone_for_decode(ctx, "catia_boundary_outer_id_copy")?;
     Ok(FaceLoops::classified(outer_id, inner))
 }
 

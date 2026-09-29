@@ -144,15 +144,6 @@ mod collection_tests {
     }
 }
 
-pub(crate) fn copy_id<T>(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    construct: impl FnOnce(String) -> Result<T, cadmpeg_ir::ids::IdentityError>,
-    operation: &'static str,
-) -> Result<T, CodecError> {
-    construct(ctx.copy_retained_text(value, operation)?).map_err(CodecError::malformed)
-}
-
 pub(crate) fn record_coverage(
     ctx: &DecodeContext<'_>,
     coverage: &mut Coverage,
@@ -418,14 +409,13 @@ pub(crate) fn copy_intcurve_support_context(
     operation: &'static str,
 ) -> Result<cadmpeg_ir::geometry::IntcurveSupportContext, CodecError> {
     use cadmpeg_ir::geometry::{IntcurveSupportContext, IntcurveSupportSide, SupportPcurve};
-    use cadmpeg_ir::ids::SurfaceId;
 
     let [left, right] = context.sides().each_ref().map(|side| {
         Ok::<_, CodecError>(IntcurveSupportSide {
             surface: side
                 .surface
                 .as_ref()
-                .map(|id| copy_id(ctx, id.as_str(), SurfaceId::mint, operation))
+                .map(|id| id.try_clone_for_decode(ctx, operation))
                 .transpose()?,
             pcurve: side
                 .pcurve
@@ -453,7 +443,6 @@ pub(crate) fn copy_intcurve_support_context(
 
 #[cfg(test)]
 mod tests {
-    use super::copy_id;
     use std::collections::HashMap;
 
     #[test]
@@ -464,7 +453,7 @@ mod tests {
         let id = SurfaceId::mint("catia:test:surface#copied".to_string())
             .expect("valid fixture identity");
         let copied = crate::test_support::with_service_context(|ctx| {
-            copy_id(ctx, id.as_str(), SurfaceId::mint, "catia_surface_id_copy")
+            id.try_clone_for_decode(ctx, "catia_surface_id_copy")
         })
         .expect("service budget");
         assert_eq!(copied, id);
@@ -474,7 +463,7 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root fits retained limit");
         assert!(matches!(
-            copy_id(&ctx, id.as_str(), SurfaceId::mint, "catia_surface_id_copy"),
+            id.try_clone_for_decode(&ctx, "catia_surface_id_copy"),
             Err(CodecError::ResourceLimit(error)) if error.operation == "catia_surface_id_copy"
         ));
     }

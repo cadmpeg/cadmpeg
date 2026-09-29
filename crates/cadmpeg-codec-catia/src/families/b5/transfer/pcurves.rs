@@ -914,12 +914,7 @@ pub(super) fn emit_pcurves(
                 )?;
             }
             for occurrence in occurrences {
-                let use_id = crate::resource::copy_id(
-                    admission.context(),
-                    id.as_str(),
-                    PcurveId::mint,
-                    "catia_b5_pcurve_use_id",
-                )?;
+                let use_id = id.try_clone_for_decode(admission.context(), "catia_b5_pcurve_use_id")?;
                 admission.context().insert_hash_map(
                     &mut pcurve_uses,
                     occurrence,

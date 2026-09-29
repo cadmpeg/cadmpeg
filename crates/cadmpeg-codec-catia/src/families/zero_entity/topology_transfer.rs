@@ -110,12 +110,7 @@ pub(super) fn transfer_closed_face_topology(
         }
         macro_rules! copied_id {
             ($value:expr, $kind:ident) => {
-                admitted!(crate::resource::copy_id(
-                    admission.context(),
-                    ($value).as_str(),
-                    $kind::mint,
-                    "catia_zero_topology_identity_copy"
-                ))
+                admitted!(($value).try_clone_for_decode(admission.context(), "catia_zero_topology_identity_copy"))
             };
         }
         let ZeroEntityClosedTopology {
@@ -941,12 +936,7 @@ pub(super) fn transfer_closed_face_topology(
                     // The source states the outer boundary first.
                     Some((outer, inner)) => {
                         let inner = admitted!(admission.context().try_collect_vec(
-                            inner.iter().map(|id| crate::resource::copy_id(
-                                admission.context(),
-                                id.as_str(),
-                                LoopId::mint,
-                                "catia_zero_topology_inner_loop_id"
-                            )),
+                            inner.iter().map(|id| id.try_clone_for_decode(admission.context(), "catia_zero_topology_inner_loop_id")),
                             "catia_zero_topology_inner_loops"
                         ));
                         cadmpeg_ir::topology::FaceLoops::classified(
@@ -1038,12 +1028,7 @@ pub(super) fn transfer_closed_face_topology(
                 ));
                 let ring = cadmpeg_ir::topology::LoopRing::new(
                     admitted!(admission.context().try_collect_vec(
-                        coedge_ids.iter().map(|id| crate::resource::copy_id(
-                            admission.context(),
-                            id.as_str(),
-                            CoedgeId::mint,
-                            "catia_zero_topology_ring_coedge_id"
-                        )),
+                        coedge_ids.iter().map(|id| id.try_clone_for_decode(admission.context(), "catia_zero_topology_ring_coedge_id")),
                         "catia_zero_topology_ring_coedges"
                     )),
                     vertex_uses,

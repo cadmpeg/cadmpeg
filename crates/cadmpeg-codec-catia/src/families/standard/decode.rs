@@ -221,12 +221,7 @@ fn bind_consolidated_revolution_faces_and_seams(
 
     let mut point_positions = HashMap::new();
     for point in &ir.model.points {
-        let id = crate::resource::copy_id(
-            ctx,
-            point.id.as_str(),
-            PointId::mint,
-            "catia_revolution_point_id_copy",
-        )?;
+        let id = point.id.try_clone_for_decode(ctx, "catia_revolution_point_id_copy")?;
         ctx.insert_hash_map(
             &mut point_positions,
             id,
@@ -237,12 +232,7 @@ fn bind_consolidated_revolution_faces_and_seams(
     let mut vertex_positions = HashMap::new();
     for vertex in &ir.model.vertices {
         if let Some(&position) = point_positions.get(&vertex.point) {
-            let id = crate::resource::copy_id(
-                ctx,
-                vertex.id.as_str(),
-                VertexId::mint,
-                "catia_revolution_vertex_id_copy",
-            )?;
+            let id = vertex.id.try_clone_for_decode(ctx, "catia_revolution_vertex_id_copy")?;
             ctx.insert_hash_map(
                 &mut vertex_positions,
                 id,
@@ -253,12 +243,7 @@ fn bind_consolidated_revolution_faces_and_seams(
     }
     let mut edge_indices = HashMap::new();
     for (index, edge) in ir.model.edges.iter().enumerate() {
-        let id = crate::resource::copy_id(
-            ctx,
-            edge.id.as_str(),
-            EdgeId::mint,
-            "catia_revolution_edge_id_copy",
-        )?;
+        let id = edge.id.try_clone_for_decode(ctx, "catia_revolution_edge_id_copy")?;
         ctx.insert_hash_map(
             &mut edge_indices,
             id,
@@ -268,12 +253,7 @@ fn bind_consolidated_revolution_faces_and_seams(
     }
     let mut coedge_indices = HashMap::new();
     for (index, coedge) in ir.model.coedges.iter().enumerate() {
-        let id = crate::resource::copy_id(
-            ctx,
-            coedge.id.as_str(),
-            cadmpeg_ir::ids::CoedgeId::mint,
-            "catia_revolution_coedge_id_copy",
-        )?;
+        let id = coedge.id.try_clone_for_decode(ctx, "catia_revolution_coedge_id_copy")?;
         ctx.insert_hash_map(
             &mut coedge_indices,
             id,
@@ -283,12 +263,7 @@ fn bind_consolidated_revolution_faces_and_seams(
     }
     let mut loop_indices = HashMap::new();
     for (index, loop_) in ir.model.loops.iter().enumerate() {
-        let id = crate::resource::copy_id(
-            ctx,
-            loop_.id.as_str(),
-            LoopId::mint,
-            "catia_revolution_loop_id_copy",
-        )?;
+        let id = loop_.id.try_clone_for_decode(ctx, "catia_revolution_loop_id_copy")?;
         ctx.insert_hash_map(
             &mut loop_indices,
             id,
@@ -302,12 +277,7 @@ fn bind_consolidated_revolution_faces_and_seams(
             surface.geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
         ) {
-            let id = crate::resource::copy_id(
-                ctx,
-                surface.id.as_str(),
-                SurfaceId::mint,
-                "catia_revolution_unknown_surface_id_copy",
-            )?;
+            let id = surface.id.try_clone_for_decode(ctx, "catia_revolution_unknown_surface_id_copy")?;
             ctx.insert_hash_set(
                 &mut unknown_surfaces,
                 id,
@@ -317,12 +287,7 @@ fn bind_consolidated_revolution_faces_and_seams(
     }
     let mut curve_indices = HashMap::new();
     for (index, curve) in ir.model.curves.iter().enumerate() {
-        let id = crate::resource::copy_id(
-            ctx,
-            curve.id.as_str(),
-            CurveId::mint,
-            "catia_revolution_curve_id_copy",
-        )?;
+        let id = curve.id.try_clone_for_decode(ctx, "catia_revolution_curve_id_copy")?;
         ctx.insert_hash_map(
             &mut curve_indices,
             id,
@@ -395,12 +360,7 @@ fn bind_consolidated_revolution_faces_and_seams(
                 *stored = None;
             }
         } else {
-            let id = crate::resource::copy_id(
-                ctx,
-                face.surface.as_str(),
-                SurfaceId::mint,
-                "catia_revolution_binding_surface_id_copy",
-            )?;
+            let id = face.surface.try_clone_for_decode(ctx, "catia_revolution_binding_surface_id_copy")?;
             ctx.insert_hash_map(
                 &mut surface_bindings,
                 id,
@@ -453,12 +413,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         if let Some(stored) = procedural_bindings.get_mut(owner) {
             *stored = None;
         } else {
-            let id = crate::resource::copy_id(
-                ctx,
-                owner.as_str(),
-                CurveId::mint,
-                "catia_revolution_owner_id_copy",
-            )?;
+            let id = owner.try_clone_for_decode(ctx, "catia_revolution_owner_id_copy")?;
             ctx.insert_hash_map(
                 &mut procedural_bindings,
                 id,
@@ -472,12 +427,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         if let Some(count) = curve_edge_counts.get_mut(curve) {
             *count += 1;
         } else {
-            let id = crate::resource::copy_id(
-                ctx,
-                curve.as_str(),
-                CurveId::mint,
-                "catia_revolution_count_curve_id_copy",
-            )?;
+            let id = curve.try_clone_for_decode(ctx, "catia_revolution_count_curve_id_copy")?;
             ctx.insert_hash_map(
                 &mut curve_edge_counts,
                 id,
@@ -533,12 +483,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         let curve = edge
             .curve()
             .map(|id| {
-                crate::resource::copy_id(
-                    ctx,
-                    id.as_str(),
-                    CurveId::mint,
-                    "catia_revolution_seam_curve_id_copy",
-                )
+                id.try_clone_for_decode(ctx, "catia_revolution_seam_curve_id_copy")
             })
             .transpose()?;
         edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(curve, Some(parameter_range))
@@ -1264,27 +1209,12 @@ fn attach_free_vertices(
     admission.reserve_entity(&mut ir.model.shells, "catia_standard_free_vertex_shells")?;
     let mut free_vertices = Vec::new();
     for vertex in &ir.model.vertices {
-        let id = crate::resource::copy_id(
-            ctx,
-            vertex.id.as_str(),
-            VertexId::mint,
-            "catia_standard_free_vertex_id_copy",
-        )?;
+        let id = vertex.id.try_clone_for_decode(ctx, "catia_standard_free_vertex_id_copy")?;
         ctx.push_vec(&mut free_vertices, id, "catia_standard_free_vertex_members")?;
     }
     let shell = Shell::with_free_vertices(
-        crate::resource::copy_id(
-            ctx,
-            shell_id.as_str(),
-            ShellId::mint,
-            "catia_standard_free_shell_id_copy",
-        )?,
-        crate::resource::copy_id(
-            ctx,
-            region_id.as_str(),
-            RegionId::mint,
-            "catia_standard_free_shell_region_copy",
-        )?,
+        shell_id.try_clone_for_decode(ctx, "catia_standard_free_shell_id_copy")?,
+        region_id.try_clone_for_decode(ctx, "catia_standard_free_shell_region_copy")?,
         free_vertices,
     )
     .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1300,21 +1230,11 @@ fn attach_free_vertices(
         )?;
     }
     admission.reserve_entity(&mut ir.model.bodies, "catia_standard_free_vertex_bodies")?;
-    let body_id_copy = crate::resource::copy_id(
-        ctx,
-        body_id.as_str(),
-        BodyId::mint,
-        "catia_standard_free_body_id_copy",
-    )?;
+    let body_id_copy = body_id.try_clone_for_decode(ctx, "catia_standard_free_body_id_copy")?;
     let mut body_regions = Vec::new();
     ctx.push_vec(
         &mut body_regions,
-        crate::resource::copy_id(
-            ctx,
-            region_id.as_str(),
-            RegionId::mint,
-            "catia_standard_free_body_region_copy",
-        )?,
+        region_id.try_clone_for_decode(ctx, "catia_standard_free_body_region_copy")?,
         "catia_standard_free_body_regions",
     )?;
     ir.model.bodies.push(Body {
@@ -1354,12 +1274,7 @@ fn standard_extrusion_support_id(
 ) -> Result<SurfaceId, cadmpeg_core::CodecError> {
     let source_object = cgm_source(ctx, "surface", surface_object_id)?;
     if let Some(id) = procedural_supports.get(&surface_object_id) {
-        return crate::resource::copy_id(
-            ctx,
-            id.as_str(),
-            SurfaceId::mint,
-            "catia_extrusion_existing_support_id_copy",
-        );
+        return id.try_clone_for_decode(ctx, "catia_extrusion_existing_support_id_copy");
     }
     let id = SurfaceId::compose(
         &cadmpeg_ir::identity_namespace!("catia", "standard", "procedural-support"),
@@ -1376,21 +1291,11 @@ fn standard_extrusion_support_id(
     )?;
     admission.reserve_entity(surfaces, "catia_standard_extrusion_support_surfaces")?;
     surfaces.push(Surface {
-        id: crate::resource::copy_id(
-            ctx,
-            id.as_str(),
-            SurfaceId::mint,
-            "catia_extrusion_support_surface_id_copy",
-        )?,
+        id: id.try_clone_for_decode(ctx, "catia_extrusion_support_surface_id_copy")?,
         geometry,
         source_object: Some(source_object),
     });
-    let map_id = crate::resource::copy_id(
-        ctx,
-        id.as_str(),
-        SurfaceId::mint,
-        "catia_extrusion_support_map_id_copy",
-    )?;
+    let map_id = id.try_clone_for_decode(ctx, "catia_extrusion_support_map_id_copy")?;
     ctx.insert_hash_map(
         procedural_supports,
         surface_object_id,
@@ -1461,12 +1366,7 @@ fn emit_standard_extrusion_definition(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_extrusion_directrix_curves")?;
             ir.model.curves.push(Curve {
-                id: crate::resource::copy_id(
-                    ctx,
-                    directrix_id.as_str(),
-                    CurveId::mint,
-                    "catia_extrusion_directrix_curve_id",
-                )?,
+                id: directrix_id.try_clone_for_decode(ctx, "catia_extrusion_directrix_curve_id")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source(ctx, "curve", extrusion.directrix_object_id)?),
             });
@@ -1491,12 +1391,7 @@ fn emit_standard_extrusion_definition(
                 &mut ir.model.procedural_curves,
                 "catia_extrusion_directrix_procedures",
             )?;
-            let owner = crate::resource::copy_id(
-                ctx,
-                directrix_id.as_str(),
-                CurveId::mint,
-                "catia_extrusion_directrix_owner_id",
-            )?;
+            let owner = directrix_id.try_clone_for_decode(ctx, "catia_extrusion_directrix_owner_id")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(procedure_id.as_str().len()),
                 "catia_extrusion_directrix_construction_id",
@@ -1535,12 +1430,7 @@ fn emit_standard_extrusion_definition(
                 "catia_extrusion_surface_directrix_curves",
             )?;
             ir.model.curves.push(Curve {
-                id: crate::resource::copy_id(
-                    ctx,
-                    directrix_id.as_str(),
-                    CurveId::mint,
-                    "catia_extrusion_surface_curve_id",
-                )?,
+                id: directrix_id.try_clone_for_decode(ctx, "catia_extrusion_surface_curve_id")?,
                 geometry: curve,
                 source_object: Some(cgm_source(ctx, "curve", extrusion.directrix_object_id)?),
             });
@@ -1569,12 +1459,7 @@ fn emit_standard_extrusion_definition(
             admission
                 .reserve_entity(&mut ir.model.curves, "catia_extrusion_offset_source_curves")?;
             ir.model.curves.push(Curve {
-                id: crate::resource::copy_id(
-                    ctx,
-                    source_id.as_str(),
-                    CurveId::mint,
-                    "catia_extrusion_offset_source_id",
-                )?,
+                id: source_id.try_clone_for_decode(ctx, "catia_extrusion_offset_source_id")?,
                 geometry: source_curve,
                 source_object: Some(cgm_source(ctx, "curve", source_object_id)?),
             });
@@ -1592,12 +1477,7 @@ fn emit_standard_extrusion_definition(
                 "catia_extrusion_offset_directrix_curves",
             )?;
             ir.model.curves.push(Curve {
-                id: crate::resource::copy_id(
-                    ctx,
-                    directrix_id.as_str(),
-                    CurveId::mint,
-                    "catia_extrusion_offset_directrix_id",
-                )?,
+                id: directrix_id.try_clone_for_decode(ctx, "catia_extrusion_offset_directrix_id")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source(ctx, "curve", extrusion.directrix_object_id)?),
             });
@@ -1635,12 +1515,7 @@ fn emit_standard_extrusion_definition(
                 cadmpeg_core::decode::u64_from_index(procedure_id.as_str().len()),
                 "catia_extrusion_offset_construction_id",
             )?;
-            let owner = crate::resource::copy_id(
-                ctx,
-                directrix_id.as_str(),
-                CurveId::mint,
-                "catia_extrusion_offset_owner_id",
-            )?;
+            let owner = directrix_id.try_clone_for_decode(ctx, "catia_extrusion_offset_owner_id")?;
             let _attached = ir.model.add_procedural_curve_charged(ctx, &owner, ProceduralCurve::new(
                     procedure_id,
                     ProceduralCurveDefinition::Offset(
@@ -1676,12 +1551,7 @@ fn copy_standard_extrusion_definition(
     ctx: &DecodeContext<'_>,
     definition: &cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction,
 ) -> Result<ProceduralSurfaceDefinition, CodecError> {
-    let directrix = crate::resource::copy_id(
-        ctx,
-        definition.directrix().as_str(),
-        CurveId::mint,
-        "catia_extrusion_definition_directrix_id",
-    )?;
+    let directrix = definition.directrix().try_clone_for_decode(ctx, "catia_extrusion_definition_directrix_id")?;
     Ok(ProceduralSurfaceDefinition::Extrusion(
         cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
             directrix,
@@ -2688,8 +2558,7 @@ fn try_decode_standard_population(
         &mut unknowns,
         &mut annotations,
         scan,
-        admitted!(crate::resource::copy_id(ctx, "catia:payload:unknown#brep-stream",
-            UnknownId::mint, "catia_standard_payload_id")),
+        admitted!(ctx.copy_retained_text("catia:payload:unknown#brep-stream", "catia_standard_payload_id").and_then(|text| UnknownId::mint(text).map_err(cadmpeg_core::CodecError::malformed))),
     ) {
         Ok(index) => index,
         Err(error) => return Some(Err(error)),
@@ -2718,11 +2587,9 @@ fn try_decode_standard_population(
                     .unwrap_or(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: None,
                     }));
-                admitted!(ctx.push_vec(&mut face_bindings, (admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
-                        "catia_standard_face_binding_surface_id")), *forward, *pos), "catia_standard_face_bindings"));
+                admitted!(ctx.push_vec(&mut face_bindings, (admitted!(id.try_clone_for_decode(ctx, "catia_standard_face_binding_surface_id")), *forward, *pos), "catia_standard_face_bindings"));
                 admitted!(ctx.push_vec(&mut surface_annotations, (
-                    admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
-                        "catia_standard_annotation_surface_id")),
+                    admitted!(id.try_clone_for_decode(ctx, "catia_standard_annotation_surface_id")),
                     "MainDataStream+SurfacicReps",
                     *pos,
                     admitted!(ctx.copy_retained_text("surfacic_reps_freeform_alias", "catia_standard_surface_annotation_tag")),
@@ -2743,8 +2610,7 @@ fn try_decode_standard_population(
                     return Some(Err(error));
                 }
                 surfaces.push(Surface {
-                    id: admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
-                        "catia_standard_surface_record_id")),
+                    id: admitted!(id.try_clone_for_decode(ctx, "catia_standard_surface_record_id")),
                     geometry,
                     source_object: Some(admitted!(cgm_source(ctx, "carrier", *tag))),
                 });
@@ -2777,8 +2643,7 @@ fn try_decode_standard_population(
                     i, SurfaceId::mint, "catia_standard_surface_id"));
                 if let Some(forward) = crate::families::standard::records::face_sense(brep, prefix)
                 {
-                    admitted!(ctx.push_vec(&mut face_bindings, (admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
-                            "catia_standard_face_binding_surface_id")), forward, prefix.pos), "catia_standard_face_bindings"));
+                    admitted!(ctx.push_vec(&mut face_bindings, (admitted!(id.try_clone_for_decode(ctx, "catia_standard_face_binding_surface_id")), forward, prefix.pos), "catia_standard_face_bindings"));
                 }
                 let (annotation_stream, annotation_offset, annotation_tag) =
                     if let Some(source_pos) = refined_analytic_surfaces.get(&i) {
@@ -2789,8 +2654,7 @@ fn try_decode_standard_population(
                             admitted!(ctx.format_retained(format_args!("surfacic_reps_{:02x}", prefix.kind.marker()), "catia_standard_surface_annotation_tag")))
                     };
                 admitted!(ctx.push_vec(&mut surface_annotations, (
-                    admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
-                        "catia_standard_annotation_surface_id")),
+                    admitted!(id.try_clone_for_decode(ctx, "catia_standard_annotation_surface_id")),
                     annotation_stream,
                     annotation_offset,
                     annotation_tag,
@@ -2814,12 +2678,10 @@ fn try_decode_standard_population(
                     i, SurfaceId::mint, "catia_standard_surface_id"));
                 if let Some(forward) = crate::families::standard::records::face_sense(brep, prefix)
                 {
-                    admitted!(ctx.push_vec(&mut face_bindings, (admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
-                            "catia_standard_face_binding_surface_id")), forward, prefix.pos), "catia_standard_face_bindings"));
+                    admitted!(ctx.push_vec(&mut face_bindings, (admitted!(id.try_clone_for_decode(ctx, "catia_standard_face_binding_surface_id")), forward, prefix.pos), "catia_standard_face_bindings"));
                 }
                 admitted!(ctx.push_vec(&mut surface_annotations, (
-                    admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
-                        "catia_standard_annotation_surface_id")),
+                    admitted!(id.try_clone_for_decode(ctx, "catia_standard_annotation_surface_id")),
                     "MainDataStream+SurfacicReps",
                     prefix.pos,
                     admitted!(ctx.format_retained(format_args!("surfacic_reps_{:02x}", prefix.kind.marker()), "catia_standard_surface_annotation_tag")),
@@ -2831,9 +2693,7 @@ fn try_decode_standard_population(
                 surfaces.push(Surface {
                     id,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                        record: Some(admitted!(crate::resource::copy_id(ctx,
-                            "catia:payload:unknown#brep-stream", UnknownId::mint,
-                            "catia_standard_unknown_record_id"))),
+                        record: Some(admitted!(ctx.copy_retained_text("catia:payload:unknown#brep-stream", "catia_standard_unknown_record_id").and_then(|text| UnknownId::mint(text).map_err(cadmpeg_core::CodecError::malformed)))),
                     }),
                     source_object: Some(admitted!(cgm_source(ctx, "carrier", prefix.target))),
                 });
@@ -2882,8 +2742,7 @@ fn try_decode_standard_population(
                     crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(support) => {
                         let source_object = admitted!(cgm_source(ctx, "surface", support_object_id));
                         if let Some(id) = procedural_supports.get(&support_object_id) {
-                            admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
-                                "catia_standard_existing_support_id"))
+                            admitted!(id.try_clone_for_decode(ctx, "catia_standard_existing_support_id"))
                         } else {
                             let id = admitted!(crate::resource::compose_u32_id(ctx,
                                 &cadmpeg_ir::identity_namespace!(
@@ -2905,13 +2764,11 @@ fn try_decode_standard_population(
                                 return Some(Err(error));
                             }
                             surfaces.push(Surface {
-                                id: admitted!(crate::resource::copy_id(ctx, id.as_str(),
-                                    SurfaceId::mint, "catia_standard_support_record_id")),
+                                id: admitted!(id.try_clone_for_decode(ctx, "catia_standard_support_record_id")),
                                 geometry: support,
                                 source_object: Some(source_object),
                             });
-                            admitted!(ctx.insert_hash_map(&mut procedural_supports, support_object_id, admitted!(crate::resource::copy_id(ctx, id.as_str(),
-                                    SurfaceId::mint, "catia_standard_support_map_id")), "catia_standard_procedural_supports"));
+                            admitted!(ctx.insert_hash_map(&mut procedural_supports, support_object_id, admitted!(id.try_clone_for_decode(ctx, "catia_standard_support_map_id")), "catia_standard_procedural_supports"));
                             id
                         }
                     }
@@ -2937,8 +2794,7 @@ fn try_decode_standard_population(
                             return Some(Err(error));
                         }
                         surfaces.push(Surface {
-                            id: admitted!(crate::resource::copy_id(ctx, support_id.as_str(),
-                                SurfaceId::mint, "catia_standard_support_record_id")),
+                            id: admitted!(support_id.try_clone_for_decode(ctx, "catia_standard_support_record_id")),
                             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                                 record: None,
                             }),
@@ -2974,9 +2830,7 @@ fn try_decode_standard_population(
                             match cache {
                                 SurfaceGeometry::Solved(cache) => {
                                     surface.geometry = SurfaceGeometry::Procedural {
-                                        construction: admitted!(crate::resource::copy_id(ctx,
-                                            construction.as_str(), ProceduralSurfaceId::mint,
-                                            "catia_standard_support_construction_ref")),
+                                        construction: admitted!(construction.try_clone_for_decode(ctx, "catia_standard_support_construction_ref")),
                                         cache: Some(cache),
                                     };
                                     true
@@ -2999,8 +2853,7 @@ fn try_decode_standard_population(
                                 Some(record_bounds),
                             ));
                         }
-                        admitted!(ctx.insert_hash_map(&mut procedural_supports, support_object_id, admitted!(crate::resource::copy_id(ctx, support_id.as_str(),
-                                SurfaceId::mint, "catia_standard_support_map_id")), "catia_standard_procedural_supports"));
+                        admitted!(ctx.insert_hash_map(&mut procedural_supports, support_object_id, admitted!(support_id.try_clone_for_decode(ctx, "catia_standard_support_map_id")), "catia_standard_procedural_supports"));
                         support_id
                     }
                 };
@@ -3057,8 +2910,7 @@ fn try_decode_standard_population(
                     return Some(Err(error));
                 }
                 ir.model.curves.push(Curve {
-                    id: admitted!(crate::resource::copy_id(ctx, directrix_id.as_str(),
-                        CurveId::mint, "catia_standard_revolution_curve_record_id")),
+                    id: admitted!(directrix_id.try_clone_for_decode(ctx, "catia_standard_revolution_curve_record_id")),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         revolution.directrix,
                     )),
@@ -3077,16 +2929,12 @@ fn try_decode_standard_population(
             .find(|candidate| candidate.id == surface) {
             if cacheless {
                 surface_record.geometry = SurfaceGeometry::Procedural {
-                    construction: admitted!(crate::resource::copy_id(ctx,
-                        procedural_id.as_str(), ProceduralSurfaceId::mint,
-                        "catia_standard_procedural_surface_ref")),
+                    construction: admitted!(procedural_id.try_clone_for_decode(ctx, "catia_standard_procedural_surface_ref")),
                     cache: None,
                 };
                 true
             } else if matches!(surface_record.geometry, SurfaceGeometry::Solved(_)) {
-                let construction = admitted!(crate::resource::copy_id(ctx,
-                    procedural_id.as_str(), ProceduralSurfaceId::mint,
-                    "catia_standard_procedural_surface_ref"));
+                let construction = admitted!(procedural_id.try_clone_for_decode(ctx, "catia_standard_procedural_surface_ref"));
                 let cache = std::mem::replace(
                     &mut surface_record.geometry,
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
@@ -3167,8 +3015,7 @@ fn try_decode_standard_population(
             None => None,
         };
         ir.model.points.push(Point::new(
-            admitted!(crate::resource::copy_id(ctx, point_id.as_str(), PointId::mint,
-                "catia_standard_point_record_id")),
+            admitted!(point_id.try_clone_for_decode(ctx, "catia_standard_point_record_id")),
             *p,
             source_object,
         ));
@@ -4572,24 +4419,9 @@ fn attach_standard_faces(
     if face_count == 0 || face_count != bindings.len() {
         return Ok(());
     }
-    let body_id = crate::resource::copy_id(
-        ctx,
-        "catia:standard:body#0",
-        BodyId::mint,
-        "catia_standard_body_id",
-    )?;
-    let region_id = crate::resource::copy_id(
-        ctx,
-        "catia:standard:region#0-0",
-        RegionId::mint,
-        "catia_standard_region_id",
-    )?;
-    let shell_id = crate::resource::copy_id(
-        ctx,
-        "catia:standard:shell#0-0",
-        ShellId::mint,
-        "catia_standard_shell_id",
-    )?;
+    let body_id = ctx.copy_retained_text("catia:standard:body#0", "catia_standard_body_id").and_then(|text| BodyId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?;
+    let region_id = ctx.copy_retained_text("catia:standard:region#0-0", "catia_standard_region_id").and_then(|text| RegionId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?;
+    let shell_id = ctx.copy_retained_text("catia:standard:shell#0-0", "catia_standard_shell_id").and_then(|text| ShellId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?;
     let mut face_ids = Vec::new();
     for (face_index, (surface, forward, offset)) in bindings.iter().enumerate() {
         let face_id = FaceId::mint(crate::resource::format_usize_id(
@@ -4620,29 +4452,14 @@ fn attach_standard_faces(
         }
         ctx.push_vec(
             &mut face_ids,
-            crate::resource::copy_id(
-                ctx,
-                face_id.as_str(),
-                FaceId::mint,
-                "catia_standard_shell_face_id",
-            )?,
+            face_id.try_clone_for_decode(ctx, "catia_standard_shell_face_id")?,
             "catia_standard_shell_face_ids",
         )?;
         admission.reserve_entity(&mut ir.model.faces, "catia_standard_model_faces")?;
         ir.model.faces.push(Face {
             id: face_id,
-            shell: crate::resource::copy_id(
-                ctx,
-                shell_id.as_str(),
-                ShellId::mint,
-                "catia_standard_face_shell_id",
-            )?,
-            surface: crate::resource::copy_id(
-                ctx,
-                surface.as_str(),
-                SurfaceId::mint,
-                "catia_standard_face_surface_id",
-            )?,
+            shell: shell_id.try_clone_for_decode(ctx, "catia_standard_face_shell_id")?,
+            surface: surface.try_clone_for_decode(ctx, "catia_standard_face_surface_id")?,
             sense: if *forward {
                 Sense::Forward
             } else {
@@ -4680,22 +4497,12 @@ fn attach_standard_faces(
     let mut body_regions = Vec::new();
     ctx.push_vec(
         &mut body_regions,
-        crate::resource::copy_id(
-            ctx,
-            region_id.as_str(),
-            RegionId::mint,
-            "catia_standard_body_region_id",
-        )?,
+        region_id.try_clone_for_decode(ctx, "catia_standard_body_region_id")?,
         "catia_standard_body_regions",
     )?;
     admission.reserve_entity(&mut ir.model.bodies, "catia_standard_model_bodies")?;
     ir.model.bodies.push(Body {
-        id: crate::resource::copy_id(
-            ctx,
-            body_id.as_str(),
-            BodyId::mint,
-            "catia_standard_model_body_id",
-        )?,
+        id: body_id.try_clone_for_decode(ctx, "catia_standard_model_body_id")?,
         kind: BodyKind::Sheet,
         regions: body_regions,
         transform: None,
@@ -4729,22 +4536,12 @@ fn attach_standard_faces(
     let mut region_shells = Vec::new();
     ctx.push_vec(
         &mut region_shells,
-        crate::resource::copy_id(
-            ctx,
-            shell_id.as_str(),
-            ShellId::mint,
-            "catia_standard_region_shell_id",
-        )?,
+        shell_id.try_clone_for_decode(ctx, "catia_standard_region_shell_id")?,
         "catia_standard_region_shells",
     )?;
     admission.reserve_entity(&mut ir.model.regions, "catia_standard_model_regions")?;
     ir.model.regions.push(Region {
-        id: crate::resource::copy_id(
-            ctx,
-            region_id.as_str(),
-            RegionId::mint,
-            "catia_standard_model_region_id",
-        )?,
+        id: region_id.try_clone_for_decode(ctx, "catia_standard_model_region_id")?,
         body: body_id,
         shells: region_shells,
     });
@@ -4792,12 +4589,7 @@ fn partition_standard_face_components(
     {
         return Ok(false);
     }
-    let body_id = crate::resource::copy_id(
-        ctx,
-        "catia:standard:body#0",
-        BodyId::mint,
-        "catia_standard_partition_body_id",
-    )?;
+    let body_id = ctx.copy_retained_text("catia:standard:body#0", "catia_standard_partition_body_id").and_then(|text| BodyId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?;
     let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == body_id) else {
         return Ok(false);
     };
@@ -4817,12 +4609,7 @@ fn partition_standard_face_components(
     for id in &region_ids {
         ctx.push_vec(
             &mut body_regions,
-            crate::resource::copy_id(
-                ctx,
-                id.as_str(),
-                RegionId::mint,
-                "catia_standard_partition_body_region_id",
-            )?,
+            id.try_clone_for_decode(ctx, "catia_standard_partition_body_region_id")?,
             "catia_standard_partition_body_regions",
         )?;
     }
@@ -4836,12 +4623,7 @@ fn partition_standard_face_components(
     )?;
 
     for (component, faces) in components.iter().enumerate() {
-        let region_id = crate::resource::copy_id(
-            ctx,
-            region_ids[component].as_str(),
-            RegionId::mint,
-            "catia_standard_partition_region_copy",
-        )?;
+        let region_id = region_ids[component].try_clone_for_decode(ctx, "catia_standard_partition_region_copy")?;
         let shell_id = ShellId::mint(crate::resource::format_usize_id(
             ctx,
             "catia:standard:shell#0-",
@@ -4865,24 +4647,14 @@ fn partition_standard_face_components(
         let mut region_shells = Vec::new();
         ctx.push_vec(
             &mut region_shells,
-            crate::resource::copy_id(
-                ctx,
-                shell_id.as_str(),
-                ShellId::mint,
-                "catia_standard_partition_region_shell_id",
-            )?,
+            shell_id.try_clone_for_decode(ctx, "catia_standard_partition_region_shell_id")?,
             "catia_standard_partition_region_shells",
         )?;
         for &face in faces {
             let Some(face) = ir.model.faces.get_mut(face) else {
                 return Ok(false);
             };
-            face.shell = crate::resource::copy_id(
-                ctx,
-                shell_id.as_str(),
-                ShellId::mint,
-                "catia_standard_partition_face_shell_id",
-            )?;
+            face.shell = shell_id.try_clone_for_decode(ctx, "catia_standard_partition_face_shell_id")?;
             crate::resource::derived_annotation(
                 ctx,
                 annotations,
@@ -4939,18 +4711,8 @@ fn partition_standard_face_components(
         }
         admission.reserve_entity(&mut ir.model.regions, "catia_standard_partition_regions")?;
         ir.model.regions.push(Region {
-            id: crate::resource::copy_id(
-                ctx,
-                region_id.as_str(),
-                RegionId::mint,
-                "catia_standard_partition_model_region_id",
-            )?,
-            body: crate::resource::copy_id(
-                ctx,
-                body_id.as_str(),
-                BodyId::mint,
-                "catia_standard_partition_region_body_id",
-            )?,
+            id: region_id.try_clone_for_decode(ctx, "catia_standard_partition_model_region_id")?,
+            body: body_id.try_clone_for_decode(ctx, "catia_standard_partition_region_body_id")?,
             shells: region_shells,
         });
         for field in ["region", "faces"] {
@@ -5494,12 +5256,7 @@ fn attach_standard_topology(
     }
     let mut surface_indices = HashMap::new();
     for (index, surface) in ir.model.surfaces.iter().enumerate() {
-        let id = crate::resource::copy_id(
-            ctx,
-            surface.id.as_str(),
-            SurfaceId::mint,
-            "catia_standard_surface_id_copy",
-        )
+        let id = surface.id.try_clone_for_decode(ctx, "catia_standard_surface_id_copy")
         .map_err(StandardTopologyError::Resource)?;
         ctx.insert_hash_map(
             &mut surface_indices,
@@ -7286,24 +7043,14 @@ fn standard_face_loops(
     let unspecified = || -> Result<_, CodecError> {
         let mut copy = Vec::new();
         for id in &ids {
-            let id = crate::resource::copy_id(
-                ctx,
-                id.as_str(),
-                LoopId::mint,
-                "catia_standard_unspecified_loop_id_copy",
-            )?;
+            let id = id.try_clone_for_decode(ctx, "catia_standard_unspecified_loop_id_copy")?;
             ctx.push_vec(&mut copy, id, "catia_standard_unspecified_loop_ids")?;
         }
         Ok(cadmpeg_ir::topology::FaceLoops::unspecified(copy))
     };
     if let [single] = ids.as_slice() {
         return Ok(cadmpeg_ir::topology::FaceLoops::classified(
-            crate::resource::copy_id(
-                ctx,
-                single.as_str(),
-                LoopId::mint,
-                "catia_standard_single_loop_id_copy",
-            )?,
+            single.try_clone_for_decode(ctx, "catia_standard_single_loop_id_copy")?,
             Vec::new(),
         ));
     }
@@ -7332,12 +7079,7 @@ fn standard_face_loops(
                 "catia_standard_planar_loop_points",
             )?;
         }
-        let id = crate::resource::copy_id(
-            ctx,
-            id.as_str(),
-            LoopId::mint,
-            "catia_standard_planar_loop_id_copy",
-        )?;
+        let id = id.try_clone_for_decode(ctx, "catia_standard_planar_loop_id_copy")?;
         ctx.push_vec(&mut rows, (id, points), "catia_standard_planar_loop_rows")?;
     }
     crate::boundary_roles::classify_planar_boundaries(ctx, &surface.geometry, &rows)
@@ -7485,12 +7227,7 @@ fn emit_standard_topology(
 
     let mut curve_indices = HashMap::new();
     for (index, curve) in ir.model.curves.iter().enumerate() {
-        let id = crate::resource::copy_id(
-            ctx,
-            curve.id.as_str(),
-            CurveId::mint,
-            "catia_standard_curve_index_id_copy",
-        )?;
+        let id = curve.id.try_clone_for_decode(ctx, "catia_standard_curve_index_id_copy")?;
         ctx.insert_hash_map(
             &mut curve_indices,
             id,
@@ -7545,12 +7282,7 @@ fn emit_standard_topology(
                     CoedgeId::mint,
                     "catia_standard_ring_members",
                 )?;
-                let after = crate::resource::copy_id(
-                    ctx,
-                    coedge.as_str(),
-                    CoedgeId::mint,
-                    "catia_standard_ring_members",
-                )?;
+                let after = coedge.try_clone_for_decode(ctx, "catia_standard_ring_members")?;
                 ctx.push_vec(
                     &mut vertex_uses,
                     AnchoredVertexUse {
@@ -7604,7 +7336,7 @@ refusal)?
                     crate::resource::derived_annotation(ctx, annotations, &id, "geometry", "catia_annotation_field")?;
                     admission.reserve_entity(&mut ir.model.pcurves, "catia_standard_model_pcurves")?;
                     ir.model.pcurves.push(Pcurve {
-                        id: crate::resource::copy_id(ctx, id.as_str(), PcurveId::mint, "catia_standard_pcurve_id_copy")?,
+                        id: id.try_clone_for_decode(ctx, "catia_standard_pcurve_id_copy")?,
                         geometry,
                         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                             None,
@@ -7625,12 +7357,7 @@ refusal)?
                     arena_index,
                     "catia_standard_edge_coedge_entries",
                 )?;
-                let id = crate::resource::copy_id(
-                    ctx,
-                    coedge_ids[coedge_index].as_str(),
-                    cadmpeg_ir::ids::CoedgeId::mint,
-                    "catia_standard_coedge_id_copy",
-                )?;
+                let id = coedge_ids[coedge_index].try_clone_for_decode(ctx, "catia_standard_coedge_id_copy")?;
                 annotate(
                     ctx,
                     annotations,
@@ -7684,12 +7411,7 @@ refusal)?
                 admission.reserve_entity(&mut ir.model.coedges, "catia_standard_model_coedges")?;
                 ir.model.coedges.push(Coedge {
                     id,
-                    owner_loop: crate::resource::copy_id(
-                        ctx,
-                        loop_id.as_str(),
-                        LoopId::mint,
-                        "catia_standard_coedge_owner_loop_copy",
-                    )?,
+                    owner_loop: loop_id.try_clone_for_decode(ctx, "catia_standard_coedge_owner_loop_copy")?,
                     edge: standard_id(
                         ctx,
                         "edge",
@@ -7697,12 +7419,7 @@ refusal)?
                         EdgeId::mint,
                         "catia_standard_coedge_edge_identity",
                     )?,
-                    radial_next: crate::resource::copy_id(
-                        ctx,
-                        coedge_ids[coedge_index].as_str(),
-                        cadmpeg_ir::ids::CoedgeId::mint,
-                        "catia_standard_radial_id_copy",
-                    )?,
+                    radial_next: coedge_ids[coedge_index].try_clone_for_decode(ctx, "catia_standard_radial_id_copy")?,
                     sense: if edge_use.reversed ^ edge_reversed[edge_use.edge_row] {
                         Sense::Reversed
                     } else {
@@ -7769,12 +7486,7 @@ refusal)?
     for uses in edge_coedges {
         for (position, current) in uses.iter().enumerate() {
             let next = uses[(position + 1) % uses.len()];
-            let next_id = crate::resource::copy_id(
-                ctx,
-                ir.model.coedges[next].id.as_str(),
-                cadmpeg_ir::ids::CoedgeId::mint,
-                "catia_standard_radial_next_id_copy",
-            )?;
+            let next_id = ir.model.coedges[next].id.try_clone_for_decode(ctx, "catia_standard_radial_next_id_copy")?;
             ir.model.coedges[*current].radial_next = next_id;
         }
     }

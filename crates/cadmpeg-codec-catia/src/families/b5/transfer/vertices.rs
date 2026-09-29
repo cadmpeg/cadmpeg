@@ -114,12 +114,7 @@ pub(super) fn emit_vertices(
         )?;
         admission.reserve_entity(&mut ir.model.points, "catia_b5_emit_points")?;
         ir.model.points.push(Point::new(
-            crate::resource::copy_id(
-                admission.context(),
-                point_id.as_str(),
-                PointId::mint,
-                "catia_b5_point_record_id",
-            )?,
+            point_id.try_clone_for_decode(admission.context(), "catia_b5_point_record_id")?,
             *coordinates,
             None,
         ));
@@ -174,12 +169,7 @@ pub(super) fn emit_vertices(
         )?;
         admission.reserve_entity(&mut ir.model.points, "catia_b5_emit_points")?;
         ir.model.points.push(Point::new(
-            crate::resource::copy_id(
-                admission.context(),
-                point_id.as_str(),
-                PointId::mint,
-                "catia_b5_point_record_id",
-            )?,
+            point_id.try_clone_for_decode(admission.context(), "catia_b5_point_record_id")?,
             vertex.point,
             Some(cgm_source(admission.context(), "vertex", vertex.object_id)?),
         ));

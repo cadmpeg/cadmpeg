@@ -1134,12 +1134,7 @@ pub(super) fn build_standard_edge_curve(
                         ),
                         None => (
                             CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                                record: Some(crate::resource::copy_id(
-                                    ctx,
-                                    "catia:payload:unknown#brep-stream",
-                                    UnknownId::mint,
-                                    "catia_standard_unknown_curve_record_id",
-                                )?),
+                                record: Some(ctx.copy_retained_text("catia:payload:unknown#brep-stream", "catia_standard_unknown_curve_record_id").and_then(|text| UnknownId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?),
                             }),
                             None,
                         ),
@@ -1228,12 +1223,7 @@ pub(super) fn build_standard_edge_curve(
                 }
                 None => (
                     CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                        record: Some(crate::resource::copy_id(
-                            ctx,
-                            "catia:payload:unknown#brep-stream",
-                            UnknownId::mint,
-                            "catia_standard_unknown_curve_record_id",
-                        )?),
+                        record: Some(ctx.copy_retained_text("catia:payload:unknown#brep-stream", "catia_standard_unknown_curve_record_id").and_then(|text| UnknownId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?),
                     }),
                     None,
                 ),
@@ -1277,12 +1267,7 @@ pub(super) fn build_standard_edge_curve(
                                     Some(geometry) => (geometry, None),
                                     None => (
                                         CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                                            record: Some(crate::resource::copy_id(
-                                                ctx,
-                                                "catia:payload:unknown#brep-stream",
-                                                UnknownId::mint,
-                                                "catia_standard_unknown_curve_record_id",
-                                            )?),
+                                            record: Some(ctx.copy_retained_text("catia:payload:unknown#brep-stream", "catia_standard_unknown_curve_record_id").and_then(|text| UnknownId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?),
                                         }),
                                         None,
                                     ),
@@ -1477,12 +1462,7 @@ pub(super) fn build_standard_edge_curve(
     );
     admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
     ir.model.curves.push(Curve {
-        id: crate::resource::copy_id(
-            ctx,
-            id.as_str(),
-            CurveId::mint,
-            "catia_standard_model_curve_id_copy",
-        )?,
+        id: id.try_clone_for_decode(ctx, "catia_standard_model_curve_id_copy")?,
         geometry,
         source_object: Some(cgm_source(ctx, "edge-support", support.tag)?),
     });
@@ -1528,12 +1508,7 @@ pub(super) fn build_standard_edge_curve(
             let side = |face| -> Result<IntcurveSupportSide, CodecError> {
                 let surface = match bindings.get(face) {
                     Some((id, _, _)) if surface_indices.contains_key(id) => {
-                        Some(crate::resource::copy_id(
-                            ctx,
-                            id.as_str(),
-                            SurfaceId::mint,
-                            "catia_standard_intersection_side_surface_id",
-                        )?)
+                        Some(id.try_clone_for_decode(ctx, "catia_standard_intersection_side_surface_id")?)
                     }
                     _ => None,
                 };
@@ -1603,12 +1578,7 @@ pub(super) fn build_standard_edge_curve(
                 );
                 let _attached = ir.model.add_procedural_curve_charged(
                     ctx,
-                    &crate::resource::copy_id(
-                        ctx,
-                        id.as_str(),
-                        CurveId::mint,
-                        "catia_standard_edge_procedural_owner_id",
-                    )?,
+                    &id.try_clone_for_decode(ctx, "catia_standard_edge_procedural_owner_id")?,
                     procedural,
                 )?;
                 param_range = Some(curve_parameter_range);
@@ -1643,12 +1613,7 @@ pub(super) fn ensure_native_edge_support_surface(
     let source_matches_empty = source_match.is_none();
     if !source_ambiguous {
         if let Some(surface_id) = source_match {
-            return crate::resource::copy_id(
-                admission.context(),
-                surface_id.as_str(),
-                SurfaceId::mint,
-                "catia_native_edge_support_matched_surface_id",
-            );
+            return surface_id.try_clone_for_decode(admission.context(), "catia_native_edge_support_matched_surface_id");
         }
     }
     if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
@@ -1668,12 +1633,7 @@ pub(super) fn ensure_native_edge_support_surface(
         }
         if source_matches_empty && !geometry_ambiguous {
             if let Some(surface_id) = geometry_match {
-                return crate::resource::copy_id(
-                    admission.context(),
-                    surface_id.as_str(),
-                    SurfaceId::mint,
-                    "catia_native_edge_support_matched_surface_id",
-                );
+                return surface_id.try_clone_for_decode(admission.context(), "catia_native_edge_support_matched_surface_id");
             }
         }
     }
@@ -1707,12 +1667,7 @@ pub(super) fn ensure_native_edge_support_surface(
             )?;
             (
                 SurfaceGeometry::Procedural {
-                    construction: crate::resource::copy_id(
-                        admission.context(),
-                        procedural_id.as_str(),
-                        ProceduralSurfaceId::mint,
-                        "catia_native_edge_support_construction_id",
-                    )?,
+                    construction: procedural_id.try_clone_for_decode(admission.context(), "catia_native_edge_support_construction_id")?,
                     cache: None,
                 },
                 Some(procedural_id),
@@ -1729,12 +1684,7 @@ pub(super) fn ensure_native_edge_support_surface(
         Exactness::ByteExact,
     )?;
     ir.model.surfaces.push(Surface {
-        id: crate::resource::copy_id(
-            admission.context(),
-            id.as_str(),
-            SurfaceId::mint,
-            "catia_native_edge_support_record_id",
-        )?,
+        id: id.try_clone_for_decode(admission.context(), "catia_native_edge_support_record_id")?,
         geometry,
         source_object: Some(source),
     });

@@ -20,7 +20,6 @@ use crate::native::{
     CatiaRangeInterval, CatiaRangeNominalFraming,
 };
 use crate::object_graph::{PayloadField, PayloadSubtype};
-use crate::resource;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct DesignFeatureTransfer {
@@ -104,26 +103,11 @@ impl DesignFeatureTransfer {
                 continue;
             };
             if parameter.owner.is_none() {
-                parameter.owner = Some(resource::copy_id(
-                    ctx,
-                    feature_id.as_str(),
-                    FeatureId::mint,
-                    "catia_feature_parameter_owner",
-                )?);
+                parameter.owner = Some(feature_id.try_clone_for_decode(ctx, "catia_feature_parameter_owner")?);
             }
             if parameter.owner.as_ref() == Some(feature_id) {
-                let parameter_id = resource::copy_id(
-                    ctx,
-                    parameter.id.as_str(),
-                    ParameterId::mint,
-                    "catia_feature_owner_parameter_id",
-                )?;
-                let feature_id = resource::copy_id(
-                    ctx,
-                    feature_id.as_str(),
-                    FeatureId::mint,
-                    "catia_feature_owner_feature_id",
-                )?;
+                let parameter_id = parameter.id.try_clone_for_decode(ctx, "catia_feature_owner_parameter_id")?;
+                let feature_id = feature_id.try_clone_for_decode(ctx, "catia_feature_owner_feature_id")?;
                 ctx.insert_hash_map(
                     &mut exact_feature_owners,
                     parameter_id,
@@ -225,29 +209,14 @@ impl DesignFeatureTransfer {
             if parent == &feature.id || *parent_ordinal >= feature.ordinal {
                 continue;
             }
-            let child = resource::copy_id(
-                ctx,
-                feature.id.as_str(),
-                FeatureId::mint,
-                "catia_feature_parent_child",
-            )?;
-            let parent = resource::copy_id(
-                ctx,
-                parent.as_str(),
-                FeatureId::mint,
-                "catia_feature_parent_id",
-            )?;
+            let child = feature.id.try_clone_for_decode(ctx, "catia_feature_parent_child")?;
+            let parent = parent.try_clone_for_decode(ctx, "catia_feature_parent_id")?;
             ctx.insert_hash_map(&mut parents, child, parent, "catia_feature_parent_map")?;
         }
         let mut cyclic = Vec::new();
         for feature in parents.keys() {
             if !feature_parent_chain_is_acyclic(ctx, feature, &parents)? {
-                let id = resource::copy_id(
-                    ctx,
-                    feature.as_str(),
-                    FeatureId::mint,
-                    "catia_feature_cyclic_id",
-                )?;
+                let id = feature.try_clone_for_decode(ctx, "catia_feature_cyclic_id")?;
                 ctx.push_vec(&mut cyclic, id, "catia_feature_cyclic_ids")?;
             }
         }
@@ -322,12 +291,7 @@ impl DesignFeatureTransfer {
                 }
                 ctx.insert_hash_set(&mut seen, target, "catia_feature_dependency_seen")?;
                 if !dependencies_by_feature.contains_key(&feature.id) {
-                    let id = resource::copy_id(
-                        ctx,
-                        feature.id.as_str(),
-                        FeatureId::mint,
-                        "catia_feature_dependency_owner",
-                    )?;
+                    let id = feature.id.try_clone_for_decode(ctx, "catia_feature_dependency_owner")?;
                     ctx.insert_hash_map(
                         &mut dependencies_by_feature,
                         id,
@@ -335,12 +299,7 @@ impl DesignFeatureTransfer {
                         "catia_feature_dependency_map",
                     )?;
                 }
-                let target = resource::copy_id(
-                    ctx,
-                    target.as_str(),
-                    FeatureId::mint,
-                    "catia_feature_dependency_target",
-                )?;
+                let target = target.try_clone_for_decode(ctx, "catia_feature_dependency_target")?;
                 if let Some(dependencies) = dependencies_by_feature.get_mut(&feature.id) {
                     ctx.push_vec(dependencies, target, "catia_feature_dependency_values")?;
                 }
@@ -399,12 +358,7 @@ fn assign_feature_parameter_ordinals(
             continue;
         };
         if !parameters_by_feature.contains_key(feature_id) {
-            let id = resource::copy_id(
-                ctx,
-                feature_id.as_str(),
-                FeatureId::mint,
-                "catia_feature_parameter_bucket_id",
-            )?;
+            let id = feature_id.try_clone_for_decode(ctx, "catia_feature_parameter_bucket_id")?;
             ctx.insert_hash_map(
                 &mut parameters_by_feature,
                 id,
@@ -412,12 +366,7 @@ fn assign_feature_parameter_ordinals(
                 "catia_feature_parameter_buckets",
             )?;
         }
-        let id = resource::copy_id(
-            ctx,
-            parameter.id.as_str(),
-            ParameterId::mint,
-            "catia_feature_parameter_ordinal_id",
-        )?;
+        let id = parameter.id.try_clone_for_decode(ctx, "catia_feature_parameter_ordinal_id")?;
         if let Some(parameters) = parameters_by_feature.get_mut(feature_id) {
             ctx.push_vec(
                 parameters,
@@ -443,12 +392,7 @@ fn assign_feature_parameter_ordinals(
             let Some(ordinal) = u32::try_from(ordinal).ok() else {
                 continue;
             };
-            let id = resource::copy_id(
-                ctx,
-                parameter.2.as_str(),
-                ParameterId::mint,
-                "catia_feature_ordinal_map_id",
-            )?;
+            let id = parameter.2.try_clone_for_decode(ctx, "catia_feature_ordinal_map_id")?;
             ctx.insert_hash_map(
                 &mut parameter_ordinals,
                 id,
@@ -483,12 +427,7 @@ fn assign_document_parameter_ordinals(
         .iter()
         .filter(|parameter| parameter.owner.is_none())
     {
-        let id = resource::copy_id(
-            ctx,
-            parameter.id.as_str(),
-            ParameterId::mint,
-            "catia_document_parameter_sort_id",
-        )?;
+        let id = parameter.id.try_clone_for_decode(ctx, "catia_document_parameter_sort_id")?;
         ctx.push_vec(
             &mut parameters,
             (parameter.ordinal, id),
@@ -545,12 +484,7 @@ fn assign_native_operation_parameter_values(
             continue;
         };
         if !values_by_feature.contains_key(feature_id) {
-            let id = resource::copy_id(
-                ctx,
-                feature_id.as_str(),
-                FeatureId::mint,
-                "catia_feature_operation_owner",
-            )?;
+            let id = feature_id.try_clone_for_decode(ctx, "catia_feature_operation_owner")?;
             ctx.insert_hash_map(
                 &mut values_by_feature,
                 id,
@@ -634,12 +568,7 @@ fn copy_feature_scope(
 ) -> Result<Option<FeatureId>, CodecError> {
     owner
         .map(|id| {
-            resource::copy_id(
-                ctx,
-                id.as_str(),
-                FeatureId::mint,
-                "catia_parameter_scope_id",
-            )
+            id.try_clone_for_decode(ctx, "catia_parameter_scope_id")
         })
         .transpose()
 }
@@ -893,12 +822,7 @@ fn transfer_principal_plane(
         &cadmpeg_ir::identity_component!("feature"),
     )?);
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id = resource::copy_id(
-        ctx,
-        feature_id.as_str(),
-        FeatureId::mint,
-        "catia_principal_feature_map_id",
-    )?;
+    let map_feature_id = feature_id.try_clone_for_decode(ctx, "catia_principal_feature_map_id")?;
     let source_tag =
         ctx.copy_retained_text(candidate.declaration_class, "catia_principal_feature_tag")?;
     let native_ref = ctx.copy_retained_text(&object.id, "catia_principal_feature_ref")?;
@@ -955,12 +879,7 @@ fn transfer_reference_plane(
         &cadmpeg_ir::identity_component!("feature"),
     )?);
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id = resource::copy_id(
-        ctx,
-        feature_id.as_str(),
-        FeatureId::mint,
-        "catia_reference_feature_map_id",
-    )?;
+    let map_feature_id = feature_id.try_clone_for_decode(ctx, "catia_reference_feature_map_id")?;
     let source_tag = ctx.copy_retained_text(candidate.kind, "catia_reference_feature_tag")?;
     let native_ref = ctx.copy_retained_text(&object.id, "catia_reference_feature_ref")?;
     ctx.push_vec(
@@ -1020,12 +939,7 @@ fn transfer_sketch(
         &cadmpeg_ir::identity_component!("feature"),
     )?);
     ctx.charge_entities(1, "admit CATIA design sketch")?;
-    let binding_sketch_id = resource::copy_id(
-        ctx,
-        sketch_id.as_str(),
-        SketchId::mint,
-        "catia_design_sketch_binding_id",
-    )?;
+    let binding_sketch_id = sketch_id.try_clone_for_decode(ctx, "catia_design_sketch_binding_id")?;
     let sketch_ref = ctx.copy_retained_text(&object.id, "catia_design_sketch_ref")?;
     ctx.push_vec(
         &mut ir.model.sketches,
@@ -1041,12 +955,7 @@ fn transfer_sketch(
         "catia_design_sketches",
     )?;
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id = resource::copy_id(
-        ctx,
-        feature_id.as_str(),
-        FeatureId::mint,
-        "catia_design_sketch_feature_map_id",
-    )?;
+    let map_feature_id = feature_id.try_clone_for_decode(ctx, "catia_design_sketch_feature_map_id")?;
     let feature_ref = ctx.copy_retained_text(&object.id, "catia_design_sketch_feature_ref")?;
     let source_tag = ctx.copy_retained_text("Sketch", "catia_design_sketch_feature_tag")?;
     ctx.push_vec(
@@ -1229,12 +1138,7 @@ fn transfer_native_operation(
         &cadmpeg_ir::identity_component!("feature"),
     )?);
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id = resource::copy_id(
-        ctx,
-        feature_id.as_str(),
-        FeatureId::mint,
-        "catia_native_operation_feature_map_id",
-    )?;
+    let map_feature_id = feature_id.try_clone_for_decode(ctx, "catia_native_operation_feature_map_id")?;
     let source_tag = ctx.copy_retained_text(kind.as_str(), "catia_native_operation_feature_tag")?;
     let native_ref = ctx.copy_retained_text(&object.id, "catia_native_operation_feature_ref")?;
     ctx.push_vec(

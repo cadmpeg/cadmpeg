@@ -148,12 +148,7 @@ pub(super) fn neutral_surface(
     if let Some(extrusion) = super::resolved_extrusion_surface(ctx, graph, surface_id, refusal)? {
         return Ok(SurfacePlan {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                record: Some(crate::resource::copy_id(
-                    ctx,
-                    payload.as_str(),
-                    UnknownId::mint,
-                    "catia_b5_extrusion_unknown_id",
-                )?),
+                record: Some(payload.try_clone_for_decode(ctx, "catia_b5_extrusion_unknown_id")?),
             }),
             // The resolved extrusion is retained by the surface plan.
             procedure: {
@@ -169,12 +164,7 @@ pub(super) fn neutral_surface(
     let geometry = match carrier {
         B5ProceduralSurface::Unresolved => {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                record: Some(crate::resource::copy_id(
-                    ctx,
-                    payload.as_str(),
-                    UnknownId::mint,
-                    "catia_b5_unresolved_unknown_id",
-                )?),
+                record: Some(payload.try_clone_for_decode(ctx, "catia_b5_unresolved_unknown_id")?),
             })
         }
         B5ProceduralSurface::RollingBall {
@@ -186,12 +176,7 @@ pub(super) fn neutral_surface(
                 definition: copy_rolling_ball_definition(ctx, definition)?,
             });
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                record: Some(crate::resource::copy_id(
-                    ctx,
-                    payload.as_str(),
-                    UnknownId::mint,
-                    "catia_b5_rolling_ball_unknown_id",
-                )?),
+                record: Some(payload.try_clone_for_decode(ctx, "catia_b5_rolling_ball_unknown_id")?),
             })
         }
         B5ProceduralSurface::Revolution {
@@ -214,12 +199,7 @@ pub(super) fn neutral_surface(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))
             }
             None => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                record: Some(crate::resource::copy_id(
-                    ctx,
-                    payload.as_str(),
-                    UnknownId::mint,
-                    "catia_b5_revolution_unknown_id",
-                )?),
+                record: Some(payload.try_clone_for_decode(ctx, "catia_b5_revolution_unknown_id")?),
             }),
         },
     };
@@ -783,12 +763,7 @@ pub(super) fn emit_surfaces(
         )?;
     }
     for (object_id, plan) in surface_plan {
-        let id = crate::resource::copy_id(
-            admission.context(),
-            surface_ids[&object_id].as_str(),
-            SurfaceId::mint,
-            "catia_b5_emitted_surface_ref",
-        )?;
+        let id = surface_ids[&object_id].try_clone_for_decode(admission.context(), "catia_b5_emitted_surface_ref")?;
         let revolution_cache = matches!(
             plan.procedure.as_ref(),
             Some(SurfaceProcedure::Revolution(_))
@@ -834,12 +809,7 @@ pub(super) fn emit_surfaces(
                 "catia_b5_surface_annotation",
             )?;
         }
-        let model_id = crate::resource::copy_id(
-            admission.context(),
-            id.as_str(),
-            SurfaceId::mint,
-            "catia_b5_model_surface_id",
-        )?;
+        let model_id = id.try_clone_for_decode(admission.context(), "catia_b5_model_surface_id")?;
         admission.reserve_entity(&mut ir.model.surfaces, "catia_b5_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: model_id,
@@ -883,12 +853,7 @@ pub(super) fn emit_surfaces(
                 )?;
                 admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
                 ir.model.curves.push(Curve {
-                    id: crate::resource::copy_id(
-                        admission.context(),
-                        directrix_id.as_str(),
-                        CurveId::mint,
-                        "catia_b5_profile_curve_record_id",
-                    )?,
+                    id: directrix_id.try_clone_for_decode(admission.context(), "catia_b5_profile_curve_record_id")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         revolution.directrix,
                     )),
@@ -1006,22 +971,12 @@ pub(super) fn emit_surfaces(
             "catia_b5_emit_procedural_surfaces",
         )?;
         let _attached = ir.model.add_procedural_surface(
-            &crate::resource::copy_id(
-                admission.context(),
-                surface.as_str(),
-                SurfaceId::mint,
-                "catia_b5_offset_surface_id",
-            )?,
+            &surface.try_clone_for_decode(admission.context(), "catia_b5_offset_surface_id")?,
             ProceduralSurface::new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset(
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
-                        crate::resource::copy_id(
-                            admission.context(),
-                            support.as_str(),
-                            SurfaceId::mint,
-                            "catia_b5_offset_support_id",
-                        )?,
+                        support.try_clone_for_decode(admission.context(), "catia_b5_offset_support_id")?,
                         offset.distance,
                         None,
                         None,
@@ -1060,12 +1015,7 @@ fn emit_extrusion_procedure(
         } => {
             let make_side = |side: super::ResolvedExtrusionSupport| {
                 Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
-                    surface: Some(crate::resource::copy_id(
-                        admission.context(),
-                        surface_ids[&side.surface_object_id].as_str(),
-                        SurfaceId::mint,
-                        "catia_b5_extrusion_support_surface_id",
-                    )?),
+                    surface: Some(surface_ids[&side.surface_object_id].try_clone_for_decode(admission.context(), "catia_b5_extrusion_support_surface_id")?),
                     pcurve: Some(SupportPcurve::new(
                         side.pcurve,
                         (side.pcurve_parameter_range
@@ -1087,12 +1037,7 @@ fn emit_extrusion_procedure(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
-                id: crate::resource::copy_id(
-                    admission.context(),
-                    directrix_id.as_str(),
-                    CurveId::mint,
-                    "catia_b5_extrusion_directrix_record_id",
-                )?,
+                id: directrix_id.try_clone_for_decode(admission.context(), "catia_b5_extrusion_directrix_record_id")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source(
                     admission.context(),
@@ -1135,12 +1080,7 @@ fn emit_extrusion_procedure(
             )?;
             let _attached = ir.model.add_procedural_curve_charged(
                 admission.context(),
-                &crate::resource::copy_id(
-                    admission.context(),
-                    directrix_id.as_str(),
-                    CurveId::mint,
-                    "catia_b5_extrusion_procedure_owner_id",
-                )?,
+                &directrix_id.try_clone_for_decode(admission.context(), "catia_b5_extrusion_procedure_owner_id")?,
                 procedure,
             )?;
         }
@@ -1155,12 +1095,7 @@ fn emit_extrusion_procedure(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
-                id: crate::resource::copy_id(
-                    admission.context(),
-                    directrix_id.as_str(),
-                    CurveId::mint,
-                    "catia_b5_extrusion_directrix_record_id",
-                )?,
+                id: directrix_id.try_clone_for_decode(admission.context(), "catia_b5_extrusion_directrix_record_id")?,
                 geometry: curve,
                 source_object: Some(cgm_source(
                     admission.context(),
@@ -1194,12 +1129,7 @@ fn emit_extrusion_procedure(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
-                id: crate::resource::copy_id(
-                    admission.context(),
-                    source_id.as_str(),
-                    CurveId::mint,
-                    "catia_b5_extrusion_source_record_id",
-                )?,
+                id: source_id.try_clone_for_decode(admission.context(), "catia_b5_extrusion_source_record_id")?,
                 geometry: source_curve,
                 source_object: Some(cgm_source(admission.context(), "curve", source_object_id)?),
             });
@@ -1213,12 +1143,7 @@ fn emit_extrusion_procedure(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
-                id: crate::resource::copy_id(
-                    admission.context(),
-                    directrix_id.as_str(),
-                    CurveId::mint,
-                    "catia_b5_extrusion_directrix_record_id",
-                )?,
+                id: directrix_id.try_clone_for_decode(admission.context(), "catia_b5_extrusion_directrix_record_id")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source(
                     admission.context(),
@@ -1246,8 +1171,7 @@ fn emit_extrusion_procedure(
                 "catia_b5_emit_procedural_curves",
             )?;
             let _attached = ir.model.add_procedural_curve_charged(admission.context(),
-                &crate::resource::copy_id(admission.context(), directrix_id.as_str(),
-                    CurveId::mint, "catia_b5_extrusion_procedure_owner_id")?,
+                &directrix_id.try_clone_for_decode(admission.context(), "catia_b5_extrusion_procedure_owner_id")?,
                 ProceduralCurve::new(
                     procedure_id,
                     ProceduralCurveDefinition::Offset(
@@ -1255,9 +1179,7 @@ fn emit_extrusion_procedure(
                             source_id,
                             distance,
                             direction,
-                            Some(crate::resource::copy_id(admission.context(),
-                                surface_ids[&support.surface_object_id].as_str(),
-                                SurfaceId::mint, "catia_b5_extrusion_support_surface_id")?),
+                            Some(surface_ids[&support.surface_object_id].try_clone_for_decode(admission.context(), "catia_b5_extrusion_support_surface_id")?),
                             source_parameter_range,
                         ),
                     ),
