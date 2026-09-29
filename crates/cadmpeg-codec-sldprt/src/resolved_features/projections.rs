@@ -2173,14 +2173,15 @@ fn same_surface_selection_semantics(
 ) -> bool {
     left.producer_feature_refs == right.producer_feature_refs
         && left.terminal_feature_ref == right.terminal_feature_ref
-        && compact_surface_selection_value(&left.components)
-            == compact_surface_selection_value(&right.components)
         && left.components.len() == right.components.len()
         && left
             .components
             .iter()
             .zip(&right.components)
-            .all(|(left, right)| left.type_signature[4..8] == right.type_signature[4..8])
+            .all(|(left, right)| {
+                left.local_id == right.local_id
+                    && left.type_signature[4..8] == right.type_signature[4..8]
+            })
 }
 
 /// Return the ordered target/tool pair retained by each `SurfaceCut` lane.
