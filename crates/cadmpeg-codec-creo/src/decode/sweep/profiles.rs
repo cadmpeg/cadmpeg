@@ -250,7 +250,7 @@ pub(in super::super) fn circular_pcurve(
     knots.extend([1.0; 3]);
     let mut weighted = Vec::new();
     ctx.try_reserve_items(&mut weighted, pole_count, "creo circular pcurve weighted poles")?;
-    let nurbs = (|| -> Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, cadmpeg_ir::geometry::nurbs::NurbsError> {
+    let nurbs = (|| -> Result<Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, cadmpeg_ir::geometry::nurbs::NurbsError>, cadmpeg_core::CodecError> {
         use cadmpeg_ir::geometry::nurbs::KnotValue;
         use cadmpeg_ir::geometry::pcurve::{PcurveNurbsPoles, WeightedPole2};
         use cadmpeg_ir::scalar::NonZeroReal;
@@ -258,36 +258,39 @@ pub(in super::super) fn circular_pcurve(
 
         for (index, &weight) in weights.iter().enumerate() {
             if NonZeroReal::new(weight).is_none() {
-                return Err(cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
-                    field: "pcurve poles".to_owned(),
+                return Ok(Err(cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
+                    field: ctx.copy_retained_text("pcurve poles", "creo circular pcurve refusal field")?,
                     index,
                     weight,
-                });
+                }));
             }
         }
         for (index, (point, weight)) in control_points.into_iter().zip(weights).enumerate() {
-            let point = FinitePoint2::new(point).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })?;
-            let weight = NonZeroReal::new(weight).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
-                    field: "pcurve poles".to_owned(),
+            let Some(point) = FinitePoint2::new(point) else {
+                return Ok(Err(cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    ctx.copy_retained_text("control_points contains a non-finite point", "creo circular pcurve refusal text")?,
+                )));
+            };
+            let Some(admitted_weight) = NonZeroReal::new(weight) else {
+                return Ok(Err(cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
+                    field: ctx.copy_retained_text("pcurve poles", "creo circular pcurve refusal field")?,
                     index,
                     weight,
-                }
-            })?;
-            weighted.push(WeightedPole2 { point, weight });
+                }));
+            };
+            weighted.push(WeightedPole2 { point, weight: admitted_weight });
         }
-        let knots = KnotValue::admit(knots)?;
-        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_parts(
+        let knots = match KnotValue::admit(knots) {
+            Ok(knots) => knots,
+            Err(error) => return Ok(Err(error)),
+        };
+        Ok(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_parts(
             2,
             knots,
             PcurveNurbsPoles::Rational { points: weighted },
             false,
-        )
-    })();
+        ))
+    })()?;
     match nurbs {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
