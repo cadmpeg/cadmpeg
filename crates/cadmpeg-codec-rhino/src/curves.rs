@@ -2306,14 +2306,10 @@ mod tests {
         let curve = rational_line_for_limits();
         let bytes = curve.knots().len() * std::mem::size_of::<f64>()
             + curve.pole_count()
-                * std::mem::size_of::<
-                    cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>,
-                >();
+                * std::mem::size_of::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>();
         let limit = u64::try_from(bytes - 1).expect("copy fits in u64");
-        let error = with_retained_limit(limit, |ctx| {
-            exact_nurbs(ctx, &exact_line_for_limits(), 0)
-        })
-        .expect_err("the full copy exceeds the retained limit by one byte");
+        let error = with_retained_limit(limit, |ctx| exact_nurbs(ctx, &exact_line_for_limits(), 0))
+            .expect_err("the full copy exceeds the retained limit by one byte");
         assert!(matches!(
             error,
             GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))

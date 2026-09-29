@@ -622,8 +622,9 @@ fn transform_nurbs(
     frame: &ProfileFrame,
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
-    curve.try_clone_for_decode(ctx, "Rhino extrusion transformed NURBS")?.try_map_owned_control_points(
-        |point| {
+    curve
+        .try_clone_for_decode(ctx, "Rhino extrusion transformed NURBS")?
+        .try_map_owned_control_points(|point| {
             let transformed = transform_local(
                 point.get(),
                 frame.origin,
@@ -636,8 +637,7 @@ fn transform_nurbs(
             FinitePoint3::new(transformed).ok_or_else(|| {
                 GeometryError::malformed(offset, "control_points contains a non-finite point")
             })
-        },
-    )
+        })
 }
 
 fn transform_local(
@@ -1089,9 +1089,9 @@ pub(crate) mod tests {
     const EPS_MITER_DIRECTION: f64 = 1.0e-12;
 
     use super::{
-        active_miter, cap_frame, cap_pcurve, exact_orientation, mitered_local,
-        read_mesh_cache, read_v5_mesh_cache, split_profiles, transform_nurbs, ANONYMOUS,
-        CLOSURE_ABSOLUTE_TOLERANCE, ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
+        active_miter, cap_frame, cap_pcurve, exact_orientation, mitered_local, read_mesh_cache,
+        read_v5_mesh_cache, split_profiles, transform_nurbs, ANONYMOUS, CLOSURE_ABSOLUTE_TOLERANCE,
+        ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
     };
     use crate::chunks::ArchiveVersion;
     use crate::curves::DecodedCurve;
@@ -1798,7 +1798,8 @@ pub(crate) mod tests {
         policy.limits.max_retained_bytes = u64::try_from(bytes - 1).expect("copy size");
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test input");
-        let error = curve.try_clone_for_decode(&ctx, "Rhino extrusion start curve")
+        let error = curve
+            .try_clone_for_decode(&ctx, "Rhino extrusion start curve")
             .expect_err("full copy exceeds limit by one byte");
         assert!(matches!(
             error,

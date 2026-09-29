@@ -38,19 +38,25 @@ fuzz_target!(|data: &[u8]| {
     if control & 0x80 != 0 {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy) else {
+        let Ok((ctx, _)) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        else {
             return;
         };
         let mut source_fidelity = SourceFidelity::default();
         if source_fidelity
             .attach_native_unknown_records(
                 &mut ir,
-                "iges", [UnknownRecord::retained(
+                "iges",
+                [UnknownRecord::retained(
                     UnknownId::mint("iges:fuzz:unsupported#0").expect("identity grammar"),
                     0,
                     vec![control],
                     Vec::new(),
-                )].into(), &ctx)
+                )]
+                .into(),
+                &ctx,
+            )
             .is_err()
         {
             // Arbitrary native input can have an unreadable unknown arena or

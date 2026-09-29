@@ -798,7 +798,8 @@ mod tests {
         source_fidelity
             .attach_native_unknown_records(
                 &mut ir,
-                "synthetic", [
+                "synthetic",
+                [
                     source_image,
                     UnknownRecord::retained(
                         UnknownId::mint("synthetic:model:record#1").expect("valid identity"),
@@ -806,7 +807,10 @@ mod tests {
                         vec![4, 5],
                         vec![body_id],
                     ),
-                ].into(), &ctx)
+                ]
+                .into(),
+                &ctx,
+            )
             .unwrap();
         let namespace = ir.native.namespace_mut("other");
         namespace.arenas_mut().insert(
