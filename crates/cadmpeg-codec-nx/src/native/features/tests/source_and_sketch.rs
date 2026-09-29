@@ -1632,12 +1632,12 @@ fn feature_input_identity_groups_require_distinct_operations_and_preserve_order(
         data_block: block.to_string(),
         source_offset: offset,
     };
-    let groups = feature_input_block_identity_groups(&[
+    let groups = crate::test_support::with_decode_context(|ctx| feature_input_block_identity_groups(ctx, &[
         input("late", "operation-b", 1, "block-7", 30),
         input("single-a", "operation-a", 0, "block-8", 10),
         input("early", "operation-a", 2, "block-7", 20),
         input("single-b", "operation-a", 3, "block-8", 40),
-    ]);
+    ])).expect("admitted input block identity groups");
 
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].data_block, "block-7");
