@@ -9,13 +9,15 @@ fn assert_string_collection_refusal(data: &[u8], limit: u64, operation: &'static
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = super::super::string_records(&ctx, data, &persistence.scopes, &parents)
         .expect_err("the next string collection item exceeds the limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
+            && resource.operation == operation)
+    );
 }
 
 const ONE_STRING_ELEMENT: &[u8] = b"@labels 1 10\n0 1 [1]\n1 1 W\n";
@@ -27,7 +29,11 @@ fn active_string_array_refuses_before_btree_node() {
 
 #[test]
 fn string_array_child_refuses_before_btree_node() {
-    assert_string_collection_refusal(ONE_STRING_ELEMENT, 3, "creo legacy string array child nodes");
+    assert_string_collection_refusal(
+        ONE_STRING_ELEMENT,
+        3,
+        "creo legacy string array child nodes",
+    );
 }
 
 #[test]
@@ -37,7 +43,11 @@ fn string_array_child_rows_refuse_before_growth() {
 
 #[test]
 fn string_array_element_offset_refuses_before_btree_node() {
-    assert_string_collection_refusal(ONE_STRING_ELEMENT, 5, "creo legacy string array element offsets");
+    assert_string_collection_refusal(
+        ONE_STRING_ELEMENT,
+        5,
+        "creo legacy string array element offsets",
+    );
 }
 
 #[test]
@@ -55,13 +65,15 @@ fn assert_string_retained_refusal(data: &[u8], limit: u64, operation: &'static s
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = super::super::string_records(&ctx, data, &persistence.scopes, &parents)
         .expect_err("the next string copy exceeds the retained limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == operation));
+            && resource.operation == operation)
+    );
 }
 
 #[test]
@@ -71,12 +83,20 @@ fn string_record_name_refuses_before_retained_copy() {
 
 #[test]
 fn string_utf8_payload_refuses_before_retained_copy() {
-    assert_string_retained_refusal(b"@name 1 10\n0 1 W\n", 0, "creo legacy string UTF-8 payload");
+    assert_string_retained_refusal(
+        b"@name 1 10\n0 1 W\n",
+        0,
+        "creo legacy string UTF-8 payload",
+    );
 }
 
 #[test]
 fn string_byte_payload_refuses_before_retained_copy() {
-    assert_string_retained_refusal(b"@name 1 10\n0 1 \xff\n", 0, "creo legacy string byte payload");
+    assert_string_retained_refusal(
+        b"@name 1 10\n0 1 \xff\n",
+        0,
+        "creo legacy string byte payload",
+    );
 }
 
 fn assert_scalar_string_refusal(
@@ -95,8 +115,8 @@ fn assert_scalar_string_refusal(
     if let Some(limit) = retained_limit {
         policy.limits.max_retained_bytes = limit;
     }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = super::super::scalar_string_records(
         &ctx,
         data,
@@ -106,8 +126,10 @@ fn assert_scalar_string_refusal(
         &parents,
     )
     .expect_err("the next scalar string allocation exceeds the limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == dimension && resource.operation == operation));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == dimension && resource.operation == operation)
+    );
 }
 
 #[test]

@@ -3,12 +3,12 @@
 
 use super::axis::SectionAxis;
 
-use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
+use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::units::FinitePoint2;
@@ -17,8 +17,8 @@ use super::super::sketch_ids::sketch_entity_id_admitted;
 use super::radii::trim_segment_id;
 use super::skamp::section_line_entity_fixed_coordinate;
 use crate::decode::sketch_transfer::identity::{
-    saved_section_ordinary_geometry_allowed, semantic_saved_section_entities,
-    saved_section_internal_id_is_unique,
+    saved_section_internal_id_is_unique, saved_section_ordinary_geometry_allowed,
+    semantic_saved_section_entities,
 };
 use crate::decode::sketch_transfer::loci::section_saved_entity;
 
@@ -195,33 +195,35 @@ pub(in crate::decode) fn resolved_section_reference_line_geometry(
     let [Some(start_id), Some(end_id)] = segment.point_ids else {
         return Ok(None);
     };
-    let Some(fixed_coordinate) = section_line_entity_fixed_coordinate(ctx, definition, segment.external_id)? else {
+    let Some(fixed_coordinate) =
+        section_line_entity_fixed_coordinate(ctx, definition, segment.external_id)?
+    else {
         return Ok(None);
     };
     Ok((|| {
-    let [Some(first), Some(second)] =
-        [start_id, end_id].map(|point| variable_points.get(&point)?[fixed_coordinate.index()])
-    else {
-        return None;
-    };
-    let scale = first.abs().max(second.abs()).max(1.0);
-    ((first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale)
-        .then(|| {
-            if fixed_coordinate == SectionAxis::U {
-                SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
-                    origin: Point2::new(first, 0.0),
-                    direction: Point2::new(0.0, 1.0),
-                })
-                .ok()
-            } else {
-                SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
-                    origin: Point2::new(0.0, first),
-                    direction: Point2::new(1.0, 0.0),
-                })
-                .ok()
-            }
-        })
-        .flatten()
+        let [Some(first), Some(second)] =
+            [start_id, end_id].map(|point| variable_points.get(&point)?[fixed_coordinate.index()])
+        else {
+            return None;
+        };
+        let scale = first.abs().max(second.abs()).max(1.0);
+        ((first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale)
+            .then(|| {
+                if fixed_coordinate == SectionAxis::U {
+                    SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+                        origin: Point2::new(first, 0.0),
+                        direction: Point2::new(0.0, 1.0),
+                    })
+                    .ok()
+                } else {
+                    SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+                        origin: Point2::new(0.0, first),
+                        direction: Point2::new(1.0, 0.0),
+                    })
+                    .ok()
+                }
+            })
+            .flatten()
     })())
 }
 
@@ -486,8 +488,8 @@ pub(in crate::decode) fn saved_section_arc(
 pub(in crate::decode) fn saved_section_segment_point_coordinates(
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<[Option<(u32, [f64; 2])>; 3]> {
-    match segment.kind {
+) -> Option<impl Iterator<Item = (u32, [f64; 2])>> {
+    let coordinates = match segment.kind {
         crate::feature::definitions::FeatureSegmentKind::Line(_) => {
             let geometry = saved_section_line_geometry(definition, segment)?;
             let [start, end] = saved_geometry_endpoints(&geometry)?;
@@ -512,7 +514,8 @@ pub(in crate::decode) fn saved_section_segment_point_coordinates(
             ])
         }
         crate::feature::definitions::FeatureSegmentKind::Point(_) => None,
-    }
+    };
+    coordinates.map(|points| points.into_iter().flatten())
 }
 
 pub(in crate::decode) fn saved_section_circle_values(
@@ -770,25 +773,31 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
         return Ok(None);
     }
     let mut trimmed_external_ids = BTreeSet::new();
-    for id in trim.rows.iter().filter_map(|row| trim_segment_id(definition, row)) {
+    for id in trim
+        .rows
+        .iter()
+        .filter_map(|row| trim_segment_id(definition, row))
+    {
         if !trimmed_external_ids.contains(&id) {
             ctx.charge_collection_items(1, "creo missing-line trimmed ID nodes")?;
             trimmed_external_ids.insert(id);
         }
     }
-    let Some(missing) = crate::decode::uniqueness::exactly_one(segments
-        .rows
-        .ordinary()
-        .filter(|candidate| {
+    let Some(missing) =
+        crate::decode::uniqueness::exactly_one(segments.rows.ordinary().filter(|candidate| {
             matches!(
                 candidate.kind,
                 crate::feature::definitions::FeatureSegmentKind::Line(_)
             ) && order.internal_id(candidate.external_id).is_none()
                 && trimmed_external_ids.contains(&candidate.external_id)
-        })) else {
+        }))
+    else {
         return Ok(None);
     };
-    let Some(fixed_coordinate) = missing.vertical_horizontal.and_then(SectionAxis::from_selector) else {
+    let Some(fixed_coordinate) = missing
+        .vertical_horizontal
+        .and_then(SectionAxis::from_selector)
+    else {
         return Ok(None);
     };
 
@@ -907,13 +916,17 @@ pub(in crate::decode) fn saved_profile_chains(
         };
         let uses = crate::decode::collect_items(
             ctx,
-            [SketchEntityUse { entity, reversed: false }],
+            [SketchEntityUse {
+                entity,
+                reversed: false,
+            }],
             "creo saved circular profile uses",
         )?;
         ctx.try_reserve_items(&mut profiles, 1, "creo saved profile rows")?;
         profiles.push(uses);
     }
-    let row_count = geometries.iter()
+    let row_count = geometries
+        .iter()
         .filter(|(_, geometry)| saved_geometry_endpoints(geometry).is_some())
         .count();
     let mut mates = ctx.alloc_filled(row_count, [None; 2], "creo saved profile endpoint mates")?;
@@ -975,10 +988,7 @@ pub(in crate::decode) fn saved_profile_chains(
                 continue;
             };
             ctx.try_reserve_items(&mut uses, 1, "creo saved profile uses")?;
-            uses.push(SketchEntityUse {
-                entity,
-                reversed,
-            });
+            uses.push(SketchEntityUse { entity, reversed });
             let outgoing = usize::from(!reversed);
             let Some((next_row, next_endpoint)) = mates[row][outgoing] else {
                 break;

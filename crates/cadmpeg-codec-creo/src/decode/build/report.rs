@@ -18,8 +18,8 @@ use crate::loss::CreoLossCode;
 use super::super::surfaces::brep::BrepTransferDiagnostics;
 use super::report_coverage::push_coverage_drop_losses;
 use super::report_losses::{
-    push_brep_transfer_note, push_carrier_transfer_notes, push_legacy_value_losses, push_report_loss,
-    push_structural_layer_notes,
+    push_brep_transfer_note, push_carrier_transfer_notes, push_legacy_value_losses,
+    push_report_loss, push_structural_layer_notes,
 };
 use crate::decode::analytic::planes::is_axis_aligned;
 use cadmpeg_ir::codec::DecodeBody;
@@ -80,6 +80,16 @@ pub(in super::super) fn build_report(
     brep_diagnostics: &BrepTransferDiagnostics,
     container_only: bool,
 ) -> Result<DecodeBody, cadmpeg_core::CodecError> {
+    struct OptionalCount<T>(Option<T>);
+    impl<T: std::fmt::Display> std::fmt::Display for OptionalCount<T> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match &self.0 {
+                Some(value) => write!(f, "{value}"),
+                None => f.write_str("n/a"),
+            }
+        }
+    }
+
     let geom_sections = scan
         .framing
         .sections
@@ -102,7 +112,12 @@ pub(in super::super) fn build_report(
     let mut placed_plane_ids = BTreeSet::new();
     for id in placed_frames
         .chain(scan.planes.outlines.iter().map(|plane| plane.surface_id))
-        .chain(scan.planes.positional_frames.iter().map(|plane| plane.surface_id))
+        .chain(
+            scan.planes
+                .positional_frames
+                .iter()
+                .map(|plane| plane.surface_id),
+        )
     {
         if !placed_plane_ids.contains(&id) {
             ctx.charge_collection_items(1, "creo report placed plane ID nodes")?;
@@ -121,15 +136,7 @@ pub(in super::super) fn build_report(
     }
 
     // The namespace census: what is byte-backed and readable.
-    struct OptionalCount<T>(Option<T>);
-    impl<T: std::fmt::Display> std::fmt::Display for OptionalCount<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            match &self.0 {
-                Some(value) => write!(f, "{value}"),
-                None => f.write_str("n/a"),
-            }
-        }
-    }
+
     let srf = OptionalCount(scan.framing.census.srf_array_count);
     let crv = OptionalCount(scan.framing.census.crv_array_count);
     push_report_loss(ctx, &mut losses, CreoLossCode::ContainerCensus, format_args!(
@@ -197,9 +204,8 @@ mod tests {
 
     #[test]
     fn placed_plane_id_nodes_refuse_collection_limit() {
-        let mut scan = crate::container::scan_bytes_ok(crate::test_support::build_prt(
-            "report", &[],
-        ));
+        let mut scan =
+            crate::container::scan_bytes_ok(crate::test_support::build_prt("report", &[]));
         scan.planes.outlines.push(OutlinePlane {
             surface_id: 17,
             origin: [0.0; 3],
@@ -213,14 +219,14 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         let error = build_report(
             &ctx,
             &scan,
             &classification,
             &CadIr::empty(),
-            Default::default(),
+            cadmpeg_ir::report::decode::Coverage::default(),
             &BrepTransferDiagnostics::default(),
             false,
         )

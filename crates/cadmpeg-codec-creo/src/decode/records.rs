@@ -28,18 +28,19 @@ use super::feature_history::round::replayed_torus_minor_radius;
 use super::native_records::{
     CreoConeHalfAngleOverride, CreoCurveExpressionAssignment, CreoCurveExpressionEquation,
     CreoCurveExpressionLine, CreoCurveExpressionLocalSystem, CreoCurveExpressionSolveBlock,
-    CreoFeatureFieldValue, CreoFeatureOperationState, CreoOperationNameRecord, CreoFeatureOutline,
-    CreoFeatureParameterFrame, CreoHalfEdgeRef, CreoPlaneEnvelope, CreoPositionalConeFrame,
-    CreoPositionalCylinderFrame, CreoPositionalTorusFrame, CreoSketchBoundedCurveSegment,
-    CreoSketchCenteredLineSegment, CreoSketchCircleSegment, CreoSketchConicSegment,
-    CreoSketchDimension, CreoSketchDimensionReference, CreoSketchDimensionReferenceTable,
-    CreoSketchEquation, CreoSketchOpaqueSegment, CreoSketchOrderRow, CreoSketchPointSegment,
-    CreoSketchPointState, CreoSketchReferenceLineSegment, CreoSketchRelation,
-    CreoSketchRelationTriple, CreoSketchSavedEntity, CreoSketchSection3d,
-    CreoSketchSectionOrientation, CreoSketchSectionPoint, CreoSketchSegment, CreoSketchSkamp,
-    CreoSketchSkampItem, CreoSketchTableHeader, CreoSketchTrimEntity, CreoSketchTrimVertex,
-    CreoSketchVariable, CreoTabulatedCylinderFrame, CreoTorusOutlineFrame,
-    CreoTorusRadiusOverrides, CreoType26FiveCoordinateEnvelope, CreoType26SplitCoordinateEnvelope,
+    CreoFeatureFieldValue, CreoFeatureOperationState, CreoFeatureOutline,
+    CreoFeatureParameterFrame, CreoHalfEdgeRef, CreoOperationNameRecord, CreoPlaneEnvelope,
+    CreoPositionalConeFrame, CreoPositionalCylinderFrame, CreoPositionalTorusFrame,
+    CreoSketchBoundedCurveSegment, CreoSketchCenteredLineSegment, CreoSketchCircleSegment,
+    CreoSketchConicSegment, CreoSketchDimension, CreoSketchDimensionReference,
+    CreoSketchDimensionReferenceTable, CreoSketchEquation, CreoSketchOpaqueSegment,
+    CreoSketchOrderRow, CreoSketchPointSegment, CreoSketchPointState,
+    CreoSketchReferenceLineSegment, CreoSketchRelation, CreoSketchRelationTriple,
+    CreoSketchSavedEntity, CreoSketchSection3d, CreoSketchSectionOrientation,
+    CreoSketchSectionPoint, CreoSketchSegment, CreoSketchSkamp, CreoSketchSkampItem,
+    CreoSketchTableHeader, CreoSketchTrimEntity, CreoSketchTrimVertex, CreoSketchVariable,
+    CreoTabulatedCylinderFrame, CreoTorusOutlineFrame, CreoTorusRadiusOverrides,
+    CreoType26FiveCoordinateEnvelope, CreoType26SplitCoordinateEnvelope,
 };
 use super::sketch::coordinates::resolved_section_coordinates;
 use super::sketch::equations_scalar::resolved_section_scalar_values;
@@ -562,7 +563,11 @@ pub(super) fn reference_line_records(
     let mut records = Vec::new();
     for line in &scan.references.lines {
         let id = ctx.format_retained(
-            format_args!("creo:mdl_ref_info:{}_record#{}", family(&line.kind), line.offset),
+            format_args!(
+                "creo:mdl_ref_info:{}_record#{}",
+                family(&line.kind),
+                line.offset
+            ),
             "creo native reference line IDs",
         )?;
         ctx.try_reserve_items(&mut records, 1, "creo native reference line records")?;
@@ -673,8 +678,7 @@ struct HexDigest([u8; 32]);
 impl std::fmt::Display for HexDigest {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         const DIGITS: [char; 16] = [
-            '0', '1', '2', '3', '4', '5', '6', '7',
-            '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
         ];
         for byte in self.0 {
             formatter.write_char(DIGITS[usize::from(byte >> 4)])?;
@@ -691,7 +695,10 @@ pub(super) fn expanded_section_records(
     let mut records = Vec::new();
     for section in &scan.framing.expanded_sections {
         let id = ctx.format_retained(
-            format_args!("creo:container:expanded_section#{}:{}", section.name, section.source_offset),
+            format_args!(
+                "creo:container:expanded_section#{}:{}",
+                section.name, section.source_offset
+            ),
             "creo native expanded section IDs",
         )?;
         let name = ctx.copy_retained_text(&section.name, "creo native expanded section names")?;
@@ -906,7 +913,11 @@ pub(super) fn feature_entity_table_records(
         let mut surface_ids = Vec::new();
         let mut non_surface_entity_ids = Vec::new();
         for entry in &table.entries {
-            ctx.try_reserve_items(&mut entry_ids, 1, "creo feature entity table record entry ids")?;
+            ctx.try_reserve_items(
+                &mut entry_ids,
+                1,
+                "creo feature entity table record entry ids",
+            )?;
             entry_ids.push(entry.entity_id);
             ctx.try_reserve_items(&mut entries, 1, "creo feature entity table record entries")?;
             entries.push(CreoFeatureEntityTableEntryRecord {
@@ -920,10 +931,18 @@ pub(super) fn feature_entity_table_records(
                 end_offset: entry.end_offset,
             });
             if table.contains_surface_id(entry.entity_id) {
-                ctx.try_reserve_items(&mut surface_ids, 1, "creo feature entity table record surface ids")?;
+                ctx.try_reserve_items(
+                    &mut surface_ids,
+                    1,
+                    "creo feature entity table record surface ids",
+                )?;
                 surface_ids.push(entry.entity_id);
             } else {
-                ctx.try_reserve_items(&mut non_surface_entity_ids, 1, "creo feature entity table record non surface ids")?;
+                ctx.try_reserve_items(
+                    &mut non_surface_entity_ids,
+                    1,
+                    "creo feature entity table record non surface ids",
+                )?;
                 non_surface_entity_ids.push(entry.entity_id);
             }
         }
@@ -970,14 +989,17 @@ mod feature_entity_table_record_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty source is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source is admitted");
         let Err(error) = feature_entity_table_records(&ctx, &scan) else {
             panic!("record copy exceeds the collection limit");
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == operation), "{error:?}");
+                && resource.operation == operation),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -1011,14 +1033,17 @@ mod feature_entity_table_record_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = "creo:allfeatur:entity_table#12".len() as u64 - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty source is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source is admitted");
         let Err(error) = feature_entity_table_records(&ctx, &scan) else {
             panic!("record identity exceeds the retained limit");
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo feature entity table record id"), "{error:?}");
+                && resource.operation == "creo feature entity table record id"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -1033,7 +1058,8 @@ mod feature_entity_table_record_tests {
             assert_eq!(record.surface_ids, [7]);
             assert_eq!(record.non_surface_entity_ids, [9]);
             Ok::<(), cadmpeg_core::CodecError>(())
-        }).expect("service profile admits the record");
+        })
+        .expect("service profile admits the record");
     }
 }
 
@@ -1142,10 +1168,17 @@ pub(super) fn surface_merge_replay_affected_id_records<'a>(
     let mut records = Vec::new();
     for record in &scan.features.surface_merge_replay_affected_ids {
         let id = ctx.format_retained(
-            format_args!("creo:feature:surface_merge_replay_affected_ids#{}", record.offset),
+            format_args!(
+                "creo:feature:surface_merge_replay_affected_ids#{}",
+                record.offset
+            ),
             "creo surface merge replay affected ids record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo surface merge replay affected ids records")?;
+        ctx.try_reserve_items(
+            &mut records,
+            1,
+            "creo surface merge replay affected ids records",
+        )?;
         records.push(CreoSurfaceMergeReplayAffectedIdsRecord {
             id,
             owner_feature_id: record.feature_id,
@@ -1172,7 +1205,11 @@ pub(super) fn feature_loop_restore_direction_records<'a>(
             format_args!("creo:feature:loop_restore_direction#{}", record.offset),
             "creo feature loop restore direction record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo feature loop restore direction records")?;
+        ctx.try_reserve_items(
+            &mut records,
+            1,
+            "creo feature loop restore direction records",
+        )?;
         records.push(CreoFeatureLoopRestoreDirectionRecord {
             id,
             owner_feature_id: record.feature_id,
@@ -1314,11 +1351,13 @@ mod feature_projection_limit_tests {
             name: "datum".into(),
             offset: 3,
         });
-        scan.features.entity_references.push(FeatureEntityReference {
-            source_entity_id: Some(4),
-            target_entity_id: 4,
-            offset: 5,
-        });
+        scan.features
+            .entity_references
+            .push(FeatureEntityReference {
+                source_entity_id: Some(4),
+                target_entity_id: 4,
+                offset: 5,
+            });
         scan.features.geometry_tables.push(FeatureGeometryTable {
             feature_id: 7,
             kind: FeatureGeometryTableKind::DatumIds(Some(vec![4, 5])),
@@ -1326,41 +1365,51 @@ mod feature_projection_limit_tests {
             entity_class: 200,
             offset: 13,
         });
-        scan.features.loop_history_entries.push(dummy_loop_history_entry());
+        scan.features
+            .loop_history_entries
+            .push(dummy_loop_history_entry());
         scan.features.affected_ids.push(FeatureAffectedIds {
             feature_id: 7,
             kind: AffectedIdKind::Geometry,
             ids: vec![4, 5],
             offset: 29,
         });
-        scan.features.replay_affected_ids.push(FeatureReplayAffectedIds {
-            feature_id: 7,
-            geometry_ids: vec![4],
-            edge_ids: vec![5],
-            geometry_extent: ReplayExtentSource::Explicit,
-            edge_extent: ReplayExtentSource::Inherited,
-            offset: 31,
-        });
-        scan.features.surface_merge_replay_affected_ids.push(FeatureSurfaceMergeAffectedIds {
-            feature_id: 7,
-            geometry_ids: vec![4],
-            edge_ids: vec![5],
-            quilt_ids: vec![6],
-            geometry_extent: ReplayExtentSource::Explicit,
-            edge_extent: ReplayExtentSource::Inherited,
-            quilt_extent: ReplayExtentSource::Explicit,
-            offset: 33,
-        });
-        scan.features.loop_restore_directions.push(FeatureLoopRestoreDirection {
-            feature_id: 7,
-            lane: LoopRestoreDirectionLane::Primary,
-            value: 1,
-            offset: 35,
-        });
-        scan.features.revolution_extents.push(FeatureRevolutionExtent {
-            feature_id: 7,
-            offset: 37,
-        });
+        scan.features
+            .replay_affected_ids
+            .push(FeatureReplayAffectedIds {
+                feature_id: 7,
+                geometry_ids: vec![4],
+                edge_ids: vec![5],
+                geometry_extent: ReplayExtentSource::Explicit,
+                edge_extent: ReplayExtentSource::Inherited,
+                offset: 31,
+            });
+        scan.features
+            .surface_merge_replay_affected_ids
+            .push(FeatureSurfaceMergeAffectedIds {
+                feature_id: 7,
+                geometry_ids: vec![4],
+                edge_ids: vec![5],
+                quilt_ids: vec![6],
+                geometry_extent: ReplayExtentSource::Explicit,
+                edge_extent: ReplayExtentSource::Inherited,
+                quilt_extent: ReplayExtentSource::Explicit,
+                offset: 33,
+            });
+        scan.features
+            .loop_restore_directions
+            .push(FeatureLoopRestoreDirection {
+                feature_id: 7,
+                lane: LoopRestoreDirectionLane::Primary,
+                value: 1,
+                offset: 35,
+            });
+        scan.features
+            .revolution_extents
+            .push(FeatureRevolutionExtent {
+                feature_id: 7,
+                offset: 37,
+            });
         scan.features.choices.push(FeatureChoice {
             feature_id: 7,
             label: "depth_choice".into(),
@@ -1392,10 +1441,7 @@ mod feature_projection_limit_tests {
                 policy.limits.max_collection_items = 0;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("empty root is admitted");
-                let error = match $projection(&ctx, &scan) {
-                    Err(error) => error,
-                    Ok(_) => panic!("one native record exceeds the collection limit"),
-                };
+                let Err(error) = $projection(&ctx, &scan) else { panic!("one native record exceeds the collection limit") };
                 assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                     if resource.dimension == ResourceDimension::CollectionItems
                         && resource.operation == $operation), "{error:?}");
@@ -1403,32 +1449,83 @@ mod feature_projection_limit_tests {
         };
     }
 
-    collection_limit_test!(feature_entity_record_refuses_limit, feature_entity_records, "creo feature entity records");
-    collection_limit_test!(feature_entity_reference_record_refuses_limit, feature_entity_reference_records, "creo feature entity reference records");
-    collection_limit_test!(feature_geometry_table_record_refuses_limit, feature_geometry_table_records, "creo feature geometry table records");
-    collection_limit_test!(feature_loop_history_record_refuses_limit, feature_loop_history_entry_records, "creo feature loop history records");
-    collection_limit_test!(feature_affected_ids_record_refuses_limit, feature_affected_id_records, "creo feature affected ids records");
-    collection_limit_test!(feature_replay_affected_ids_record_refuses_limit, feature_replay_affected_id_records, "creo feature replay affected ids records");
-    collection_limit_test!(surface_merge_replay_affected_ids_record_refuses_limit, surface_merge_replay_affected_id_records, "creo surface merge replay affected ids records");
-    collection_limit_test!(feature_loop_restore_direction_record_refuses_limit, feature_loop_restore_direction_records, "creo feature loop restore direction records");
-    collection_limit_test!(feature_revolution_extent_record_refuses_limit, feature_revolution_extent_records, "creo feature revolution extent records");
-    collection_limit_test!(feature_choice_record_refuses_limit, feature_choice_records, "creo feature choice records");
-    collection_limit_test!(feature_row_record_refuses_limit, feature_row_records, "creo feature row records");
-    collection_limit_test!(depdb_recipe_row_record_refuses_limit, depdb_recipe_row_records, "creo depdb recipe row records");
+    collection_limit_test!(
+        feature_entity_record_refuses_limit,
+        feature_entity_records,
+        "creo feature entity records"
+    );
+    collection_limit_test!(
+        feature_entity_reference_record_refuses_limit,
+        feature_entity_reference_records,
+        "creo feature entity reference records"
+    );
+    collection_limit_test!(
+        feature_geometry_table_record_refuses_limit,
+        feature_geometry_table_records,
+        "creo feature geometry table records"
+    );
+    collection_limit_test!(
+        feature_loop_history_record_refuses_limit,
+        feature_loop_history_entry_records,
+        "creo feature loop history records"
+    );
+    collection_limit_test!(
+        feature_affected_ids_record_refuses_limit,
+        feature_affected_id_records,
+        "creo feature affected ids records"
+    );
+    collection_limit_test!(
+        feature_replay_affected_ids_record_refuses_limit,
+        feature_replay_affected_id_records,
+        "creo feature replay affected ids records"
+    );
+    collection_limit_test!(
+        surface_merge_replay_affected_ids_record_refuses_limit,
+        surface_merge_replay_affected_id_records,
+        "creo surface merge replay affected ids records"
+    );
+    collection_limit_test!(
+        feature_loop_restore_direction_record_refuses_limit,
+        feature_loop_restore_direction_records,
+        "creo feature loop restore direction records"
+    );
+    collection_limit_test!(
+        feature_revolution_extent_record_refuses_limit,
+        feature_revolution_extent_records,
+        "creo feature revolution extent records"
+    );
+    collection_limit_test!(
+        feature_choice_record_refuses_limit,
+        feature_choice_records,
+        "creo feature choice records"
+    );
+    collection_limit_test!(
+        feature_row_record_refuses_limit,
+        feature_row_records,
+        "creo feature row records"
+    );
+    collection_limit_test!(
+        depdb_recipe_row_record_refuses_limit,
+        depdb_recipe_row_records,
+        "creo depdb recipe row records"
+    );
 
     #[test]
     fn borrowed_feature_projection_preserves_json() {
         let scan = scan();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let geometry = feature_geometry_table_records(&ctx, &scan).expect("record is admitted");
         let history = feature_loop_history_entry_records(&ctx, &scan).expect("record is admitted");
         let geometry = serde_json::to_value(&geometry[0]).expect("record serializes");
         let history = serde_json::to_value(&history[0]).expect("record serializes");
         assert_eq!(geometry["entry_ids"], serde_json::json!([4, 5]));
-        assert_eq!(history["field_bytes"], serde_json::json!([[1], [2], [3], [4]]));
+        assert_eq!(
+            history["field_bytes"],
+            serde_json::json!([[1], [2], [3], [4]])
+        );
     }
 }
 
@@ -1455,9 +1552,7 @@ pub(super) fn feature_choice_field_records<'a>(
                     CreoFeatureFieldValue::CompactInt { value: *value }
                 }
                 crate::feature::rows::FeatureFieldValue::CompactIntArray(values) => {
-                    CreoFeatureFieldValue::CompactIntArray {
-                        values,
-                    }
+                    CreoFeatureFieldValue::CompactIntArray { values }
                 }
                 crate::feature::rows::FeatureFieldValue::EntityReference {
                     entity_id,
@@ -1477,9 +1572,9 @@ pub(super) fn feature_choice_field_records<'a>(
                     body,
                     decoded_values: decoded_values.as_deref(),
                 },
-                crate::feature::rows::FeatureFieldValue::Raw(bytes) => CreoFeatureFieldValue::Raw {
-                    bytes,
-                },
+                crate::feature::rows::FeatureFieldValue::Raw(bytes) => {
+                    CreoFeatureFieldValue::Raw { bytes }
+                }
             },
             offset: field.offset,
             source_section: source_section_ref(scan, field.offset),
@@ -1500,9 +1595,15 @@ mod feature_choice_field_record_tests {
             FeatureFieldValue::Empty,
             FeatureFieldValue::CompactInt(7),
             FeatureFieldValue::CompactIntArray(vec![7, 8]),
-            FeatureFieldValue::EntityReference { entity_id: 9, terminated: true },
+            FeatureFieldValue::EntityReference {
+                entity_id: 9,
+                terminated: true,
+            },
             FeatureFieldValue::ScalarArray {
-                dimensions: 1, count: 2, body: vec![0xf9, 2], decoded_values: Some(vec![1.0, 2.0]),
+                dimensions: 1,
+                count: 2,
+                body: vec![0xf9, 2],
+                decoded_values: Some(vec![1.0, 2.0]),
             },
             FeatureFieldValue::Raw(vec![0xe3]),
         ];
@@ -1525,15 +1626,17 @@ mod feature_choice_field_record_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let error = match feature_choice_field_records(&ctx, &scan) {
-            Err(error) => error,
-            Ok(_) => panic!("one choice-field record exceeds the collection limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = feature_choice_field_records(&ctx, &scan) else {
+            panic!("one choice-field record exceeds the collection limit")
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native feature choice field records"), "{error:?}");
+                && resource.operation == "creo native feature choice field records"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -1542,15 +1645,17 @@ mod feature_choice_field_record_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = "creo:feature:choice_field#0".len() as u64 - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let error = match feature_choice_field_records(&ctx, &scan) {
-            Err(error) => error,
-            Ok(_) => panic!("one choice-field ID exceeds the retained limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = feature_choice_field_records(&ctx, &scan) else {
+            panic!("one choice-field ID exceeds the retained limit")
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native feature choice field record id"), "{error:?}");
+                && resource.operation == "creo native feature choice field record id"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -1558,20 +1663,24 @@ mod feature_choice_field_record_tests {
         let scan = scan();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let records = feature_choice_field_records(&ctx, &scan).expect("records are admitted");
-        let values = records.iter()
+        let values = records
+            .iter()
             .map(|record| serde_json::to_value(&record.value).expect("value serializes"))
             .collect::<Vec<_>>();
-        assert_eq!(serde_json::Value::Array(values), serde_json::json!([
-            {"kind":"empty"},
-            {"kind":"compact_int","value":7},
-            {"kind":"compact_int_array","values":[7,8]},
-            {"kind":"entity_reference","entity_id":9,"terminated":true},
-            {"kind":"scalar_array","dimensions":1,"count":2,"body":[249,2],"decoded_values":[1.0,2.0]},
-            {"kind":"raw","bytes":[227]}
-        ]));
+        assert_eq!(
+            serde_json::Value::Array(values),
+            serde_json::json!([
+                {"kind":"empty"},
+                {"kind":"compact_int","value":7},
+                {"kind":"compact_int_array","values":[7,8]},
+                {"kind":"entity_reference","entity_id":9,"terminated":true},
+                {"kind":"scalar_array","dimensions":1,"count":2,"body":[249,2],"decoded_values":[1.0,2.0]},
+                {"kind":"raw","bytes":[227]}
+            ])
+        );
     }
 }
 
@@ -1582,7 +1691,9 @@ pub(super) fn half_edge_records<'a>(
     let mut topology_rows = BTreeMap::new();
     for row in &scan.curves.topology_rows {
         match topology_rows.entry(row.id) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => { entry.insert(row); }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.insert(row);
+            }
             std::collections::btree_map::Entry::Vacant(entry) => {
                 ctx.charge_collection_items(1, "creo native half edge topology row nodes")?;
                 entry.insert(row);
@@ -1595,18 +1706,21 @@ pub(super) fn half_edge_records<'a>(
             continue;
         };
         let id = ctx.format_retained(
-            format_args!("creo:topology:half_edge#{}:{}", edge.id.curve_id, edge.id.side),
+            format_args!(
+                "creo:topology:half_edge#{}:{}",
+                edge.id.curve_id, edge.id.side
+            ),
             "creo native half edge record id",
         )?;
         ctx.try_reserve_items(&mut records, 1, "creo native half edge records")?;
         records.push(CreoHalfEdgeRecord {
-                id,
-                curve_id: edge.id.curve_id,
-                side: edge.id.side,
-                face_id: edge.face_id.map_or(0, std::num::NonZeroU32::get),
-                next: edge.next.map(half_edge_ref),
-                offset: row.offset,
-                source_section: source_section_ref(scan, row.offset),
+            id,
+            curve_id: edge.id.curve_id,
+            side: edge.id.side,
+            face_id: edge.face_id.map_or(0, std::num::NonZeroU32::get),
+            next: edge.next.map(half_edge_ref),
+            offset: row.offset,
+            source_section: source_section_ref(scan, row.offset),
         });
     }
     Ok(records)
@@ -1645,9 +1759,9 @@ pub(super) fn loop_array_frame_records<'a>(
                 entry.insert(0)
             }
         };
-        *count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(
-            "creo native loop array frame counts", u64::MAX, u64::MAX
-        ))?;
+        *count = count.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("creo native loop array frame counts", u64::MAX, u64::MAX)
+        })?;
     }
     let mut records = Vec::new();
     for frame in &scan.loop_arrays.frames {
@@ -1729,10 +1843,17 @@ pub(super) fn half_edge_vertex_incidence_records(
     let mut records = Vec::new();
     for record in &scan.topology.half_edge_vertex_incidence {
         let id = ctx.format_retained(
-            format_args!("creo:topology:half_edge_vertex_incidence#{}:{}", record.half_edge.curve_id, record.half_edge.side),
+            format_args!(
+                "creo:topology:half_edge_vertex_incidence#{}:{}",
+                record.half_edge.curve_id, record.half_edge.side
+            ),
             "creo native half edge vertex incidence record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native half edge vertex incidence records")?;
+        ctx.try_reserve_items(
+            &mut records,
+            1,
+            "creo native half edge vertex incidence records",
+        )?;
         records.push(CreoHalfEdgeVertexIncidenceRecord {
             id,
             half_edge: half_edge_ref(record.half_edge),
@@ -1773,15 +1894,17 @@ mod topology_projection_limit_tests {
     use crate::curve::CurveTopologyRow;
     use crate::loop_array::{LoopArrayFrame, LoopArrayRecord};
     use crate::topology::{
-        FaceComponent, HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, Loop, Side,
-        TopologicalVertex,
+        FaceComponent, HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, Loop, Side, TopologicalVertex,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::num::NonZeroU32;
 
     fn scan() -> crate::container::ContainerScan<'static> {
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
-        let half_edge = HalfEdgeId { curve_id: 8, side: Side::Zero };
+        let half_edge = HalfEdgeId {
+            curve_id: 8,
+            side: Side::Zero,
+        };
         scan.curves.topology_rows.push(CurveTopologyRow {
             id: 8,
             type_byte: 1,
@@ -1804,11 +1927,13 @@ mod topology_projection_limit_tests {
             id: 1,
             half_edges: vec![half_edge],
         });
-        scan.topology.half_edge_vertex_incidence.push(HalfEdgeVertexIncidence {
-            half_edge,
-            start_vertex_id: 1,
-            end_vertex_id: Some(1),
-        });
+        scan.topology
+            .half_edge_vertex_incidence
+            .push(HalfEdgeVertexIncidence {
+                half_edge,
+                start_vertex_id: 1,
+                end_vertex_id: Some(1),
+            });
         scan.topology.face_components.push(FaceComponent {
             face_ids: vec![1],
             curve_ids: vec![8],
@@ -1848,10 +1973,7 @@ mod topology_projection_limit_tests {
                 policy.limits.max_collection_items = $limit;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("empty root is admitted");
-                let error = match $projection(&ctx, &scan) {
-                    Err(error) => error,
-                    Ok(_) => panic!("one native record exceeds the collection limit"),
-                };
+                let Err(error) = $projection(&ctx, &scan) else { panic!("one native record exceeds the collection limit") };
                 assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                     if resource.dimension == ResourceDimension::CollectionItems
                         && resource.operation == $operation), "{error:?}");
@@ -1859,28 +1981,76 @@ mod topology_projection_limit_tests {
         };
     }
 
-    collection_limit_test!(half_edge_topology_nodes_refuse_limit, half_edge_records, 0, "creo native half edge topology row nodes");
-    collection_limit_test!(half_edge_records_refuse_limit, half_edge_records, 1, "creo native half edge records");
-    collection_limit_test!(loop_records_refuse_limit, loop_records, 0, "creo native loop records");
-    collection_limit_test!(loop_array_frame_count_nodes_refuse_limit, loop_array_frame_records, 0, "creo native loop array frame count nodes");
-    collection_limit_test!(loop_array_frame_records_refuse_limit, loop_array_frame_records, 1, "creo native loop array frame records");
-    collection_limit_test!(loop_array_records_refuse_limit, loop_array_record_records, 0, "creo native loop array records");
-    collection_limit_test!(topological_vertex_records_refuse_limit, topological_vertex_records, 0, "creo native topological vertex records");
-    collection_limit_test!(half_edge_vertex_incidence_records_refuse_limit, half_edge_vertex_incidence_records, 0, "creo native half edge vertex incidence records");
-    collection_limit_test!(face_component_records_refuse_limit, face_component_records, 0, "creo native face component records");
+    collection_limit_test!(
+        half_edge_topology_nodes_refuse_limit,
+        half_edge_records,
+        0,
+        "creo native half edge topology row nodes"
+    );
+    collection_limit_test!(
+        half_edge_records_refuse_limit,
+        half_edge_records,
+        1,
+        "creo native half edge records"
+    );
+    collection_limit_test!(
+        loop_records_refuse_limit,
+        loop_records,
+        0,
+        "creo native loop records"
+    );
+    collection_limit_test!(
+        loop_array_frame_count_nodes_refuse_limit,
+        loop_array_frame_records,
+        0,
+        "creo native loop array frame count nodes"
+    );
+    collection_limit_test!(
+        loop_array_frame_records_refuse_limit,
+        loop_array_frame_records,
+        1,
+        "creo native loop array frame records"
+    );
+    collection_limit_test!(
+        loop_array_records_refuse_limit,
+        loop_array_record_records,
+        0,
+        "creo native loop array records"
+    );
+    collection_limit_test!(
+        topological_vertex_records_refuse_limit,
+        topological_vertex_records,
+        0,
+        "creo native topological vertex records"
+    );
+    collection_limit_test!(
+        half_edge_vertex_incidence_records_refuse_limit,
+        half_edge_vertex_incidence_records,
+        0,
+        "creo native half edge vertex incidence records"
+    );
+    collection_limit_test!(
+        face_component_records_refuse_limit,
+        face_component_records,
+        0,
+        "creo native face component records"
+    );
 
     #[test]
     fn borrowed_topology_projection_preserves_half_edges_and_body() {
         let scan = scan();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let loops = loop_records(&ctx, &scan).expect("loop is admitted");
         let rows = loop_array_record_records(&ctx, &scan).expect("row is admitted");
         let loop_value = serde_json::to_value(&loops[0]).expect("loop serializes");
         let row_value = serde_json::to_value(&rows[0]).expect("row serializes");
-        assert_eq!(loop_value["half_edges"], serde_json::json!([{"curve_id":8,"side":0}]));
+        assert_eq!(
+            loop_value["half_edges"],
+            serde_json::json!([{"curve_id":8,"side":0}])
+        );
         assert_eq!(row_value["body"], serde_json::json!([0xe3]));
         assert_eq!(row_value["end"], serde_json::json!(23));
     }
@@ -1945,7 +2115,11 @@ pub(super) fn curve_prototype_topology_records<'a>(
             format_args!("creo:curve:prototype_topology#{}", record.curve_id),
             "creo native curve prototype topology record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native curve prototype topology records")?;
+        ctx.try_reserve_items(
+            &mut records,
+            1,
+            "creo native curve prototype topology records",
+        )?;
         records.push(CreoCurvePrototypeTopologyRecord {
             id,
             curve_id: record.curve_id,
@@ -1998,20 +2172,20 @@ pub(super) fn plane_local_system_records<'a>(
         )?;
         ctx.try_reserve_items(&mut records, 1, "creo native plane local system records")?;
         records.push(CreoPlaneLocalSystemRecord {
-                id,
-                surface_id: record.surface_id,
-                body: &record.body,
-                slots: &record.slots,
-                origin: frame.origin,
-                u_axis: frame.u_axis(),
-                normal: frame.normal(),
-                classification: match record.classification {
-                    crate::surface::LocalSystemClassification::Simple => "simple",
-                    crate::surface::LocalSystemClassification::Unclassified => "unclassified",
-                },
-                row_offset: record.row_offset,
-                offset: record.offset,
-                source_section: source_section_ref(scan, record.offset),
+            id,
+            surface_id: record.surface_id,
+            body: &record.body,
+            slots: &record.slots,
+            origin: frame.origin,
+            u_axis: frame.u_axis(),
+            normal: frame.normal(),
+            classification: match record.classification {
+                crate::surface::LocalSystemClassification::Simple => "simple",
+                crate::surface::LocalSystemClassification::Unclassified => "unclassified",
+            },
+            row_offset: record.row_offset,
+            offset: record.offset,
+            source_section: source_section_ref(scan, record.offset),
         });
     }
     Ok(records)
@@ -2092,7 +2266,10 @@ pub(super) fn datum_plane_records<'a>(
     let mut records = Vec::new();
     for record in &scan.planes.datums {
         let id = ctx.format_retained(
-            format_args!("creo:datum:plane#{}:{}", record.offset_in_payload, record.id),
+            format_args!(
+                "creo:datum:plane#{}:{}",
+                record.offset_in_payload, record.id
+            ),
             "creo native datum plane record id",
         )?;
         ctx.try_reserve_items(&mut records, 1, "creo native datum plane records")?;
@@ -2117,7 +2294,10 @@ pub(super) fn datum_cylinder_records<'a>(
     let mut records = Vec::new();
     for record in &scan.planes.datum_cylinders {
         let id = ctx.format_retained(
-            format_args!("creo:datum:cylinder#{}:{}", record.offset_in_payload, record.id),
+            format_args!(
+                "creo:datum:cylinder#{}:{}",
+                record.offset_in_payload, record.id
+            ),
             "creo native datum cylinder record id",
         )?;
         ctx.try_reserve_items(&mut records, 1, "creo native datum cylinder records")?;
@@ -2148,7 +2328,10 @@ pub(super) fn feature_section_transform_records<'a>(
     let mut records = Vec::new();
     for record in &scan.features.section_transforms {
         let id = ctx.format_retained(
-            format_args!("creo:feature:section_transform#{}:{}", record.definition_id, record.offset),
+            format_args!(
+                "creo:feature:section_transform#{}:{}",
+                record.definition_id, record.offset
+            ),
             "creo native section transform record id",
         )?;
         ctx.try_reserve_items(&mut records, 1, "creo native section transform records")?;
@@ -2164,7 +2347,12 @@ pub(super) fn feature_section_transform_records<'a>(
             source_section: source_section_ref(scan, record.offset),
         });
     }
-    crate::sort::stable_sort_by(ctx, records.as_mut_slice(), |left, right| left.id.cmp(&right.id), "creo feature section transform records records ordering")?;
+    crate::sort::stable_sort_by(
+        ctx,
+        records.as_mut_slice(),
+        |left, right| left.id.cmp(&right.id),
+        "creo feature section transform records records ordering",
+    )?;
     records.dedup_by(|left, right| left.id == right.id);
     Ok(records)
 }
@@ -2177,24 +2365,28 @@ pub(super) fn feature_placement_instruction_records<'a>(
     for definition in &scan.features.definitions {
         for instruction in crate::feature::definitions::placement_instructions(definition) {
             let id = ctx.format_retained(
-                format_args!("creo:featdefs:placement_instruction#{}:{}", definition.identity.id(), instruction.offset),
+                format_args!(
+                    "creo:featdefs:placement_instruction#{}:{}",
+                    definition.identity.id(),
+                    instruction.offset
+                ),
                 "creo native placement instruction record id",
             )?;
             ctx.try_reserve_items(&mut records, 1, "creo native placement instruction records")?;
             records.push(CreoFeaturePlacementInstructionRecord {
-                    id,
-                    definition_id: definition.identity.id(),
-                    owner_feature_id: definition.identity.owner_feature_id(),
-                    instruction_type: instruction.kind,
-                    zero_offset: instruction.zero_offset,
-                    dimension_id: instruction.dimension_id,
-                    reference_id: instruction.reference_id,
-                    geometry1_id: instruction.geometry1_id,
-                    geometry2_id: instruction.geometry2_id,
-                    member1: instruction.member1,
-                    member2: instruction.member2,
-                    offset: instruction.offset,
-                    source_section: source_section_ref(scan, instruction.offset),
+                id,
+                definition_id: definition.identity.id(),
+                owner_feature_id: definition.identity.owner_feature_id(),
+                instruction_type: instruction.kind,
+                zero_offset: instruction.zero_offset,
+                dimension_id: instruction.dimension_id,
+                reference_id: instruction.reference_id,
+                geometry1_id: instruction.geometry1_id,
+                geometry2_id: instruction.geometry2_id,
+                member1: instruction.member1,
+                member2: instruction.member2,
+                offset: instruction.offset,
+                source_section: source_section_ref(scan, instruction.offset),
             });
         }
     }
@@ -2209,38 +2401,65 @@ mod curve_plane_projection_limit_tests {
         feature_section_transform_records, outline_plane_records, plane_envelope_records,
         plane_local_system_records, prototype_pcurve_records,
     };
-    use crate::curve::{dummy_curve_prototype, CurvePrototypeTopology, FcCurveCoordinates, PrototypePcurveEndpoints};
+    use crate::curve::{
+        dummy_curve_prototype, CurvePrototypeTopology, FcCurveCoordinates, PrototypePcurveEndpoints,
+    };
     use crate::datum::{Axis, DatumCylinder, DatumPlane, DatumPlaneRecord};
     use crate::feature::definitions::{DefinitionIdentity, FeatureDefinition};
     use crate::placement::FeatureSectionTransform;
-    use crate::surface::{LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem, PositionalCylinderFrame};
+    use crate::surface::{
+        LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord,
+        PlaneLocalSystem, PositionalCylinderFrame,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::units::UnitVector3;
 
     fn scan() -> crate::container::ContainerScan<'static> {
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.curves.fc_coordinates.push(FcCurveCoordinates {
-            curve_id: 8, subtype: 1, body: vec![0xfc, 1], values_mm: vec![2.0],
-            tokens: Vec::new(), opaque_spans: Vec::new(), offset: 3,
+            curve_id: 8,
+            subtype: 1,
+            body: vec![0xfc, 1],
+            values_mm: vec![2.0],
+            tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            offset: 3,
         });
-        scan.curves.prototype_pcurves.push(PrototypePcurveEndpoints {
-            curve_id: 8, face_0_endpoints: [[0.0, 0.0], [1.0, 0.0]],
-            face_1_endpoints: [[0.0, 0.0], [1.0, 0.0]], offset: 5,
-        });
+        scan.curves
+            .prototype_pcurves
+            .push(PrototypePcurveEndpoints {
+                curve_id: 8,
+                face_0_endpoints: [[0.0, 0.0], [1.0, 0.0]],
+                face_1_endpoints: [[0.0, 0.0], [1.0, 0.0]],
+                offset: 5,
+            });
         scan.curves.prototype_topology.push(CurvePrototypeTopology {
-            curve_id: 8, faces: [None, None], next_edges: [0, 0], offset: 7,
+            curve_id: 8,
+            faces: [None, None],
+            next_edges: [0, 0],
+            offset: 7,
         });
         scan.curves.prototypes.push(dummy_curve_prototype());
         scan.planes.local_systems.push(PlaneLocalSystem {
-            surface_id: 3, body: vec![0xe3], slots: [None; 12], layout: None,
-            classification: LocalSystemClassification::Simple, row_offset: 13, offset: 15,
+            surface_id: 3,
+            body: vec![0xe3],
+            slots: [None; 12],
+            layout: None,
+            classification: LocalSystemClassification::Simple,
+            row_offset: 13,
+            offset: 15,
         });
         scan.planes.envelopes.push(PlaneEnvelopeRecord {
-            surface_id: 3, body: vec![0xe3], envelope: PlaneEnvelope::Standard {
-                bounds_2d: [[None; 2]; 2], corners_3d: [[None; 3]; 2],
+            surface_id: 3,
+            body: vec![0xe3],
+            envelope: PlaneEnvelope::Standard {
+                bounds_2d: [[None; 2]; 2],
+                corners_3d: [[None; 3]; 2],
             },
-            corner_coordinate_equal: [None; 3], scalar_tokens: vec![vec![0xf9]],
-            row_offset: 13, offset: 17,
+            corner_coordinate_equal: [None; 3],
+            scalar_tokens: vec![vec![0xf9]],
+            row_offset: 13,
+            offset: 17,
         });
         scan.planes.outlines.push(OutlinePlane {
             surface_id: 3,
@@ -2250,28 +2469,60 @@ mod curve_plane_projection_limit_tests {
             offset: 18,
         });
         scan.planes.datums.push(DatumPlaneRecord {
-            id: 3, feature_id: 2, plane: DatumPlane { axis: Axis::X, offset: 1.0 },
-            opposite_offset: 1.0, in_plane_corners: [[None; 2]; 2], offset_in_payload: 19,
+            id: 3,
+            feature_id: 2,
+            plane: DatumPlane {
+                axis: Axis::X,
+                offset: 1.0,
+            },
+            opposite_offset: 1.0,
+            in_plane_corners: [[None; 2]; 2],
+            offset_in_payload: 19,
         });
         scan.planes.datum_cylinders.push(DatumCylinder {
-            id: 4, feature_id: 2, reversed: false,
+            id: 4,
+            feature_id: 2,
+            reversed: false,
             frame: PositionalCylinderFrame::new(
-                [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], 2.0, None,
-            ).expect("valid cylinder frame"),
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0],
+                2.0,
+                None,
+            )
+            .expect("valid cylinder frame"),
             offset_in_payload: 20,
         });
         scan.features.section_transforms.push(
             FeatureSectionTransform::new(
-                2, Some(2), [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 21,
-            ).expect("orthonormal test frame"),
+                2,
+                Some(2),
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                21,
+            )
+            .expect("orthonormal test frame"),
         );
         scan.features.definitions.push(FeatureDefinition {
-            identity: DefinitionIdentity::Parsed { schema_id: None, owner_feature_id: Some(2) },
+            identity: DefinitionIdentity::Parsed {
+                schema_id: None,
+                owner_feature_id: Some(2),
+            },
             body: b"place_instruction_ptrs\0\xf8\x03\xf7\x0b\xfb\xe3\
-                \xf1\xf7\x0b\xe3\xc0\x4e\x9f\x18\xf6\xf6\x02\xf6\x00\x00\x00\xe6".to_vec(),
-            parameter_frames: Vec::new(), outlines: Vec::new(), variables: None,
-            segments: None, trim_entities: None, trim_vertices: None, order_table: None,
-            section_3d: None, dimensions: None, relations: None, saved_section: None,
+                \xf1\xf7\x0b\xe3\xc0\x4e\x9f\x18\xf6\xf6\x02\xf6\x00\x00\x00\xe6"
+                .to_vec(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
             offset: 1000,
         });
         scan
@@ -2287,10 +2538,7 @@ mod curve_plane_projection_limit_tests {
                 policy.limits.max_collection_items = 0;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("empty root is admitted");
-                let error = match ($project)(&ctx, &scan) {
-                    Err(error) => error,
-                    Ok(_) => panic!("one native record exceeds the collection limit"),
-                };
+                let Err(error) = ($project)(&ctx, &scan) else { panic!("one native record exceeds the collection limit") };
                 assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                     if resource.dimension == ResourceDimension::CollectionItems
                         && resource.operation == $operation), "{error:?}");
@@ -2298,28 +2546,97 @@ mod curve_plane_projection_limit_tests {
         };
     }
 
-    collection_limit_test!(fc_curve_coordinate_record_refuses_limit, fc_curve_coordinate_records, "creo native FC curve coordinate records");
-    collection_limit_test!(prototype_pcurve_record_refuses_limit, prototype_pcurve_records, "creo native prototype pcurve records");
-    collection_limit_test!(curve_prototype_topology_record_refuses_limit, curve_prototype_topology_records, "creo native curve prototype topology records");
-    collection_limit_test!(curve_prototype_record_refuses_limit, |ctx, scan| curve_prototype_records(ctx, scan, &scan.curves.prototypes, "creo:curve:prototype"), "creo native curve prototype records");
-    collection_limit_test!(plane_local_system_record_refuses_limit, |ctx, scan| plane_local_system_records(ctx, scan, &scan.planes.local_systems, "creo:surface:plane_local_system"), "creo native plane local system records");
-    collection_limit_test!(plane_envelope_record_refuses_limit, |ctx, scan| plane_envelope_records(ctx, scan, &scan.planes.envelopes, "creo:surface:plane_envelope"), "creo native plane envelope records");
-    collection_limit_test!(outline_plane_record_refuses_limit, |ctx, scan| outline_plane_records(ctx, scan, &scan.planes.outlines, "creo:surface:outline_plane"), "creo native outline plane records");
-    collection_limit_test!(datum_plane_record_refuses_limit, datum_plane_records, "creo native datum plane records");
-    collection_limit_test!(datum_cylinder_record_refuses_limit, datum_cylinder_records, "creo native datum cylinder records");
-    collection_limit_test!(section_transform_record_refuses_limit, feature_section_transform_records, "creo native section transform records");
-    collection_limit_test!(placement_instruction_record_refuses_limit, feature_placement_instruction_records, "creo native placement instruction records");
+    collection_limit_test!(
+        fc_curve_coordinate_record_refuses_limit,
+        fc_curve_coordinate_records,
+        "creo native FC curve coordinate records"
+    );
+    collection_limit_test!(
+        prototype_pcurve_record_refuses_limit,
+        prototype_pcurve_records,
+        "creo native prototype pcurve records"
+    );
+    collection_limit_test!(
+        curve_prototype_topology_record_refuses_limit,
+        curve_prototype_topology_records,
+        "creo native curve prototype topology records"
+    );
+    collection_limit_test!(
+        curve_prototype_record_refuses_limit,
+        |ctx, scan| curve_prototype_records(
+            ctx,
+            scan,
+            &scan.curves.prototypes,
+            "creo:curve:prototype"
+        ),
+        "creo native curve prototype records"
+    );
+    collection_limit_test!(
+        plane_local_system_record_refuses_limit,
+        |ctx, scan| plane_local_system_records(
+            ctx,
+            scan,
+            &scan.planes.local_systems,
+            "creo:surface:plane_local_system"
+        ),
+        "creo native plane local system records"
+    );
+    collection_limit_test!(
+        plane_envelope_record_refuses_limit,
+        |ctx, scan| plane_envelope_records(
+            ctx,
+            scan,
+            &scan.planes.envelopes,
+            "creo:surface:plane_envelope"
+        ),
+        "creo native plane envelope records"
+    );
+    collection_limit_test!(
+        outline_plane_record_refuses_limit,
+        |ctx, scan| outline_plane_records(
+            ctx,
+            scan,
+            &scan.planes.outlines,
+            "creo:surface:outline_plane"
+        ),
+        "creo native outline plane records"
+    );
+    collection_limit_test!(
+        datum_plane_record_refuses_limit,
+        datum_plane_records,
+        "creo native datum plane records"
+    );
+    collection_limit_test!(
+        datum_cylinder_record_refuses_limit,
+        datum_cylinder_records,
+        "creo native datum cylinder records"
+    );
+    collection_limit_test!(
+        section_transform_record_refuses_limit,
+        feature_section_transform_records,
+        "creo native section transform records"
+    );
+    collection_limit_test!(
+        placement_instruction_record_refuses_limit,
+        feature_placement_instruction_records,
+        "creo native placement instruction records"
+    );
 
     #[test]
     fn borrowed_curve_and_plane_projection_preserves_json() {
         let scan = scan();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let fc = fc_curve_coordinate_records(&ctx, &scan).expect("record is admitted");
-        let plane = plane_envelope_records(&ctx, &scan, &scan.planes.envelopes, "creo:surface:plane_envelope")
-            .expect("record is admitted");
+        let plane = plane_envelope_records(
+            &ctx,
+            &scan,
+            &scan.planes.envelopes,
+            "creo:surface:plane_envelope",
+        )
+        .expect("record is admitted");
         let fc = serde_json::to_value(&fc[0]).expect("record serializes");
         let plane = serde_json::to_value(&plane[0]).expect("record serializes");
         assert_eq!(fc["body"], serde_json::json!([0xfc, 1]));
@@ -2451,7 +2768,9 @@ impl Serialize for ScalarTokens<'_> {
         match self {
             Self::Empty => serializer.collect_seq(std::iter::empty::<&[u8]>()),
             Self::Present(tokens) => serializer.collect_seq(tokens.iter()),
-            Self::Missing(count) => serializer.collect_seq(std::iter::repeat_n(&[] as &[u8], *count)),
+            Self::Missing(count) => {
+                serializer.collect_seq(std::iter::repeat_n(&[] as &[u8], *count))
+            }
         }
     }
 }
@@ -2464,39 +2783,81 @@ fn serialize_surface_named_value<S: serde::Serializer>(
     use serde::ser::SerializeMap;
     let (kind, compact, dimensions, count, scalars, tokens, opaque) = match value {
         SurfaceNamedValue::Empty => (
-            "empty", CompactValues::Empty, None, None,
-            ScalarValues::Empty, ScalarTokens::Empty, &[][..],
+            "empty",
+            CompactValues::Empty,
+            None,
+            None,
+            ScalarValues::Empty,
+            ScalarTokens::Empty,
+            &[][..],
         ),
         SurfaceNamedValue::CompactInt(value) => (
-            "compact_int", CompactValues::One(*value), None, None,
-            ScalarValues::Empty, ScalarTokens::Empty, &[][..],
+            "compact_int",
+            CompactValues::One(*value),
+            None,
+            None,
+            ScalarValues::Empty,
+            ScalarTokens::Empty,
+            &[][..],
         ),
         SurfaceNamedValue::CompactIntArray(values) => (
-            "compact_int_array", CompactValues::Many(values), None, None,
-            ScalarValues::Empty, ScalarTokens::Empty, &[][..],
+            "compact_int_array",
+            CompactValues::Many(values),
+            None,
+            None,
+            ScalarValues::Empty,
+            ScalarTokens::Empty,
+            &[][..],
         ),
         SurfaceNamedValue::ContiguousEntityReferences(ids) => (
-            "contiguous_entity_references", CompactValues::Many(ids), None, None,
-            ScalarValues::Empty, ScalarTokens::Empty, &[][..],
+            "contiguous_entity_references",
+            CompactValues::Many(ids),
+            None,
+            None,
+            ScalarValues::Empty,
+            ScalarTokens::Empty,
+            &[][..],
         ),
         SurfaceNamedValue::ScalarArray(array) => (
-            "scalar_array", CompactValues::Empty, Some(array.dimensions()), Some(array.count()),
+            "scalar_array",
+            CompactValues::Empty,
+            Some(array.dimensions()),
+            Some(array.count()),
             ScalarValues::Optional(array.values()),
-            array.tokens().map_or(ScalarTokens::Empty, ScalarTokens::Present), &[][..],
+            array
+                .tokens()
+                .map_or(ScalarTokens::Empty, ScalarTokens::Present),
+            &[][..],
         ),
         SurfaceNamedValue::CountedScalarArray(array) => (
-            "counted_scalar_array", CompactValues::Empty, None, Some(array.count()),
+            "counted_scalar_array",
+            CompactValues::Empty,
+            None,
+            Some(array.count()),
             ScalarValues::Optional(array.values()),
-            array.tokens().map_or(ScalarTokens::Missing(array.values().len()), ScalarTokens::Present),
+            array.tokens().map_or(
+                ScalarTokens::Missing(array.values().len()),
+                ScalarTokens::Present,
+            ),
             &[][..],
         ),
         SurfaceNamedValue::ScalarSequence(values) => (
-            "scalar_sequence", CompactValues::Empty, None, None,
-            ScalarValues::Sequence(values), ScalarTokens::Empty, &[][..],
+            "scalar_sequence",
+            CompactValues::Empty,
+            None,
+            None,
+            ScalarValues::Sequence(values),
+            ScalarTokens::Empty,
+            &[][..],
         ),
         SurfaceNamedValue::Opaque(bytes) => (
-            "opaque", CompactValues::Empty, None, None,
-            ScalarValues::Empty, ScalarTokens::Empty, bytes.as_slice(),
+            "opaque",
+            CompactValues::Empty,
+            None,
+            None,
+            ScalarValues::Empty,
+            ScalarTokens::Empty,
+            bytes.as_slice(),
         ),
     };
     let mut map = serializer.serialize_map(Some(7))?;
@@ -2723,7 +3084,11 @@ pub(super) fn surface_prototype_records<'a>(
         };
         let mut parameters = Vec::new();
         for parameter in &record.parameters {
-            ctx.try_reserve_items(&mut parameters, 1, "creo native surface prototype parameters")?;
+            ctx.try_reserve_items(
+                &mut parameters,
+                1,
+                "creo native surface prototype parameters",
+            )?;
             parameters.push(CreoSurfaceNamedParameterRecord {
                 name: &parameter.name,
                 value: &parameter.value,
@@ -2754,7 +3119,10 @@ pub(super) fn surface_contour_records<'a>(
     let mut records = Vec::new();
     for record in contours {
         let id = ctx.format_retained(
-            format_args!("creo:{namespace}:surface_contour#{}-{}", record.surface_id, record.offset),
+            format_args!(
+                "creo:{namespace}:surface_contour#{}-{}",
+                record.surface_id, record.offset
+            ),
             "creo native surface contour record id",
         )?;
         ctx.try_reserve_items(&mut records, 1, "creo native surface contour records")?;
@@ -2781,40 +3149,65 @@ mod surface_projection_limit_tests {
     use super::{surface_contour_records, surface_prototype_records, surface_row_records};
     use crate::surface::arrays::{CountedScalars, DimensionedScalars};
     use crate::surface::{
-        BoundaryType, SurfaceContourRecord, SurfaceKind, SurfaceNamedParameter,
-        SurfaceNamedValue, SurfacePrototypeFamily, SurfacePrototypeRecord, SurfaceRow,
+        BoundaryType, SurfaceContourRecord, SurfaceKind, SurfaceNamedParameter, SurfaceNamedValue,
+        SurfacePrototypeFamily, SurfacePrototypeRecord, SurfaceRow,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.surfaces.rows.push(SurfaceRow {
-            id: 7, kind: SurfaceKind::Plane, feature_id: 2, reversed: false,
-            boundary_type: BoundaryType::Code01, next_surface: 0, offset: 3,
+            id: 7,
+            kind: SurfaceKind::Plane,
+            feature_id: 2,
+            reversed: false,
+            boundary_type: BoundaryType::Code01,
+            next_surface: 0,
+            offset: 3,
         });
         scan.surfaces.contours.push(SurfaceContourRecord {
-            surface_id: 7, chain_index: 0, curve_header_id: 8, trv: 1,
-            parameter_envelope: [None; 4], separator_reference: None,
-            body: vec![8, 0xe3], offset: 5, envelope_offset: 6, surface_row_offset: 3,
+            surface_id: 7,
+            chain_index: 0,
+            curve_header_id: 8,
+            trv: 1,
+            parameter_envelope: [None; 4],
+            separator_reference: None,
+            body: vec![8, 0xe3],
+            offset: 5,
+            envelope_offset: 6,
+            surface_row_offset: 3,
         });
         let values = [
             SurfaceNamedValue::Empty,
             SurfaceNamedValue::CompactInt(4),
             SurfaceNamedValue::CompactIntArray(vec![4, 5]),
             SurfaceNamedValue::ContiguousEntityReferences(vec![7, 8]),
-            SurfaceNamedValue::ScalarArray(DimensionedScalars::empty(1, 2).expect("test scalar grid")),
-            SurfaceNamedValue::CountedScalarArray(CountedScalars::empty(2).expect("test scalar array")),
+            SurfaceNamedValue::ScalarArray(
+                DimensionedScalars::empty(1, 2).expect("test scalar grid"),
+            ),
+            SurfaceNamedValue::CountedScalarArray(
+                CountedScalars::empty(2).expect("test scalar array"),
+            ),
             SurfaceNamedValue::ScalarSequence(vec![1.0, 2.0]),
             SurfaceNamedValue::Opaque(vec![0xe3]),
         ];
-        scan.surfaces.prototype_records.push(SurfacePrototypeRecord {
-            family: SurfacePrototypeFamily::Plane,
-            parameters: values.into_iter().enumerate().map(|(offset, value)| SurfaceNamedParameter {
-                name: "parameter".into(), value, body: vec![0xe3],
-                offset, value_offset: offset + 1,
-            }).collect(),
-            offset: 11,
-        });
+        scan.surfaces
+            .prototype_records
+            .push(SurfacePrototypeRecord {
+                family: SurfacePrototypeFamily::Plane,
+                parameters: values
+                    .into_iter()
+                    .enumerate()
+                    .map(|(offset, value)| SurfaceNamedParameter {
+                        name: "parameter".into(),
+                        value,
+                        body: vec![0xe3],
+                        offset,
+                        value_offset: offset + 1,
+                    })
+                    .collect(),
+                offset: 11,
+            });
         scan
     }
 
@@ -2824,15 +3217,17 @@ mod surface_projection_limit_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let error = match surface_row_records(&ctx, &scan, &scan.surfaces.rows, "visibgeom") {
-            Err(error) => error,
-            Ok(_) => panic!("one surface row exceeds the collection limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = surface_row_records(&ctx, &scan, &scan.surfaces.rows, "visibgeom") else {
+            panic!("one surface row exceeds the collection limit")
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native surface row records"), "{error:?}");
+                && resource.operation == "creo native surface row records"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -2841,15 +3236,18 @@ mod surface_projection_limit_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let error = match surface_contour_records(&ctx, &scan, &scan.surfaces.contours, "visibgeom") {
-            Err(error) => error,
-            Ok(_) => panic!("one contour exceeds the collection limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = surface_contour_records(&ctx, &scan, &scan.surfaces.contours, "visibgeom")
+        else {
+            panic!("one contour exceeds the collection limit")
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native surface contour records"), "{error:?}");
+                && resource.operation == "creo native surface contour records"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -2858,15 +3256,19 @@ mod surface_projection_limit_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let error = match surface_prototype_records(&ctx, &scan, &scan.surfaces.prototype_records, "visibgeom") {
-            Err(error) => error,
-            Ok(_) => panic!("one parameter exceeds the collection limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) =
+            surface_prototype_records(&ctx, &scan, &scan.surfaces.prototype_records, "visibgeom")
+        else {
+            panic!("one parameter exceeds the collection limit");
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native surface prototype parameters"), "{error:?}");
+                && resource.operation == "creo native surface prototype parameters"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -2875,15 +3277,19 @@ mod surface_projection_limit_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 8;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let error = match surface_prototype_records(&ctx, &scan, &scan.surfaces.prototype_records, "visibgeom") {
-            Err(error) => error,
-            Ok(_) => panic!("prototype row exceeds the collection limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) =
+            surface_prototype_records(&ctx, &scan, &scan.surfaces.prototype_records, "visibgeom")
+        else {
+            panic!("prototype row exceeds the collection limit");
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native surface prototype records"), "{error:?}");
+                && resource.operation == "creo native surface prototype records"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -2894,15 +3300,19 @@ mod surface_projection_limit_tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes =
             ("creo:visibgeom:surface_prototype#11".len() + "other:unknown".len() - 1) as u64;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let error = match surface_prototype_records(&ctx, &scan, &scan.surfaces.prototype_records, "visibgeom") {
-            Err(error) => error,
-            Ok(_) => panic!("unknown-family copy exceeds the retained limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) =
+            surface_prototype_records(&ctx, &scan, &scan.surfaces.prototype_records, "visibgeom")
+        else {
+            panic!("unknown-family copy exceeds the retained limit");
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native surface prototype family"), "{error:?}");
+                && resource.operation == "creo native surface prototype family"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -2910,11 +3320,14 @@ mod surface_projection_limit_tests {
         let scan = scan();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let records = surface_prototype_records(&ctx, &scan, &scan.surfaces.prototype_records, "visibgeom")
-            .expect("prototype is admitted");
-        let values = records[0].parameters.iter()
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let records =
+            surface_prototype_records(&ctx, &scan, &scan.surfaces.prototype_records, "visibgeom")
+                .expect("prototype is admitted");
+        let values = records[0]
+            .parameters
+            .iter()
             .map(|parameter| serde_json::to_value(parameter).expect("parameter serializes"))
             .collect::<Vec<_>>();
         assert_eq!(values[1]["compact_values"], serde_json::json!([4]));
@@ -2960,7 +3373,8 @@ fn curve_id_counts(
                 entry.insert(0)
             }
         };
-        *count = (*count).checked_add(1)
+        *count = (*count)
+            .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     }
     Ok(counts)
@@ -3102,10 +3516,17 @@ pub(super) fn tabulated_cylinder_curve_replay_records<'a>(
     let mut records = Vec::new();
     for record in &scan.curves.tabulated_cylinder_replays {
         let id = ctx.format_retained(
-            format_args!("creo:visibgeom:tabulated_cylinder_curve_replay#{}", record.surface_id),
+            format_args!(
+                "creo:visibgeom:tabulated_cylinder_curve_replay#{}",
+                record.surface_id
+            ),
             "creo native tabulated cylinder replay record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native tabulated cylinder replay records")?;
+        ctx.try_reserve_items(
+            &mut records,
+            1,
+            "creo native tabulated cylinder replay records",
+        )?;
         records.push(CreoTabulatedCylinderCurveReplayRecord {
             id,
             body: &record.body,
@@ -3144,33 +3565,72 @@ mod curve_projection_limit_tests {
 
     fn scan() -> crate::container::ContainerScan<'static> {
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
-        let scalar = CurveParameterScalar { value: 2.0, raw: vec![0xf9, 0], offset: 1 };
-        let reference = CurveParameterReference { entity_id: 9, offset: 3, length: 2 };
-        let opaque = CurveParameterOpaqueSpan { raw: vec![0xe3], offset: 5 };
+        let scalar = CurveParameterScalar {
+            value: 2.0,
+            raw: vec![0xf9, 0],
+            offset: 1,
+        };
+        let reference = CurveParameterReference {
+            entity_id: 9,
+            offset: 3,
+            length: 2,
+        };
+        let opaque = CurveParameterOpaqueSpan {
+            raw: vec![0xe3],
+            offset: 5,
+        };
         scan.curves.parameters.push(CurveParameterRecord {
-            curve_id: 8, type_byte: 1, body: vec![0xf9, 0, 0xe3],
-            scalar_tokens: vec![scalar.clone()], references: vec![reference.clone()],
-            opaque_spans: vec![opaque.clone()], reference_geometry: [0, 0],
-            offset: 11, body_offset: 12, suffix_offset: 15,
+            curve_id: 8,
+            type_byte: 1,
+            body: vec![0xf9, 0, 0xe3],
+            scalar_tokens: vec![scalar.clone()],
+            references: vec![reference.clone()],
+            opaque_spans: vec![opaque.clone()],
+            reference_geometry: [0, 0],
+            offset: 11,
+            body_offset: 12,
+            suffix_offset: 15,
         });
         scan.curves.cross_section_rows.push(DepdbCurveRow {
-            id: 8, type_byte: 1, feature_id: 2, directions: [0, 0],
-            suffix: dummy_depdb_curve_suffix(), body: vec![0xe3],
-            scalar_tokens: vec![scalar], references: vec![reference],
-            opaque_spans: vec![opaque], offset: 17,
+            id: 8,
+            type_byte: 1,
+            feature_id: 2,
+            directions: [0, 0],
+            suffix: dummy_depdb_curve_suffix(),
+            body: vec![0xe3],
+            scalar_tokens: vec![scalar],
+            references: vec![reference],
+            opaque_spans: vec![opaque],
+            offset: 17,
         });
         scan.curves.topology_rows.push(CurveTopologyRow {
-            id: 8, type_byte: 1, feature_id: 2, directions: [0, 0],
-            faces: [None, None], next_edges: [0, 0], offset: 19,
+            id: 8,
+            type_byte: 1,
+            feature_id: 2,
+            directions: [0, 0],
+            faces: [None, None],
+            next_edges: [0, 0],
+            offset: 19,
         });
-        scan.curves.tabulated_cylinder_replays.push(TabulatedCylinderCurveReplay {
-            body: vec![0xf9, 0xe3], surface_id: 7, curve_id: 8,
-            curve_type: 1, flip: 0, tangent_condition: 0, degree: 3,
-            parameter_body: vec![0xf9], control_point_ids: [1, 2, 3, 4],
-            successor_reference: 0, control_point_bodies: std::array::from_fn(|_| vec![0xe3]),
-            control_points: [None; 4], terminal_reference: 0,
-            offset: 23, surface_row_offset: 21,
-        });
+        scan.curves
+            .tabulated_cylinder_replays
+            .push(TabulatedCylinderCurveReplay {
+                body: vec![0xf9, 0xe3],
+                surface_id: 7,
+                curve_id: 8,
+                curve_type: 1,
+                flip: 0,
+                tangent_condition: 0,
+                degree: 3,
+                parameter_body: vec![0xf9],
+                control_point_ids: [1, 2, 3, 4],
+                successor_reference: 0,
+                control_point_bodies: std::array::from_fn(|_| vec![0xe3]),
+                control_points: [None; 4],
+                terminal_reference: 0,
+                offset: 23,
+                surface_row_offset: 21,
+            });
         scan
     }
 
@@ -3184,10 +3644,7 @@ mod curve_projection_limit_tests {
                 policy.limits.max_collection_items = $limit;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("empty root is admitted");
-                let error = match ($project)(&ctx, &scan) {
-                    Err(error) => error,
-                    Ok(_) => panic!("native curve projection exceeds the collection limit"),
-                };
+                let Err(error) = ($project)(&ctx, &scan) else { panic!("native curve projection exceeds the collection limit") };
                 assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                     if resource.dimension == ResourceDimension::CollectionItems
                         && resource.operation == $operation), "{error:?}");
@@ -3195,32 +3652,80 @@ mod curve_projection_limit_tests {
         };
     }
 
-    collection_limit_test!(curve_parameter_count_nodes_refuse_limit, |ctx, scan| curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom"), 0, "creo native curve parameter count nodes");
-    collection_limit_test!(curve_parameter_records_refuse_limit, |ctx, scan| curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom"), 1, "creo native curve parameter records");
-    collection_limit_test!(cross_section_curve_count_nodes_refuse_limit, cross_section_curve_row_records, 0, "creo native cross section curve count nodes");
-    collection_limit_test!(cross_section_curve_records_refuse_limit, cross_section_curve_row_records, 1, "creo native cross section curve records");
-    collection_limit_test!(curve_topology_count_nodes_refuse_limit, |ctx, scan| curve_topology_row_records(ctx, scan, &scan.curves.topology_rows, "visibgeom"), 0, "creo native curve topology count nodes");
-    collection_limit_test!(curve_topology_records_refuse_limit, |ctx, scan| curve_topology_row_records(ctx, scan, &scan.curves.topology_rows, "visibgeom"), 1, "creo native curve topology records");
-    collection_limit_test!(tabulated_cylinder_replay_records_refuse_limit, tabulated_cylinder_curve_replay_records, 0, "creo native tabulated cylinder replay records");
+    collection_limit_test!(
+        curve_parameter_count_nodes_refuse_limit,
+        |ctx, scan| curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom"),
+        0,
+        "creo native curve parameter count nodes"
+    );
+    collection_limit_test!(
+        curve_parameter_records_refuse_limit,
+        |ctx, scan| curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom"),
+        1,
+        "creo native curve parameter records"
+    );
+    collection_limit_test!(
+        cross_section_curve_count_nodes_refuse_limit,
+        cross_section_curve_row_records,
+        0,
+        "creo native cross section curve count nodes"
+    );
+    collection_limit_test!(
+        cross_section_curve_records_refuse_limit,
+        cross_section_curve_row_records,
+        1,
+        "creo native cross section curve records"
+    );
+    collection_limit_test!(
+        curve_topology_count_nodes_refuse_limit,
+        |ctx, scan| curve_topology_row_records(ctx, scan, &scan.curves.topology_rows, "visibgeom"),
+        0,
+        "creo native curve topology count nodes"
+    );
+    collection_limit_test!(
+        curve_topology_records_refuse_limit,
+        |ctx, scan| curve_topology_row_records(ctx, scan, &scan.curves.topology_rows, "visibgeom"),
+        1,
+        "creo native curve topology records"
+    );
+    collection_limit_test!(
+        tabulated_cylinder_replay_records_refuse_limit,
+        tabulated_cylinder_curve_replay_records,
+        0,
+        "creo native tabulated cylinder replay records"
+    );
 
     #[test]
     fn borrowed_curve_projection_preserves_nested_json() {
         let scan = scan();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let parameters = curve_parameter_records(&ctx, &scan, &scan.curves.parameters, "visibgeom")
             .expect("parameters are admitted");
-        let replay = tabulated_cylinder_curve_replay_records(&ctx, &scan).expect("replay is admitted");
+        let replay =
+            tabulated_cylinder_curve_replay_records(&ctx, &scan).expect("replay is admitted");
         let parameter = serde_json::to_value(&parameters[0]).expect("parameter serializes");
         let replay = serde_json::to_value(&replay[0]).expect("replay serializes");
         assert_eq!(parameter["scalar_values"], serde_json::json!([2.0]));
-        assert_eq!(parameter["scalar_tokens"], serde_json::json!([{"value":2.0,"raw":[249,0],"offset":1,"length":2}]));
+        assert_eq!(
+            parameter["scalar_tokens"],
+            serde_json::json!([{"value":2.0,"raw":[249,0],"offset":1,"length":2}])
+        );
         assert_eq!(parameter["skipped_references"], serde_json::json!([9]));
-        assert_eq!(parameter["references"], serde_json::json!([{"entity_id":9,"offset":3,"length":2}]));
-        assert_eq!(parameter["opaque_spans"], serde_json::json!([{"raw":[227],"offset":5,"length":1}]));
-        assert_eq!(replay["control_point_bodies"], serde_json::json!([[227],[227],[227],[227]]));
+        assert_eq!(
+            parameter["references"],
+            serde_json::json!([{"entity_id":9,"offset":3,"length":2}])
+        );
+        assert_eq!(
+            parameter["opaque_spans"],
+            serde_json::json!([{"raw":[227],"offset":5,"length":1}])
+        );
+        assert_eq!(
+            replay["control_point_bodies"],
+            serde_json::json!([[227], [227], [227], [227]])
+        );
     }
 }
 
@@ -3233,109 +3738,109 @@ pub(super) fn surface_parameter_records<'a>(
 ) -> Result<Vec<CreoSurfaceParameterRecord<'a>>, CodecError> {
     let mut records = Vec::new();
     for record in parameters {
-            let Some(row) = crate::surface::unique_surface_row(rows, record.surface_id) else {
-                continue;
-            };
-            let surface_family = surface_family(row.kind);
-            let boundary = match record.boundary {
-                crate::surface::SurfaceBodyBoundary::CompoundClose => "compound_close",
-                crate::surface::SurfaceBodyBoundary::NextRow => "next_row",
-                crate::surface::SurfaceBodyBoundary::NamedRecord => "named_record",
-                crate::surface::SurfaceBodyBoundary::SectionEnd => "section_end",
-            };
-            let id = ctx.format_retained(
-                format_args!("creo:{namespace}:surface_parameter#{}", record.surface_id),
-                "creo native surface parameter record id",
-            )?;
-            ctx.try_reserve_items(&mut records, 1, "creo native surface parameter records")?;
-            records.push(CreoSurfaceParameterRecord {
-                id,
-                surface_id: record.surface_id,
-                surface_type_byte: row.kind.canonical_type_byte(),
-                surface_family,
-                boundary,
-                body: &record.body,
-                slots: &record.scalar_tokens,
-                opaque_spans: &record.opaque_spans,
-                scalar_frames: &record.scalar_frames,
-                terminal_scalar_frame: record.terminal_scalar_frame(),
-                tabulated_cylinder_frame: record.tabulated_cylinder_frame().map(|frame| {
-                    CreoTabulatedCylinderFrame {
-                        values: frame.values().get(),
-                        prefixes: frame.prefixes(),
-                    }
+        let Some(row) = crate::surface::unique_surface_row(rows, record.surface_id) else {
+            continue;
+        };
+        let surface_family = surface_family(row.kind);
+        let boundary = match record.boundary {
+            crate::surface::SurfaceBodyBoundary::CompoundClose => "compound_close",
+            crate::surface::SurfaceBodyBoundary::NextRow => "next_row",
+            crate::surface::SurfaceBodyBoundary::NamedRecord => "named_record",
+            crate::surface::SurfaceBodyBoundary::SectionEnd => "section_end",
+        };
+        let id = ctx.format_retained(
+            format_args!("creo:{namespace}:surface_parameter#{}", record.surface_id),
+            "creo native surface parameter record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native surface parameter records")?;
+        records.push(CreoSurfaceParameterRecord {
+            id,
+            surface_id: record.surface_id,
+            surface_type_byte: row.kind.canonical_type_byte(),
+            surface_family,
+            boundary,
+            body: &record.body,
+            slots: &record.scalar_tokens,
+            opaque_spans: &record.opaque_spans,
+            scalar_frames: &record.scalar_frames,
+            terminal_scalar_frame: record.terminal_scalar_frame(),
+            tabulated_cylinder_frame: record.tabulated_cylinder_frame().map(|frame| {
+                CreoTabulatedCylinderFrame {
+                    values: frame.values().get(),
+                    prefixes: frame.prefixes(),
+                }
+            }),
+            positional_cylinder_frame: record.positional_cylinder_frame().map(|frame| {
+                CreoPositionalCylinderFrame {
+                    origin: frame.frame().origin(),
+                    axis: frame.frame().axis(),
+                    ref_direction: frame.frame().ref_direction(),
+                    radius: frame.radius().get(),
+                    length: frame.length().map(cadmpeg_ir::scalar::PositiveLength::get),
+                }
+            }),
+            split_cylinder_outline_bounds: record.split_cylinder_outline_bounds(),
+            positional_cone_frame: record.positional_cone_frame().map(|frame| {
+                CreoPositionalConeFrame {
+                    apex: frame.frame().origin(),
+                    axis: frame.frame().axis(),
+                    ref_direction: frame.frame().ref_direction(),
+                    half_angle: frame.half_angle().get().get(),
+                }
+            }),
+            positional_torus_frame: record.positional_torus_frame().map(|frame| {
+                CreoPositionalTorusFrame {
+                    center: frame.frame().origin(),
+                    axis: frame.frame().axis(),
+                    ref_direction: frame.frame().ref_direction(),
+                    major_radius: frame.major_radius().get(),
+                    minor_radius: frame.minor_radius().get(),
+                }
+            }),
+            torus_outline_frame: record
+                .torus_outline_frame()
+                .map(|frame| CreoTorusOutlineFrame {
+                    values: frame.values,
+                    selector: frame.selector,
+                    offset: frame.offset,
                 }),
-                positional_cylinder_frame: record.positional_cylinder_frame().map(|frame| {
-                    CreoPositionalCylinderFrame {
-                        origin: frame.frame().origin(),
-                        axis: frame.frame().axis(),
-                        ref_direction: frame.frame().ref_direction(),
-                        radius: frame.radius().get(),
-                        length: frame.length().map(cadmpeg_ir::scalar::PositiveLength::get),
-                    }
-                }),
-                split_cylinder_outline_bounds: record.split_cylinder_outline_bounds(),
-                positional_cone_frame: record.positional_cone_frame().map(|frame| {
-                    CreoPositionalConeFrame {
-                        apex: frame.frame().origin(),
-                        axis: frame.frame().axis(),
-                        ref_direction: frame.frame().ref_direction(),
-                        half_angle: frame.half_angle().get().get(),
-                    }
-                }),
-                positional_torus_frame: record.positional_torus_frame().map(|frame| {
-                    CreoPositionalTorusFrame {
-                        center: frame.frame().origin(),
-                        axis: frame.frame().axis(),
-                        ref_direction: frame.frame().ref_direction(),
-                        major_radius: frame.major_radius().get(),
-                        minor_radius: frame.minor_radius().get(),
-                    }
-                }),
-                torus_outline_frame: record.torus_outline_frame().map(|frame| {
-                    CreoTorusOutlineFrame {
-                        values: frame.values,
-                        selector: frame.selector,
-                        offset: frame.offset,
-                    }
-                }),
-                type26_five_coordinate_envelope: record.type26_five_coordinate_envelope().map(
-                    |envelope| CreoType26FiveCoordinateEnvelope {
-                        values: envelope.values,
-                        offset: envelope.offset,
+            type26_five_coordinate_envelope: record.type26_five_coordinate_envelope().map(
+                |envelope| CreoType26FiveCoordinateEnvelope {
+                    values: envelope.values,
+                    offset: envelope.offset,
+                },
+            ),
+            type26_split_coordinate_envelope: record.type26_split_coordinate_envelope().map(
+                |envelope| CreoType26SplitCoordinateEnvelope {
+                    values: envelope.values,
+                    offset: envelope.offset,
+                },
+            ),
+            torus_radius_overrides: record.torus_radius_overrides().map(|overrides| {
+                CreoTorusRadiusOverrides {
+                    radius1: overrides.radius1,
+                    radius2: overrides.radius2,
+                    radius2_encoding: match overrides.radius2_encoding {
+                        crate::surface::TorusRadius2Encoding::Direct => "direct",
+                        crate::surface::TorusRadius2Encoding::OuterRingDifference => {
+                            "outer_ring_difference"
+                        }
                     },
-                ),
-                type26_split_coordinate_envelope: record.type26_split_coordinate_envelope().map(
-                    |envelope| CreoType26SplitCoordinateEnvelope {
-                        values: envelope.values,
-                        offset: envelope.offset,
-                    },
-                ),
-                torus_radius_overrides: record.torus_radius_overrides().map(|overrides| {
-                    CreoTorusRadiusOverrides {
-                        radius1: overrides.radius1,
-                        radius2: overrides.radius2,
-                        radius2_encoding: match overrides.radius2_encoding {
-                            crate::surface::TorusRadius2Encoding::Direct => "direct",
-                            crate::surface::TorusRadius2Encoding::OuterRingDifference => {
-                                "outer_ring_difference"
-                            }
-                        },
-                        offset: overrides.offset,
-                    }
-                }),
-                replayed_torus_minor_radius: replayed_torus_minor_radius(scan, row, record),
-                cone_half_angle_override: record.cone_half_angle_override().map(|half_angle| {
-                    CreoConeHalfAngleOverride {
-                        radians: half_angle.radians.get().get(),
-                        offset: half_angle.offset,
-                    }
-                }),
-                extrusion_direction: record.extrusion_direction(),
-                row_offset: record.offset,
-                body_offset: record.body_offset,
-                source_section: source_section_ref(scan, record.body_offset),
-            });
+                    offset: overrides.offset,
+                }
+            }),
+            replayed_torus_minor_radius: replayed_torus_minor_radius(scan, row, record),
+            cone_half_angle_override: record.cone_half_angle_override().map(|half_angle| {
+                CreoConeHalfAngleOverride {
+                    radians: half_angle.radians.get().get(),
+                    offset: half_angle.offset,
+                }
+            }),
+            extrusion_direction: record.extrusion_direction(),
+            row_offset: record.offset,
+            body_offset: record.body_offset,
+            source_section: source_section_ref(scan, record.body_offset),
+        });
     }
     Ok(records)
 }
@@ -3353,16 +3858,35 @@ mod surface_parameter_projection_limit_tests {
     fn scan() -> crate::container::ContainerScan<'static> {
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.surfaces.rows.push(SurfaceRow {
-            id: 7, kind: SurfaceKind::Plane, feature_id: 2, reversed: false,
-            boundary_type: BoundaryType::Code01, next_surface: 0, offset: 3,
+            id: 7,
+            kind: SurfaceKind::Plane,
+            feature_id: 2,
+            reversed: false,
+            boundary_type: BoundaryType::Code01,
+            next_surface: 0,
+            offset: 3,
         });
-        let token = SurfaceParameterScalar { value: Some(1.0), raw: vec![0xf9, 0], offset: 0 };
+        let token = SurfaceParameterScalar {
+            value: Some(1.0),
+            raw: vec![0xf9, 0],
+            offset: 0,
+        };
         scan.surfaces.parameters.push(SurfaceParameterRecord {
-            surface_id: 7, body: vec![0xf9, 0], scalar_tokens: vec![token.clone()],
-            opaque_spans: vec![SurfaceParameterOpaqueSpan { raw: vec![0xe3], offset: 2 }],
-            scalar_frames: vec![SurfaceParameterScalarFrame { offset: 0, slots: vec![token] }],
+            surface_id: 7,
+            body: vec![0xf9, 0],
+            scalar_tokens: vec![token.clone()],
+            opaque_spans: vec![SurfaceParameterOpaqueSpan {
+                raw: vec![0xe3],
+                offset: 2,
+            }],
+            scalar_frames: vec![SurfaceParameterScalarFrame {
+                offset: 0,
+                slots: vec![token],
+            }],
             carrier: SurfaceParameterCarrier::Unresolved(SurfaceKind::Plane),
-            boundary: SurfaceBodyBoundary::CompoundClose, offset: 3, body_offset: 4,
+            boundary: SurfaceBodyBoundary::CompoundClose,
+            offset: 3,
+            body_offset: 4,
         });
         scan
     }
@@ -3373,15 +3897,23 @@ mod surface_parameter_projection_limit_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let error = match surface_parameter_records(&ctx, &scan, &scan.surfaces.rows, &scan.surfaces.parameters, "visibgeom") {
-            Err(error) => error,
-            Ok(_) => panic!("one parameter record exceeds the collection limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = surface_parameter_records(
+            &ctx,
+            &scan,
+            &scan.surfaces.rows,
+            &scan.surfaces.parameters,
+            "visibgeom",
+        ) else {
+            panic!("one parameter record exceeds the collection limit");
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native surface parameter records"), "{error:?}");
+                && resource.operation == "creo native surface parameter records"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -3390,15 +3922,23 @@ mod surface_parameter_projection_limit_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = "creo:visibgeom:surface_parameter#7".len() as u64 - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let error = match surface_parameter_records(&ctx, &scan, &scan.surfaces.rows, &scan.surfaces.parameters, "visibgeom") {
-            Err(error) => error,
-            Ok(_) => panic!("one parameter ID exceeds the retained limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = surface_parameter_records(
+            &ctx,
+            &scan,
+            &scan.surfaces.rows,
+            &scan.surfaces.parameters,
+            "visibgeom",
+        ) else {
+            panic!("one parameter ID exceeds the retained limit");
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native surface parameter record id"), "{error:?}");
+                && resource.operation == "creo native surface parameter record id"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -3406,14 +3946,26 @@ mod surface_parameter_projection_limit_tests {
         let scan = scan();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let records = surface_parameter_records(&ctx, &scan, &scan.surfaces.rows, &scan.surfaces.parameters, "visibgeom")
-            .expect("parameter record is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let records = surface_parameter_records(
+            &ctx,
+            &scan,
+            &scan.surfaces.rows,
+            &scan.surfaces.parameters,
+            "visibgeom",
+        )
+        .expect("parameter record is admitted");
         let value = serde_json::to_value(&records[0]).expect("record serializes");
         assert_eq!(value["body"], serde_json::json!([249, 0]));
-        assert_eq!(value["slots"], serde_json::json!([{"value":1.0,"raw":[249,0],"offset":0,"length":2}]));
-        assert_eq!(value["opaque_spans"], serde_json::json!([{"raw":[227],"offset":2,"length":1}]));
+        assert_eq!(
+            value["slots"],
+            serde_json::json!([{"value":1.0,"raw":[249,0],"offset":0,"length":2}])
+        );
+        assert_eq!(
+            value["opaque_spans"],
+            serde_json::json!([{"raw":[227],"offset":2,"length":1}])
+        );
     }
 }
 
@@ -3441,39 +3993,48 @@ pub(super) fn feature_operation_state_records<'a>(
         ordinals.insert(state.feature_id, next_ordinal);
         let name = CreoOperationNameRecord {
             display_name_stored: state.name.display_name_stored(),
-            stored_name: state.name.stored_name_bytes()
+            stored_name: state
+                .name
+                .stored_name_bytes()
                 .map(|bytes| ctx.copy_retained_lossy_utf8(bytes, "creo native feature state name"))
                 .transpose()?,
             stored_name_bytes: state.name.stored_name_bytes(),
             identifier_keyword: state.name.identifier_keyword(),
-            stored_name_prefix: state.name.stored_name_prefix()
-                .map(|prefix| ctx.format_retained(char::from(prefix), "creo native feature state prefix"))
+            stored_name_prefix: state
+                .name
+                .stored_name_prefix()
+                .map(|prefix| {
+                    ctx.format_retained(char::from(prefix), "creo native feature state prefix")
+                })
                 .transpose()?,
         };
         let id = ctx.format_retained(
-            format_args!("creo:mdlstatus:feature_state#{}:{state_ordinal}", state.feature_id),
+            format_args!(
+                "creo:mdlstatus:feature_state#{}:{state_ordinal}",
+                state.feature_id
+            ),
             "creo native feature state IDs",
         )?;
         ctx.try_reserve_items(&mut records, 1, "creo native feature state records")?;
         records.push(CreoFeatureOperationState {
-                id,
-                feature_id: state.feature_id,
-                state_ordinal,
-                current: !state.display_state_conflict
-                    && current_offsets.get(&state.feature_id) == Some(&state.offset),
-                family: state.kind.as_str(),
-                name,
-                recipe: state
-                    .recipe
-                    .candidate()
-                    .map(crate::feature::operations::FeatureRecipe::name),
-                recipe_conflict: state.recipe.is_conflicting().then_some(true),
-                display_state_conflict: state.display_state_conflict.then_some(true),
-                root_schema_class: state.root_schema_class().map(SchemaClass::code),
-                parent_feature_id: state.parent_feature_id(),
-                offset: state.offset,
-                state_offset: state.state_offset,
-            });
+            id,
+            feature_id: state.feature_id,
+            state_ordinal,
+            current: !state.display_state_conflict
+                && current_offsets.get(&state.feature_id) == Some(&state.offset),
+            family: state.kind.as_str(),
+            name,
+            recipe: state
+                .recipe
+                .candidate()
+                .map(crate::feature::operations::FeatureRecipe::name),
+            recipe_conflict: state.recipe.is_conflicting().then_some(true),
+            display_state_conflict: state.display_state_conflict.then_some(true),
+            root_schema_class: state.root_schema_class().map(SchemaClass::code),
+            parent_feature_id: state.parent_feature_id(),
+            offset: state.offset,
+            state_offset: state.state_offset,
+        });
     }
     Ok(records)
 }
@@ -3488,14 +4049,10 @@ pub(super) fn feature_reference_name_records(
             format_args!("creo:mdlrefinfo:feature_name#{}", record.offset),
             "creo native feature reference IDs",
         )?;
-        let name = ctx.copy_retained_lossy_utf8(
-            &record.name_bytes,
-            "creo native feature reference text",
-        )?;
-        let name_bytes = ctx.copy_retained(
-            &record.name_bytes,
-            "creo native feature reference bytes",
-        )?;
+        let name =
+            ctx.copy_retained_lossy_utf8(&record.name_bytes, "creo native feature reference text")?;
+        let name_bytes =
+            ctx.copy_retained(&record.name_bytes, "creo native feature reference bytes")?;
         ctx.try_reserve_items(&mut records, 1, "creo native feature reference records")?;
         records.push(CreoFeatureReferenceNameRecord {
             id,
@@ -3532,20 +4089,23 @@ pub(super) fn pcurve_endpoint_records(
         )?;
         ctx.try_reserve_items(&mut records, 1, "creo native pcurve endpoint records")?;
         records.push((
-                CreoPcurveEndpointRecord {
-                    id,
-                    curve_id: pcurve.curve_id,
-                    faces: pcurve.stored_face_ids(),
-                    face_0_endpoints: pcurve.face_0_endpoints,
-                    face_1_endpoints: pcurve.face_1_endpoints,
-                    source_form: "positional",
-                },
-                pcurve.offset,
+            CreoPcurveEndpointRecord {
+                id,
+                curve_id: pcurve.curve_id,
+                faces: pcurve.stored_face_ids(),
+                face_0_endpoints: pcurve.face_0_endpoints,
+                face_1_endpoints: pcurve.face_1_endpoints,
+                source_form: "positional",
+            },
+            pcurve.offset,
         ));
     }
     for pcurve in &scan.curves.bound_prototype_pcurves {
         let id = ctx.format_retained(
-            format_args!("creo:visibgeom:prototype_pcurve_endpoints#{}", pcurve.curve_id),
+            format_args!(
+                "creo:visibgeom:prototype_pcurve_endpoints#{}",
+                pcurve.curve_id
+            ),
             "creo native prototype pcurve endpoint record id",
         )?;
         ctx.try_reserve_items(&mut records, 1, "creo native pcurve endpoint records")?;
@@ -3561,7 +4121,12 @@ pub(super) fn pcurve_endpoint_records(
             pcurve.offset,
         ));
     }
-    crate::sort::stable_sort_by_key(ctx, records.as_mut_slice(), |(_, offset)| *offset, "creo pcurve endpoint records records ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        records.as_mut_slice(),
+        |(_, offset)| *offset,
+        "creo pcurve endpoint records records ordering",
+    )?;
     Ok(records)
 }
 
@@ -3574,42 +4139,54 @@ mod pcurve_endpoint_projection_limit_tests {
     fn positional_pcurve_endpoint_refuses_collection_limit() {
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
-            curve_id: 7, faces: [None; 2],
-            face_0_endpoints: [[0.0; 2]; 2], face_1_endpoints: [[0.0; 2]; 2], offset: 4,
+            curve_id: 7,
+            faces: [None; 2],
+            face_0_endpoints: [[0.0; 2]; 2],
+            face_1_endpoints: [[0.0; 2]; 2],
+            offset: 4,
         });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let error = match pcurve_endpoint_records(&ctx, &scan) {
-            Err(error) => error,
-            Ok(_) => panic!("the endpoint record exceeds the collection limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = pcurve_endpoint_records(&ctx, &scan) else {
+            panic!("the endpoint record exceeds the collection limit")
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native pcurve endpoint records"), "{error:?}");
+                && resource.operation == "creo native pcurve endpoint records"),
+            "{error:?}"
+        );
     }
 
     #[test]
     fn prototype_pcurve_endpoint_refuses_collection_limit() {
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
-        scan.curves.bound_prototype_pcurves.push(crate::curve::BoundPrototypePcurve {
-            curve_id: 8, faces: [None; 2],
-            face_0_endpoints: [[0.0; 2]; 2], face_1_endpoints: [[0.0; 2]; 2], offset: 3,
-        });
+        scan.curves
+            .bound_prototype_pcurves
+            .push(crate::curve::BoundPrototypePcurve {
+                curve_id: 8,
+                faces: [None; 2],
+                face_0_endpoints: [[0.0; 2]; 2],
+                face_1_endpoints: [[0.0; 2]; 2],
+                offset: 3,
+            });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let error = match pcurve_endpoint_records(&ctx, &scan) {
-            Err(error) => error,
-            Ok(_) => panic!("the prototype endpoint record exceeds the collection limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = pcurve_endpoint_records(&ctx, &scan) else {
+            panic!("the prototype endpoint record exceeds the collection limit")
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native pcurve endpoint records"), "{error:?}");
+                && resource.operation == "creo native pcurve endpoint records"),
+            "{error:?}"
+        );
     }
 }
 
@@ -3636,11 +4213,18 @@ pub(super) fn curve_expression_records<'a>(
         let mut lines = Vec::new();
         for line in &record.lines {
             ctx.try_reserve_items(&mut lines, 1, "creo native curve expression lines")?;
-            lines.push(CreoCurveExpressionLine { text: &line.text, offset: line.offset });
+            lines.push(CreoCurveExpressionLine {
+                text: &line.text,
+                offset: line.offset,
+            });
         }
         let mut assignments = Vec::new();
         for assignment in &record.assignments {
-            ctx.try_reserve_items(&mut assignments, 1, "creo native curve expression assignments")?;
+            ctx.try_reserve_items(
+                &mut assignments,
+                1,
+                "creo native curve expression assignments",
+            )?;
             assignments.push(curve_expression_assignment_projection(assignment));
         }
         let mut solve_blocks = Vec::new();
@@ -3657,10 +4241,18 @@ pub(super) fn curve_expression_records<'a>(
             }
             let mut block_assignments = Vec::new();
             for assignment in &block.assignments {
-                ctx.try_reserve_items(&mut block_assignments, 1, "creo native curve expression block assignments")?;
+                ctx.try_reserve_items(
+                    &mut block_assignments,
+                    1,
+                    "creo native curve expression block assignments",
+                )?;
                 block_assignments.push(curve_expression_assignment_projection(assignment));
             }
-            ctx.try_reserve_items(&mut solve_blocks, 1, "creo native curve expression solve blocks")?;
+            ctx.try_reserve_items(
+                &mut solve_blocks,
+                1,
+                "creo native curve expression solve blocks",
+            )?;
             solve_blocks.push(CreoCurveExpressionSolveBlock {
                 equations,
                 assignments: block_assignments,
@@ -3675,12 +4267,16 @@ pub(super) fn curve_expression_records<'a>(
             id,
             entity_id: record.entity_id,
             backup: record.backup,
-            local_system: record.local_system.as_ref().map(|frame| CreoCurveExpressionLocalSystem {
-                dimensions: frame.dimensions,
-                count: frame.count,
-                body: &frame.body,
-                explicit_slots: frame.explicit_slots.map(cadmpeg_ir::units::FiniteVector::get),
-                offset: frame.offset,
+            local_system: record.local_system.as_ref().map(|frame| {
+                CreoCurveExpressionLocalSystem {
+                    dimensions: frame.dimensions,
+                    count: frame.count,
+                    body: &frame.body,
+                    explicit_slots: frame
+                        .explicit_slots
+                        .map(cadmpeg_ir::units::FiniteVector::get),
+                    offset: frame.offset,
+                }
             }),
             lines,
             assignments,
@@ -3705,28 +4301,50 @@ mod curve_expression_projection_limit_tests {
     fn scan() -> crate::container::ContainerScan<'static> {
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
         let assignment = CurveExpressionAssignment {
-            target: CurveExpressionTarget::Parameter { name: "p".into(), declared_unit: None },
-            expression: "2".into(), dependencies: vec!["q".into()],
+            target: CurveExpressionTarget::Parameter {
+                name: "p".into(),
+                declared_unit: None,
+            },
+            expression: "2".into(),
+            dependencies: vec!["q".into()],
             value: Some(CurveExpressionValue::Number(2.0)),
-            activation: CurveExpressionActivation::Active, offset: 6,
+            activation: CurveExpressionActivation::Active,
+            offset: 6,
         };
         scan.curves.expressions.push(CurveExpressionRecord {
-            entity_id: 7, backup: false,
+            entity_id: 7,
+            backup: false,
             local_system: Some(CurveExpressionLocalSystem {
-                dimensions: 4, count: 3, body: vec![0xf9], explicit_slots: None, offset: 4,
+                dimensions: 4,
+                count: 3,
+                body: vec![0xf9],
+                explicit_slots: None,
+                offset: 4,
             }),
-            lines: vec![CurveExpressionLine { text: "p=2".into(), offset: 5 }],
+            lines: vec![CurveExpressionLine {
+                text: "p=2".into(),
+                offset: 5,
+            }],
             assignments: vec![assignment.clone()],
             solve_blocks: vec![CurveExpressionSolveBlock {
                 equations: vec![CurveExpressionEquation {
-                    left: "p".into(), right: "q".into(), dependencies: vec!["q".into()], offset: 7,
+                    left: "p".into(),
+                    right: "q".into(),
+                    dependencies: vec!["q".into()],
+                    offset: 7,
                 }],
                 assignments: vec![assignment],
-                unknowns: vec![SolveUnknown { name: "q".into(), solution: Some(CurveExpressionValue::Number(2.0)) }],
-                offset: 8, for_offset: 9,
+                unknowns: vec![SolveUnknown {
+                    name: "q".into(),
+                    solution: Some(CurveExpressionValue::Number(2.0)),
+                }],
+                offset: 8,
+                for_offset: 9,
             }],
-            unresolved_solve_control: false, prohibited_constructs: vec!["bad".into()],
-            offset: 3, expression_offset: 5,
+            unresolved_solve_control: false,
+            prohibited_constructs: vec!["bad".into()],
+            offset: 3,
+            expression_offset: 5,
         });
         scan
     }
@@ -3737,13 +4355,17 @@ mod curve_expression_projection_limit_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let error = match curve_expression_records(&ctx, &scan) {
-            Err(error) => error, Ok(_) => panic!("native ID exceeds retained limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = curve_expression_records(&ctx, &scan) else {
+            panic!("native ID exceeds retained limit")
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo curve expression record id"), "{error:?}");
+                && resource.operation == "creo curve expression record id"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -3760,13 +4382,17 @@ mod curve_expression_projection_limit_tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-            let error = match curve_expression_records(&ctx, &scan) {
-                Err(error) => error, Ok(_) => panic!("one more projection row exceeds the collection limit"),
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            let Err(error) = curve_expression_records(&ctx, &scan) else {
+                panic!("one more projection row exceeds the collection limit")
             };
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                 if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation), "{error:?}");
+                    && resource.operation == operation),
+                "{error:?}"
+            );
         }
     }
 
@@ -3775,14 +4401,21 @@ mod curve_expression_projection_limit_tests {
         let scan = scan();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let records = curve_expression_records(&ctx, &scan).expect("expression is admitted");
         let value = serde_json::to_value(&records[0]).expect("record serializes");
         assert_eq!(value["local_system"]["body"], serde_json::json!([249]));
         assert_eq!(value["lines"][0]["text"], "p=2");
         assert_eq!(value["assignments"][0]["target"]["kind"], "parameter");
-        assert_eq!(value["solve_blocks"][0]["variables"], serde_json::json!(["q"]));
-        assert_eq!(value["solve_blocks"][0]["solutions"], serde_json::json!([2.0]));
+        assert_eq!(
+            value["solve_blocks"][0]["variables"],
+            serde_json::json!(["q"])
+        );
+        assert_eq!(
+            value["solve_blocks"][0]["solutions"],
+            serde_json::json!([2.0])
+        );
         assert_eq!(value["prohibited_constructs"], serde_json::json!(["bad"]));
     }
 }
@@ -3796,59 +4429,85 @@ pub(super) fn sketch_records<'a>(
         if !feature_definition_has_sketch_design(ctx, definition)? {
             continue;
         }
-        let id = if scan.features.definitions.iter().filter(|candidate| candidate.identity.id() == definition.identity.id()).count() != 1
-            || (definition.identity.schema_id().is_none() && definition.identity.owner_feature_id().is_none()) {
-            ctx.format_retained(format_args!("creo:featdefs:sketch#offset:{}", definition.offset), "creo sketch record id")?
+        let id = if scan
+            .features
+            .definitions
+            .iter()
+            .filter(|candidate| candidate.identity.id() == definition.identity.id())
+            .count()
+            != 1
+            || (definition.identity.schema_id().is_none()
+                && definition.identity.owner_feature_id().is_none())
+        {
+            ctx.format_retained(
+                format_args!("creo:featdefs:sketch#offset:{}", definition.offset),
+                "creo sketch record id",
+            )?
         } else {
-            ctx.format_retained(format_args!("creo:featdefs:sketch#{}", definition.identity.id()), "creo sketch record id")?
+            ctx.format_retained(
+                format_args!("creo:featdefs:sketch#{}", definition.identity.id()),
+                "creo sketch record id",
+            )?
         };
-        let source_section = ctx.copy_retained_text(source_section_ref(scan, definition.offset), "creo sketch source section")?;
+        let source_section = ctx.copy_retained_text(
+            source_section_ref(scan, definition.offset),
+            "creo sketch source section",
+        )?;
         let record = CreoSketchRecord {
-                id,
-                definition_id: definition.identity.id(),
-                owner_feature_id: definition.identity.owner_feature_id(),
-                source_section,
-                offset: definition.offset,
-                section_3d: definition
-                    .section_3d
-                    .as_ref()
-                    .map(|section| CreoSketchSection3d {
-                        sketch_plane_entity_id: section.sketch_plane_entity_id,
-                        sketch_plane_flip: section.sketch_plane_flip.map(binary_flag_value),
-                        reference_planes: &section.reference_planes,
-                        reference_plane_datum_geometry_id: section
-                            .reference_plane_datum_geometry_id,
-                        orientation: CreoSketchSectionOrientation {
-                            section_flip: section.orientation.section_flip.map(binary_flag_value),
-                            reference_type: section.orientation.reference_type,
-                            segment_id: section.orientation.segment_id,
-                            reference_flip: section
-                                .orientation
-                                .reference_flip
-                                .map(binary_flag_value),
-                        },
-                        dimension_ids: &section.dimension_ids,
-                        offset: section.offset,
-                    }),
-                table_headers: sketch_table_headers(ctx, definition)?,
-                section_points: sketch_section_point_records(ctx, definition)?,
-                solved_external_ids: crate::decode::collect_items(ctx,
-                    definition.trim_entities.iter().flat_map(|table| table.solved_external_ids.iter().copied()),
-                    "creo native sketch solved external IDs")?,
-                variables: {
-                    let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
-                    let resolved_radii = resolved_section_radii(ctx, definition)?;
-                    let resolved_scalars = resolved_section_scalar_values(ctx, definition)?;
-                    crate::decode::project_items(ctx, definition
-                        .variables
-                        .iter()
-                        .flat_map(|table| &table.rows), "creo native sketch variables", |row| Ok(CreoSketchVariable {
+            id,
+            definition_id: definition.identity.id(),
+            owner_feature_id: definition.identity.owner_feature_id(),
+            source_section,
+            offset: definition.offset,
+            section_3d: definition
+                .section_3d
+                .as_ref()
+                .map(|section| CreoSketchSection3d {
+                    sketch_plane_entity_id: section.sketch_plane_entity_id,
+                    sketch_plane_flip: section.sketch_plane_flip.map(binary_flag_value),
+                    reference_planes: &section.reference_planes,
+                    reference_plane_datum_geometry_id: section.reference_plane_datum_geometry_id,
+                    orientation: CreoSketchSectionOrientation {
+                        section_flip: section.orientation.section_flip.map(binary_flag_value),
+                        reference_type: section.orientation.reference_type,
+                        segment_id: section.orientation.segment_id,
+                        reference_flip: section.orientation.reference_flip.map(binary_flag_value),
+                    },
+                    dimension_ids: &section.dimension_ids,
+                    offset: section.offset,
+                }),
+            table_headers: sketch_table_headers(ctx, definition)?,
+            section_points: sketch_section_point_records(ctx, definition)?,
+            solved_external_ids: crate::decode::collect_items(
+                ctx,
+                definition
+                    .trim_entities
+                    .iter()
+                    .flat_map(|table| table.solved_external_ids.iter().copied()),
+                "creo native sketch solved external IDs",
+            )?,
+            variables: {
+                let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
+                let resolved_radii = resolved_section_radii(ctx, definition)?;
+                let resolved_scalars = resolved_section_scalar_values(ctx, definition)?;
+                crate::decode::project_items(
+                    ctx,
+                    definition.variables.iter().flat_map(|table| &table.rows),
+                    "creo native sketch variables",
+                    |row| {
+                        Ok(CreoSketchVariable {
                             variable_type: row.variable_type.code(),
                             key: row.key,
                             value: row.value,
-                            value_body: ctx.copy_retained(&row.value_body, "creo native sketch variable value body")?,
+                            value_body: ctx.copy_retained(
+                                &row.value_body,
+                                "creo native sketch variable value body",
+                            )?,
                             guess: row.guess,
-                            guess_body: ctx.copy_retained(&row.guess_body, "creo native sketch variable guess body")?,
+                            guess_body: ctx.copy_retained(
+                                &row.guess_body,
+                                "creo native sketch variable guess body",
+                            )?,
                             known: row.known,
                             homogeneity: row.homogeneity,
                             uvar_id: row.uvar_id,
@@ -3863,9 +4522,13 @@ pub(super) fn sketch_records<'a>(
                                 _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
                             },
                             offset: row.offset,
-                        }))?
-                },
-                equations: crate::decode::collect_items(ctx, crate::feature::definitions::equation_table(
+                        })
+                    },
+                )?
+            },
+            equations: crate::decode::collect_items(
+                ctx,
+                crate::feature::definitions::equation_table(
                     ctx,
                     &definition.body,
                     0,
@@ -3882,12 +4545,18 @@ pub(super) fn sketch_records<'a>(
                     auxiliary_body: equation.auxiliary_body,
                     body: equation.body,
                     offset: equation.offset,
-                })
-                , "creo native sketch equations")?,
-                segments: crate::decode::project_items(ctx, definition
+                }),
+                "creo native sketch equations",
+            )?,
+            segments: crate::decode::project_items(
+                ctx,
+                definition
                     .segments
                     .iter()
-                    .flat_map(|table| table.rows.ordinary()), "creo native sketch segments", |segment| Ok(CreoSketchSegment {
+                    .flat_map(|table| table.rows.ordinary()),
+                "creo native sketch segments",
+                |segment| {
+                    Ok(CreoSketchSegment {
                         external_id: segment.external_id,
                         kind: match segment.kind {
                             crate::feature::definitions::FeatureSegmentKind::Line(_) => "line",
@@ -3901,10 +4570,15 @@ pub(super) fn sketch_records<'a>(
                         vertical_horizontal_constraint: segment.vertical_horizontal,
                         radius_dimension_id: segment.radius_ref,
                         secondary_radius_dimension_id: segment.radius2_ref,
-                        body: ctx.copy_retained(&segment.body, "creo native sketch segment body")?,
+                        body: ctx
+                            .copy_retained(&segment.body, "creo native sketch segment body")?,
                         offset: segment.offset,
-                    }))?,
-                circle_segments: crate::decode::collect_items(ctx, definition
+                    })
+                },
+            )?,
+            circle_segments: crate::decode::collect_items(
+                ctx,
+                definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.circles())
@@ -3913,9 +4587,12 @@ pub(super) fn sketch_records<'a>(
                         center_id: segment.center_id,
                         radius_dimension_id: segment.radius_ref,
                         offset: segment.offset,
-                    })
-                    , "creo native sketch circle segments")?,
-                point_segments: crate::decode::collect_items(ctx, definition
+                    }),
+                "creo native sketch circle segments",
+            )?,
+            point_segments: crate::decode::collect_items(
+                ctx,
+                definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.points())
@@ -3923,9 +4600,12 @@ pub(super) fn sketch_records<'a>(
                         external_id: segment.external_id,
                         point_id: segment.point_id,
                         offset: segment.offset,
-                    })
-                    , "creo native sketch point segments")?,
-                centered_line_segments: crate::decode::collect_items(ctx, definition
+                    }),
+                "creo native sketch point segments",
+            )?,
+            centered_line_segments: crate::decode::collect_items(
+                ctx,
+                definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.centered_lines())
@@ -3933,9 +4613,12 @@ pub(super) fn sketch_records<'a>(
                         external_id: segment.external_id,
                         center_id: segment.center_id,
                         offset: segment.offset,
-                    })
-                    , "creo native sketch centered line segments")?,
-                reference_line_segments: crate::decode::collect_items(ctx, definition
+                    }),
+                "creo native sketch centered line segments",
+            )?,
+            reference_line_segments: crate::decode::collect_items(
+                ctx,
+                definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.reference_lines())
@@ -3945,9 +4628,12 @@ pub(super) fn sketch_records<'a>(
                         directions: segment.directions,
                         vertical_horizontal_constraint: segment.vertical_horizontal,
                         offset: segment.offset,
-                    })
-                    , "creo native sketch reference line segments")?,
-                bounded_curve_segments: crate::decode::collect_items(ctx, definition
+                    }),
+                "creo native sketch reference line segments",
+            )?,
+            bounded_curve_segments: crate::decode::collect_items(
+                ctx,
+                definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.bounded_curves())
@@ -3961,9 +4647,12 @@ pub(super) fn sketch_records<'a>(
                         radius_dimension_id: segment.radius_ref,
                         secondary_radius_dimension_id: segment.radius2_ref,
                         offset: segment.offset,
-                    })
-                    , "creo native sketch bounded curve segments")?,
-                conic_segments: crate::decode::collect_items(ctx, definition
+                    }),
+                "creo native sketch bounded curve segments",
+            )?,
+            conic_segments: crate::decode::collect_items(
+                ctx,
+                definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.conics())
@@ -3973,12 +4662,18 @@ pub(super) fn sketch_records<'a>(
                         first_coefficient_ref: segment.first_coefficient_ref,
                         second_coefficient_ref: segment.second_coefficient_ref,
                         offset: segment.offset,
-                    })
-                    , "creo native sketch conic segments")?,
-                opaque_segments: crate::decode::project_items(ctx, definition
+                    }),
+                "creo native sketch conic segments",
+            )?,
+            opaque_segments: crate::decode::project_items(
+                ctx,
+                definition
                     .segments
                     .iter()
-                    .flat_map(|table| table.rows.opaque()), "creo native sketch opaque segments", |segment| Ok(CreoSketchOpaqueSegment {
+                    .flat_map(|table| table.rows.opaque()),
+                "creo native sketch opaque segments",
+                |segment| {
+                    Ok(CreoSketchOpaqueSegment {
                         external_id: segment.external_id,
                         kind: segment.kind,
                         point_ids: segment.point_ids,
@@ -3988,10 +4683,17 @@ pub(super) fn sketch_records<'a>(
                         vertical_horizontal_constraint: segment.vertical_horizontal,
                         radius_dimension_id: segment.radius_ref,
                         secondary_radius_dimension_id: segment.radius2_ref,
-                        body: ctx.copy_retained(&segment.body, "creo native sketch opaque segment body")?,
+                        body: ctx.copy_retained(
+                            &segment.body,
+                            "creo native sketch opaque segment body",
+                        )?,
                         offset: segment.offset,
-                    }))?,
-                trim_entities: crate::decode::collect_items(ctx, definition
+                    })
+                },
+            )?,
+            trim_entities: crate::decode::collect_items(
+                ctx,
+                definition
                     .trim_entities
                     .iter()
                     .flat_map(|table| &table.rows)
@@ -4005,21 +4707,35 @@ pub(super) fn sketch_records<'a>(
                             crate::feature::definitions::TrimEntityKind::Arc { .. } => "arc",
                         },
                         offset: entity.offset,
-                    })
-                    , "creo native sketch trim entities")?,
-                trim_vertices: crate::decode::project_items(ctx, definition
+                    }),
+                "creo native sketch trim entities",
+            )?,
+            trim_vertices: crate::decode::project_items(
+                ctx,
+                definition
                     .trim_vertices
                     .iter()
-                    .flat_map(|table| &table.rows), "creo native sketch trim vertices", |vertex| Ok(CreoSketchTrimVertex {
+                    .flat_map(|table| &table.rows),
+                "creo native sketch trim vertices",
+                |vertex| {
+                    Ok(CreoSketchTrimVertex {
                         vertex_id: vertex.vertex_id,
-                        entities: crate::decode::collect_items(ctx, vertex.entities.iter().copied(), "creo native sketch trim vertex entities")?,
+                        entities: crate::decode::collect_items(
+                            ctx,
+                            vertex.entities.iter().copied(),
+                            "creo native sketch trim vertex entities",
+                        )?,
                         section_coordinates: vertex.section_coordinates.map(|point| {
                             let point = point.get();
                             [point.u, point.v]
                         }),
                         offset: vertex.offset,
-                    }))?,
-                order_rows: crate::decode::collect_items(ctx, definition
+                    })
+                },
+            )?,
+            order_rows: crate::decode::collect_items(
+                ctx,
+                definition
                     .order_table
                     .iter()
                     .flat_map(|table| &table.rows)
@@ -4028,9 +4744,12 @@ pub(super) fn sketch_records<'a>(
                         internal_id: row.internal_id,
                         bitmask: row.bitmask,
                         offset: row.offset,
-                    })
-                    , "creo native sketch order rows")?,
-                saved_entities: crate::decode::collect_items(ctx, definition
+                    }),
+                "creo native sketch order rows",
+            )?,
+            saved_entities: crate::decode::collect_items(
+                ctx,
+                definition
                     .saved_section
                     .iter()
                     .flat_map(|section| &section.entities)
@@ -4100,20 +4819,37 @@ pub(super) fn sketch_records<'a>(
                                 offset: dummy.offset,
                             }
                         }
-                    })
-                    , "creo native sketch saved entities")?,
-                dimensions: crate::decode::project_items(ctx, definition
-                    .dimensions
-                    .iter()
-                    .flat_map(|table| &table.rows), "creo native sketch dimensions", |dimension| Ok(CreoSketchDimension {
+                    }),
+                "creo native sketch saved entities",
+            )?,
+            dimensions: crate::decode::project_items(
+                ctx,
+                definition.dimensions.iter().flat_map(|table| &table.rows),
+                "creo native sketch dimensions",
+                |dimension| {
+                    Ok(CreoSketchDimension {
                         external_id: dimension.external_id,
                         dimension_type: dimension.dimension_type,
                         value: match &dimension.value {
-                            crate::feature::definitions::DimensionValue::Resolved(value) => crate::feature::definitions::DimensionValue::Resolved(*value),
-                            crate::feature::definitions::DimensionValue::UnresolvedToken(token) => crate::feature::definitions::DimensionValue::UnresolvedToken(ctx.copy_retained(token, "creo native sketch dimension unresolved token")?),
-                            crate::feature::definitions::DimensionValue::Undefined => crate::feature::definitions::DimensionValue::Undefined,
+                            crate::feature::definitions::DimensionValue::Resolved(value) => {
+                                crate::feature::definitions::DimensionValue::Resolved(*value)
+                            }
+                            crate::feature::definitions::DimensionValue::UnresolvedToken(token) => {
+                                crate::feature::definitions::DimensionValue::UnresolvedToken(
+                                    ctx.copy_retained(
+                                        token,
+                                        "creo native sketch dimension unresolved token",
+                                    )?,
+                                )
+                            }
+                            crate::feature::definitions::DimensionValue::Undefined => {
+                                crate::feature::definitions::DimensionValue::Undefined
+                            }
                         },
-                        value_body: ctx.copy_retained(&dimension.value_body, "creo native sketch dimension value body")?,
+                        value_body: ctx.copy_retained(
+                            &dimension.value_body,
+                            "creo native sketch dimension value body",
+                        )?,
                         unit: match dimension.unit() {
                             crate::feature::definitions::DimensionUnit::Radians => "radians",
                             crate::feature::definitions::DimensionUnit::Millimeters => {
@@ -4125,59 +4861,89 @@ pub(super) fn sketch_records<'a>(
                         },
                         direction_byte: dimension.direction_byte,
                         auxiliary_value: dimension.auxiliary_value,
-                        auxiliary_body: ctx.copy_retained(&dimension.auxiliary_body, "creo native sketch dimension auxiliary body")?,
-                        references: dimension.references.as_ref().map(|table| -> Result<CreoSketchDimensionReferenceTable, CodecError> {
-                            Ok(CreoSketchDimensionReferenceTable {
-                                declared_count: table.declared_count,
-                                entity_ref: table.entity_ref,
-                                rows: crate::decode::collect_items(ctx, table
-                                    .rows
-                                    .iter()
-                                    .map(|reference| CreoSketchDimensionReference {
-                                        item_id: reference.item_id,
-                                        sense: reference.sense,
-                                        point: reference.point,
-                                        offset: reference.offset,
+                        auxiliary_body: ctx.copy_retained(
+                            &dimension.auxiliary_body,
+                            "creo native sketch dimension auxiliary body",
+                        )?,
+                        references: dimension
+                            .references
+                            .as_ref()
+                            .map(
+                                |table| -> Result<CreoSketchDimensionReferenceTable, CodecError> {
+                                    Ok(CreoSketchDimensionReferenceTable {
+                                        declared_count: table.declared_count,
+                                        entity_ref: table.entity_ref,
+                                        rows: crate::decode::collect_items(
+                                            ctx,
+                                            table.rows.iter().map(|reference| {
+                                                CreoSketchDimensionReference {
+                                                    item_id: reference.item_id,
+                                                    sense: reference.sense,
+                                                    point: reference.point,
+                                                    offset: reference.offset,
+                                                }
+                                            }),
+                                            "creo native sketch dimension references",
+                                        )?,
+                                        offset: table.offset,
                                     })
-                                    , "creo native sketch dimension references")?,
-                                offset: table.offset,
-                            })
-                        }).transpose()?,
+                                },
+                            )
+                            .transpose()?,
                         offset: dimension.offset,
-                    }))?,
-                relations: crate::decode::project_items(ctx, definition
-                    .relations
-                    .iter()
-                    .flat_map(|table| &table.rows), "creo native sketch relations", |relation| Ok(CreoSketchRelation {
+                    })
+                },
+            )?,
+            relations: crate::decode::project_items(
+                ctx,
+                definition.relations.iter().flat_map(|table| &table.rows),
+                "creo native sketch relations",
+                |relation| {
+                    Ok(CreoSketchRelation {
                         relation_id: relation.relation_id,
                         used: relation.used,
-                        operands: ctx.copy_retained(&relation.operands, "creo native sketch relation operands")?,
+                        operands: ctx.copy_retained(
+                            &relation.operands,
+                            "creo native sketch relation operands",
+                        )?,
                         operand_vectors: relation.operand_vectors,
                         sign: relation.sign,
                         dimension_id: relation.dimension_id,
                         relation_type: relation.relation_type,
-                        body: ctx.copy_retained(&relation.body, "creo native sketch relation body")?,
+                        body: ctx
+                            .copy_retained(&relation.body, "creo native sketch relation body")?,
                         offset: relation.offset,
-                    }))?,
-                skamps: crate::decode::project_items(ctx, definition
+                    })
+                },
+            )?,
+            skamps: crate::decode::project_items(
+                ctx,
+                definition
                     .relations
                     .iter()
-                    .flat_map(FeatureRelationTable::skamps), "creo native sketch skamps", |skamp| Ok(CreoSketchSkamp {
+                    .flat_map(FeatureRelationTable::skamps),
+                "creo native sketch skamps",
+                |skamp| {
+                    Ok(CreoSketchSkamp {
                         id: skamp.id,
                         kind: skamp.kind,
                         flags: skamp.flags,
                         status: skamp.status,
-                        items: crate::decode::collect_items(ctx, skamp
-                            .items
-                            .iter()
-                            .map(|item| CreoSketchSkampItem {
+                        items: crate::decode::collect_items(
+                            ctx,
+                            skamp.items.iter().map(|item| CreoSketchSkampItem {
                                 entity_id: item.entity_id,
                                 sense: item.sense,
-                            })
-                            , "creo native sketch skamp items")?,
+                            }),
+                            "creo native sketch skamp items",
+                        )?,
                         offset: skamp.offset,
-                    }))?,
-                relation_triples: crate::decode::collect_items(ctx, definition
+                    })
+                },
+            )?,
+            relation_triples: crate::decode::collect_items(
+                ctx,
+                definition
                     .relations
                     .iter()
                     .flat_map(FeatureRelationTable::triples)
@@ -4186,8 +4952,9 @@ pub(super) fn sketch_records<'a>(
                         equation: triple.equation_id,
                         skamp: triple.skamp_id,
                         offset: triple.offset,
-                    })
-                    , "creo native sketch relation triples")?,
+                    }),
+                "creo native sketch relation triples",
+            )?,
         };
         ctx.try_reserve_items(&mut records, 1, "creo sketch records")?;
         records.push(record);
@@ -4208,17 +4975,31 @@ mod sketch_projection_limit_tests {
 
     fn definition() -> FeatureDefinition {
         FeatureDefinition {
-            identity: DefinitionIdentity::Parsed { schema_id: std::num::NonZeroU32::new(7), owner_feature_id: None },
-            body: Vec::new(), parameter_frames: Vec::new(), outlines: Vec::new(),
-            variables: None, segments: None, trim_entities: None, trim_vertices: None,
-            order_table: None, section_3d: Some(FeatureSection3d {
-                sketch_plane_entity_id: Some(2), sketch_plane_flip: None,
+            identity: DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(7),
+                owner_feature_id: None,
+            },
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: Some(FeatureSection3d {
+                sketch_plane_entity_id: Some(2),
+                sketch_plane_flip: None,
                 reference_planes: ReferencePlanes::Named(vec![3]),
                 reference_plane_datum_geometry_id: None,
                 orientation: FeatureSectionOrientation::default(),
-                dimension_ids: vec![4], offset: 2,
+                dimension_ids: vec![4],
+                offset: 2,
             }),
-            dimensions: None, relations: None, saved_section: None, offset: 1,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 1,
         }
     }
 
@@ -4234,13 +5015,17 @@ mod sketch_projection_limit_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let error = match sketch_records(&ctx, &scan) {
-            Err(error) => error, Ok(_) => panic!("native sketch ID exceeds retained limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = sketch_records(&ctx, &scan) else {
+            panic!("native sketch ID exceeds retained limit")
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo sketch record id"), "{error:?}");
+                && resource.operation == "creo sketch record id"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -4249,13 +5034,17 @@ mod sketch_projection_limit_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = "creo:featdefs:sketch#7".len() as u64;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let error = match sketch_records(&ctx, &scan) {
-            Err(error) => error, Ok(_) => panic!("source section exceeds retained limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = sketch_records(&ctx, &scan) else {
+            panic!("source section exceeds retained limit")
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo sketch source section"), "{error:?}");
+                && resource.operation == "creo sketch source section"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -4264,13 +5053,17 @@ mod sketch_projection_limit_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let error = match sketch_records(&ctx, &scan) {
-            Err(error) => error, Ok(_) => panic!("one sketch projection exceeds collection limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = sketch_records(&ctx, &scan) else {
+            panic!("one sketch projection exceeds collection limit")
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo sketch records"), "{error:?}");
+                && resource.operation == "creo sketch records"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -4279,36 +5072,58 @@ mod sketch_projection_limit_tests {
         let definition = &mut scan.features.definitions[0];
         definition.section_3d = None;
         definition.saved_section = Some(FeatureSavedSection {
-            entities: vec![FeatureSavedEntity::Dummy(FeatureSavedDummy { entity_id: Some(8), body: vec![0xe3], offset: 3 })],
+            entities: vec![FeatureSavedEntity::Dummy(FeatureSavedDummy {
+                entity_id: Some(8),
+                body: vec![0xe3],
+                offset: 3,
+            })],
             offset: 2,
         });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let error = match sketch_records(&ctx, &scan) {
-            Err(error) => error, Ok(_) => panic!("saved entity follows the table header"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = sketch_records(&ctx, &scan) else {
+            panic!("saved entity follows the table header")
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native sketch saved entities"), "{error:?}");
+                && resource.operation == "creo native sketch saved entities"),
+            "{error:?}"
+        );
     }
 
     #[test]
     fn borrowed_sketch_section_frames_preserve_json() {
         let mut scan = scan();
-        scan.features.definitions[0].section_3d.as_mut().expect("section frame").reference_planes =
-            ReferencePlanes::Positional(vec![FeatureSectionReferencePlane {
-                plane_entity_id: 3, reference_type: Some(2), external_reference_id: None,
-                segment_id: None, sub_index: None, reference_flip: None,
-            }]);
+        scan.features.definitions[0]
+            .section_3d
+            .as_mut()
+            .expect("section frame")
+            .reference_planes = ReferencePlanes::Positional(vec![FeatureSectionReferencePlane {
+            plane_entity_id: 3,
+            reference_type: Some(2),
+            external_reference_id: None,
+            segment_id: None,
+            sub_index: None,
+            reference_flip: None,
+        }]);
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let records = sketch_records(&ctx, &scan).expect("sketch projection is admitted");
         let value = serde_json::to_value(&records[0]).expect("record serializes");
-        assert_eq!(value["section_3d"]["reference_plane_entity_ids"], serde_json::json!([3]));
-        assert_eq!(value["section_3d"]["reference_plane_rows"][0]["reference_type"], 2);
+        assert_eq!(
+            value["section_3d"]["reference_plane_entity_ids"],
+            serde_json::json!([3])
+        );
+        assert_eq!(
+            value["section_3d"]["reference_plane_rows"][0]["reference_type"],
+            2
+        );
         assert_eq!(value["section_3d"]["dimension_ids"], serde_json::json!([4]));
         assert!(value["section_3d"]["reference_planes"].is_null());
     }
@@ -4318,29 +5133,48 @@ mod sketch_projection_limit_tests {
         let mut scan = scan();
         scan.features.definitions[0].section_3d = None;
         scan.features.definitions[0].variables = Some(FeatureVariableTable {
-            declared_count: 1, entity_ref: None, rows: vec![FeatureVariableRow {
-                variable_type: VariableType::Parameter, key: 1, value: ScalarLane::Value(2.0),
-                value_body: vec![0xf9], guess: ScalarLane::Undefined, guess_body: vec![0xe3],
-                known: None, homogeneity: None, uvar_id: None, offset: 3,
-            }], offset: 2,
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![FeatureVariableRow {
+                variable_type: VariableType::Parameter,
+                key: 1,
+                value: ScalarLane::Value(2.0),
+                value_body: vec![0xf9],
+                guess: ScalarLane::Undefined,
+                guess_body: vec![0xe3],
+                known: None,
+                homogeneity: None,
+                uvar_id: None,
+                offset: 3,
+            }],
+            offset: 2,
         });
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let records = sketch_records(&ctx, &scan).expect("service profile admits one variable");
         let value = serde_json::to_value(&records[0]).expect("record serializes");
-        assert_eq!(value["variables"][0]["value_body"], serde_json::json!([249]));
+        assert_eq!(
+            value["variables"][0]["value_body"],
+            serde_json::json!([249])
+        );
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = ("creo:featdefs:sketch#7".len() + "unknown".len()) as u64;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let error = match sketch_records(&ctx, &scan) {
-            Err(error) => error, Ok(_) => panic!("variable body exceeds retained limit"),
+        policy.limits.max_retained_bytes =
+            ("creo:featdefs:sketch#7".len() + "unknown".len()) as u64;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = sketch_records(&ctx, &scan) else {
+            panic!("variable body exceeds retained limit")
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native sketch variable value body"), "{error:?}");
+                && resource.operation == "creo native sketch variable value body"),
+            "{error:?}"
+        );
     }
 }
 
@@ -4351,21 +5185,18 @@ pub(super) fn sketch_section_point_records(
     let Some(variables) = &definition.variables else {
         return Ok(Vec::new());
     };
-    let (points, ambiguous) = variables.reconciled_points(ctx)?;
+    let crate::feature::definitions::ReconciledPoints { points, ambiguous } =
+        variables.reconciled_points(ctx)?;
     let mut point_ids = BTreeSet::new();
-    for point_id in points
-        .keys()
-        .copied()
-        .chain(ambiguous.iter().copied())
-    {
+    for point_id in points.keys().copied().chain(ambiguous.iter().copied()) {
         if !point_ids.contains(&point_id) {
             ctx.charge_collection_items(1, "creo sketch section point ID nodes")?;
             point_ids.insert(point_id);
         }
     }
-    crate::decode::collect_items(ctx, point_ids
-        .into_iter()
-        .map(|point_id| {
+    crate::decode::collect_items(
+        ctx,
+        point_ids.into_iter().map(|point_id| {
             let [u, v] = points.get(&point_id).copied().unwrap_or([None; 2]);
             let state = if ambiguous.contains(&point_id) {
                 CreoSketchPointState::Conflicting
@@ -4378,8 +5209,9 @@ pub(super) fn sketch_section_point_records(
                 }
             };
             CreoSketchSectionPoint { point_id, state }
-        })
-        , "creo sketch section point records")
+        }),
+        "creo sketch section point records",
+    )
 }
 
 pub(super) fn feature_definition_records<'a>(
@@ -4391,14 +5223,24 @@ pub(super) fn feature_definition_records<'a>(
         let id = feature_definition_record_id(ctx, scan, definition)?;
         let mut parameter_frames = Vec::new();
         for frame in &definition.parameter_frames {
-            ctx.try_reserve_items(&mut parameter_frames, 1, "creo native feature parameter frames")?;
+            ctx.try_reserve_items(
+                &mut parameter_frames,
+                1,
+                "creo native feature parameter frames",
+            )?;
             parameter_frames.push(CreoFeatureParameterFrame {
                 kind: match frame.kind {
-                    crate::feature::definitions::FeatureParameterFrameKind::LocalSystem => "local_system",
-                    crate::feature::definitions::FeatureParameterFrameKind::Transform => "transform",
+                    crate::feature::definitions::FeatureParameterFrameKind::LocalSystem => {
+                        "local_system"
+                    }
+                    crate::feature::definitions::FeatureParameterFrameKind::Transform => {
+                        "transform"
+                    }
                 },
                 body: &frame.body,
-                decoded_values: frame.decoded_values.map(cadmpeg_ir::units::FiniteVector::get),
+                decoded_values: frame
+                    .decoded_values
+                    .map(cadmpeg_ir::units::FiniteVector::get),
                 offset: frame.offset,
             });
         }
@@ -4435,26 +5277,48 @@ pub(super) fn feature_definition_records<'a>(
 mod feature_definition_projection_limit_tests {
     use super::feature_definition_records;
     use crate::feature::definitions::{
-        DecodedField, DefinitionIdentity, FeatureDefinition, FeatureOutline,
-        FeatureParameterFrame, FeatureParameterFrameKind, OutlinePhase,
+        DecodedField, DefinitionIdentity, FeatureDefinition, FeatureOutline, FeatureParameterFrame,
+        FeatureParameterFrameKind, OutlinePhase,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn scan() -> crate::container::ContainerScan<'static> {
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
-        let mut local_scalars = std::array::from_fn(|_| DecodedField { value: None, body: Vec::new() });
-        local_scalars[0] = DecodedField { value: Some(2.0), body: vec![0xf9] };
+        let mut local_scalars = std::array::from_fn(|_| DecodedField {
+            value: None,
+            body: Vec::new(),
+        });
+        local_scalars[0] = DecodedField {
+            value: Some(2.0),
+            body: vec![0xf9],
+        };
         scan.features.definitions.push(FeatureDefinition {
-            identity: DefinitionIdentity::Parsed { schema_id: std::num::NonZeroU32::new(7), owner_feature_id: Some(3) },
+            identity: DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(7),
+                owner_feature_id: Some(3),
+            },
             body: vec![0xe3],
             parameter_frames: vec![FeatureParameterFrame {
-                kind: FeatureParameterFrameKind::Transform, body: vec![0xf9],
-                decoded_values: None, offset: 4,
+                kind: FeatureParameterFrameKind::Transform,
+                body: vec![0xf9],
+                decoded_values: None,
+                offset: 4,
             }],
-            outlines: vec![FeatureOutline { phase: OutlinePhase::PostRegen, local_scalars, offset: 5 }],
-            variables: None, segments: None, trim_entities: None, trim_vertices: None,
-            order_table: None, section_3d: None, dimensions: None, relations: None,
-            saved_section: None, offset: 3,
+            outlines: vec![FeatureOutline {
+                phase: OutlinePhase::PostRegen,
+                local_scalars,
+                offset: 5,
+            }],
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 3,
         });
         scan
     }
@@ -4465,13 +5329,17 @@ mod feature_definition_projection_limit_tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let error = match feature_definition_records(&ctx, &scan) {
-            Err(error) => error, Ok(_) => panic!("native ID exceeds retained limit"),
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let Err(error) = feature_definition_records(&ctx, &scan) else {
+            panic!("native ID exceeds retained limit")
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo feature definition record id"), "{error:?}");
+                && resource.operation == "creo feature definition record id"),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -4485,13 +5353,17 @@ mod feature_definition_projection_limit_tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-            let error = match feature_definition_records(&ctx, &scan) {
-                Err(error) => error, Ok(_) => panic!("one more projection row exceeds the collection limit"),
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            let Err(error) = feature_definition_records(&ctx, &scan) else {
+                panic!("one more projection row exceeds the collection limit")
             };
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                 if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation), "{error:?}");
+                    && resource.operation == operation),
+                "{error:?}"
+            );
         }
     }
 
@@ -4500,13 +5372,23 @@ mod feature_definition_projection_limit_tests {
         let scan = scan();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let records = feature_definition_records(&ctx, &scan).expect("definition is admitted");
         let value = serde_json::to_value(&records[0]).expect("record serializes");
         assert_eq!(value["body"], serde_json::json!([227]));
-        assert_eq!(value["parameter_frames"][0]["body"], serde_json::json!([249]));
-        assert_eq!(value["outlines"][0]["local_values"], serde_json::json!([2.0,null,null,null,null,null]));
-        assert_eq!(value["outlines"][0]["local_value_bodies"], serde_json::json!([[249],[],[],[],[],[]]));
+        assert_eq!(
+            value["parameter_frames"][0]["body"],
+            serde_json::json!([249])
+        );
+        assert_eq!(
+            value["outlines"][0]["local_values"],
+            serde_json::json!([2.0, null, null, null, null, null])
+        );
+        assert_eq!(
+            value["outlines"][0]["local_value_bodies"],
+            serde_json::json!([[249], [], [], [], [], []])
+        );
     }
 }
 
@@ -4521,9 +5403,9 @@ pub(super) fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTabl
 #[cfg(test)]
 mod tests {
     use super::{
-        expanded_section_records, feature_operation_state_records, feature_reference_name_records, feature_row_records,
-        reference_circle_records, reference_conic_records, reference_ellipse_records,
-        reference_line_records,
+        expanded_section_records, feature_operation_state_records, feature_reference_name_records,
+        feature_row_records, reference_circle_records, reference_conic_records,
+        reference_ellipse_records, reference_line_records,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::BTreeSet;
@@ -4533,18 +5415,20 @@ mod tests {
         max_collection_items: u64,
     ) -> Result<Vec<super::CreoExpandedSectionRecord>, cadmpeg_core::CodecError> {
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
-        scan.framing.expanded_sections.push(crate::container::ExpandedSection {
-            name: "Body".to_string(),
-            source_offset: 0,
-            compressed_length: 3,
-            data: b"abc".to_vec(),
-        });
+        scan.framing
+            .expanded_sections
+            .push(crate::container::ExpandedSection {
+                name: "Body".to_string(),
+                source_offset: 0,
+                compressed_length: 3,
+                data: b"abc".to_vec(),
+            });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = max_retained_bytes;
         policy.limits.max_collection_items = max_collection_items;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         expanded_section_records(&ctx, &scan)
     }
 
@@ -4553,9 +5437,11 @@ mod tests {
         let id_len = "creo:container:expanded_section#Body:0".len() as u64;
         let error = expanded_records_with_limits(id_len - 1, 1)
             .expect_err("expanded-section ID needs full retained length");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native expanded section IDs"));
+                && resource.operation == "creo native expanded section IDs")
+        );
     }
 
     #[test]
@@ -4563,9 +5449,11 @@ mod tests {
         let id_len = "creo:container:expanded_section#Body:0".len() as u64;
         let error = expanded_records_with_limits(id_len + 3, 1)
             .expect_err("section name needs four retained bytes");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native expanded section names"));
+                && resource.operation == "creo native expanded section names")
+        );
     }
 
     #[test]
@@ -4573,20 +5461,24 @@ mod tests {
         let id_len = "creo:container:expanded_section#Body:0".len() as u64;
         let error = expanded_records_with_limits(id_len + 4 + 63, 1)
             .expect_err("SHA-256 hex needs 64 retained bytes");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native expanded section hashes"));
+                && resource.operation == "creo native expanded section hashes")
+        );
     }
 
     #[test]
     fn native_expanded_section_row_refuses_collection_limit() {
         let error = expanded_records_with_limits(u64::MAX, 0)
             .expect_err("one expanded section needs one output row");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native expanded section records"));
-        let records = expanded_records_with_limits(u64::MAX, 1)
-            .expect("the expanded section is admitted");
+                && resource.operation == "creo native expanded section records")
+        );
+        let records =
+            expanded_records_with_limits(u64::MAX, 1).expect("the expanded section is admitted");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].id, "creo:container:expanded_section#Body:0");
         assert_eq!(records[0].name, "Body");
@@ -4607,55 +5499,63 @@ mod tests {
             end: point([1.0, 0.0, 0.0]),
             offset: 0,
         });
-        scan.references.circles.push(crate::reference::ReferenceCircle {
-            entity_id: 7,
-            center: point([0.0, 0.0, 0.0]),
-            center_stored: true,
-            radius: PositiveLength::new(1.0).expect("positive radius"),
-            axis: UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
-            start: point([1.0, 0.0, 0.0]),
-            end: point([0.0, 1.0, 0.0]),
-            offset: 0,
-        });
-        scan.references.conics.push(crate::reference::ReferenceConic {
-            entity_id: 8,
-            type_id: crate::reference::ConicType::Ellipse,
-            flip: 1,
-            start: point([2.0, 0.0, 0.0]),
-            end: point([0.0, 1.0, 0.0]),
-            parameter_start: None,
-            parameter_end: None,
-            coefficient_1: FiniteReal::new(2.0).expect("finite coefficient"),
-            coefficient_2: FiniteReal::new(1.0).expect("finite coefficient"),
-            local_system: None,
-            body: vec![0x31, 0x32],
-            offset: 0,
-        });
-        scan.references.ellipses.push(crate::reference::ReferenceEllipse {
-            source_entity_id: 8,
-            center: point([0.0, 0.0, 0.0]),
-            axis: UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
-            major_direction: UnitVector3::new([1.0, 0.0, 0.0].into()).expect("unit direction"),
-            major_radius: PositiveLength::new(2.0).expect("positive radius"),
-            minor_radius: PositiveLength::new(1.0).expect("positive radius"),
-            offset: 0,
-        });
+        scan.references
+            .circles
+            .push(crate::reference::ReferenceCircle {
+                entity_id: 7,
+                center: point([0.0, 0.0, 0.0]),
+                center_stored: true,
+                radius: PositiveLength::new(1.0).expect("positive radius"),
+                axis: UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
+                start: point([1.0, 0.0, 0.0]),
+                end: point([0.0, 1.0, 0.0]),
+                offset: 0,
+            });
+        scan.references
+            .conics
+            .push(crate::reference::ReferenceConic {
+                entity_id: 8,
+                type_id: crate::reference::ConicType::Ellipse,
+                flip: 1,
+                start: point([2.0, 0.0, 0.0]),
+                end: point([0.0, 1.0, 0.0]),
+                parameter_start: None,
+                parameter_end: None,
+                coefficient_1: FiniteReal::new(2.0).expect("finite coefficient"),
+                coefficient_2: FiniteReal::new(1.0).expect("finite coefficient"),
+                local_system: None,
+                body: vec![0x31, 0x32],
+                offset: 0,
+            });
+        scan.references
+            .ellipses
+            .push(crate::reference::ReferenceEllipse {
+                source_entity_id: 8,
+                center: point([0.0, 0.0, 0.0]),
+                axis: UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
+                major_direction: UnitVector3::new([1.0, 0.0, 0.0].into()).expect("unit direction"),
+                major_radius: PositiveLength::new(2.0).expect("positive radius"),
+                minor_radius: PositiveLength::new(1.0).expect("positive radius"),
+                offset: 0,
+            });
         scan
     }
 
     fn reference_records_with_limits(
         max_retained_bytes: u64,
         max_collection_items: u64,
-        project: impl FnOnce(&DecodeContext<'_>, &crate::container::ContainerScan<'_>)
-            -> Result<usize, cadmpeg_core::CodecError>,
+        project: impl FnOnce(
+            &DecodeContext<'_>,
+            &crate::container::ContainerScan<'_>,
+        ) -> Result<usize, cadmpeg_core::CodecError>,
     ) -> Result<usize, cadmpeg_core::CodecError> {
         let scan = reference_scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = max_retained_bytes;
         policy.limits.max_collection_items = max_collection_items;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         project(&ctx, &scan)
     }
 
@@ -4664,23 +5564,33 @@ mod tests {
         let limit = "creo:mdl_ref_info:line_record#0".len() as u64 - 1;
         let error = reference_records_with_limits(limit, 1, |ctx, scan| {
             reference_line_records(ctx, scan).map(|records| records.len())
-        }).expect_err("line ID needs its full retained length");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("line ID needs its full retained length");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native reference line IDs"));
+                && resource.operation == "creo native reference line IDs")
+        );
     }
 
     #[test]
     fn native_reference_line_row_refuses_collection_limit() {
         let error = reference_records_with_limits(u64::MAX, 0, |ctx, scan| {
             reference_line_records(ctx, scan).map(|records| records.len())
-        }).expect_err("one line record needs an output row");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("one line record needs an output row");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native reference line records"));
-        assert_eq!(reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
-            reference_line_records(ctx, scan).map(|records| records.len())
-        }).expect("one line record"), 1);
+                && resource.operation == "creo native reference line records")
+        );
+        assert_eq!(
+            reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
+                reference_line_records(ctx, scan).map(|records| records.len())
+            })
+            .expect("one line record"),
+            1
+        );
     }
 
     #[test]
@@ -4688,23 +5598,33 @@ mod tests {
         let limit = "creo:mdl_ref_info:arc_z_record#0".len() as u64 - 1;
         let error = reference_records_with_limits(limit, 1, |ctx, scan| {
             reference_circle_records(ctx, scan).map(|records| records.len())
-        }).expect_err("circle ID needs its full retained length");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("circle ID needs its full retained length");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native reference circle IDs"));
+                && resource.operation == "creo native reference circle IDs")
+        );
     }
 
     #[test]
     fn native_reference_circle_row_refuses_collection_limit() {
         let error = reference_records_with_limits(u64::MAX, 0, |ctx, scan| {
             reference_circle_records(ctx, scan).map(|records| records.len())
-        }).expect_err("one circle record needs an output row");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("one circle record needs an output row");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native reference circle records"));
-        assert_eq!(reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
-            reference_circle_records(ctx, scan).map(|records| records.len())
-        }).expect("one circle record"), 1);
+                && resource.operation == "creo native reference circle records")
+        );
+        assert_eq!(
+            reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
+                reference_circle_records(ctx, scan).map(|records| records.len())
+            })
+            .expect("one circle record"),
+            1
+        );
     }
 
     #[test]
@@ -4712,23 +5632,33 @@ mod tests {
         let limit = "creo:mdl_ref_info:conic_record#0".len() as u64 - 1;
         let error = reference_records_with_limits(limit, 1, |ctx, scan| {
             reference_conic_records(ctx, scan).map(|records| records.len())
-        }).expect_err("conic ID needs its full retained length");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("conic ID needs its full retained length");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native reference conic IDs"));
+                && resource.operation == "creo native reference conic IDs")
+        );
     }
 
     #[test]
     fn native_reference_conic_row_refuses_collection_limit() {
         let error = reference_records_with_limits(u64::MAX, 0, |ctx, scan| {
             reference_conic_records(ctx, scan).map(|records| records.len())
-        }).expect_err("one conic record needs an output row");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("one conic record needs an output row");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native reference conic records"));
-        assert_eq!(reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
-            reference_conic_records(ctx, scan).map(|records| records.len())
-        }).expect("one conic record"), 1);
+                && resource.operation == "creo native reference conic records")
+        );
+        assert_eq!(
+            reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
+                reference_conic_records(ctx, scan).map(|records| records.len())
+            })
+            .expect("one conic record"),
+            1
+        );
     }
 
     #[test]
@@ -4736,46 +5666,62 @@ mod tests {
         let limit = "creo:mdl_ref_info:ellipse_carrier#0".len() as u64 - 1;
         let error = reference_records_with_limits(limit, 1, |ctx, scan| {
             reference_ellipse_records(ctx, scan).map(|records| records.len())
-        }).expect_err("ellipse ID needs its full retained length");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("ellipse ID needs its full retained length");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native reference ellipse IDs"));
+                && resource.operation == "creo native reference ellipse IDs")
+        );
     }
 
     #[test]
     fn native_reference_ellipse_source_id_refuses_retained_limit() {
         let limit = "creo:mdl_ref_info:ellipse_carrier#0".len() as u64
-            + "creo:mdl_ref_info:conic_record#0".len() as u64 - 1;
+            + "creo:mdl_ref_info:conic_record#0".len() as u64
+            - 1;
         let error = reference_records_with_limits(limit, 1, |ctx, scan| {
             reference_ellipse_records(ctx, scan).map(|records| records.len())
-        }).expect_err("source conic ID needs its full retained length");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("source conic ID needs its full retained length");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native reference ellipse source IDs"));
+                && resource.operation == "creo native reference ellipse source IDs")
+        );
     }
 
     #[test]
     fn native_reference_ellipse_row_refuses_collection_limit() {
         let error = reference_records_with_limits(u64::MAX, 0, |ctx, scan| {
             reference_ellipse_records(ctx, scan).map(|records| records.len())
-        }).expect_err("one ellipse record needs an output row");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("one ellipse record needs an output row");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native reference ellipse records"));
-        assert_eq!(reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
-            reference_ellipse_records(ctx, scan).map(|records| records.len())
-        }).expect("one ellipse record"), 1);
+                && resource.operation == "creo native reference ellipse records")
+        );
+        assert_eq!(
+            reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
+                reference_ellipse_records(ctx, scan).map(|records| records.len())
+            })
+            .expect("one ellipse record"),
+            1
+        );
     }
 
     fn reference_name_scan() -> crate::container::ContainerScan<'static> {
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
-        scan.features.reference_names.push(crate::feature::operations::FeatureReferenceName {
-            feature_id: 40,
-            name_bytes: b"A\xff".to_vec(),
-            own_reference_id: 3,
-            reference_type: 1,
-            offset: 0,
-        });
+        scan.features
+            .reference_names
+            .push(crate::feature::operations::FeatureReferenceName {
+                feature_id: 40,
+                name_bytes: b"A\xff".to_vec(),
+                own_reference_id: 3,
+                reference_type: 1,
+                offset: 0,
+            });
         scan
     }
 
@@ -4788,13 +5734,16 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = max_retained_bytes;
         policy.limits.max_collection_items = max_collection_items;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         feature_reference_name_records(&ctx, &scan)
     }
 
     fn operation_state_scan() -> crate::container::ContainerScan<'static> {
-        use crate::feature::operations::{FeatureOperation, IdKeyword, OperationKind, OperationName, RecipeResolution, RecipeState};
+        use crate::feature::operations::{
+            FeatureOperation, IdKeyword, OperationKind, OperationName, RecipeResolution,
+            RecipeState,
+        };
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.features.operations.push(FeatureOperation {
             feature_id: 40,
@@ -4832,46 +5781,57 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = max_retained_bytes;
         policy.limits.max_collection_items = max_collection_items;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let records = feature_operation_state_records(&ctx, &scan)?;
-        Ok(records.iter().map(|record| serde_json::to_value(record).expect("record JSON")).collect())
+        Ok(records
+            .iter()
+            .map(|record| serde_json::to_value(record).expect("record JSON"))
+            .collect())
     }
 
     #[test]
     fn native_feature_current_offset_refuses_node_limit() {
         let error = operation_state_records_with_limits(u64::MAX, 0)
             .expect_err("one current offset needs a BTreeMap node");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native feature current-offset nodes"));
+                && resource.operation == "creo native feature current-offset nodes")
+        );
     }
 
     #[test]
     fn native_feature_state_ordinal_refuses_node_limit() {
         let error = operation_state_records_with_limits(u64::MAX, 1)
             .expect_err("one state ordinal needs a BTreeMap node");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native feature ordinal nodes"));
+                && resource.operation == "creo native feature ordinal nodes")
+        );
     }
 
     #[test]
     fn native_feature_state_name_refuses_replacement_limit() {
         let error = operation_state_records_with_limits(3, 3)
             .expect_err("one invalid name needs four replacement bytes");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native feature state name"));
+                && resource.operation == "creo native feature state name")
+        );
     }
 
     #[test]
     fn native_feature_state_prefix_refuses_retained_limit() {
         let error = operation_state_records_with_limits(4, 3)
             .expect_err("the source prefix needs another retained byte");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native feature state prefix"));
+                && resource.operation == "creo native feature state prefix")
+        );
     }
 
     #[test]
@@ -4879,24 +5839,31 @@ mod tests {
         let id_len = "creo:mdlstatus:feature_state#40:0".len() as u64;
         let error = operation_state_records_with_limits(5 + id_len - 1, 3)
             .expect_err("the state ID needs its full retained length");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native feature state IDs"));
+                && resource.operation == "creo native feature state IDs")
+        );
     }
 
     #[test]
     fn native_feature_state_row_refuses_collection_limit() {
         let error = operation_state_records_with_limits(u64::MAX, 2)
             .expect_err("one native state needs an output Vec row");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native feature state records"));
+                && resource.operation == "creo native feature state records")
+        );
         let records = operation_state_records_with_limits(u64::MAX, 3)
             .expect("the service-profile state is admitted");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0]["id"], "creo:mdlstatus:feature_state#40:0");
         assert_eq!(records[0]["stored_name"], "A\u{fffd}");
-        assert_eq!(records[0]["stored_name_bytes"], serde_json::json!([65, 255]));
+        assert_eq!(
+            records[0]["stored_name_bytes"],
+            serde_json::json!([65, 255])
+        );
         assert_eq!(records[0]["stored_name_prefix"], "~");
         assert_eq!(records[0]["identifier_keyword"], "id");
         assert_eq!(records[0]["family"], "Native Feature");
@@ -4908,9 +5875,11 @@ mod tests {
         let id_len = "creo:mdlrefinfo:feature_name#0".len() as u64;
         let error = reference_name_records_with_limits(id_len - 1, 1)
             .expect_err("native reference ID needs its full retained length");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native feature reference IDs"));
+                && resource.operation == "creo native feature reference IDs")
+        );
     }
 
     #[test]
@@ -4918,9 +5887,11 @@ mod tests {
         let id_len = "creo:mdlrefinfo:feature_name#0".len() as u64;
         let error = reference_name_records_with_limits(id_len + 3, 1)
             .expect_err("invalid UTF-8 needs four retained bytes");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native feature reference text"));
+                && resource.operation == "creo native feature reference text")
+        );
     }
 
     #[test]
@@ -4928,20 +5899,24 @@ mod tests {
         let id_len = "creo:mdlrefinfo:feature_name#0".len() as u64;
         let error = reference_name_records_with_limits(id_len + 4 + 1, 1)
             .expect_err("source bytes need their full retained length");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native feature reference bytes"));
+                && resource.operation == "creo native feature reference bytes")
+        );
     }
 
     #[test]
     fn native_feature_reference_row_refuses_collection_limit() {
         let error = reference_name_records_with_limits(u64::MAX, 0)
             .expect_err("one native record needs one collection item");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native feature reference records"));
-        let records = reference_name_records_with_limits(u64::MAX, 1)
-            .expect("one native record is admitted");
+                && resource.operation == "creo native feature reference records")
+        );
+        let records =
+            reference_name_records_with_limits(u64::MAX, 1).expect("one native record is admitted");
         assert_eq!(records[0].name, "A\u{fffd}");
         assert_eq!(records[0].name_bytes, b"A\xff");
     }

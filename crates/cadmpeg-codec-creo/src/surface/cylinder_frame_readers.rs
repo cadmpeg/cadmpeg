@@ -121,20 +121,22 @@ pub(super) fn decode_selector_corner_interval_cylinder_frame(
     let radius = f64::midpoint(spans[first_radial]?.abs(), spans[second_radial]?.abs());
     (radius > EPS_CYLINDER_GEOMETRY_MIN * scale).then_some(())?;
 
-    let (first_axial, second_axial, axis_sign) = crate::decode::uniqueness::exactly_one([
-        (
-            corners[0][axis_index] - first_parameter,
-            corners[1][axis_index] - second_parameter,
-            1.0,
-        ),
-        (
-            corners[0][axis_index] + first_parameter,
-            corners[1][axis_index] + second_parameter,
-            -1.0,
-        ),
-    ]
-    .into_iter()
-    .filter(|(first, second, _)| close(*first, *second)))?;
+    let (first_axial, second_axial, axis_sign) = crate::decode::uniqueness::exactly_one(
+        [
+            (
+                corners[0][axis_index] - first_parameter,
+                corners[1][axis_index] - second_parameter,
+                1.0,
+            ),
+            (
+                corners[0][axis_index] + first_parameter,
+                corners[1][axis_index] + second_parameter,
+                -1.0,
+            ),
+        ]
+        .into_iter()
+        .filter(|(first, second, _)| close(*first, *second)),
+    )?;
     let transverse_maxima = match [first_selector, second_selector] {
         [0x12, 0x11] => [true, true],
         [0x11, 0x14] => [true, false],
@@ -218,20 +220,22 @@ pub(super) fn decode_type24_axial_interval_corner_candidates(
     let radius = f64::midpoint(spans[first_radial].abs(), spans[second_radial].abs());
     (radius > EPS_CYLINDER_GEOMETRY_MIN * scale).then_some(())?;
 
-    let (first_axial, second_axial, axis_sign) = crate::decode::uniqueness::exactly_one([
-        (
-            corners[0][axis_index] - first_parameter,
-            corners[1][axis_index] - second_parameter,
-            1.0,
-        ),
-        (
-            corners[0][axis_index] + first_parameter,
-            corners[1][axis_index] + second_parameter,
-            -1.0,
-        ),
-    ]
-    .into_iter()
-    .filter(|(first, second, _)| close(*first, *second)))?;
+    let (first_axial, second_axial, axis_sign) = crate::decode::uniqueness::exactly_one(
+        [
+            (
+                corners[0][axis_index] - first_parameter,
+                corners[1][axis_index] - second_parameter,
+                1.0,
+            ),
+            (
+                corners[0][axis_index] + first_parameter,
+                corners[1][axis_index] + second_parameter,
+                -1.0,
+            ),
+        ]
+        .into_iter()
+        .filter(|(first, second, _)| close(*first, *second)),
+    )?;
 
     let frame = |radial_maxima: [bool; 2]| {
         let mut origin = [0.0; 3];
@@ -247,13 +251,7 @@ pub(super) fn decode_type24_axial_interval_corner_candidates(
         axis[axis_index] = axis_sign;
         let mut ref_direction = [0.0; 3];
         ref_direction[first_radial] = 1.0;
-        PositionalCylinderFrame::new(
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            Some(parameter_span),
-        )
+        PositionalCylinderFrame::new(origin, axis, ref_direction, radius, Some(parameter_span))
     };
     Some([
         frame([true, true])?,
@@ -577,7 +575,8 @@ fn decode_compact_y_axis_cylinder_frame(
         0x14 => {
             let (values, end) = decode_values::<9>(body, cache, 1)?;
             (end == body.len()).then_some(())?;
-            let [axial_start, _, axial_end, transverse_center, repeated_start, radial_low, transverse_edge, repeated_end, radial_high] = values;
+            let [axial_start, _, axial_end, transverse_center, repeated_start, radial_low, transverse_edge, repeated_end, radial_high] =
+                values;
             (
                 axial_start,
                 axial_end,
@@ -594,7 +593,8 @@ fn decode_compact_y_axis_cylinder_frame(
             (body.get(marker) == Some(&0x14)).then_some(())?;
             let (trailing, end) = decode_values::<7>(body, cache, marker + 1)?;
             (end == body.len()).then_some(())?;
-            let [axial_end, transverse_edge, repeated_start, radial_low, transverse_center, repeated_end, radial_high] = trailing;
+            let [axial_end, transverse_edge, repeated_start, radial_low, transverse_center, repeated_end, radial_high] =
+                trailing;
             (
                 leading[0],
                 axial_end,
@@ -844,8 +844,8 @@ fn decode_local_system_cylinder_frame(
         cursor = next;
     }
     let (radius_start, radius) = unique_terminal_positive_scalar(body, cursor)?;
-    let slots = crate::decode::uniqueness::exactly_one((cursor..radius_start)
-        .filter_map(|start| {
+    let slots =
+        crate::decode::uniqueness::exactly_one((cursor..radius_start).filter_map(|start| {
             scalar::decode_positional_plane_local_system_slots(
                 body.get(start..radius_start)?,
                 cache,
@@ -917,8 +917,8 @@ fn decode_zero_support_cylinder_frame(
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     let close = |first: f64, second: f64| (first - second).abs() <= EPS_SURFACE_AGREEMENT * scale;
-    let (axis_index, radial_index) = crate::decode::uniqueness::exactly_one((0..2)
-        .filter_map(|axis_index| {
+    let (axis_index, radial_index) =
+        crate::decode::uniqueness::exactly_one((0..2).filter_map(|axis_index| {
             let radial_index = 1 - axis_index;
             (close(
                 (envelope[1 + axis_index] - envelope[4 + axis_index]).abs(),
@@ -980,8 +980,8 @@ fn decode_signed_zero_support_cylinder_frame(
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
-    let (axis_index, diameter_index, radius_index) = crate::decode::uniqueness::exactly_one((0..3)
-        .filter_map(|axis_index| {
+    let (axis_index, diameter_index, radius_index) =
+        crate::decode::uniqueness::exactly_one((0..3).filter_map(|axis_index| {
             let [first_radial, second_radial] = match axis_index {
                 0 => [1, 2],
                 1 => [0, 2],
@@ -1234,14 +1234,16 @@ fn decode_precise_center_edge_cylinder_frame(
     let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
     let close =
         |left: f64, right: f64| (left - right).abs() <= EPS_CYLINDER_GEOMETRY_RELATIVE * scale;
-    let (first_radial, second_radial, axis_index) = crate::decode::uniqueness::exactly_one([(0, 1, 2), (0, 2, 1), (1, 2, 0)]
-        .into_iter()
-        .filter_map(|(first_radial, second_radial, axis_index)| {
-            (close(spans[first_radial], spans[second_radial])
-                && spans[first_radial] > EPS_CYLINDER_GEOMETRY_MIN * scale
-                && spans[axis_index] > spans[first_radial])
-                .then_some((first_radial, second_radial, axis_index))
-        }))?;
+    let (first_radial, second_radial, axis_index) = crate::decode::uniqueness::exactly_one(
+        [(0, 1, 2), (0, 2, 1), (1, 2, 0)].into_iter().filter_map(
+            |(first_radial, second_radial, axis_index)| {
+                (close(spans[first_radial], spans[second_radial])
+                    && spans[first_radial] > EPS_CYLINDER_GEOMETRY_MIN * scale
+                    && spans[axis_index] > spans[first_radial])
+                    .then_some((first_radial, second_radial, axis_index))
+            },
+        ),
+    )?;
     let radius = spans[first_radial];
     let origin_axial = second[axis_index] + signed_length;
     let lower = origin_axial.min(second[axis_index]);
@@ -1333,30 +1335,32 @@ pub(super) fn decode_local_system_suffix_cylinder_frame(
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalCylinderFrame> {
     let (radius_start, radius) = unique_terminal_positive_scalar(body, 1)?;
-    let slots = crate::decode::uniqueness::exactly_one((0..radius_start)
-        .filter_map(|start| {
-            scalar::decode_positional_cylinder_local_system_slots(
-                body.get(start..radius_start)?,
-                cache,
-            )
-            .map(cadmpeg_ir::units::FiniteVector::get)
-        })
-        .filter(|slots| {
-            let first = [slots[0], slots[1], slots[2]];
-            let second = [slots[3], slots[4], slots[5]];
-            let first_magnitude = first.iter().map(|value| value * value).sum::<f64>().sqrt();
-            let second_magnitude = second.iter().map(|value| value * value).sum::<f64>().sqrt();
-            let scale = first_magnitude.max(second_magnitude).max(1.0);
-            first_magnitude > 0.0
-                && (first_magnitude - second_magnitude).abs() <= EPS_SURFACE_AGREEMENT * scale
-                && first
-                    .iter()
-                    .zip(second)
-                    .map(|(left, right)| left * right)
-                    .sum::<f64>()
-                    .abs()
-                    <= EPS_SUPPORT_ORTHOGONALITY * scale
-        }))?;
+    let slots = crate::decode::uniqueness::exactly_one(
+        (0..radius_start)
+            .filter_map(|start| {
+                scalar::decode_positional_cylinder_local_system_slots(
+                    body.get(start..radius_start)?,
+                    cache,
+                )
+                .map(cadmpeg_ir::units::FiniteVector::get)
+            })
+            .filter(|slots| {
+                let first = [slots[0], slots[1], slots[2]];
+                let second = [slots[3], slots[4], slots[5]];
+                let first_magnitude = first.iter().map(|value| value * value).sum::<f64>().sqrt();
+                let second_magnitude = second.iter().map(|value| value * value).sum::<f64>().sqrt();
+                let scale = first_magnitude.max(second_magnitude).max(1.0);
+                first_magnitude > 0.0
+                    && (first_magnitude - second_magnitude).abs() <= EPS_SURFACE_AGREEMENT * scale
+                    && first
+                        .iter()
+                        .zip(second)
+                        .map(|(left, right)| left * right)
+                        .sum::<f64>()
+                        .abs()
+                        <= EPS_SUPPORT_ORTHOGONALITY * scale
+            }),
+    )?;
     cylinder_frame_from_local_system(&slots, radius)
 }
 
@@ -1382,10 +1386,9 @@ pub(super) fn decode_compound_local_system_cylinder_frame(
             if body[start - 1] != psb::token::COMPOUND_CLOSE {
                 continue;
             }
-            let Some(slots) = body
-                .get(start..radius_start)
-                .and_then(|bytes| scalar::decode_positional_cylinder_local_system_slots(bytes, cache))
-            else {
+            let Some(slots) = body.get(start..radius_start).and_then(|bytes| {
+                scalar::decode_positional_cylinder_local_system_slots(bytes, cache)
+            }) else {
                 continue;
             };
             if candidate.is_some() {
@@ -1435,21 +1438,21 @@ fn decode_zero_support_cylinder_origin_radius(
     cache: &scalar::ScalarCache,
 ) -> Option<([f64; 3], f64)> {
     let (radius_start, radius) = unique_terminal_positive_scalar(body, start)?;
-    let origin = crate::decode::uniqueness::exactly_one((start + zero_support.len()..radius_start)
-        .filter_map(|origin_start| {
+    let origin = crate::decode::uniqueness::exactly_one(
+        (start + zero_support.len()..radius_start).filter_map(|origin_start| {
             (body.get(origin_start - zero_support.len()..origin_start) == Some(zero_support)).then(
                 || decode_positional_cylinder_origin(body, origin_start, radius_start, cache),
             )?
-        }))?;
+        }),
+    )?;
     Some((origin, radius))
 }
 
 pub(super) fn unique_terminal_positive_scalar(body: &[u8], start: usize) -> Option<(usize, f64)> {
-    crate::decode::uniqueness::exactly_one((start..body.len())
-        .filter_map(|offset| {
-            let (value, end) = scalar::decode(body, offset)?;
-            (end == body.len() && value.is_finite() && value > 0.0).then_some((offset, value))
-        }))
+    crate::decode::uniqueness::exactly_one((start..body.len()).filter_map(|offset| {
+        let (value, end) = scalar::decode(body, offset)?;
+        (end == body.len() && value.is_finite() && value > 0.0).then_some((offset, value))
+    }))
 }
 
 fn decode_positional_cylinder_origin(

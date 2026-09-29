@@ -31,7 +31,13 @@ pub(super) fn feature_definition_has_sketch_design(
     {
         return Ok(true);
     }
-    Ok(crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?.is_some())
+    Ok(crate::feature::definitions::equation_table(
+        ctx,
+        &definition.body,
+        0,
+        definition.body.len(),
+    )?
+    .is_some())
 }
 
 pub(super) fn sketch_table_headers(
@@ -58,9 +64,12 @@ pub(super) fn sketch_table_headers(
             table.offset,
         )?;
     }
-    if let Some(table) =
-        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
-    {
+    if let Some(table) = crate::feature::definitions::equation_table(
+        ctx,
+        &definition.body,
+        0,
+        definition.body.len(),
+    )? {
         push(
             CreoSketchTableKind::Equations {
                 declared_count: table.declared_count,
@@ -82,7 +91,11 @@ pub(super) fn sketch_table_headers(
     }
     if let Some(table) = &definition.trim_entities {
         let mut buckets = Vec::new();
-        ctx.try_reserve_items(&mut buckets, table.buckets.len(), "creo sketch trim entity headers")?;
+        ctx.try_reserve_items(
+            &mut buckets,
+            table.buckets.len(),
+            "creo sketch trim entity headers",
+        )?;
         buckets.extend(table.buckets.iter().map(|bucket| CreoSketchBucketHeader {
             index: bucket.index,
             declared_entry_count: bucket.declared_entry_count,
@@ -102,7 +115,11 @@ pub(super) fn sketch_table_headers(
     }
     if let Some(table) = &definition.trim_vertices {
         let mut buckets = Vec::new();
-        ctx.try_reserve_items(&mut buckets, table.buckets.len(), "creo sketch trim vertex headers")?;
+        ctx.try_reserve_items(
+            &mut buckets,
+            table.buckets.len(),
+            "creo sketch trim vertex headers",
+        )?;
         buckets.extend(table.buckets.iter().map(|bucket| CreoSketchBucketHeader {
             index: bucket.index,
             declared_entry_count: bucket.declared_entry_count,
@@ -177,7 +194,12 @@ pub(super) fn sketch_table_headers(
             table.offset,
         )?;
     }
-    crate::sort::stable_sort_by_key(ctx, headers.as_mut_slice(), |header| header.offset, "creo sketch table headers headers ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        headers.as_mut_slice(),
+        |header| header.offset,
+        "creo sketch table headers headers ordering",
+    )?;
     Ok(headers)
 }
 
@@ -204,12 +226,18 @@ pub(super) fn feature_definition_record_id(
             && definition.identity.owner_feature_id().is_none())
     {
         ctx.format_retained(
-            format_args!("creo:featdefs:feature_definition#offset:{}", definition.offset),
+            format_args!(
+                "creo:featdefs:feature_definition#offset:{}",
+                definition.offset
+            ),
             "creo feature definition record id",
         )
     } else {
         ctx.format_retained(
-            format_args!("creo:featdefs:feature_definition#{}", definition.identity.id()),
+            format_args!(
+                "creo:featdefs:feature_definition#{}",
+                definition.identity.id()
+            ),
             "creo feature definition record id",
         )
     }
@@ -346,7 +374,13 @@ pub(super) fn sketch_section_curve_id_admitted(
 ) -> Result<String, CodecError> {
     let namespace = &crate::identity::FEATDEFS_SECTION_CURVE;
     ctx.format_retained(
-        format_args!("{}:{}:{}#{}:{suffix}", namespace.format(), namespace.scope(), namespace.kind(), sketch_identity_scope(sketch)),
+        format_args!(
+            "{}:{}:{}#{}:{suffix}",
+            namespace.format(),
+            namespace.scope(),
+            namespace.kind(),
+            sketch_identity_scope(sketch)
+        ),
         "creo section curve reference",
     )
 }
@@ -358,7 +392,13 @@ pub(super) fn typed_sketch_section_curve_id_admitted(
 ) -> Result<Option<CurveId>, CodecError> {
     let namespace = &crate::identity::FEATDEFS_SECTION_CURVE;
     let text = ctx.format_retained(
-        format_args!("{}:{}:{}#{}:{suffix}", namespace.format(), namespace.scope(), namespace.kind(), sketch_identity_scope(sketch)),
+        format_args!(
+            "{}:{}:{}#{}:{suffix}",
+            namespace.format(),
+            namespace.scope(),
+            namespace.kind(),
+            sketch_identity_scope(sketch)
+        ),
         "creo section curve identity",
     )?;
     Ok(CurveId::try_from(text).ok())
@@ -370,7 +410,10 @@ pub(super) fn sketch_point_ref_admitted(
     point: u32,
 ) -> Result<String, CodecError> {
     ctx.format_retained(
-        format_args!("creo:featdefs:sketch#{}:point#{point}", sketch_identity_scope(sketch)),
+        format_args!(
+            "creo:featdefs:sketch#{}:point#{point}",
+            sketch_identity_scope(sketch)
+        ),
         "creo sketch point reference",
     )
 }
@@ -381,7 +424,13 @@ pub(super) fn sketch_feature_id_admitted(
 ) -> Result<Option<IrFeatureId>, CodecError> {
     let namespace = &crate::identity::MODEL_SKETCH_FEATURE;
     let text = ctx.format_retained(
-        format_args!("{}:{}:{}#{}", namespace.format(), namespace.scope(), namespace.kind(), sketch_identity_scope(sketch)),
+        format_args!(
+            "{}:{}:{}#{}",
+            namespace.format(),
+            namespace.scope(),
+            namespace.kind(),
+            sketch_identity_scope(sketch)
+        ),
         "creo sketch feature identity",
     )?;
     Ok(IrFeatureId::try_from(text).ok())
@@ -400,7 +449,10 @@ pub(super) fn section_owner_feature_id(
         )?
     } else {
         ctx.format_retained(
-            format_args!("creo:model:sketch_feature#{}", sketch_identity_scope(sketch)),
+            format_args!(
+                "creo:model:sketch_feature#{}",
+                sketch_identity_scope(sketch)
+            ),
             "creo section owner feature identity",
         )?
     };
@@ -412,11 +464,12 @@ pub(super) fn owning_feature_definition_ref(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Result<Option<String>, CodecError> {
-    let Some(definition) = exactly_one(scan
-        .features
-        .definitions
-        .iter()
-        .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id))) else {
+    let Some(definition) = exactly_one(
+        scan.features
+            .definitions
+            .iter()
+            .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id)),
+    ) else {
         return Ok(None);
     };
     feature_definition_record_id(ctx, scan, definition).map(Some)

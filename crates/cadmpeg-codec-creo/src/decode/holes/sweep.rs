@@ -40,7 +40,12 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
             return None;
         };
         let cap = |(id, origin, normal): FeatureOutlinePlane| {
-            let envelope = exactly_one(scan.planes.envelopes.iter().filter(|envelope| envelope.surface_id == id))?;
+            let envelope = exactly_one(
+                scan.planes
+                    .envelopes
+                    .iter()
+                    .filter(|envelope| envelope.surface_id == id),
+            )?;
             Some(CapOutline {
                 surface_id: id,
                 origin,
@@ -53,11 +58,14 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
         let table = exactly_one(scan.features.entity_tables.iter().filter(|table| {
             table.feature_id == feature_id && table.surface_ids_iter().next().is_some()
         }))?;
-        let [entry_plane, termination_plane, first_cylinder, second_cylinder] = table.entries.as_slice()
+        let [entry_plane, termination_plane, first_cylinder, second_cylinder] =
+            table.entries.as_slice()
         else {
             return None;
         };
-        if entry_plane.entity_id != first.surface_id || termination_plane.entity_id != second.surface_id {
+        if entry_plane.entity_id != first.surface_id
+            || termination_plane.entity_id != second.surface_id
+        {
             return None;
         }
         let cylinder_row = |id| {
@@ -67,9 +75,16 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
         };
         let first_row = cylinder_row(first_cylinder.entity_id)?;
         let second_row = cylinder_row(second_cylinder.entity_id)?;
-        let (_, _, extent) = hole_placement([first, second].map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
+        let (_, _, extent) =
+            hole_placement([first, second].map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
         let geometry = hole_cylinder_from_cap_outlines([first, second])?;
-        Some((entry_plane.entity_id, first_row, second_row, extent, geometry))
+        Some((
+            entry_plane.entity_id,
+            first_row,
+            second_row,
+            extent,
+            geometry,
+        ))
     })();
     let Some((entry_surface_id, first_row, second_row, extent, geometry)) = candidate else {
         return Ok(None);
@@ -87,18 +102,26 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
 
 fn has_exact_materialized_surface_roster(
     table: &crate::feature::entity::FeatureEntityTable,
-    expected_ids: impl IntoIterator<Item = u32> + Clone,
+    expected_ids: &(impl IntoIterator<Item = u32> + Clone),
 ) -> bool {
-    let expected_count = expected_ids.clone().into_iter().count();
+    let expected_count = (*expected_ids).clone().into_iter().count();
     if table.surface_ids_iter().count() != expected_count
         || table.unique_surface_ids().len() != expected_count
     {
         return false;
     }
-    expected_ids.clone().into_iter().enumerate().all(|(index, id)| {
-        table.unique_surface_ids().contains(&id)
-            && !expected_ids.clone().into_iter().take(index).any(|previous| previous == id)
-    })
+    (*expected_ids)
+        .clone()
+        .into_iter()
+        .enumerate()
+        .all(|(index, id)| {
+            table.unique_surface_ids().contains(&id)
+                && !expected_ids
+                    .clone()
+                    .into_iter()
+                    .take(index)
+                    .any(|previous| previous == id)
+        })
 }
 
 pub(in crate::decode) fn compact_simple_hole_cylinder_id(
@@ -108,64 +131,55 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
 ) -> Option<u32> {
     exactly_one(
         tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id && table.table_class_id == 29)
-        .filter_map(|table| {
-            let topology_candidates = table
-                .entries
-                .windows(2)
-                .enumerate()
-                .filter_map(|(index, pair)| {
-                    let [class_204, class_203] = pair.first_chunk::<2>()?;
-                    (class_204.class_id() == 204
-                        && class_203.class_id() == 203
-                        && class_204.source_entity_id().is_none()
-                        && class_203.source_entity_id().is_none())
-                    .then_some(())?;
-                    let mut planes = pair
-                        .iter()
-                        .filter(|candidate| {
-                            table.contains_surface_id(candidate.entity_id)
-                                && rows
-                                    .iter()
-                                    .filter(|row| row.id == candidate.entity_id)
-                                    .count()
-                                    == 1
-                                && rows.iter().any(|row| {
-                                    row.id == candidate.entity_id
-                                        && row.feature_id == feature_id
-                                        && row.kind == crate::surface::SurfaceKind::Plane
+            .iter()
+            .filter(|table| table.feature_id == feature_id && table.table_class_id == 29)
+            .filter_map(|table| {
+                let topology_candidates =
+                    table
+                        .entries
+                        .windows(2)
+                        .enumerate()
+                        .filter_map(|(index, pair)| {
+                            let [class_204, class_203] = pair.first_chunk::<2>()?;
+                            (class_204.class_id() == 204
+                                && class_203.class_id() == 203
+                                && class_204.source_entity_id().is_none()
+                                && class_203.source_entity_id().is_none())
+                            .then_some(())?;
+                            let mut planes = pair.iter().filter(|candidate| {
+                                table.contains_surface_id(candidate.entity_id)
+                                    && rows
+                                        .iter()
+                                        .filter(|row| row.id == candidate.entity_id)
+                                        .count()
+                                        == 1
+                                    && rows.iter().any(|row| {
+                                        row.id == candidate.entity_id
+                                            && row.feature_id == feature_id
+                                            && row.kind == crate::surface::SurfaceKind::Plane
+                                    })
+                            });
+                            let plane = match (planes.next(), planes.next()) {
+                                (None, None) if table.entries.len() == 4 => None,
+                                (Some(plane), None) => Some(plane.entity_id),
+                                _ => return None,
+                            };
+                            pair.iter()
+                                .filter(|candidate| Some(candidate.entity_id) != plane)
+                                .all(|candidate| {
+                                    !table.contains_surface_id(candidate.entity_id)
+                                        && !rows.iter().any(|row| row.id == candidate.entity_id)
                                 })
+                                .then_some((index, plane))
                         });
-                    let plane = match (planes.next(), planes.next()) {
-                        (None, None) if table.entries.len() == 4 => None,
-                        (Some(plane), None) => Some(plane.entity_id),
-                        _ => return None,
-                    };
-                    pair.iter()
-                        .filter(|candidate| Some(candidate.entity_id) != plane)
-                        .all(|candidate| {
-                            !table.contains_surface_id(candidate.entity_id)
-                                && !rows.iter().any(|row| row.id == candidate.entity_id)
-                        })
-                        .then_some((index, plane))
-                });
-            let (topology_index, plane) = exactly_one(topology_candidates)?;
-            let bottoms = table
-                .entries
-                .iter()
-                .enumerate()
-                .filter(|(_, candidate)| {
+                let (topology_index, plane) = exactly_one(topology_candidates)?;
+                let bottoms = table.entries.iter().enumerate().filter(|(_, candidate)| {
                     candidate.source_entity_id() == Some(0)
                         && !table.contains_surface_id(candidate.entity_id)
                         && !rows.iter().any(|row| row.id == candidate.entity_id)
                 });
-            let (bottom_index, _) = exactly_one(bottoms)?;
-            let sides = table
-                .entries
-                .iter()
-                .enumerate()
-                .filter(|(_, candidate)| {
+                let (bottom_index, _) = exactly_one(bottoms)?;
+                let sides = table.entries.iter().enumerate().filter(|(_, candidate)| {
                     candidate.class_id() == 200
                         && candidate.source_entity_id().is_none()
                         && table.contains_surface_id(candidate.entity_id)
@@ -180,18 +194,16 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
                                 && row.kind == crate::surface::SurfaceKind::Cylinder
                         })
                 });
-            let (side_index, side) = exactly_one(sides)?;
-            let roster_matches = match plane {
-                Some(plane_id) if plane_id != side.entity_id => {
-                    has_exact_materialized_surface_roster(table, [side.entity_id, plane_id])
-                }
-                _ => has_exact_materialized_surface_roster(table, [side.entity_id]),
-            };
-            (roster_matches
-                && topology_index < bottom_index
-                && bottom_index < side_index)
-                .then_some(side.entity_id)
-        }),
+                let (side_index, side) = exactly_one(sides)?;
+                let roster_matches = match plane {
+                    Some(plane_id) if plane_id != side.entity_id => {
+                        has_exact_materialized_surface_roster(table, &([side.entity_id, plane_id]))
+                    }
+                    _ => has_exact_materialized_surface_roster(table, &([side.entity_id])),
+                };
+                (roster_matches && topology_index < bottom_index && bottom_index < side_index)
+                    .then_some(side.entity_id)
+            }),
     )
 }
 
@@ -202,12 +214,13 @@ pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
 ) -> Result<Option<SimpleHoleGeometry<'a>>, CodecError> {
     let candidate = (|| {
         let cylinder_id = compact_simple_hole_cylinder_id(
-        feature_id,
-        &scan.features.entity_tables,
-        &scan.surfaces.rows,
+            feature_id,
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
         )?;
-        let frame = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?
-            .positional_cylinder_frame()?;
+        let frame =
+            crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?
+                .positional_cylinder_frame()?;
         let length = frame.length()?;
         let row = crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_id)?;
         Some((frame, length, row))
@@ -283,64 +296,90 @@ pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
     feature_id: u32,
 ) -> Result<Option<CircularSweepGeometry<'a>>, CodecError> {
     let candidate = (|| {
-    let table = exactly_one(scan.features.entity_tables.iter().filter(|table| {
-        table.feature_id == feature_id && table.surface_ids_iter().next().is_some()
-    }))?;
-    let [first_cap, second_cap, profile_id, cylinder_id] = table.entries.as_slice() else {
-        return None;
-    };
-    let (rowless_cap, cap_id) = match (
-        table.contains_surface_id(first_cap.entity_id),
-        table.contains_surface_id(second_cap.entity_id),
-    ) {
-        (true, false) => (second_cap, first_cap),
-        (false, true) => (first_cap, second_cap),
-        _ => return None,
-    };
-    if [
-        first_cap.class_id(),
-        second_cap.class_id(),
-        profile_id.class_id(),
-        cylinder_id.class_id(),
-    ] != [204, 203, 200, 200]
-        || profile_id.source_entity_id().is_none()
-        || cylinder_id.source_entity_id().is_some()
-        || !has_exact_materialized_surface_roster(table, [cap_id.entity_id, cylinder_id.entity_id])
-        || !table.contains_non_surface_entity_id(rowless_cap.entity_id)
-        || !table.contains_non_surface_entity_id(profile_id.entity_id)
-    {
-        return None;
-    }
-    crate::surface::unique_surface_row(&scan.surfaces.rows, cap_id.entity_id)
-        .is_some_and(|row| {
-            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
-        })
-        .then_some(())?;
-    let cylinder_row =
-        crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_id.entity_id).filter(
-            |row| row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder,
+        let table = exactly_one(scan.features.entity_tables.iter().filter(|table| {
+            table.feature_id == feature_id && table.surface_ids_iter().next().is_some()
+        }))?;
+        let [first_cap, second_cap, profile_id, cylinder_id] = table.entries.as_slice() else {
+            return None;
+        };
+        let (rowless_cap, cap_id) = match (
+            table.contains_surface_id(first_cap.entity_id),
+            table.contains_surface_id(second_cap.entity_id),
+        ) {
+            (true, false) => (second_cap, first_cap),
+            (false, true) => (first_cap, second_cap),
+            _ => return None,
+        };
+        if [
+            first_cap.class_id(),
+            second_cap.class_id(),
+            profile_id.class_id(),
+            cylinder_id.class_id(),
+        ] != [204, 203, 200, 200]
+            || profile_id.source_entity_id().is_none()
+            || cylinder_id.source_entity_id().is_some()
+            || !has_exact_materialized_surface_roster(
+                table,
+                &([cap_id.entity_id, cylinder_id.entity_id]),
+            )
+            || !table.contains_non_surface_entity_id(rowless_cap.entity_id)
+            || !table.contains_non_surface_entity_id(profile_id.entity_id)
+        {
+            return None;
+        }
+        crate::surface::unique_surface_row(&scan.surfaces.rows, cap_id.entity_id)
+            .is_some_and(|row| {
+                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
+            })
+            .then_some(())?;
+        let cylinder_row = crate::surface::unique_surface_row(
+            &scan.surfaces.rows,
+            cylinder_id.entity_id,
+        )
+        .filter(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+        })?;
+        let plane = feature_outline_plane(scan, feature_id, cap_id.entity_id)?;
+        let envelope = exactly_one(
+            scan.planes
+                .envelopes
+                .iter()
+                .filter(|envelope| envelope.surface_id == cap_id.entity_id),
         )?;
-    let plane = feature_outline_plane(scan, feature_id, cap_id.entity_id)?;
-    let envelope = exactly_one(scan.planes.envelopes.iter().filter(|envelope| envelope.surface_id == cap_id.entity_id))?;
-    let cap = CapOutline {
-        surface_id: plane.0,
-        origin: plane.1,
-        normal: plane.2,
-        corners: plane_envelope_corners(&envelope.envelope)?,
-    };
-    let transform = exactly_one(scan.features.section_transforms.iter().filter(|transform| transform.feature_id == Some(feature_id)))?;
-    let (extent, direction) = extrusion_extent_and_direction(
-        transform.origin(),
-        transform.normal(),
-        [(plane.1, plane.2)],
-    )?;
-        Some((cylinder_row, transform.definition_id, direction, extent, cylinder_from_single_cap_outline(cap)?))
+        let cap = CapOutline {
+            surface_id: plane.0,
+            origin: plane.1,
+            normal: plane.2,
+            corners: plane_envelope_corners(&envelope.envelope)?,
+        };
+        let transform = exactly_one(
+            scan.features
+                .section_transforms
+                .iter()
+                .filter(|transform| transform.feature_id == Some(feature_id)),
+        )?;
+        let (extent, direction) = extrusion_extent_and_direction(
+            transform.origin(),
+            transform.normal(),
+            [(plane.1, plane.2)],
+        )?;
+        Some((
+            cylinder_row,
+            transform.definition_id,
+            direction,
+            extent,
+            cylinder_from_single_cap_outline(cap)?,
+        ))
     })();
     let Some((cylinder_row, definition_id, direction, extent, geometry)) = candidate else {
         return Ok(None);
     };
     let mut cylinder_rows = Vec::new();
-    ctx.try_reserve_items(&mut cylinder_rows, 1, "creo single-cap circular cylinder rows")?;
+    ctx.try_reserve_items(
+        &mut cylinder_rows,
+        1,
+        "creo single-cap circular cylinder rows",
+    )?;
     cylinder_rows.push(cylinder_row);
     Ok(Some(CircularSweepGeometry {
         cylinder_rows,
@@ -397,54 +436,61 @@ pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
     feature_id: u32,
 ) -> Result<Option<CircularSweepGeometry<'a>>, CodecError> {
     let candidate = (|| {
-    let table = exactly_one(scan.features.entity_tables.iter().filter(|table| {
-        table.feature_id == feature_id && table.surface_ids_iter().next().is_some()
-    }))?;
-    let [first_plane_entry, second_plane_entry, profile_entry, cylinder_entry] =
-        table.entries.as_slice()
-    else {
-        return None;
-    };
-    if [
+        let table = exactly_one(scan.features.entity_tables.iter().filter(|table| {
+            table.feature_id == feature_id && table.surface_ids_iter().next().is_some()
+        }))?;
+        let [first_plane_entry, second_plane_entry, profile_entry, cylinder_entry] =
+            table.entries.as_slice()
+        else {
+            return None;
+        };
+        if [
             first_plane_entry.class_id(),
             second_plane_entry.class_id(),
             profile_entry.class_id(),
             cylinder_entry.class_id(),
         ] != [204, 203, 200, 200]
-        || first_plane_entry.source_entity_id().is_some()
-        || second_plane_entry.source_entity_id().is_some()
-        || profile_entry.source_entity_id().is_none()
-        || cylinder_entry.source_entity_id().is_some()
-        || !has_exact_materialized_surface_roster(
-            table,
-            [
-                first_plane_entry.entity_id,
-                second_plane_entry.entity_id,
-                cylinder_entry.entity_id,
-            ],
-        )
-        || table.contains_surface_id(profile_entry.entity_id)
-        || !table.contains_non_surface_entity_id(profile_entry.entity_id)
-    {
-        return None;
-    }
-    let first = feature_outline_plane(scan, feature_id, first_plane_entry.entity_id)?;
-    let second = feature_outline_plane(scan, feature_id, second_plane_entry.entity_id)?;
-    let cap = |plane: FeatureOutlinePlane| {
-        let corners = exactly_one(scan.planes.envelopes.iter().filter(|envelope| envelope.surface_id == plane.0))
+            || first_plane_entry.source_entity_id().is_some()
+            || second_plane_entry.source_entity_id().is_some()
+            || profile_entry.source_entity_id().is_none()
+            || cylinder_entry.source_entity_id().is_some()
+            || !has_exact_materialized_surface_roster(
+                table,
+                &([
+                    first_plane_entry.entity_id,
+                    second_plane_entry.entity_id,
+                    cylinder_entry.entity_id,
+                ]),
+            )
+            || table.contains_surface_id(profile_entry.entity_id)
+            || !table.contains_non_surface_entity_id(profile_entry.entity_id)
+        {
+            return None;
+        }
+        let first = feature_outline_plane(scan, feature_id, first_plane_entry.entity_id)?;
+        let second = feature_outline_plane(scan, feature_id, second_plane_entry.entity_id)?;
+        let cap = |plane: FeatureOutlinePlane| {
+            let corners = exactly_one(
+                scan.planes
+                    .envelopes
+                    .iter()
+                    .filter(|envelope| envelope.surface_id == plane.0),
+            )
             .and_then(|envelope| plane_envelope_corners(&envelope.envelope));
-        Some(CapOutline {
-            surface_id: plane.0,
-            origin: plane.1,
-            normal: plane.2,
-            corners: corners?,
-        })
-    };
-    let cylinder_row =
-        crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_entry.entity_id).filter(
-            |row| row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder,
-        )?;
-    let (_, direction, termination) = hole_placement([first, second])?;
+            Some(CapOutline {
+                surface_id: plane.0,
+                origin: plane.1,
+                normal: plane.2,
+                corners: corners?,
+            })
+        };
+        let cylinder_row =
+            crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_entry.entity_id)
+                .filter(|row| {
+                    row.feature_id == feature_id
+                        && row.kind == crate::surface::SurfaceKind::Cylinder
+                })?;
+        let (_, direction, termination) = hole_placement([first, second])?;
         let extent = ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination,

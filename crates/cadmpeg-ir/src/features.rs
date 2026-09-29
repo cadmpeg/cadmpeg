@@ -1984,7 +1984,11 @@ impl FeatureResultTopology {
             (FeatureResultMemberError::RepeatedEdge, &members.edges),
             (FeatureResultMemberError::RepeatedVertex, &members.vertices),
         ] {
-            if values.iter().enumerate().any(|(index, value)| values[..index].contains(value)) {
+            if values
+                .iter()
+                .enumerate()
+                .any(|(index, value)| values[..index].contains(value))
+            {
                 return Err(error);
             }
         }
@@ -2051,7 +2055,10 @@ impl FeatureContent {
     }
 
     /// Reserves capacity for additional ordered source-content entries.
-    pub fn try_reserve(&mut self, additional: usize) -> Result<(), std::collections::TryReserveError> {
+    pub fn try_reserve(
+        &mut self,
+        additional: usize,
+    ) -> Result<(), std::collections::TryReserveError> {
         self.0.try_reserve(additional)
     }
 
@@ -7910,12 +7917,17 @@ impl SweepShape {
     pub fn generated_sections_mut(&mut self) -> impl Iterator<Item = &mut GeneratedSweepSection> {
         let (section, sections) = match self {
             Self::Unresolved { .. } | Self::Surface { .. } => (None, &mut [][..]),
-            Self::Solid { section, sections, .. } => (Some(section), sections.as_mut_slice()),
+            Self::Solid {
+                section, sections, ..
+            } => (Some(section), sections.as_mut_slice()),
         };
-        section.into_iter().chain(sections.iter_mut()).filter_map(|section| match section {
-            SweepSection::Generated(generated) => Some(generated),
-            SweepSection::Unresolved(_) | SweepSection::Profile(_) => None,
-        })
+        section
+            .into_iter()
+            .chain(sections.iter_mut())
+            .filter_map(|section| match section {
+                SweepSection::Generated(generated) => Some(generated),
+                SweepSection::Unresolved(_) | SweepSection::Profile(_) => None,
+            })
     }
 
     /// The generated region of the primary cross-section, when the sweep owns it.

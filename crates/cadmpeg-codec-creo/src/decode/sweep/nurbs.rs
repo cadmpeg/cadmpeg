@@ -81,64 +81,124 @@ pub(in super::super) fn extruded_geometry_surface(
 }
 
 pub(in super::super) fn bspline_basis(
-    ctx: &DecodeContext<'_>, index: usize, degree: usize, parameter: f64, knots: &[f64], count: usize,
+    ctx: &DecodeContext<'_>,
+    index: usize,
+    degree: usize,
+    parameter: f64,
+    knots: &[f64],
+    count: usize,
 ) -> Result<Option<f64>, CodecError> {
     let _depth = ctx.enter_nested("creo interpolation basis depth")?;
     ctx.charge_work(1, "creo interpolation basis work")?;
-    let Some(end) = index.checked_add(degree).and_then(|end| end.checked_add(1)) else { return Ok(None); };
-    let Some(window) = knots.get(index..=end) else { return Ok(None); };
-    let (Some(&first), Some(&second), Some(&last), Some(&last_knot)) = (window.first(), window.get(1), window.last(), knots.last()) else { return Ok(None); };
+    let Some(end) = index.checked_add(degree).and_then(|end| end.checked_add(1)) else {
+        return Ok(None);
+    };
+    let Some(window) = knots.get(index..=end) else {
+        return Ok(None);
+    };
+    let (Some(&first), Some(&second), Some(&last), Some(&last_knot)) =
+        (window.first(), window.get(1), window.last(), knots.last())
+    else {
+        return Ok(None);
+    };
     if parameter == last_knot {
         return Ok(Some(f64::from(index.checked_add(1) == Some(count))));
     }
-    if degree == 0 { return Ok(Some(f64::from(first <= parameter && parameter < second))); }
+    if degree == 0 {
+        return Ok(Some(f64::from(first <= parameter && parameter < second)));
+    }
     let left_denominator = window[degree] - first;
     let right_denominator = last - second;
     let left = if left_denominator > 0.0 {
-        let Some(basis) = bspline_basis(ctx, index, degree - 1, parameter, knots, count)? else { return Ok(None); };
+        let Some(basis) = bspline_basis(ctx, index, degree - 1, parameter, knots, count)? else {
+            return Ok(None);
+        };
         (parameter - first) / left_denominator * basis
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     let right = if right_denominator > 0.0 {
-        let Some(basis) = bspline_basis(ctx, index + 1, degree - 1, parameter, knots, count)? else { return Ok(None); };
+        let Some(basis) = bspline_basis(ctx, index + 1, degree - 1, parameter, knots, count)?
+        else {
+            return Ok(None);
+        };
         (last - parameter) / right_denominator * basis
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     Ok(Some(left + right))
 }
 
 pub(in super::super) fn bspline_basis_derivative(
-    ctx: &DecodeContext<'_>, index: usize, degree: usize, parameter: f64, knots: &[f64], count: usize,
+    ctx: &DecodeContext<'_>,
+    index: usize,
+    degree: usize,
+    parameter: f64,
+    knots: &[f64],
+    count: usize,
 ) -> Result<Option<f64>, CodecError> {
     let _depth = ctx.enter_nested("creo interpolation basis depth")?;
     ctx.charge_work(1, "creo interpolation basis work")?;
-    let Some(end) = index.checked_add(degree).and_then(|end| end.checked_add(1)) else { return Ok(None); };
-    let Some(window) = knots.get(index..=end) else { return Ok(None); };
-    if degree == 0 { return Ok(Some(0.0)); }
-    let Ok(degree_value) = u32::try_from(degree).map(f64::from) else { return Ok(None); };
+    let Some(end) = index.checked_add(degree).and_then(|end| end.checked_add(1)) else {
+        return Ok(None);
+    };
+    let Some(window) = knots.get(index..=end) else {
+        return Ok(None);
+    };
+    if degree == 0 {
+        return Ok(Some(0.0));
+    }
+    let Ok(degree_value) = u32::try_from(degree).map(f64::from) else {
+        return Ok(None);
+    };
     let left_denominator = window[degree] - window[0];
     let right_denominator = window[degree + 1] - window[1];
     let left = if left_denominator > 0.0 {
-        let Some(basis) = bspline_basis(ctx, index, degree - 1, parameter, knots, count)? else { return Ok(None); };
+        let Some(basis) = bspline_basis(ctx, index, degree - 1, parameter, knots, count)? else {
+            return Ok(None);
+        };
         degree_value / left_denominator * basis
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     let right = if right_denominator > 0.0 {
-        let Some(basis) = bspline_basis(ctx, index + 1, degree - 1, parameter, knots, count)? else { return Ok(None); };
+        let Some(basis) = bspline_basis(ctx, index + 1, degree - 1, parameter, knots, count)?
+        else {
+            return Ok(None);
+        };
         degree_value / right_denominator * basis
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     Ok(Some(left - right))
 }
 
 fn solve_vector_system(
-    ctx: &DecodeContext<'_>, mut matrix: Vec<Vec<f64>>, mut values: Vec<[f64; 3]>,
+    ctx: &DecodeContext<'_>,
+    mut matrix: Vec<Vec<f64>>,
+    mut values: Vec<[f64; 3]>,
 ) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
     const EPS_INTERPOLATION_PIVOT: f64 = 1e-14;
     let count = matrix.len();
-    if values.len() != count || matrix.iter().any(|row| row.len() != count) { return Ok(None); }
+    if values.len() != count || matrix.iter().any(|row| row.len() != count) {
+        return Ok(None);
+    }
     for column in 0..count {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(count - column), "creo interpolation pivot work")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(count - column),
+            "creo interpolation pivot work",
+        )?;
         let Some(pivot) = (column..count).max_by(|left, right| {
-            matrix[*left][column].abs().total_cmp(&matrix[*right][column].abs())
-        }) else { return Ok(None); };
-        if matrix[pivot][column].abs() <= EPS_INTERPOLATION_PIVOT || matrix[pivot][column].is_nan() { return Ok(None); }
+            matrix[*left][column]
+                .abs()
+                .total_cmp(&matrix[*right][column].abs())
+        }) else {
+            return Ok(None);
+        };
+        if matrix[pivot][column].abs() <= EPS_INTERPOLATION_PIVOT || matrix[pivot][column].is_nan()
+        {
+            return Ok(None);
+        }
         matrix.swap(column, pivot);
         values.swap(column, pivot);
         let scale = matrix[column][column];
@@ -150,13 +210,23 @@ fn solve_vector_system(
         values[column] = values[column].map(|value| value / scale);
         let pivot_value = values[column];
         let (before, pivot_and_after) = matrix.split_at_mut(column);
-        let Some((pivot_row, after)) = pivot_and_after.split_first_mut() else { return Ok(None); };
+        let Some((pivot_row, after)) = pivot_and_after.split_first_mut() else {
+            return Ok(None);
+        };
         let (before_values, pivot_and_after_values) = values.split_at_mut(column);
-        let Some((_, after_values)) = pivot_and_after_values.split_first_mut() else { return Ok(None); };
-        for (row, values) in before.iter_mut().chain(after.iter_mut()).zip(before_values.iter_mut().chain(after_values.iter_mut())) {
+        let Some((_, after_values)) = pivot_and_after_values.split_first_mut() else {
+            return Ok(None);
+        };
+        for (row, values) in before
+            .iter_mut()
+            .chain(after.iter_mut())
+            .zip(before_values.iter_mut().chain(after_values.iter_mut()))
+        {
             ctx.charge_work(1, "creo interpolation elimination work")?;
             let factor = row[column];
-            if factor == 0.0 { continue; }
+            if factor == 0.0 {
+                continue;
+            }
             for (entry, pivot_entry) in row[column..].iter_mut().zip(&pivot_row[column..]) {
                 ctx.charge_work(1, "creo interpolation elimination work")?;
                 *entry -= factor * pivot_entry;
@@ -285,7 +355,8 @@ pub(in super::super) fn saved_spline_nurbs(
     match NurbsCurve::from_lanes_admitted(ctx, 3, knots, converted_controls, None, false)? {
         Ok(curve) => Ok(Some(curve)),
         Err(error) => {
-            refusal.note_checked(ctx,
+            refusal.note_checked(
+                ctx,
                 format_args!("{} NURBS record", saved_spline_record(spline)),
                 &error,
             );
@@ -342,7 +413,8 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<SketchGeometry>, CodecError> {
     if let Some((subject, z)) = saved_spline_off_plane_input(spline) {
-        refusal.note_checked(ctx,
+        refusal.note_checked(
+            ctx,
             format_args!("{} sketch geometry record", saved_spline_record(spline)),
             &format_args!("{subject} is not on the sketch plane: z states {z}"),
         );
@@ -385,15 +457,21 @@ pub(in super::super) fn saved_spline_sketch_geometry(
             Some(weights)
         }
     };
-    let poles = if let Some(weights) = weights {
-        let mut paired = Vec::new();
-        ctx.try_reserve_items(&mut paired, controls.len(), "creo saved spline sketch paired poles")?;
-        paired.extend(controls.into_iter().zip(weights).map(|(point, weight)|
-            cadmpeg_ir::geometry::pcurve::WeightedPole2 { point, weight }));
-        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points: paired }
-    } else {
-        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points: controls }
-    };
+    let poles =
+        if let Some(weights) = weights {
+            let mut paired = Vec::new();
+            ctx.try_reserve_items(
+                &mut paired,
+                controls.len(),
+                "creo saved spline sketch paired poles",
+            )?;
+            paired.extend(controls.into_iter().zip(weights).map(|(point, weight)| {
+                cadmpeg_ir::geometry::pcurve::WeightedPole2 { point, weight }
+            }));
+            cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points: paired }
+        } else {
+            cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points: controls }
+        };
     match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_parts(
         nurbs.degree(),
         knots,
@@ -402,7 +480,8 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     ) {
         Ok(pcurve) => Ok(Some(SketchGeometry::nurbs(pcurve))),
         Err(error) => {
-            refusal.note_checked(ctx,
+            refusal.note_checked(
+                ctx,
                 format_args!("{} sketch geometry record", saved_spline_record(spline)),
                 &error,
             );
@@ -550,7 +629,8 @@ pub(in super::super) fn interpolation_spline_surface(
         row.extend_from_slice(points);
         pole_rows.push(row);
     }
-    match NurbsSurface::from_lanes_admitted(ctx,
+    match NurbsSurface::from_lanes_admitted(
+        ctx,
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, u_knots, false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, v_knots, false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(pole_rows, None),
@@ -558,7 +638,8 @@ pub(in super::super) fn interpolation_spline_surface(
     )? {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
-            refusal.note_checked(ctx,
+            refusal.note_checked(
+                ctx,
                 format_args!("creo interpolation-spline surface record for {record}"),
                 &error,
             );
@@ -598,12 +679,15 @@ pub(in super::super) fn extruded_nurbs_surface(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<NurbsSurface>, CodecError> {
-    use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurfaceAxis, WeightedPole3};
     use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurfaceAxis, WeightedPole3};
     use cadmpeg_ir::scalar::NonZeroReal;
 
     let count = directrix.pole_count();
-    let rational = matches!(directrix.pole_rows(), cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. });
+    let rational = matches!(
+        directrix.pole_rows(),
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
+    );
     let mut polynomial_rows = Vec::new();
     let mut rational_rows = Vec::new();
     if rational {
@@ -622,7 +706,8 @@ pub(in super::super) fn extruded_nurbs_surface(
             source.z + sweep[2],
         );
         let Some(translated) = FinitePoint3::new(translated) else {
-            refusal.note_checked(ctx,
+            refusal.note_checked(
+                ctx,
                 format_args!("creo extruded NURBS surface record for {record}"),
                 &cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                     "control_points contains a non-finite point".into(),
@@ -631,14 +716,21 @@ pub(in super::super) fn extruded_nurbs_surface(
             return Ok(None);
         };
         if rational {
-            let Some(weight) = directrix.pole_rows().weight_at(index).and_then(NonZeroReal::new) else {
+            let Some(weight) = directrix
+                .pole_rows()
+                .weight_at(index)
+                .and_then(NonZeroReal::new)
+            else {
                 return Ok(None);
             };
             let mut row = Vec::new();
             ctx.try_reserve_items(&mut row, 2, "creo extruded NURBS pole values")?;
             row.extend([
                 WeightedPole3 { point, weight },
-                WeightedPole3 { point: translated, weight },
+                WeightedPole3 {
+                    point: translated,
+                    weight,
+                },
             ]);
             rational_rows.push(row);
         } else {
@@ -649,9 +741,13 @@ pub(in super::super) fn extruded_nurbs_surface(
         }
     }
     let poles = if rational {
-        NurbsPoleGrid::Rational { rows: rational_rows }
+        NurbsPoleGrid::Rational {
+            rows: rational_rows,
+        }
     } else {
-        NurbsPoleGrid::Polynomial { rows: polynomial_rows }
+        NurbsPoleGrid::Polynomial {
+            rows: polynomial_rows,
+        }
     };
     let u_knots = ctx.try_collection(
         directrix.knots().len(),
@@ -669,7 +765,8 @@ pub(in super::super) fn extruded_nurbs_surface(
     ) {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
-            refusal.note_checked(ctx,
+            refusal.note_checked(
+                ctx,
                 format_args!("creo extruded NURBS surface record for {record}"),
                 &error,
             );
@@ -716,7 +813,9 @@ pub(super) fn sketch_nurbs_curve(
             NurbsPoles3::Rational { points: lifted }
         }
     };
-    let Some(nurbs) = NurbsCurve::new_admitted_poles(curve.degree(), knots, poles, curve.periodic()).ok() else {
+    let Some(nurbs) =
+        NurbsCurve::new_admitted_poles(curve.degree(), knots, poles, curve.periodic()).ok()
+    else {
         return Ok(None);
     };
     Ok(valid_positive_nurbs_curve(&nurbs).map(|()| nurbs))
@@ -754,13 +853,19 @@ pub(super) fn sketch_nurbs_pcurve(
     let Some(nurbs) = oriented_sketch_nurbs_curve(ctx, geometry, reversed)? else {
         return Ok(None);
     };
-    let knots = ctx.try_collection(nurbs.knots().len(), "creo sketch NURBS pcurve knots", || {
-        nurbs.knots().try_clone()
-    })?;
+    let knots = ctx.try_collection(
+        nurbs.knots().len(),
+        "creo sketch NURBS pcurve knots",
+        || nurbs.knots().try_clone(),
+    )?;
     let poles = match nurbs.pole_rows() {
         NurbsPoles3::Polynomial { points } => {
             let mut projected = Vec::new();
-            ctx.try_reserve_items(&mut projected, points.len(), "creo sketch NURBS pcurve poles")?;
+            ctx.try_reserve_items(
+                &mut projected,
+                points.len(),
+                "creo sketch NURBS pcurve poles",
+            )?;
             for point in points {
                 let [x, y, _] = point.coordinates();
                 projected.push(cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y));
@@ -769,7 +874,11 @@ pub(super) fn sketch_nurbs_pcurve(
         }
         NurbsPoles3::Rational { points } => {
             let mut projected = Vec::new();
-            ctx.try_reserve_items(&mut projected, points.len(), "creo sketch NURBS pcurve poles")?;
+            ctx.try_reserve_items(
+                &mut projected,
+                points.len(),
+                "creo sketch NURBS pcurve poles",
+            )?;
             for pole in points {
                 let [x, y, _] = pole.point.coordinates();
                 projected.push(WeightedPole2 {
@@ -780,15 +889,11 @@ pub(super) fn sketch_nurbs_pcurve(
             PcurveNurbsPoles::Rational { points: projected }
         }
     };
-    match PcurveNurbs::new_admitted_poles(
-        nurbs.degree(),
-        knots,
-        poles,
-        nurbs.periodic(),
-    ) {
+    match PcurveNurbs::new_admitted_poles(nurbs.degree(), knots, poles, nurbs.periodic()) {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
-            refusal.note_checked(ctx,
+            refusal.note_checked(
+                ctx,
                 format_args!("creo sketch NURBS pcurve record for {record}"),
                 &error,
             );
@@ -802,11 +907,12 @@ pub(in super::super) fn extrusion_brep_side_surface(
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
     reversed: bool,
-    start: [f64; 2],
-    end: [f64; 2],
+    endpoints: [[f64; 2]; 2],
     span: ExtrusionSpan,
     diagnostics: &mut crate::lane_refusal::LaneRefusalContext<'_, '_>,
 ) -> Result<Option<SurfaceGeometry>, CodecError> {
+    let [start, end] = endpoints;
+
     if matches!(
         geometry.definition(),
         SketchGeometryDefinition::Nurbs { .. }
@@ -825,11 +931,18 @@ pub(in super::super) fn extrusion_brep_side_surface(
             return Ok(None);
         };
         let Some(surface) = extruded_nurbs_surface(
-            ctx, &translated, sweep, diagnostics.record, diagnostics.refusals,
-        )? else {
+            ctx,
+            &translated,
+            sweep,
+            diagnostics.record,
+            diagnostics.refusals,
+        )?
+        else {
             return Ok(None);
         };
-        return Ok(Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))));
+        return Ok(Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+            surface,
+        ))));
     }
     let surface = match geometry.definition() {
         SketchGeometryDefinition::Line { .. } => {
@@ -1145,7 +1258,8 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     match NurbsCurve::from_lanes_admitted(ctx, 3, knots, controls, None, false)? {
         Ok(curve) => Ok(Some((curve, sweep))),
         Err(error) => {
-            refusal.note_checked(ctx,
+            refusal.note_checked(
+                ctx,
                 format_args!(
                     "creo placed tabulated-cylinder directrix record for surface {} at offset {}",
                     parameters.surface_id, parameters.offset
@@ -1160,8 +1274,8 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
 #[cfg(test)]
 mod tests {
     use super::{
-        extruded_nurbs_surface, oriented_sketch_nurbs_curve, placed_section_nurbs, signed_unit_chart,
-        translated_nurbs_curve,
+        extruded_nurbs_surface, oriented_sketch_nurbs_curve, placed_section_nurbs,
+        signed_unit_chart, translated_nurbs_curve,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
@@ -1196,12 +1310,16 @@ mod tests {
         let geometry = sketch_line_nurbs();
         let error = with_collection_limit(0, |ctx| super::sketch_nurbs_curve(ctx, &geometry))
             .expect_err("four knots exceed zero items");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo sketch NURBS lift knots"));
-        assert!(with_collection_limit(6, |ctx| super::sketch_nurbs_curve(ctx, &geometry))
-            .expect("service sized collection")
-            .is_some());
+                && refusal.operation == "creo sketch NURBS lift knots")
+        );
+        assert!(
+            with_collection_limit(6, |ctx| super::sketch_nurbs_curve(ctx, &geometry))
+                .expect("service sized collection")
+                .is_some()
+        );
     }
 
     #[test]
@@ -1209,26 +1327,44 @@ mod tests {
         let geometry = sketch_line_nurbs();
         let error = with_collection_limit(4, |ctx| super::sketch_nurbs_curve(ctx, &geometry))
             .expect_err("two poles exceed the four knot items");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo sketch NURBS lift poles"));
-        assert!(with_collection_limit(6, |ctx| super::sketch_nurbs_curve(ctx, &geometry))
-            .expect("service sized collection")
-            .is_some());
+                && refusal.operation == "creo sketch NURBS lift poles")
+        );
+        assert!(
+            with_collection_limit(6, |ctx| super::sketch_nurbs_curve(ctx, &geometry))
+                .expect("service sized collection")
+                .is_some()
+        );
     }
 
     #[test]
     fn sketch_nurbs_pcurve_knots_refuse_collection_limit() {
         let geometry = sketch_line_nurbs();
         let error = with_collection_limit(6, |ctx| {
-            super::sketch_nurbs_pcurve(ctx, &geometry, false, &"linear sketch", &mut crate::lane_refusal::LaneRefusals::new())
+            super::sketch_nurbs_pcurve(
+                ctx,
+                &geometry,
+                false,
+                &"linear sketch",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
         })
         .expect_err("pcurve knots exceed the lifted curve items");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo sketch NURBS pcurve knots"));
+                && refusal.operation == "creo sketch NURBS pcurve knots")
+        );
         assert!(with_collection_limit(12, |ctx| {
-            super::sketch_nurbs_pcurve(ctx, &geometry, false, &"linear sketch", &mut crate::lane_refusal::LaneRefusals::new())
+            super::sketch_nurbs_pcurve(
+                ctx,
+                &geometry,
+                false,
+                &"linear sketch",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
         })
         .expect("service sized collection")
         .is_some());
@@ -1238,14 +1374,28 @@ mod tests {
     fn sketch_nurbs_pcurve_poles_refuse_collection_limit() {
         let geometry = sketch_line_nurbs();
         let error = with_collection_limit(10, |ctx| {
-            super::sketch_nurbs_pcurve(ctx, &geometry, false, &"linear sketch", &mut crate::lane_refusal::LaneRefusals::new())
+            super::sketch_nurbs_pcurve(
+                ctx,
+                &geometry,
+                false,
+                &"linear sketch",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
         })
         .expect_err("pcurve poles exceed the ten prior items");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo sketch NURBS pcurve poles"));
+                && refusal.operation == "creo sketch NURBS pcurve poles")
+        );
         assert!(with_collection_limit(12, |ctx| {
-            super::sketch_nurbs_pcurve(ctx, &geometry, false, &"linear sketch", &mut crate::lane_refusal::LaneRefusals::new())
+            super::sketch_nurbs_pcurve(
+                ctx,
+                &geometry,
+                false,
+                &"linear sketch",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
         })
         .expect("service sized collection")
         .is_some());
@@ -1283,30 +1433,55 @@ mod tests {
 
     #[test]
     fn saved_spline_constructor_refuses_typed_pole_storage() {
-        let error = with_collection_limit(39, |ctx| super::saved_spline_nurbs(
-            ctx, &planar_or_offset_spline(0.0), &mut crate::lane_refusal::LaneRefusals::new()))
-            .expect_err("typed poles need forty items in total");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == "IR NURBS admitted poles"));
-        assert!(crate::decode::with_test_decode_ctx(|ctx| super::saved_spline_nurbs(
-            ctx, &planar_or_offset_spline(0.0), &mut crate::lane_refusal::LaneRefusals::new()))
-            .expect("service constructor").is_some());
+        let error = with_collection_limit(39, |ctx| {
+            super::saved_spline_nurbs(
+                ctx,
+                &planar_or_offset_spline(0.0),
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        })
+        .expect_err("typed poles need forty items in total");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == "IR NURBS admitted poles")
+        );
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| super::saved_spline_nurbs(
+                ctx,
+                &planar_or_offset_spline(0.0),
+                &mut crate::lane_refusal::LaneRefusals::new()
+            ))
+            .expect("service constructor")
+            .is_some()
+        );
     }
 
     #[test]
     fn interpolation_constructor_refuses_typed_grid_storage() {
         // The earlier collections use 302 items; four rows and sixteen poles
         // use twenty more before the first typed row.
-        assert!(matches!(interpolation_surface_refusal(322), cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == "IR NURBS admitted grid rows"));
-        assert!(crate::decode::with_test_decode_ctx(|ctx| super::interpolation_spline_surface(
-            ctx, &interpolation_grid(), &"interpolation grid fixture", &mut crate::lane_refusal::LaneRefusals::new()))
-            .expect("service constructor").is_some());
+        assert!(
+            matches!(interpolation_surface_refusal(322), cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == "IR NURBS admitted grid rows")
+        );
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| super::interpolation_spline_surface(
+                ctx,
+                &interpolation_grid(),
+                &"interpolation grid fixture",
+                &mut crate::lane_refusal::LaneRefusals::new()
+            ))
+            .expect("service constructor")
+            .is_some()
+        );
     }
 
     #[test]
     fn interpolation_basis_refuses_work_and_recursive_depth() {
-        for (work, depth, operation) in [(0, 128, "creo interpolation basis work"), (u64::MAX, 1, "creo interpolation basis depth")] {
+        for (work, depth, operation) in [
+            (0, 128, "creo interpolation basis work"),
+            (u64::MAX, 1, "creo interpolation basis depth"),
+        ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = work;
@@ -1314,27 +1489,60 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             for derivative in [false, true] {
                 let result = if derivative {
-                    super::bspline_basis_derivative(&ctx, 0, 3, 0.5, &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], 4)
+                    super::bspline_basis_derivative(
+                        &ctx,
+                        0,
+                        3,
+                        0.5,
+                        &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+                        4,
+                    )
                 } else {
-                    super::bspline_basis(&ctx, 0, 3, 0.5, &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], 4)
+                    super::bspline_basis(
+                        &ctx,
+                        0,
+                        3,
+                        0.5,
+                        &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+                        4,
+                    )
                 };
-                assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == operation));
+                assert!(
+                    matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == operation)
+                );
             }
         }
     }
 
     #[test]
     fn interpolation_dense_solver_refuses_each_work_boundary() {
-        for (cap, operation) in [(1, "creo interpolation pivot work"), (2, "creo interpolation normalization work"), (7, "creo interpolation elimination work")] {
+        for (cap, operation) in [
+            (1, "creo interpolation pivot work"),
+            (2, "creo interpolation normalization work"),
+            (7, "creo interpolation elimination work"),
+        ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = super::solve_vector_system(&ctx, vec![vec![1.0, 0.0], vec![1.0, 1.0]], vec![[1.0; 3], [2.0; 3]]);
-            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == operation));
+            let result = super::solve_vector_system(
+                &ctx,
+                vec![vec![1.0, 0.0], vec![1.0, 1.0]],
+                vec![[1.0; 3], [2.0; 3]],
+            );
+            assert!(
+                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == operation)
+            );
         }
-        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::solve_vector_system(ctx,
-            vec![vec![1.0, 0.0], vec![1.0, 1.0]], vec![[1.0; 3], [2.0; 3]])).expect("service solver"), Some(vec![[1.0; 3]; 2]));
+        assert_eq!(
+            crate::decode::with_test_decode_ctx(|ctx| super::solve_vector_system(
+                ctx,
+                vec![vec![1.0, 0.0], vec![1.0, 1.0]],
+                vec![[1.0; 3], [2.0; 3]]
+            ))
+            .expect("service solver"),
+            Some(vec![[1.0; 3]; 2])
+        );
     }
 
     #[test]
@@ -1467,7 +1675,9 @@ mod tests {
 
         assert!(crate::decode::with_test_decode_ctx(|ctx| {
             translated_nurbs_curve(ctx, &curve, [f64::MAX, 0.0, 0.0])
-        }).expect("translation resources").is_none());
+        })
+        .expect("translation resources")
+        .is_none());
         assert_eq!(curve.control_points()[0], Point3::new(f64::MAX, 0.0, 0.0));
     }
 
@@ -1479,21 +1689,32 @@ mod tests {
             vec![Point3::new(1.0, 2.0, 0.0), Point3::new(3.0, 4.0, 0.0)],
             None,
             false,
-        ).expect("finite curve");
+        )
+        .expect("finite curve");
         let transform = crate::placement::FeatureSectionTransform::new(
-            1, Some(1), [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0,
-        ).expect("section frame");
+            1,
+            Some(1),
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            0,
+        )
+        .expect("section frame");
         for limit in [0, 4] {
-            let error = with_collection_limit(limit, |ctx| {
-                placed_section_nurbs(ctx, &transform, &curve)
-            }).expect_err("knot or pole copy exceeds limit");
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            let error =
+                with_collection_limit(limit, |ctx| placed_section_nurbs(ctx, &transform, &curve))
+                    .expect_err("knot or pole copy exceeds limit");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                 if resource.operation == "creo placed section NURBS curve"
-                    && resource.dimension == ResourceDimension::CollectionItems));
+                    && resource.dimension == ResourceDimension::CollectionItems)
+            );
         }
         assert!(crate::decode::with_test_decode_ctx(|ctx| {
             placed_section_nurbs(ctx, &transform, &curve)
-        }).expect("service resources").is_some());
+        })
+        .expect("service resources")
+        .is_some());
     }
 
     #[test]
@@ -1504,19 +1725,28 @@ mod tests {
             vec![Point3::new(1.0, 2.0, 0.0), Point3::new(3.0, 4.0, 0.0)],
             None,
             false,
-        ).expect("finite curve");
+        )
+        .expect("finite curve");
         for limit in [0, 4] {
             let error = with_collection_limit(limit, |ctx| {
                 translated_nurbs_curve(ctx, &curve, [0.0, 0.0, 2.0])
-            }).expect_err("knot or pole copy exceeds limit");
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            })
+            .expect_err("knot or pole copy exceeds limit");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                 if resource.operation == "creo translated NURBS curve"
-                    && resource.dimension == ResourceDimension::CollectionItems));
+                    && resource.dimension == ResourceDimension::CollectionItems)
+            );
         }
-        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| {
-            translated_nurbs_curve(ctx, &curve, [0.0, 0.0, 2.0])
-        }).expect("service resources").expect("finite translation").control_points(),
-            vec![Point3::new(1.0, 2.0, 2.0), Point3::new(3.0, 4.0, 2.0)]);
+        assert_eq!(
+            crate::decode::with_test_decode_ctx(|ctx| {
+                translated_nurbs_curve(ctx, &curve, [0.0, 0.0, 2.0])
+            })
+            .expect("service resources")
+            .expect("finite translation")
+            .control_points(),
+            vec![Point3::new(1.0, 2.0, 2.0), Point3::new(3.0, 4.0, 2.0)]
+        );
     }
 
     fn extruded_nurbs_refusal_at_limit(limit: u64) -> cadmpeg_core::CodecError {
@@ -1526,11 +1756,18 @@ mod tests {
             vec![Point3::new(1.0, 2.0, 0.0), Point3::new(3.0, 4.0, 0.0)],
             Some(vec![1.0, 0.5]),
             false,
-        ).expect("rational directrix");
+        )
+        .expect("rational directrix");
         with_collection_limit(limit, |ctx| {
-            extruded_nurbs_surface(ctx, &curve, [0.0, 0.0, 2.0],
-                &"rational directrix", &mut crate::lane_refusal::LaneRefusals::new())
-        }).expect_err("surface grid exceeds collection limit")
+            extruded_nurbs_surface(
+                ctx,
+                &curve,
+                [0.0, 0.0, 2.0],
+                &"rational directrix",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        })
+        .expect_err("surface grid exceeds collection limit")
     }
 
     #[test]
@@ -1665,8 +1902,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("test decode context");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         assert!(super::saved_spline_sketch_geometry(
             &ctx,
@@ -1675,7 +1912,9 @@ mod tests {
         )
         .expect("candidate route")
         .is_none());
-        let error = refusal.take_records_checked().expect_err("refusal text exceeds limit");
+        let error = refusal
+            .take_records_checked()
+            .expect_err("refusal text exceeds limit");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1737,8 +1976,20 @@ mod tests {
     #[test]
     fn malformed_basis_knots_are_rejected() {
         for knots in [&[][..], &[0.0][..]] {
-            assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::bspline_basis(ctx, 0, 3, 0.5, knots, 4)).expect("service basis"), None);
-            assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::bspline_basis_derivative(ctx, 0, 3, 0.5, knots, 4)).expect("service basis"), None);
+            assert_eq!(
+                crate::decode::with_test_decode_ctx(|ctx| super::bspline_basis(
+                    ctx, 0, 3, 0.5, knots, 4
+                ))
+                .expect("service basis"),
+                None
+            );
+            assert_eq!(
+                crate::decode::with_test_decode_ctx(|ctx| super::bspline_basis_derivative(
+                    ctx, 0, 3, 0.5, knots, 4
+                ))
+                .expect("service basis"),
+                None
+            );
         }
     }
 
@@ -1758,13 +2009,21 @@ mod tests {
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let (first, second) = with_collection_limit(u64::MAX, |ctx| {
             let first = extruded_nurbs_surface(
-                ctx, &directrix, [f64::MAX, 0.0, 0.0],
-                &"surface 11 at offset 64", &mut refusal,
-            ).expect("first carrier resources");
+                ctx,
+                &directrix,
+                [f64::MAX, 0.0, 0.0],
+                &"surface 11 at offset 64",
+                &mut refusal,
+            )
+            .expect("first carrier resources");
             let second = extruded_nurbs_surface(
-                ctx, &directrix, [f64::MAX, 0.0, 0.0],
-                &"surface 12 at offset 128", &mut refusal,
-            ).expect("second carrier resources");
+                ctx,
+                &directrix,
+                [f64::MAX, 0.0, 0.0],
+                &"surface 12 at offset 128",
+                &mut refusal,
+            )
+            .expect("second carrier resources");
             (first, second)
         });
         assert!(first.is_none(), "the refused ruling states no surface");

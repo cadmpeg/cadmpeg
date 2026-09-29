@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::curve::curve_equation_prohibited_constructs;
 use crate::curve::evaluate_creo_math_function;
 use crate::curve::evaluate_creo_relation_function;
-use crate::curve::curve_equation_prohibited_constructs;
 use crate::curve::expression_records;
 use crate::curve::reevaluate_expression_records;
 use crate::curve::relation_round;
@@ -20,8 +20,8 @@ use crate::curve::DimensionProbeKind;
 use crate::curve::DimensionProbeValue;
 use crate::curve::ExpressionValue;
 use crate::curve::ExternalRelationSymbols;
-use crate::curve::RelationEvaluationContext;
 use crate::curve::RelationDimension;
+use crate::curve::RelationEvaluationContext;
 use crate::curve::SimultaneousAffineValue;
 use crate::curve::SymbolicRelationDimension;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -66,13 +66,8 @@ fn relation_parse_limit_error_with_context<V: ExpressionValue + std::fmt::Debug>
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    crate::curve::parse_relation_expression(
-        &ctx,
-        expression,
-        values,
-        context,
-    )
-    .expect_err("relation parser allocation must refuse")
+    crate::curve::parse_relation_expression(&ctx, expression, values, context)
+        .expect_err("relation parser allocation must refuse")
 }
 
 #[test]
@@ -276,9 +271,10 @@ fn distinct_affine_probe_values() -> BTreeMap<String, SimultaneousAffineValue> {
 
 #[test]
 fn relation_affine_sum_refuses_new_coefficient_node() {
-    let error = relation_parse_limit_error("driver+other", &distinct_affine_probe_values(), |policy| {
-        policy.limits.max_collection_items = 2;
-    });
+    let error =
+        relation_parse_limit_error("driver+other", &distinct_affine_probe_values(), |policy| {
+            policy.limits.max_collection_items = 2;
+        });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo affine combined coefficient nodes"));
@@ -286,9 +282,10 @@ fn relation_affine_sum_refuses_new_coefficient_node() {
 
 #[test]
 fn relation_affine_difference_refuses_new_coefficient_node() {
-    let error = relation_parse_limit_error("driver-other", &distinct_affine_probe_values(), |policy| {
-        policy.limits.max_collection_items = 2;
-    });
+    let error =
+        relation_parse_limit_error("driver-other", &distinct_affine_probe_values(), |policy| {
+            policy.limits.max_collection_items = 2;
+        });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo affine combined coefficient nodes"));
@@ -306,9 +303,13 @@ fn relation_affine_comparison_refuses_coefficient_work() {
 
 #[test]
 fn relation_affine_function_refuses_selected_value_clone() {
-    let error = relation_parse_limit_error("if(1,driver,other)", &distinct_affine_probe_values(), |policy| {
-        policy.limits.max_collection_items = 5;
-    });
+    let error = relation_parse_limit_error(
+        "if(1,driver,other)",
+        &distinct_affine_probe_values(),
+        |policy| {
+            policy.limits.max_collection_items = 5;
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo relation affine clone coefficient nodes"));
@@ -316,9 +317,13 @@ fn relation_affine_function_refuses_selected_value_clone() {
 
 #[test]
 fn relation_affine_function_refuses_numeric_argument_vector() {
-    let error = relation_parse_limit_error("sin(1)", &BTreeMap::<String, SimultaneousAffineValue>::new(), |policy| {
-        policy.limits.max_collection_items = 1;
-    });
+    let error = relation_parse_limit_error(
+        "sin(1)",
+        &BTreeMap::<String, SimultaneousAffineValue>::new(),
+        |policy| {
+            policy.limits.max_collection_items = 1;
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo affine function numeric arguments"));
@@ -408,9 +413,13 @@ fn relation_dimension_reference_refuses_constraint_vector() {
 
 #[test]
 fn relation_literal_text_refuses_retained_copy() {
-    let error = relation_parse_limit_error("'abc'", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
-        policy.limits.max_retained_bytes = 2;
-    });
+    let error = relation_parse_limit_error(
+        "'abc'",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| {
+            policy.limits.max_retained_bytes = 2;
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo relation literal text"));
@@ -429,9 +438,13 @@ fn relation_lookup_refuses_scoped_key_copy() {
 
 #[test]
 fn relation_function_refuses_argument_vector() {
-    let error = relation_parse_limit_error("sin(1)", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
-        policy.limits.max_collection_items = 0;
-    });
+    let error = relation_parse_limit_error(
+        "sin(1)",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo relation function arguments"));
@@ -439,9 +452,13 @@ fn relation_function_refuses_argument_vector() {
 
 #[test]
 fn relation_function_refuses_recursive_step() {
-    let error = relation_parse_limit_error("sin(1)", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
-        policy.limits.max_recursion_depth = 0;
-    });
+    let error = relation_parse_limit_error(
+        "sin(1)",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| {
+            policy.limits.max_recursion_depth = 0;
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RecursionDepth
             && resource.operation == "creo relation function depth"));
@@ -449,9 +466,13 @@ fn relation_function_refuses_recursive_step() {
 
 #[test]
 fn relation_group_refuses_recursive_step() {
-    let error = relation_parse_limit_error("(1)", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
-        policy.limits.max_recursion_depth = 0;
-    });
+    let error = relation_parse_limit_error(
+        "(1)",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| {
+            policy.limits.max_recursion_depth = 0;
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RecursionDepth
             && resource.operation == "creo relation group depth"));
@@ -459,9 +480,13 @@ fn relation_group_refuses_recursive_step() {
 
 #[test]
 fn relation_function_refuses_work() {
-    let error = relation_parse_limit_error("sin(1)", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
-        policy.limits.max_work_units = 0;
-    });
+    let error = relation_parse_limit_error(
+        "sin(1)",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo relation function work"));
@@ -469,9 +494,13 @@ fn relation_function_refuses_work() {
 
 #[test]
 fn relation_exponent_refuses_recursive_step() {
-    let error = relation_parse_limit_error("2^3", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
-        policy.limits.max_recursion_depth = 0;
-    });
+    let error = relation_parse_limit_error(
+        "2^3",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| {
+            policy.limits.max_recursion_depth = 0;
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RecursionDepth
             && resource.operation == "creo relation exponent depth"));
@@ -479,9 +508,13 @@ fn relation_exponent_refuses_recursive_step() {
 
 #[test]
 fn relation_exponent_refuses_work() {
-    let error = relation_parse_limit_error("2^3", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
-        policy.limits.max_work_units = 0;
-    });
+    let error = relation_parse_limit_error(
+        "2^3",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo relation exponent work"));
@@ -489,9 +522,13 @@ fn relation_exponent_refuses_work() {
 
 #[test]
 fn relation_group_refuses_work() {
-    let error = relation_parse_limit_error("(1)", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
-        policy.limits.max_work_units = 0;
-    });
+    let error = relation_parse_limit_error(
+        "(1)",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo relation group work"));
@@ -896,7 +933,11 @@ fn evaluates_scoped_symbol_targets_without_declaring_local_parameters() {
     })
     .collect::<Vec<_>>();
     let mut external_symbols = ExternalRelationSymbols::default();
-    observe_relation_symbol(&mut external_symbols, "driver", Some(CurveExpressionValue::Number(2.0)));
+    observe_relation_symbol(
+        &mut external_symbols,
+        "driver",
+        Some(CurveExpressionValue::Number(2.0)),
+    );
 
     let assignments = evaluate_expression_program(&lines, None, &external_symbols);
 
@@ -1659,14 +1700,26 @@ fn external_symbol_values_require_agreeing_observations() {
         offset: 0,
     }];
     let mut external_symbols = ExternalRelationSymbols::default();
-    observe_relation_symbol(&mut external_symbols, "D42", Some(CurveExpressionValue::Number(2.0)));
-    observe_relation_symbol(&mut external_symbols, "d42", Some(CurveExpressionValue::Number(2.0)));
+    observe_relation_symbol(
+        &mut external_symbols,
+        "D42",
+        Some(CurveExpressionValue::Number(2.0)),
+    );
+    observe_relation_symbol(
+        &mut external_symbols,
+        "d42",
+        Some(CurveExpressionValue::Number(2.0)),
+    );
     assert_eq!(
         evaluate_expression_program(&lines, None, &external_symbols)[0].value,
         Some(CurveExpressionValue::Number(3.0))
     );
 
-    observe_relation_symbol(&mut external_symbols, "d42", Some(CurveExpressionValue::Number(4.0)));
+    observe_relation_symbol(
+        &mut external_symbols,
+        "d42",
+        Some(CurveExpressionValue::Number(4.0)),
+    );
     assert_eq!(
         evaluate_expression_program(&lines, None, &external_symbols)[0].value,
         None
@@ -1781,7 +1834,11 @@ fn curve_equations_retain_but_do_not_evaluate_prohibited_constructs() {
         .iter()
         .all(|assignment| assignment.value.is_none()));
     let mut symbols = ExternalRelationSymbols::default();
-    observe_relation_symbol(&mut symbols, "external", Some(CurveExpressionValue::Number(5.0)));
+    observe_relation_symbol(
+        &mut symbols,
+        "external",
+        Some(CurveExpressionValue::Number(5.0)),
+    );
     crate::decode::with_test_decode_ctx(|ctx| {
         reevaluate_expression_records(ctx, &mut records, None, &symbols)
     })

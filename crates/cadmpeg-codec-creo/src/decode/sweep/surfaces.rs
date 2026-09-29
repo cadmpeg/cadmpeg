@@ -240,7 +240,9 @@ pub(in super::super) fn placed_sketch_curve_ref(
     suffix: impl std::fmt::Display,
     geometry: &SketchGeometry,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    let Some(transform) = transform else { return Ok(None); };
+    let Some(transform) = transform else {
+        return Ok(None);
+    };
     if placed_section_geometry_curve(transform, geometry).is_none() {
         return Ok(None);
     }
@@ -291,24 +293,38 @@ pub(in super::super) fn transfer_saved_spline_curves(
             let Some(nurbs) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
                 let records = refusal.take_records_checked()?;
                 if records.is_empty() {
-                    push_saved_spline_loss(ctx, losses, format_args!(
-                        "Saved section spline at offset {} cannot form a NURBS curve.", spline.offset
-                    ))?;
+                    push_saved_spline_loss(
+                        ctx,
+                        losses,
+                        format_args!(
+                            "Saved section spline at offset {} cannot form a NURBS curve.",
+                            spline.offset
+                        ),
+                    )?;
                 } else {
-                    push_saved_spline_loss(ctx, losses, format_args!(
-                        "Saved section spline at offset {} cannot form a NURBS curve: {}",
-                        spline.offset, JoinedLaneRecords(&records)
-                    ))?;
+                    push_saved_spline_loss(
+                        ctx,
+                        losses,
+                        format_args!(
+                            "Saved section spline at offset {} cannot form a NURBS curve: {}",
+                            spline.offset,
+                            JoinedLaneRecords(&records)
+                        ),
+                    )?;
                 }
                 continue;
             };
             let (suffix, _suffix_reservation) = if let Some(entity_id) = spline.entity_id {
                 ctx.format_scoped(entity_id, "creo saved spline identity suffix")?
             } else {
-                ctx.format_scoped(format_args!("offset{}", spline.offset), "creo saved spline identity suffix")?
+                ctx.format_scoped(
+                    format_args!("offset{}", spline.offset),
+                    "creo saved spline identity suffix",
+                )?
             };
             let curve_id = crate::identity::compose_checked::<CurveId>(
-                ctx, &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
+                ctx,
+                &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
                 format_args!("{}:{suffix}", definition.identity.id()),
                 "creo saved spline curve identity",
             )?;
@@ -318,7 +334,8 @@ pub(in super::super) fn transfer_saved_spline_curves(
             let Some(placed) = placed_section_nurbs(ctx, transform, &nurbs)? else {
                 continue;
             };
-            annotate(ctx,
+            annotate(
+                ctx,
                 annotations,
                 &curve_id,
                 "FeatDefs",
@@ -336,13 +353,10 @@ pub(in super::super) fn transfer_saved_spline_curves(
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(
-                        ctx,
-                        format_args!(
-                            "FeatDefs:saved_spline#{}",
-                            suffix
-                        ),
-                        "creo source object identity",
-                    )?,
+                            ctx,
+                            format_args!("FeatDefs:saved_spline#{suffix}"),
+                            "creo source object identity",
+                        )?,
                         name: None,
                         color: None,
                         visible: None,
@@ -364,7 +378,8 @@ pub(in super::super) fn revolved_nurbs_surface(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<NurbsSurface>, cadmpeg_core::CodecError> {
-    let Some(axis_direction) = normalize([axis.direction.x, axis.direction.y, axis.direction.z]) else {
+    let Some(axis_direction) = normalize([axis.direction.x, axis.direction.y, axis.direction.z])
+    else {
         return Ok(None);
     };
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
@@ -412,13 +427,24 @@ pub(in super::super) fn revolved_nurbs_surface(
             point.z - center[2],
         ];
         let tangent = cross(axis_direction, radial);
-        let directrix_weight = directrix.pole_rows().weight_at(index).map_or(1.0, |weight| weight);
+        let directrix_weight = directrix
+            .pole_rows()
+            .weight_at(index)
+            .map_or(1.0, |weight| weight);
         ctx.try_reserve_items(&mut control_points, 1, "creo revolved NURBS pole rows")?;
         ctx.try_reserve_items(&mut weights, 1, "creo revolved NURBS weight rows")?;
         let mut point_row = Vec::new();
         let mut weight_row = Vec::new();
-        ctx.try_reserve_items(&mut point_row, angular_poles.len(), "creo revolved NURBS poles")?;
-        ctx.try_reserve_items(&mut weight_row, angular_weights.len(), "creo revolved NURBS weights")?;
+        ctx.try_reserve_items(
+            &mut point_row,
+            angular_poles.len(),
+            "creo revolved NURBS poles",
+        )?;
+        ctx.try_reserve_items(
+            &mut weight_row,
+            angular_weights.len(),
+            "creo revolved NURBS weights",
+        )?;
         for ([radial_scale, tangent_scale], angular_weight) in
             angular_poles.into_iter().zip(angular_weights)
         {
@@ -433,7 +459,11 @@ pub(in super::super) fn revolved_nurbs_surface(
         weights.push(weight_row);
     }
     let mut u_knots = Vec::new();
-    ctx.try_reserve_items(&mut u_knots, directrix.knots().as_slice().len(), "creo revolved NURBS u knots")?;
+    ctx.try_reserve_items(
+        &mut u_knots,
+        directrix.knots().as_slice().len(),
+        "creo revolved NURBS u knots",
+    )?;
     u_knots.extend_from_slice(directrix.knots().as_slice());
     let angular_knots = [
         0.0,
@@ -450,28 +480,23 @@ pub(in super::super) fn revolved_nurbs_surface(
         std::f64::consts::TAU,
     ];
     let mut v_knots = Vec::new();
-    ctx.try_reserve_items(&mut v_knots, angular_knots.len(), "creo revolved NURBS v knots")?;
+    ctx.try_reserve_items(
+        &mut v_knots,
+        angular_knots.len(),
+        "creo revolved NURBS v knots",
+    )?;
     v_knots.extend(angular_knots);
-    match NurbsSurface::from_lanes_admitted(ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            directrix.degree(),
-            u_knots,
-            false,
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            2,
-            v_knots,
-            false,
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-            control_points,
-            Some(weights),
-        ),
+    match NurbsSurface::from_lanes_admitted(
+        ctx,
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(directrix.degree(), u_knots, false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, Some(weights)),
         false,
     )? {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
-            refusal.note_checked(ctx,
+            refusal.note_checked(
+                ctx,
                 format_args!("creo revolved NURBS surface record for {record}"),
                 &error,
             );
@@ -604,13 +629,16 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 continue;
             };
             let id = crate::identity::compose_checked::<SurfaceId>(
-                ctx, &crate::identity::VISIBGEOM_SURFACE, surface_id,
+                ctx,
+                &crate::identity::VISIBGEOM_SURFACE,
+                surface_id,
                 "creo extrusion surface identity",
             )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
-            annotate(ctx,
+            annotate(
+                ctx,
                 annotations,
                 &id,
                 "FeatDefs",
@@ -628,12 +656,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(
-                        ctx,
-                        format_args!(
-                            "VisibGeom:{surface_id}"
-                        ),
-                        "creo source object identity",
-                    )?,
+                            ctx,
+                            format_args!("VisibGeom:{surface_id}"),
+                            "creo source object identity",
+                        )?,
                         name: None,
                         color: None,
                         visible: None,
@@ -673,13 +699,16 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 continue;
             }
             let id = crate::identity::compose_checked::<SurfaceId>(
-                ctx, &crate::identity::VISIBGEOM_SURFACE, native_surface_id,
+                ctx,
+                &crate::identity::VISIBGEOM_SURFACE,
+                native_surface_id,
                 "creo extrusion surface identity",
             )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
-            annotate(ctx,
+            annotate(
+                ctx,
                 annotations,
                 &id,
                 "FeatDefs",
@@ -697,12 +726,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(
-                        ctx,
-                        format_args!(
-                            "VisibGeom:{native_surface_id}"
-                        ),
-                        "creo source object identity",
-                    )?,
+                            ctx,
+                            format_args!("VisibGeom:{native_surface_id}"),
+                            "creo source object identity",
+                        )?,
                         name: None,
                         color: None,
                         visible: None,
@@ -751,14 +778,24 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             let Some(section_curve) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
                 let records = refusal.take_records_checked()?;
                 if records.is_empty() {
-                    push_saved_spline_loss(ctx, losses, format_args!(
-                        "Saved section spline at offset {} cannot form a NURBS curve.", spline.offset
-                    ))?;
+                    push_saved_spline_loss(
+                        ctx,
+                        losses,
+                        format_args!(
+                            "Saved section spline at offset {} cannot form a NURBS curve.",
+                            spline.offset
+                        ),
+                    )?;
                 } else {
-                    push_saved_spline_loss(ctx, losses, format_args!(
-                        "Saved section spline at offset {} cannot form a NURBS curve: {}",
-                        spline.offset, JoinedLaneRecords(&records)
-                    ))?;
+                    push_saved_spline_loss(
+                        ctx,
+                        losses,
+                        format_args!(
+                            "Saved section spline at offset {} cannot form a NURBS curve: {}",
+                            spline.offset,
+                            JoinedLaneRecords(&records)
+                        ),
+                    )?;
                 }
                 continue;
             };
@@ -788,15 +825,20 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 }
                 continue;
             };
-            let directrix_range = directrix.knots().first().zip(directrix.knots().last())
+            let directrix_range = directrix
+                .knots()
+                .first()
+                .zip(directrix.knots().last())
                 .map(|(lower, upper)| (*lower, *upper));
             let curve_id = crate::identity::compose_checked::<CurveId>(
-                ctx, &crate::identity::FEATURE_EXTRUSION_DIRECTRIX,
+                ctx,
+                &crate::identity::FEATURE_EXTRUSION_DIRECTRIX,
                 format_args!("{feature_id}:{internal_id}"),
                 "creo extrusion directrix identity",
             )?;
             if !ir.model.curves.iter().any(|curve| curve.id == curve_id) {
-                annotate(ctx,
+                annotate(
+                    ctx,
                     annotations,
                     &curve_id,
                     "FeatDefs",
@@ -810,19 +852,14 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     ir,
                     Curve {
                         id: curve_id.copy_admitted(ctx, "creo construction curve identity copy")?,
-                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                            directrix,
-                        )),
+                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Creo,
                             object_id: crate::identity::source_object_id_checked(
-                        ctx,
-                        format_args!(
-                                "FeatDefs:saved_spline#{}",
-                                internal_id
-                            ),
-                        "creo source object identity",
-                    )?,
+                                ctx,
+                                format_args!("FeatDefs:saved_spline#{internal_id}"),
+                                "creo source object identity",
+                            )?,
                             name: None,
                             color: None,
                             visible: None,
@@ -833,18 +870,22 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 )?;
             }
             let surface_id = crate::identity::compose_checked::<SurfaceId>(
-                ctx, &crate::identity::VISIBGEOM_SURFACE, native_surface_id,
+                ctx,
+                &crate::identity::VISIBGEOM_SURFACE,
+                native_surface_id,
                 "creo extrusion surface identity",
             )?;
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
             let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
-                ctx, &crate::identity::FEATURE_EXTRUSION_CONSTRUCTION,
+                ctx,
+                &crate::identity::FEATURE_EXTRUSION_CONSTRUCTION,
                 format_args!("{feature_id}:{internal_id}"),
                 "creo extrusion construction identity",
             )?;
-            annotate(ctx,
+            annotate(
+                ctx,
                 annotations,
                 &surface_id,
                 "FeatDefs",
@@ -852,7 +893,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 "protextrude_spline_surface",
                 Exactness::Derived,
             )?;
-            annotate(ctx,
+            annotate(
+                ctx,
                 annotations,
                 &procedural_id,
                 "FeatDefs",
@@ -870,12 +912,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(
-                        ctx,
-                        format_args!(
-                            "VisibGeom:{native_surface_id}"
-                        ),
-                        "creo source object identity",
-                    )?,
+                            ctx,
+                            format_args!("VisibGeom:{native_surface_id}"),
+                            "creo source object identity",
+                        )?,
                         name: None,
                         color: None,
                         visible: None,
@@ -884,18 +924,21 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     }),
                 },
             )?;
-            let Some((lower_knot, upper_knot)) = directrix_range
-            else {
-                push_saved_spline_loss(ctx, losses, format_args!(
+            let Some((lower_knot, upper_knot)) = directrix_range else {
+                push_saved_spline_loss(
+                    ctx,
+                    losses,
+                    format_args!(
                     "Extrusion directrix for feature {feature_id} at offset {} has no knot range",
                     spline.offset
-                ))?;
+                ),
+                )?;
                 continue;
             };
             source_carriers.admit_procedural_surface(
                 ctx,
                 ir,
-                surface_id,
+                &surface_id,
                 cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                     curve_id,
                     Some([lower_knot, upper_knot]),

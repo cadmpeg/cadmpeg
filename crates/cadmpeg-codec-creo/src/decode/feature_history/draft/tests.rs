@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{admitted_hole_placements, hole_face_selection, schema_feature_definition, thicken_feature_definition, unbounded_feature_plane_definition};
+use super::{
+    admitted_hole_placements, hole_face_selection, schema_feature_definition,
+    thicken_feature_definition, unbounded_feature_plane_definition,
+};
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::UnresolvedFamily;
@@ -61,8 +64,8 @@ fn hole_face_limit_error(
     if let Some(limit) = materialized {
         policy.limits.max_materialized_bytes = limit;
     }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = hole_face_selection(
         &ctx,
         &scan,
@@ -73,13 +76,22 @@ fn hole_face_limit_error(
         &std::collections::BTreeSet::new(),
     )
     .expect_err("one hole face selection exceeds the resource limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == operation), "{error:?}");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn hole_native_face_selection_refuses_retained_limit() {
-    hole_face_limit_error(None, Some(0), None, false, "creo hole native face selection");
+    hole_face_limit_error(
+        None,
+        Some(0),
+        None,
+        false,
+        "creo hole native face selection",
+    );
 }
 
 #[test]
@@ -90,7 +102,13 @@ fn hole_candidate_face_id_refuses_materialized_limit() {
 #[test]
 fn hole_resolved_face_id_refuses_retained_limit() {
     let native = "creo:visibgeom:surface#11";
-    hole_face_limit_error(None, Some(native.len() as u64), None, true, "creo hole face IDs");
+    hole_face_limit_error(
+        None,
+        Some(native.len() as u64),
+        None,
+        true,
+        "creo hole face IDs",
+    );
 }
 
 #[test]
@@ -115,9 +133,11 @@ fn hole_resolved_face_keeps_its_native_reference() {
         )
     })
     .expect("service profile admits the resolved face");
-    assert!(matches!(selection, cadmpeg_ir::features::FaceSelection::Resolved { faces, native }
+    assert!(
+        matches!(selection, cadmpeg_ir::features::FaceSelection::Resolved { faces, native }
         if faces == vec![resolved_hole_face().id]
-            && native == "creo:visibgeom:surface#11"));
+            && native == "creo:visibgeom:surface#11")
+    );
 }
 
 #[test]
@@ -125,18 +145,19 @@ fn hole_generated_native_copy_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let scan = thicken_scan();
     let result_surface_ids = std::collections::BTreeMap::from([(3, vec![11])]);
-    let available_features = std::collections::BTreeSet::from([
-        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#3")
-            .expect("identity grammar"),
-    ]);
+    let available_features =
+        std::collections::BTreeSet::from([cadmpeg_ir::features::FeatureId::mint(
+            "creo:model:feature#3",
+        )
+        .expect("identity grammar")]);
     let native = "creo:visibgeom:surface#11";
     let producer = "creo:model:feature#3";
     let local = "surface#11";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = (native.len() + producer.len() + local.len()) as u64;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = hole_face_selection(
         &ctx,
         &scan,
@@ -147,18 +168,22 @@ fn hole_generated_native_copy_refuses_retained_limit() {
         &available_features,
     )
     .expect_err("generated native copy exceeds the retained limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo hole generated native selection"), "{error:?}");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo hole generated native selection"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn hole_generated_face_keeps_its_native_reference() {
     let scan = thicken_scan();
     let result_surface_ids = std::collections::BTreeMap::from([(3, vec![11])]);
-    let available_features = std::collections::BTreeSet::from([
-        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#3")
-            .expect("identity grammar"),
-    ]);
+    let available_features =
+        std::collections::BTreeSet::from([cadmpeg_ir::features::FeatureId::mint(
+            "creo:model:feature#3",
+        )
+        .expect("identity grammar")]);
     let selection = crate::decode::with_test_decode_ctx(|ctx| {
         hole_face_selection(
             ctx,
@@ -171,8 +196,10 @@ fn hole_generated_face_keeps_its_native_reference() {
         )
     })
     .expect("service profile admits the generated face");
-    assert!(matches!(selection, cadmpeg_ir::features::FaceSelection::Generated { native, .. }
-        if native == "creo:visibgeom:surface#11"));
+    assert!(
+        matches!(selection, cadmpeg_ir::features::FaceSelection::Generated { native, .. }
+        if native == "creo:visibgeom:surface#11")
+    );
 }
 
 #[test]
@@ -181,8 +208,8 @@ fn hole_placements_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let placement = cadmpeg_ir::features::holes::HolePlacement::Axis {
         origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
             .expect("finite origin"),
@@ -191,13 +218,16 @@ fn hole_placements_refuse_collection_limit() {
     };
     let error = admitted_hole_placements(&ctx, [placement])
         .expect_err("one placement exceeds the resource limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo hole placements"), "{error:?}");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo hole placements"),
+        "{error:?}"
+    );
 }
 
 fn thicken_scan() -> crate::container::ContainerScan<'static> {
-    let entry = |entity_id, class_id, related_entity_id| {
-        crate::feature::entity::FeatureEntityTableEntry {
+    let entry =
+        |entity_id, class_id, related_entity_id| crate::feature::entity::FeatureEntityTableEntry {
             payload: crate::feature::entity::entry_payload(
                 class_id,
                 None,
@@ -208,8 +238,7 @@ fn thicken_scan() -> crate::container::ContainerScan<'static> {
             prefixed: true,
             offset: entity_id as usize,
             end_offset: entity_id as usize,
-        }
-    };
+        };
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.entity_tables.push(
         crate::feature::entity::FeatureEntityTable::new(
@@ -244,11 +273,7 @@ fn thicken_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
-fn thicken_resource_error(
-    collection: Option<u64>,
-    retained: Option<u64>,
-    operation: &'static str,
-) {
+fn thicken_resource_error(collection: Option<u64>, retained: Option<u64>, operation: &'static str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let scan = thicken_scan();
     let arena = DecodeArena::new();
@@ -259,12 +284,15 @@ fn thicken_resource_error(
     if let Some(limit) = retained {
         policy.limits.max_retained_bytes = limit;
     }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = thicken_feature_definition(&ctx, &scan, &CadIr::empty(), 17)
         .expect_err("one thicken selection exceeds the resource limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == operation), "{error:?}");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -275,7 +303,11 @@ fn thicken_source_surface_ids_refuse_collection_limit() {
 #[test]
 fn thicken_native_selection_refuses_retained_limit() {
     let identities = "creo:model:feature#3".len() + "creo:model:feature#17".len();
-    thicken_resource_error(None, Some(identities as u64), "creo thicken native selection");
+    thicken_resource_error(
+        None,
+        Some(identities as u64),
+        "creo thicken native selection",
+    );
 }
 
 #[test]
@@ -312,9 +344,11 @@ fn thicken_fixture_generates_a_face_under_service_policy() {
         thicken_feature_definition(ctx, &scan, &CadIr::empty(), 17)
     })
     .expect("service profile admits generated thicken face");
-    assert!(matches!(definition,
+    assert!(matches!(
+        definition,
         IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
-            faces: cadmpeg_ir::features::FaceSelection::Generated { .. }, ..
+            faces: cadmpeg_ir::features::FaceSelection::Generated { .. },
+            ..
         })
     ));
 }

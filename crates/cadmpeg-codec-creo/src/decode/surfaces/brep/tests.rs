@@ -2,6 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -9,27 +11,25 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::AnnotationBuilder;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 
 use super::{
     admitted_face_components, component_is_closed, is_neutral_face_reference,
-    legacy_body_ownership_is_unambiguous, merge_body_components, native_parameter_loop_polygon,
-    ordered_native_parameter_face_loops, split_neutral_component_shells, transfer_native_brep,
-    model_typed_nonlinear_curve_ids, push_native_pcurve_candidate, BrepTransferDiagnostics,
+    legacy_body_ownership_is_unambiguous, merge_body_components, model_typed_nonlinear_curve_ids,
+    native_parameter_loop_polygon, ordered_native_parameter_face_loops,
+    push_native_pcurve_candidate, split_neutral_component_shells, transfer_native_brep,
+    BrepEdgeIndexes, BrepFaceCandidateIndexes, BrepSourceIndexes, BrepTransferDiagnostics,
     FaceAdmissionDetail, FaceAdmissionRejection, NativeBrepCurveEvidence, NativeCurveEvidence,
-    BrepEdgeIndexes, BrepFaceCandidateIndexes, BrepSourceIndexes, NativePcurveCandidates,
-    NeutralShellSpec,
+    NativePcurveCandidates, NeutralShellSpec,
 };
 
-mod eligible_index;
 mod body_index;
-mod split_shells;
 mod component_topology;
-mod shell_references;
+mod eligible_index;
 mod face_references;
 mod loop_ring;
 mod pcurve_emission;
+mod shell_references;
+mod split_shells;
 
 #[test]
 fn brep_coverage_refuses_before_first_report_node() {
@@ -38,19 +38,22 @@ fn brep_coverage_refuses_before_first_report_node() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error = diagnostics.record_coverage(&ctx, &mut cadmpeg_ir::report::decode::Coverage::default())
+    let error = diagnostics
+        .record_coverage(&ctx, &mut cadmpeg_ir::report::decode::Coverage::default())
         .expect_err("first B-rep coverage node exceeds cap");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "decode coverage nodes"));
 }
 
-fn brep_edge_index_input() -> (
-    Vec<crate::curve::CurveTopologyRow>,
-    BTreeMap<u32, [u32; 2]>,
-    BTreeMap<u32, [f64; 3]>,
-    CadIr,
-) {
+struct BrepEdgeIndexInput {
+    rows: Vec<crate::curve::CurveTopologyRow>,
+    native_vertices: BTreeMap<u32, [u32; 2]>,
+    solved_vertices: BTreeMap<u32, [f64; 3]>,
+    ir: CadIr,
+}
+
+fn brep_edge_index_input() -> BrepEdgeIndexInput {
     let rows = vec![crate::curve::CurveTopologyRow {
         id: 10,
         type_byte: 0,
@@ -61,20 +64,27 @@ fn brep_edge_index_input() -> (
         offset: 0,
     }];
     let native_vertices = BTreeMap::from([(10, [1, 2])]);
-    let solved_vertices = BTreeMap::from([
-        (1, [0.0, 0.0, 0.0]),
-        (2, [1.0, 0.0, 0.0]),
-    ]);
-    (rows, native_vertices, solved_vertices, CadIr::empty())
+    let solved_vertices = BTreeMap::from([(1, [0.0, 0.0, 0.0]), (2, [1.0, 0.0, 0.0])]);
+    BrepEdgeIndexInput {
+        rows,
+        native_vertices,
+        solved_vertices,
+        ir: CadIr::empty(),
+    }
 }
 
 fn brep_edge_index_limit_error(limit: u64) -> CodecError {
-    let (rows, native_vertices, solved_vertices, ir) = brep_edge_index_input();
+    let BrepEdgeIndexInput {
+        rows,
+        native_vertices,
+        solved_vertices,
+        ir,
+    } = brep_edge_index_input();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     BrepEdgeIndexes::from_rows(&ctx, &rows, &native_vertices, &solved_vertices, &ir)
         .err()
         .expect("edge-index node refused")
@@ -106,7 +116,12 @@ fn brep_admitted_edge_id_nodes_refuse_collection_limit() {
 
 #[test]
 fn brep_edge_indexes_preserve_model_curve_multiplicity() {
-    let (rows, native_vertices, solved_vertices, mut ir) = brep_edge_index_input();
+    let BrepEdgeIndexInput {
+        rows,
+        native_vertices,
+        solved_vertices,
+        mut ir,
+    } = brep_edge_index_input();
     let curve = Curve {
         id: CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 10),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -145,8 +160,8 @@ fn face_candidate_index_limit_error(limit: u64) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     BrepFaceCandidateIndexes::from_scan(&ctx, &scan, &ir)
         .err()
         .expect("candidate index allocation refused")
@@ -195,15 +210,17 @@ fn brep_model_surface_count_nodes_refuse_collection_limit() {
 #[test]
 fn brep_boundary_curve_id_nodes_refuse_collection_limit() {
     let mut scan = face_candidate_scan();
-    scan.topology.loops[0].half_edges.push(crate::topology::HalfEdgeId {
-        curve_id: 10,
-        side: crate::topology::Side::Zero,
-    });
+    scan.topology.loops[0]
+        .half_edges
+        .push(crate::topology::HalfEdgeId {
+            curve_id: 10,
+            side: crate::topology::Side::Zero,
+        });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 5;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = BrepFaceCandidateIndexes::from_scan(&ctx, &scan, &CadIr::empty())
         .err()
         .expect("boundary curve node refused");
@@ -262,8 +279,8 @@ fn source_index_limit_error(kind: &str) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     BrepSourceIndexes::from_scan(&ctx, &carriers, &scan)
         .err()
         .expect("source-index node refused")
@@ -306,19 +323,24 @@ fn brep_source_indexes_keep_last_duplicate_half_edge_and_incidence() {
             face_id: std::num::NonZeroU32::new(face_id),
             next: None,
         });
-        scan.topology.half_edge_vertex_incidence.push(
-            crate::topology::HalfEdgeVertexIncidence {
+        scan.topology
+            .half_edge_vertex_incidence
+            .push(crate::topology::HalfEdgeVertexIncidence {
                 half_edge: id,
                 start_vertex_id: face_id,
                 end_vertex_id: None,
-            },
-        );
+            });
     }
     let indexes = crate::decode::with_test_decode_ctx(|ctx| {
         BrepSourceIndexes::from_scan(ctx, &BTreeMap::new(), &scan)
     })
     .expect("service source indexes admitted");
-    assert_eq!(indexes.half_edges[&id].face_id.map(std::num::NonZeroU32::get), Some(6));
+    assert_eq!(
+        indexes.half_edges[&id]
+            .face_id
+            .map(std::num::NonZeroU32::get),
+        Some(6)
+    );
     assert_eq!(indexes.incidence[&id].start_vertex_id, 6);
 }
 
@@ -326,29 +348,15 @@ fn pcurve_candidate_limit_error(limit: u64, second_on_same_key: bool) -> CodecEr
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let mut candidates = NativePcurveCandidates::new();
     if second_on_same_key {
-        push_native_pcurve_candidate(
-            &ctx,
-            &mut candidates,
-            10,
-            5,
-            [[0.0, 0.0], [1.0, 0.0]],
-            4,
-        )
-        .expect("first candidate admitted");
+        push_native_pcurve_candidate(&ctx, &mut candidates, 10, 5, [[0.0, 0.0], [1.0, 0.0]], 4)
+            .expect("first candidate admitted");
     }
-    push_native_pcurve_candidate(
-        &ctx,
-        &mut candidates,
-        10,
-        5,
-        [[1.0, 0.0], [2.0, 0.0]],
-        8,
-    )
-    .expect_err("candidate allocation refused")
+    push_native_pcurve_candidate(&ctx, &mut candidates, 10, 5, [[1.0, 0.0], [2.0, 0.0]], 8)
+        .expect_err("candidate allocation refused")
 }
 
 #[test]
@@ -376,14 +384,10 @@ fn brep_pcurve_candidates_reuse_nodes_and_preserve_source_order() {
             && resource.used == 2));
     let candidates = crate::decode::with_test_decode_ctx(|ctx| {
         let mut candidates = NativePcurveCandidates::new();
-        push_native_pcurve_candidate(
-            ctx, &mut candidates, 10, 5, [[0.0, 0.0], [1.0, 0.0]], 4,
-        )
-        .expect("first service candidate admitted");
-        push_native_pcurve_candidate(
-            ctx, &mut candidates, 10, 5, [[1.0, 0.0], [2.0, 0.0]], 8,
-        )
-        .expect("second service candidate admitted");
+        push_native_pcurve_candidate(ctx, &mut candidates, 10, 5, [[0.0, 0.0], [1.0, 0.0]], 4)
+            .expect("first service candidate admitted");
+        push_native_pcurve_candidate(ctx, &mut candidates, 10, 5, [[1.0, 0.0], [2.0, 0.0]], 8)
+            .expect("second service candidate admitted");
         candidates
     });
     assert_eq!(candidates[&(10, 5)].len(), 2);
@@ -394,8 +398,7 @@ fn brep_pcurve_candidates_reuse_nodes_and_preserve_source_order() {
 fn typed_curve_id_fixture() -> CadIr {
     let mut ir = CadIr::empty();
     let circle = |id: u32| Curve {
-        id: CurveId::mint(format!("creo:visibgeom:curve#{id}"))
-            .expect("fixture curve identity"),
+        id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("fixture curve identity"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
@@ -417,8 +420,8 @@ fn brep_typed_curve_id_nodes_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = model_typed_nonlinear_curve_ids(
         &ctx,
         &ir,
@@ -436,8 +439,8 @@ fn brep_typed_curve_ids_charge_distinct_nodes_and_preserve_order() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = model_typed_nonlinear_curve_ids(
         &ctx,
         &ir,
@@ -483,11 +486,13 @@ fn native_triangle_collection_error(limit: u64, ordered: bool) -> CodecError {
         .iter()
         .copied()
         .enumerate()
-        .map(|(index, half_edge)| crate::topology::HalfEdgeVertexIncidence {
-            half_edge,
-            start_vertex_id: u32::try_from(index + 1).expect("three vertices"),
-            end_vertex_id: Some(u32::try_from((index + 1) % 3 + 1).expect("three vertices")),
-        })
+        .map(
+            |(index, half_edge)| crate::topology::HalfEdgeVertexIncidence {
+                half_edge,
+                start_vertex_id: u32::try_from(index + 1).expect("three vertices"),
+                end_vertex_id: Some(u32::try_from((index + 1) % 3 + 1).expect("three vertices")),
+            },
+        )
         .collect::<Vec<_>>();
     let incidence = bindings
         .iter()
@@ -523,8 +528,7 @@ fn native_triangle_collection_error(limit: u64, ordered: bool) -> CodecError {
         ordered_native_parameter_face_loops(
             &ctx,
             &[&lp],
-            5,
-            &surface,
+            (5, &surface),
             &incidence,
             &solved_vertices,
             &native_pcurves,
@@ -539,8 +543,7 @@ fn native_triangle_collection_error(limit: u64, ordered: bool) -> CodecError {
         native_parameter_loop_polygon(
             &ctx,
             &lp,
-            5,
-            &surface,
+            (5, &surface),
             &incidence,
             &solved_vertices,
             &native_pcurves,
@@ -551,7 +554,7 @@ fn native_triangle_collection_error(limit: u64, ordered: bool) -> CodecError {
     result.expect_err("native triangle collection exceeds limit")
 }
 
-fn assert_native_collection_refusal(error: CodecError, operation: &'static str) {
+fn assert_native_collection_refusal(error: &CodecError, operation: &'static str) {
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == operation));
@@ -560,7 +563,7 @@ fn assert_native_collection_refusal(error: CodecError, operation: &'static str) 
 #[test]
 fn native_parameter_loop_polygon_refuses_pcurve_segments() {
     assert_native_collection_refusal(
-        native_triangle_collection_error(0, false),
+        &native_triangle_collection_error(0, false),
         "creo native loop pcurve segments",
     );
 }
@@ -568,7 +571,7 @@ fn native_parameter_loop_polygon_refuses_pcurve_segments() {
 #[test]
 fn native_parameter_loop_polygon_refuses_polygon_points() {
     assert_native_collection_refusal(
-        native_triangle_collection_error(3, false),
+        &native_triangle_collection_error(3, false),
         "creo native loop polygon points",
     );
 }
@@ -576,7 +579,7 @@ fn native_parameter_loop_polygon_refuses_polygon_points() {
 #[test]
 fn ordered_native_parameter_face_loops_refuses_polygon_collection() {
     assert_native_collection_refusal(
-        native_triangle_collection_error(6, true),
+        &native_triangle_collection_error(6, true),
         "creo native face loop polygons",
     );
 }
@@ -584,7 +587,7 @@ fn ordered_native_parameter_face_loops_refuses_polygon_collection() {
 #[test]
 fn ordered_native_parameter_face_loops_refuses_loop_references() {
     assert_native_collection_refusal(
-        native_triangle_collection_error(7, true),
+        &native_triangle_collection_error(7, true),
         "creo native face loop references",
     );
 }
@@ -648,7 +651,7 @@ fn circle_order_collection_error(limit: u64) -> CodecError {
 #[test]
 fn ordered_two_edge_circle_loops_refuses_geometry_collection() {
     assert_native_collection_refusal(
-        circle_order_collection_error(0),
+        &circle_order_collection_error(0),
         "creo native circle loop geometry",
     );
 }
@@ -656,7 +659,7 @@ fn ordered_two_edge_circle_loops_refuses_geometry_collection() {
 #[test]
 fn ordered_two_edge_circle_loops_refuses_order_collection() {
     assert_native_collection_refusal(
-        circle_order_collection_error(2),
+        &circle_order_collection_error(2),
         "creo native circle loop order",
     );
 }
@@ -664,7 +667,7 @@ fn ordered_two_edge_circle_loops_refuses_order_collection() {
 #[test]
 fn ordered_two_edge_circle_loops_refuses_ordered_output() {
     assert_native_collection_refusal(
-        circle_order_collection_error(4),
+        &circle_order_collection_error(4),
         "creo native ordered circle loops",
     );
 }
@@ -682,8 +685,7 @@ fn native_parameter_loop_polygon_service(
         native_parameter_loop_polygon(
             ctx,
             lp,
-            face_id,
-            surface,
+            (face_id, surface),
             incidence,
             solved_vertices,
             native_pcurves,
@@ -706,8 +708,7 @@ fn ordered_native_parameter_face_loops_service<'a>(
         ordered_native_parameter_face_loops(
             ctx,
             loops,
-            face_id,
-            surface,
+            (face_id, surface),
             incidence,
             solved_vertices,
             native_pcurves,
@@ -734,7 +735,8 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
     };
     crate::decode::with_test_decode_ctx(|ctx| {
         for face_id in 10..16 {
-            diagnostics.reject_face(ctx, FaceAdmissionRejection::MissingLoops, face_id)
+            diagnostics
+                .reject_face(ctx, FaceAdmissionRejection::MissingLoops, face_id)
                 .expect("service rejection admitted");
         }
     });
@@ -773,8 +775,8 @@ fn brep_face_rejection_diagnostics_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let mut diagnostics = BrepTransferDiagnostics::default();
     let error = diagnostics
         .reject_face(&ctx, FaceAdmissionRejection::MissingLoops, 17)
@@ -803,8 +805,8 @@ fn rejection_detail_limit_error(limit: u64) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     FaceAdmissionDetail::unresolved_boundary(
         &ctx,
         17,
@@ -859,9 +861,10 @@ fn rejection_record_limit_error(
     if let Some(limit) = retained_limit {
         policy.limits.max_retained_bytes = limit;
     }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    diagnostics.face_admission_rejection_records(&ctx)
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    diagnostics
+        .face_admission_rejection_records(&ctx)
         .err()
         .expect("rejection record allocation refused")
 }
@@ -973,16 +976,22 @@ fn brep_diagnostics_report_component_gate_inputs() {
 
 #[test]
 fn explicit_single_body_merges_disconnected_components() {
-    let merged = crate::decode::with_test_decode_ctx(|ctx| merge_body_components(ctx, vec![
-        NeutralShellSpec {
-            faces: vec![1, 2],
-            wire_curves: BTreeSet::from([10]),
-        },
-        NeutralShellSpec {
-            faces: vec![3],
-            wire_curves: BTreeSet::from([11, 12]),
-        },
-    ])).expect("service component merge admitted");
+    let merged = crate::decode::with_test_decode_ctx(|ctx| {
+        merge_body_components(
+            ctx,
+            vec![
+                NeutralShellSpec {
+                    faces: vec![1, 2],
+                    wire_curves: BTreeSet::from([10]),
+                },
+                NeutralShellSpec {
+                    faces: vec![3],
+                    wire_curves: BTreeSet::from([11, 12]),
+                },
+            ],
+        )
+    })
+    .expect("service component merge admitted");
 
     assert_eq!(
         merged,
@@ -1038,7 +1047,11 @@ fn face_admission_diagnostics_record_unresolved_boundary_operands() {
 
     let mut diagnostics = BrepTransferDiagnostics::default();
     crate::decode::with_test_decode_ctx(|ctx| {
-        diagnostics.reject_face_with_detail(ctx, FaceAdmissionRejection::UnresolvedBoundaryVertices, detail)
+        diagnostics.reject_face_with_detail(
+            ctx,
+            FaceAdmissionRejection::UnresolvedBoundaryVertices,
+            detail,
+        )
     })
     .expect("service rejection admitted");
     let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::UnresolvedBoundaryVertices);
@@ -1127,15 +1140,17 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
 #[test]
 fn admitted_face_component_refs_refuse_collection_limit() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.topology.face_components.push(crate::topology::FaceComponent {
-        face_ids: vec![5],
-        curve_ids: Vec::new(),
-    });
+    scan.topology
+        .face_components
+        .push(crate::topology::FaceComponent {
+            face_ids: vec![5],
+            curve_ids: Vec::new(),
+        });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = admitted_face_components(&ctx, &scan, &BTreeSet::from([5]))
         .expect_err("component reference refused");
     assert!(matches!(error, CodecError::ResourceLimit(resource)

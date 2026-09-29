@@ -794,7 +794,10 @@ impl LoopRing {
                 "loop ring vertex-use after must name a coedge in the ring",
             ));
         }
-        Ok(Self { coedges, vertex_uses })
+        Ok(Self {
+            coedges,
+            vertex_uses,
+        })
     }
 
     /// Coedges in source traversal order.
@@ -1860,10 +1863,8 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &policy,
-        )
-        .unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::LoopRing::new_admitted(
             &ctx,
             vec![first.clone(), second.clone()],
@@ -1871,15 +1872,15 @@ mod tests {
             "test loop ring nodes",
         )
         .unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && resource.operation == "test loop ring nodes"));
+                && resource.operation == "test loop ring nodes")
+        );
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &policy,
-        )
-        .unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let ring = super::LoopRing::new_admitted(
             &ctx,
             vec![first.clone(), second.clone()],

@@ -38,7 +38,12 @@ fn coordinate_equation_refuses_before_first_term_node() {
     }), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo coordinate equation term nodes"));
-    assert_eq!(SectionEquationFixture::point_value(7, SectionAxis::U, 2.0).terms.len(), 1);
+    assert_eq!(
+        SectionEquationFixture::point_value(7, SectionAxis::U, 2.0)
+            .terms
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -48,7 +53,12 @@ fn coordinate_difference_refuses_before_second_term_node() {
     }), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo coordinate equation term nodes"));
-    assert_eq!(SectionEquationFixture::point_difference(7, 8, SectionAxis::V, 3.0).terms.len(), 2);
+    assert_eq!(
+        SectionEquationFixture::point_difference(7, 8, SectionAxis::V, 3.0)
+            .terms
+            .len(),
+        2
+    );
 }
 
 #[test]
@@ -104,11 +114,7 @@ fn section_solved_columns_refuse_before_vector_growth() {
 
 #[test]
 fn section_coordinate_unique_variables_refuse_before_tree_insert() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(0, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -122,11 +128,7 @@ fn section_coordinate_unique_variables_refuse_before_tree_insert() {
 
 #[test]
 fn section_coordinate_ordered_variables_refuse_before_vector_reserve() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(1, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -140,11 +142,7 @@ fn section_coordinate_ordered_variables_refuse_before_vector_reserve() {
 
 #[test]
 fn section_coordinate_variable_indices_refuse_before_tree_insert() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(2, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -176,11 +174,7 @@ fn unsigned_dimension_unique_variables_refuse_before_tree_insert() {
 
 #[test]
 fn section_remaining_variables_refuse_before_tree_insert() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(7, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -194,11 +188,7 @@ fn section_remaining_variables_refuse_before_tree_insert() {
 
 #[test]
 fn section_component_seed_refuses_before_tree_insert() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(8, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -212,11 +202,7 @@ fn section_component_seed_refuses_before_tree_insert() {
 
 #[test]
 fn section_pending_seed_refuses_before_deque_growth() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(9, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -521,11 +507,7 @@ fn unsigned_resolved_values_refuse_before_tree_insert() {
 
 #[test]
 fn section_component_columns_refuse_before_vector_reserve() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(10, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -539,11 +521,7 @@ fn section_component_columns_refuse_before_vector_reserve() {
 
 #[test]
 fn section_local_columns_refuse_before_tree_insert() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(11, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -557,11 +535,7 @@ fn section_local_columns_refuse_before_tree_insert() {
 
 #[test]
 fn section_component_equations_refuse_before_tree_insert() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(12, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -575,11 +549,7 @@ fn section_component_equations_refuse_before_tree_insert() {
 
 #[test]
 fn section_matrix_rows_refuse_before_vector_reserve() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(13, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -593,11 +563,7 @@ fn section_matrix_rows_refuse_before_vector_reserve() {
 
 #[test]
 fn section_matrix_coefficients_refuse_before_tree_insert() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(14, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -611,11 +577,7 @@ fn section_matrix_coefficients_refuse_before_tree_insert() {
 
 #[test]
 fn section_solved_coordinates_refuse_before_tree_insert() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(17, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -643,11 +605,7 @@ fn section_stored_fallback_refuses_before_solved_node() {
 
 #[test]
 fn section_solved_points_refuse_before_tree_insert() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(18, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -661,11 +619,7 @@ fn section_solved_points_refuse_before_tree_insert() {
 
 #[test]
 fn section_coordinate_adjacency_reports_collection_limit() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(3, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -679,11 +633,7 @@ fn section_coordinate_adjacency_reports_collection_limit() {
 
 #[test]
 fn section_coordinate_equation_membership_reports_collection_limit() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(4, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -757,11 +707,7 @@ fn unsigned_dimension_adjacency_links_refuse_before_tree_insert() {
 
 #[test]
 fn section_coordinate_members_refuse_before_vector_growth() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     assert!(crate::decode::with_test_decode_ctx(|ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })
@@ -798,11 +744,7 @@ fn section_coordinate_adjacency_links_refuse_before_tree_insert() {
 
 #[test]
 fn section_coordinate_equation_links_refuse_before_tree_insert() {
-    let equations = [SectionEquationFixture::point_value(
-        1,
-        SectionAxis::U,
-        1.0,
-    )];
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let error = with_collection_limit(6, |ctx| {
         super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
     })

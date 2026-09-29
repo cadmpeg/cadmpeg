@@ -12,6 +12,7 @@ use cadmpeg_ir::features::{
     AngularTermination, BodySelection, EdgeSelection, FaceSelection, LinearTermination, PathRef,
     SurfaceBoundary,
 };
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -20,7 +21,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{
     ShadedVertex, Strip, Strips, Tessellation, TessellationLaneError, TessellationMesh,
 };
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
@@ -210,31 +210,51 @@ fn transfer_reference_lines(
         let (id, object_id) = match &line.kind {
             crate::reference::ReferenceLineKind::Line => (
                 crate::identity::compose_checked::<CurveId>(
-                    ctx, &crate::identity::MDL_REF_INFO_LINE, line.offset,
+                    ctx,
+                    &crate::identity::MDL_REF_INFO_LINE,
+                    line.offset,
                     "creo reference line identity",
                 )?,
-                source_object_id_checked(ctx, format_args!("MdlRefInfo:line:{}", line.offset),
-                    "creo reference line object identity")?,
+                source_object_id_checked(
+                    ctx,
+                    format_args!("MdlRefInfo:line:{}", line.offset),
+                    "creo reference line object identity",
+                )?,
             ),
             crate::reference::ReferenceLineKind::Line3d { entity_id, .. } => {
                 if line3d_id_counts.get(entity_id) == Some(&1) {
                     (
-                        crate::identity::compose_checked::<CurveId>(ctx, &crate::identity::MDL_REF_INFO_LINE3D,
-                            entity_id, "creo reference line3d identity")?,
-                        source_object_id_checked(ctx, format_args!("MdlRefInfo:line3d:{entity_id}"),
-                            "creo reference line3d object identity")?,
+                        crate::identity::compose_checked::<CurveId>(
+                            ctx,
+                            &crate::identity::MDL_REF_INFO_LINE3D,
+                            entity_id,
+                            "creo reference line3d identity",
+                        )?,
+                        source_object_id_checked(
+                            ctx,
+                            format_args!("MdlRefInfo:line3d:{entity_id}"),
+                            "creo reference line3d object identity",
+                        )?,
                     )
                 } else {
                     (
-                        crate::identity::compose_checked::<CurveId>(ctx, &crate::identity::MDL_REF_INFO_LINE3D,
-                            format_args!("{entity_id}@{}", line.offset), "creo reference line3d identity")?,
-                        source_object_id_checked(ctx, format_args!("MdlRefInfo:line3d:{entity_id}@{}", line.offset),
-                            "creo reference line3d object identity")?,
+                        crate::identity::compose_checked::<CurveId>(
+                            ctx,
+                            &crate::identity::MDL_REF_INFO_LINE3D,
+                            format_args!("{entity_id}@{}", line.offset),
+                            "creo reference line3d identity",
+                        )?,
+                        source_object_id_checked(
+                            ctx,
+                            format_args!("MdlRefInfo:line3d:{entity_id}@{}", line.offset),
+                            "creo reference line3d object identity",
+                        )?,
                     )
                 }
             }
         };
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             "MdlRefInfo",
@@ -289,20 +309,35 @@ fn transfer_reference_circles(
         };
         let (id, object_id) = if circle_id_counts.get(&circle.entity_id) == Some(&1) {
             (
-                crate::identity::compose_checked::<CurveId>(ctx, &crate::identity::MDL_REF_INFO_ARC_Z,
-                    circle.entity_id, "creo reference circle identity")?,
-                source_object_id_checked(ctx, format_args!("MdlRefInfo:arc_z:{}", circle.entity_id),
-                    "creo reference circle object identity")?,
+                crate::identity::compose_checked::<CurveId>(
+                    ctx,
+                    &crate::identity::MDL_REF_INFO_ARC_Z,
+                    circle.entity_id,
+                    "creo reference circle identity",
+                )?,
+                source_object_id_checked(
+                    ctx,
+                    format_args!("MdlRefInfo:arc_z:{}", circle.entity_id),
+                    "creo reference circle object identity",
+                )?,
             )
         } else {
             (
-                crate::identity::compose_checked::<CurveId>(ctx, &crate::identity::MDL_REF_INFO_ARC_Z,
-                    format_args!("{}@{}", circle.entity_id, circle.offset), "creo reference circle identity")?,
-                source_object_id_checked(ctx, format_args!("MdlRefInfo:arc_z:{}@{}", circle.entity_id, circle.offset),
-                    "creo reference circle object identity")?,
+                crate::identity::compose_checked::<CurveId>(
+                    ctx,
+                    &crate::identity::MDL_REF_INFO_ARC_Z,
+                    format_args!("{}@{}", circle.entity_id, circle.offset),
+                    "creo reference circle identity",
+                )?,
+                source_object_id_checked(
+                    ctx,
+                    format_args!("MdlRefInfo:arc_z:{}@{}", circle.entity_id, circle.offset),
+                    "creo reference circle object identity",
+                )?,
             )
         };
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             "MdlRefInfo",
@@ -356,25 +391,45 @@ fn transfer_reference_ellipses(
         if !ellipse_id_counts.contains_key(&ellipse.source_entity_id) {
             ctx.charge_collection_items(1, "creo reference ellipse count nodes")?;
         }
-        *ellipse_id_counts.entry(ellipse.source_entity_id).or_default() += 1;
+        *ellipse_id_counts
+            .entry(ellipse.source_entity_id)
+            .or_default() += 1;
     }
     for ellipse in &scan.references.ellipses {
         let (id, object_id) = if ellipse_id_counts.get(&ellipse.source_entity_id) == Some(&1) {
             (
-                crate::identity::compose_checked::<CurveId>(ctx, &crate::identity::MDL_REF_INFO_CONIC,
-                    ellipse.source_entity_id, "creo reference ellipse identity")?,
-                source_object_id_checked(ctx, format_args!("MdlRefInfo:conic:{}", ellipse.source_entity_id),
-                    "creo reference ellipse object identity")?,
+                crate::identity::compose_checked::<CurveId>(
+                    ctx,
+                    &crate::identity::MDL_REF_INFO_CONIC,
+                    ellipse.source_entity_id,
+                    "creo reference ellipse identity",
+                )?,
+                source_object_id_checked(
+                    ctx,
+                    format_args!("MdlRefInfo:conic:{}", ellipse.source_entity_id),
+                    "creo reference ellipse object identity",
+                )?,
             )
         } else {
             (
-                crate::identity::compose_checked::<CurveId>(ctx, &crate::identity::MDL_REF_INFO_CONIC,
-                    format_args!("{}@{}", ellipse.source_entity_id, ellipse.offset), "creo reference ellipse identity")?,
-                source_object_id_checked(ctx, format_args!("MdlRefInfo:conic:{}@{}", ellipse.source_entity_id, ellipse.offset),
-                    "creo reference ellipse object identity")?,
+                crate::identity::compose_checked::<CurveId>(
+                    ctx,
+                    &crate::identity::MDL_REF_INFO_CONIC,
+                    format_args!("{}@{}", ellipse.source_entity_id, ellipse.offset),
+                    "creo reference ellipse identity",
+                )?,
+                source_object_id_checked(
+                    ctx,
+                    format_args!(
+                        "MdlRefInfo:conic:{}@{}",
+                        ellipse.source_entity_id, ellipse.offset
+                    ),
+                    "creo reference ellipse object identity",
+                )?,
             )
         };
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             "MdlRefInfo",
@@ -438,7 +493,11 @@ fn admitted_display_strips<V>(
 ) -> Result<Option<Strips<V>>, CodecError> {
     let mut remaining = vertices.into_iter();
     let mut strips = Vec::new();
-    ctx.try_reserve_items(&mut strips, spans.len(), "creo display tessellation strip rows")?;
+    ctx.try_reserve_items(
+        &mut strips,
+        spans.len(),
+        "creo display tessellation strip rows",
+    )?;
     for span in spans {
         let Ok(count) = usize::try_from(*span) else {
             return Ok(None);
@@ -481,7 +540,8 @@ fn transfer_display_tessellations(
             format_args!("creo:solid_primdata:tessellation#{}", strip.offset),
             "creo display tessellation identity",
         )?;
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             "SolidPrimdata",
@@ -491,7 +551,11 @@ fn transfer_display_tessellations(
         )?;
         ctx.charge_entities(1, "admit Creo model tessellations")?;
         let mut positions = Vec::new();
-        ctx.try_reserve_items(&mut positions, strip.positions.len(), "creo display tessellation positions")?;
+        ctx.try_reserve_items(
+            &mut positions,
+            strip.positions.len(),
+            "creo display tessellation positions",
+        )?;
         for position in &strip.positions {
             let mut point = Point3::from(position.get());
             if let Some(scale) = length_scale {
@@ -508,37 +572,62 @@ fn transfer_display_tessellations(
                 }
             }
             let Some(point) = FinitePoint3::new(point) else {
-                return Err(display_strip_error(ctx, strip.offset,
-                    "vertices contain a non-finite coordinate")?);
+                return Err(display_strip_error(
+                    ctx,
+                    strip.offset,
+                    "vertices contain a non-finite coordinate",
+                )?);
             };
             positions.push(point);
         }
         let mesh = if let Some(normals) = &strip.normals {
             if normals.len() != positions.len() {
-                return Err(display_strip_error(ctx, strip.offset,
+                return Err(display_strip_error(
+                    ctx,
+                    strip.offset,
                     TessellationLaneError::VertexNormalLane {
-                        vertices: positions.len(), normals: normals.len(),
-                    })?);
+                        vertices: positions.len(),
+                        normals: normals.len(),
+                    },
+                )?);
             }
             let mut rows = Vec::new();
-            ctx.try_reserve_items(&mut rows, positions.len(), "creo display tessellation shaded rows")?;
+            ctx.try_reserve_items(
+                &mut rows,
+                positions.len(),
+                "creo display tessellation shaded rows",
+            )?;
             for (position, normal) in positions.into_iter().zip(normals) {
                 let Some(normal) = FiniteVector3::new(Vector3::from(normal.get())) else {
-                    return Err(display_strip_error(ctx, strip.offset,
-                        "normals contain a non-finite coordinate")?);
+                    return Err(display_strip_error(
+                        ctx,
+                        strip.offset,
+                        "normals contain a non-finite coordinate",
+                    )?);
                 };
                 rows.push(ShadedVertex { position, normal });
             }
             let Some(strips) = admitted_display_strips(ctx, rows, &strip.strip_lengths)? else {
-                return Err(display_strip_error(ctx, strip.offset,
-                    TessellationLaneError::Strips { spans: strip.strip_lengths.len() })?);
+                return Err(display_strip_error(
+                    ctx,
+                    strip.offset,
+                    TessellationLaneError::Strips {
+                        spans: strip.strip_lengths.len(),
+                    },
+                )?);
             };
             TessellationMesh::ShadedStrips { strips }
         } else {
             // An absent normal lane is an unshaded strip set.
-            let Some(strips) = admitted_display_strips(ctx, positions, &strip.strip_lengths)? else {
-                return Err(display_strip_error(ctx, strip.offset,
-                    TessellationLaneError::Strips { spans: strip.strip_lengths.len() })?);
+            let Some(strips) = admitted_display_strips(ctx, positions, &strip.strip_lengths)?
+            else {
+                return Err(display_strip_error(
+                    ctx,
+                    strip.offset,
+                    TessellationLaneError::Strips {
+                        spans: strip.strip_lengths.len(),
+                    },
+                )?);
             };
             TessellationMesh::Strips { strips }
         };
@@ -562,10 +651,13 @@ fn transfer_datum_plane_surfaces(
     for plane in &scan.planes.datums {
         let normal = plane.plane.normal();
         let id = crate::identity::compose_checked::<SurfaceId>(
-            ctx, &crate::identity::ACTDATUM_SURFACE, plane.id,
+            ctx,
+            &crate::identity::ACTDATUM_SURFACE,
+            plane.id,
             "creo datum plane surface identity",
         )?;
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             "ActDatums",
@@ -593,8 +685,11 @@ fn transfer_datum_plane_surfaces(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: source_object_id_checked(ctx, format_args!("ActDatums:{}", plane.id),
-                        "creo datum plane object identity")?,
+                    object_id: source_object_id_checked(
+                        ctx,
+                        format_args!("ActDatums:{}", plane.id),
+                        "creo datum plane object identity",
+                    )?,
                     name: None,
                     color: None,
                     visible: None,
@@ -622,9 +717,19 @@ fn transfer_placed_plane_surfaces_into_ir(
             )?));
         }
     }
-    for (surface_id, (plane, u_axis, offset)) in placed_plane_surfaces(ctx, scan)? {
+    for (
+        surface_id,
+        crate::decode::analytic::planes::PlacedPlaneSurface {
+            plane,
+            u_axis,
+            offset,
+        },
+    ) in placed_plane_surfaces(ctx, scan)?
+    {
         let id = crate::identity::compose_checked::<SurfaceId>(
-            ctx, &crate::identity::VISIBGEOM_SURFACE, surface_id,
+            ctx,
+            &crate::identity::VISIBGEOM_SURFACE,
+            surface_id,
             "creo placed plane surface identity",
         )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
@@ -647,7 +752,8 @@ fn transfer_placed_plane_surfaces_into_ir(
         } else {
             "plane_local_system"
         };
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -671,8 +777,11 @@ fn transfer_placed_plane_surfaces_into_ir(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: source_object_id_checked(ctx, format_args!("VisibGeom:{surface_id}"),
-                        "creo placed plane object identity")?,
+                    object_id: source_object_id_checked(
+                        ctx,
+                        format_args!("VisibGeom:{surface_id}"),
+                        "creo placed plane object identity",
+                    )?,
                     name: None,
                     color: None,
                     visible: None,

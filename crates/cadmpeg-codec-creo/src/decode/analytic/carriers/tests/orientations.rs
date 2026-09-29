@@ -18,17 +18,18 @@ fn limited_native(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    native_face_orientations(&ctx, scan, ir)
-        .err()
-        .expect("orientation index refused")
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    native_face_orientations(&ctx, scan, ir).expect_err("orientation index refused")
 }
 
-fn assert_refusal(error: CodecError, operation: &'static str) {
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
+fn assert_refusal(error: &CodecError, operation: &'static str) {
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation), "{error:?}");
+            && resource.operation == operation),
+        "{error:?}"
+    );
 }
 
 fn one_surface_row() -> crate::surface::SurfaceRow {
@@ -58,41 +59,55 @@ fn one_round_feature() -> crate::feature::rows::FeatureRow {
 fn native_face_source_id_nodes_refuse_collection_limit() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.push(one_surface_row());
-    assert_refusal(limited_native(&scan, &CadIr::empty(), 0), "creo native face source ID nodes");
+    assert_refusal(
+        &limited_native(&scan, &CadIr::empty(), 0),
+        "creo native face source ID nodes",
+    );
 }
 
 #[test]
 fn native_face_orientation_nodes_refuse_collection_limit() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.push(one_surface_row());
-    assert_refusal(limited_native(&scan, &CadIr::empty(), 1), "creo native face orientation nodes");
+    assert_refusal(
+        &limited_native(&scan, &CadIr::empty(), 1),
+        "creo native face orientation nodes",
+    );
 }
 
 #[test]
 fn native_datum_orientation_nodes_refuse_collection_limit() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.planes.datum_cylinders.push(crate::datum::DatumCylinder {
-        id: 17,
-        feature_id: 1,
-        reversed: true,
-        frame: crate::surface::PositionalCylinderFrame::new(
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0],
-            2.0,
-            None,
-        )
-        .expect("valid cylinder frame"),
-        offset_in_payload: 0,
-    });
-    assert_refusal(limited_native(&scan, &CadIr::empty(), 0), "creo native face orientation nodes");
+    scan.planes
+        .datum_cylinders
+        .push(crate::datum::DatumCylinder {
+            id: 17,
+            feature_id: 1,
+            reversed: true,
+            frame: crate::surface::PositionalCylinderFrame::new(
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0],
+                2.0,
+                None,
+            )
+            .expect("valid cylinder frame"),
+            offset_in_payload: 0,
+        });
+    assert_refusal(
+        &limited_native(&scan, &CadIr::empty(), 0),
+        "creo native face orientation nodes",
+    );
 }
 
 #[test]
 fn native_round_feature_id_nodes_refuse_collection_limit() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.rows.push(one_round_feature());
-    assert_refusal(limited_native(&scan, &CadIr::empty(), 0), "creo native round feature ID nodes");
+    assert_refusal(
+        &limited_native(&scan, &CadIr::empty(), 0),
+        "creo native round feature ID nodes",
+    );
 }
 
 #[test]
@@ -102,8 +117,8 @@ fn rowless_transfer_feature_id_nodes_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = crate::decode::surfaces::cylinders::transfer_rowless_round_cylinders(
         &ctx,
         &scan,
@@ -111,9 +126,8 @@ fn rowless_transfer_feature_id_nodes_refuse_collection_limit() {
         &mut cadmpeg_ir::AnnotationBuilder::new(),
         &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
     )
-    .err()
-    .expect("round feature ID node refused");
-    assert_refusal(error, "creo rowless round feature ID nodes");
+    .expect_err("round feature ID node refused");
+    assert_refusal(&error, "creo rowless round feature ID nodes");
 }
 
 #[test]
@@ -123,8 +137,8 @@ fn constrained_round_feature_id_nodes_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = crate::decode::surfaces::cylinders::transfer_constrained_slot_fillet_cylinders(
         &ctx,
         &scan,
@@ -132,9 +146,8 @@ fn constrained_round_feature_id_nodes_refuse_collection_limit() {
         &mut cadmpeg_ir::AnnotationBuilder::new(),
         &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
     )
-    .err()
-    .expect("constrained round node refused");
-    assert_refusal(error, "creo constrained round feature ID nodes");
+    .expect_err("constrained round node refused");
+    assert_refusal(&error, "creo constrained round feature ID nodes");
 }
 
 #[test]
@@ -149,8 +162,8 @@ fn positional_round_feature_id_nodes_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = crate::decode::surfaces::cylinders::transfer_positional_cylinders(
         &ctx,
         &scan,
@@ -158,9 +171,8 @@ fn positional_round_feature_id_nodes_refuse_collection_limit() {
         &mut cadmpeg_ir::AnnotationBuilder::new(),
         &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
     )
-    .err()
-    .expect("positional round node refused");
-    assert_refusal(error, "creo positional round feature ID nodes");
+    .expect_err("positional round node refused");
+    assert_refusal(&error, "creo positional round feature ID nodes");
 }
 
 #[test]
@@ -172,10 +184,16 @@ fn available_surface_id_nodes_refuse_collection_limit() {
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
-    assert_refusal(limited_native(&scan, &ir, 0), "creo available surface ID nodes");
+    assert_refusal(
+        &limited_native(&scan, &ir, 0),
+        "creo available surface ID nodes",
+    );
 }
 
-fn rowless_fixture() -> (crate::feature::entity::FeatureEntityTable, Vec<crate::surface::SurfaceRow>) {
+fn rowless_fixture() -> (
+    crate::feature::entity::FeatureEntityTable,
+    Vec<crate::surface::SurfaceRow>,
+) {
     let table = crate::feature::entity::FeatureEntityTable::new(
         23,
         47,
@@ -212,17 +230,16 @@ fn rowless_round_pairs_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = crate::decode::surfaces::cylinders::rowless_round_cylinder_pairs(
         &ctx,
         &BTreeSet::from([23]),
         &[table],
         &rows,
     )
-    .err()
-    .expect("pair refused");
-    assert_refusal(error, "creo rowless round cylinder pairs");
+    .expect_err("pair refused");
+    assert_refusal(&error, "creo rowless round cylinder pairs");
 }
 
 #[test]
@@ -231,8 +248,8 @@ fn rowless_face_orientation_nodes_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = rowless_round_face_orientations(
         &ctx,
         &BTreeSet::from([23]),
@@ -240,9 +257,8 @@ fn rowless_face_orientation_nodes_refuse_collection_limit() {
         &rows,
         &BTreeSet::from([12]),
     )
-    .err()
-    .expect("orientation node refused");
-    assert_refusal(error, "creo rowless face orientation nodes");
+    .expect_err("orientation node refused");
+    assert_refusal(&error, "creo rowless face orientation nodes");
 }
 
 #[test]

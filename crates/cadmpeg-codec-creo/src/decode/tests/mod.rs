@@ -151,7 +151,13 @@ fn section_axis_line_carrier(
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
     let variable_points = crate::decode::with_test_decode_ctx(|ctx| {
-        definition.variables.as_ref()?.reconciled_points(ctx).ok().map(|points| points.0)
+        definition
+            .variables
+            .as_ref()?
+            .reconciled_points(ctx)
+            .map(|result| (result.points, result.ambiguous))
+            .ok()
+            .map(|points| points.0)
     })?;
     section_axis_line_carrier_with_points(&variable_points, segment)
 }
@@ -165,17 +171,33 @@ fn section_segment_intersection_carrier(
 ) -> Option<SketchGeometry> {
     let missing_line = crate::decode::with_test_decode_ctx(|ctx| {
         saved_section_missing_line_geometry(ctx, definition)
-    }).expect("test missing-line geometry admitted");
+    })
+    .expect("test missing-line geometry admitted");
     let variable_points = definition
         .variables
         .as_ref()
-        .map(|variables| crate::decode::with_test_decode_ctx(|ctx| variables.reconciled_points(ctx).expect("test point reconciliation").0))
+        .map(|variables| {
+            crate::decode::with_test_decode_ctx(|ctx| {
+                variables
+                    .reconciled_points(ctx)
+                    .map(|result| (result.points, result.ambiguous))
+                    .expect("test point reconciliation")
+                    .0
+            })
+        })
         .unwrap_or_default();
     crate::decode::with_test_decode_ctx(|ctx| {
         section_segment_intersection_carrier_with_missing_line(
-            ctx, definition, radii, points, segment, missing_line.as_ref(), &variable_points,
+            ctx,
+            definition,
+            radii,
+            points,
+            segment,
+            missing_line.as_ref(),
+            &variable_points,
         )
-    }).expect("test section carrier")
+    })
+    .expect("test section carrier")
 }
 
 #[cfg(test)]

@@ -307,7 +307,9 @@ impl AnnotationBuilder {
         let retained_fields = self.annotations.exactness.get(&id).is_some_and(|note| {
             let fields = match note {
                 ExactnessNote::Entity { fields, .. } => fields,
-                ExactnessNote::Fields { fields: NonEmptyMap(fields) } => fields,
+                ExactnessNote::Fields {
+                    fields: NonEmptyMap(fields),
+                } => fields,
             };
             fields.values().any(|value| *value != exactness)
         });
@@ -319,8 +321,12 @@ impl AnnotationBuilder {
             None
         };
         let mut fields = match self.annotations.exactness.remove(&id) {
-            Some(ExactnessNote::Entity { fields, .. }
-                | ExactnessNote::Fields { fields: NonEmptyMap(fields) }) => fields,
+            Some(
+                ExactnessNote::Entity { fields, .. }
+                | ExactnessNote::Fields {
+                    fields: NonEmptyMap(fields),
+                },
+            ) => fields,
             None => BTreeMap::new(),
         };
         fields.retain(|_, value| *value != exactness);
@@ -330,17 +336,15 @@ impl AnnotationBuilder {
         );
         if let Some(entity) = entity_exactness {
             if let Some(exactness_id) = exactness_id {
-                self.annotations.exactness.insert(
-                    exactness_id,
-                    ExactnessNote::Entity { entity, fields },
-                );
+                self.annotations
+                    .exactness
+                    .insert(exactness_id, ExactnessNote::Entity { entity, fields });
             }
         } else if let Ok(fields) = NonEmptyMap::try_from(fields) {
             if let Some(exactness_id) = exactness_id {
-                self.annotations.exactness.insert(
-                    exactness_id,
-                    ExactnessNote::Fields { fields },
-                );
+                self.annotations
+                    .exactness
+                    .insert(exactness_id, ExactnessNote::Fields { fields });
             }
         }
         Ok(())
@@ -581,13 +585,18 @@ mod tests {
         ] {
             total += value.len() as u64;
             policy.limits.max_retained_bytes = total - 1;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let mut builder = super::AnnotationBuilder::new();
-            let error = builder.annotate_admitted(&ctx, id, stream, 42, tag, super::Exactness::Derived)
+            let error = builder
+                .annotate_admitted(&ctx, id, stream, 42, tag, super::Exactness::Derived)
                 .expect_err("retained value exceeds cap");
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                 if resource.dimension == ResourceDimension::RetainedBytes
-                    && resource.operation == operation), "{error}");
+                    && resource.operation == operation),
+                "{error}"
+            );
         }
         policy.limits.max_retained_bytes = total;
         for (limit, operation) in [
@@ -596,22 +605,29 @@ mod tests {
             (2, "annotation exactness nodes"),
         ] {
             policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let mut builder = super::AnnotationBuilder::new();
-            let error = builder.annotate_admitted(&ctx, id, stream, 42, tag, super::Exactness::Derived)
+            let error = builder
+                .annotate_admitted(&ctx, id, stream, 42, tag, super::Exactness::Derived)
                 .expect_err("collection node exceeds cap");
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                 if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation), "{error}");
+                    && resource.operation == operation),
+                "{error}"
+            );
         }
         policy.limits.max_collection_items = 3;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let mut admitted = super::AnnotationBuilder::new();
-        admitted.annotate_admitted(&ctx, id, stream, 42, tag, super::Exactness::Derived)
+        admitted
+            .annotate_admitted(&ctx, id, stream, 42, tag, super::Exactness::Derived)
             .expect("exact caps admit annotation");
         let mut original = super::AnnotationBuilder::new();
-        let handle = super::StreamHandle::new(super::StreamName::try_from(stream.to_string())
-            .expect("nonempty stream"));
+        let handle = super::StreamHandle::new(
+            super::StreamName::try_from(stream.to_string()).expect("nonempty stream"),
+        );
         original.note(id, &handle, 42).tag(tag);
         original.exactness(id, super::Exactness::Derived);
         assert_eq!(admitted.build(), original.build());

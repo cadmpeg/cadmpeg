@@ -140,10 +140,7 @@ fn positional_cylinder_frame_rejects_conflicting_grammar_candidates() {
         first.length().map(PositiveLength::get),
     )
     .expect("valid positional cylinder frame");
-    assert_eq!(
-        unique_positional_cylinder_frame([first, conflicting]),
-        None
-    );
+    assert_eq!(unique_positional_cylinder_frame([first, conflicting]), None);
 }
 
 #[test]

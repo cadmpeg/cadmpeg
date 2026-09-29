@@ -103,9 +103,12 @@ fn assert_item_refusal(limit: u64, operation: &'static str) {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
     let error = run(&policy).expect_err("missing-line collection exceeds cap");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation), "{error:?}");
+            && resource.operation == operation),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -149,8 +152,12 @@ fn missing_line_keeps_service_geometry_and_offset() {
         .expect("service resources")
         .expect("missing line resolved");
     assert_eq!(offset, 41);
-    assert_eq!(geometry, SketchGeometry::try_from(SketchGeometryDefinition::Line {
-        start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
-        end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
-    }).expect("line geometry"));
+    assert_eq!(
+        geometry,
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
+            end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
+        })
+        .expect("line geometry")
+    );
 }

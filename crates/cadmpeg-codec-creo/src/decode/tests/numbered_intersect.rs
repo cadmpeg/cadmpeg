@@ -1,29 +1,47 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: numbered intersect.
 
+use crate::decode::sketch::coordinates::section_linear_distance_coordinate as section_linear_distance_coordinate_admitted;
+use crate::decode::sweep::nurbs::placed_tabulated_cylinder_directrix as checked_tabulated_cylinder_directrix;
+use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
+use cadmpeg_ir::features::FeatureId as IrFeatureId;
+use cadmpeg_ir::features::FeatureOperation as IrFeatureOperation;
 use crate::decode::sketch::axis::SectionAxis;
 use crate::vecmath::normalize;
-
-use super::parameter_slot;
 use crate::decode::build::report::has_transferred_geometry;
-use crate::decode::feature_history::axes::{
-    geometry_generator_features, model_feature_ids, GeometryGeneratorFeature,
-};
-use crate::decode::feature_history::dependencies::{
-    feature_entity_dependencies, feature_output_surface_dependencies,
-    native_feature_dependency_ids, surface_merge_entity_dependencies,
-    surface_merge_quilt_ids,
-};
-use crate::decode::feature_history::knit::{
-    generated_surface_face_refs, knit_class_100_operand_entity_ids, knit_operand_surface_ids,
-};
+use crate::decode::feature_history::axes::{geometry_generator_features, model_feature_ids, GeometryGeneratorFeature};
+use crate::decode::feature_history::dependencies::{feature_entity_dependencies, feature_output_surface_dependencies, native_feature_dependency_ids, surface_merge_entity_dependencies, surface_merge_quilt_ids};
+use crate::decode::feature_history::knit::{generated_surface_face_refs, knit_class_100_operand_entity_ids, knit_operand_surface_ids};
 use crate::decode::feature_history::link::profile_segment_ids;
-use crate::decode::feature_history::selections::{
-    feature_edge_selection, generated_curve_edge_refs,
-};
+use crate::decode::feature_history::selections::{feature_edge_selection, generated_curve_edge_refs};
 use crate::decode::holes::placement::{cylinder_from_complementary_outline_bounds, hole_placement};
 use crate::decode::holes::sweep::extrusion_extent_and_direction;
-use crate::decode::sketch::coordinates::section_linear_distance_coordinate as section_linear_distance_coordinate_admitted;
+use crate::decode::sketch::equations_coordinate::{solve_section_coordinate_equations, solve_unsigned_dimension_coordinates, SectionCoordinateEquation, SectionEquationFixture};
+use crate::decode::surfaces::fc05_model_frame;
+use crate::decode::sweep::surfaces::{extruded_section_line, revolved_section_circle, revolved_section_surface};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{EdgeSelection, ExtrudeExtent, ExtrudeSide, Feature, GeneratedEdgeRef, GeneratedFaceRef, LinearTermination, RevolutionAxis};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralSurfaceId, SurfaceId};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, Length};
+use cadmpeg_ir::sketches::{SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition};
+use std::collections::{BTreeMap, BTreeSet};
+use super::parameter_slot;
+use crate::decode::sweep::nurbs::signed_unit_chart;
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 fn section_linear_distance_coordinate(
     definition: &crate::feature::definitions::FeatureDefinition,
@@ -34,41 +52,34 @@ fn section_linear_distance_coordinate(
     saved_segment_points: &[(u32, [f64; 2])],
     ambiguous_point_ids: &std::collections::BTreeSet<u32>,
 ) -> Option<SectionAxis> {
-    crate::decode::with_test_decode_ctx(|ctx| section_linear_distance_coordinate_admitted(
-        ctx, definition, segments, first, second, coordinates, saved_segment_points, ambiguous_point_ids,
-    )).expect("test linear distance coordinate")
+    crate::decode::with_test_decode_ctx(|ctx| {
+        section_linear_distance_coordinate_admitted(
+            ctx,
+            definition,
+            segments,
+            [first, second],
+            coordinates,
+            saved_segment_points,
+            ambiguous_point_ids,
+        )
+    })
+    .expect("test linear distance coordinate")
 }
-use crate::decode::sketch::equations_coordinate::{
-    solve_section_coordinate_equations, solve_unsigned_dimension_coordinates,
-    SectionCoordinateEquation, SectionEquationFixture,
-};
-use crate::decode::surfaces::fc05_model_frame;
-use crate::decode::sweep::nurbs::{
-    placed_tabulated_cylinder_directrix as checked_tabulated_cylinder_directrix, signed_unit_chart,
-};
-use crate::decode::sweep::surfaces::{
-    extruded_section_line, revolved_section_circle, revolved_section_surface,
-};
-use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralSurfaceId, SurfaceId};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
-};
-use cadmpeg_ir::{
-    features::{
-        EdgeSelection, ExtrudeExtent, ExtrudeSide,
-        Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
-        FeatureOperation as IrFeatureOperation, GeneratedEdgeRef, GeneratedFaceRef,
-        LinearTermination, RevolutionAxis,
-    },
-    scalar::{Angle, Length},
-};
-use std::collections::{BTreeMap, BTreeSet};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 fn service_feature_plane_equations(
     scan: &crate::container::ContainerScan<'_>,
@@ -78,8 +89,20 @@ fn service_feature_plane_equations(
 ) -> Option<Vec<([f64; 3], [f64; 3])>> {
     crate::decode::with_test_decode_ctx(|ctx| {
         crate::decode::sweep::planes::feature_plane_equations(
-            ctx, scan, ir, source_carriers, feature_id,
+            ctx,
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
         )
+        .map(|result| {
+            result.map(|planes| {
+                planes
+                    .into_iter()
+                    .map(|plane| (plane.origin, plane.normal))
+                    .collect::<Vec<_>>()
+            })
+        })
     })
     .expect("service resources")
 }
@@ -122,7 +145,13 @@ fn generated_surface_face_refs_with_service(
     available_features: &BTreeSet<IrFeatureId>,
 ) -> Option<Vec<GeneratedFaceRef>> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        generated_surface_face_refs(ctx, source_ids, rows, result_surface_ids, available_features)
+        generated_surface_face_refs(
+            ctx,
+            source_ids,
+            rows,
+            result_surface_ids,
+            available_features,
+        )
     })
     .expect("service profile admits generated surface references")
 }
@@ -165,8 +194,7 @@ fn native_feature_dependency_ids_with_service(
             entity_tables,
             replay,
             surface_rows,
-            feature_id,
-            prototype_dependencies,
+            (feature_id, prototype_dependencies),
         )
     })
     .expect("service profile admits native feature dependencies")
@@ -176,10 +204,8 @@ fn feature_entity_dependencies_with_service(
     tables: &[crate::feature::entity::FeatureEntityTable],
     feature_id: u32,
 ) -> Vec<u32> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        feature_entity_dependencies(ctx, tables, feature_id)
-    })
-    .expect("service profile admits entity dependencies")
+    crate::decode::with_test_decode_ctx(|ctx| feature_entity_dependencies(ctx, tables, feature_id))
+        .expect("service profile admits entity dependencies")
 }
 
 fn feature_output_surface_dependencies_with_service(
@@ -443,7 +469,10 @@ fn hole_outline_placement_requires_complete_feature_plane_evidence() {
         service_feature_outline_planes(&scan, 911).map(|planes| planes.len()),
         Some(3)
     );
-    assert!(hole_placement(service_feature_outline_planes(&scan, 911).expect("complete planes")).is_none());
+    assert!(
+        hole_placement(service_feature_outline_planes(&scan, 911).expect("complete planes"))
+            .is_none()
+    );
 
     scan.planes.outlines.push(plane(33, 10.0));
     assert!(service_feature_outline_planes(&scan, 911).is_none());
@@ -574,11 +603,7 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
             ctx,
-            &[SectionEquationFixture::point_value(
-                4,
-                SectionAxis::U,
-                7.0
-            )],
+            &[SectionEquationFixture::point_value(4, SectionAxis::U, 7.0)],
             &BTreeMap::new(),
         ))
         .expect("test section solve"),
@@ -606,11 +631,7 @@ fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| solve_unsigned_dimension_coordinates(
             ctx,
-            &[SectionEquationFixture::point_value(
-                1,
-                SectionAxis::U,
-                0.0
-            )],
+            &[SectionEquationFixture::point_value(1, SectionAxis::U, 0.0)],
             &BTreeMap::from([((1, SectionAxis::U), 0.0)]),
             &[(1, 2, SectionAxis::U, 3.0)],
         ))
@@ -661,11 +682,17 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         vec![entry(192, 200, Some(175)), entry(192, 200, Some(175))],
     );
     assert_eq!(
-        feature_entity_dependencies_with_service(&[duplicate_owned_producer.clone(), consumer.clone()], 416),
+        feature_entity_dependencies_with_service(
+            &[duplicate_owned_producer.clone(), consumer.clone()],
+            416
+        ),
         [175]
     );
     assert_eq!(
-        knit_class_100_operand_entity_ids_with_service(416, &[duplicate_owned_producer, consumer.clone()]),
+        knit_class_100_operand_entity_ids_with_service(
+            416,
+            &[duplicate_owned_producer, consumer.clone()]
+        ),
         None
     );
     assert_eq!(
@@ -674,7 +701,10 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
     );
     let source_missing_entry = table(175, 67, vec![entry(192, 200, None)]);
     assert_eq!(
-        knit_class_100_operand_entity_ids_with_service(416, &[source_missing_entry.clone(), consumer.clone()]),
+        knit_class_100_operand_entity_ids_with_service(
+            416,
+            &[source_missing_entry.clone(), consumer.clone()]
+        ),
         Some(vec![192])
     );
     assert_eq!(
@@ -746,7 +776,10 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         None
     );
     let missing = table(417, 100, vec![entry(193, 98, None)]);
-    assert_eq!(knit_class_100_operand_entity_ids_with_service(417, &[missing]), None);
+    assert_eq!(
+        knit_class_100_operand_entity_ids_with_service(417, &[missing]),
+        None
+    );
     let duplicate = table(418, 100, vec![entry(192, 98, None), entry(192, 98, None)]);
     assert_eq!(
         knit_class_100_operand_entity_ids_with_service(418, &[producer.clone(), duplicate]),
@@ -795,13 +828,20 @@ fn owned_output_entity_depends_on_its_prior_surface_target() {
     };
 
     assert_eq!(
-        feature_output_surface_dependencies_with_service(&tables, std::slice::from_ref(&surface), 2976),
+        feature_output_surface_dependencies_with_service(
+            &tables,
+            std::slice::from_ref(&surface),
+            2976
+        ),
         [97]
     );
 
     let mut current_surface = surface;
     current_surface.feature_id = 2976;
-    assert!(feature_output_surface_dependencies_with_service(&tables, &[current_surface], 2976).is_empty());
+    assert!(
+        feature_output_surface_dependencies_with_service(&tables, &[current_surface], 2976)
+            .is_empty()
+    );
 }
 
 #[test]
@@ -840,7 +880,12 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
     ];
 
     assert_eq!(
-        surface_merge_entity_dependencies_with_service(&[], std::slice::from_ref(&replay), &tables, 416),
+        surface_merge_entity_dependencies_with_service(
+            &[],
+            std::slice::from_ref(&replay),
+            &tables,
+            416
+        ),
         [97, 175, 312]
     );
     assert_eq!(
@@ -910,7 +955,12 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
     let result_surface_ids = BTreeMap::from([(97, vec![98]), (144, vec![145])]);
 
     assert_eq!(
-        generated_surface_face_refs_with_service(&[98, 145], &rows, &result_surface_ids, &producers),
+        generated_surface_face_refs_with_service(
+            &[98, 145],
+            &rows,
+            &result_surface_ids,
+            &producers
+        ),
         Some(vec![
             GeneratedFaceRef::new(
                 IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar"),
@@ -934,7 +984,12 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
         None
     );
     assert_eq!(
-        generated_surface_face_refs_with_service(&[98], &rows, &result_surface_ids, &BTreeSet::new()),
+        generated_surface_face_refs_with_service(
+            &[98],
+            &rows,
+            &result_surface_ids,
+            &BTreeSet::new()
+        ),
         None
     );
 }
@@ -1004,7 +1059,10 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
     scan.features
         .entity_tables
         .push(table(312, 67, vec![entry(103, 200, Some(312), 51)], 50));
-    assert_eq!(knit_operand_surface_ids_with_service(&scan, 416, &[103, 150]), None);
+    assert_eq!(
+        knit_operand_surface_ids_with_service(&scan, 416, &[103, 150]),
+        None
+    );
 
     scan.features
         .entity_tables
@@ -1012,7 +1070,10 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
     scan.features
         .surface_merge_replay_affected_ids
         .push(replay(417, vec![777], 100));
-    assert_eq!(knit_operand_surface_ids_with_service(&scan, 417, &[777]), None);
+    assert_eq!(
+        knit_operand_surface_ids_with_service(&scan, 417, &[777]),
+        None
+    );
 }
 
 #[test]
@@ -1201,7 +1262,10 @@ fn conflicting_empty_and_nonempty_edge_selections_remain_unresolved() {
         },
     ]);
 
-    assert_eq!(feature_edge_selection_with_service(&scan, &CadIr::empty(), 10), None);
+    assert_eq!(
+        feature_edge_selection_with_service(&scan, &CadIr::empty(), 10),
+        None
+    );
 }
 
 #[test]
@@ -1272,8 +1336,9 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             offset: 100,
         });
 
-    let available_features = crate::decode::with_test_decode_ctx(|ctx| model_feature_ids(ctx, &scan))
-        .expect("service profile admits feature identities");
+    let available_features =
+        crate::decode::with_test_decode_ctx(|ctx| model_feature_ids(ctx, &scan))
+            .expect("service profile admits feature identities");
     assert_eq!(
         available_features,
         BTreeSet::from([
@@ -1418,6 +1483,208 @@ fn split_outline_carrier_requires_complementary_square_bounds() {
     .is_none());
 }
 
+#[test]
+fn geometry_signal_excludes_opaque_carriers() {
+    let mut ir = CadIr::empty();
+    let surface_id =
+        SurfaceId::mint("test:model:entity#surface".to_string()).expect("identity grammar");
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    ir.model.curves.push(Curve {
+        id: CurveId::mint("test:model:entity#curve".to_string()).expect("identity grammar"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+
+    assert!(!has_transferred_geometry(&ir));
+
+    let _attached = ir.model.add_procedural_surface(
+        surface_id,
+        ProceduralSurface::new(
+            ProceduralSurfaceId::mint("test:model:entity#procedural".to_string())
+                .expect("identity grammar"),
+            ProceduralSurfaceDefinition::Exact(
+                cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
+                    cadmpeg_ir::geometry::ExactSpline::Legacy {
+                        ranges: [[0.0, 1.0], [0.0, 1.0]],
+                        extension: 0,
+                        cache: None,
+                    },
+                )
+                .expect("finite ordered exact-spline fixture ranges"),
+            ),
+            None,
+        ),
+    );
+
+    assert!(has_transferred_geometry(&ir));
+}
+
+#[test]
+fn fc05_row_frame_maps_cyclically_onto_each_model_axis() {
+    let center = [11.0, 13.0];
+    let reference = [0.6, 0.8];
+    assert_eq!(
+        fc05_model_frame(
+            crate::decode::axis::Axis::X,
+            17.0,
+            center,
+            reference,
+            crate::decode::axis::Sign::Negative,
+        ),
+        ([17.0, 13.0, 11.0], [-1.0, 0.0, 0.0], [0.0, 0.8, 0.6])
+    );
+    assert_eq!(
+        fc05_model_frame(
+            crate::decode::axis::Axis::Y,
+            17.0,
+            center,
+            reference,
+            crate::decode::axis::Sign::Negative,
+        ),
+        ([11.0, 17.0, 13.0], [0.0, -1.0, 0.0], [0.6, 0.0, 0.8])
+    );
+    assert_eq!(
+        fc05_model_frame(
+            crate::decode::axis::Axis::Z,
+            17.0,
+            center,
+            reference,
+            crate::decode::axis::Sign::Negative,
+        ),
+        ([13.0, 11.0, 17.0], [0.0, 0.0, -1.0], [0.8, 0.6, 0.0])
+    );
+}
+
+#[test]
+fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
+    let transform = crate::placement::FeatureSectionTransform::new(
+        1,
+        Some(2),
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        0,
+    )
+    .expect("valid section frame");
+    let axis = RevolutionAxis {
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            .expect("finite point fixture"),
+        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+            .expect("valid direction fixture"),
+        reference: None,
+    };
+    let line = |start: [f64; 2], end: [f64; 2]| {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+        })
+        .expect("valid test fixture")
+    };
+
+    assert!(
+        matches!(revolved_section_circle(&transform, [2.0, 3.0], &axis).map(|circle| CurveGeometry::try_from(circle).expect("valid revolved circle")), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+                if {
+                    let center = circle_curve.center().get();
+        let axis = circle_curve.frame().axis().as_raw();
+        let ref_direction = circle_curve.frame().reference().as_raw();
+        let radius = circle_curve.radius().get();
+                    center == Point3::new(0.0, 3.0, 0.0)
+                        && *axis == Vector3::new(0.0, 1.0, 0.0)
+                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                        && radius == 2.0
+                })
+    );
+    assert!(revolved_section_circle(&transform, [0.0, 3.0], &axis).is_none());
+    assert!(
+        matches!(extruded_section_line(&transform, [2.0, 3.0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
+                if {
+                    let origin = line_curve.origin().get();
+        let direction = *line_curve.direction().as_raw();
+                    origin == Point3::new(2.0, 3.0, 0.0) && direction == Vector3::new(0.0, 0.0, 1.0)
+                })
+    );
+
+    assert!(
+        matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
+        if {
+            let radius = cylinder_surface.radius().get();
+            radius == 2.0
+        })
+    );
+    assert!(
+        matches!(revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)))
+        if {
+            let origin = plane_surface.origin();
+            origin.y == 3.0
+        })
+    );
+    assert!(
+        matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
+                if {
+                    let radius = cone_surface.radius().get();
+        let half_angle = cone_surface.half_angle().get();
+                    radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
+                })
+    );
+    assert!(
+        matches!(revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
+                if {
+                    let axis = cone_surface.frame().axis().as_raw();
+        let radius = cone_surface.radius().get();
+        let half_angle = cone_surface.half_angle().get();
+                    axis.y == -1.0
+                        && radius == 4.0
+                        && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
+                })
+    );
+    let centered_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        center: cadmpeg_ir::math::Point2::new(0.0, 3.0),
+        radius: Length::new(2.0).expect("finite length fixture"),
+        start_angle: Angle::new(0.0).expect("finite angle fixture"),
+        end_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
+    })
+    .expect("valid sketch fixture");
+    assert!(
+        matches!(revolved_section_surface(&transform, &centered_arc, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)))
+        if {
+            let radius = sphere_surface.radius().get();
+            radius == 2.0
+        })
+    );
+    let offset_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        center: cadmpeg_ir::math::Point2::new(5.0, 3.0),
+        radius: Length::new(2.0).expect("finite length fixture"),
+        start_angle: Angle::new(0.0).expect("finite angle fixture"),
+        end_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
+    })
+    .expect("valid sketch fixture");
+    assert!(
+        matches!(revolved_section_surface(&transform, &offset_arc, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
+                if {
+                    let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
+                    major_radius == 5.0 && minor_radius == 2.0
+                })
+    );
+    let offset_circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+        center: Point2::new(5.0, 3.0),
+        radius: Length::new(2.0).expect("finite length fixture"),
+    })
+    .expect("valid sketch fixture");
+    assert!(
+        matches!(revolved_section_surface(&transform, &offset_circle, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
+                if {
+                    let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
+                    major_radius == 5.0 && minor_radius == 2.0
+                })
+    );
+}
+
 fn tabulated_directrix_limit_fixture() -> (
     crate::surface::TabulatedCylinderCurveReplay,
     crate::surface::SurfaceParameterRecord,
@@ -1506,12 +1773,22 @@ fn tabulated_directrix_knots_refuse_collection_limit() {
 
 #[test]
 fn tabulated_directrix_constructor_refuses_typed_poles() {
-    assert!(matches!(tabulated_directrix_limit_error(15), cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "IR NURBS admitted poles"));
+    assert!(
+        matches!(tabulated_directrix_limit_error(15), cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "IR NURBS admitted poles")
+    );
     let (replay, parameters) = tabulated_directrix_limit_fixture();
-    assert!(crate::decode::with_test_decode_ctx(|ctx| checked_tabulated_cylinder_directrix(
-        ctx, &replay, &parameters, None, &mut crate::lane_refusal::LaneRefusals::new()))
-        .expect("service directrix constructor").is_some());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| checked_tabulated_cylinder_directrix(
+            ctx,
+            &replay,
+            &parameters,
+            None,
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ))
+        .expect("service directrix constructor")
+        .is_some()
+    );
 }
 
 #[test]
@@ -1856,206 +2133,4 @@ fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
         Point3::new(-2.355_057_866_495_792, 6.440_596_814_034_794, 4.78)
     );
     assert_eq!(sweep, [0.0, 0.0, 0.099_999_999_999_999_64]);
-}
-
-#[test]
-fn geometry_signal_excludes_opaque_carriers() {
-    let mut ir = CadIr::empty();
-    let surface_id =
-        SurfaceId::mint("test:model:entity#surface".to_string()).expect("identity grammar");
-    ir.model.surfaces.push(Surface {
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-        source_object: None,
-    });
-    ir.model.curves.push(Curve {
-        id: CurveId::mint("test:model:entity#curve".to_string()).expect("identity grammar"),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-        source_object: None,
-    });
-
-    assert!(!has_transferred_geometry(&ir));
-
-    let _attached = ir.model.add_procedural_surface(
-        surface_id,
-        ProceduralSurface::new(
-            ProceduralSurfaceId::mint("test:model:entity#procedural".to_string())
-                .expect("identity grammar"),
-            ProceduralSurfaceDefinition::Exact(
-                cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
-                    cadmpeg_ir::geometry::ExactSpline::Legacy {
-                        ranges: [[0.0, 1.0], [0.0, 1.0]],
-                        extension: 0,
-                        cache: None,
-                    },
-                )
-                .expect("finite ordered exact-spline fixture ranges"),
-            ),
-            None,
-        ),
-    );
-
-    assert!(has_transferred_geometry(&ir));
-}
-
-#[test]
-fn fc05_row_frame_maps_cyclically_onto_each_model_axis() {
-    let center = [11.0, 13.0];
-    let reference = [0.6, 0.8];
-    assert_eq!(
-        fc05_model_frame(
-            crate::decode::axis::Axis::X,
-            17.0,
-            center,
-            reference,
-            crate::decode::axis::Sign::Negative,
-        ),
-        ([17.0, 13.0, 11.0], [-1.0, 0.0, 0.0], [0.0, 0.8, 0.6])
-    );
-    assert_eq!(
-        fc05_model_frame(
-            crate::decode::axis::Axis::Y,
-            17.0,
-            center,
-            reference,
-            crate::decode::axis::Sign::Negative,
-        ),
-        ([11.0, 17.0, 13.0], [0.0, -1.0, 0.0], [0.6, 0.0, 0.8])
-    );
-    assert_eq!(
-        fc05_model_frame(
-            crate::decode::axis::Axis::Z,
-            17.0,
-            center,
-            reference,
-            crate::decode::axis::Sign::Negative,
-        ),
-        ([13.0, 11.0, 17.0], [0.0, 0.0, -1.0], [0.8, 0.6, 0.0])
-    );
-}
-
-#[test]
-fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
-    let transform = crate::placement::FeatureSectionTransform::new(
-        1,
-        Some(2),
-        [0.0, 0.0, 0.0],
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        0,
-    )
-    .expect("valid section frame");
-    let axis = RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-            .expect("finite point fixture"),
-        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
-            .expect("valid direction fixture"),
-        reference: None,
-    };
-    let line = |start: [f64; 2], end: [f64; 2]| {
-        SketchGeometry::try_from(SketchGeometryDefinition::Line {
-            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
-            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
-        })
-        .expect("valid test fixture")
-    };
-
-    assert!(
-        matches!(revolved_section_circle(&transform, [2.0, 3.0], &axis).map(|circle| CurveGeometry::try_from(circle).expect("valid revolved circle")), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
-                if {
-                    let center = circle_curve.center().get();
-        let axis = circle_curve.frame().axis().as_raw();
-        let ref_direction = circle_curve.frame().reference().as_raw();
-        let radius = circle_curve.radius().get();
-                    center == Point3::new(0.0, 3.0, 0.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && radius == 2.0
-                })
-    );
-    assert!(revolved_section_circle(&transform, [0.0, 3.0], &axis).is_none());
-    assert!(
-        matches!(extruded_section_line(&transform, [2.0, 3.0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
-                if {
-                    let origin = line_curve.origin().get();
-        let direction = *line_curve.direction().as_raw();
-                    origin == Point3::new(2.0, 3.0, 0.0) && direction == Vector3::new(0.0, 0.0, 1.0)
-                })
-    );
-
-    assert!(
-        matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
-        if {
-            let radius = cylinder_surface.radius().get();
-            radius == 2.0
-        })
-    );
-    assert!(
-        matches!(revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)))
-        if {
-            let origin = plane_surface.origin();
-            origin.y == 3.0
-        })
-    );
-    assert!(
-        matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
-                if {
-                    let radius = cone_surface.radius().get();
-        let half_angle = cone_surface.half_angle().get();
-                    radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
-                })
-    );
-    assert!(
-        matches!(revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
-                if {
-                    let axis = cone_surface.frame().axis().as_raw();
-        let radius = cone_surface.radius().get();
-        let half_angle = cone_surface.half_angle().get();
-                    axis.y == -1.0
-                        && radius == 4.0
-                        && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
-                })
-    );
-    let centered_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-        center: cadmpeg_ir::math::Point2::new(0.0, 3.0),
-        radius: Length::new(2.0).expect("finite length fixture"),
-        start_angle: Angle::new(0.0).expect("finite angle fixture"),
-        end_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
-    })
-    .expect("valid sketch fixture");
-    assert!(
-        matches!(revolved_section_surface(&transform, &centered_arc, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)))
-        if {
-            let radius = sphere_surface.radius().get();
-            radius == 2.0
-        })
-    );
-    let offset_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-        center: cadmpeg_ir::math::Point2::new(5.0, 3.0),
-        radius: Length::new(2.0).expect("finite length fixture"),
-        start_angle: Angle::new(0.0).expect("finite angle fixture"),
-        end_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
-    })
-    .expect("valid sketch fixture");
-    assert!(
-        matches!(revolved_section_surface(&transform, &offset_arc, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
-                if {
-                    let major_radius = torus_surface.major_radius().get();
-        let minor_radius = torus_surface.minor_radius().get();
-                    major_radius == 5.0 && minor_radius == 2.0
-                })
-    );
-    let offset_circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-        center: Point2::new(5.0, 3.0),
-        radius: Length::new(2.0).expect("finite length fixture"),
-    })
-    .expect("valid sketch fixture");
-    assert!(
-        matches!(revolved_section_surface(&transform, &offset_circle, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
-                if {
-                    let major_radius = torus_surface.major_radius().get();
-        let minor_radius = torus_surface.minor_radius().get();
-                    major_radius == 5.0 && minor_radius == 2.0
-                })
-    );
 }

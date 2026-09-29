@@ -14,7 +14,12 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 
 macro_rules! require_some {
-    ($value:expr) => { match $value { Some(value) => value, None => return Ok(None) } };
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
 }
 
 const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-9;
@@ -26,15 +31,15 @@ const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
 fn sketch_geometry_endpoints(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &SketchGeometry,
-) -> Result<Option<([f64; 2], [f64; 2])>, cadmpeg_core::CodecError> {
+) -> Result<Option<[[f64; 2]; 2]>, cadmpeg_core::CodecError> {
     Ok(match geometry.definition() {
-        SketchGeometryDefinition::Line { start, end } => Some(([start.u, start.v], [end.u, end.v])),
+        SketchGeometryDefinition::Line { start, end } => Some([[start.u, start.v], [end.u, end.v]]),
         SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
             end_angle,
-        } => Some((
+        } => Some([
             [
                 center.u + radius.get() * start_angle.get().cos(),
                 center.v + radius.get() * start_angle.get().sin(),
@@ -43,10 +48,10 @@ fn sketch_geometry_endpoints(
                 center.u + radius.get() * end_angle.get().cos(),
                 center.v + radius.get() * end_angle.get().sin(),
             ],
-        )),
+        ]),
         SketchGeometryDefinition::Circle { center, radius } => {
             let seam = [center.u + radius.get(), center.v];
-            Some((seam, seam))
+            Some([seam, seam])
         }
         SketchGeometryDefinition::Nurbs { .. } => {
             let Some(nurbs) = sketch_nurbs_curve(ctx, geometry)? else {
@@ -63,7 +68,7 @@ fn sketch_geometry_endpoints(
             ) else {
                 return Ok(None);
             };
-            Some(([first.x, first.y], [last.x, last.y]))
+            Some([[first.x, first.y], [last.x, last.y]])
         }
         _ => None,
     })
@@ -74,14 +79,17 @@ pub(in super::super) fn connected_sketch_profile_vertices(
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     sketch_id: &SketchId,
-) -> Result<Vec<(usize, Vec<[f64; 2]>)>, cadmpeg_core::CodecError> {
+) -> Result<
+    impl ExactSizeIterator<Item = (usize, Vec<[f64; 2]>)> + std::fmt::Debug,
+    cadmpeg_core::CodecError,
+> {
     let Some(sketch) = exactly_one(
         ir.model
             .sketches
             .iter()
             .filter(|sketch| sketch.id == *sketch_id),
     ) else {
-        return Ok(Vec::new());
+        return Ok(Vec::new().into_iter());
     };
     let mut profiles = Vec::new();
     for (profile_index, profile) in sketch.profiles.iter().enumerate() {
@@ -91,14 +99,16 @@ pub(in super::super) fn connected_sketch_profile_vertices(
         let mut uses = Vec::new();
         let mut valid = true;
         for entity_use in profile {
-            let Some(geometry) = exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
-                        entity.sketch == *sketch_id && entity.id() == &entity_use.entity
-                    }))
-                    .map(|entity| source_carriers.sketch_geometry(entity)) else {
+            let Some(geometry) =
+                exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
+                    entity.sketch == *sketch_id && entity.id() == &entity_use.entity
+                }))
+                .map(|entity| source_carriers.sketch_geometry(entity))
+            else {
                 valid = false;
                 break;
             };
-            let Some((mut start, mut end)) = sketch_geometry_endpoints(ctx, geometry)? else {
+            let Some([mut start, mut end]) = sketch_geometry_endpoints(ctx, geometry)? else {
                 valid = false;
                 break;
             };
@@ -111,37 +121,35 @@ pub(in super::super) fn connected_sketch_profile_vertices(
         if !valid {
             continue;
         }
-            let scale = uses
-                .iter()
-                .flat_map(|(start, end)| start.iter().chain(end))
-                .map(|coordinate| coordinate.abs())
-                .fold(1.0, f64::max);
-            if !uses.windows(2).all(|adjacent| {
-                let end = adjacent[0].1;
-                let next = adjacent[1].0;
-                (end[0] - next[0]).hypot(end[1] - next[1]) <= EPS_ENDPOINT_AGREEMENT * scale
-            }) {
-                continue;
-            }
-            let Some(first) = uses.first().map(|use_row| use_row.0) else {
-                continue;
-            };
-            let Some(terminal) = uses.last().map(|use_row| use_row.1) else {
-                continue;
-            };
-            let mut vertices = Vec::new();
-            ctx.try_reserve_items(&mut vertices, uses.len(), "creo connected profile vertices")?;
-            vertices.extend(uses.iter().map(|(start, _)| *start));
-            if (terminal[0] - first[0]).hypot(terminal[1] - first[1])
-                > EPS_ENDPOINT_AGREEMENT * scale
-            {
-                ctx.try_reserve_items(&mut vertices, 1, "creo connected profile vertices")?;
-                vertices.push(terminal);
-            }
-            ctx.try_reserve_items(&mut profiles, 1, "creo connected profile rows")?;
-            profiles.push((profile_index, vertices));
+        let scale = uses
+            .iter()
+            .flat_map(|(start, end)| start.iter().chain(end))
+            .map(|coordinate| coordinate.abs())
+            .fold(1.0, f64::max);
+        if !uses.windows(2).all(|adjacent| {
+            let end = adjacent[0].1;
+            let next = adjacent[1].0;
+            (end[0] - next[0]).hypot(end[1] - next[1]) <= EPS_ENDPOINT_AGREEMENT * scale
+        }) {
+            continue;
+        }
+        let Some(first) = uses.first().map(|use_row| use_row.0) else {
+            continue;
+        };
+        let Some(terminal) = uses.last().map(|use_row| use_row.1) else {
+            continue;
+        };
+        let mut vertices = Vec::new();
+        ctx.try_reserve_items(&mut vertices, uses.len(), "creo connected profile vertices")?;
+        vertices.extend(uses.iter().map(|(start, _)| *start));
+        if (terminal[0] - first[0]).hypot(terminal[1] - first[1]) > EPS_ENDPOINT_AGREEMENT * scale {
+            ctx.try_reserve_items(&mut vertices, 1, "creo connected profile vertices")?;
+            vertices.push(terminal);
+        }
+        ctx.try_reserve_items(&mut profiles, 1, "creo connected profile rows")?;
+        profiles.push((profile_index, vertices));
     }
-    Ok(profiles)
+    Ok(profiles.into_iter())
 }
 
 pub(in super::super) fn oriented_arc_parameterization(
@@ -215,7 +223,11 @@ pub(in super::super) fn circular_pcurve(
         return Ok(None);
     };
     let mut control_points = Vec::new();
-    ctx.try_reserve_items(&mut control_points, pole_count, "creo circular pcurve controls")?;
+    ctx.try_reserve_items(
+        &mut control_points,
+        pole_count,
+        "creo circular pcurve controls",
+    )?;
     let mut weights = Vec::new();
     ctx.try_reserve_items(&mut weights, pole_count, "creo circular pcurve weights")?;
     for segment in 0..segment_count {
@@ -249,7 +261,11 @@ pub(in super::super) fn circular_pcurve(
     }
     knots.extend([1.0; 3]);
     let mut weighted = Vec::new();
-    ctx.try_reserve_items(&mut weighted, pole_count, "creo circular pcurve weighted poles")?;
+    ctx.try_reserve_items(
+        &mut weighted,
+        pole_count,
+        "creo circular pcurve weighted poles",
+    )?;
     let nurbs = (|| -> Result<Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, cadmpeg_ir::geometry::nurbs::NurbsError>, cadmpeg_core::CodecError> {
         use cadmpeg_ir::geometry::nurbs::KnotValue;
         use cadmpeg_ir::geometry::pcurve::{PcurveNurbsPoles, WeightedPole2};
@@ -294,7 +310,11 @@ pub(in super::super) fn circular_pcurve(
     match nurbs {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
-            refusal.note_checked(ctx, format_args!("creo circular pcurve record for {record}"), &error);
+            refusal.note_checked(
+                ctx,
+                format_args!("creo circular pcurve record for {record}"),
+                &error,
+            );
             Ok(None)
         }
     }
@@ -566,7 +586,7 @@ impl ProfileEntity {
         geometry: SketchGeometry,
         reversed: bool,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        let Some((mut start, mut end)) = sketch_geometry_endpoints(ctx, &geometry)? else {
+        let Some([mut start, mut end]) = sketch_geometry_endpoints(ctx, &geometry)? else {
             return Ok(None);
         };
         if reversed {
@@ -640,9 +660,11 @@ pub(in super::super) fn resolved_sketch_profiles(
     for profile in &sketch.profiles {
         let mut geometries = Vec::new();
         for entity_use in profile {
-            let Some(entity) = exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
-                entity.sketch == *sketch_id && entity.id() == &entity_use.entity
-            })) else {
+            let Some(entity) =
+                exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
+                    entity.sketch == *sketch_id && entity.id() == &entity_use.entity
+                }))
+            else {
                 return Ok(None);
             };
             let source_geometry = source_carriers.sketch_geometry(entity);
@@ -920,7 +942,12 @@ struct NurbsProfileSpan {
     depth: usize,
 }
 
-fn nurbs_profile_point(ctx: &cadmpeg_core::decode::DecodeContext<'_>, evaluator: &mut cadmpeg_ir::eval::admitted::NurbsPointEvaluator<'_>, nurbs: &NurbsCurve, parameter: f64) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+fn nurbs_profile_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    evaluator: &mut cadmpeg_ir::eval::admitted::NurbsPointEvaluator<'_>,
+    nurbs: &NurbsCurve,
+    parameter: f64,
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
     let parameter = require_some!(cadmpeg_ir::eval::map_nurbs_curve_parameter(
         nurbs,
         require_some!(cadmpeg_ir::scalar::FiniteReal::new(parameter)),
@@ -992,7 +1019,9 @@ fn append_nurbs_profile_span(
             depth: span.depth + 1,
         },
         points,
-    )?.is_none() {
+    )?
+    .is_none()
+    {
         return Ok(None);
     }
     append_nurbs_profile_span(
@@ -1056,7 +1085,9 @@ fn nurbs_profile_polyline(
                 depth: 0,
             },
             &mut points,
-        )?.is_none() {
+        )?
+        .is_none()
+        {
             return Ok(None);
         }
     }

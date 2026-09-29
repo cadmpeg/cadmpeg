@@ -110,12 +110,12 @@ fn datum_plane_records_refuse_before_result_growth() {
     data.push(0x0f);
     data.extend(ieee8(-3.0));
     assert_eq!(
-        with_collection_limit(&data, 16, |ctx| planes(ctx, &data))
+        with_collection_limit(&data, 25, |ctx| planes(ctx, &data))
             .expect("datum plane admitted")
             .len(),
         1
     );
-    let error = with_collection_limit(&data, 15, |ctx| planes(ctx, &data))
+    let error = with_collection_limit(&data, 24, |ctx| planes(ctx, &data))
         .expect_err("datum result needs admission");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

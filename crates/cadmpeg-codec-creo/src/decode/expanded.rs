@@ -85,7 +85,11 @@ fn primitive_scalar_array_records<'a>(
     let mut records = Vec::new();
     for array in &scan.primitives.scalar_arrays {
         let id = ctx.format_retained(
-            format_args!("creo:solid_primdata:scalar_array#{}:{}", array.field.as_str(), array.offset),
+            format_args!(
+                "creo:solid_primdata:scalar_array#{}:{}",
+                array.field.as_str(),
+                array.offset
+            ),
             "creo native scalar-array IDs",
         )?;
         ctx.try_reserve_items(&mut records, 1, "creo native scalar-array records")?;
@@ -105,26 +109,30 @@ pub(super) fn feature_surface_replay_associations(
     scan: &ContainerScan,
 ) -> Result<Vec<CreoFeatureSurfaceReplayAssociation>, CodecError> {
     let mut associations = Vec::new();
-    visit_feature_surface_replays(ctx, scan, |owner_feature_id, table_offset, replay_ordinal, visible, replay| {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:allfeatur:surface_replay#{}:{}:{}:{}",
-                owner_feature_id, table_offset, replay_ordinal, visible.id
-            ),
-            "creo native surface replay IDs",
-        )?;
-        ctx.try_reserve_items(&mut associations, 1, "creo native surface replay records")?;
-        associations.push(CreoFeatureSurfaceReplayAssociation {
-            id,
-            owner_feature_id,
-            visible_surface_id: visible.id,
-            replay_surface_id: replay.id,
-            replay_ordinal,
-            surface_family: surface_family(visible.kind),
-            table_offset,
-        });
-        Ok(())
-    })?;
+    visit_feature_surface_replays(
+        ctx,
+        scan,
+        |owner_feature_id, table_offset, replay_ordinal, visible, replay| {
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:allfeatur:surface_replay#{}:{}:{}:{}",
+                    owner_feature_id, table_offset, replay_ordinal, visible.id
+                ),
+                "creo native surface replay IDs",
+            )?;
+            ctx.try_reserve_items(&mut associations, 1, "creo native surface replay records")?;
+            associations.push(CreoFeatureSurfaceReplayAssociation {
+                id,
+                owner_feature_id,
+                visible_surface_id: visible.id,
+                replay_surface_id: replay.id,
+                replay_ordinal,
+                surface_family: surface_family(visible.kind),
+                table_offset,
+            });
+            Ok(())
+        },
+    )?;
     Ok(associations)
 }
 
@@ -145,8 +153,13 @@ pub(super) fn feature_surface_replay_association_count(
 fn visit_feature_surface_replays(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-    mut emit: impl FnMut(u32, usize, usize, &crate::surface::SurfaceRow, &crate::surface::SurfaceRow)
-        -> Result<(), CodecError>,
+    mut emit: impl FnMut(
+        u32,
+        usize,
+        usize,
+        &crate::surface::SurfaceRow,
+        &crate::surface::SurfaceRow,
+    ) -> Result<(), CodecError>,
 ) -> Result<(), CodecError> {
     for table in &scan.features.entity_tables {
         let owner_feature_id = table.feature_id;
@@ -167,7 +180,10 @@ fn visit_feature_surface_replays(
         let replay_entries = &table.entries[visible_count..];
         let mut replay_ordinal = 0;
         let mut cursor = 0usize;
-        while let Some(end) = cursor.checked_add(visible_count).filter(|end| *end <= replay_entries.len()) {
+        while let Some(end) = cursor
+            .checked_add(visible_count)
+            .filter(|end| *end <= replay_entries.len())
+        {
             ctx.charge_work(1, "creo surface replay candidate work")?;
             let candidate_entries = &replay_entries[cursor..end];
             if candidate_entries
@@ -177,9 +193,18 @@ fn visit_feature_surface_replays(
                 cursor += 1;
                 continue;
             }
-            if visible_entries.iter().zip(candidate_entries).all(|(visible_entry, replay_entry)| {
-                    let visible = crate::surface::unique_surface_row(&scan.surfaces.rows, visible_entry.entity_id);
-                    let replay = crate::surface::unique_surface_row(&scan.surfaces.nonvisible_rows, replay_entry.entity_id);
+            if visible_entries
+                .iter()
+                .zip(candidate_entries)
+                .all(|(visible_entry, replay_entry)| {
+                    let visible = crate::surface::unique_surface_row(
+                        &scan.surfaces.rows,
+                        visible_entry.entity_id,
+                    );
+                    let replay = crate::surface::unique_surface_row(
+                        &scan.surfaces.nonvisible_rows,
+                        replay_entry.entity_id,
+                    );
                     visible.zip(replay).is_some_and(|(visible, replay)| {
                         visible.feature_id == owner_feature_id
                             && replay.feature_id == owner_feature_id
@@ -188,11 +213,27 @@ fn visit_feature_surface_replays(
                 })
             {
                 for (visible_entry, replay_entry) in visible_entries.iter().zip(candidate_entries) {
-                    let visible = crate::surface::unique_surface_row(&scan.surfaces.rows, visible_entry.entity_id)
-                        .ok_or_else(|| CodecError::malformed("matched visible replay row disappeared"))?;
-                    let replay = crate::surface::unique_surface_row(&scan.surfaces.nonvisible_rows, replay_entry.entity_id)
-                        .ok_or_else(|| CodecError::malformed("matched nonvisible replay row disappeared"))?;
-                    emit(owner_feature_id, table.offset, replay_ordinal, visible, replay)?;
+                    let visible = crate::surface::unique_surface_row(
+                        &scan.surfaces.rows,
+                        visible_entry.entity_id,
+                    )
+                    .ok_or_else(|| {
+                        CodecError::malformed("matched visible replay row disappeared")
+                    })?;
+                    let replay = crate::surface::unique_surface_row(
+                        &scan.surfaces.nonvisible_rows,
+                        replay_entry.entity_id,
+                    )
+                    .ok_or_else(|| {
+                        CodecError::malformed("matched nonvisible replay row disappeared")
+                    })?;
+                    emit(
+                        owner_feature_id,
+                        table.offset,
+                        replay_ordinal,
+                        visible,
+                        replay,
+                    )?;
                 }
                 replay_ordinal += 1;
                 cursor += visible_count;
@@ -295,23 +336,30 @@ mod tests {
 
     fn primitive_scan() -> crate::container::ContainerScan<'static> {
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
-        scan.primitives.double_xar_tables.push(crate::container::ModelDoubleXarTable {
-            section_name: "Body".to_string(),
-            section_source_offset: 0,
-            expanded_offset: 0,
-            entries: Vec::new(),
-        });
-        scan.primitives.scalar_arrays.push(crate::primdata::PrimitiveScalarArray {
-            field: crate::primdata::PrimitiveArrayField::Points,
-            offset: 0,
-            values: vec![cadmpeg_ir::scalar::FiniteReal::new(2.5).expect("finite scalar")],
-        });
+        scan.primitives
+            .double_xar_tables
+            .push(crate::container::ModelDoubleXarTable {
+                section_name: "Body".to_string(),
+                section_source_offset: 0,
+                expanded_offset: 0,
+                entries: Vec::new(),
+            });
+        scan.primitives
+            .scalar_arrays
+            .push(crate::primdata::PrimitiveScalarArray {
+                field: crate::primdata::PrimitiveArrayField::Points,
+                offset: 0,
+                values: vec![cadmpeg_ir::scalar::FiniteReal::new(2.5).expect("finite scalar")],
+            });
         scan.curves.fc05_circles.push(crate::curve::Fc05Circle {
             curve_id: 20,
             center_row_frame: [3.0, 4.0],
             radius_mm: 2.0,
-            sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2::normalized_with_length([1.0, 0.0])
-                .expect("unit sample direction").0,
+            sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2::normalized_with_length(
+                [1.0, 0.0],
+            )
+            .expect("unit sample direction")
+            .0,
             angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
                 sense: crate::curve::ParameterSense::Increasing,
                 reference_direction_row_frame: [1.0, 0.0],
@@ -321,44 +369,60 @@ mod tests {
             max_residual: 0.0,
             offset: 0,
         });
-        scan.curves.fc05_cylinder_cap_pairs.push(crate::curve::Fc05CylinderCapPair {
-            surface_id: 10,
-            cap_edges: vec![
-                crate::curve::Fc05CapEdge { curve_id: 20, cap_plane_id: 11, cap_ordinate_row_frame: -5.0 },
-                crate::curve::Fc05CapEdge { curve_id: 21, cap_plane_id: 12, cap_ordinate_row_frame: 7.0 },
-            ],
-            center_row_frame: [3.0, 4.0],
-            radius_mm: 2.0,
-            reference_direction_row_frame: [1.0, 0.0],
-            parameter_sense: crate::curve::ParameterSense::Increasing,
-            cap_ordinates_row_frame: vec![-5.0, 7.0],
-            offset: 0,
-        });
+        scan.curves
+            .fc05_cylinder_cap_pairs
+            .push(crate::curve::Fc05CylinderCapPair {
+                surface_id: 10,
+                cap_edges: vec![
+                    crate::curve::Fc05CapEdge {
+                        curve_id: 20,
+                        cap_plane_id: 11,
+                        cap_ordinate_row_frame: -5.0,
+                    },
+                    crate::curve::Fc05CapEdge {
+                        curve_id: 21,
+                        cap_plane_id: 12,
+                        cap_ordinate_row_frame: 7.0,
+                    },
+                ],
+                center_row_frame: [3.0, 4.0],
+                radius_mm: 2.0,
+                reference_direction_row_frame: [1.0, 0.0],
+                parameter_sense: crate::curve::ParameterSense::Increasing,
+                cap_ordinates_row_frame: vec![-5.0, 7.0],
+                offset: 0,
+            });
         scan
     }
 
     fn with_limits(
         retained: u64,
         items: u64,
-        project: impl FnOnce(&DecodeContext<'_>, &crate::container::ContainerScan<'_>)
-            -> Result<serde_json::Value, cadmpeg_core::CodecError>,
+        project: impl FnOnce(
+            &DecodeContext<'_>,
+            &crate::container::ContainerScan<'_>,
+        ) -> Result<serde_json::Value, cadmpeg_core::CodecError>,
     ) -> Result<serde_json::Value, cadmpeg_core::CodecError> {
         let scan = primitive_scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = retained;
         policy.limits.max_collection_items = items;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         project(&ctx, &scan)
     }
 
     fn replay_scan() -> crate::container::ContainerScan<'static> {
-        use crate::feature::entity::{EntryPayload, FeatureEntityTable, FeatureEntityTableEntry, PlainClass};
+        use crate::feature::entity::{
+            EntryPayload, FeatureEntityTable, FeatureEntityTableEntry, PlainClass,
+        };
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
         let entry = |entity_id, class_id| FeatureEntityTableEntry {
             entity_id,
-            payload: EntryPayload::Plain { class: PlainClass::new(class_id).expect("plain entry class") },
+            payload: EntryPayload::Plain {
+                class: PlainClass::new(class_id).expect("plain entry class"),
+            },
             prefixed: false,
             offset: 0,
             end_offset: 0,
@@ -388,8 +452,10 @@ mod tests {
         retained: u64,
         items: u64,
         work: u64,
-        project: impl FnOnce(&DecodeContext<'_>, &crate::container::ContainerScan<'_>)
-            -> Result<serde_json::Value, cadmpeg_core::CodecError>,
+        project: impl FnOnce(
+            &DecodeContext<'_>,
+            &crate::container::ContainerScan<'_>,
+        ) -> Result<serde_json::Value, cadmpeg_core::CodecError>,
     ) -> Result<serde_json::Value, cadmpeg_core::CodecError> {
         let scan = replay_scan();
         let arena = DecodeArena::new();
@@ -397,8 +463,8 @@ mod tests {
         policy.limits.max_retained_bytes = retained;
         policy.limits.max_collection_items = items;
         policy.limits.max_work_units = work;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         project(&ctx, &scan)
     }
 
@@ -407,10 +473,13 @@ mod tests {
         let error = with_replay_limits(u64::MAX, 1, 0, |ctx, scan| {
             let count = feature_surface_replay_association_count(ctx, scan)?;
             Ok(serde_json::json!(count))
-        }).expect_err("one candidate comparison needs work admission");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("one candidate comparison needs work admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::WorkUnits
-                && resource.operation == "creo surface replay candidate work"));
+                && resource.operation == "creo surface replay candidate work")
+        );
     }
 
     #[test]
@@ -419,10 +488,13 @@ mod tests {
         let error = with_replay_limits(limit, 1, 1, |ctx, scan| {
             let records = feature_surface_replay_associations(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
-        }).expect_err("one association ID needs full retained length");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("one association ID needs full retained length");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native surface replay IDs"));
+                && resource.operation == "creo native surface replay IDs")
+        );
     }
 
     #[test]
@@ -430,22 +502,30 @@ mod tests {
         let error = with_replay_limits(u64::MAX, 0, 1, |ctx, scan| {
             let records = feature_surface_replay_associations(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
-        }).expect_err("one association needs an output row");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("one association needs an output row");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native surface replay records"));
+                && resource.operation == "creo native surface replay records")
+        );
         let record = with_replay_limits(u64::MAX, 1, 1, |ctx, scan| {
             let records = feature_surface_replay_associations(ctx, scan)?;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
-        }).expect("one association record");
+        })
+        .expect("one association record");
         assert_eq!(record["id"], "creo:allfeatur:surface_replay#4:0:0:7");
         assert_eq!(record["visible_surface_id"], 7);
         assert_eq!(record["replay_surface_id"], 9);
         assert_eq!(record["surface_family"], "plane");
-        assert_eq!(with_replay_limits(u64::MAX, 0, 1, |ctx, scan| {
-            let count = feature_surface_replay_association_count(ctx, scan)?;
-            Ok(serde_json::json!(count))
-        }).expect("the metadata count makes no record copy"), 1);
+        assert_eq!(
+            with_replay_limits(u64::MAX, 0, 1, |ctx, scan| {
+                let count = feature_surface_replay_association_count(ctx, scan)?;
+                Ok(serde_json::json!(count))
+            })
+            .expect("the metadata count makes no record copy"),
+            1
+        );
     }
 
     #[test]
@@ -454,10 +534,13 @@ mod tests {
         let error = with_limits(limit, 1, |ctx, scan| {
             let records = double_xar_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
-        }).expect_err("table ID needs its full retained length");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("table ID needs its full retained length");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native double-xar IDs"));
+                && resource.operation == "creo native double-xar IDs")
+        );
     }
 
     #[test]
@@ -465,14 +548,18 @@ mod tests {
         let error = with_limits(u64::MAX, 0, |ctx, scan| {
             let records = double_xar_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
-        }).expect_err("one table needs an output row");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("one table needs an output row");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native double-xar records"));
+                && resource.operation == "creo native double-xar records")
+        );
         let value = with_limits(u64::MAX, 1, |ctx, scan| {
             let records = double_xar_records(ctx, scan)?;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
-        }).expect("one table record");
+        })
+        .expect("one table record");
         assert_eq!(value["id"], "creo:Body:double_xar#0:0");
         assert_eq!(value["count"], 0);
     }
@@ -483,10 +570,13 @@ mod tests {
         let error = with_limits(limit, 1, |ctx, scan| {
             let records = primitive_scalar_array_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
-        }).expect_err("scalar-array ID needs its full retained length");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("scalar-array ID needs its full retained length");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native scalar-array IDs"));
+                && resource.operation == "creo native scalar-array IDs")
+        );
     }
 
     #[test]
@@ -494,14 +584,18 @@ mod tests {
         let error = with_limits(u64::MAX, 0, |ctx, scan| {
             let records = primitive_scalar_array_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
-        }).expect_err("one scalar array needs an output row");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("one scalar array needs an output row");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native scalar-array records"));
+                && resource.operation == "creo native scalar-array records")
+        );
         let value = with_limits(u64::MAX, 1, |ctx, scan| {
             let records = primitive_scalar_array_records(ctx, scan)?;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
-        }).expect("one scalar-array record");
+        })
+        .expect("one scalar-array record");
         assert_eq!(value["id"], "creo:solid_primdata:scalar_array#pts:0");
         assert_eq!(value["field"], "pts");
         assert_eq!(value["values"], serde_json::json!([2.5]));
@@ -513,10 +607,13 @@ mod tests {
         let error = with_limits(limit, 1, |ctx, scan| {
             let records = fc05_circle_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
-        }).expect_err("FC05 circle ID needs full retained length");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("FC05 circle ID needs full retained length");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native FC05 circle IDs"));
+                && resource.operation == "creo native FC05 circle IDs")
+        );
     }
 
     #[test]
@@ -524,14 +621,18 @@ mod tests {
         let error = with_limits(u64::MAX, 0, |ctx, scan| {
             let records = fc05_circle_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
-        }).expect_err("one FC05 circle needs one output row");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("one FC05 circle needs one output row");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native FC05 circle records"));
+                && resource.operation == "creo native FC05 circle records")
+        );
         let value = with_limits(u64::MAX, 1, |ctx, scan| {
             let records = fc05_circle_records(ctx, scan)?;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
-        }).expect("one FC05 circle record");
+        })
+        .expect("one FC05 circle record");
         assert_eq!(value["id"], "creo:curve:fc05_circle#20");
         assert_eq!(value["radius_mm"], 2.0);
         assert_eq!(value["point_count"], 8);
@@ -543,10 +644,13 @@ mod tests {
         let error = with_limits(limit, 1, |ctx, scan| {
             let records = fc05_cylinder_cap_pair_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
-        }).expect_err("FC05 cap-pair ID needs full retained length");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("FC05 cap-pair ID needs full retained length");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native FC05 cap pair IDs"));
+                && resource.operation == "creo native FC05 cap pair IDs")
+        );
     }
 
     #[test]
@@ -554,18 +658,28 @@ mod tests {
         let error = with_limits(u64::MAX, 0, |ctx, scan| {
             let records = fc05_cylinder_cap_pair_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
-        }).expect_err("one FC05 cap pair needs one output row");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        })
+        .expect_err("one FC05 cap pair needs one output row");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native FC05 cap pair records"));
+                && resource.operation == "creo native FC05 cap pair records")
+        );
         let value = with_limits(u64::MAX, 1, |ctx, scan| {
             let records = fc05_cylinder_cap_pair_records(ctx, scan)?;
             Ok(serde_json::to_value(&records[0]).expect("record JSON"))
-        }).expect("one FC05 cap-pair record");
+        })
+        .expect("one FC05 cap-pair record");
         assert_eq!(value["id"], "creo:surface:fc05_cylinder_cap_pair#10");
         assert_eq!(value["curve_ids"], serde_json::json!([20, 21]));
         assert_eq!(value["cap_plane_ids"], serde_json::json!([11, 12]));
-        assert_eq!(value["curve_cap_ordinates_row_frame"], serde_json::json!([-5.0, 7.0]));
-        assert_eq!(value["cap_ordinates_row_frame"], serde_json::json!([-5.0, 7.0]));
+        assert_eq!(
+            value["curve_cap_ordinates_row_frame"],
+            serde_json::json!([-5.0, 7.0])
+        );
+        assert_eq!(
+            value["cap_ordinates_row_frame"],
+            serde_json::json!([-5.0, 7.0])
+        );
     }
 }

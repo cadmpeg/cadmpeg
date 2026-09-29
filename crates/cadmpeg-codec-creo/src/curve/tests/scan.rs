@@ -9,14 +9,16 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container::{self};
 use crate::CreoCodec;
 
-fn fc05_circles_service(parameters: &[crate::curve::CurveParameterRecord]) -> Vec<crate::curve::Fc05Circle> {
+fn fc05_circles_service(
+    parameters: &[crate::curve::CurveParameterRecord],
+) -> Vec<crate::curve::Fc05Circle> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
@@ -448,16 +450,14 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
 
     let mut mismatched_topology = scan.curves.topology_rows.clone();
     mismatched_topology[0].type_byte = 1;
-    assert!(
-        {
-            let arena = DecodeArena::new();
-            let policy = DecodePolicy::service();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            crate::curve::pcurve_endpoints(&ctx, &scan.curves.parameters, &mismatched_topology)
-                .expect("service pcurve endpoints")
-                .is_empty()
-        }
-    );
+    assert!({
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        crate::curve::pcurve_endpoints(&ctx, &scan.curves.parameters, &mismatched_topology)
+            .expect("service pcurve endpoints")
+            .is_empty()
+    });
 }
 
 #[test]

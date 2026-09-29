@@ -1,22 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::EditableDecodeResult;
-
-use crate::container::SectionRole;
-use crate::test_support::assert_annotation;
-use crate::test_support::build_prt;
-use crate::test_support::build_prt_raw;
-use crate::test_support::jpeg_payload;
-use crate::test_support::visibgeom_payload;
-
-use std::io::Cursor;
-
+use crate::test_support::{build_prt, assert_annotation, build_prt_raw, jpeg_payload, visibgeom_payload};
+use crate::{container, CreoCodec};
+use crate::container::{Layout, SectionRole, UnknownLayout};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::Exactness;
+use cadmpeg_test_support::EditableDecodeResult;
+use std::io::Cursor;
 
-use crate::container::{self, Layout, UnknownLayout};
-use crate::CreoCodec;
+
+
+
 
 mod aggregation;
 mod sections;
@@ -52,8 +47,8 @@ fn assert_summary_limit(
             }
             _ => panic!("this summary test uses a collection or retained-byte limit"),
         }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("test decode context");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
         let result = crate::dialect::classify(&ctx, &scan)
             .and_then(|classification| container::summarize(&ctx, &scan, classification));
         matches!(
@@ -67,67 +62,119 @@ fn assert_summary_limit(
 
 #[test]
 fn dialect_declared_nodes_refuse_collection_limit() {
-    assert_summary_limit("creo declared dialect nodes", cadmpeg_core::decode::ResourceDimension::CollectionItems, false);
+    assert_summary_limit(
+        "creo declared dialect nodes",
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        false,
+    );
 }
 
 #[test]
 fn dialect_declared_key_refuses_retained_limit() {
-    assert_summary_limit("creo declared dialect key", cadmpeg_core::decode::ResourceDimension::RetainedBytes, false);
+    assert_summary_limit(
+        "creo declared dialect key",
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        false,
+    );
 }
 
 #[test]
 fn dialect_declared_version_refuses_retained_limit() {
-    assert_summary_limit("creo declared version line", cadmpeg_core::decode::ResourceDimension::RetainedBytes, false);
+    assert_summary_limit(
+        "creo declared version line",
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        false,
+    );
 }
 
 #[test]
 fn summary_attribute_nodes_refuse_collection_limit() {
-    assert_summary_limit("creo summary attribute nodes", cadmpeg_core::decode::ResourceDimension::CollectionItems, false);
+    assert_summary_limit(
+        "creo summary attribute nodes",
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        false,
+    );
 }
 
 #[test]
 fn summary_attribute_key_refuses_retained_limit() {
-    assert_summary_limit("creo summary attribute key", cadmpeg_core::decode::ResourceDimension::RetainedBytes, false);
+    assert_summary_limit(
+        "creo summary attribute key",
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        false,
+    );
 }
 
 #[test]
 fn summary_offset_refuses_retained_limit() {
-    assert_summary_limit("creo summary offset", cadmpeg_core::decode::ResourceDimension::RetainedBytes, false);
+    assert_summary_limit(
+        "creo summary offset",
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        false,
+    );
 }
 
 #[test]
 fn summary_raw_name_refuses_retained_limit() {
-    assert_summary_limit("creo summary raw name", cadmpeg_core::decode::ResourceDimension::RetainedBytes, false);
+    assert_summary_limit(
+        "creo summary raw name",
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        false,
+    );
 }
 
 #[test]
 fn summary_entry_name_refuses_retained_limit() {
-    assert_summary_limit("creo summary entry name", cadmpeg_core::decode::ResourceDimension::RetainedBytes, false);
+    assert_summary_limit(
+        "creo summary entry name",
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        false,
+    );
 }
 
 #[test]
 fn summary_entries_refuse_collection_limit() {
-    assert_summary_limit("creo summary entries", cadmpeg_core::decode::ResourceDimension::CollectionItems, false);
+    assert_summary_limit(
+        "creo summary entries",
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        false,
+    );
 }
 
 #[test]
 fn container_note_text_refuses_retained_limit() {
-    assert_summary_limit("creo container note text", cadmpeg_core::decode::ResourceDimension::RetainedBytes, false);
+    assert_summary_limit(
+        "creo container note text",
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        false,
+    );
 }
 
 #[test]
 fn container_notes_refuse_collection_limit() {
-    assert_summary_limit("creo container notes", cadmpeg_core::decode::ResourceDimension::CollectionItems, false);
+    assert_summary_limit(
+        "creo container notes",
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        false,
+    );
 }
 
 #[test]
 fn unverified_dialect_loss_text_refuses_retained_limit() {
-    assert_summary_limit("creo unverified dialect loss text", cadmpeg_core::decode::ResourceDimension::RetainedBytes, true);
+    assert_summary_limit(
+        "creo unverified dialect loss text",
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        true,
+    );
 }
 
 #[test]
 fn summary_losses_refuse_collection_limit() {
-    assert_summary_limit("creo summary losses", cadmpeg_core::decode::ResourceDimension::CollectionItems, true);
+    assert_summary_limit(
+        "creo summary losses",
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        true,
+    );
 }
 
 #[test]
@@ -142,8 +189,8 @@ fn summary_expanded_size_refuses_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("test decode context");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
         let result = crate::dialect::classify(&ctx, &scan)
             .and_then(|classification| container::summarize(&ctx, &scan, classification));
         matches!(
@@ -439,8 +486,8 @@ fn feature_definition_aggregation_refuses_before_vec_growth() {
             .expect("root feature input is admitted");
         super::feature_definitions(&ctx, std::slice::from_ref(&section)).map(|rows| rows.len())
     };
-    assert_eq!(run(1).expect("one definition admitted"), 1);
-    let error = run(0).expect_err("aggregate definition needs an item");
+    assert_eq!(run(7).expect("one definition admitted"), 1);
+    let error = run(6).expect_err("aggregate definition needs an item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo feature definitions"));
@@ -825,7 +872,9 @@ fn feature_row_definition_refuses_before_vec_growth() {
 fn one_feature_definition() -> crate::feature::definitions::FeatureDefinition {
     crate::decode::with_test_decode_ctx(|ctx| {
         crate::feature::definitions::depdb_section_definition(
-            ctx, b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0", None,
+            ctx,
+            b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0",
+            None,
         )
     })
     .expect("section definition admitted")
@@ -975,10 +1024,12 @@ fn two_chart_pcurve_count_node_refuses_before_insertion() {
         super::two_chart_pcurves(&ctx, &sections, &face_ids)
     };
     assert_eq!(
-        run(4).expect("two rows and two count nodes admitted").len(),
+        run(28)
+            .expect("two rows and two count nodes admitted")
+            .len(),
         2
     );
-    let error = run(2).expect_err("count node follows two collected rows");
+    let error = run(26).expect_err("count node follows two collected rows");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -1008,10 +1059,10 @@ fn current_feature_operation_node_refuses_before_insertion() {
     use cadmpeg_core::CodecError;
 
     assert_eq!(
-        current_feature_operations_with_limit(3).expect("one operation admitted"),
+        current_feature_operations_with_limit(8).expect("one operation admitted"),
         1
     );
-    let error = current_feature_operations_with_limit(1)
+    let error = current_feature_operations_with_limit(6)
         .expect_err("map node follows the aggregate operation item");
     assert!(matches!(
         error,
@@ -1026,7 +1077,7 @@ fn current_feature_operation_order_refuses_before_vec_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    let error = current_feature_operations_with_limit(2)
+    let error = current_feature_operations_with_limit(7)
         .expect_err("ordered item follows aggregate and map nodes");
     assert!(matches!(
         error,
@@ -1053,8 +1104,8 @@ fn feature_reference_aggregation_refuses_before_vec_growth() {
             .expect("root input is admitted");
         super::feature_reference_names(&ctx, &sections)
     };
-    assert_eq!(run(1).expect("one reference admitted").len(), 1);
-    let error = run(0).expect_err("one reference needs an aggregate Vec item");
+    assert_eq!(run(2).expect("one reference admitted").len(), 1);
+    let error = run(1).expect_err("one reference needs an aggregate Vec item");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -1342,13 +1393,15 @@ fn scan_expands_toc_sized_unix_compress_payload() {
     data.extend_from_slice(&compressed);
 
     let scan = container::scan_bytes_ok(data);
-    let classification = crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
-        .expect("dialect classification admitted");
+    let classification =
+        crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
+            .expect("dialect classification admitted");
 
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, b"ABC");
-    let summary = crate::decode::with_test_decode_ctx(|ctx| container::summarize(ctx, &scan, classification))
-        .expect("container summary admitted");
+    let summary =
+        crate::decode::with_test_decode_ctx(|ctx| container::summarize(ctx, &scan, classification))
+            .expect("container summary admitted");
     let cadmpeg_core::container::EntryStorage::Compressed {
         method,
         stored,
@@ -1378,27 +1431,29 @@ fn geometry_array_census_overflow_error_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let entry = b"srf_array\0\xf8\xbf\xff";
     let count = (u32::MAX / 16_383) + 1;
-    let mut region = Vec::new();
-    region.reserve(entry.len() * count as usize);
+    let mut region = Vec::with_capacity(entry.len() * count as usize);
     for _ in 0..count {
         region.extend_from_slice(entry);
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = super::read_array_count(&ctx, &region, b"srf_array")
         .expect_err("sum exceeds the 32-bit census");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo geometry array census error"));
+            && resource.operation == "creo geometry array census error")
+    );
     crate::decode::with_test_decode_ctx(|ctx| {
         let error = super::read_array_count(ctx, &region, b"srf_array")
             .expect_err("sum exceeds the 32-bit census");
         assert!(error.to_string().contains("32-bit census"));
         Ok::<(), cadmpeg_core::CodecError>(())
-    }).expect("service error text admitted");
+    })
+    .expect("service error text admitted");
 }
 
 #[test]
@@ -1893,14 +1948,9 @@ fn assert_loop_array_aggregate_refusal(limit: u64, operation: &'static str) {
     use cadmpeg_core::CodecError;
 
     let payload = loop_array_aggregate_fixture();
-    let scanned = container::Section::scan(
-        "VisibGeom".to_string(),
-        0,
-        payload.len(),
-        None,
-        &payload,
-    )
-    .expect("loop array section extent");
+    let scanned =
+        container::Section::scan("VisibGeom".to_string(), 0, payload.len(), None, &payload)
+            .expect("loop array section extent");
     let run = |limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -1909,7 +1959,13 @@ fn assert_loop_array_aggregate_refusal(limit: u64, operation: &'static str) {
             .expect("loop array input admitted");
         super::loop_array_scan(&ctx, std::slice::from_ref(&scanned))
     };
-    assert_eq!(run(u64::MAX).expect("service loop array aggregate").records.len(), 1);
+    assert_eq!(
+        run(u64::MAX)
+            .expect("service loop array aggregate")
+            .records
+            .len(),
+        1
+    );
     let error = run(limit).expect_err("loop array aggregate exceeds collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -2004,6 +2060,14 @@ fn legacy_framing_box_refuses_its_retained_slot() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let framing = super::LegacyAsciiFraming { schema: "6".into(), product_release: None, banner_offset: 0, object_offset: 0, persistence: crate::legacy::Persistence::default() };
-    assert!(matches!(super::identify_layout(&ctx, &[], &[], Some(framing)), Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "creo legacy framing box"));
+    let framing = super::LegacyAsciiFraming {
+        schema: "6".into(),
+        product_release: None,
+        banner_offset: 0,
+        object_offset: 0,
+        persistence: crate::legacy::Persistence::default(),
+    };
+    assert!(
+        matches!(super::identify_layout(&ctx, &[], &[], Some(framing)), Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "creo legacy framing box")
+    );
 }

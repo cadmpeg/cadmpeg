@@ -229,9 +229,7 @@ fn line_conic_intersections(
             + constant.abs(),
     );
     let mut points = Vec::new();
-    for parameter in real_roots(line_quadratic, line_linear, line_constant)
-        .into_iter()
-    {
+    for parameter in real_roots(line_quadratic, line_linear, line_constant) {
         let point = std::array::from_fn(|coordinate| {
             direction[coordinate].mul_add(parameter, origin[coordinate])
         });
@@ -387,13 +385,12 @@ fn conic_conic_intersections(
     )?;
     for [u, v] in parameters {
         let point = std::array::from_fn(|coordinate| {
-                first_equation.origin[coordinate]
-                    + u * first_equation.x_axis[coordinate]
-                    + v * first_equation.y_axis[coordinate]
+            first_equation.origin[coordinate]
+                + u * first_equation.x_axis[coordinate]
+                + v * first_equation.y_axis[coordinate]
         });
-        if
-            curve_contains_points(first, [point, point])
-                && curve_contains_points(second, [point, point])
+        if curve_contains_points(first, [point, point])
+            && curve_contains_points(second, [point, point])
         {
             intersections.push(point);
         }
@@ -410,10 +407,18 @@ fn incident_analytic_vertex_domain(
         for second in first + 1..curves.len() {
             let conic_points = conic_conic_intersections(ctx, curves[first], curves[second])?;
             for point in line_line_intersection(curves[first], curves[second])
-                    .into_iter()
-                    .chain(line_conic_intersections(ctx, curves[first], curves[second])?)
-                    .chain(line_conic_intersections(ctx, curves[second], curves[first])?)
-                    .chain(conic_points)
+                .into_iter()
+                .chain(line_conic_intersections(
+                    ctx,
+                    curves[first],
+                    curves[second],
+                )?)
+                .chain(line_conic_intersections(
+                    ctx,
+                    curves[second],
+                    curves[first],
+                )?)
+                .chain(conic_points)
             {
                 ctx.try_reserve_items(&mut candidates, 1, "creo incident analytic candidates")?;
                 candidates.push(point);
@@ -427,16 +432,16 @@ fn incident_analytic_vertex_domain(
     });
     let mut unique = Vec::new();
     for point in candidates {
-            // A candidate outside the finite range agrees with no other
-            // candidate.
-            if !unique.iter().any(|candidate| {
-                finite_model_point(*candidate)
-                    .zip(finite_model_point(point))
-                    .is_some_and(|(candidate, point)| model_points_agree(candidate, point))
-            }) {
-                ctx.try_reserve_items(&mut unique, 1, "creo unique analytic candidates")?;
-                unique.push(point);
-            }
+        // A candidate outside the finite range agrees with no other
+        // candidate.
+        if !unique.iter().any(|candidate| {
+            finite_model_point(*candidate)
+                .zip(finite_model_point(point))
+                .is_some_and(|(candidate, point)| model_points_agree(candidate, point))
+        }) {
+            ctx.try_reserve_items(&mut unique, 1, "creo unique analytic candidates")?;
+            unique.push(point);
+        }
     }
     Ok(unique)
 }
@@ -506,8 +511,11 @@ pub(in crate::decode) fn solve_topological_vertices(
         topological_vertices: scan.topology.vertices.len(),
         ..TopologicalVertexSolveDiagnostics::default()
     };
-    let vertex_faces =
-        crate::topology::vertex_incident_faces(ctx, &scan.topology.vertices, &scan.topology.half_edges)?;
+    let vertex_faces = crate::topology::vertex_incident_faces(
+        ctx,
+        &scan.topology.vertices,
+        &scan.topology.half_edges,
+    )?;
     let mut carrier_points = BTreeMap::new();
     for vertex in &scan.topology.vertices {
         let Some(face_ids) = vertex_faces.get(&vertex.id) else {
@@ -649,11 +657,7 @@ pub(in crate::decode) fn solve_topological_vertices(
                 }
             }
         }
-        ctx.try_reserve_items(
-            &mut pcurve_constraints,
-            1,
-            "creo vertex pcurve constraints",
-        )?;
+        ctx.try_reserve_items(&mut pcurve_constraints, 1, "creo vertex pcurve constraints")?;
         pcurve_constraints.push((vertices, points, ordered, complete, authoritative));
     }
     let mut ambiguous_pcurve_vertices = BTreeSet::new();
@@ -704,7 +708,9 @@ pub(in crate::decode) fn solve_topological_vertices(
             continue;
         };
         let (id, _id_reservation) = crate::identity::compose_scoped::<CurveId>(
-            ctx, &crate::identity::VISIBGEOM_CURVE, row.id,
+            ctx,
+            &crate::identity::VISIBGEOM_CURVE,
+            row.id,
             "creo vertex curve lookup identity",
         )?;
         if !nurbs_endpoint_witnesses.contains(&id) {
@@ -727,30 +733,32 @@ pub(in crate::decode) fn solve_topological_vertices(
     // carrier equations for the vertex-domain solver.
     let mut analytic_curves = BTreeMap::new();
     for row in topology_rows {
-            let (id, _id_reservation) = crate::identity::compose_scoped::<CurveId>(
-                ctx, &crate::identity::VISIBGEOM_CURVE, row.id,
-                "creo vertex curve lookup identity",
-            )?;
-            let Some(curve) = unique_model_curve(ir, &id) else {
-                continue;
-            };
-            let geometry = source_carriers.curve_geometry(curve);
-            let evaluable = matches!(
-                geometry,
-                CurveGeometry::Solved(
-                    SolvedCurveGeometry::Line(_)
-                        | SolvedCurveGeometry::Circle(_)
-                        | SolvedCurveGeometry::Ellipse(_)
-                        | SolvedCurveGeometry::Parabola(_)
-                        | SolvedCurveGeometry::Hyperbola(_)
-                )
-            );
-            if evaluable {
-                if !analytic_curves.contains_key(&row.id) {
-                    ctx.charge_collection_items(1, "creo analytic curve lookup nodes")?;
-                }
-                analytic_curves.insert(row.id, geometry);
+        let (id, _id_reservation) = crate::identity::compose_scoped::<CurveId>(
+            ctx,
+            &crate::identity::VISIBGEOM_CURVE,
+            row.id,
+            "creo vertex curve lookup identity",
+        )?;
+        let Some(curve) = unique_model_curve(ir, &id) else {
+            continue;
+        };
+        let geometry = source_carriers.curve_geometry(curve);
+        let evaluable = matches!(
+            geometry,
+            CurveGeometry::Solved(
+                SolvedCurveGeometry::Line(_)
+                    | SolvedCurveGeometry::Circle(_)
+                    | SolvedCurveGeometry::Ellipse(_)
+                    | SolvedCurveGeometry::Parabola(_)
+                    | SolvedCurveGeometry::Hyperbola(_)
+            )
+        );
+        if evaluable {
+            if !analytic_curves.contains_key(&row.id) {
+                ctx.charge_collection_items(1, "creo analytic curve lookup nodes")?;
             }
+            analytic_curves.insert(row.id, geometry);
+        }
     }
     let mut incident_curves = BTreeMap::new();
     for vertex in &scan.topology.vertices {

@@ -293,9 +293,9 @@ impl<'a> DecodeContext<'a> {
         loop {
             match std::str::from_utf8(remaining) {
                 Ok(valid) => {
-                    length = length.checked_add(valid.len()).ok_or_else(|| {
-                        self.refuse_codec_limit(operation, u64::MAX, u64::MAX)
-                    })?;
+                    length = length
+                        .checked_add(valid.len())
+                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
                     break;
                 }
                 Err(error) => {
@@ -366,8 +366,10 @@ impl<'a> DecodeContext<'a> {
             .map_err(|_| CodecError::Malformed("scoped text formatting failed".into()))?;
         let reservation = self.reserve_scoped(u64_from_index(count.0), operation)?;
         let mut text = String::new();
-        text.try_reserve(count.0)
-            .map_err(|_| self.budget.materialized_allocation_failed(u64_from_index(count.0), operation))?;
+        text.try_reserve(count.0).map_err(|_| {
+            self.budget
+                .materialized_allocation_failed(u64_from_index(count.0), operation)
+        })?;
         std::fmt::write(&mut text, format_args!("{value}"))
             .map_err(|_| CodecError::Malformed("scoped text formatting failed".into()))?;
         Ok((text, reservation))
@@ -887,8 +889,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 3;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         {
             let (text, _reservation) = ctx
                 .format_scoped(format_args!("x{}", 12), "test scoped format")
@@ -914,11 +916,14 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 4;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         assert_eq!(
-            ctx.format_retained(format_args!("{number}" , number = 1234), "test retained format")
-                .expect("four rendered bytes fit"),
+            ctx.format_retained(
+                format_args!("{number}", number = 1234),
+                "test retained format"
+            )
+            .expect("four rendered bytes fit"),
             "1234"
         );
         let error = ctx

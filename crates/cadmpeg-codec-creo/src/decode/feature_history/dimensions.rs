@@ -57,7 +57,7 @@ fn dimension_expression(
     value
         .map(|value| ctx.format_retained(value, "creo dimension expression"))
         .transpose()
-        .map(|value| value.unwrap_or_default())
+        .map(std::option::Option::unwrap_or_default)
 }
 
 fn push_feature_source_parameter(
@@ -167,19 +167,32 @@ pub(in super::super) fn resolved_feature_dimension_parameter_admitted<'a>(
     sketch: &SketchId,
     table: &'a crate::feature::definitions::FeatureDimensionTable,
     ordinal: usize,
-) -> Result<Option<(&'a crate::feature::definitions::FeatureDimension, ParameterId)>, cadmpeg_core::CodecError> {
+) -> Result<
+    Option<(
+        &'a crate::feature::definitions::FeatureDimension,
+        ParameterId,
+    )>,
+    cadmpeg_core::CodecError,
+> {
     if !feature_dimension_table_complete(table) {
         return Ok(None);
     }
     let Some(dimension) = table.rows.get(ordinal) else {
         return Ok(None);
     };
-    let unique = table.rows.iter().filter(|candidate| candidate.external_id == dimension.external_id).count() == 1;
+    let unique = table
+        .rows
+        .iter()
+        .filter(|candidate| candidate.external_id == dimension.external_id)
+        .count()
+        == 1;
     if !unique {
         return Ok(None);
     }
-    Ok(feature_dimension_parameter_row_id_admitted(ctx, sketch, dimension.external_id, None)?
-        .map(|parameter| (dimension, parameter)))
+    Ok(
+        feature_dimension_parameter_row_id_admitted(ctx, sketch, dimension.external_id, None)?
+            .map(|parameter| (dimension, parameter)),
+    )
 }
 
 pub(in super::super) fn planned_feature_dimension_parameter_ids(
@@ -280,7 +293,10 @@ pub(in super::super) fn feature_skamp_table_complete(
 pub(in super::super) fn feature_dimension_parameter_layout(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     keys: &[(SketchId, u32)],
-) -> Result<Option<Vec<(u32, String, Option<usize>)>>, cadmpeg_core::CodecError> {
+) -> Result<
+    Option<impl ExactSizeIterator<Item = (u32, String, Option<usize>)> + std::fmt::Debug>,
+    cadmpeg_core::CodecError,
+> {
     let mut local_counts = BTreeMap::<(&SketchId, u32), usize>::new();
     for (sketch, external_id) in keys {
         let key = (sketch, *external_id);
@@ -316,10 +332,18 @@ pub(in super::super) fn feature_dimension_parameter_layout(
             None
         };
         let name = if local_counts[&key] == 1 {
-            ctx.format_retained(format_args!("d{external_id}"), "creo dimension parameter name")?
+            ctx.format_retained(
+                format_args!("d{external_id}"),
+                "creo dimension parameter name",
+            )?
         } else if let Some(occurrence) = occurrence {
             ctx.format_retained(
-                format_args!("d{}_{}_{}", sketch_identity_scope(sketch), external_id, occurrence + 1),
+                format_args!(
+                    "d{}_{}_{}",
+                    sketch_identity_scope(sketch),
+                    external_id,
+                    occurrence + 1
+                ),
                 "creo dimension parameter name",
             )?
         } else {
@@ -330,7 +354,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
         };
         layout.push((assigned, name, occurrence));
     }
-    Ok(Some(layout))
+    Ok(Some(layout.into_iter()))
 }
 
 pub(in super::super) fn transfer_feature_dimensions(
@@ -344,7 +368,11 @@ pub(in super::super) fn transfer_feature_dimensions(
     for feature in &ir.model.features {
         if !feature_ids.contains(&feature.id) {
             ctx.charge_collection_items(1, "creo dimension owner feature ID nodes")?;
-            feature_ids.insert(feature.id.copy_admitted(ctx, "creo dimension owner feature IDs")?);
+            feature_ids.insert(
+                feature
+                    .id
+                    .copy_admitted(ctx, "creo dimension owner feature IDs")?,
+            );
         }
     }
     let mut candidates = Vec::new();
@@ -352,7 +380,8 @@ pub(in super::super) fn transfer_feature_dimensions(
         let Some(sketch) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
-        let Some(owner) = section_owner_feature_id(ctx, scan, definition.identity.id(), &sketch)? else {
+        let Some(owner) = section_owner_feature_id(ctx, scan, definition.identity.id(), &sketch)?
+        else {
             continue;
         };
         if !feature_ids.contains(&owner) {
@@ -371,9 +400,14 @@ pub(in super::super) fn transfer_feature_dimensions(
             ));
         }
     }
-    crate::sort::stable_sort_by_key(ctx, candidates.as_mut_slice(), |(_, definition, source_ordinal, _)| {
-        (definition.offset, definition.identity.id(), *source_ordinal)
-    }, "creo transfer feature dimensions candidates ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        candidates.as_mut_slice(),
+        |(_, definition, source_ordinal, _)| {
+            (definition.offset, definition.identity.id(), *source_ordinal)
+        },
+        "creo transfer feature dimensions candidates ordering",
+    )?;
     let mut keys = Vec::new();
     ctx.try_reserve_items(&mut keys, candidates.len(), "creo dimension layout keys")?;
     for (sketch, _, _, dimension) in &candidates {
@@ -397,12 +431,17 @@ pub(in super::super) fn transfer_feature_dimensions(
     for ((sketch, definition, source_ordinal, dimension), (ordinal, name, occurrence)) in
         candidates.into_iter().zip(layout)
     {
-        let Some(owner_id) = section_owner_feature_id(ctx, scan, definition.identity.id(), &sketch)?
+        let Some(owner_id) =
+            section_owner_feature_id(ctx, scan, definition.identity.id(), &sketch)?
         else {
             continue;
         };
-        let Some(id) =
-            feature_dimension_parameter_row_id_admitted(ctx, &sketch, dimension.external_id, occurrence)?
+        let Some(id) = feature_dimension_parameter_row_id_admitted(
+            ctx,
+            &sketch,
+            dimension.external_id,
+            occurrence,
+        )?
         else {
             continue;
         };
@@ -416,7 +455,8 @@ pub(in super::super) fn transfer_feature_dimensions(
                 id.copy_admitted(ctx, "creo relation parameter identities")?,
             );
         }
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -425,11 +465,26 @@ pub(in super::super) fn transfer_feature_dimensions(
             Exactness::Derived,
         )?;
         let mut properties = BTreeMap::new();
-        insert_dimension_property(ctx, &mut properties, "definition_id", definition.identity.id())?;
+        insert_dimension_property(
+            ctx,
+            &mut properties,
+            "definition_id",
+            definition.identity.id(),
+        )?;
         insert_dimension_property(ctx, &mut properties, "source_ordinal", source_ordinal)?;
         insert_dimension_property(ctx, &mut properties, "external_id", dimension.external_id)?;
-        insert_dimension_property(ctx, &mut properties, "dimension_type", dimension.dimension_type)?;
-        insert_dimension_property(ctx, &mut properties, "direction_byte", dimension.direction_byte)?;
+        insert_dimension_property(
+            ctx,
+            &mut properties,
+            "dimension_type",
+            dimension.dimension_type,
+        )?;
+        insert_dimension_property(
+            ctx,
+            &mut properties,
+            "direction_byte",
+            dimension.direction_byte,
+        )?;
         if let Some(auxiliary) = dimension.auxiliary_value {
             insert_dimension_property(ctx, &mut properties, "auxiliary_value", auxiliary)?;
         }
@@ -475,7 +530,11 @@ pub(in super::super) fn transfer_feature_dimensions(
                 display: feature_dimension_display(dimension.dimension_type),
                 value,
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                properties: cadmpeg_core::text::named_entries_checked(ctx, id.as_str(), properties)?,
+                properties: cadmpeg_core::text::named_entries_checked(
+                    ctx,
+                    id.as_str(),
+                    properties,
+                )?,
                 pmi: None,
                 native_ref: Some(feature_sketch_record_id_in_scan(ctx, scan, definition)?),
             },

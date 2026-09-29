@@ -43,6 +43,7 @@ use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 /// Evaluation under the caller decode resource limits.
 pub mod admitted;
 
+mod basis;
 mod depth;
 mod polyline;
 mod rational;
@@ -1296,276 +1297,6 @@ fn offset(base: Point3, terms: &[(f64, Vector3)]) -> Point3 {
     )
 }
 
-/// Knot span index of `t` for a clamped B-spline basis, or `None` when the
-/// knot vector cannot support `count` poles of the given degree.
-fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<usize> {
-    if count <= degree || knots.len() < count.checked_add(degree)?.checked_add(1)? {
-        return None;
-    }
-    if t >= knots[count] {
-        return Some(count - 1);
-    }
-    if t <= knots[degree] {
-        return Some(degree);
-    }
-    let mut lo = degree;
-    let mut hi = count;
-    while lo < hi {
-        let mid = usize::midpoint(lo, hi);
-        if t < knots[mid] {
-            hi = mid;
-        } else if t >= knots[mid + 1] {
-            lo = mid + 1;
-        } else {
-            return Some(mid);
-        }
-    }
-    Some(lo)
-}
-
-/// Non-zero basis function values at `t` for the given span (Cox–de Boor).
-/// Scratch contains `degree + 1` values, at most the admitted control count.
-fn bspline_basis(scratch: &admitted::Scratch<'_, '_>, knots: &[f64], degree: usize, span: usize, t: f64) -> Option<admitted::SupportValues<f64>> {
-    let support = degree.checked_add(1)?;
-    let mut values = if support <= 2 {
-        admitted::SupportValues::Inline { values: [0.0; 2], len: support }
-    } else {
-        scratch.work(support.checked_mul(support)?, "IR B-spline basis work")?;
-        admitted::SupportValues::Heap(scratch.filled(support, 0.0, "IR B-spline basis")?)
-    };
-    bspline_basis_into(knots, degree, span, t, &mut values)?;
-    Some(values)
-}
-
-fn bspline_basis_into(knots: &[f64], degree: usize, span: usize, t: f64, values: &mut [f64]) -> Option<()> {
-    let finite_t = FiniteReal::new(t);
-    values.fill(0.0);
-    values[0] = 1.0;
-    for j in 1..=degree {
-        let mut saved = 0.0;
-        for r in 0..j {
-            let value = values[r];
-            // Each knot distance is admitted where it is formed.
-            let right = FiniteReal::new(knots[span + r + 1] - t);
-            let left = FiniteReal::new(t - knots[span + 1 - j + r]);
-            // Two finite distances with a finite sum form the scaled ratio. A
-            // distance or a sum outside the finite range takes the exact knot
-            // differences instead.
-            let ratio_terms = right.zip(left).and_then(|(right, left)| {
-                Some((right, left, FiniteReal::new(right.get() + left.get())?))
-            });
-            let [right_term, left_term] = if let Some((right, left, denominator)) = ratio_terms {
-                scaled_ratio_products(FiniteReal::new(value)?, denominator, [right, left])?
-                    .map(FiniteReal::get)
-            } else {
-                let t = finite_t?;
-                let [right_knot, left_knot] =
-                    FiniteReal::array([knots[span + r + 1], knots[span + 1 - j + r]])?;
-                [
-                    value
-                        * difference_quotient(right_knot, t, right_knot, left_knot)
-                            .ok()?
-                            .get(),
-                    value
-                        * difference_quotient(t, left_knot, right_knot, left_knot)
-                            .ok()?
-                            .get(),
-                ]
-            };
-            values[r] = saved + right_term;
-            saved = left_term;
-        }
-        values[j] = saved;
-    }
-    Some(())
-}
-
-fn bspline_basis_derivative(scratch: &admitted::Scratch<'_, '_>, knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Vec<f64>> {
-    if degree == 0 {
-        return scratch.filled(1, 0.0, "IR B-spline derivative basis");
-    }
-    let lower = bspline_basis(scratch, knots, degree - 1, span, t)?;
-    scratch.work(degree.checked_add(1)?, "IR B-spline derivative work")?;
-    let lower_start = span - (degree - 1);
-    scratch.collect((0..=degree)
-        .map(|local| {
-            let index = span - degree + local;
-            let lower_at = |global: usize| {
-                global
-                    .checked_sub(lower_start)
-                    .and_then(|at| lower.get(at))
-                    .copied()
-                    .unwrap_or(0.0)
-            };
-            let left_denominator = knots[index + degree] - knots[index];
-            let right_denominator = knots[index + degree + 1] - knots[index + 1];
-            let left = if left_denominator == 0.0 {
-                0.0
-            } else if left_denominator.is_finite() {
-                degree as f64 * lower_at(index) / left_denominator
-            } else {
-                FiniteReal::array([
-                    degree as f64 * lower_at(index),
-                    knots[index + degree],
-                    knots[index],
-                ])
-                .and_then(|[value, end, start]| {
-                    difference_quotient(value, FiniteReal::ZERO, end, start).ok()
-                })
-                .map_or(f64::NAN, FiniteReal::get)
-            };
-            let right = if right_denominator == 0.0 {
-                0.0
-            } else if right_denominator.is_finite() {
-                degree as f64 * lower_at(index + 1) / right_denominator
-            } else {
-                FiniteReal::array([
-                    degree as f64 * lower_at(index + 1),
-                    knots[index + degree + 1],
-                    knots[index + 1],
-                ])
-                .and_then(|[value, end, start]| {
-                    difference_quotient(value, FiniteReal::ZERO, end, start).ok()
-                })
-                .map_or(f64::NAN, FiniteReal::get)
-            };
-            Some(left - right)
-        }), "IR B-spline derivative basis")
-}
-
-/// The owned basis has `degree + 1` values, at most the admitted control count.
-fn bspline_basis_second_derivative(scratch: &admitted::Scratch<'_, '_>, 
-    knots: &[f64],
-    degree: usize,
-    span: usize,
-    t: f64,
-) -> Option<Cow<'static, [f64]>> {
-    if degree == 0 {
-        return Some(Cow::Borrowed(&[0.0]));
-    }
-    if degree == 1 {
-        return Some(Cow::Borrowed(&[0.0, 0.0]));
-    }
-    let lower = bspline_basis_derivative(scratch, knots, degree - 1, span, t)?;
-    scratch.work(degree.checked_add(1)?, "IR B-spline second derivative work")?;
-    let lower_start = span - (degree - 1);
-    let basis = scratch.collect((0..=degree)
-        .map(|local| {
-            let index = span - degree + local;
-            let lower_at = |global: usize| {
-                global
-                    .checked_sub(lower_start)
-                    .and_then(|at| lower.get(at))
-                    .copied()
-                    .unwrap_or(0.0)
-            };
-            let left_denominator = knots[index + degree] - knots[index];
-            let right_denominator = knots[index + degree + 1] - knots[index + 1];
-            let left = if left_denominator == 0.0 {
-                0.0
-            } else if left_denominator.is_finite() {
-                degree as f64 * lower_at(index) / left_denominator
-            } else {
-                FiniteReal::array([
-                    degree as f64 * lower_at(index),
-                    knots[index + degree],
-                    knots[index],
-                ])
-                .and_then(|[value, end, start]| {
-                    difference_quotient(value, FiniteReal::ZERO, end, start).ok()
-                })
-                .map_or(f64::NAN, FiniteReal::get)
-            };
-            let right = if right_denominator == 0.0 {
-                0.0
-            } else if right_denominator.is_finite() {
-                degree as f64 * lower_at(index + 1) / right_denominator
-            } else {
-                FiniteReal::array([
-                    degree as f64 * lower_at(index + 1),
-                    knots[index + degree + 1],
-                    knots[index + 1],
-                ])
-                .and_then(|[value, end, start]| {
-                    difference_quotient(value, FiniteReal::ZERO, end, start).ok()
-                })
-                .map_or(f64::NAN, FiniteReal::get)
-            };
-            Some(left - right)
-        }), "IR B-spline second derivative basis")?;
-    Some(Cow::Owned(basis))
-}
-
-/// Basis derivatives with respect to a local coordinate whose unit is the
-/// active knot span. This keeps the coefficients finite when derivatives in
-/// the original parameter would exceed binary64 range.
-fn bspline_basis_scaled_derivatives(scratch: &admitted::Scratch<'_, '_>, 
-    knots: &[f64],
-    degree: usize,
-    span: usize,
-    t: f64,
-    scale: PositiveReal,
-) -> Option<(Vec<f64>, Vec<f64>)> {
-    if degree == 0 {
-        return Some((scratch.filled(1, 0.0, "IR scaled B-spline first basis")?, scratch.filled(1, 0.0, "IR scaled B-spline second basis")?));
-    }
-    let lower = bspline_basis(scratch, knots, degree - 1, span, t)?;
-    let first = bspline_basis_scaled_derivative_level(scratch, knots, degree, span, scale, &lower)?;
-    let second = if degree == 1 {
-        scratch.filled(2, 0.0, "IR scaled B-spline second basis")?
-    } else {
-        let lower_lower = bspline_basis(scratch, knots, degree - 2, span, t)?;
-        let lower_first =
-            bspline_basis_scaled_derivative_level(scratch, knots, degree - 1, span, scale, &lower_lower)?;
-        bspline_basis_scaled_derivative_level(scratch, knots, degree, span, scale, &lower_first)?
-    };
-    Some((first, second))
-}
-
-fn bspline_basis_scaled_derivative_level(scratch: &admitted::Scratch<'_, '_>, 
-    knots: &[f64],
-    degree: usize,
-    span: usize,
-    scale: PositiveReal,
-    lower: &[f64],
-) -> Option<Vec<f64>> {
-    let lower_start = span - (degree - 1);
-    let mut derivative = scratch.filled(
-        degree.checked_add(1)?,
-        0.0,
-        "IR scaled B-spline derivative basis",
-    )?;
-    scratch.work(derivative.len(), "IR scaled B-spline derivative work")?;
-    for (local, derivative_value) in derivative.iter_mut().enumerate() {
-        let index = span - degree + local;
-        let lower_at = |values: &[f64], global: usize| {
-            global
-                .checked_sub(lower_start)
-                .and_then(|at| values.get(at))
-                .copied()
-                .unwrap_or(0.0)
-        };
-        let ratio = |hi: usize, lo: usize| {
-            if knots[hi] == knots[lo] {
-                Some(0.0)
-            } else {
-                let [hi_knot, lo_knot] = FiniteReal::array([knots[hi], knots[lo]])?;
-                difference_quotient(scale.into(), FiniteReal::ZERO, hi_knot, lo_knot)
-                    .ok()
-                    .map(FiniteReal::get)
-            }
-        };
-        let left = ratio(index + degree, index)?;
-        let right = ratio(index + degree + 1, index + 1)?;
-        *derivative_value =
-            degree as f64 * (left * lower_at(lower, index) - right * lower_at(lower, index + 1));
-        if !derivative_value.is_finite() {
-            return None;
-        }
-    }
-    Some(derivative)
-}
-
 /// Evaluate a NURBS curve at knot-domain parameter `t` over its admitted
 /// poles, or report why it has no finite point there.
 ///
@@ -1578,7 +1309,8 @@ pub fn nurbs_curve_point_at(
     t: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     let poles = curve.pole_rows();
-    nurbs_curve_point_evaluation(&admitted::Scratch::default(), 
+    nurbs_curve_point_evaluation(
+        &admitted::Scratch::default(),
         curve.degree(),
         curve.knots(),
         poles.count(),
@@ -1595,7 +1327,8 @@ pub fn nurbs_curve_point_at(
 /// reads NaN; a projection that overflows carries each coordinate it
 /// reached. A knot vector or pole list that states no span at `t`, and a zero
 /// weight sum, have no value.
-fn nurbs_curve_point_evaluation(scratch: &admitted::Scratch<'_, '_>, 
+fn nurbs_curve_point_evaluation(
+    scratch: &admitted::Scratch<'_, '_>,
     degree: u32,
     knots: &[f64],
     count: usize,
@@ -1607,10 +1340,10 @@ fn nurbs_curve_point_evaluation(scratch: &admitted::Scratch<'_, '_>,
     let no_value = EvaluationFailure::NoValue;
     let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
     let degree = usize::try_from(degree).map_err(|_| no_value)?;
-    let span = bspline_span(knots, degree, count, t).ok_or(no_value)?;
+    let span = basis::bspline_span(knots, degree, count, t).ok_or(no_value)?;
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
-    let basis = bspline_basis(scratch, knots, degree, span, t).ok_or(unreached)?;
+    let basis = basis::bspline_basis(scratch, knots, degree, span, t).ok_or(unreached)?;
     if !basis.iter().all(|value| value.is_finite()) {
         return Err(unreached);
     }
@@ -1622,15 +1355,27 @@ fn nurbs_curve_point_evaluation(scratch: &admitted::Scratch<'_, '_>,
 }
 
 /// The `degree + 1` poles that support span `span`, in parameter order.
-fn local_poles(scratch: &admitted::Scratch<'_, '_>, 
+fn local_poles(
+    scratch: &admitted::Scratch<'_, '_>,
     span: usize,
     degree: usize,
     pole: impl Fn(usize) -> Option<FinitePoint3>,
 ) -> Option<admitted::SupportValues<FinitePoint3>> {
     match degree {
-        0 => { let point = pole(span)?; Some(admitted::SupportValues::Inline { values: [point; 2], len: 1 }) },
-        1 => Some(admitted::SupportValues::Inline { values: [pole(span - 1)?, pole(span)?], len: 2 }),
-        _ => scratch.collect((span - degree..=span).map(pole), "IR local NURBS poles").map(admitted::SupportValues::Heap),
+        0 => {
+            let point = pole(span)?;
+            Some(admitted::SupportValues::Inline {
+                values: [point; 2],
+                len: 1,
+            })
+        }
+        1 => Some(admitted::SupportValues::Inline {
+            values: [pole(span - 1)?, pole(span)?],
+            len: 2,
+        }),
+        _ => scratch
+            .collect((span - degree..=span).map(pole), "IR local NURBS poles")
+            .map(admitted::SupportValues::Heap),
     }
 }
 
@@ -1726,7 +1471,8 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
     let speed_bound = nurbs_curve_speed_bound_about(curve, weights.values(), point)?.get();
     let poles = curve.control_points();
     let distance = |parameter: FiniteReal| {
-        let position = nurbs_curve_point_evaluation(&admitted::Scratch::default(), 
+        let position = nurbs_curve_point_evaluation(
+            &admitted::Scratch::default(),
             curve.degree(),
             curve.knots(),
             poles.len(),
@@ -1807,7 +1553,8 @@ fn nurbs_curve_parameter_near_point_newton(
     let mut parameter = window.project(ExtendedReal::from_finite(seed));
     let poles = curve.control_points();
     for _ in 0..MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS {
-        let position = nurbs_curve_point_evaluation(&admitted::Scratch::default(), 
+        let position = nurbs_curve_point_evaluation(
+            &admitted::Scratch::default(),
             curve.degree(),
             curve.knots(),
             poles.len(),
@@ -1824,7 +1571,8 @@ fn nurbs_curve_parameter_near_point_newton(
         if residual.norm() <= tolerance {
             return Some(parameter);
         }
-        let tangent = nurbs_curve_derivative(&admitted::Scratch::default(), 
+        let tangent = nurbs_curve_derivative(
+            &admitted::Scratch::default(),
             curve.degree(),
             curve.knots(),
             &poles,
@@ -2274,7 +2022,8 @@ fn nurbs_pcurve_differential(
     weights: Option<&[f64]>,
     t: f64,
 ) -> Result<PcurveDifferential, EvaluationFailure<Point2>> {
-    nurbs_pcurve_differential_with(&admitted::Scratch::default(), 
+    nurbs_pcurve_differential_with(
+        &admitted::Scratch::default(),
         degree,
         knots,
         control_points.len(),
@@ -2293,7 +2042,8 @@ fn nurbs_pcurve_differential(
 /// coordinate, and each reads NaN. The rational quotient rule forms the
 /// derivatives from the finite point, so a curve without one has no
 /// derivatives here.
-fn nurbs_pcurve_differential_with(scratch: &admitted::Scratch<'_, '_>, 
+fn nurbs_pcurve_differential_with(
+    scratch: &admitted::Scratch<'_, '_>,
     degree: u32,
     knots: &[f64],
     count: usize,
@@ -2304,10 +2054,10 @@ fn nurbs_pcurve_differential_with(scratch: &admitted::Scratch<'_, '_>,
     let t = t.get();
     let unreached = EvaluationFailure::NonFinite(Point2::new(f64::NAN, f64::NAN));
     let degree = usize::try_from(degree).map_err(|_| EvaluationFailure::NoValue)?;
-    let span = bspline_span(knots, degree, count, t).ok_or(EvaluationFailure::NoValue)?;
+    let span = basis::bspline_span(knots, degree, count, t).ok_or(EvaluationFailure::NoValue)?;
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
-    let basis = bspline_basis(scratch, knots, degree, span, t).ok_or(unreached)?;
+    let basis = basis::bspline_basis(scratch, knots, degree, span, t).ok_or(unreached)?;
     if !basis.iter().all(|value| value.is_finite()) {
         return Err(unreached);
     }
@@ -2331,10 +2081,11 @@ fn nurbs_pcurve_differential_with(scratch: &admitted::Scratch<'_, '_>,
     };
     // The derivative basis is absent only where a term of the lower basis
     // left the finite range.
-    let Some(mut first_basis) = bspline_basis_derivative(scratch, knots, degree, span, t) else {
+    let Some(mut first_basis) = basis::bspline_basis_derivative(scratch, knots, degree, span, t)
+    else {
         return Ok(point_only(unreached));
     };
-    let mut second_basis = bspline_basis_second_derivative(scratch, knots, degree, span, t);
+    let mut second_basis = basis::bspline_basis_second_derivative(scratch, knots, degree, span, t);
     let scale = if first_basis.iter().all(|value| value.is_finite())
         && second_basis
             .as_ref()
@@ -2382,7 +2133,9 @@ fn nurbs_pcurve_differential_with(scratch: &admitted::Scratch<'_, '_>,
                     .map(uv),
             });
         }
-        let Some(scaled) = bspline_basis_scaled_derivatives(scratch, knots, degree, span, t, scale) else {
+        let Some(scaled) =
+            basis::bspline_basis_scaled_derivatives(scratch, knots, degree, span, t, scale)
+        else {
             return Ok(point_only(unreached));
         };
         first_basis = scaled.0;
@@ -2599,7 +2352,8 @@ impl NurbsSurfaceLocal<'_> {
         let non_finite = EvaluationFailure::NonFinite(());
         let knots = [self.surface.u_knots(), self.surface.v_knots()];
         let derivative = |axis: usize| {
-            bspline_basis_derivative(&admitted::Scratch::default(), 
+            basis::bspline_basis_derivative(
+                &admitted::Scratch::default(),
                 knots[axis],
                 self.degrees[axis],
                 self.spans[axis],
@@ -2634,7 +2388,8 @@ impl NurbsSurfaceLocal<'_> {
         let non_finite = EvaluationFailure::NonFinite(());
         let knots = [self.surface.u_knots(), self.surface.v_knots()];
         let second = |axis: usize| {
-            bspline_basis_second_derivative(&admitted::Scratch::default(), 
+            basis::bspline_basis_second_derivative(
+                &admitted::Scratch::default(),
                 knots[axis],
                 self.degrees[axis],
                 self.spans[axis],
@@ -2669,7 +2424,8 @@ impl NurbsSurfaceLocal<'_> {
 /// coordinate reads NaN; a projection that overflows carries each coordinate
 /// it reached. A parameter that is not finite, a knot vector or pole net that
 /// states no span at the parameter, and a zero weight sum have no value.
-fn nurbs_surface_local<'a>(scratch: &admitted::Scratch<'_, '_>, 
+fn nurbs_surface_local<'a>(
+    scratch: &admitted::Scratch<'_, '_>,
     surface: &'a NurbsSurface,
     u_at: f64,
     v_at: f64,
@@ -2698,12 +2454,14 @@ fn nurbs_surface_local<'a>(scratch: &admitted::Scratch<'_, '_>,
     )
     .ok_or(no_value)?
     .get();
-    let u_span = bspline_span(surface.u_knots(), u_degree, u_count, u_at).ok_or(no_value)?;
-    let v_span = bspline_span(surface.v_knots(), v_degree, v_count, v_at).ok_or(no_value)?;
+    let u_span = basis::bspline_span(surface.u_knots(), u_degree, u_count, u_at).ok_or(no_value)?;
+    let v_span = basis::bspline_span(surface.v_knots(), v_degree, v_count, v_at).ok_or(no_value)?;
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
-    let u_basis = bspline_basis(scratch, surface.u_knots(), u_degree, u_span, u_at).ok_or(unreached)?;
-    let v_basis = bspline_basis(scratch, surface.v_knots(), v_degree, v_span, v_at).ok_or(unreached)?;
+    let u_basis = basis::bspline_basis(scratch, surface.u_knots(), u_degree, u_span, u_at)
+        .ok_or(unreached)?;
+    let v_basis = basis::bspline_basis(scratch, surface.v_knots(), v_degree, v_span, v_at)
+        .ok_or(unreached)?;
     if !u_basis
         .iter()
         .chain(v_basis.iter())
@@ -2834,8 +2592,14 @@ pub fn nurbs_surface_isocurve(
         FiniteReal::new(fixed_parameter)?,
     )?
     .get();
-    let fixed_span = bspline_span(fixed_knots, fixed_degree, fixed_count, fixed_parameter)?;
-    let fixed_basis = bspline_basis(&admitted::Scratch::default(), fixed_knots, fixed_degree, fixed_span, fixed_parameter)?;
+    let fixed_span = basis::bspline_span(fixed_knots, fixed_degree, fixed_count, fixed_parameter)?;
+    let fixed_basis = basis::bspline_basis(
+        &admitted::Scratch::default(),
+        fixed_knots,
+        fixed_degree,
+        fixed_span,
+        fixed_parameter,
+    )?;
     let varying_count = match fixed_axis {
         SurfaceParameterAxis::U => v_count,
         SurfaceParameterAxis::V => u_count,
@@ -3197,7 +2961,12 @@ pub fn curve_tangent_solved(
     geometry: &SolvedCurveGeometry,
     t: f64,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    curve_derivative_evaluation(&admitted::Scratch::default(), geometry, t, CurveDerivative::First)
+    curve_derivative_evaluation(
+        &admitted::Scratch::default(),
+        geometry,
+        t,
+        CurveDerivative::First,
+    )
 }
 
 /// Evaluate the exact second derivative of a directly stored curve, or report
@@ -3206,7 +2975,12 @@ pub fn curve_second_derivative_solved(
     geometry: &SolvedCurveGeometry,
     t: f64,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    curve_derivative_evaluation(&admitted::Scratch::default(), geometry, t, CurveDerivative::Second)
+    curve_derivative_evaluation(
+        &admitted::Scratch::default(),
+        geometry,
+        t,
+        CurveDerivative::Second,
+    )
 }
 
 /// Evaluate a directly stored curve at `t` within a caller-owned work slice.
@@ -3361,7 +3135,8 @@ fn admit_derivative(derivative: Vector3) -> Result<FiniteVector3, EvaluationFail
 ///
 /// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
 /// construction; no arm follows an arena id.
-fn curve_derivative_evaluation(scratch: &admitted::Scratch<'_, '_>, 
+fn curve_derivative_evaluation(
+    scratch: &admitted::Scratch<'_, '_>,
     geometry: &SolvedCurveGeometry,
     t: f64,
     order: CurveDerivative,
@@ -3461,15 +3236,25 @@ fn curve_derivative_evaluation(scratch: &admitted::Scratch<'_, '_>,
             let parameter =
                 map_nurbs_curve_parameter(nurbs, parameter).ok_or(EvaluationFailure::NoValue)?;
             let poles = nurbs.pole_rows();
-            let points = scratch.collect((0..poles.count()).map(|index| poles.point_at(index)),
-                "IR NURBS derivative points").ok_or(EvaluationFailure::NoValue)?;
+            let points = scratch
+                .collect(
+                    (0..poles.count()).map(|index| poles.point_at(index)),
+                    "IR NURBS derivative points",
+                )
+                .ok_or(EvaluationFailure::NoValue)?;
             let weights = match poles {
                 crate::geometry::nurbs::NurbsPoles3::Polynomial { .. } => None,
-                crate::geometry::nurbs::NurbsPoles3::Rational { points } => Some(scratch.collect(
-                    points.iter().map(|pole| Some(pole.weight.get())), "IR NURBS derivative weights")
-                    .ok_or(EvaluationFailure::NoValue)?),
+                crate::geometry::nurbs::NurbsPoles3::Rational { points } => Some(
+                    scratch
+                        .collect(
+                            points.iter().map(|pole| Some(pole.weight.get())),
+                            "IR NURBS derivative weights",
+                        )
+                        .ok_or(EvaluationFailure::NoValue)?,
+                ),
             };
-            nurbs_curve_derivative(scratch,
+            nurbs_curve_derivative(
+                scratch,
                 nurbs.degree(),
                 nurbs.knots(),
                 &points,
@@ -3479,13 +3264,19 @@ fn curve_derivative_evaluation(scratch: &admitted::Scratch<'_, '_>,
             )
         }
         SolvedCurveGeometry::Polyline(polyline) => {
-            let points = scratch.collect(polyline.points().map(Some), "IR polyline derivative points")
+            let points = scratch
+                .collect(polyline.points().map(Some), "IR polyline derivative points")
                 .ok_or(EvaluationFailure::NoValue)?;
             let parameters = match polyline.parameters() {
-                Some(parameters) => scratch.collect(parameters.map(Some), "IR polyline derivative parameters"),
-                None => scratch.collect((0..points.len()).map(|index| Some(FiniteReal::from_index(index))),
-                    "IR polyline derivative parameters"),
-            }.ok_or(EvaluationFailure::NoValue)?;
+                Some(parameters) => {
+                    scratch.collect(parameters.map(Some), "IR polyline derivative parameters")
+                }
+                None => scratch.collect(
+                    (0..points.len()).map(|index| Some(FiniteReal::from_index(index))),
+                    "IR polyline derivative parameters",
+                ),
+            }
+            .ok_or(EvaluationFailure::NoValue)?;
             let tangent = polyline_tangent(&points, &parameters, t)?;
             Ok(if second { FiniteVector3::ZERO } else { tangent })
         }
@@ -3523,7 +3314,8 @@ fn sinh_cosh_lanes(
 /// left the finite range, as did a point or derivative projection that
 /// overflows. A knot vector or pole list that states no span at `t`, a zero
 /// weight sum, and a span of zero width have no value.
-fn nurbs_curve_derivative(scratch: &admitted::Scratch<'_, '_>, 
+fn nurbs_curve_derivative(
+    scratch: &admitted::Scratch<'_, '_>,
     degree: u32,
     knots: &[f64],
     control_points: &[FinitePoint3],
@@ -3536,14 +3328,15 @@ fn nurbs_curve_derivative(scratch: &admitted::Scratch<'_, '_>,
     let non_finite = EvaluationFailure::NonFinite(());
     let second = order == CurveDerivative::Second;
     let degree = usize::try_from(degree).map_err(|_| no_value)?;
-    let span = bspline_span(knots, degree, control_points.len(), t).ok_or(no_value)?;
-    let basis = bspline_basis(scratch, knots, degree, span, t).ok_or(non_finite)?;
+    let span = basis::bspline_span(knots, degree, control_points.len(), t).ok_or(no_value)?;
+    let basis = basis::bspline_basis(scratch, knots, degree, span, t).ok_or(non_finite)?;
     if !basis.iter().all(|value| value.is_finite()) {
         return Err(non_finite);
     }
-    let mut first_basis = bspline_basis_derivative(scratch, knots, degree, span, t).ok_or(non_finite)?;
+    let mut first_basis =
+        basis::bspline_basis_derivative(scratch, knots, degree, span, t).ok_or(non_finite)?;
     let mut second_basis = if second {
-        bspline_basis_second_derivative(scratch, knots, degree, span, t).ok_or(non_finite)?
+        basis::bspline_basis_second_derivative(scratch, knots, degree, span, t).ok_or(non_finite)?
     } else {
         Cow::Borrowed(&[][..])
     };
@@ -3569,15 +3362,18 @@ fn nurbs_curve_derivative(scratch: &admitted::Scratch<'_, '_>,
             return Ok(FiniteVector3::from_components(x, y, z));
         }
         let scaled =
-            bspline_basis_scaled_derivatives(scratch, knots, degree, span, t, scale).ok_or(non_finite)?;
+            basis::bspline_basis_scaled_derivatives(scratch, knots, degree, span, t, scale)
+                .ok_or(non_finite)?;
         first_basis = scaled.0;
         if second {
             second_basis = Cow::Owned(scaled.1);
         }
         scale
     };
-    let poles =
-        local_poles(scratch, span, degree, |index| control_points.get(index).copied()).ok_or(no_value)?;
+    let poles = local_poles(scratch, span, degree, |index| {
+        control_points.get(index).copied()
+    })
+    .ok_or(no_value)?;
     // A sum is absent only where one of its derivative basis terms is not
     // finite.
     let sum = |values: &[f64]| {
@@ -3887,8 +3683,22 @@ fn model_curve_differential_by_id_inner(
                 || curve_point_solved(cache, parameter),
                 |budget| curve_point_with_budget_solved(cache, parameter, budget),
             ),
-            || curve_derivative_evaluation(&admitted::Scratch::default(), cache, parameter, CurveDerivative::First),
-            || curve_derivative_evaluation(&admitted::Scratch::default(), cache, parameter, CurveDerivative::Second),
+            || {
+                curve_derivative_evaluation(
+                    &admitted::Scratch::default(),
+                    cache,
+                    parameter,
+                    CurveDerivative::First,
+                )
+            },
+            || {
+                curve_derivative_evaluation(
+                    &admitted::Scratch::default(),
+                    cache,
+                    parameter,
+                    CurveDerivative::Second,
+                )
+            },
         );
     }
     let solved = match &curve.geometry {
@@ -3917,8 +3727,22 @@ fn model_curve_differential_by_id_inner(
         ),
         None => differential_at(
             curve_point_solved(solved, parameter),
-            || curve_derivative_evaluation(&admitted::Scratch::default(), solved, parameter, CurveDerivative::First),
-            || curve_derivative_evaluation(&admitted::Scratch::default(), solved, parameter, CurveDerivative::Second),
+            || {
+                curve_derivative_evaluation(
+                    &admitted::Scratch::default(),
+                    solved,
+                    parameter,
+                    CurveDerivative::First,
+                )
+            },
+            || {
+                curve_derivative_evaluation(
+                    &admitted::Scratch::default(),
+                    solved,
+                    parameter,
+                    CurveDerivative::Second,
+                )
+            },
         ),
     }
 }
@@ -5297,7 +5121,8 @@ pub fn curve_point_solved(
             let parameter =
                 map_nurbs_curve_parameter(nurbs, parameter()?).ok_or(EvaluationFailure::NoValue)?;
             let poles = nurbs.pole_rows();
-            nurbs_curve_point_evaluation(&admitted::Scratch::default(), 
+            nurbs_curve_point_evaluation(
+                &admitted::Scratch::default(),
                 nurbs.degree(),
                 nurbs.knots(),
                 poles.count(),
@@ -9170,7 +8995,8 @@ fn reached_value(value: Result<FinitePoint2, EvaluationFailure<Point2>>) -> Poin
 /// inline `Box<PcurveGeometry>` behind a `try_new` that refuses a chain past
 /// [`MAX_GEOMETRY_NESTING`](crate::geometry::MAX_GEOMETRY_NESTING). No arm
 /// follows an arena id, so the value handed in bounds the descent.
-fn pcurve_uv_differential(scratch: &admitted::Scratch<'_, '_>, 
+fn pcurve_uv_differential(
+    scratch: &admitted::Scratch<'_, '_>,
     geometry: &PcurveGeometry,
     parameter: FiniteReal,
 ) -> Option<PcurveEvaluation> {
@@ -9404,18 +9230,31 @@ fn pcurve_uv_differential(scratch: &admitted::Scratch<'_, '_>,
             let poles = nurbs.pole_rows();
             let weights = match poles {
                 crate::geometry::pcurve::PolarNurbsPoles::Polynomial { .. } => None,
-                crate::geometry::pcurve::PolarNurbsPoles::Rational { poles } => Some(scratch.collect(
-                    poles.iter().map(|pole| Some(pole.weight.get())), "IR polar NURBS weights")?),
+                crate::geometry::pcurve::PolarNurbsPoles::Rational { poles } => {
+                    Some(scratch.collect(
+                        poles.iter().map(|pole| Some(pole.weight.get())),
+                        "IR polar NURBS weights",
+                    )?)
+                }
             };
             let radial_at = |index: usize| match poles {
-                crate::geometry::pcurve::PolarNurbsPoles::Polynomial { poles } => poles.get(index).map(|pole| pole.radial),
-                crate::geometry::pcurve::PolarNurbsPoles::Rational { poles } => poles.get(index).map(|pole| pole.radial),
+                crate::geometry::pcurve::PolarNurbsPoles::Polynomial { poles } => {
+                    poles.get(index).map(|pole| pole.radial)
+                }
+                crate::geometry::pcurve::PolarNurbsPoles::Rational { poles } => {
+                    poles.get(index).map(|pole| pole.radial)
+                }
             };
             let axial_at = |index: usize| match poles {
-                crate::geometry::pcurve::PolarNurbsPoles::Polynomial { poles } => poles.get(index).map(|pole| pole.axial),
-                crate::geometry::pcurve::PolarNurbsPoles::Rational { poles } => poles.get(index).map(|pole| pole.axial),
+                crate::geometry::pcurve::PolarNurbsPoles::Polynomial { poles } => {
+                    poles.get(index).map(|pole| pole.axial)
+                }
+                crate::geometry::pcurve::PolarNurbsPoles::Rational { poles } => {
+                    poles.get(index).map(|pole| pole.axial)
+                }
             };
-            let radial = nurbs_pcurve_differential_with(scratch, 
+            let radial = nurbs_pcurve_differential_with(
+                scratch,
                 nurbs.degree(),
                 nurbs.knots(),
                 poles.count(),
@@ -9423,7 +9262,8 @@ fn pcurve_uv_differential(scratch: &admitted::Scratch<'_, '_>,
                 weights.as_deref(),
                 parameter,
             );
-            let axial = nurbs_pcurve_differential_with(scratch, 
+            let axial = nurbs_pcurve_differential_with(
+                scratch,
                 nurbs.degree(),
                 nurbs.knots(),
                 poles.count(),
@@ -9554,16 +9394,25 @@ fn pcurve_uv_differential(scratch: &admitted::Scratch<'_, '_>,
             let poles = nurbs.pole_rows();
             let weights = match poles {
                 crate::geometry::pcurve::PcurveNurbsPoles::Polynomial { .. } => None,
-                crate::geometry::pcurve::PcurveNurbsPoles::Rational { points } => Some(scratch.collect(
-                    points.iter().map(|pole| Some(pole.weight.get())), "IR NURBS pcurve weights")?),
+                crate::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
+                    Some(scratch.collect(
+                        points.iter().map(|pole| Some(pole.weight.get())),
+                        "IR NURBS pcurve weights",
+                    )?)
+                }
             };
-            return match nurbs_pcurve_differential_with(scratch,
+            return match nurbs_pcurve_differential_with(
+                scratch,
                 nurbs.degree(),
                 nurbs.knots(),
                 poles.count(),
                 |index| match poles {
-                    crate::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => points.get(index).copied().map(planar_pole),
-                    crate::geometry::pcurve::PcurveNurbsPoles::Rational { points } => points.get(index).map(|pole| planar_pole(pole.point)),
+                    crate::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => {
+                        points.get(index).copied().map(planar_pole)
+                    }
+                    crate::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
+                        points.get(index).map(|pole| planar_pole(pole.point))
+                    }
                 },
                 weights.as_deref(),
                 parameter,

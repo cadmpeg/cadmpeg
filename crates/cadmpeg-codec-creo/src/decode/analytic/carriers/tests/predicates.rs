@@ -16,9 +16,11 @@ fn valid_parameter_polygon_refuses_normalized_points() {
         .expect("empty root");
     let error = valid_parameter_polygon(&ctx, &[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
         .expect_err("normalized points exceed limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo normalized polygon points"));
+            && resource.operation == "creo normalized polygon points")
+    );
 }
 #[test]
 fn numerical_audit_polygon_incidence_ignores_length_scale() {
@@ -44,5 +46,9 @@ fn numerical_audit_polygon_admission_ignores_translation() {
             .map(|p| [p[0] + offset, p[1] + offset]);
         assert!(valid_parameter_polygon_service(&p));
     }
-    assert!(!valid_parameter_polygon_service(&[[0., 0.], [1., 0.], [2., 0.]]));
+    assert!(!valid_parameter_polygon_service(&[
+        [0., 0.],
+        [1., 0.],
+        [2., 0.]
+    ]));
 }

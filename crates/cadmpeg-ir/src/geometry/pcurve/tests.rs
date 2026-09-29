@@ -79,7 +79,10 @@ fn in_place_pcurve_pole_scale_refuses_atomically() {
     let error = nurbs
         .scale_control_points_in_place(crate::scalar::PositiveReal::new(2.0).unwrap())
         .expect_err("second pole overflows");
-    assert!(matches!(error, crate::geometry::nurbs::NurbsError::Structure(_)));
+    assert!(matches!(
+        error,
+        crate::geometry::nurbs::NurbsError::Structure(_)
+    ));
     assert_eq!(nurbs, original);
 }
 
@@ -116,8 +119,14 @@ fn admitted_pcurve_nurbs_parts_keep_the_raw_constructor_geometry() {
     let knots = vec![0.0, 0.0, 1.0, 1.0];
     let points = [Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)];
     let weights = [1.0, 2.0];
-    let raw = PcurveNurbs::from_lanes(1, knots.clone(), points.to_vec(), Some(weights.to_vec()), false)
-        .expect("raw pcurve");
+    let raw = PcurveNurbs::from_lanes(
+        1,
+        knots.clone(),
+        points.to_vec(),
+        Some(weights.to_vec()),
+        false,
+    )
+    .expect("raw pcurve");
     let admitted = PcurveNurbs::from_admitted_parts(
         1,
         KnotValue::admit(knots).expect("admitted knots"),
@@ -135,7 +144,10 @@ fn admitted_pcurve_nurbs_parts_keep_the_raw_constructor_geometry() {
     )
     .expect("admitted pcurve");
     assert_eq!(admitted, raw);
-    assert_eq!(admitted.try_clone().expect("fallible rational copy"), admitted);
+    assert_eq!(
+        admitted.try_clone().expect("fallible rational copy"),
+        admitted
+    );
 }
 
 #[test]
@@ -148,7 +160,10 @@ fn polynomial_pcurve_nurbs_try_clone_keeps_its_admitted_lanes() {
         false,
     )
     .expect("polynomial pcurve");
-    assert_eq!(polynomial.try_clone().expect("fallible polynomial copy"), polynomial);
+    assert_eq!(
+        polynomial.try_clone().expect("fallible polynomial copy"),
+        polynomial
+    );
 }
 mod metadata;
 

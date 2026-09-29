@@ -6,9 +6,9 @@ use cadmpeg_test_support::EditableDecodeResult;
 use super::contour_records;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
 use crate::test_support::build_prt;
@@ -64,8 +64,8 @@ fn contour_chain_with_limits(
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
     policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("contour input admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("contour input admitted");
     super::super::parse_surface_contour_chain(
         &ctx,
         &payload,
@@ -96,8 +96,8 @@ fn contour_chain_refuses_second_entry_before_growth() {
 
 #[test]
 fn contour_chain_refuses_body_before_retained_copy() {
-    let error = contour_chain_with_limits(u64::MAX, 0)
-        .expect_err("contour body exceeds retained limit");
+    let error =
+        contour_chain_with_limits(u64::MAX, 0).expect_err("contour body exceeds retained limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo contour chain body"));
@@ -110,8 +110,8 @@ fn contour_chain_refuses_aggregate_before_growth() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("contour input admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("contour input admitted");
     let error = super::super::contour_records_for_rows(&ctx, &payload, &rows)
         .expect_err("aggregate contour entries exceed collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)

@@ -10,7 +10,12 @@ use cadmpeg_ir::math::Point3;
 fn numerical_0922_inverse_keeps_both_branches() {
     let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
     let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &evaluation_arena,
+        &evaluation_policy,
+    )
+    .expect("evaluation root");
 
     for d in [1., SMALL_PARAMETER_DOMAIN] {
         let n = NurbsCurve::from_lanes(
@@ -26,8 +31,15 @@ fn numerical_0922_inverse_keeps_both_branches() {
         )
         .expect("valid folded degree-one curve");
         let g = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(n.clone()));
-        let result =
-            degree_one_nurbs_point_parameter(&evaluation_ctx, &g, &n, [0., 0., 0.], [0., d], POINT_FIT_TOLERANCE).expect("evaluation resources");
+        let result = degree_one_nurbs_point_parameter(
+            &evaluation_ctx,
+            &g,
+            &n,
+            [0., 0., 0.],
+            [0., d],
+            POINT_FIT_TOLERANCE,
+        )
+        .expect("evaluation resources");
         println!("Creo folded segment domain {d:e}: {result:?}");
         assert_eq!(result, None);
     }
@@ -58,7 +70,12 @@ fn numerical_0922_finite_knot_domain_reverses() {
 fn numerical_audit_full_edge_survives_small_knot_domain() {
     let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
     let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &evaluation_arena,
+        &evaluation_policy,
+    )
+    .expect("evaluation root");
 
     for d in [1., 1e-14] {
         let c = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -72,7 +89,12 @@ fn numerical_audit_full_edge_survives_small_knot_domain() {
             .expect("valid degree-one carrier"),
         ));
         assert_eq!(
-            nonperiodic_nurbs_edge_parameter_range(&evaluation_ctx, &c, [[0., 0., 0.], [1., 0., 0.]]).expect("evaluation resources"),
+            nonperiodic_nurbs_edge_parameter_range(
+                &evaluation_ctx,
+                &c,
+                [[0., 0., 0.], [1., 0., 0.]]
+            )
+            .expect("evaluation resources"),
             Some([0., d])
         );
     }

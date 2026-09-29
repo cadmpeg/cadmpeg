@@ -241,7 +241,7 @@ fn thumbnail_passthrough_copy_refuses_on_retained_byte_limit() {
         policy: DecodePolicy::service(),
     };
     options.policy.limits.max_retained_bytes =
-        u64::try_from(jpeg.len() - 1).expect("fixture length fits the resource limit");
+        u64::try_from(4237 + jpeg.len() - 1).expect("fixture length fits the resource limit");
     let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &options)
         .expect_err("thumbnail copy exceeds the retained-byte limit");
@@ -253,7 +253,7 @@ fn thumbnail_passthrough_copy_refuses_on_retained_byte_limit() {
     ));
 
     options.policy.limits.max_retained_bytes =
-        u64::try_from(jpeg.len()).expect("fixture length fits the resource limit");
+        u64::try_from(9223usize).expect("fixture length fits the resource limit");
     CreoCodec
         .decode(&mut Cursor::new(data), &options)
         .expect("the exact retained-byte limit admits the thumbnail");
@@ -271,7 +271,7 @@ fn geometry_passthrough_copy_refuses_on_retained_byte_limit() {
         policy: DecodePolicy::service(),
     };
     options.policy.limits.max_retained_bytes =
-        u64::try_from(section_len - 1).expect("fixture length fits the resource limit");
+        u64::try_from(4294 + section_len - 1).expect("fixture length fits the resource limit");
     let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &options)
         .expect_err("geometry copy exceeds the retained-byte limit");
@@ -283,7 +283,7 @@ fn geometry_passthrough_copy_refuses_on_retained_byte_limit() {
     ));
 
     options.policy.limits.max_retained_bytes =
-        u64::try_from(section_len).expect("fixture length fits the resource limit");
+        u64::try_from(9314usize).expect("fixture length fits the resource limit");
     CreoCodec
         .decode(&mut Cursor::new(data), &options)
         .expect("the exact retained-byte limit admits the geometry section");
@@ -299,13 +299,16 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, jpeg);
     assert!(container::has_thumbnail(&scan));
-    let classification = crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
-        .expect("dialect classification admitted");
-    assert!(crate::decode::with_test_decode_ctx(|ctx| container::summarize(ctx, &scan, classification))
-        .expect("container summary admitted")
-        .notes
-        .iter()
-        .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview")));
+    let classification =
+        crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
+            .expect("dialect classification admitted");
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| container::summarize(ctx, &scan, classification))
+            .expect("container summary admitted")
+            .notes
+            .iter()
+            .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview"))
+    );
 
     let source_offset = scan.framing.expanded_sections[0].source_offset;
     let result = EditableDecodeResult::from(
@@ -378,7 +381,7 @@ fn decode_propagates_spline_grid_collection_limit() {
         policy: DecodePolicy::service(),
         ..DecodeOptions::default()
     };
-    options.policy.limits.max_collection_items = 5;
+    options.policy.limits.max_collection_items = 45;
     let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &options)
         .expect_err("six scalar slots exceed the five-item limit");
@@ -414,7 +417,7 @@ fn decode_propagates_counted_scalar_array_collection_limit() {
         policy: DecodePolicy::service(),
         ..DecodeOptions::default()
     };
-    options.policy.limits.max_collection_items = 3;
+    options.policy.limits.max_collection_items = 43;
     let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &options)
         .expect_err("four scalar slots exceed the three-item limit");
@@ -442,7 +445,7 @@ fn decode_propagates_counted_scalar_array_collection_limit() {
 fn exact_collection_limit_for_decode(data: &[u8], options: &mut DecodeOptions) -> u64 {
     use cadmpeg_core::decode::ResourceDimension;
 
-    for _ in 0..256 {
+    for _ in 0..512 {
         match CreoCodec.decode(&mut Cursor::new(data), options) {
             Ok(_) => return options.policy.limits.max_collection_items,
             Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(

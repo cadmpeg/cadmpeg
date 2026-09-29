@@ -117,7 +117,7 @@ pub(super) fn emit_geometry_arenas(
         "surface_rows",
         &surface_rows,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "surface_namespace_row",
         Exactness::ByteExact,
@@ -131,7 +131,7 @@ pub(super) fn emit_geometry_arenas(
         "nonvisible_surface_rows",
         &nonvisible_surface_rows,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "nonvisible_surface_namespace_row",
         Exactness::ByteExact,
@@ -149,12 +149,13 @@ pub(super) fn emit_geometry_arenas(
         "cross_section_surface_rows",
         &cross_section_surface_rows,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "cross_section_surface_namespace_row",
         Exactness::ByteExact,
     )?;
-    let surface_contours = surface_contour_records(ctx, scan, &scan.surfaces.contours, "visibgeom")?;
+    let surface_contours =
+        surface_contour_records(ctx, scan, &scan.surfaces.contours, "visibgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -162,7 +163,7 @@ pub(super) fn emit_geometry_arenas(
         "surface_contours",
         &surface_contours,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "surface_contour_chain_entry",
         Exactness::ByteExact,
@@ -176,7 +177,7 @@ pub(super) fn emit_geometry_arenas(
         "nonvisible_surface_contours",
         &nonvisible_surface_contours,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "nonvisible_surface_contour_chain_entry",
         Exactness::ByteExact,
@@ -194,7 +195,7 @@ pub(super) fn emit_geometry_arenas(
         "cross_section_surface_contours",
         &cross_section_surface_contours,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "cross_section_surface_contour_chain_entry",
         Exactness::ByteExact,
@@ -208,7 +209,7 @@ pub(super) fn emit_geometry_arenas(
         "surface_prototypes",
         &surface_prototypes,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "surface_prototype_record",
         Exactness::ByteExact,
@@ -226,7 +227,7 @@ pub(super) fn emit_geometry_arenas(
         "nonvisible_surface_prototypes",
         &nonvisible_surface_prototypes,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "nonvisible_surface_prototype_record",
         Exactness::ByteExact,
@@ -239,12 +240,13 @@ pub(super) fn emit_geometry_arenas(
         "tabulated_cylinder_curve_replays",
         &tabulated_cylinder_curve_replays,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "tabulated_cylinder_curve_replay",
         Exactness::ByteExact,
     )?;
-    let curve_parameters = curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom")?;
+    let curve_parameters =
+        curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -252,7 +254,7 @@ pub(super) fn emit_geometry_arenas(
         "curve_parameters",
         &curve_parameters,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "curve_parameter_record",
         Exactness::ByteExact,
@@ -266,7 +268,7 @@ pub(super) fn emit_geometry_arenas(
         "nonvisible_curve_parameters",
         &nonvisible_curve_parameters,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "nonvisible_curve_parameter_record",
         Exactness::ByteExact,
@@ -279,7 +281,7 @@ pub(super) fn emit_geometry_arenas(
         "fc_curve_coordinates",
         &fc_curve_coordinates,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "fc_curve_coordinates",
         Exactness::ByteExact,
@@ -306,7 +308,7 @@ pub(super) fn emit_geometry_arenas(
         "curve_prototypes",
         &curve_prototypes,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "curve_prototype",
         Exactness::ByteExact,
@@ -324,7 +326,7 @@ pub(super) fn emit_geometry_arenas(
         "nonvisible_curve_prototypes",
         &nonvisible_curve_prototypes,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "nonvisible_curve_prototype",
         Exactness::ByteExact,
@@ -342,7 +344,7 @@ pub(super) fn emit_geometry_arenas(
         "cross_section_curve_prototypes",
         &cross_section_curve_prototypes,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "cross_section_curve_prototype",
         Exactness::ByteExact,
@@ -356,13 +358,17 @@ pub(super) fn emit_geometry_arenas(
         "curve_topology_rows",
         &curve_topology_rows,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "curve_topology_row",
         Exactness::ByteExact,
     )?;
-    let nonvisible_curve_topology_rows =
-        curve_topology_row_records(ctx, scan, &scan.curves.nonvisible_topology_rows, "novisgeom")?;
+    let nonvisible_curve_topology_rows = curve_topology_row_records(
+        ctx,
+        scan,
+        &scan.curves.nonvisible_topology_rows,
+        "novisgeom",
+    )?;
     emit_uniform(
         ctx,
         ir,
@@ -370,7 +376,7 @@ pub(super) fn emit_geometry_arenas(
         "nonvisible_curve_topology_rows",
         &nonvisible_curve_topology_rows,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "nonvisible_curve_topology_row",
         Exactness::ByteExact,
@@ -383,7 +389,7 @@ pub(super) fn emit_geometry_arenas(
         "cross_section_curve_rows",
         &cross_section_curve_rows,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "cross_section_curve_row",
         Exactness::ByteExact,
@@ -398,7 +404,7 @@ pub(super) fn emit_geometry_arenas(
         "loop_array_records",
         &loop_array_records,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "loop_array_record",
         Exactness::ByteExact,
@@ -411,7 +417,7 @@ pub(super) fn emit_geometry_arenas(
         "half_edges",
         &half_edges,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "native_half_edge",
         Exactness::Derived,
@@ -450,7 +456,7 @@ pub(super) fn emit_geometry_arenas(
         "surface_parameters",
         &surface_parameters,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.body_offset as u64,
         "surface_parameter_frame",
         Exactness::ByteExact,
@@ -469,7 +475,7 @@ pub(super) fn emit_geometry_arenas(
         "nonvisible_surface_parameters",
         &nonvisible_surface_parameters,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.body_offset as u64,
         "nonvisible_surface_parameter_frame",
         Exactness::ByteExact,
@@ -488,7 +494,7 @@ pub(super) fn emit_geometry_arenas(
         "cross_section_surface_parameters",
         &cross_section_surface_parameters,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.body_offset as u64,
         "cross_section_surface_parameter_frame",
         Exactness::ByteExact,
@@ -512,8 +518,12 @@ pub(super) fn emit_geometry_arenas(
         "cross_section_plane_local_systems",
         &cross_section_plane_local_systems,
     )?;
-    let plane_envelopes =
-        plane_envelope_records(ctx, scan, &scan.planes.envelopes, "creo:surface:plane_envelope")?;
+    let plane_envelopes = plane_envelope_records(
+        ctx,
+        scan,
+        &scan.planes.envelopes,
+        "creo:surface:plane_envelope",
+    )?;
     store_arena(ctx, ir, "plane_envelopes", &plane_envelopes)?;
     let cross_section_plane_envelopes = plane_envelope_records(
         ctx,
@@ -527,8 +537,12 @@ pub(super) fn emit_geometry_arenas(
         "cross_section_plane_envelopes",
         &cross_section_plane_envelopes,
     )?;
-    let outline_planes =
-        outline_plane_records(ctx, scan, &scan.planes.outlines, "creo:surface:outline_plane")?;
+    let outline_planes = outline_plane_records(
+        ctx,
+        scan,
+        &scan.planes.outlines,
+        "creo:surface:outline_plane",
+    )?;
     store_arena(ctx, ir, "outline_planes", &outline_planes)?;
     let positional_frame_planes = outline_plane_records(
         ctx,
@@ -571,7 +585,8 @@ pub(super) fn emit_geometry_arenas(
     // annotation needs, so the offset travels alongside each record in a tuple.
     let pcurve_endpoints = pcurve_endpoint_records(ctx, scan)?;
     for (record, offset) in &pcurve_endpoints {
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &record.id,
             "VisibGeom",
@@ -596,7 +611,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_definitions",
         &feature_definitions,
         |definition| &definition.id,
-        |definition| &definition.source_section,
+        |definition| definition.source_section,
         |definition| definition.offset as u64,
         "feature_definition_record",
         Exactness::ByteExact,
@@ -661,7 +676,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_geometry_tables",
         &feature_geometry_tables,
         |table| &table.id,
-        |table| &table.source_section,
+        |table| table.source_section,
         |table| table.offset as u64,
         "feature_geometry_table",
         Exactness::ByteExact,
@@ -674,7 +689,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_loop_history_entries",
         &feature_loop_history_entries,
         |entry| &entry.id,
-        |entry| &entry.source_section,
+        |entry| entry.source_section,
         |entry| entry.offset as u64,
         "feature_loop_history_entry",
         Exactness::ByteExact,
@@ -687,7 +702,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_affected_ids",
         &feature_affected_ids,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "feature_affected_ids",
         Exactness::ByteExact,
@@ -700,7 +715,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_replay_affected_ids",
         &feature_replay_affected_ids,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "feature_replay_affected_ids",
         Exactness::ByteExact,
@@ -713,7 +728,7 @@ pub(super) fn emit_geometry_arenas(
         "surface_merge_replay_affected_ids",
         &surface_merge_replay_affected_ids,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "surface_merge_replay_affected_ids",
         Exactness::ByteExact,
@@ -726,7 +741,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_loop_restore_directions",
         &feature_loop_restore_directions,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "feature_loop_restore_direction",
         Exactness::ByteExact,
@@ -739,7 +754,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_revolution_extents",
         &feature_revolution_extents,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "feature_revolution_extent",
         Exactness::Derived,
@@ -752,7 +767,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_rows",
         &feature_rows,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "feature_row",
         Exactness::ByteExact,
@@ -765,7 +780,7 @@ pub(super) fn emit_geometry_arenas(
         "depdb_recipe_rows",
         &depdb_recipe_rows,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "depdb_recipe_row",
         Exactness::ByteExact,
@@ -778,7 +793,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_choices",
         &feature_choices,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "feature_choice",
         Exactness::ByteExact,
@@ -791,7 +806,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_choice_fields",
         &feature_choice_fields,
         |record| &record.id,
-        |record| &record.source_section,
+        |record| record.source_section,
         |record| record.offset as u64,
         "feature_choice_field",
         Exactness::ByteExact,
@@ -814,7 +829,8 @@ pub(super) fn emit_geometry_arenas(
     let curve_expressions = curve_expression_records(ctx, scan)?;
     for (expression, source) in curve_expressions.iter().zip(&scan.curves.expressions) {
         let source_section = source_section_ref(scan, source.expression_offset);
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &expression.id,
             source_section,
@@ -838,7 +854,8 @@ pub(super) fn emit_geometry_arenas(
                 .iter()
                 .find(|section| section.contains(state.state_offset))
                 .map_or("MdlStatus", |section| section.name());
-            annotate(ctx,
+            annotate(
+                ctx,
                 annotations,
                 &state.id,
                 section,
@@ -863,7 +880,8 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     if let Some(family_table) = family_table_record(scan) {
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             super::super::records::CreoFamilyTableRecord::ID,
             "FamilyInf",

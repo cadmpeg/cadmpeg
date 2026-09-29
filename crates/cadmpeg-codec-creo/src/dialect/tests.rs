@@ -22,7 +22,9 @@ fn classify_ok(scan: &crate::container::ContainerScan<'_>) -> super::DialectClas
         .expect("dialect declaration is admitted")
 }
 
-fn loss_ok(classification: &super::DialectClassification) -> Option<cadmpeg_ir::report::loss::LossNote> {
+fn loss_ok(
+    classification: &super::DialectClassification,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
     crate::decode::with_test_decode_ctx(|ctx| classification.loss(ctx))
         .expect("dialect loss is admitted")
 }
@@ -38,17 +40,16 @@ fn legacy_classification_with_limits(
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = collection_limit;
     policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test decode context");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
     classify(&ctx, &scan)
 }
 
 #[test]
 fn legacy_declared_nodes_charge_each_key_before_insertion() {
     for limit in 0..3 {
-        let error = match legacy_classification_with_limits(limit, u64::MAX) {
-            Err(error) => error,
-            Ok(_) => panic!("each of three declared fields needs one node"),
+        let Err(error) = legacy_classification_with_limits(limit, u64::MAX) else {
+            panic!("each of three declared fields needs one node")
         };
         assert!(matches!(
             error,
@@ -329,8 +330,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
 fn the_dialect_unverified_loss_carries_the_shared_taxonomy() {
     let bytes = unknown_bytes();
     let scan = scan_bytes_ok(bytes.as_slice());
-    let note = loss_ok(&classify_ok(&scan))
-        .expect("an unclassified layout charges the loss");
+    let note = loss_ok(&classify_ok(&scan)).expect("an unclassified layout charges the loss");
     assert_eq!(note.code.to_string(), "creo/source.dialect-unverified");
     assert_eq!(
         note.code.taxonomy(),
@@ -400,10 +400,18 @@ fn source_dialect_copy_refuses_each_declaration_node() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let error = classification.copy_matched_admitted(&ctx).expect_err("declaration node");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo source dialect declaration nodes"));
+        let error = classification
+            .copy_matched_admitted(&ctx)
+            .expect_err("declaration node");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo source dialect declaration nodes")
+        );
     }
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| classification.copy_matched_admitted(ctx)).expect("service"), *classification.matched());
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| classification.copy_matched_admitted(ctx))
+            .expect("service"),
+        *classification.matched()
+    );
 }
 
 #[test]
@@ -413,7 +421,10 @@ fn source_dialect_copy_refuses_keys_and_values_and_preserves_all_layouts() {
         let scan = scan_bytes_ok(bytes.as_slice());
         let classification = classify_ok(&scan);
         let copied = crate::test_support::assert_retained_boundaries(
-            &["creo source dialect declaration key", "creo source dialect declaration value"],
+            &[
+                "creo source dialect declaration key",
+                "creo source dialect declaration value",
+            ],
             |ctx| classification.copy_matched_admitted(ctx),
         );
         assert_eq!(copied, *classification.matched(), "{}", case.label);

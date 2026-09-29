@@ -5,16 +5,6 @@ use crate::transform::Transform;
 const EPS_NURBS_RATIONAL_DERIVATIVE: f64 = 1e-12;
 
 #[test]
-fn knot_span_refuses_oversized_degree_and_count_without_overflow() {
-    let knots = [0.0, 1.0];
-    assert_eq!(super::super::bspline_span(&knots, usize::MAX, 1, 0.5), None);
-    assert_eq!(
-        super::super::bspline_span(&knots, usize::MAX - 1, usize::MAX, 0.5),
-        None
-    );
-}
-
-#[test]
 fn numerical_audit_inverse_point_uses_scale_safe_affine_inverse() {
     let scale = 1.0e110;
     let matrix = Transform::affine([
@@ -296,7 +286,12 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
             )
             .unwrap(),
         );
-        let result = pcurve_uv_differential(&super::super::admitted::Scratch::default(), &curve, crate::scalar::FiniteReal::HALF).unwrap();
+        let result = pcurve_uv_differential(
+            &super::super::admitted::Scratch::default(),
+            &curve,
+            crate::scalar::FiniteReal::HALF,
+        )
+        .unwrap();
         assert!((result.point.unwrap().u - 0.5).abs() <= 8.0 * f64::EPSILON);
         assert!((result.tangent.unwrap().u - 1.0).abs() <= 8.0 * f64::EPSILON);
         assert!(result.acceleration.unwrap().u.abs() <= 8.0 * f64::EPSILON);
@@ -304,7 +299,12 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
     let curve = PcurveGeometry::SphericalGreatCircle(
         SphericalGreatCirclePcurve::try_new(0.0, 1.0, 0.0, 1e200).unwrap(),
     );
-    let result = pcurve_uv_differential(&super::super::admitted::Scratch::default(), &curve, crate::scalar::FiniteReal::HALF).unwrap();
+    let result = pcurve_uv_differential(
+        &super::super::admitted::Scratch::default(),
+        &curve,
+        crate::scalar::FiniteReal::HALF,
+    )
+    .unwrap();
     let (sin, cos) = 0.5_f64.sin_cos();
     let expected_first = -sin / (1e200 * cos * cos);
     let expected_second = -(1.0 + sin * sin) / (1e200 * cos * cos * cos);
@@ -617,4 +617,14 @@ fn numerical_audit_rational_linear_nurbs_keeps_subnormal_pole_derivatives() {
     assert!((first.x / expected_first - 1.0).abs() <= EPS_NURBS_RATIONAL_DERIVATIVE);
     assert!((second.x / expected_second - 1.0).abs() <= EPS_NURBS_RATIONAL_DERIVATIVE);
     assert_eq!((first.y, first.z, second.y, second.z), (0.0, 0.0, 0.0, 0.0));
+}
+
+#[test]
+fn knot_span_refuses_oversized_degree_and_count_without_overflow() {
+    let knots = [0.0, 1.0];
+    assert_eq!(crate::eval::basis::bspline_span(&knots, usize::MAX, 1, 0.5), None);
+    assert_eq!(
+        crate::eval::basis::bspline_span(&knots, usize::MAX - 1, usize::MAX, 0.5),
+        None
+    );
 }

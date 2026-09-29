@@ -1,35 +1,48 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::feature::definitions::decode_section_coordinate_scalar;
-use crate::feature::definitions::decode_variable_scalar;
-use crate::feature::definitions::placement_instruction_rows;
 use crate::feature::definitions::positional_saved_section as parse_positional_saved_section;
-use crate::feature::definitions::saved_arc_scalar;
 use crate::feature::definitions::saved_circular_entities as parse_saved_circular_entities;
 use crate::feature::definitions::saved_conic_entities as parse_saved_conic_entities;
 use crate::feature::definitions::saved_line_entities as parse_saved_line_entities;
 use crate::feature::definitions::saved_positional_generated_entities as parse_saved_positional_generated_entities;
 use crate::feature::definitions::saved_section as parse_saved_section;
-use crate::feature::definitions::saved_section_scalar;
 use crate::feature::definitions::saved_spline_entities as parse_saved_spline_entities;
-use crate::feature::definitions::saved_spline_parameter;
 use crate::feature::definitions::variable_table as parse_variable_table;
-use crate::feature::definitions::FeatureOrderRow;
-use crate::feature::definitions::FeatureOrderTable;
-use crate::feature::definitions::FeatureSavedEntity;
-use crate::feature::definitions::FeatureSegment;
-use crate::feature::definitions::FeatureSegmentKind;
-use crate::feature::definitions::FeatureSegmentTable;
-use crate::feature::definitions::ScalarLane;
-use crate::feature::operations::reference_names;
-use crate::feature::operations::FeatureRecipe;
-use crate::feature::operations::FeatureReferenceName;
+use crate::feature::definitions::{placement_instruction_rows, saved_arc_scalar, saved_section_scalar, saved_spline_parameter, FeatureOrderRow, FeatureOrderTable, FeatureSavedEntity, FeatureSegment, FeatureSegmentKind, FeatureSegmentTable, decode_section_coordinate_scalar, decode_variable_scalar, ScalarLane};
+use crate::feature::operations::{reference_names, FeatureRecipe, FeatureReferenceName};
 use crate::feature::rows::FeatureFieldValue;
-use crate::psb;
-use crate::scalar;
+use crate::{psb, scalar};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 fn saved_section(
     payload: &[u8],
@@ -119,7 +132,13 @@ fn saved_positional_generated_entities(
 ) -> Vec<FeatureSavedEntity> {
     crate::decode::with_test_decode_ctx(|ctx| {
         parse_saved_positional_generated_entities(
-            ctx, payload, start, end, cache, order_table, segments,
+            ctx,
+            payload,
+            start,
+            end,
+            cache,
+            order_table,
+            segments,
         )
     })
     .expect("positional generated entities admitted")
@@ -170,8 +189,13 @@ fn generated_row_with_limits(
     };
     with_saved_leaf_limits(&payload, collection_limit, retained_limit, |ctx| {
         parse_saved_positional_generated_entities(
-            ctx, &payload, 0, payload.len(), &scalar::ScalarCache::default(),
-            Some(&order), Some(&segments),
+            ctx,
+            &payload,
+            0,
+            payload.len(),
+            &scalar::ScalarCache::default(),
+            Some(&order),
+            Some(&segments),
         )
     })
 }
@@ -220,23 +244,44 @@ macro_rules! generated_arc_collection_limit_test {
     };
 }
 
-generated_arc_collection_limit_test!(saved_generated_segment_node_refuses_before_btree_insertion, 0, "creo saved generated segment nodes");
-generated_arc_collection_limit_test!(saved_generated_row_start_refuses_before_vec_growth, 1, "creo saved generated row starts");
-generated_arc_collection_limit_test!(saved_generated_arc_refuses_before_entity_append, 2, "creo saved generated entities");
+generated_arc_collection_limit_test!(
+    saved_generated_segment_node_refuses_before_btree_insertion,
+    0,
+    "creo saved generated segment nodes"
+);
+generated_arc_collection_limit_test!(
+    saved_generated_row_start_refuses_before_vec_growth,
+    1,
+    "creo saved generated row starts"
+);
+generated_arc_collection_limit_test!(
+    saved_generated_arc_refuses_before_entity_append,
+    2,
+    "creo saved generated entities"
+);
 
 #[test]
 fn saved_generated_arc_body_refuses_before_retained_copy() {
-    assert!(matches!(generated_arc_with_limits(3, 13), Err(CodecError::ResourceLimit(limit))
+    assert!(
+        matches!(generated_arc_with_limits(3, 13), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved generated arc body"));
-    assert_eq!(generated_arc_with_limits(3, 14).expect("generated arc admitted").len(), 1);
+            && limit.operation == "creo saved generated arc body")
+    );
+    assert_eq!(
+        generated_arc_with_limits(3, 14)
+            .expect("generated arc admitted")
+            .len(),
+        1
+    );
 }
 
 #[test]
 fn saved_generated_line_body_refuses_before_retained_copy() {
-    assert!(matches!(generated_line_with_limits(3, 7), Err(CodecError::ResourceLimit(limit))
+    assert!(
+        matches!(generated_line_with_limits(3, 7), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved generated line body"));
+            && limit.operation == "creo saved generated line body")
+    );
     let entities = generated_line_with_limits(3, 8).expect("generated line admitted");
     let [FeatureSavedEntity::Line(line)] = entities.as_slice() else {
         panic!("generated line");
@@ -261,8 +306,7 @@ fn with_saved_leaf_limits<T>(
 
 const SAVED_CIRCULAR_LIMIT_INPUT: &[u8] = b"\xe0\x00entity(arc)\0\xe0\x01id\0\x07\
     \xe0\x00entity(circle)\0\xe0\x01id\0\x08";
-const SAVED_CONIC_LIMIT_INPUT: &[u8] =
-    b"\xe0\x00entity(conic)\0\xe0\x01id\0\x02\xe0\x01type\0\x3a";
+const SAVED_CONIC_LIMIT_INPUT: &[u8] = b"\xe0\x00entity(conic)\0\xe0\x01id\0\x02\xe0\x01type\0\x3a";
 const SAVED_DUMMY_LIMIT_INPUT: &[u8] = b"\xe0\x00entity(dummy_ent)\0\x07";
 
 fn saved_circular_with_limits(
@@ -289,18 +333,32 @@ fn saved_circular_with_limits(
 
 #[test]
 fn saved_arc_body_refuses_before_retained_copy() {
-    assert!(matches!(saved_circular_with_limits(2, 5), Err(CodecError::ResourceLimit(limit))
+    assert!(
+        matches!(saved_circular_with_limits(2, 5), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved arc body"));
-    assert_eq!(saved_circular_with_limits(2, 12).expect("arc and circle admitted").len(), 2);
+            && limit.operation == "creo saved arc body")
+    );
+    assert_eq!(
+        saved_circular_with_limits(2, 12)
+            .expect("arc and circle admitted")
+            .len(),
+        2
+    );
 }
 
 #[test]
 fn saved_circle_body_refuses_before_retained_copy() {
-    assert!(matches!(saved_circular_with_limits(2, 11), Err(CodecError::ResourceLimit(limit))
+    assert!(
+        matches!(saved_circular_with_limits(2, 11), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved circle body"));
-    assert_eq!(saved_circular_with_limits(2, 12).expect("arc and circle admitted").len(), 2);
+            && limit.operation == "creo saved circle body")
+    );
+    assert_eq!(
+        saved_circular_with_limits(2, 12)
+            .expect("arc and circle admitted")
+            .len(),
+        2
+    );
 }
 
 #[test]
@@ -311,16 +369,27 @@ fn saved_circular_entities_refuse_before_each_append() {
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "creo saved circular entities"));
     }
-    assert_eq!(saved_circular_with_limits(2, u64::MAX).expect("arc and circle admitted").len(), 2);
+    assert_eq!(
+        saved_circular_with_limits(2, u64::MAX)
+            .expect("arc and circle admitted")
+            .len(),
+        2
+    );
 }
 
 #[test]
 fn saved_conic_body_refuses_before_retained_copy() {
-    let run = |collection, retained| with_saved_leaf_limits(
-        SAVED_CONIC_LIMIT_INPUT, collection, retained, |ctx| {
-            parse_saved_conic_entities(ctx, SAVED_CONIC_LIMIT_INPUT, 0,
-                SAVED_CONIC_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
-        });
+    let run = |collection, retained| {
+        with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, collection, retained, |ctx| {
+            parse_saved_conic_entities(
+                ctx,
+                SAVED_CONIC_LIMIT_INPUT,
+                0,
+                SAVED_CONIC_LIMIT_INPUT.len(),
+                &scalar::ScalarCache::default(),
+            )
+        })
+    };
     assert!(matches!(run(1, 13), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo saved conic body"));
@@ -329,58 +398,108 @@ fn saved_conic_body_refuses_before_retained_copy() {
 
 #[test]
 fn saved_conic_entity_refuses_before_append() {
-    assert!(matches!(with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, 0, u64::MAX, |ctx| {
+    assert!(
+        matches!(with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, 0, u64::MAX, |ctx| {
         parse_saved_conic_entities(ctx, SAVED_CONIC_LIMIT_INPUT, 0,
             SAVED_CONIC_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
     }), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo saved conic entities"));
-    assert_eq!(with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, 1, u64::MAX, |ctx| {
-        parse_saved_conic_entities(ctx, SAVED_CONIC_LIMIT_INPUT, 0,
-            SAVED_CONIC_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
-    }).expect("conic admitted").len(), 1);
+            && limit.operation == "creo saved conic entities")
+    );
+    assert_eq!(
+        with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, 1, u64::MAX, |ctx| {
+            parse_saved_conic_entities(
+                ctx,
+                SAVED_CONIC_LIMIT_INPUT,
+                0,
+                SAVED_CONIC_LIMIT_INPUT.len(),
+                &scalar::ScalarCache::default(),
+            )
+        })
+        .expect("conic admitted")
+        .len(),
+        1
+    );
 }
 
 #[test]
 fn saved_dummy_body_refuses_before_retained_copy() {
-    assert!(matches!(with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 1, 0, |ctx| {
+    assert!(
+        matches!(with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 1, 0, |ctx| {
         crate::feature::definitions::saved_dummy_entities(ctx, SAVED_DUMMY_LIMIT_INPUT, 0,
             SAVED_DUMMY_LIMIT_INPUT.len())
     }), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved dummy body"));
-    assert_eq!(with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 1, 1, |ctx| {
-        crate::feature::definitions::saved_dummy_entities(ctx, SAVED_DUMMY_LIMIT_INPUT, 0,
-            SAVED_DUMMY_LIMIT_INPUT.len())
-    }).expect("dummy admitted").len(), 1);
+            && limit.operation == "creo saved dummy body")
+    );
+    assert_eq!(
+        with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 1, 1, |ctx| {
+            crate::feature::definitions::saved_dummy_entities(
+                ctx,
+                SAVED_DUMMY_LIMIT_INPUT,
+                0,
+                SAVED_DUMMY_LIMIT_INPUT.len(),
+            )
+        })
+        .expect("dummy admitted")
+        .len(),
+        1
+    );
 }
 
 #[test]
 fn saved_dummy_entity_refuses_before_append() {
-    assert!(matches!(with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 0, u64::MAX, |ctx| {
+    assert!(
+        matches!(with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 0, u64::MAX, |ctx| {
         crate::feature::definitions::saved_dummy_entities(ctx, SAVED_DUMMY_LIMIT_INPUT, 0,
             SAVED_DUMMY_LIMIT_INPUT.len())
     }), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo saved dummy entities"));
-    assert_eq!(with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 1, u64::MAX, |ctx| {
-        crate::feature::definitions::saved_dummy_entities(ctx, SAVED_DUMMY_LIMIT_INPUT, 0,
-            SAVED_DUMMY_LIMIT_INPUT.len())
-    }).expect("dummy admitted").len(), 1);
+            && limit.operation == "creo saved dummy entities")
+    );
+    assert_eq!(
+        with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 1, u64::MAX, |ctx| {
+            crate::feature::definitions::saved_dummy_entities(
+                ctx,
+                SAVED_DUMMY_LIMIT_INPUT,
+                0,
+                SAVED_DUMMY_LIMIT_INPUT.len(),
+            )
+        })
+        .expect("dummy admitted")
+        .len(),
+        1
+    );
 }
 
 #[test]
 fn positional_saved_section_conic_refuses_before_aggregate_growth() {
-    assert!(matches!(with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, 1, u64::MAX, |ctx| {
+    assert!(
+        matches!(with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, 1, u64::MAX, |ctx| {
         parse_positional_saved_section(ctx, SAVED_CONIC_LIMIT_INPUT, 0,
             SAVED_CONIC_LIMIT_INPUT.len(), &scalar::ScalarCache::default(), None, None)
     }), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo positional saved section entities"));
-    assert_eq!(with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, 2, u64::MAX, |ctx| {
-        parse_positional_saved_section(ctx, SAVED_CONIC_LIMIT_INPUT, 0,
-            SAVED_CONIC_LIMIT_INPUT.len(), &scalar::ScalarCache::default(), None, None)
-    }).expect("section admitted").expect("conic section present").entities.len(), 1);
+            && limit.operation == "creo positional saved section entities")
+    );
+    assert_eq!(
+        with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, 2, u64::MAX, |ctx| {
+            parse_positional_saved_section(
+                ctx,
+                SAVED_CONIC_LIMIT_INPUT,
+                0,
+                SAVED_CONIC_LIMIT_INPUT.len(),
+                &scalar::ScalarCache::default(),
+                None,
+                None,
+            )
+        })
+        .expect("section admitted")
+        .expect("conic section present")
+        .entities
+        .len(),
+        1
+    );
 }
 
 const SAVED_LINE_LIMIT_INPUT: &[u8] =
@@ -423,17 +542,40 @@ macro_rules! saved_line_collection_limit_test {
     };
 }
 
-saved_line_collection_limit_test!(saved_line_references_refuse_before_vec_growth, 0, "creo saved line references");
-saved_line_collection_limit_test!(saved_line_attributes_refuse_before_vec_growth, 1, "creo saved line attributes");
-saved_line_collection_limit_test!(saved_line_block_refuses_before_entity_append, 2, "creo saved line block entities");
-saved_line_collection_limit_test!(saved_line_group_refuses_before_entity_extend, 3, "creo saved line entities");
+saved_line_collection_limit_test!(
+    saved_line_references_refuse_before_vec_growth,
+    0,
+    "creo saved line references"
+);
+saved_line_collection_limit_test!(
+    saved_line_attributes_refuse_before_vec_growth,
+    1,
+    "creo saved line attributes"
+);
+saved_line_collection_limit_test!(
+    saved_line_block_refuses_before_entity_append,
+    2,
+    "creo saved line block entities"
+);
+saved_line_collection_limit_test!(
+    saved_line_group_refuses_before_entity_extend,
+    3,
+    "creo saved line entities"
+);
 
 #[test]
 fn saved_line_body_refuses_before_retained_copy() {
-    assert!(matches!(saved_line_with_limits(4, 12), Err(CodecError::ResourceLimit(limit))
+    assert!(
+        matches!(saved_line_with_limits(4, 12), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved line body"));
-    assert_eq!(saved_line_with_limits(4, 13).expect("saved line admitted").len(), 1);
+            && limit.operation == "creo saved line body")
+    );
+    assert_eq!(
+        saved_line_with_limits(4, 13)
+            .expect("saved line admitted")
+            .len(),
+        1
+    );
 }
 
 const SAVED_SPLINE_LIMIT_INPUT: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0\xe3\
@@ -477,9 +619,21 @@ macro_rules! saved_spline_collection_limit_test {
     };
 }
 
-saved_spline_collection_limit_test!(saved_spline_points_refuse_before_reserve, 1, "creo saved spline points");
-saved_spline_collection_limit_test!(saved_spline_parameters_refuse_before_reserve, 3, "creo saved spline parameters");
-saved_spline_collection_limit_test!(saved_spline_entity_refuses_before_append, 4, "creo saved spline entities");
+saved_spline_collection_limit_test!(
+    saved_spline_points_refuse_before_reserve,
+    1,
+    "creo saved spline points"
+);
+saved_spline_collection_limit_test!(
+    saved_spline_parameters_refuse_before_reserve,
+    3,
+    "creo saved spline parameters"
+);
+saved_spline_collection_limit_test!(
+    saved_spline_entity_refuses_before_append,
+    4,
+    "creo saved spline entities"
+);
 
 macro_rules! saved_spline_retained_limit_test {
     ($name:ident, $limit:expr, $operation:literal) => {
@@ -494,9 +648,21 @@ macro_rules! saved_spline_retained_limit_test {
     };
 }
 
-saved_spline_retained_limit_test!(saved_spline_point_body_refuses_before_copy, 8, "creo saved spline point body");
-saved_spline_retained_limit_test!(saved_spline_tangent_body_refuses_before_copy, 17, "creo saved spline tangent body");
-saved_spline_retained_limit_test!(saved_spline_parameter_body_refuses_before_copy, 21, "creo saved spline parameter body");
+saved_spline_retained_limit_test!(
+    saved_spline_point_body_refuses_before_copy,
+    8,
+    "creo saved spline point body"
+);
+saved_spline_retained_limit_test!(
+    saved_spline_tangent_body_refuses_before_copy,
+    17,
+    "creo saved spline tangent body"
+);
+saved_spline_retained_limit_test!(
+    saved_spline_parameter_body_refuses_before_copy,
+    21,
+    "creo saved spline parameter body"
+);
 
 #[test]
 fn saved_section_entity_refuses_before_aggregate_growth() {
@@ -521,7 +687,14 @@ fn saved_section_entity_refuses_before_aggregate_growth() {
     assert!(matches!(run(5), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo saved section entities"));
-    assert_eq!(run(6).expect("section admitted").expect("section present").entities.len(), 1);
+    assert_eq!(
+        run(6)
+            .expect("section admitted")
+            .expect("section present")
+            .entities
+            .len(),
+        1
+    );
 }
 
 fn variable_table(
@@ -530,10 +703,8 @@ fn variable_table(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<crate::feature::definitions::FeatureVariableTable> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_variable_table(ctx, payload, start, end, cache)
-    })
-    .expect("variable table admitted")
+    crate::decode::with_test_decode_ctx(|ctx| parse_variable_table(ctx, payload, start, end, cache))
+        .expect("variable table admitted")
 }
 
 fn variable_row_with_limits(
@@ -550,7 +721,11 @@ fn variable_row_with_limits(
     policy.limits.max_retained_bytes = retained_limit;
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)?;
     Ok(parse_variable_table(
-        &ctx, payload, 0, payload.len(), &scalar::ScalarCache::default(),
+        &ctx,
+        payload,
+        0,
+        payload.len(),
+        &scalar::ScalarCache::default(),
     )?
     .expect("complete variable table"))
 }
@@ -560,7 +735,13 @@ fn named_variable_row_vec_refuses_before_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    assert_eq!(variable_row_with_limits(1, u64::MAX).expect("one row admitted").rows.len(), 1);
+    assert_eq!(
+        variable_row_with_limits(1, u64::MAX)
+            .expect("one row admitted")
+            .rows
+            .len(),
+        1
+    );
     let error = variable_row_with_limits(0, u64::MAX).expect_err("one row needs one item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -604,219 +785,6 @@ fn operations(payload: &[u8]) -> Vec<crate::feature::operations::FeatureOperatio
 fn field_value(payload: &[u8]) -> crate::feature::rows::FeatureFieldValue {
     crate::decode::with_test_decode_ctx(|ctx| crate::feature::rows::field_value(ctx, payload))
         .expect("field value is admitted")
-}
-
-#[test]
-fn decodes_var_arr_dictionary_sign_pairs() {
-    let cache = scalar::ScalarCache::default();
-    let cases = [
-        (
-            [0x97, 0xc3, 0x95, 0x81, 0x06, 0x24, 0xdc],
-            3.595_499_999_999_999_5,
-        ),
-        (
-            [0xdd, 0xc3, 0x95, 0x81, 0x06, 0x24, 0xdc],
-            -3.595_499_999_999_999_5,
-        ),
-        (
-            [0x80, 0x58, 0x23, 0x8b, 0x27, 0x55, 0x6f],
-            1.334_018_271_988_806_7,
-        ),
-        ([0x7f, 0xa3, 0xd7, 0x0a, 0x3d, 0x70, 0xa4], 1.29),
-        ([0xc7, 0xa3, 0xd7, 0x0a, 0x3d, 0x70, 0xa4], -1.29),
-        (
-            [0xc8, 0x58, 0x23, 0x8b, 0x27, 0x55, 0x6f],
-            -1.334_018_271_988_806_7,
-        ),
-    ];
-    for (bytes, expected) in cases {
-        let (value, next) = decode_variable_scalar(&bytes, 0, bytes.len(), &cache);
-        assert_eq!(value, ScalarLane::Value(expected));
-        assert_eq!(next, bytes.len());
-    }
-}
-
-#[test]
-fn decodes_var_arr_negative_subunit_form() {
-    let bytes = [0xd5, 0xd9, 0x52, 0xa4, 0x85, 0x40, 0x39];
-    let (value, next) =
-        decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
-
-    assert_eq!(value, ScalarLane::Value(-0.395_669_107_559_015_74));
-    assert_eq!(next, bytes.len());
-}
-
-#[test]
-fn decodes_var_arr_positive_subunit_form() {
-    let bytes = [0x4f, 0xdf, 0x46, 0xa2, 0x52, 0x96, 0xd1];
-    let (value, next) =
-        decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
-
-    assert_eq!(value, ScalarLane::Value(0.488_686_161_664_432_46));
-    assert_eq!(next, bytes.len());
-}
-
-#[test]
-fn variable_row_bounds_an_unresolved_guess_from_its_fixed_suffix() {
-    let payload = b"var_arr\0\xf8\x01\xf7\x77\xfb\xe2\xf1\xf7\x77\xe2\
-            \x00\x41\x18\x20\x96\x61\x01\x01\x82\x06\xe2";
-    let variables = variable_table(payload, 0, payload.len(), &scalar::ScalarCache::default())
-        .expect("variable table");
-    let [row] = variables.rows.as_slice() else {
-        panic!("one structurally complete variable row");
-    };
-
-    assert!(variables.is_complete());
-    assert_eq!(
-        row.variable_type,
-        crate::feature::definitions::VariableType::Dimension
-    );
-    assert_eq!(row.key, 65);
-    assert_eq!(row.value, ScalarLane::Value(0.0));
-    assert_eq!(row.value_body, [0x18]);
-    assert_eq!(row.guess, ScalarLane::Undefined);
-    assert_eq!(row.guess_body, [0x20, 0x96, 0x61]);
-    assert_eq!(row.known, Some(1));
-    assert_eq!(row.homogeneity, Some(1));
-    assert_eq!(row.uvar_id, Some(518));
-}
-
-#[test]
-fn variable_row_classifies_value_and_guess_sentinels_independently() {
-    let payload = b"var_arr\0\xf8\x01\xf7\x77\xfb\xe2\xf1\xf7\x77\xe2\
-            \x01\x07\xed\x01\x02\x03\x04\x05\x06\x07\x08\
-            \xed\x11\x12\x13\x14\x15\x16\x17\x18\x01\x01\x09\xe2";
-    let variables = variable_table(payload, 0, payload.len(), &scalar::ScalarCache::default())
-        .expect("variable table");
-    let [row] = variables.rows.as_slice() else {
-        panic!("one structurally complete variable row");
-    };
-
-    assert!(variables.is_complete());
-    assert_eq!(
-        row.value_body,
-        [0xed, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
-    );
-    assert_eq!(row.value, ScalarLane::DimensionDriven);
-    assert_eq!(
-        row.guess_body,
-        [0xed, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18]
-    );
-    assert_eq!(row.guess, ScalarLane::DimensionDriven);
-    assert_eq!(row.known, Some(1));
-    assert_eq!(row.homogeneity, Some(1));
-    assert_eq!(row.uvar_id, Some(9));
-}
-
-#[test]
-fn var_arr_world_coordinate_2d_is_positive() {
-    let bytes = [0x2d, 0x34, 0x43, 0xf5, 0x12, 0xe8, 0x00, 0x45];
-    let (value, next) =
-        decode_section_coordinate_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
-
-    assert_eq!(value, ScalarLane::Value(20.265_458_280_220_873));
-    assert_eq!(next, bytes.len());
-    assert_eq!(
-        decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()).0,
-        ScalarLane::Value(-20.265_458_280_220_873)
-    );
-}
-
-#[test]
-fn saved_section_world_coordinate_2d_is_positive() {
-    let bytes = [0x2d, 0x52, 0xa4, 0x0d, 0xb4, 0x1f, 0x70, 0xed];
-
-    assert_eq!(
-        saved_section_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
-        (Some(74.563_336_401_657_31), bytes.len())
-    );
-}
-
-#[test]
-fn decodes_var_arr_positional_dict_lattice() {
-    for (bytes, head) in [
-        ([0x51, 1, 2, 3, 4, 5, 6], [0x3f, 0xc6]),
-        ([0x64, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
-        ([0x69, 1, 2, 3, 4, 5, 6], [0x3f, 0xde]),
-        ([0x9c, 1, 2, 3, 4, 5, 6], [0x40, 0x11]),
-        ([0x9d, 1, 2, 3, 4, 5, 6], [0x40, 0x12]),
-        ([0x9f, 1, 2, 3, 4, 5, 6], [0x40, 0x14]),
-        ([0xa0, 1, 2, 3, 4, 5, 6], [0x40, 0x15]),
-        ([0xa7, 1, 2, 3, 4, 5, 6], [0xbf, 0xd3]),
-        ([0xaa, 1, 2, 3, 4, 5, 6], [0xbf, 0xd6]),
-        ([0xae, 1, 2, 3, 4, 5, 6], [0xbf, 0xda]),
-        ([0xad, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
-        ([0xb3, 1, 2, 3, 4, 5, 6], [0xbf, 0xe0]),
-        ([0xbd, 1, 2, 3, 4, 5, 6], [0xbf, 0xea]),
-        ([0xc3, 1, 2, 3, 4, 5, 6], [0xbf, 0xf0]),
-        ([0xc9, 1, 2, 3, 4, 5, 6], [0xbf, 0xf6]),
-        ([0xca, 1, 2, 3, 4, 5, 6], [0xbf, 0xf7]),
-        ([0xcb, 1, 2, 3, 4, 5, 6], [0xbf, 0xf8]),
-        ([0xcc, 1, 2, 3, 4, 5, 6], [0xbf, 0xf9]),
-        ([0xcd, 1, 2, 3, 4, 5, 6], [0xbf, 0xfa]),
-        ([0xce, 1, 2, 3, 4, 5, 6], [0xbf, 0xfb]),
-        ([0xd0, 1, 2, 3, 4, 5, 6], [0xbf, 0xfe]),
-        ([0xd2, 1, 2, 3, 4, 5, 6], [0xc0, 0x00]),
-        ([0xd4, 1, 2, 3, 4, 5, 6], [0xc0, 0x02]),
-        ([0xd6, 1, 2, 3, 4, 5, 6], [0xc0, 0x04]),
-        ([0xd8, 1, 2, 3, 4, 5, 6], [0xc0, 0x06]),
-        ([0xda, 1, 2, 3, 4, 5, 6], [0xc0, 0x08]),
-    ] {
-        let (value, next) =
-            decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
-        assert_eq!(
-            value,
-            ScalarLane::Value(f64::from_be_bytes([
-                head[0], head[1], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6],
-            ]))
-        );
-        assert_eq!(next, bytes.len());
-    }
-    let bytes = [0x28, 1, 2, 3, 4, 5, 6, 7];
-    assert_eq!(
-        decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
-        (
-            ScalarLane::Value(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
-            bytes.len(),
-        )
-    );
-    for prefix in [0x19, 0x32, 0x37, 0x41] {
-        let bytes = [prefix, 1, 2, 3, 4, 5, 6, 7];
-        assert_eq!(
-            decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
-            (
-                ScalarLane::Value(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
-                bytes.len(),
-            )
-        );
-    }
-    assert_eq!(
-        decode_section_coordinate_scalar(
-            &[0x34, 0xd0, 0x00],
-            0,
-            3,
-            &scalar::ScalarCache::default()
-        ),
-        (ScalarLane::Undefined, 3)
-    );
-    assert_eq!(
-        decode_section_coordinate_scalar(
-            &[0x00, 0x04, 0xa6],
-            0,
-            3,
-            &scalar::ScalarCache::default()
-        ),
-        (ScalarLane::Undefined, 3)
-    );
-    assert_eq!(
-        decode_section_coordinate_scalar(
-            &[0x01, 0x04, 0xfe, 0xf2],
-            0,
-            4,
-            &scalar::ScalarCache::default()
-        ),
-        (ScalarLane::Undefined, 4)
-    );
 }
 
 #[test]
@@ -1850,4 +1818,217 @@ fn model_reference_entry_joins_feature_name_to_feature_id() {
         }]
     );
     assert_eq!(names[0].name(), "Datum Plane id 41");
+}
+
+#[test]
+fn decodes_var_arr_dictionary_sign_pairs() {
+    let cache = scalar::ScalarCache::default();
+    let cases = [
+        (
+            [0x97, 0xc3, 0x95, 0x81, 0x06, 0x24, 0xdc],
+            3.595_499_999_999_999_5,
+        ),
+        (
+            [0xdd, 0xc3, 0x95, 0x81, 0x06, 0x24, 0xdc],
+            -3.595_499_999_999_999_5,
+        ),
+        (
+            [0x80, 0x58, 0x23, 0x8b, 0x27, 0x55, 0x6f],
+            1.334_018_271_988_806_7,
+        ),
+        ([0x7f, 0xa3, 0xd7, 0x0a, 0x3d, 0x70, 0xa4], 1.29),
+        ([0xc7, 0xa3, 0xd7, 0x0a, 0x3d, 0x70, 0xa4], -1.29),
+        (
+            [0xc8, 0x58, 0x23, 0x8b, 0x27, 0x55, 0x6f],
+            -1.334_018_271_988_806_7,
+        ),
+    ];
+    for (bytes, expected) in cases {
+        let (value, next) = decode_variable_scalar(&bytes, 0, bytes.len(), &cache);
+        assert_eq!(value, ScalarLane::Value(expected));
+        assert_eq!(next, bytes.len());
+    }
+}
+
+#[test]
+fn decodes_var_arr_negative_subunit_form() {
+    let bytes = [0xd5, 0xd9, 0x52, 0xa4, 0x85, 0x40, 0x39];
+    let (value, next) =
+        decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
+
+    assert_eq!(value, ScalarLane::Value(-0.395_669_107_559_015_74));
+    assert_eq!(next, bytes.len());
+}
+
+#[test]
+fn decodes_var_arr_positive_subunit_form() {
+    let bytes = [0x4f, 0xdf, 0x46, 0xa2, 0x52, 0x96, 0xd1];
+    let (value, next) =
+        decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
+
+    assert_eq!(value, ScalarLane::Value(0.488_686_161_664_432_46));
+    assert_eq!(next, bytes.len());
+}
+
+#[test]
+fn variable_row_bounds_an_unresolved_guess_from_its_fixed_suffix() {
+    let payload = b"var_arr\0\xf8\x01\xf7\x77\xfb\xe2\xf1\xf7\x77\xe2\
+            \x00\x41\x18\x20\x96\x61\x01\x01\x82\x06\xe2";
+    let variables = variable_table(payload, 0, payload.len(), &scalar::ScalarCache::default())
+        .expect("variable table");
+    let [row] = variables.rows.as_slice() else {
+        panic!("one structurally complete variable row");
+    };
+
+    assert!(variables.is_complete());
+    assert_eq!(
+        row.variable_type,
+        crate::feature::definitions::VariableType::Dimension
+    );
+    assert_eq!(row.key, 65);
+    assert_eq!(row.value, ScalarLane::Value(0.0));
+    assert_eq!(row.value_body, [0x18]);
+    assert_eq!(row.guess, ScalarLane::Undefined);
+    assert_eq!(row.guess_body, [0x20, 0x96, 0x61]);
+    assert_eq!(row.known, Some(1));
+    assert_eq!(row.homogeneity, Some(1));
+    assert_eq!(row.uvar_id, Some(518));
+}
+
+#[test]
+fn variable_row_classifies_value_and_guess_sentinels_independently() {
+    let payload = b"var_arr\0\xf8\x01\xf7\x77\xfb\xe2\xf1\xf7\x77\xe2\
+            \x01\x07\xed\x01\x02\x03\x04\x05\x06\x07\x08\
+            \xed\x11\x12\x13\x14\x15\x16\x17\x18\x01\x01\x09\xe2";
+    let variables = variable_table(payload, 0, payload.len(), &scalar::ScalarCache::default())
+        .expect("variable table");
+    let [row] = variables.rows.as_slice() else {
+        panic!("one structurally complete variable row");
+    };
+
+    assert!(variables.is_complete());
+    assert_eq!(
+        row.value_body,
+        [0xed, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
+    );
+    assert_eq!(row.value, ScalarLane::DimensionDriven);
+    assert_eq!(
+        row.guess_body,
+        [0xed, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18]
+    );
+    assert_eq!(row.guess, ScalarLane::DimensionDriven);
+    assert_eq!(row.known, Some(1));
+    assert_eq!(row.homogeneity, Some(1));
+    assert_eq!(row.uvar_id, Some(9));
+}
+
+#[test]
+fn var_arr_world_coordinate_2d_is_positive() {
+    let bytes = [0x2d, 0x34, 0x43, 0xf5, 0x12, 0xe8, 0x00, 0x45];
+    let (value, next) =
+        decode_section_coordinate_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
+
+    assert_eq!(value, ScalarLane::Value(20.265_458_280_220_873));
+    assert_eq!(next, bytes.len());
+    assert_eq!(
+        decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()).0,
+        ScalarLane::Value(-20.265_458_280_220_873)
+    );
+}
+
+#[test]
+fn saved_section_world_coordinate_2d_is_positive() {
+    let bytes = [0x2d, 0x52, 0xa4, 0x0d, 0xb4, 0x1f, 0x70, 0xed];
+
+    assert_eq!(
+        saved_section_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
+        (Some(74.563_336_401_657_31), bytes.len())
+    );
+}
+
+#[test]
+fn decodes_var_arr_positional_dict_lattice() {
+    for (bytes, head) in [
+        ([0x51, 1, 2, 3, 4, 5, 6], [0x3f, 0xc6]),
+        ([0x64, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
+        ([0x69, 1, 2, 3, 4, 5, 6], [0x3f, 0xde]),
+        ([0x9c, 1, 2, 3, 4, 5, 6], [0x40, 0x11]),
+        ([0x9d, 1, 2, 3, 4, 5, 6], [0x40, 0x12]),
+        ([0x9f, 1, 2, 3, 4, 5, 6], [0x40, 0x14]),
+        ([0xa0, 1, 2, 3, 4, 5, 6], [0x40, 0x15]),
+        ([0xa7, 1, 2, 3, 4, 5, 6], [0xbf, 0xd3]),
+        ([0xaa, 1, 2, 3, 4, 5, 6], [0xbf, 0xd6]),
+        ([0xae, 1, 2, 3, 4, 5, 6], [0xbf, 0xda]),
+        ([0xad, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
+        ([0xb3, 1, 2, 3, 4, 5, 6], [0xbf, 0xe0]),
+        ([0xbd, 1, 2, 3, 4, 5, 6], [0xbf, 0xea]),
+        ([0xc3, 1, 2, 3, 4, 5, 6], [0xbf, 0xf0]),
+        ([0xc9, 1, 2, 3, 4, 5, 6], [0xbf, 0xf6]),
+        ([0xca, 1, 2, 3, 4, 5, 6], [0xbf, 0xf7]),
+        ([0xcb, 1, 2, 3, 4, 5, 6], [0xbf, 0xf8]),
+        ([0xcc, 1, 2, 3, 4, 5, 6], [0xbf, 0xf9]),
+        ([0xcd, 1, 2, 3, 4, 5, 6], [0xbf, 0xfa]),
+        ([0xce, 1, 2, 3, 4, 5, 6], [0xbf, 0xfb]),
+        ([0xd0, 1, 2, 3, 4, 5, 6], [0xbf, 0xfe]),
+        ([0xd2, 1, 2, 3, 4, 5, 6], [0xc0, 0x00]),
+        ([0xd4, 1, 2, 3, 4, 5, 6], [0xc0, 0x02]),
+        ([0xd6, 1, 2, 3, 4, 5, 6], [0xc0, 0x04]),
+        ([0xd8, 1, 2, 3, 4, 5, 6], [0xc0, 0x06]),
+        ([0xda, 1, 2, 3, 4, 5, 6], [0xc0, 0x08]),
+    ] {
+        let (value, next) =
+            decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
+        assert_eq!(
+            value,
+            ScalarLane::Value(f64::from_be_bytes([
+                head[0], head[1], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6],
+            ]))
+        );
+        assert_eq!(next, bytes.len());
+    }
+    let bytes = [0x28, 1, 2, 3, 4, 5, 6, 7];
+    assert_eq!(
+        decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
+        (
+            ScalarLane::Value(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
+            bytes.len(),
+        )
+    );
+    for prefix in [0x19, 0x32, 0x37, 0x41] {
+        let bytes = [prefix, 1, 2, 3, 4, 5, 6, 7];
+        assert_eq!(
+            decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
+            (
+                ScalarLane::Value(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
+                bytes.len(),
+            )
+        );
+    }
+    assert_eq!(
+        decode_section_coordinate_scalar(
+            &[0x34, 0xd0, 0x00],
+            0,
+            3,
+            &scalar::ScalarCache::default()
+        ),
+        (ScalarLane::Undefined, 3)
+    );
+    assert_eq!(
+        decode_section_coordinate_scalar(
+            &[0x00, 0x04, 0xa6],
+            0,
+            3,
+            &scalar::ScalarCache::default()
+        ),
+        (ScalarLane::Undefined, 3)
+    );
+    assert_eq!(
+        decode_section_coordinate_scalar(
+            &[0x01, 0x04, 0xfe, 0xf2],
+            0,
+            4,
+            &scalar::ScalarCache::default()
+        ),
+        (ScalarLane::Undefined, 4)
+    );
 }

@@ -288,7 +288,9 @@ fn second_native_record_refuses_before_output_vec_growth() {
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::native::arena_from(
         &limited,
-        records.iter().map(Ok::<_, crate::native::NativeConvertError>),
+        records
+            .iter()
+            .map(Ok::<_, crate::native::NativeConvertError>),
     )
     .unwrap_err();
     let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
@@ -298,10 +300,13 @@ fn second_native_record_refuses_before_output_vec_growth() {
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     assert_eq!(limit.operation, "store native record");
 
-    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let stored = crate::native::arena_from(
         &service,
-        records.iter().map(Ok::<_, crate::native::NativeConvertError>),
+        records
+            .iter()
+            .map(Ok::<_, crate::native::NativeConvertError>),
     )
     .unwrap();
     assert_eq!(stored.len(), 2);

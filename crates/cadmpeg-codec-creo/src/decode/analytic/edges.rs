@@ -15,7 +15,12 @@ use super::vertices::finite_model_point;
 use crate::vecmath::{cross, dot};
 
 macro_rules! require_some {
-    ($value:expr) => { match $value { Some(value) => value, None => return Ok(None) } };
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
 }
 
 const EPS_ON_CONIC: f64 = 1.0e-7;
@@ -119,13 +124,18 @@ pub(super) fn nurbs_control_extent(nurbs: &NurbsCurve) -> f64 {
         .fold(1.0, f64::max)
 }
 
-pub(super) fn nurbs_points(nurbs: &NurbsCurve) -> impl Iterator<Item = cadmpeg_ir::features::FinitePoint3> + '_ {
+pub(super) fn nurbs_points(
+    nurbs: &NurbsCurve,
+) -> impl Iterator<Item = cadmpeg_ir::features::FinitePoint3> + '_ {
     (0..nurbs.pole_count()).filter_map(|index| nurbs.pole_rows().point_at(index))
 }
 
 pub(super) fn nurbs_weights_positive(nurbs: &NurbsCurve) -> bool {
     (0..nurbs.pole_count()).all(|index| {
-        nurbs.pole_rows().weight_at(index).is_none_or(|weight| weight > 0.0)
+        nurbs
+            .pole_rows()
+            .weight_at(index)
+            .is_none_or(|weight| weight > 0.0)
     })
 }
 
@@ -140,7 +150,10 @@ pub(in crate::decode) fn nurbs_intrinsic_parameter_range(
     (range[0] < range[1]).then_some(range)
 }
 
-pub(super) fn nonperiodic_nurbs_endpoint_points(ctx: &cadmpeg_core::decode::DecodeContext<'_>, geometry: &CurveGeometry) -> Result<Option<[[f64; 3]; 2]>, cadmpeg_core::CodecError> {
+pub(super) fn nonperiodic_nurbs_endpoint_points(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    geometry: &CurveGeometry,
+) -> Result<Option<[[f64; 3]; 2]>, cadmpeg_core::CodecError> {
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
         return Ok(None);
     };
@@ -158,7 +171,8 @@ pub(super) fn nonperiodic_nurbs_endpoint_points(ctx: &cadmpeg_core::decode::Deco
     Ok(Some([first, second]))
 }
 
-fn nonperiodic_nurbs_edge_parameter_range(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn nonperiodic_nurbs_edge_parameter_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
@@ -175,25 +189,31 @@ fn nonperiodic_nurbs_edge_parameter_range(ctx: &cadmpeg_core::decode::DecodeCont
         require_some!(nurbs_weights_positive(nurbs).then_some(()));
         let scale = nurbs_control_extent(nurbs);
         let tolerance = EPS_AGREE * scale;
-        let first = require_some!(degree_one_nurbs_point_parameter(ctx, geometry, nurbs, points[0], range, tolerance)?);
-        let second =
-            require_some!(degree_one_nurbs_point_parameter(ctx, geometry, nurbs, points[1], range, tolerance)?);
+        let first = require_some!(degree_one_nurbs_point_parameter(
+            ctx, geometry, nurbs, points[0], range, tolerance
+        )?);
+        let second = require_some!(degree_one_nurbs_point_parameter(
+            ctx, geometry, nurbs, points[1], range, tolerance
+        )?);
         let parameters = if first <= second {
             [first, second]
         } else {
             [second, first]
         };
-        return Ok((cadmpeg_ir::math::parameter_fraction(parameters[0], range[0], range[1])
-            .zip(cadmpeg_ir::math::parameter_fraction(
-                parameters[1],
-                range[0],
-                range[1],
-            ))
-            .is_some_and(|(first, second)| second.get() - first.get() > EPS_NEAR_ZERO))
-        .then_some(parameters));
+        return Ok(
+            (cadmpeg_ir::math::parameter_fraction(parameters[0], range[0], range[1])
+                .zip(cadmpeg_ir::math::parameter_fraction(
+                    parameters[1],
+                    range[0],
+                    range[1],
+                ))
+                .is_some_and(|(first, second)| second.get() - first.get() > EPS_NEAR_ZERO))
+            .then_some(parameters),
+        );
     }
 
-    let [first, second] = range.map(|parameter| cadmpeg_ir::eval::admitted::curve_point(ctx, geometry, parameter));
+    let [first, second] =
+        range.map(|parameter| cadmpeg_ir::eval::admitted::curve_point(ctx, geometry, parameter));
     let mapped = [first?.ok(), second?.ok()];
     // An edge endpoint outside the finite range aligns with no carrier end.
     let ([Some(first), Some(second)], [Some(start), Some(end)]) =
@@ -212,11 +232,14 @@ fn nonperiodic_nurbs_edge_parameter_range(ctx: &cadmpeg_core::decode::DecodeCont
 /// Edge parameter ranges are canonical and therefore increasing. When the
 /// native edge reverses the carrier direction, reverse the NURBS definition
 /// and keep the same geometric parameter domain.
-pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &mut CurveGeometry,
     points: [[f64; 3]; 2],
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
-    let range = require_some!(nonperiodic_nurbs_edge_parameter_range(ctx, geometry, points)?);
+    let range = require_some!(nonperiodic_nurbs_edge_parameter_range(
+        ctx, geometry, points
+    )?);
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &*geometry else {
         return Ok(None);
     };
@@ -228,14 +251,16 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(ctx: &cadmpeg_cor
                 return Ok(None);
             };
             let tolerance = EPS_AGREE * nurbs_control_extent(nurbs);
-            let first = require_some!(degree_one_nurbs_point_parameter(ctx,
+            let first = require_some!(degree_one_nurbs_point_parameter(
+                ctx,
                 &*geometry,
                 nurbs,
                 points[0],
                 FiniteReal::raw_array(intrinsic_range),
                 tolerance,
             )?);
-            let second = require_some!(degree_one_nurbs_point_parameter(ctx,
+            let second = require_some!(degree_one_nurbs_point_parameter(
+                ctx,
                 &*geometry,
                 nurbs,
                 points[1],
@@ -290,7 +315,8 @@ fn reverse_nonperiodic_nurbs(nurbs: &mut NurbsCurve, [start, end]: [FiniteReal; 
     nurbs.reverse_parameterization_in_range(start, end)
 }
 
-pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     point: [f64; 3],
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
@@ -318,7 +344,8 @@ pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(ctx: &cadmpeg_
         .then_some(range))
 }
 
-fn degree_one_nurbs_point_parameter(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn degree_one_nurbs_point_parameter(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     nurbs: &NurbsCurve,
     point: [f64; 3],
@@ -351,7 +378,13 @@ fn degree_one_nurbs_point_parameter(ctx: &cadmpeg_core::decode::DecodeContext<'_
         if !(-EPS_AGREE..=1.0 + EPS_AGREE).contains(&fraction) {
             continue;
         }
-        let fraction = if fraction < 0.0 { 0.0 } else if fraction > 1.0 { 1.0 } else { fraction };
+        let fraction = match fraction.partial_cmp(&0.0) {
+            Some(std::cmp::Ordering::Less) => 0.0,
+            _ => match fraction.partial_cmp(&1.0) {
+                Some(std::cmp::Ordering::Greater) => 1.0,
+                _ => fraction,
+            },
+        };
         let projected = [
             first.x + fraction * delta[0],
             first.y + fraction * delta[1],
@@ -361,8 +394,14 @@ fn degree_one_nurbs_point_parameter(ctx: &cadmpeg_core::decode::DecodeContext<'_
         if dot(mismatch, mismatch).sqrt() > tolerance {
             continue;
         }
-        let first_weight = nurbs.pole_rows().weight_at(span - 1).map_or(1.0, |weight| weight);
-        let second_weight = nurbs.pole_rows().weight_at(span).map_or(1.0, |weight| weight);
+        let first_weight = nurbs
+            .pole_rows()
+            .weight_at(span - 1)
+            .map_or(1.0, |weight| weight);
+        let second_weight = nurbs
+            .pole_rows()
+            .weight_at(span)
+            .map_or(1.0, |weight| weight);
         let rational_denominator = second_weight * (1.0 - fraction) + fraction * first_weight;
         if rational_denominator <= 0.0 || !rational_denominator.is_finite() {
             continue;
@@ -384,7 +423,10 @@ fn degree_one_nurbs_point_parameter(ctx: &cadmpeg_core::decode::DecodeContext<'_
         ];
         if dot(mismatch, mismatch).sqrt() <= tolerance {
             if let Some(first) = candidate {
-                if !((parameter - first).abs() <= parameter_tolerance) {
+                if !matches!(
+                    ((parameter - first).abs()).partial_cmp(&(parameter_tolerance)),
+                    Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+                ) {
                     return Ok(None);
                 }
             } else {

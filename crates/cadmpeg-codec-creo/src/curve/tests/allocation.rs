@@ -27,8 +27,8 @@ fn with_expression_policy<T>(
     run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
 ) -> Result<T, CodecError> {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test input is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test input is admitted");
     run(&ctx)
 }
 
@@ -59,7 +59,7 @@ fn target_limit_error(source: &str, collection_limit: u64, retained_limit: u64) 
     }))
 }
 
-fn assert_target_limit(error: CodecError, dimension: ResourceDimension, operation: &'static str) {
+fn assert_target_limit(error: &CodecError, dimension: ResourceDimension, operation: &'static str) {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == dimension && limit.operation == operation));
 }
@@ -67,7 +67,7 @@ fn assert_target_limit(error: CodecError, dimension: ResourceDimension, operatio
 #[test]
 fn expression_parsed_arguments_refuse_before_growth() {
     assert_target_limit(
-        target_limit_error("foo(x,y)", 0, u64::MAX),
+        &target_limit_error("foo(x,y)", 0, u64::MAX),
         ResourceDimension::CollectionItems,
         "creo expression parsed arguments",
     );
@@ -76,7 +76,7 @@ fn expression_parsed_arguments_refuse_before_growth() {
 #[test]
 fn expression_target_arguments_refuse_before_growth() {
     assert_target_limit(
-        target_limit_error("foo(x,y)", 2, u64::MAX),
+        &target_limit_error("foo(x,y)", 2, u64::MAX),
         ResourceDimension::CollectionItems,
         "creo expression target arguments",
     );
@@ -85,7 +85,7 @@ fn expression_target_arguments_refuse_before_growth() {
 #[test]
 fn expression_target_argument_text_refuses_before_copy() {
     assert_target_limit(
-        target_limit_error("foo(x)", u64::MAX, 0),
+        &target_limit_error("foo(x)", u64::MAX, 0),
         ResourceDimension::RetainedBytes,
         "creo expression target argument text",
     );
@@ -94,7 +94,7 @@ fn expression_target_argument_text_refuses_before_copy() {
 #[test]
 fn expression_function_target_refuses_before_copy() {
     assert_target_limit(
-        target_limit_error("foo()", u64::MAX, 0),
+        &target_limit_error("foo()", u64::MAX, 0),
         ResourceDimension::RetainedBytes,
         "creo expression function target",
     );
@@ -103,7 +103,7 @@ fn expression_function_target_refuses_before_copy() {
 #[test]
 fn expression_table_column_refuses_before_copy() {
     assert_target_limit(
-        target_limit_error("value(p,r,c)", u64::MAX, 0),
+        &target_limit_error("value(p,r,c)", u64::MAX, 0),
         ResourceDimension::RetainedBytes,
         "creo expression table column",
     );
@@ -112,7 +112,7 @@ fn expression_table_column_refuses_before_copy() {
 #[test]
 fn expression_table_parameter_refuses_before_copy() {
     assert_target_limit(
-        target_limit_error("value(p,r,c)", u64::MAX, 1),
+        &target_limit_error("value(p,r,c)", u64::MAX, 1),
         ResourceDimension::RetainedBytes,
         "creo expression table parameter",
     );
@@ -121,7 +121,7 @@ fn expression_table_parameter_refuses_before_copy() {
 #[test]
 fn expression_table_row_refuses_before_copy() {
     assert_target_limit(
-        target_limit_error("value(p,r,c)", u64::MAX, 2),
+        &target_limit_error("value(p,r,c)", u64::MAX, 2),
         ResourceDimension::RetainedBytes,
         "creo expression table row",
     );
@@ -130,7 +130,7 @@ fn expression_table_row_refuses_before_copy() {
 #[test]
 fn expression_scoped_target_refuses_before_copy() {
     assert_target_limit(
-        target_limit_error("a:b", u64::MAX, 0),
+        &target_limit_error("a:b", u64::MAX, 0),
         ResourceDimension::RetainedBytes,
         "creo expression scoped target",
     );
@@ -139,7 +139,7 @@ fn expression_scoped_target_refuses_before_copy() {
 #[test]
 fn expression_system_target_refuses_before_copy() {
     assert_target_limit(
-        target_limit_error("D1", u64::MAX, 0),
+        &target_limit_error("D1", u64::MAX, 0),
         ResourceDimension::RetainedBytes,
         "creo expression system target",
     );
@@ -148,7 +148,7 @@ fn expression_system_target_refuses_before_copy() {
 #[test]
 fn expression_declared_unit_refuses_before_copy() {
     assert_target_limit(
-        target_limit_error("a[mm]", u64::MAX, 0),
+        &target_limit_error("a[mm]", u64::MAX, 0),
         ResourceDimension::RetainedBytes,
         "creo expression declared unit",
     );
@@ -157,7 +157,7 @@ fn expression_declared_unit_refuses_before_copy() {
 #[test]
 fn expression_parameter_target_refuses_before_copy() {
     assert_target_limit(
-        target_limit_error("a", u64::MAX, 0),
+        &target_limit_error("a", u64::MAX, 0),
         ResourceDimension::RetainedBytes,
         "creo expression parameter target",
     );
@@ -186,7 +186,7 @@ fn expression_dependency_items_refuse_before_growth() {
 fn expression_dependency_text_refuses_before_copy() {
     let line = expression_lines(&["a=b"]);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = 1;
     let error = with_expression_policy(policy, |ctx| {
         super::super::expression_assignment(ctx, &line[0])
     })
@@ -200,7 +200,7 @@ fn expression_dependency_text_refuses_before_copy() {
 fn expression_assignment_text_refuses_before_copy() {
     let line = expression_lines(&["a=1"]);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = 1;
     let error = with_expression_policy(policy, |ctx| {
         super::super::expression_assignment(ctx, &line[0])
     })
@@ -240,7 +240,7 @@ fn pending_solve_statements_refuse_before_growth() {
 fn solve_equations_refuse_before_growth() {
     let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
+    policy.limits.max_collection_items = 6;
     let error = resource_error(with_expression_policy(policy, |ctx| {
         super::super::curve_expression_solve_program(ctx, &lines)
     }));
@@ -252,14 +252,17 @@ fn solve_equations_refuse_before_growth() {
 #[test]
 fn solve_blocks_refuse_before_growth() {
     let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
-    assert_eq!(with_expression_policy(DecodePolicy::service(), |ctx| {
-        super::super::curve_expression_solve_program(ctx, &lines)
-    })
-    .expect("service profile")
-    .blocks
-    .len(), 1);
+    assert_eq!(
+        with_expression_policy(DecodePolicy::service(), |ctx| {
+            super::super::curve_expression_solve_program(ctx, &lines)
+        })
+        .expect("service profile")
+        .blocks
+        .len(),
+        1
+    );
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 6;
+    policy.limits.max_collection_items = 7;
     let error = resource_error(with_expression_policy(policy, |ctx| {
         super::super::curve_expression_solve_program(ctx, &lines)
     }));
@@ -272,7 +275,7 @@ fn solve_blocks_refuse_before_growth() {
 fn solve_assignment_indices_refuse_before_growth() {
     let lines = expression_lines(&["SOLVE", "x=1", "y=2", "FOR x"]);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 9;
+    policy.limits.max_collection_items = 10;
     let error = resource_error(with_expression_policy(policy, |ctx| {
         super::super::curve_expression_solve_program(ctx, &lines)
     }));
@@ -285,7 +288,7 @@ fn solve_assignment_indices_refuse_before_growth() {
 fn solve_assignments_refuse_before_growth() {
     let lines = expression_lines(&["SOLVE", "x=1", "y=2", "FOR x"]);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 10;
+    policy.limits.max_collection_items = 11;
     let error = resource_error(with_expression_policy(policy, |ctx| {
         super::super::curve_expression_solve_program(ctx, &lines)
     }));
@@ -307,8 +310,15 @@ fn executable_solve_line_nodes_refuse_before_insert() {
             && limit.operation == "creo executable solve line index nodes"));
     let program = with_expression_policy(DecodePolicy::service(), |ctx| {
         super::super::curve_expression_solve_program(ctx, &lines)
-    }).expect("service solve program");
-    assert_eq!(program.executable_line_indices.into_iter().collect::<Vec<_>>(), [2]);
+    })
+    .expect("service solve program");
+    assert_eq!(
+        program
+            .executable_line_indices
+            .into_iter()
+            .collect::<Vec<_>>(),
+        [2]
+    );
 }
 
 #[test]
@@ -416,11 +426,16 @@ fn evaluation_limit_reaches(
     panic!("no limit reaches {operation}");
 }
 
-fn external_symbol(value: Option<super::super::CurveExpressionValue>) -> super::super::ExternalRelationSymbols {
+fn external_symbol(
+    value: Option<super::super::CurveExpressionValue>,
+) -> super::super::ExternalRelationSymbols {
     named_external_symbol("external", value)
 }
 
-fn named_external_symbol(name: &str, value: Option<super::super::CurveExpressionValue>) -> super::super::ExternalRelationSymbols {
+fn named_external_symbol(
+    name: &str,
+    value: Option<super::super::CurveExpressionValue>,
+) -> super::super::ExternalRelationSymbols {
     super::super::ExternalRelationSymbols {
         values: BTreeMap::from([(name.to_owned(), value)]),
     }
@@ -454,34 +469,181 @@ macro_rules! evaluation_retained_test {
     };
 }
 
-evaluation_collection_test!(existing_external_symbol_nodes_refuse, &[], external_symbol(None), "creo existing external symbol nodes");
-evaluation_retained_test!(existing_external_symbol_names_refuse, &[], external_symbol(None), "creo existing external symbol names");
-evaluation_collection_test!(existing_assignment_symbol_nodes_refuse, &["a=1"], super::super::ExternalRelationSymbols::default(), "creo existing assignment symbol nodes");
-evaluation_retained_test!(existing_assignment_symbol_names_refuse, &["a=1"], super::super::ExternalRelationSymbols::default(), "creo existing assignment symbol names");
-evaluation_collection_test!(defined_external_symbol_nodes_refuse, &[], external_symbol(None), "creo defined external symbol nodes");
-evaluation_retained_test!(defined_external_symbol_names_refuse, &[], external_symbol(None), "creo defined external symbol names");
-evaluation_collection_test!(external_value_nodes_refuse, &[], external_symbol(Some(super::super::CurveExpressionValue::String("text".into()))), "creo external value nodes");
-evaluation_retained_test!(external_value_names_refuse, &[], external_symbol(Some(super::super::CurveExpressionValue::Number(1.0))), "creo external value names");
-evaluation_retained_test!(external_string_values_refuse, &[], external_symbol(Some(super::super::CurveExpressionValue::String("text".into()))), "creo external string values");
-evaluation_collection_test!(defined_assignment_symbol_nodes_refuse, &["a=1"], super::super::ExternalRelationSymbols::default(), "creo defined assignment symbol nodes");
-evaluation_retained_test!(defined_assignment_symbol_names_refuse, &["a=1"], super::super::ExternalRelationSymbols::default(), "creo defined assignment symbol names");
-evaluation_collection_test!(evaluated_value_nodes_refuse, &["a=1"], super::super::ExternalRelationSymbols::default(), "creo evaluated value nodes");
-evaluation_retained_test!(evaluated_symbol_names_refuse, &["a=1"], super::super::ExternalRelationSymbols::default(), "creo evaluated symbol names");
-evaluation_collection_test!(evaluated_assignments_refuse, &["a=1"], super::super::ExternalRelationSymbols::default(), "creo evaluated assignments");
-evaluation_collection_test!(solve_dimension_snapshots_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo solve dimension snapshots");
-evaluation_collection_test!(solve_initial_value_snapshots_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo solve initial value snapshots");
-evaluation_collection_test!(solve_dimension_snapshot_nodes_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo solve dimension snapshot nodes");
-evaluation_collection_test!(solve_initial_snapshot_nodes_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo solve initial snapshot nodes");
-evaluation_collection_test!(solve_solution_nodes_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo solve solution nodes");
-evaluation_collection_test!(existing_solve_symbol_nodes_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo existing solve symbol nodes");
-evaluation_retained_test!(existing_solve_symbol_names_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo existing solve symbol names");
-evaluation_collection_test!(defined_solve_symbol_nodes_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo defined solve symbol nodes");
-evaluation_retained_test!(defined_solve_symbol_names_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo defined solve symbol names");
-evaluation_collection_test!(solved_value_nodes_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo solved value nodes");
-evaluation_retained_test!(solved_value_names_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo solved value names");
-evaluation_collection_test!(evaluated_function_assignments_refuse, &["foo(x)=1"], super::super::ExternalRelationSymbols::default(), "creo evaluated assignments");
-evaluation_retained_test!(evaluated_string_values_refuse, &["a=\"text\""], super::super::ExternalRelationSymbols::default(), "creo evaluated string values");
-evaluation_retained_test!(solve_initial_string_values_refuse, &["SOLVE", "x=1", "FOR x"], named_external_symbol("x", Some(super::super::CurveExpressionValue::String("text".into()))), "creo solve initial string values");
+evaluation_collection_test!(
+    existing_external_symbol_nodes_refuse,
+    &[],
+    external_symbol(None),
+    "creo existing external symbol nodes"
+);
+evaluation_retained_test!(
+    existing_external_symbol_names_refuse,
+    &[],
+    external_symbol(None),
+    "creo existing external symbol names"
+);
+evaluation_collection_test!(
+    existing_assignment_symbol_nodes_refuse,
+    &["a=1"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo existing assignment symbol nodes"
+);
+evaluation_retained_test!(
+    existing_assignment_symbol_names_refuse,
+    &["a=1"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo existing assignment symbol names"
+);
+evaluation_collection_test!(
+    defined_external_symbol_nodes_refuse,
+    &[],
+    external_symbol(None),
+    "creo defined external symbol nodes"
+);
+evaluation_retained_test!(
+    defined_external_symbol_names_refuse,
+    &[],
+    external_symbol(None),
+    "creo defined external symbol names"
+);
+evaluation_collection_test!(
+    external_value_nodes_refuse,
+    &[],
+    external_symbol(Some(super::super::CurveExpressionValue::String(
+        "text".into()
+    ))),
+    "creo external value nodes"
+);
+evaluation_retained_test!(
+    external_value_names_refuse,
+    &[],
+    external_symbol(Some(super::super::CurveExpressionValue::Number(1.0))),
+    "creo external value names"
+);
+evaluation_retained_test!(
+    external_string_values_refuse,
+    &[],
+    external_symbol(Some(super::super::CurveExpressionValue::String(
+        "text".into()
+    ))),
+    "creo external string values"
+);
+evaluation_collection_test!(
+    defined_assignment_symbol_nodes_refuse,
+    &["a=1"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo defined assignment symbol nodes"
+);
+evaluation_retained_test!(
+    defined_assignment_symbol_names_refuse,
+    &["a=1"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo defined assignment symbol names"
+);
+evaluation_collection_test!(
+    evaluated_value_nodes_refuse,
+    &["a=1"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo evaluated value nodes"
+);
+evaluation_retained_test!(
+    evaluated_symbol_names_refuse,
+    &["a=1"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo evaluated symbol names"
+);
+evaluation_collection_test!(
+    evaluated_assignments_refuse,
+    &["a=1"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo evaluated assignments"
+);
+evaluation_collection_test!(
+    solve_dimension_snapshots_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo solve dimension snapshots"
+);
+evaluation_collection_test!(
+    solve_initial_value_snapshots_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo solve initial value snapshots"
+);
+evaluation_collection_test!(
+    solve_dimension_snapshot_nodes_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo solve dimension snapshot nodes"
+);
+evaluation_collection_test!(
+    solve_initial_snapshot_nodes_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo solve initial snapshot nodes"
+);
+evaluation_collection_test!(
+    solve_solution_nodes_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo solve solution nodes"
+);
+evaluation_collection_test!(
+    existing_solve_symbol_nodes_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo existing solve symbol nodes"
+);
+evaluation_retained_test!(
+    existing_solve_symbol_names_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo existing solve symbol names"
+);
+evaluation_collection_test!(
+    defined_solve_symbol_nodes_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo defined solve symbol nodes"
+);
+evaluation_retained_test!(
+    defined_solve_symbol_names_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo defined solve symbol names"
+);
+evaluation_collection_test!(
+    solved_value_nodes_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo solved value nodes"
+);
+evaluation_retained_test!(
+    solved_value_names_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo solved value names"
+);
+evaluation_collection_test!(
+    evaluated_function_assignments_refuse,
+    &["foo(x)=1"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo evaluated assignments"
+);
+evaluation_retained_test!(
+    evaluated_string_values_refuse,
+    &["a=\"text\""],
+    super::super::ExternalRelationSymbols::default(),
+    "creo evaluated string values"
+);
+evaluation_retained_test!(
+    solve_initial_string_values_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    named_external_symbol(
+        "x",
+        Some(super::super::CurveExpressionValue::String("text".into()))
+    ),
+    "creo solve initial string values"
+);
 
 macro_rules! evaluation_materialized_test {
     ($name:ident, $source:expr, $operation:literal) => {
@@ -497,7 +659,11 @@ macro_rules! evaluation_materialized_test {
     };
 }
 
-evaluation_materialized_test!(solve_snapshot_lookup_refuses_temporary_bytes, &["SOLVE", "x=1", "FOR x"], "creo solve snapshot lookup");
+evaluation_materialized_test!(
+    solve_snapshot_lookup_refuses_temporary_bytes,
+    &["SOLVE", "x=1", "FOR x"],
+    "creo solve snapshot lookup"
+);
 
 fn affine_helix_limit_reaches(dimension: ResourceDimension, operation: &'static str) {
     let record = super::super::expression_records(AFFINE_HELIX)
@@ -515,9 +681,8 @@ fn affine_helix_limit_reaches(dimension: ResourceDimension, operation: &'static 
             ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
             _ => panic!("unsupported affine test limit"),
         }
-        let result = with_expression_policy(policy, |ctx| {
-            super::super::expression_helix(ctx, &record)
-        });
+        let result =
+            with_expression_policy(policy, |ctx| super::super::expression_helix(ctx, &record));
         if matches!(result, Err(CodecError::ResourceLimit(ref refusal))
             if refusal.dimension == dimension && refusal.operation == operation)
         {
@@ -545,13 +710,34 @@ macro_rules! affine_helix_retained_test {
     };
 }
 
-affine_helix_collection_test!(affine_time_value_node_refuses, "creo affine time value node");
-affine_helix_retained_test!(affine_time_value_name_refuses, "creo affine time value name");
-affine_helix_collection_test!(affine_defined_time_node_refuses, "creo affine defined time node");
-affine_helix_retained_test!(affine_defined_time_name_refuses, "creo affine defined time name");
-affine_helix_retained_test!(affine_assignment_names_refuse, "creo affine assignment names");
-affine_helix_collection_test!(affine_defined_symbol_nodes_refuse, "creo affine defined symbol nodes");
-affine_helix_retained_test!(affine_defined_symbol_names_refuse, "creo affine defined symbol names");
+affine_helix_collection_test!(
+    affine_time_value_node_refuses,
+    "creo affine time value node"
+);
+affine_helix_retained_test!(
+    affine_time_value_name_refuses,
+    "creo affine time value name"
+);
+affine_helix_collection_test!(
+    affine_defined_time_node_refuses,
+    "creo affine defined time node"
+);
+affine_helix_retained_test!(
+    affine_defined_time_name_refuses,
+    "creo affine defined time name"
+);
+affine_helix_retained_test!(
+    affine_assignment_names_refuse,
+    "creo affine assignment names"
+);
+affine_helix_collection_test!(
+    affine_defined_symbol_nodes_refuse,
+    "creo affine defined symbol nodes"
+);
+affine_helix_retained_test!(
+    affine_defined_symbol_names_refuse,
+    "creo affine defined symbol names"
+);
 affine_helix_collection_test!(affine_value_nodes_refuse, "creo affine value nodes");
 
 fn solve_storage_limit_reaches(source: &[&str], operation: &'static str) {
@@ -595,31 +781,138 @@ macro_rules! solve_storage_test {
     };
 }
 
-solve_storage_test!(affine_variable_keys_refuse, &["SOLVE", "x=1", "FOR x"], "creo affine variable keys");
-solve_storage_test!(affine_known_value_nodes_refuse, &["y=2", "SOLVE", "x+y=3", "FOR x"], "creo affine known value nodes");
-solve_storage_test!(affine_coefficient_nodes_refuse, &["SOLVE", "x=1", "FOR x"], "creo affine coefficient nodes");
-solve_storage_test!(affine_unknown_value_nodes_refuse, &["SOLVE", "x=1", "FOR x"], "creo affine unknown value nodes");
-solve_storage_test!(affine_equation_coefficients_refuse, &["SOLVE", "x=1", "FOR x"], "creo affine equation coefficients");
-solve_storage_test!(affine_equation_rows_refuse, &["SOLVE", "x=1", "FOR x"], "creo affine equation rows");
-solve_storage_test!(affine_unique_solution_refuses, &["SOLVE", "x=1", "FOR x"], "creo affine unique solution");
-solve_storage_test!(affine_solved_values_refuse, &["SOLVE", "x=1", "FOR x"], "creo affine solved values");
-solve_storage_test!(nonlinear_initial_point_refuses, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear initial point");
-solve_storage_test!(nonlinear_line_search_point_refuses, &["x=1", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear line-search point");
-solve_storage_test!(nonlinear_solved_values_refuse, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear solved values");
-evaluation_retained_test!(affine_variable_names_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo affine variable names");
-evaluation_retained_test!(affine_known_value_names_refuse, &["y=2", "SOLVE", "x+y=3", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo affine known value names");
-evaluation_retained_test!(affine_coefficient_names_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo affine coefficient names");
-evaluation_retained_test!(affine_unknown_value_names_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo affine unknown value names");
-solve_storage_test!(nonlinear_known_value_nodes_refuse, &["y=3", "x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear known value nodes");
-solve_storage_test!(nonlinear_unknown_value_nodes_refuse, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear unknown value nodes");
-solve_storage_test!(nonlinear_residual_rows_refuse, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear residual rows");
-solve_storage_test!(nonlinear_jacobian_coefficients_refuse, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear Jacobian coefficients");
-solve_storage_test!(nonlinear_positive_probe_refuses, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear positive probe");
-solve_storage_test!(nonlinear_negative_probe_refuses, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear negative probe");
-solve_storage_test!(nonlinear_jacobian_rows_refuse, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear Jacobian rows");
-evaluation_retained_test!(nonlinear_known_value_names_refuse, &["y=3", "x=2", "SOLVE", "x*x*x=8", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo nonlinear known value names");
-evaluation_retained_test!(nonlinear_unknown_value_names_refuse, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo nonlinear unknown value names");
-evaluation_retained_test!(nonlinear_known_string_values_refuse, &["y=\"text\"", "x=2", "SOLVE", "x*x*x=8", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo nonlinear known string values");
+solve_storage_test!(
+    affine_variable_keys_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    "creo affine variable keys"
+);
+solve_storage_test!(
+    affine_known_value_nodes_refuse,
+    &["y=2", "SOLVE", "x+y=3", "FOR x"],
+    "creo affine known value nodes"
+);
+solve_storage_test!(
+    affine_coefficient_nodes_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    "creo affine coefficient nodes"
+);
+solve_storage_test!(
+    affine_unknown_value_nodes_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    "creo affine unknown value nodes"
+);
+solve_storage_test!(
+    affine_equation_coefficients_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    "creo affine equation coefficients"
+);
+solve_storage_test!(
+    affine_equation_rows_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    "creo affine equation rows"
+);
+solve_storage_test!(
+    affine_unique_solution_refuses,
+    &["SOLVE", "x=1", "FOR x"],
+    "creo affine unique solution"
+);
+solve_storage_test!(
+    affine_solved_values_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    "creo affine solved values"
+);
+solve_storage_test!(
+    nonlinear_initial_point_refuses,
+    &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
+    "creo nonlinear initial point"
+);
+solve_storage_test!(
+    nonlinear_line_search_point_refuses,
+    &["x=1", "SOLVE", "x*x*x=8", "FOR x"],
+    "creo nonlinear line-search point"
+);
+solve_storage_test!(
+    nonlinear_solved_values_refuse,
+    &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
+    "creo nonlinear solved values"
+);
+evaluation_retained_test!(
+    affine_variable_names_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo affine variable names"
+);
+evaluation_retained_test!(
+    affine_known_value_names_refuse,
+    &["y=2", "SOLVE", "x+y=3", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo affine known value names"
+);
+evaluation_retained_test!(
+    affine_coefficient_names_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo affine coefficient names"
+);
+evaluation_retained_test!(
+    affine_unknown_value_names_refuse,
+    &["SOLVE", "x=1", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo affine unknown value names"
+);
+solve_storage_test!(
+    nonlinear_known_value_nodes_refuse,
+    &["y=3", "x=2", "SOLVE", "x*x*x=8", "FOR x"],
+    "creo nonlinear known value nodes"
+);
+solve_storage_test!(
+    nonlinear_unknown_value_nodes_refuse,
+    &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
+    "creo nonlinear unknown value nodes"
+);
+solve_storage_test!(
+    nonlinear_residual_rows_refuse,
+    &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
+    "creo nonlinear residual rows"
+);
+solve_storage_test!(
+    nonlinear_jacobian_coefficients_refuse,
+    &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
+    "creo nonlinear Jacobian coefficients"
+);
+solve_storage_test!(
+    nonlinear_positive_probe_refuses,
+    &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
+    "creo nonlinear positive probe"
+);
+solve_storage_test!(
+    nonlinear_negative_probe_refuses,
+    &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
+    "creo nonlinear negative probe"
+);
+solve_storage_test!(
+    nonlinear_jacobian_rows_refuse,
+    &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
+    "creo nonlinear Jacobian rows"
+);
+evaluation_retained_test!(
+    nonlinear_known_value_names_refuse,
+    &["y=3", "x=2", "SOLVE", "x*x*x=8", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo nonlinear known value names"
+);
+evaluation_retained_test!(
+    nonlinear_unknown_value_names_refuse,
+    &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo nonlinear unknown value names"
+);
+evaluation_retained_test!(
+    nonlinear_known_string_values_refuse,
+    &["y=\"text\"", "x=2", "SOLVE", "x*x*x=8", "FOR x"],
+    super::super::ExternalRelationSymbols::default(),
+    "creo nonlinear known string values"
+);
 
 #[test]
 fn solve_unknowns_refuse_before_vector_growth() {
@@ -628,7 +921,13 @@ fn solve_unknowns_refuse_before_vector_growth() {
     })
     .expect("service profile")
     .expect("valid unknowns");
-    assert_eq!(service.iter().map(|unknown| unknown.name.as_str()).collect::<Vec<_>>(), ["x", "Y"]);
+    assert_eq!(
+        service
+            .iter()
+            .map(|unknown| unknown.name.as_str())
+            .collect::<Vec<_>>(),
+        ["x", "Y"]
+    );
     assert!(with_expression_policy(DecodePolicy::service(), |ctx| {
         super::super::curve_expression_solve_unknowns(ctx, "x, X")
     })
@@ -761,7 +1060,7 @@ fn curve_parameter_scalar_cache_refuses_before_unique_image_growth() {
             .expect("root input is admitted");
         super::super::parameter_records_with_face_ids(&ctx, &payload, None)
     };
-    assert!(run(3).expect("service admits scalar image").is_empty());
+    assert!(run(4).expect("service admits scalar image").is_empty());
     let error = run(0).expect_err("scalar image requires a set node");
     assert!(matches!(
         error,
@@ -783,7 +1082,7 @@ fn depdb_curve_scalar_cache_refuses_before_unique_image_growth() {
         super::super::depdb_cross_section_rows(&ctx, payload)
     };
     assert!(run(100).expect("service admits scalar image").is_empty());
-    let error = run(0).expect_err("scalar image requires a set node");
+    let error = run(1).expect_err("scalar image requires a set node");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -804,7 +1103,12 @@ fn scalar_lane_with_limits(
     policy.limits.max_retained_bytes = max_retained_bytes;
     let (ctx, _) =
         DecodeContext::from_root_bytes(body, &arena, &policy).expect("root input is admitted");
-    super::super::curve_scalar_lane(&ctx, body, type_byte, &crate::scalar::ScalarCache::default())
+    super::super::curve_scalar_lane(
+        &ctx,
+        body,
+        type_byte,
+        &crate::scalar::ScalarCache::default(),
+    )
 }
 
 #[test]
@@ -813,11 +1117,12 @@ fn curve_parameter_references_refuse_before_vector_growth() {
     assert_eq!(
         scalar_lane_with_limits(&body, 0, 3, 100)
             .expect("service limits admit reference")
-            .references.len(),
+            .references
+            .len(),
         1
     );
-    let error = scalar_lane_with_limits(&body, 0, 2, 100)
-        .expect_err("reference follows two claim slots");
+    let error =
+        scalar_lane_with_limits(&body, 0, 2, 100).expect_err("reference follows two claim slots");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo curve parameter references"));
@@ -828,11 +1133,12 @@ fn curve_parameter_scalars_refuse_before_vector_growth() {
     assert_eq!(
         scalar_lane_with_limits(&[0x0e], 8, 2, 100)
             .expect("service limits admit scalar")
-            .scalar_tokens.len(),
+            .scalar_tokens
+            .len(),
         1
     );
-    let error = scalar_lane_with_limits(&[0x0e], 8, 1, 100)
-        .expect_err("scalar follows one claim slot");
+    let error =
+        scalar_lane_with_limits(&[0x0e], 8, 1, 100).expect_err("scalar follows one claim slot");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo curve parameter scalars"));
@@ -843,7 +1149,8 @@ fn curve_scalar_raw_token_refuses_before_copy() {
     assert_eq!(
         scalar_lane_with_limits(&[0x0e], 8, 2, 1)
             .expect("one raw byte is admitted")
-            .scalar_tokens[0].raw,
+            .scalar_tokens[0]
+            .raw,
         [0x0e]
     );
     let error = scalar_lane_with_limits(&[0x0e], 8, 2, 0)
@@ -858,7 +1165,8 @@ fn curve_zero_raw_token_refuses_before_copy() {
     assert_eq!(
         scalar_lane_with_limits(&[0x18], 0, 2, 1)
             .expect("one zero byte is admitted")
-            .scalar_tokens[0].raw,
+            .scalar_tokens[0]
+            .raw,
         [0x18]
     );
     let error = scalar_lane_with_limits(&[0x18], 0, 2, 0)
@@ -873,11 +1181,12 @@ fn curve_opaque_spans_refuse_before_vector_growth() {
     assert_eq!(
         scalar_lane_with_limits(&[0xff], 0, 2, 1)
             .expect("one opaque span is admitted")
-            .opaque_spans.len(),
+            .opaque_spans
+            .len(),
         1
     );
-    let error = scalar_lane_with_limits(&[0xff], 0, 1, 1)
-        .expect_err("opaque span follows one claim slot");
+    let error =
+        scalar_lane_with_limits(&[0xff], 0, 1, 1).expect_err("opaque span follows one claim slot");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo curve opaque spans"));
@@ -888,7 +1197,8 @@ fn curve_opaque_raw_span_refuses_before_copy() {
     assert_eq!(
         scalar_lane_with_limits(&[0xff], 0, 2, 1)
             .expect("one opaque byte is admitted")
-            .opaque_spans[0].raw,
+            .opaque_spans[0]
+            .raw,
         [0xff]
     );
     let error = scalar_lane_with_limits(&[0xff], 0, 2, 0)
@@ -935,11 +1245,11 @@ fn expression_conditional_validation_refuses_before_stack_growth() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         super::super::expression_program_control_is_valid(&ctx, &lines)
     };
-    assert_eq!(run(1).expect("one conditional is admitted"), true);
+    assert!(run(1).expect("one conditional is admitted"));
     let error = run(0).expect_err("one conditional requires a validation slot");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -951,22 +1261,23 @@ fn expression_conditional_parent_refuses_before_stack_growth() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let frame = || super::super::ConditionalFrame {
         parent: super::super::CurveExpressionActivation::Active,
         condition: Some(true),
     };
     let mut stack = super::super::ConditionalStack::default();
-    stack.push(&ctx, frame()).expect("first frame is held inline");
-    let error = stack.push(&ctx, frame()).expect_err("a nested frame needs a parent slot");
+    stack
+        .push(&ctx, frame())
+        .expect("first frame is held inline");
+    let error = stack
+        .push(&ctx, frame())
+        .expect_err("a nested frame needs a parent slot");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo expression conditional parents"));
-    assert_eq!(
-        stack.end(),
-        super::super::CurveExpressionActivation::Active
-    );
+    assert_eq!(stack.end(), super::super::CurveExpressionActivation::Active);
 }
 
 const ONE_DEPDB_CURVE_ROW: &[u8] = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x07\x08\x04\x01\xf6\xe4\xff\0\x09\x0a\0\xe1\xe0next_record\0";
@@ -988,7 +1299,7 @@ fn depdb_curve_rows_refuse_before_fallible_reservation() {
             .len(),
         1
     );
-    let error = depdb_rows_with_limit(0).expect_err("one row requires one collection item");
+    let error = depdb_rows_with_limit(1).expect_err("one row requires one collection item");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -999,7 +1310,7 @@ fn depdb_curve_rows_refuse_before_fallible_reservation() {
 
 #[test]
 fn depdb_curve_boundaries_refuse_before_vec_growth() {
-    let error = depdb_rows_with_limit(1).expect_err("boundary follows row reservation");
+    let error = depdb_rows_with_limit(2).expect_err("boundary follows row reservation");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -1066,48 +1377,90 @@ fn curve_prototype_vec_refuses_before_growth() {
 
 #[test]
 fn solve_synchronization_refuses_each_retained_value() {
-    use super::super::{CurveExpressionActivation, CurveExpressionAssignment,
-        CurveExpressionSolveBlock, CurveExpressionTarget, CurveExpressionValue, SolveUnknown};
+    use super::super::{
+        CurveExpressionActivation, CurveExpressionAssignment, CurveExpressionSolveBlock,
+        CurveExpressionTarget, CurveExpressionValue, SolveUnknown,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let assignment = CurveExpressionAssignment {
-        target: CurveExpressionTarget::Parameter { name: "a".into(), declared_unit: None },
-        expression: "\"ab\"".into(), dependencies: Vec::new(),
+        target: CurveExpressionTarget::Parameter {
+            name: "a".into(),
+            declared_unit: None,
+        },
+        expression: "\"ab\"".into(),
+        dependencies: Vec::new(),
         value: Some(CurveExpressionValue::String("ab".into())),
-        activation: CurveExpressionActivation::Active, offset: 1,
+        activation: CurveExpressionActivation::Active,
+        offset: 1,
     };
     for (assignment_value, solution, operation) in [
-        (Some(CurveExpressionValue::String("ab".into())), None, "creo synchronized assignment values"),
-        (None, Some(CurveExpressionValue::String("ab".into())), "creo synchronized solve values"),
+        (
+            Some(CurveExpressionValue::String("ab".into())),
+            None,
+            "creo synchronized assignment values",
+        ),
+        (
+            None,
+            Some(CurveExpressionValue::String("ab".into())),
+            "creo synchronized solve values",
+        ),
     ] {
         let mut evaluated = assignment.clone();
         evaluated.value = assignment_value;
         let solutions = solution.into_iter().map(|value| (0, vec![value])).collect();
         let mut blocks = vec![CurveExpressionSolveBlock {
-            equations: Vec::new(), assignments: vec![assignment.clone()],
-            unknowns: vec![SolveUnknown { name: "x".into(), solution: None }],
-            offset: 0, for_offset: 2,
+            equations: Vec::new(),
+            assignments: vec![assignment.clone()],
+            unknowns: vec![SolveUnknown {
+                name: "x".into(),
+                solution: None,
+            }],
+            offset: 0,
+            for_offset: 2,
         }];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(matches!(super::super::synchronize_solve_blocks(&ctx, &mut blocks, &[evaluated.clone()], &solutions),
+        assert!(
+            matches!(super::super::synchronize_solve_blocks(&ctx, &mut blocks, &[evaluated.clone()], &solutions),
             Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-            if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == operation));
+            if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == operation)
+        );
         crate::decode::with_test_decode_ctx(|ctx| {
-            super::super::synchronize_solve_blocks(ctx, &mut blocks, &[evaluated.clone()], &solutions)
-        }).expect("service synchronization");
+            super::super::synchronize_solve_blocks(
+                ctx,
+                &mut blocks,
+                &[evaluated.clone()],
+                &solutions,
+            )
+        })
+        .expect("service synchronization");
         assert_eq!(blocks[0].assignments[0], evaluated);
-        assert_eq!(blocks[0].unknowns[0].solution.as_ref(), solutions.get(&0).and_then(|values| values.first()));
+        assert_eq!(
+            blocks[0].unknowns[0].solution.as_ref(),
+            solutions.get(&0).and_then(|values| values.first())
+        );
     }
 }
 
 #[test]
 fn expression_helix_required_outputs_refuse_scan_work() {
-    let record = super::super::expression_records(b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\xe0\x0aexpression\0\xf8\x01a=1\0").pop().expect("record");
-    assert!(crate::decode::with_test_decode_ctx(|ctx| super::super::expression_helix(ctx, &record)).expect("service").is_none());
+    let record = super::super::expression_records(
+        b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\xe0\x0aexpression\0\xf8\x01a=1\0",
+    )
+    .pop()
+    .expect("record");
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| super::super::expression_helix(ctx, &record))
+            .expect("service")
+            .is_none()
+    );
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let error = with_expression_policy(policy, |ctx| super::super::expression_helix(ctx, &record)).expect_err("output scan needs work");
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "creo helix output scan work"));
+    let error = with_expression_policy(policy, |ctx| super::super::expression_helix(ctx, &record))
+        .expect_err("output scan needs work");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "creo helix output scan work")
+    );
 }

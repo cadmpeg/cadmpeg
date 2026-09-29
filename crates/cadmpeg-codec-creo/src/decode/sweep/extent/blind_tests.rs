@@ -213,170 +213,185 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
 #[test]
 fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
     crate::decode::with_test_decode_ctx(|ctx| {
-    let row = |id, reversed| crate::surface::SurfaceRow {
-        id,
-        kind: crate::surface::SurfaceKind::Plane,
-        feature_id: 7,
-        reversed,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: id as usize,
-    };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.surfaces.rows.extend([
-        row(37, false),
-        row(31, false),
-        row(32, true),
-        row(33, true),
-        row(34, true),
-        row(36, false),
-        row(35, true),
-    ]);
-    let plane = |id, origin, normal| Surface {
-        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                origin,
-                normal,
-                Vector3::new(0.0, 0.0, 1.0),
-            )
-            .expect("valid PlaneSurface fixture"),
-        )),
-        source_object: None,
-    };
-    let mut ir = CadIr::empty();
-    ir.model.surfaces.extend([
-        Surface {
-            id: SurfaceId::mint("creo:visibgeom:surface#37".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        let row = |id, reversed| crate::surface::SurfaceRow {
+            id,
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 7,
+            reversed,
+            boundary_type: crate::surface::BoundaryType::Code00,
+            next_surface: 0,
+            offset: id as usize,
+        };
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.surfaces.rows.extend([
+            row(37, false),
+            row(31, false),
+            row(32, true),
+            row(33, true),
+            row(34, true),
+            row(36, false),
+            row(35, true),
+        ]);
+        let plane = |id, origin, normal| Surface {
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    origin,
+                    normal,
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
             source_object: None,
-        },
-        plane(31, Point3::new(0.0, 6.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
-        plane(32, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
-        plane(33, Point3::new(4.0, 48.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
-        plane(
-            34,
-            Point3::new(-4.0, 48.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        ),
-        plane(36, Point3::new(0.0, 30.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
-        plane(35, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
-    ]);
-    let mut section = crate::feature::definitions::FeatureSection3d {
-        sketch_plane_entity_id: Some(30),
-        sketch_plane_flip: Some(crate::feature::definitions::BinaryFlag::Clear),
-        reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![29]),
-        reference_plane_datum_geometry_id: None,
-        orientation: crate::feature::definitions::FeatureSectionOrientation {
-            section_flip: Some(crate::feature::definitions::BinaryFlag::Set),
-            ..Default::default()
-        },
-        dimension_ids: Vec::new(),
-        offset: 0,
-    };
+        };
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.extend([
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#37".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                source_object: None,
+            },
+            plane(31, Point3::new(0.0, 6.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
+            plane(32, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
+            plane(33, Point3::new(4.0, 48.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
+            plane(
+                34,
+                Point3::new(-4.0, 48.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ),
+            plane(36, Point3::new(0.0, 30.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
+            plane(35, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
+        ]);
+        let mut section = crate::feature::definitions::FeatureSection3d {
+            sketch_plane_entity_id: Some(30),
+            sketch_plane_flip: Some(crate::feature::definitions::BinaryFlag::Clear),
+            reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![29]),
+            reference_plane_datum_geometry_id: None,
+            orientation: crate::feature::definitions::FeatureSectionOrientation {
+                section_flip: Some(crate::feature::definitions::BinaryFlag::Set),
+                ..Default::default()
+            },
+            dimension_ids: Vec::new(),
+            offset: 0,
+        };
 
-    assert_eq!(
-        generated_rectilinear_plane_extent(ctx,
+        assert_eq!(
+            generated_rectilinear_plane_extent(
+                ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                7,
+                Some(&section)
+            )
+            .expect("admitted extent"),
+            Some((
+                ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(42.0)
+                                .expect("nonzero length fixture"),
+                        },
+                        draft: None,
+                    },
+                },
+                [0.0, -1.0, 0.0],
+            ))
+        );
+        section.sketch_plane_flip = Some(crate::feature::definitions::BinaryFlag::Set);
+        assert_eq!(
+            generated_rectilinear_plane_extent(
+                ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                7,
+                Some(&section)
+            )
+            .expect("admitted extent"),
+            Some((
+                ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(42.0)
+                                .expect("nonzero length fixture"),
+                        },
+                        draft: None,
+                    },
+                },
+                [0.0, 1.0, 0.0],
+            ))
+        );
+        section.orientation.section_flip = Some(crate::feature::definitions::BinaryFlag::Clear);
+        assert_eq!(
+            generated_rectilinear_plane_extent(
+                ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                7,
+                Some(&section)
+            )
+            .expect("admitted extent"),
+            Some((
+                ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(42.0)
+                                .expect("nonzero length fixture"),
+                        },
+                        draft: None,
+                    },
+                },
+                [0.0, -1.0, 0.0],
+            ))
+        );
+        assert!(generated_rectilinear_plane_extent(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
-            Some(&section)
-        ).expect("admitted extent"),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(42.0)
-                            .expect("nonzero length fixture"),
-                    },
-                    draft: None,
-                },
-            },
-            [0.0, -1.0, 0.0],
-        ))
-    );
-    section.sketch_plane_flip = Some(crate::feature::definitions::BinaryFlag::Set);
-    assert_eq!(
-        generated_rectilinear_plane_extent(ctx,
+            None
+        )
+        .expect("admitted extent")
+        .is_none());
+        let mut incomplete_section = section.clone();
+        incomplete_section.sketch_plane_entity_id = None;
+        assert!(generated_rectilinear_plane_extent(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
-            Some(&section)
-        ).expect("admitted extent"),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(42.0)
-                            .expect("nonzero length fixture"),
-                    },
-                    draft: None,
-                },
-            },
-            [0.0, 1.0, 0.0],
-        ))
-    );
-    section.orientation.section_flip = Some(crate::feature::definitions::BinaryFlag::Clear);
-    assert_eq!(
-        generated_rectilinear_plane_extent(ctx,
-            &scan,
-            &ir,
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            7,
-            Some(&section)
-        ).expect("admitted extent"),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(42.0)
-                            .expect("nonzero length fixture"),
-                    },
-                    draft: None,
-                },
-            },
-            [0.0, -1.0, 0.0],
-        ))
-    );
-    assert!(generated_rectilinear_plane_extent(ctx,
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        7,
-        None
-    ).expect("admitted extent")
-    .is_none());
-    let mut incomplete_section = section.clone();
-    incomplete_section.sketch_plane_entity_id = None;
-    assert!(generated_rectilinear_plane_extent(ctx,
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        7,
-        Some(&incomplete_section)
-    ).expect("admitted extent")
-    .is_none());
+            Some(&incomplete_section)
+        )
+        .expect("admitted extent")
+        .is_none());
 
-    scan.surfaces.rows[3].reversed = false;
-    assert!(generated_rectilinear_plane_extent(ctx,
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        7,
-        Some(&section)
-    ).expect("admitted extent")
-    .is_none());
-    scan.surfaces.rows[3].reversed = true;
-    ir.model.surfaces.pop();
-    assert!(generated_rectilinear_plane_extent(ctx,
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        7,
-        Some(&section)
-    ).expect("admitted extent")
-    .is_none());
+        scan.surfaces.rows[3].reversed = false;
+        assert!(generated_rectilinear_plane_extent(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            Some(&section)
+        )
+        .expect("admitted extent")
+        .is_none());
+        scan.surfaces.rows[3].reversed = true;
+        ir.model.surfaces.pop();
+        assert!(generated_rectilinear_plane_extent(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+            Some(&section)
+        )
+        .expect("admitted extent")
+        .is_none());
     });
 }

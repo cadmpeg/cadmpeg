@@ -37,107 +37,170 @@ pub(super) fn push_coverage_drop_losses(
         coverage_count(coverage, "untransferred_visible_surface_row_count");
     if untransferred_surface_rows != 0 {
         let family_counts = SURFACE_KINDS.map(|kind| {
-                let family = surface_family(kind);
-                let count = coverage.iter().find_map(|(key, count)| {
+            let family = surface_family(kind);
+            let count = coverage
+                .iter()
+                .find_map(|(key, count)| {
                     (key.strip_prefix("untransferred_visible_")
                         .and_then(|name| name.strip_suffix("_surface_row_count"))
                         == Some(family))
                     .then_some(*count)
-                }).unwrap_or(0);
-                (family, count)
-            });
+                })
+                .unwrap_or(0);
+            (family, count)
+        });
         let unresolved_families = CountBreakdown(&family_counts);
-        push_report_loss(ctx, losses, CreoLossCode::VisibGeomSurfaceUntransferred, format_args!(
-            "{untransferred_surface_rows} unique VisibGeom surface row(s) were not \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::VisibGeomSurfaceUntransferred,
+            format_args!(
+                "{untransferred_surface_rows} unique VisibGeom surface row(s) were not \
              transferred as carriers and remain structural namespace records \
              ({unresolved_families})."
-        ))?;
+            ),
+        )?;
     }
     let untransferred_curve_rows =
         coverage_count(coverage, "untransferred_visible_curve_row_count");
     if untransferred_curve_rows != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::VisibGeomCurveUntransferred, format_args!(
-            "{untransferred_curve_rows} unique VisibGeom curve-topology row(s) were not \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::VisibGeomCurveUntransferred,
+            format_args!(
+                "{untransferred_curve_rows} unique VisibGeom curve-topology row(s) were not \
              transferred as carriers and remain structural namespace records."
-        ))?;
+            ),
+        )?;
     }
     let ambiguous_surface_rows = coverage_count(coverage, "ambiguous_visible_surface_row_count");
     if ambiguous_surface_rows != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::VisibGeomSurfaceAmbiguous, format_args!(
-            "{ambiguous_surface_rows} VisibGeom surface row(s) share a non-unique identity \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::VisibGeomSurfaceAmbiguous,
+            format_args!(
+                "{ambiguous_surface_rows} VisibGeom surface row(s) share a non-unique identity \
              and were not resolved to a single carrier."
-        ))?;
+            ),
+        )?;
     }
     let ambiguous_curve_rows = coverage_count(coverage, "ambiguous_visible_curve_row_count");
     if ambiguous_curve_rows != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::VisibGeomCurveAmbiguous, format_args!(
-            "{ambiguous_curve_rows} VisibGeom curve-topology row(s) share a non-unique \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::VisibGeomCurveAmbiguous,
+            format_args!(
+                "{ambiguous_curve_rows} VisibGeom curve-topology row(s) share a non-unique \
              identity and were not resolved to a single carrier."
-        ))?;
+            ),
+        )?;
     }
     let missing_segment_rows = coverage_count(coverage, "missing_feature_segment_row_count");
     if missing_segment_rows != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::SectionSegmentMissing, format_args!(
-            "{missing_segment_rows} declared section segment row(s) did not decode and remain \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::SectionSegmentMissing,
+            format_args!(
+                "{missing_segment_rows} declared section segment row(s) did not decode and remain \
              unavailable to the defining sketch."
-        ))?;
+            ),
+        )?;
     }
     let missing_relation_rows = coverage_count(coverage, "missing_feature_relation_row_count");
     if missing_relation_rows != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::SectionRelationMissing, format_args!(
-            "{missing_relation_rows} declared section relation row(s) did not decode; the \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::SectionRelationMissing,
+            format_args!(
+                "{missing_relation_rows} declared section relation row(s) did not decode; the \
              affected complete-table solver identities remain unavailable."
-        ))?;
+            ),
+        )?;
     }
     let malformed_relation_tables =
         coverage_count(coverage, "malformed_feature_relation_table_count");
     if malformed_relation_tables != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::SectionRelationTableMalformed, format_args!(
-            "{malformed_relation_tables} section relation table(s) use the invalid zero \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::SectionRelationTableMalformed,
+            format_args!(
+                "{malformed_relation_tables} section relation table(s) use the invalid zero \
              allocation count."
-        ))?;
+            ),
+        )?;
     }
     let missing_skamp_rows = coverage_count(coverage, "missing_feature_skamp_row_count");
     if missing_skamp_rows != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::SectionIncidenceMissing, format_args!(
-            "{missing_skamp_rows} declared section incidence row(s) did not decode; the \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::SectionIncidenceMissing,
+            format_args!(
+                "{missing_skamp_rows} declared section incidence row(s) did not decode; the \
              affected complete-table solver identities remain unavailable."
-        ))?;
+            ),
+        )?;
     }
     let missing_triple_rows = coverage_count(coverage, "missing_feature_relation_triple_row_count");
     if missing_triple_rows != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::SectionRelationJoinMissing, format_args!(
-            "{missing_triple_rows} declared section relation-incidence join row(s) did not \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::SectionRelationJoinMissing,
+            format_args!(
+                "{missing_triple_rows} declared section relation-incidence join row(s) did not \
              decode; the affected complete-table solver identities remain unavailable."
-        ))?;
+            ),
+        )?;
     }
     let unresolved_segment_geometry =
         coverage_count(coverage, "unresolved_feature_segment_geometry_count");
     if unresolved_segment_geometry != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::SectionSegmentGeometryUnresolved, format_args!(
-            "{unresolved_segment_geometry} decoded section segment(s) retain source-native \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::SectionSegmentGeometryUnresolved,
+            format_args!(
+                "{unresolved_segment_geometry} decoded section segment(s) retain source-native \
              geometry because their exact neutral construction remains unresolved."
-        ))?;
+            ),
+        )?;
     }
     let active_native_skamps =
         coverage_count(coverage, "active_native_feature_skamp_constraint_count");
     if active_native_skamps != 0 {
         let kinds = constraint_kind_breakdown(coverage, "active_native_feature_skamp_type_");
-        push_report_loss(ctx, losses, CreoLossCode::SectionIncidenceNative, format_args!(
-            "{active_native_skamps} active section incidence constraint(s) retain native \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::SectionIncidenceNative,
+            format_args!(
+                "{active_native_skamps} active section incidence constraint(s) retain native \
              operands because their neutral semantics or referenced geometry remain unresolved \
              ({kinds})."
-        ))?;
+            ),
+        )?;
     }
     let active_native_relations =
         coverage_count(coverage, "active_native_feature_relation_constraint_count");
     if active_native_relations != 0 {
         let kinds = constraint_kind_breakdown(coverage, "active_native_feature_relation_type_");
-        push_report_loss(ctx, losses, CreoLossCode::SectionRelationNative, format_args!(
-            "{active_native_relations} active section dimension relation(s) retain native \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::SectionRelationNative,
+            format_args!(
+                "{active_native_relations} active section dimension relation(s) retain native \
              operands because their neutral semantics, incidence join, or referenced geometry \
              remain unresolved ({kinds})."
-        ))?;
+            ),
+        )?;
     }
     let incomplete_sweeps = coverage_count(coverage, "transferred_incomplete_sweep_feature_count");
     if incomplete_sweeps != 0 {
@@ -152,10 +215,15 @@ pub(super) fn push_coverage_drop_losses(
             ),
         ];
         let families = CountBreakdown(&family_counts);
-        push_report_loss(ctx, losses, CreoLossCode::FeatureSweepIncomplete, format_args!(
-            "{incomplete_sweeps} profile sweep history feature(s) retain incomplete required \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::FeatureSweepIncomplete,
+            format_args!(
+                "{incomplete_sweeps} profile sweep history feature(s) retain incomplete required \
              construction operands ({families})."
-        ))?;
+            ),
+        )?;
     }
     let incomplete_surface_operations = coverage_count(
         coverage,
@@ -183,10 +251,15 @@ pub(super) fn push_coverage_drop_losses(
             ),
         ];
         let families = CountBreakdown(&family_counts);
-        push_report_loss(ctx, losses, CreoLossCode::FeatureSurfaceOperationIncomplete, format_args!(
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::FeatureSurfaceOperationIncomplete,
+            format_args!(
                 "{incomplete_surface_operations} surface construction history feature(s) retain \
              incomplete required operands ({families})."
-            ))?;
+            ),
+        )?;
     }
     let incomplete_other_constructions = coverage_count(
         coverage,
@@ -211,10 +284,15 @@ pub(super) fn push_coverage_drop_losses(
             ),
         ];
         let families = CountBreakdown(&family_counts);
-        push_report_loss(ctx, losses, CreoLossCode::FeatureConstructionIncomplete, format_args!(
-            "{incomplete_other_constructions} construction history feature(s) retain \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::FeatureConstructionIncomplete,
+            format_args!(
+                "{incomplete_other_constructions} construction history feature(s) retain \
              unresolved neutral operands ({families})."
-        ))?;
+            ),
+        )?;
     }
     let incomplete_recognized_features =
         coverage_count(coverage, "transferred_incomplete_recognized_feature_count");
@@ -238,25 +316,40 @@ pub(super) fn push_coverage_drop_losses(
             ),
         ];
         let families = CountBreakdown(&family_counts);
-        push_report_loss(ctx, losses, CreoLossCode::FeatureRecognizedIncomplete, format_args!(
-            "{incomplete_recognized_features} recognized non-sweep history feature(s) retain \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::FeatureRecognizedIncomplete,
+            format_args!(
+                "{incomplete_recognized_features} recognized non-sweep history feature(s) retain \
              incomplete required construction operands ({families})."
-        ))?;
+            ),
+        )?;
     }
     let explicitly_unresolved_features =
         coverage_count(coverage, "transferred_explicitly_unresolved_feature_count");
     let native_features = coverage_count(coverage, "transferred_native_feature_count");
     if native_features != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::FeatureNativeSemantics, format_args!(
-            "{native_features} history feature definition(s) retain only source-native \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::FeatureNativeSemantics,
+            format_args!(
+                "{native_features} history feature definition(s) retain only source-native \
              semantics."
-        ))?;
+            ),
+        )?;
     }
     if explicitly_unresolved_features != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::FeatureConstructionUnresolved, format_args!(
-            "{explicitly_unresolved_features} typed history feature definition(s) retain an \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::FeatureConstructionUnresolved,
+            format_args!(
+                "{explicitly_unresolved_features} typed history feature definition(s) retain an \
              explicitly unresolved model-space construction."
-        ))?;
+            ),
+        )?;
     }
     let unresolved_dimension_driven_variables = coverage_count(
         coverage,
@@ -271,38 +364,58 @@ pub(super) fn push_coverage_drop_losses(
             coverage,
             "unresolved_feature_dimension_driven_other_variable_count",
         );
-        push_report_loss(ctx, losses, CreoLossCode::SectionDimensionVariableUnresolved, format_args!(
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::SectionDimensionVariableUnresolved,
+            format_args!(
                 "{unresolved_dimension_driven_variables} dimension-driven section solver \
              variable(s) retain unresolved exact values: {unresolved_coordinate_variables} \
              coordinate variable(s) lack a complete dimension equation and {other_variables} \
              variable(s) have a non-coordinate family whose dimension semantics are \
              unresolved."
-            ))?;
+            ),
+        )?;
     }
     let unresolved_dimension_driven_guesses =
         coverage_count(coverage, "unresolved_feature_dimension_driven_guess_count");
     if unresolved_dimension_driven_guesses != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::SectionDimensionGuessUnresolved, format_args!(
-            "{unresolved_dimension_driven_guesses} section solver variable pre-solve \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::SectionDimensionGuessUnresolved,
+            format_args!(
+                "{unresolved_dimension_driven_guesses} section solver variable pre-solve \
              estimate(s) use a dimension-driven sentinel whose dimension join is unresolved."
-        ))?;
+            ),
+        )?;
     }
     let missing_solver_variables =
         coverage_count(coverage, "missing_feature_solver_variable_count");
     if missing_solver_variables != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::SectionSolverVariableMissing, format_args!(
-            "{missing_solver_variables} declared section solver variable row(s) did not \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::SectionSolverVariableMissing,
+            format_args!(
+                "{missing_solver_variables} declared section solver variable row(s) did not \
              decode; stored and equation-derived coordinates are withheld for the incomplete \
              table."
-        ))?;
+            ),
+        )?;
     }
     let unresolved_dimension_values =
         coverage_count(coverage, "unresolved_feature_dimension_value_count");
     if unresolved_dimension_values != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::SectionDimensionValueUnresolved, format_args!(
-            "{unresolved_dimension_values} section dimension(s) retain source-native value \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::SectionDimensionValueUnresolved,
+            format_args!(
+                "{unresolved_dimension_values} section dimension(s) retain source-native value \
              tokens because their exact scalar encodings remain unresolved."
-        ))?;
+            ),
+        )?;
     }
     let unresolved_configuration_driver_tables = coverage_count(
         coverage,
@@ -313,19 +426,29 @@ pub(super) fn push_coverage_drop_losses(
         "transferred_configuration_driver_table_count",
     ));
     if unresolved_configuration_driver_tables != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::ConfigurationDriverUnresolved, format_args!(
-            "{unresolved_configuration_driver_tables} referenced configuration driver \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::ConfigurationDriverUnresolved,
+            format_args!(
+                "{unresolved_configuration_driver_tables} referenced configuration driver \
              table(s) retain unresolved traversal and row semantics."
-        ))?;
+            ),
+        )?;
     }
     let prohibited_records =
         coverage_count(coverage, "prohibited_active_curve_expression_record_count");
     if prohibited_records != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CurveExpressionProhibited, format_args!(
-            "{prohibited_records} active curve-equation record(s) containing prohibited \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CurveExpressionProhibited,
+            format_args!(
+                "{prohibited_records} active curve-equation record(s) containing prohibited \
              datum-curve constructs were not evaluated; source and dependencies were \
              retained without values or derived curves."
-        ))?;
+            ),
+        )?;
     }
     let unresolved_solve_blocks = coverage_count(
         coverage,
@@ -336,30 +459,45 @@ pub(super) fn push_coverage_drop_losses(
         "evaluated_active_curve_expression_solve_block_count",
     ));
     if unresolved_solve_blocks != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CurveExpressionSolveUnresolved, format_args!(
-            "{unresolved_solve_blocks} active curve-equation simultaneous-solve block(s) \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CurveExpressionSolveUnresolved,
+            format_args!(
+                "{unresolved_solve_blocks} active curve-equation simultaneous-solve block(s) \
              retain their ordered equations and unknowns without solved values or derived \
              curves."
-        ))?;
+            ),
+        )?;
     }
     let unresolved_solve_controls = coverage_count(
         coverage,
         "unresolved_active_curve_expression_solve_control_count",
     );
     if unresolved_solve_controls != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CurveExpressionSolveControlUnresolved, format_args!(
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CurveExpressionSolveControlUnresolved,
+            format_args!(
                 "{unresolved_solve_controls} active curve-equation record(s) retain malformed or \
              incomplete simultaneous-solve control without sequentially interpreting its \
              bounded source lines."
-            ))?;
+            ),
+        )?;
     }
     let prohibited_kinds =
         coverage_count(coverage, "prohibited_active_curve_expression_kind_count");
     if prohibited_kinds != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CurveExpressionKindProhibited, format_args!(
-            "{prohibited_kinds} prohibited datum-curve construct(s) across active \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CurveExpressionKindProhibited,
+            format_args!(
+                "{prohibited_kinds} prohibited datum-curve construct(s) across active \
              curve-equation records were not evaluated."
-        ))?;
+            ),
+        )?;
     }
     Ok(())
 }
@@ -373,7 +511,10 @@ mod tests {
     fn two_untransferred_planes() -> cadmpeg_ir::report::decode::Coverage {
         let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
         coverage.record(crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT, 2);
-        coverage.record(crate::coverage::UNTRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT, 2);
+        coverage.record(
+            crate::coverage::UNTRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT,
+            2,
+        );
         coverage
     }
 
@@ -382,8 +523,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         let error = push_coverage_drop_losses(&ctx, &mut Vec::new(), &two_untransferred_planes())
             .expect_err("coverage loss text refused");
         assert!(matches!(error, CodecError::ResourceLimit(resource)

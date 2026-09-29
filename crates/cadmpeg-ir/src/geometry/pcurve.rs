@@ -1816,7 +1816,8 @@ impl PcurveNurbs {
         knot_operation: &'static str,
         pole_operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let knots = ctx.try_collection(self.knots.len(), knot_operation, || self.knots.try_clone())?;
+        let knots =
+            ctx.try_collection(self.knots.len(), knot_operation, || self.knots.try_clone())?;
         let poles = match &self.poles {
             PcurveNurbsPoles::Polynomial { points } => {
                 let mut copy = Vec::new();
@@ -1862,25 +1863,43 @@ impl PcurveNurbs {
         })
     }
 
-    pub(crate) fn scale_points_admitted(&mut self, ctx: &DecodeContext<'_>, scale: PositiveReal)
-        -> Result<Result<(), NurbsError>, CodecError> {
-        fn scale_point(ctx: &DecodeContext<'_>, point: &mut FinitePoint2, scale: PositiveReal)
-            -> Result<Result<(), NurbsError>, CodecError> {
+    pub(crate) fn scale_points_admitted(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<(), NurbsError>, CodecError> {
+        fn scale_point(
+            ctx: &DecodeContext<'_>,
+            point: &mut FinitePoint2,
+            scale: PositiveReal,
+        ) -> Result<Result<(), NurbsError>, CodecError> {
             ctx.charge_work(1, "IR sketch NURBS unit scaling work")?;
             let raw = point.get();
-            let Some(scaled) = FinitePoint2::new(Point2::new(raw.u * scale.get(), raw.v * scale.get())) else {
+            let Some(scaled) =
+                FinitePoint2::new(Point2::new(raw.u * scale.get(), raw.v * scale.get()))
+            else {
                 return Ok(Err(NurbsError::Structure(ctx.copy_retained_text(
-                    "control_points contains a non-finite point", "IR NURBS refusal text")?)));
+                    "control_points contains a non-finite point",
+                    "IR NURBS refusal text",
+                )?)));
             };
             *point = scaled;
             Ok(Ok(()))
         }
         match &mut self.poles {
             PcurveNurbsPoles::Polynomial { points } => {
-                for point in points { if let Err(error) = scale_point(ctx, point, scale)? { return Ok(Err(error)); } }
+                for point in points {
+                    if let Err(error) = scale_point(ctx, point, scale)? {
+                        return Ok(Err(error));
+                    }
+                }
             }
             PcurveNurbsPoles::Rational { points } => {
-                for pole in points { if let Err(error) = scale_point(ctx, &mut pole.point, scale)? { return Ok(Err(error)); } }
+                for pole in points {
+                    if let Err(error) = scale_point(ctx, &mut pole.point, scale)? {
+                        return Ok(Err(error));
+                    }
+                }
             }
         }
         Ok(Ok(()))
@@ -1890,10 +1909,7 @@ impl PcurveNurbs {
     ///
     /// Every scaled position is checked before any position changes, so a
     /// refusal leaves this curve unchanged.
-    pub fn scale_control_points_in_place(
-        &mut self,
-        scale: PositiveReal,
-    ) -> Result<(), NurbsError> {
+    pub fn scale_control_points_in_place(&mut self, scale: PositiveReal) -> Result<(), NurbsError> {
         let scaled = |point: FinitePoint2| {
             let point = point.get();
             FinitePoint2::new(Point2::new(point.u * scale.get(), point.v * scale.get()))

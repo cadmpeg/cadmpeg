@@ -5,8 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 use super::{
-    admit_new_feature_id, append_regeneration_edge, commit_regeneration_edges, compose_feature_id, merge_feature_dependencies, merge_feature_source_properties, ordered_row_feature_ids,
-    refresh_feature_outputs, emit_model_features,
+    admit_new_feature_id, append_regeneration_edge, commit_regeneration_edges, compose_feature_id,
+    emit_model_features, merge_feature_dependencies, merge_feature_source_properties,
+    ordered_row_feature_ids, refresh_feature_outputs,
 };
 
 #[test]
@@ -16,9 +17,11 @@ fn model_feature_identity_refuses_before_materialization_and_retention() {
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = compose_feature_id(&ctx, 40).expect_err("temporary identity exceeds cap");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::MaterializedBytes
-            && resource.operation == "creo model feature identity"));
+            && resource.operation == "creo model feature identity")
+    );
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -26,9 +29,11 @@ fn model_feature_identity_refuses_before_materialization_and_retention() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let (_, bytes) = compose_feature_id(&ctx, 40).expect("temporary identity admitted");
     let error = bytes.commit().expect_err("retained identity exceeds cap");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo model feature identity"));
+            && resource.operation == "creo model feature identity")
+    );
 
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -44,9 +49,24 @@ fn regeneration_edge_refuses_each_storage_boundary() {
     let child = FeatureId::mint("creo:model:feature#41").expect("identity grammar");
     let parent = FeatureId::mint("creo:model:feature#40").expect("identity grammar");
     for (items, bytes, dimension, operation) in [
-        (0, u64::MAX, ResourceDimension::CollectionItems, "creo regeneration edges"),
-        (1, 0, ResourceDimension::RetainedBytes, "creo regeneration child identity"),
-        (1, child.as_str().len() as u64, ResourceDimension::RetainedBytes, "creo regeneration parent identity"),
+        (
+            0,
+            u64::MAX,
+            ResourceDimension::CollectionItems,
+            "creo regeneration edges",
+        ),
+        (
+            1,
+            0,
+            ResourceDimension::RetainedBytes,
+            "creo regeneration child identity",
+        ),
+        (
+            1,
+            child.as_str().len() as u64,
+            ResourceDimension::RetainedBytes,
+            "creo regeneration parent identity",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -55,8 +75,10 @@ fn regeneration_edge_refuses_each_storage_boundary() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let error = append_regeneration_edge(&ctx, &mut Vec::new(), &child, &parent)
             .expect_err("below-need edge cap");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == dimension && resource.operation == operation));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == dimension && resource.operation == operation)
+        );
     }
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -86,11 +108,17 @@ fn regeneration_parent_node_refuses_before_tree_insertion() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error = commit_regeneration_edges(&ctx, &mut make_ir(), vec![(child_id.clone(), parent_id.clone())])
-        .expect_err("tree node exceeds cap");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    let error = commit_regeneration_edges(
+        &ctx,
+        &mut make_ir(),
+        vec![(child_id.clone(), parent_id.clone())],
+    )
+    .expect_err("tree node exceeds cap");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo regeneration parent nodes"));
+            && resource.operation == "creo regeneration parent nodes")
+    );
 
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -103,8 +131,8 @@ fn regeneration_parent_node_refuses_before_tree_insertion() {
 
 fn feature_for_output_refresh() -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::{
-        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
-        FeatureId, FeatureOperation,
+        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureOperation,
     };
 
     Feature {
@@ -131,14 +159,16 @@ fn feature_output_refresh_refuses_before_update_rows() {
     ir.model.features.push(feature_for_output_refresh());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = refresh_feature_outputs(&ctx, &scan, &mut ir)
         .expect_err("one refresh needs one update row");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo feature output update rows"));
+            && resource.operation == "creo feature output update rows")
+    );
     assert_eq!(ir.model.features[0].ordinal, 3);
 }
 
@@ -162,15 +192,17 @@ fn existing_feature_property_refuses_before_new_btree_node() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut target = BTreeMap::new();
     let incoming = BTreeMap::from([(property_key("recipe"), "Extrude".to_string())]);
     let error = merge_feature_source_properties(&ctx, &mut target, incoming)
         .expect_err("existing Feature needs one destination node");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo IR Feature source property nodes"));
+            && resource.operation == "creo IR Feature source property nodes")
+    );
     assert!(target.is_empty());
 }
 
@@ -178,8 +210,8 @@ fn existing_feature_property_refuses_before_new_btree_node() {
 fn existing_feature_property_merge_keeps_order_and_replacement() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut target = BTreeMap::from([(property_key("recipe"), "Native".to_string())]);
     let incoming = BTreeMap::from([
         (property_key("featdefs_schema_state"), "absent".to_string()),
@@ -189,7 +221,13 @@ fn existing_feature_property_merge_keeps_order_and_replacement() {
         .expect("one new property and one replacement fit");
     assert_eq!(target["recipe"], "Extrude");
     assert_eq!(target["featdefs_schema_state"], "absent");
-    assert_eq!(target.keys().next().map(cadmpeg_core::text::NonBlankString::as_str), Some("featdefs_schema_state"));
+    assert_eq!(
+        target
+            .keys()
+            .next()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("featdefs_schema_state")
+    );
 }
 
 #[test]
@@ -197,16 +235,18 @@ fn existing_feature_dependency_refuses_before_member_growth() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut target = cadmpeg_ir::features::DistinctMembers::default();
     let dependency = cadmpeg_ir::features::FeatureId::mint("creo:model:feature#12")
         .expect("dependency identity");
     let error = merge_feature_dependencies(&ctx, &mut target, vec![dependency])
         .expect_err("one new dependency needs one member slot");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo IR Feature dependency members"));
+            && resource.operation == "creo IR Feature dependency members")
+    );
     assert!(target.is_empty());
 }
 
@@ -216,10 +256,9 @@ fn existing_feature_dependency_merge_preserves_first_order_and_uniqueness() {
         .expect("first dependency identity");
     let second = cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
         .expect("second dependency identity");
-    let mut target = cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(vec![
-        first.clone(),
-    ])
-    .expect("one member is distinct");
+    let mut target =
+        cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(vec![first.clone()])
+            .expect("one member is distinct");
     crate::decode::with_test_decode_ctx(|ctx| {
         merge_feature_dependencies(ctx, &mut target, vec![first.clone(), second.clone()])
     })
@@ -230,21 +269,23 @@ fn existing_feature_dependency_merge_preserves_first_order_and_uniqueness() {
 #[test]
 fn native_operation_feature_refuses_kind_retained_limit() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.operations.push(crate::feature::operations::FeatureOperation {
-        feature_id: 40,
-        kind: crate::feature::operations::OperationKind::Native,
-        name: crate::feature::operations::OperationName::Derived,
-        recipe: crate::feature::operations::RecipeResolution::None,
-        display_state_conflict: false,
-        depdb: None,
-        offset: 0,
-        state_offset: 0,
-    });
+    scan.features
+        .operations
+        .push(crate::feature::operations::FeatureOperation {
+            feature_id: 40,
+            kind: crate::feature::operations::OperationKind::Native,
+            name: crate::feature::operations::OperationName::Derived,
+            recipe: crate::feature::operations::RecipeResolution::None,
+            display_state_conflict: false,
+            depdb: None,
+            offset: 0,
+            state_offset: 0,
+        });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let error = emit_model_features(
         &ctx,
@@ -254,9 +295,12 @@ fn native_operation_feature_refuses_kind_retained_limit() {
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
     )
     .expect_err("native kind needs retained text");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo native Feature kind"), "{error:?}");
+            && resource.operation == "creo native Feature kind"),
+        "{error:?}"
+    );
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -287,8 +331,8 @@ fn native_row_feature_refuses_kind_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let result = emit_model_features(
             &ctx,
             &scan,
@@ -298,12 +342,16 @@ fn native_row_feature_refuses_kind_retained_limit() {
         );
         if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native row Feature kind") {
+                && resource.operation == "creo native row Feature kind")
+        {
             reached_kind = true;
             break;
         }
     }
-    assert!(reached_kind, "row-native kind boundary was not reached below its need");
+    assert!(
+        reached_kind,
+        "row-native kind boundary was not reached below its need"
+    );
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -334,8 +382,8 @@ fn native_row_feature_refuses_name_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let result = emit_model_features(
             &ctx,
             &scan,
@@ -345,12 +393,16 @@ fn native_row_feature_refuses_name_retained_limit() {
         );
         if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo row Feature name") {
+                && resource.operation == "creo row Feature name")
+        {
             reached_name = true;
             break;
         }
     }
-    assert!(reached_name, "row name boundary was not reached below its need");
+    assert!(
+        reached_name,
+        "row name boundary was not reached below its need"
+    );
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -363,31 +415,36 @@ fn native_row_feature_refuses_name_retained_limit() {
         )
     })
     .expect("service-profile row name");
-    assert_eq!(ir.model.features[0].name.as_deref(), Some("Native Feature id 40"));
+    assert_eq!(
+        ir.model.features[0].name.as_deref(),
+        Some("Native Feature id 40")
+    );
 }
 
 #[test]
 fn stored_operation_feature_name_refuses_retained_limit() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.operations.push(crate::feature::operations::FeatureOperation {
-        feature_id: 40,
-        kind: crate::feature::operations::OperationKind::Native,
-        name: crate::feature::operations::OperationName::Stored {
-            bytes: b"~Native Feature id 40".to_vec(),
-            keyword: crate::feature::operations::IdKeyword::Id,
-            prefix: Some(b'~'),
-        },
-        recipe: crate::feature::operations::RecipeResolution::None,
-        display_state_conflict: false,
-        depdb: None,
-        offset: 0,
-        state_offset: 0,
-    });
+    scan.features
+        .operations
+        .push(crate::feature::operations::FeatureOperation {
+            feature_id: 40,
+            kind: crate::feature::operations::OperationKind::Native,
+            name: crate::feature::operations::OperationName::Stored {
+                bytes: b"~Native Feature id 40".to_vec(),
+                keyword: crate::feature::operations::IdKeyword::Id,
+                prefix: Some(b'~'),
+            },
+            recipe: crate::feature::operations::RecipeResolution::None,
+            display_state_conflict: false,
+            depdb: None,
+            offset: 0,
+            state_offset: 0,
+        });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 56;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = emit_model_features(
         &ctx,
         &scan,
@@ -396,9 +453,12 @@ fn stored_operation_feature_name_refuses_retained_limit() {
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
     )
     .expect_err("the prefix property, kind and stripped name need 57 bytes");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo stored Feature name"), "{error:?}");
+            && resource.operation == "creo stored Feature name"),
+        "{error:?}"
+    );
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -411,31 +471,36 @@ fn stored_operation_feature_name_refuses_retained_limit() {
         )
     })
     .expect("service-profile stored name");
-    assert_eq!(ir.model.features[0].name.as_deref(), Some("Native Feature id 40"));
+    assert_eq!(
+        ir.model.features[0].name.as_deref(),
+        Some("Native Feature id 40")
+    );
 }
 
 #[test]
 fn recipe_source_tag_refuses_retained_limit() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.operations.push(crate::feature::operations::FeatureOperation {
-        feature_id: 40,
-        kind: crate::feature::operations::OperationKind::Extrude,
-        name: crate::feature::operations::OperationName::Derived,
-        recipe: crate::feature::operations::RecipeResolution::Resolved(
-            crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
-        ),
-        display_state_conflict: false,
-        depdb: None,
-        offset: 0,
-        state_offset: 0,
-    });
+    scan.features
+        .operations
+        .push(crate::feature::operations::FeatureOperation {
+            feature_id: 40,
+            kind: crate::feature::operations::OperationKind::Extrude,
+            name: crate::feature::operations::OperationName::Derived,
+            recipe: crate::feature::operations::RecipeResolution::Resolved(
+                crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
+            ),
+            display_state_conflict: false,
+            depdb: None,
+            offset: 0,
+            state_offset: 0,
+        });
     let mut reached_source_tag = false;
     for limit in 0..256 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let result = emit_model_features(
             &ctx,
             &scan,
@@ -445,12 +510,16 @@ fn recipe_source_tag_refuses_retained_limit() {
         );
         if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo Feature source tag") {
+                && resource.operation == "creo Feature source tag")
+        {
             reached_source_tag = true;
             break;
         }
     }
-    assert!(reached_source_tag, "source tag boundary was not reached below its need");
+    assert!(
+        reached_source_tag,
+        "source tag boundary was not reached below its need"
+    );
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -463,7 +532,10 @@ fn recipe_source_tag_refuses_retained_limit() {
         )
     })
     .expect("service-profile recipe tag");
-    assert_eq!(ir.model.features[0].source_tag.as_deref(), Some("protextrude"));
+    assert_eq!(
+        ir.model.features[0].source_tag.as_deref(),
+        Some("protextrude")
+    );
 }
 
 #[test]
@@ -518,13 +590,15 @@ fn feature_row_identity_refuses_before_btree_node() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = ordered_row_feature_ids(&ctx, &[one_feature_row()])
         .expect_err("one distinct row needs one identity node");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo feature row identity nodes"));
+            && resource.operation == "creo feature row identity nodes")
+    );
 }
 
 #[test]
@@ -532,13 +606,15 @@ fn feature_row_id_refuses_before_vec_growth() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = ordered_row_feature_ids(&ctx, &[one_feature_row()])
         .expect_err("one distinct row also needs one output slot");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo feature row IDs"));
+            && resource.operation == "creo feature row IDs")
+    );
 }
 
 #[test]
@@ -546,18 +622,15 @@ fn operation_feature_identity_refuses_before_btree_node() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut ids = BTreeSet::new();
-    let error = admit_new_feature_id(
-        &ctx,
-        &mut ids,
-        40,
-        "creo operation feature identity nodes",
-    )
-    .expect_err("one operation needs one identity node");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    let error = admit_new_feature_id(&ctx, &mut ids, 40, "creo operation feature identity nodes")
+        .expect_err("one operation needs one identity node");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo operation feature identity nodes"));
+            && resource.operation == "creo operation feature identity nodes")
+    );
     assert!(ids.is_empty());
 }

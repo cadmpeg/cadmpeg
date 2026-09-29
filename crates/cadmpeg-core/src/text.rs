@@ -255,7 +255,7 @@ pub fn named_entries_reporting<V>(
 
 /// Keys named entries after the caller admits each new map node and refusal.
 ///
-/// The BTreeMap keeps the same order and first-value rule as
+/// The `BTreeMap` keeps the same order and first-value rule as
 /// [`named_entries_reporting`]. The caller context charges one collection item
 /// before each vacant map node, and one item before each refused-entry Vec
 /// append. Refusal text and restated keys are copied after retained-byte
@@ -277,10 +277,9 @@ pub fn named_entries_reporting_checked<V>(
                 }
                 std::collections::btree_map::Entry::Occupied(slot) => {
                     let record = ctx.format_retained(&record, "named entry refused record")?;
-                    let key = NonBlankString(ctx.copy_retained_text(
-                        slot.key().as_str(),
-                        "named entry refused key",
-                    )?);
+                    let key = NonBlankString(
+                        ctx.copy_retained_text(slot.key().as_str(), "named entry refused key")?,
+                    );
                     ctx.try_reserve_items(&mut refused, 1, "named entry refusals")?;
                     refused.push(NamedEntryError::Restated { record, key });
                 }
@@ -408,15 +407,17 @@ mod tests {
         collection_limit: u64,
         retained_limit: u64,
     ) -> Result<
-        (std::collections::BTreeMap<NonBlankString, i32>, Vec<NamedEntryError>),
+        (
+            std::collections::BTreeMap<NonBlankString, i32>,
+            Vec<NamedEntryError>,
+        ),
         crate::CodecError,
     > {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = collection_limit;
         policy.limits.max_retained_bytes = retained_limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         named_entries_reporting_checked(&ctx, "f", entries)
     }
 
@@ -427,13 +428,20 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let error = value.copy_admitted(&ctx, "nonblank copy").expect_err("three bytes exceed two");
+        let error = value
+            .copy_admitted(&ctx, "nonblank copy")
+            .expect_err("three bytes exceed two");
         assert!(matches!(error, crate::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
                 && resource.operation == "nonblank copy"));
         let service = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
-        assert_eq!(value.copy_admitted(&ctx, "nonblank copy").expect("service copy"), value);
+        assert_eq!(
+            value
+                .copy_admitted(&ctx, "nonblank copy")
+                .expect("service copy"),
+            value
+        );
     }
 
     #[test]
@@ -580,7 +588,10 @@ mod tests {
     #[test]
     fn checked_named_entry_map_refuses_before_btree_insertion() {
         let entries = vec![("width".to_owned(), 1)];
-        assert_eq!(checked_reporting(entries.clone(), 1, 100).unwrap().0.len(), 1);
+        assert_eq!(
+            checked_reporting(entries.clone(), 1, 100).unwrap().0.len(),
+            1
+        );
         assert!(matches!(
             checked_reporting(entries, 0, 100),
             Err(crate::CodecError::ResourceLimit(limit))
@@ -592,7 +603,10 @@ mod tests {
     #[test]
     fn checked_named_entry_refusals_refuse_before_vec_growth() {
         let entries = vec![("width".to_owned(), 1), ("width".to_owned(), 2)];
-        assert_eq!(checked_reporting(entries.clone(), 2, 100).unwrap().1.len(), 1);
+        assert_eq!(
+            checked_reporting(entries.clone(), 2, 100).unwrap().1.len(),
+            1
+        );
         assert!(matches!(
             checked_reporting(entries, 1, 100),
             Err(crate::CodecError::ResourceLimit(limit))
@@ -625,10 +639,17 @@ mod tests {
 
     #[test]
     fn checked_named_entries_keep_order_and_first_value() {
-        let entries = vec![("width".to_owned(), 1), ("width".to_owned(), 2), ("depth".to_owned(), 3)];
+        let entries = vec![
+            ("width".to_owned(), 1),
+            ("width".to_owned(), 2),
+            ("depth".to_owned(), 3),
+        ];
         let (kept, refused) = checked_reporting(entries.clone(), 10, 100).unwrap();
         assert_eq!(kept.get("width"), Some(&1));
-        assert_eq!(kept.keys().map(NonBlankString::as_str).collect::<Vec<_>>(), ["depth", "width"]);
+        assert_eq!(
+            kept.keys().map(NonBlankString::as_str).collect::<Vec<_>>(),
+            ["depth", "width"]
+        );
         assert_eq!(refused, named_entries_reporting("f", entries).1);
 
         let arena = DecodeArena::new();

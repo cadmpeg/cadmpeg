@@ -9,9 +9,9 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container::{self};
 use crate::CreoCodec;
@@ -60,7 +60,7 @@ fn with_collection_limit<T>(
     run(&ctx)
 }
 
-fn assert_collection_error(error: CodecError, operation: &'static str) {
+fn assert_collection_error(error: &CodecError, operation: &'static str) {
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == operation));
@@ -91,28 +91,28 @@ fn paired_incidence() -> [HalfEdgeVertexIncidence; 2] {
 fn start_vertex_pairs_refuse_group_node() {
     let error = with_collection_limit(0, |ctx| edge_start_vertex_pairs(ctx, &paired_incidence()))
         .expect_err("one curve needs a grouping node");
-    assert_collection_error(error, "creo start-vertex pair group nodes");
+    assert_collection_error(&error, "creo start-vertex pair group nodes");
 }
 
 #[test]
 fn start_vertex_pairs_refuse_output_node() {
     let error = with_collection_limit(1, |ctx| edge_start_vertex_pairs(ctx, &paired_incidence()))
         .expect_err("one curve needs an output node");
-    assert_collection_error(error, "creo start-vertex pair nodes");
+    assert_collection_error(&error, "creo start-vertex pair nodes");
 }
 
 #[test]
 fn edge_vertex_pairs_refuse_group_node() {
     let error = with_collection_limit(0, |ctx| edge_vertex_pairs(ctx, &paired_incidence()))
         .expect_err("one curve needs a grouping node");
-    assert_collection_error(error, "creo edge-vertex pair group nodes");
+    assert_collection_error(&error, "creo edge-vertex pair group nodes");
 }
 
 #[test]
 fn edge_vertex_pairs_refuse_output_node() {
     let error = with_collection_limit(1, |ctx| edge_vertex_pairs(ctx, &paired_incidence()))
         .expect_err("one curve needs an output node");
-    assert_collection_error(error, "creo edge-vertex pair nodes");
+    assert_collection_error(&error, "creo edge-vertex pair nodes");
 }
 
 #[test]
@@ -122,9 +122,8 @@ fn edge_vertex_pairs_reject_duplicate_side_without_a_temporary_vector() {
     let start = with_service_context(|ctx| {
         edge_start_vertex_pairs(ctx, &incidence).expect("service start pairs")
     });
-    let edge = with_service_context(|ctx| {
-        edge_vertex_pairs(ctx, &incidence).expect("service edge pairs")
-    });
+    let edge =
+        with_service_context(|ctx| edge_vertex_pairs(ctx, &incidence).expect("service edge pairs"));
     assert!(!start.contains_key(&7));
     assert!(!edge.contains_key(&7));
 }
@@ -145,7 +144,7 @@ fn vertex_incident_faces_refuse_half_edge_lookup_node() {
     let (vertices, edges) = one_incident_vertex();
     let error = with_collection_limit(0, |ctx| vertex_incident_faces(ctx, &vertices, &edges))
         .expect_err("one edge needs a lookup node");
-    assert_collection_error(error, "creo incident-face half-edge lookup nodes");
+    assert_collection_error(&error, "creo incident-face half-edge lookup nodes");
 }
 
 #[test]
@@ -153,7 +152,7 @@ fn vertex_incident_faces_refuse_face_node() {
     let (vertices, edges) = one_incident_vertex();
     let error = with_collection_limit(1, |ctx| vertex_incident_faces(ctx, &vertices, &edges))
         .expect_err("one incident face needs a set node");
-    assert_collection_error(error, "creo incident face nodes");
+    assert_collection_error(&error, "creo incident face nodes");
 }
 
 #[test]
@@ -161,7 +160,7 @@ fn vertex_incident_faces_refuse_vertex_node() {
     let (vertices, edges) = one_incident_vertex();
     let error = with_collection_limit(2, |ctx| vertex_incident_faces(ctx, &vertices, &edges))
         .expect_err("one vertex needs an output node");
-    assert_collection_error(error, "creo incident-face vertex nodes");
+    assert_collection_error(&error, "creo incident-face vertex nodes");
 }
 
 fn build_with_collection_limit(
@@ -620,7 +619,10 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
     let incident_faces = with_service_context(|ctx| {
         vertex_incident_faces(ctx, &[vertex], &edges).expect("service incident faces")
     });
-    assert_eq!(incident_faces.get(&1).cloned(), Some(BTreeSet::from([10, 20, 30])));
+    assert_eq!(
+        incident_faces.get(&1).cloned(),
+        Some(BTreeSet::from([10, 20, 30]))
+    );
 }
 
 #[test]

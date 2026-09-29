@@ -1,42 +1,47 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::surface::rows as checked_rows;
+use super::{counted_parameter_scalar_slots, named_prototype_records, named_surface_value, parameter_records, plane_local_systems};
+use crate::{psb, scalar};
+use crate::surface::{admitted_counted_parameter_body, complete_plane_local_system_slots, decode_row_scalar, first_compound_close, plane_direct_frame, plane_envelope_scalar_slots_with_tokens_and_end, plane_frame, plane_local_system_compound_close, plane_matrix_frame, scalar_slots_with_tokens_and_end, slot_equality, LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem, ScalarBodyRefusal, SurfaceBodyBoundary, SurfaceKind, SurfaceNamedValue, SurfaceParameterOpaqueSpan, SurfaceParameterRecord, SurfaceParameterScalar, SurfaceParameterScalarFrame, SurfacePrototypeFamily, SurfaceRow};
+
 mod resource_limits;
 
-use super::counted_parameter_scalar_slots;
-use super::named_prototype_records;
-use super::named_surface_value;
-use super::parameter_records;
-use super::plane_local_systems;
-use crate::psb;
-use crate::scalar;
-use crate::surface::admitted_counted_parameter_body;
-use crate::surface::complete_plane_local_system_slots;
-use crate::surface::decode_row_scalar;
-use crate::surface::first_compound_close;
-use crate::surface::plane_direct_frame;
-use crate::surface::plane_envelope_scalar_slots_with_tokens_and_end;
-use crate::surface::plane_frame;
-use crate::surface::plane_local_system_compound_close;
-use crate::surface::plane_matrix_frame;
-use crate::surface::rows as checked_rows;
-use crate::surface::scalar_slots_with_tokens_and_end;
-use crate::surface::slot_equality;
-use crate::surface::LocalSystemClassification;
-use crate::surface::OutlinePlane;
-use crate::surface::PlaneEnvelope;
-use crate::surface::PlaneEnvelopeRecord;
-use crate::surface::PlaneLocalSystem;
-use crate::surface::ScalarBodyRefusal;
-use crate::surface::SurfaceBodyBoundary;
-use crate::surface::SurfaceKind;
-use crate::surface::SurfaceNamedValue;
-use crate::surface::SurfaceParameterOpaqueSpan;
-use crate::surface::SurfaceParameterRecord;
-use crate::surface::SurfaceParameterScalar;
-use crate::surface::SurfaceParameterScalarFrame;
-use crate::surface::SurfacePrototypeFamily;
-use crate::surface::SurfaceRow;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
     crate::decode::with_test_decode_ctx(|ctx| checked_rows(ctx, payload))
@@ -71,6 +76,7 @@ fn service_complete_plane_compact_scalar_suffix<'a>(
 ) -> Option<Vec<(Option<f64>, &'a [u8])>> {
     crate::decode::with_test_decode_ctx(|ctx| {
         crate::surface::complete_plane_compact_scalar_suffix(ctx, body, cache)
+            .map(|result| result.map(|table| table.slots))
     })
     .expect("compact suffix fits service limits")
 }
@@ -164,14 +170,14 @@ fn held_coordinate_outline_refuses_output_vector() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &policy,
-    )
-    .expect("empty root");
-    let error = crate::surface::outline_planes(&ctx, &records)
-        .expect_err("outline vector exceeds limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo held-coordinate outline planes"));
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error =
+        crate::surface::outline_planes(&ctx, &records).expect_err("outline vector exceeds limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo held-coordinate outline planes")
+    );
 }
 
 fn placed_frame_bound_limit_error(limit: u64) -> cadmpeg_core::CodecError {
@@ -205,10 +211,8 @@ fn placed_frame_bound_limit_error(limit: u64) -> cadmpeg_core::CodecError {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &policy,
-    )
-    .expect("empty root");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
     crate::surface::placed_outline_planes(&ctx, &records, &frames)
         .expect_err("placed outline collection exceeds limit")
 }
@@ -216,22 +220,28 @@ fn placed_frame_bound_limit_error(limit: u64) -> cadmpeg_core::CodecError {
 #[test]
 fn placed_outline_refuses_frame_bound_vector() {
     let error = placed_frame_bound_limit_error(0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo frame-bound outline planes"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo frame-bound outline planes")
+    );
 }
 
 #[test]
 fn placed_outline_refuses_frame_bound_id_node() {
     let error = placed_frame_bound_limit_error(1);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo frame-bound outline ID nodes"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo frame-bound outline ID nodes")
+    );
 }
 
 #[test]
 fn placed_outline_refuses_output_vector() {
     let error = placed_frame_bound_limit_error(2);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo placed outline planes"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo placed outline planes")
+    );
 }
 
 #[test]
@@ -240,8 +250,18 @@ fn placed_outline_refuses_matrix_frame_id_node() {
         surface_id: 42,
         body: Vec::new(),
         slots: [
-            Some(1.0), Some(0.0), Some(1.0), Some(0.0), Some(0.0), Some(0.0),
-            Some(-1.0), Some(0.0), Some(1.0), Some(0.0), Some(0.0), Some(0.0),
+            Some(1.0),
+            Some(0.0),
+            Some(1.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(-1.0),
+            Some(0.0),
+            Some(1.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
         ],
         layout: Some(crate::scalar::PlaneSupportFrameLayout::MatrixColumns),
         classification: LocalSystemClassification::Unclassified,
@@ -251,14 +271,14 @@ fn placed_outline_refuses_matrix_frame_id_node() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &policy,
-    )
-    .expect("empty root");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
     let error = crate::surface::placed_outline_planes(&ctx, &[], &frames)
         .expect_err("matrix frame ID exceeds limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo matrix frame ID nodes"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo matrix frame ID nodes")
+    );
 }
 
 fn unique_positional_frame_fixture() -> (SurfaceParameterRecord, SurfaceRow) {
@@ -328,12 +348,12 @@ fn positional_frame_limit_error(limit: u64) -> cadmpeg_core::CodecError {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &policy,
-    )
-    .expect("empty root");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
     crate::surface::positional_frame_planes(
-        &ctx, std::slice::from_ref(&record), std::slice::from_ref(&row),
+        &ctx,
+        std::slice::from_ref(&record),
+        std::slice::from_ref(&row),
     )
     .expect_err("positional plane collection exceeds limit")
 }
@@ -341,15 +361,19 @@ fn positional_frame_limit_error(limit: u64) -> cadmpeg_core::CodecError {
 #[test]
 fn positional_frame_refuses_candidate_vector() {
     let error = positional_frame_limit_error(0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo positional plane candidates"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo positional plane candidates")
+    );
 }
 
 #[test]
 fn positional_frame_refuses_output_vector() {
     let error = positional_frame_limit_error(1);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo positional frame planes"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo positional frame planes")
+    );
 }
 
 #[test]
@@ -834,8 +858,9 @@ fn compact_plane_scalar_suffix_requires_one_complete_nine_slot_frame() {
     let body = [
         0x32, 0xbe, 0xe4, 0xe4, 0xe4, 0x0d, 0x0f, 0xe4, 0x0d, 0xe4, 0x0f,
     ];
-    let slots = service_complete_plane_compact_scalar_suffix(&body, &scalar::ScalarCache::default())
-        .expect("unique compact scalar suffix");
+    let slots =
+        service_complete_plane_compact_scalar_suffix(&body, &scalar::ScalarCache::default())
+            .expect("unique compact scalar suffix");
 
     assert_eq!(
         slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
@@ -851,9 +876,11 @@ fn compact_plane_scalar_suffix_requires_one_complete_nine_slot_frame() {
             Some(0.0),
         ]
     );
-    assert!(
-        service_complete_plane_compact_scalar_suffix(&body[2..], &scalar::ScalarCache::default()).is_none()
-    );
+    assert!(service_complete_plane_compact_scalar_suffix(
+        &body[2..],
+        &scalar::ScalarCache::default()
+    )
+    .is_none());
 }
 
 #[test]
@@ -937,7 +964,13 @@ fn plane_envelope_coordinates_decode_compact_positive_half() {
         0x0f, 0xe4, 0x0d, 0x0f, 0x43, 0xe0, 0x00, 0xe4, 0x0f, 0x0e, 0xe4, 0x0f,
     ];
     let (slots, consumed) = crate::decode::with_test_decode_ctx(|ctx| {
-        plane_envelope_scalar_slots_with_tokens_and_end(ctx, &body, 10, &scalar::ScalarCache::default())
+        plane_envelope_scalar_slots_with_tokens_and_end(
+            ctx,
+            &body,
+            10,
+            &scalar::ScalarCache::default(),
+        )
+        .map(|result| result.map(|table| (table.slots, table.consumed)))
     })
     .expect("envelope slots are admitted")
     .expect("a complete ten-slot envelope table");
@@ -1176,7 +1209,8 @@ fn plane_local_system_close_validates_past_an_e0_numeric_byte() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             plane_local_system_compound_close(ctx, &payload, 0, payload.len(), &cache)
-        }).expect("local-system close fits service limits"),
+        })
+        .expect("local-system close fits service limits"),
         Some(close)
     );
 }
@@ -1304,10 +1338,11 @@ fn signed_surface_dict_slots_decode_as_mirrors() {
     ];
     let slots = crate::decode::with_test_decode_ctx(|ctx| {
         scalar_slots_with_tokens_and_end(ctx, &body, 3, &scalar::ScalarCache::default())
+            .map(|result| result.map(|table| (table.slots, table.consumed)))
     })
-        .expect("scalar slots are admitted")
-        .expect("a complete three-slot table")
-        .0;
+    .expect("scalar slots are admitted")
+    .expect("a complete three-slot table")
+    .0;
 
     let magnitude = f64::from_be_bytes([0x3f, 0xe8, 1, 2, 3, 4, 5, 6]);
     assert_eq!(
@@ -1325,7 +1360,9 @@ fn a_surface_row_slot_table_states_no_slot_it_did_not_decode() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             scalar_slots_with_tokens_and_end(ctx, &[0xe4, 0x01, 0xe4], 3, &cache)
-        }).expect("scalar slots are admitted"),
+                .map(|result| result.map(|table| (table.slots, table.consumed)))
+        })
+        .expect("scalar slots are admitted"),
         None
     );
     // A body that runs out before its declared count states fewer slots than
@@ -1333,13 +1370,16 @@ fn a_surface_row_slot_table_states_no_slot_it_did_not_decode() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             scalar_slots_with_tokens_and_end(ctx, &[0xe4, 0x18], 3, &cache)
-        }).expect("scalar slots are admitted"),
+                .map(|result| result.map(|table| (table.slots, table.consumed)))
+        })
+        .expect("scalar slots are admitted"),
         None
     );
     // A complete table states every slot with the bytes it was decoded from,
     // and those bytes run from zero to the returned offset.
     let (slots, consumed) = crate::decode::with_test_decode_ctx(|ctx| {
         scalar_slots_with_tokens_and_end(ctx, &[0xe4, 0xe4, 0x18], 3, &cache)
+            .map(|result| result.map(|table| (table.slots, table.consumed)))
     })
     .expect("scalar slots are admitted")
     .expect("a complete three-slot table");
@@ -1357,17 +1397,22 @@ fn a_plane_envelope_slot_table_states_no_slot_it_did_not_decode() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             plane_envelope_scalar_slots_with_tokens_and_end(ctx, &[0x0e, 0x01, 0x0e], 3, &cache)
-        }).expect("envelope slots are admitted"),
+                .map(|result| result.map(|table| (table.slots, table.consumed)))
+        })
+        .expect("envelope slots are admitted"),
         None
     );
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             plane_envelope_scalar_slots_with_tokens_and_end(ctx, &[0x0e, 0x18], 3, &cache)
-        }).expect("envelope slots are admitted"),
+                .map(|result| result.map(|table| (table.slots, table.consumed)))
+        })
+        .expect("envelope slots are admitted"),
         None
     );
     let (slots, consumed) = crate::decode::with_test_decode_ctx(|ctx| {
         plane_envelope_scalar_slots_with_tokens_and_end(ctx, &[0x0e, 0x0e, 0x18], 3, &cache)
+            .map(|result| result.map(|table| (table.slots, table.consumed)))
     })
     .expect("envelope slots are admitted")
     .expect("a complete three-slot envelope table");
@@ -1377,284 +1422,6 @@ fn a_plane_envelope_slot_table_states_no_slot_it_did_not_decode() {
         consumed
     );
     assert!(slots.iter().all(|slot| slot.0.is_some()));
-}
-
-#[test]
-fn terminal_positional_slot_zero_occupies_one_byte() {
-    let slots = crate::decode::with_test_decode_ctx(|ctx| {
-        scalar_slots_with_tokens_and_end(ctx, &[0xe4, 0x18], 2, &scalar::ScalarCache::default())
-    })
-        .expect("scalar slots are admitted")
-        .expect("a complete two-slot table")
-        .0;
-
-    assert_eq!(slots, [(Some(1.0), &[0xe4][..]), (Some(0.0), &[0x18][..])]);
-}
-
-#[test]
-fn named_local_system_expands_row_lane_zero_forms() {
-    let body = [
-        0xf9, 0x04, 0x03, 0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4, 0x43, 0xe0, 0x00,
-        0x18, 0xe4,
-    ];
-
-    assert_eq!(
-        named_surface_value(
-            &SurfacePrototypeFamily::Plane,
-            "local_sys",
-            &body,
-            &scalar::ScalarCache::default(),
-            &"prototype fixture",
-            &mut crate::lane_refusal::LaneRefusals::new()
-        ),
-        SurfaceNamedValue::ScalarArray({
-            let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
-                .expect("valid scalar array");
-            array
-                .fill_values(vec![
-                    Some(0.0),
-                    Some(1.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(1.0),
-                    Some(-0.5),
-                    Some(0.0),
-                    Some(1.0),
-                ])
-                .expect("matching scalar extent");
-            array
-        })
-    );
-}
-
-#[test]
-fn named_local_system_splits_zero_before_coordinate_token() {
-    let body = [
-        0x41, 0xd2, 0x3c, 0xfc, 0xe9, 0x9e, 0x37, 0xb2, 0x79, 0xac, 0x53, 0x1a, 0x28, 0x66, 0x9d,
-        0x18, 0x79, 0xac, 0x53, 0x1a, 0x28, 0x66, 0x9d, 0x5d, 0x3c, 0xfc, 0xe9, 0x9e, 0x37, 0xb2,
-        0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
-    ];
-
-    let slots = sequential_named_local_system_slots(
-        &body,
-        12,
-        &scalar::ScalarCache::default(),
-        &mut ScalarBodyRefusal::default(),
-    )
-    .expect("complete local system");
-
-    assert_eq!(slots[2], Some(0.0));
-    assert_eq!(slots[3], slots[1]);
-    assert_eq!(slots[4], slots[0].map(|value| -value));
-    assert_eq!(slots[5..], [Some(0.0); 7]);
-}
-
-#[test]
-fn named_local_system_decodes_terminal_zero_slot() {
-    let payload = b"srf_prim_ptr(cylinder)\0\xe0\x02local_sys\0\xf9\x04\x03\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18\xe0\x01radius\0\xe4";
-    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
-
-    assert_eq!(
-        records[0].field("local_sys").map(|field| &field.value),
-        Some(&SurfaceNamedValue::ScalarArray({
-            let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
-                .expect("valid scalar array");
-            array
-                .fill_values(vec![
-                    Some(0.0),
-                    Some(1.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(1.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(15.0),
-                    Some(0.0),
-                ])
-                .expect("matching scalar extent");
-            array
-        }))
-    );
-}
-
-#[test]
-fn named_local_system_advances_across_inherited_slots() {
-    let body = [
-        0xe4, 0x0f, 0xe7, 0x03, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
-    ];
-
-    assert_eq!(
-        sequential_named_local_system_slots(
-            &body,
-            12,
-            &scalar::ScalarCache::default(),
-            &mut ScalarBodyRefusal::default()
-        ),
-        Some(vec![
-            Some(1.0),
-            Some(0.0),
-            None,
-            None,
-            None,
-            Some(1.0),
-            Some(0.0),
-            Some(0.0),
-            Some(0.0),
-            Some(0.0),
-            Some(0.0),
-            Some(0.0),
-        ])
-    );
-}
-
-/// The bounded `local_sys` scalar body obeys the rules of the bounded scalar
-/// body it is: a body that ends before its declared count is refused rather
-/// than read as trailing absent slots, and a body with a byte left after its
-/// last declared slot is refused.
-#[test]
-fn a_named_local_system_body_that_is_not_exactly_its_declared_slots_is_refused() {
-    let cache = scalar::ScalarCache::default();
-    // The twelve-slot body of `named_local_system_advances_across_inherited_slots`.
-    let body = [
-        0xe4, 0x0f, 0xe7, 0x03, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
-    ];
-
-    assert_eq!(
-        sequential_named_local_system_slots(&body, 12, &cache, &mut ScalarBodyRefusal::default())
-            .map(|slots| slots.len()),
-        Some(12)
-    );
-    // Thirteen declared slots: the body ends one slot early.
-    assert_eq!(
-        sequential_named_local_system_slots(&body, 13, &cache, &mut ScalarBodyRefusal::default()),
-        None
-    );
-    // Eleven declared slots: the last byte is left over.
-    assert_eq!(
-        sequential_named_local_system_slots(&body, 11, &cache, &mut ScalarBodyRefusal::default()),
-        None
-    );
-    // An inherited run that ends the body far short of the declaration.
-    assert_eq!(
-        sequential_named_local_system_slots(
-            &[0xe4, 0xe7, 0x02],
-            12,
-            &cache,
-            &mut ScalarBodyRefusal::default()
-        ),
-        None
-    );
-}
-
-#[test]
-fn named_local_system_rejects_invalid_inherited_slot_transitions() {
-    for body in [
-        &[0xe7][..],
-        &[0xe7, 0x00],
-        &[0xe7, 0x0d],
-        &[0xe4, 0xe7, 0x0c],
-    ] {
-        assert_eq!(
-            sequential_named_local_system_slots(
-                body,
-                12,
-                &scalar::ScalarCache::default(),
-                &mut ScalarBodyRefusal::default()
-            ),
-            None
-        );
-    }
-}
-
-#[test]
-fn named_local_system_rejects_an_unknown_byte_before_complete_slots() {
-    let payload = b"srf_prim_ptr(cylinder)\0\
-        \xe0\x02local_sys\0\xf9\x04\x03\xfb\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18\
-        \xe0\x01radius\0\xe4";
-    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
-
-    assert_eq!(
-        records[0].field("local_sys").map(|field| &field.value),
-        Some(&SurfaceNamedValue::Opaque(
-            b"\xf9\x04\x03\xfb\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18".to_vec()
-        ))
-    );
-}
-
-#[test]
-fn named_local_system_uses_the_signed_coordinate_dict_lane() {
-    let payload = b"srf_prim_ptr(torus)\0\
-        \xe0\x02local_sys\0\xf9\x04\x03\
-        \x7a\xeb\xb6\x28\xd0\x03\x82\
-        \x28\xb2\x01\x83\xce\x09\x70\xf1\
-        \x18\xe5\x10\
-        \x41\xb2\x01\x83\xce\x09\x70\xf1\
-        \x7a\xeb\xb6\x28\xd0\x03\x82\x18\
-        \x48\x66\x80\x48\x08\x00\x2f\x44\x00";
-    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
-    let SurfaceNamedValue::ScalarArray(array) =
-        &records[0].field("local_sys").expect("local system").value
-    else {
-        panic!("scalar local system");
-    };
-    let values = array.values();
-
-    assert_eq!(values[0], Some(0.997_523_383_819_597_8));
-    assert_eq!(values[1], Some(0.070_335_614_969_227_37));
-    assert_eq!(values[6], Some(-0.070_335_614_969_227_37));
-    assert_eq!(values[7], Some(0.997_523_383_819_597_8));
-    assert_eq!(&values[9..12], &[Some(-180.0), Some(-3.0), Some(40.0)]);
-}
-
-/// `0x0e` is the positive compact half coordinate of the `local_sys` scalar
-/// lane. The body declares three slots and encodes three.
-#[test]
-fn named_local_system_decodes_positive_compact_half_coordinate_over_a_complete_body() {
-    let body = [0xf9, 0x01, 0x03, 0x0e, 0x0f, 0x0f];
-    let SurfaceNamedValue::ScalarArray(array) = named_surface_value(
-        &SurfacePrototypeFamily::Plane,
-        "local_sys",
-        &body,
-        &scalar::ScalarCache::default(),
-        &"prototype fixture",
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    ) else {
-        panic!("scalar local system");
-    };
-    let values = array.values();
-
-    assert_eq!(values, [Some(0.5), Some(0.0), Some(0.0)]);
-}
-
-#[test]
-fn dimensioned_scalar_arrays_decode_compact_extents() {
-    let mut body = vec![0xf9, 0x80, 0x88, 0x03];
-    body.extend([0x0f; 136 * 3]);
-    let SurfaceNamedValue::ScalarArray(array) = named_surface_value(
-        &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
-        "i_points",
-        &body,
-        &scalar::ScalarCache::default(),
-        &"prototype fixture",
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    ) else {
-        panic!("dimensioned scalar array");
-    };
-    let dimensions = array.dimensions();
-    let count = array.count();
-    let values = array.values();
-
-    assert_eq!(dimensions, 136);
-    assert_eq!(count, 3);
-    assert_eq!(values.len(), 408);
-    assert!(values.iter().all(|value| *value == Some(0.0)));
 }
 
 #[test]
@@ -2187,4 +1954,283 @@ fn torus_rows_keep_the_byte_after_a_seven_byte_coordinate() {
         Some((-7.0, 7))
     );
     assert_eq!(body[7], 0xf6);
+}
+
+#[test]
+fn terminal_positional_slot_zero_occupies_one_byte() {
+    let slots = crate::decode::with_test_decode_ctx(|ctx| {
+        scalar_slots_with_tokens_and_end(ctx, &[0xe4, 0x18], 2, &scalar::ScalarCache::default())
+            .map(|result| result.map(|table| (table.slots, table.consumed)))
+    })
+    .expect("scalar slots are admitted")
+    .expect("a complete two-slot table")
+    .0;
+
+    assert_eq!(slots, [(Some(1.0), &[0xe4][..]), (Some(0.0), &[0x18][..])]);
+}
+
+#[test]
+fn named_local_system_expands_row_lane_zero_forms() {
+    let body = [
+        0xf9, 0x04, 0x03, 0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4, 0x43, 0xe0, 0x00,
+        0x18, 0xe4,
+    ];
+
+    assert_eq!(
+        named_surface_value(
+            &SurfacePrototypeFamily::Plane,
+            "local_sys",
+            &body,
+            &scalar::ScalarCache::default(),
+            &"prototype fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
+        SurfaceNamedValue::ScalarArray({
+            let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
+                .expect("valid scalar array");
+            array
+                .fill_values(vec![
+                    Some(0.0),
+                    Some(1.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(1.0),
+                    Some(-0.5),
+                    Some(0.0),
+                    Some(1.0),
+                ])
+                .expect("matching scalar extent");
+            array
+        })
+    );
+}
+
+#[test]
+fn named_local_system_splits_zero_before_coordinate_token() {
+    let body = [
+        0x41, 0xd2, 0x3c, 0xfc, 0xe9, 0x9e, 0x37, 0xb2, 0x79, 0xac, 0x53, 0x1a, 0x28, 0x66, 0x9d,
+        0x18, 0x79, 0xac, 0x53, 0x1a, 0x28, 0x66, 0x9d, 0x5d, 0x3c, 0xfc, 0xe9, 0x9e, 0x37, 0xb2,
+        0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+    ];
+
+    let slots = sequential_named_local_system_slots(
+        &body,
+        12,
+        &scalar::ScalarCache::default(),
+        &mut ScalarBodyRefusal::default(),
+    )
+    .expect("complete local system");
+
+    assert_eq!(slots[2], Some(0.0));
+    assert_eq!(slots[3], slots[1]);
+    assert_eq!(slots[4], slots[0].map(|value| -value));
+    assert_eq!(slots[5..], [Some(0.0); 7]);
+}
+
+#[test]
+fn named_local_system_decodes_terminal_zero_slot() {
+    let payload = b"srf_prim_ptr(cylinder)\0\xe0\x02local_sys\0\xf9\x04\x03\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18\xe0\x01radius\0\xe4";
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
+
+    assert_eq!(
+        records[0].field("local_sys").map(|field| &field.value),
+        Some(&SurfaceNamedValue::ScalarArray({
+            let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
+                .expect("valid scalar array");
+            array
+                .fill_values(vec![
+                    Some(0.0),
+                    Some(1.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(1.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(15.0),
+                    Some(0.0),
+                ])
+                .expect("matching scalar extent");
+            array
+        }))
+    );
+}
+
+#[test]
+fn named_local_system_advances_across_inherited_slots() {
+    let body = [
+        0xe4, 0x0f, 0xe7, 0x03, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+    ];
+
+    assert_eq!(
+        sequential_named_local_system_slots(
+            &body,
+            12,
+            &scalar::ScalarCache::default(),
+            &mut ScalarBodyRefusal::default()
+        ),
+        Some(vec![
+            Some(1.0),
+            Some(0.0),
+            None,
+            None,
+            None,
+            Some(1.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+        ])
+    );
+}
+
+/// The bounded `local_sys` scalar body obeys the rules of the bounded scalar
+/// body it is: a body that ends before its declared count is refused rather
+/// than read as trailing absent slots, and a body with a byte left after its
+/// last declared slot is refused.
+#[test]
+fn a_named_local_system_body_that_is_not_exactly_its_declared_slots_is_refused() {
+    let cache = scalar::ScalarCache::default();
+    // The twelve-slot body of `named_local_system_advances_across_inherited_slots`.
+    let body = [
+        0xe4, 0x0f, 0xe7, 0x03, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+    ];
+
+    assert_eq!(
+        sequential_named_local_system_slots(&body, 12, &cache, &mut ScalarBodyRefusal::default())
+            .map(|slots| slots.len()),
+        Some(12)
+    );
+    // Thirteen declared slots: the body ends one slot early.
+    assert_eq!(
+        sequential_named_local_system_slots(&body, 13, &cache, &mut ScalarBodyRefusal::default()),
+        None
+    );
+    // Eleven declared slots: the last byte is left over.
+    assert_eq!(
+        sequential_named_local_system_slots(&body, 11, &cache, &mut ScalarBodyRefusal::default()),
+        None
+    );
+    // An inherited run that ends the body far short of the declaration.
+    assert_eq!(
+        sequential_named_local_system_slots(
+            &[0xe4, 0xe7, 0x02],
+            12,
+            &cache,
+            &mut ScalarBodyRefusal::default()
+        ),
+        None
+    );
+}
+
+#[test]
+fn named_local_system_rejects_invalid_inherited_slot_transitions() {
+    for body in [
+        &[0xe7][..],
+        &[0xe7, 0x00],
+        &[0xe7, 0x0d],
+        &[0xe4, 0xe7, 0x0c],
+    ] {
+        assert_eq!(
+            sequential_named_local_system_slots(
+                body,
+                12,
+                &scalar::ScalarCache::default(),
+                &mut ScalarBodyRefusal::default()
+            ),
+            None
+        );
+    }
+}
+
+#[test]
+fn named_local_system_rejects_an_unknown_byte_before_complete_slots() {
+    let payload = b"srf_prim_ptr(cylinder)\0\
+        \xe0\x02local_sys\0\xf9\x04\x03\xfb\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18\
+        \xe0\x01radius\0\xe4";
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
+
+    assert_eq!(
+        records[0].field("local_sys").map(|field| &field.value),
+        Some(&SurfaceNamedValue::Opaque(
+            b"\xf9\x04\x03\xfb\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18".to_vec()
+        ))
+    );
+}
+
+#[test]
+fn named_local_system_uses_the_signed_coordinate_dict_lane() {
+    let payload = b"srf_prim_ptr(torus)\0\
+        \xe0\x02local_sys\0\xf9\x04\x03\
+        \x7a\xeb\xb6\x28\xd0\x03\x82\
+        \x28\xb2\x01\x83\xce\x09\x70\xf1\
+        \x18\xe5\x10\
+        \x41\xb2\x01\x83\xce\x09\x70\xf1\
+        \x7a\xeb\xb6\x28\xd0\x03\x82\x18\
+        \x48\x66\x80\x48\x08\x00\x2f\x44\x00";
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
+    let SurfaceNamedValue::ScalarArray(array) =
+        &records[0].field("local_sys").expect("local system").value
+    else {
+        panic!("scalar local system");
+    };
+    let values = array.values();
+
+    assert_eq!(values[0], Some(0.997_523_383_819_597_8));
+    assert_eq!(values[1], Some(0.070_335_614_969_227_37));
+    assert_eq!(values[6], Some(-0.070_335_614_969_227_37));
+    assert_eq!(values[7], Some(0.997_523_383_819_597_8));
+    assert_eq!(&values[9..12], &[Some(-180.0), Some(-3.0), Some(40.0)]);
+}
+
+/// `0x0e` is the positive compact half coordinate of the `local_sys` scalar
+/// lane. The body declares three slots and encodes three.
+#[test]
+fn named_local_system_decodes_positive_compact_half_coordinate_over_a_complete_body() {
+    let body = [0xf9, 0x01, 0x03, 0x0e, 0x0f, 0x0f];
+    let SurfaceNamedValue::ScalarArray(array) = named_surface_value(
+        &SurfacePrototypeFamily::Plane,
+        "local_sys",
+        &body,
+        &scalar::ScalarCache::default(),
+        &"prototype fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    ) else {
+        panic!("scalar local system");
+    };
+    let values = array.values();
+
+    assert_eq!(values, [Some(0.5), Some(0.0), Some(0.0)]);
+}
+
+#[test]
+fn dimensioned_scalar_arrays_decode_compact_extents() {
+    let mut body = vec![0xf9, 0x80, 0x88, 0x03];
+    body.extend([0x0f; 136 * 3]);
+    let SurfaceNamedValue::ScalarArray(array) = named_surface_value(
+        &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
+        "i_points",
+        &body,
+        &scalar::ScalarCache::default(),
+        &"prototype fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    ) else {
+        panic!("dimensioned scalar array");
+    };
+    let dimensions = array.dimensions();
+    let count = array.count();
+    let values = array.values();
+
+    assert_eq!(dimensions, 136);
+    assert_eq!(count, 3);
+    assert_eq!(values.len(), 408);
+    assert!(values.iter().all(|value| *value == Some(0.0)));
 }

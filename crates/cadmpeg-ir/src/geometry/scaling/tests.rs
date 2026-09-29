@@ -330,118 +330,213 @@ fn a_scaled_polygonal_surface_keeps_its_triangles_and_refuses_only_overflow() {
     );
 }
 
-fn with_scaling_limits<T>(work: u64, retained: u64, depth: u64,
-    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+fn with_scaling_limits<T>(
+    work: u64,
+    retained: u64,
+    depth: u64,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = work;
     policy.limits.max_retained_bytes = retained;
     policy.limits.max_recursion_depth = depth;
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     run(&ctx)
 }
 
 fn scaling_curve(x: f64, rational: bool) -> SolvedCurveGeometry {
-    SolvedCurveGeometry::Nurbs(crate::geometry::nurbs::NurbsCurve::from_lanes(1,
-        vec![0.0, 0.0, 1.0, 1.0], vec![Point3::new(x, 0.0, 0.0); 2],
-        rational.then(|| vec![1.0, 2.0]), false).expect("curve"))
+    SolvedCurveGeometry::Nurbs(
+        crate::geometry::nurbs::NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(x, 0.0, 0.0); 2],
+            rational.then(|| vec![1.0, 2.0]),
+            false,
+        )
+        .expect("curve"),
+    )
 }
 
 fn scaling_surface(x: f64, rational: bool) -> SolvedSurfaceGeometry {
     use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
-    SolvedSurfaceGeometry::Nurbs(NurbsSurface::from_lanes(
-        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        NurbsSurfaceLanes::new(vec![vec![Point3::new(x, 0.0, 0.0); 2]; 2],
-            rational.then(|| vec![vec![1.0, 2.0]; 2])), false).expect("surface"))
+    SolvedSurfaceGeometry::Nurbs(
+        NurbsSurface::from_lanes(
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                vec![vec![Point3::new(x, 0.0, 0.0); 2]; 2],
+                rational.then(|| vec![vec![1.0, 2.0]; 2]),
+            ),
+            false,
+        )
+        .expect("surface"),
+    )
 }
 
 #[test]
 fn owned_nurbs_scaling_refuses_each_pole_work_and_reuses_lanes() {
     for rational in [false, true] {
         for cap in [1, 2] {
-            let result = with_scaling_limits(cap, u64::MAX, u64::MAX,
-                |ctx| scaling_curve(1.0, rational).scaled_owned_admitted(ctx, scale(2.0)));
-            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-                if resource.operation == "IR NURBS unit scaling work"));
+            let result = with_scaling_limits(cap, u64::MAX, u64::MAX, |ctx| {
+                scaling_curve(1.0, rational).scaled_owned_admitted(ctx, scale(2.0))
+            });
+            assert!(
+                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+                if resource.operation == "IR NURBS unit scaling work")
+            );
         }
-        assert_eq!(with_scaling_limits(3, 0, u64::MAX,
-            |ctx| scaling_curve(1.0, rational).scaled_owned_admitted(ctx, scale(2.0))).expect("admitted"),
-            scaling_curve(1.0, rational).scaled(scale(2.0)));
+        assert_eq!(
+            with_scaling_limits(3, 0, u64::MAX, |ctx| scaling_curve(1.0, rational)
+                .scaled_owned_admitted(ctx, scale(2.0)))
+            .expect("admitted"),
+            scaling_curve(1.0, rational).scaled(scale(2.0))
+        );
         for cap in 1..5 {
-            let result = with_scaling_limits(cap, u64::MAX, u64::MAX,
-                |ctx| scaling_surface(1.0, rational).scaled_owned_admitted(ctx, scale(2.0)));
-            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-                if resource.operation == "IR NURBS unit scaling work"));
+            let result = with_scaling_limits(cap, u64::MAX, u64::MAX, |ctx| {
+                scaling_surface(1.0, rational).scaled_owned_admitted(ctx, scale(2.0))
+            });
+            assert!(
+                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+                if resource.operation == "IR NURBS unit scaling work")
+            );
         }
-        assert_eq!(with_scaling_limits(5, 0, u64::MAX,
-            |ctx| scaling_surface(1.0, rational).scaled_owned_admitted(ctx, scale(2.0))).expect("admitted"),
-            scaling_surface(1.0, rational).scaled(scale(2.0)));
+        assert_eq!(
+            with_scaling_limits(5, 0, u64::MAX, |ctx| scaling_surface(1.0, rational)
+                .scaled_owned_admitted(ctx, scale(2.0)))
+            .expect("admitted"),
+            scaling_surface(1.0, rational).scaled(scale(2.0))
+        );
         for retained in [0, 40] {
             assert!(matches!(with_scaling_limits(u64::MAX, retained, u64::MAX,
                 |ctx| scaling_curve(f64::MAX, rational).scaled_owned_admitted(ctx, scale(2.0))),
                 Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR NURBS refusal text"));
         }
-        assert_eq!(with_scaling_limits(u64::MAX, u64::MAX, u64::MAX,
-            |ctx| scaling_surface(f64::MAX, rational).scaled_owned_admitted(ctx, scale(2.0))).expect("admitted refusal"),
-            scaling_surface(f64::MAX, rational).scaled(scale(2.0)));
+        assert_eq!(
+            with_scaling_limits(u64::MAX, u64::MAX, u64::MAX, |ctx| scaling_surface(
+                f64::MAX,
+                rational
+            )
+            .scaled_owned_admitted(ctx, scale(2.0)))
+            .expect("admitted refusal"),
+            scaling_surface(f64::MAX, rational).scaled(scale(2.0))
+        );
     }
 }
 
 #[test]
 fn owned_sample_scaling_refuses_work_and_retained_text_without_row_copies() {
     for parameterized in [false, true] {
-        let curve = |x, deflection| SolvedCurveGeometry::Polyline(PolylineCurve::new(
-            if parameterized { PolylineSamples::Parameterized { vertices: vec![
-                PolylineVertex { parameter: 0.0, point: Point3::new(x, 0.0, 0.0) },
-                PolylineVertex { parameter: 1.0, point: Point3::new(0.0, 1.0, 0.0) },
-            ].try_into().expect("samples") } } else { PolylineSamples::Unparameterized {
-                points: vec![Point3::new(x, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)].try_into().expect("samples") } },
-            deflection).expect("polyline"));
+        let curve = |x, deflection| {
+            SolvedCurveGeometry::Polyline(
+                PolylineCurve::new(
+                    if parameterized {
+                        PolylineSamples::Parameterized {
+                            vertices: vec![
+                                PolylineVertex {
+                                    parameter: 0.0,
+                                    point: Point3::new(x, 0.0, 0.0),
+                                },
+                                PolylineVertex {
+                                    parameter: 1.0,
+                                    point: Point3::new(0.0, 1.0, 0.0),
+                                },
+                            ]
+                            .try_into()
+                            .expect("samples"),
+                        }
+                    } else {
+                        PolylineSamples::Unparameterized {
+                            points: vec![Point3::new(x, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)]
+                                .try_into()
+                                .expect("samples"),
+                        }
+                    },
+                    deflection,
+                )
+                .expect("polyline"),
+            )
+        };
         for cap in [1, 2] {
             assert!(matches!(with_scaling_limits(cap, 0, u64::MAX,
                 |ctx| curve(1.0, 0.0).scaled_owned_admitted(ctx, scale(2.0))),
                 Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR sampled unit scaling work"));
         }
-        assert_eq!(with_scaling_limits(3, 0, u64::MAX,
-            |ctx| curve(1.0, 0.0).scaled_owned_admitted(ctx, scale(2.0))).expect("admitted"), curve(1.0, 0.0).scaled(scale(2.0)));
+        assert_eq!(
+            with_scaling_limits(3, 0, u64::MAX, |ctx| curve(1.0, 0.0)
+                .scaled_owned_admitted(ctx, scale(2.0)))
+            .expect("admitted"),
+            curve(1.0, 0.0).scaled(scale(2.0))
+        );
         for (x, deflection) in [(f64::MAX, f64::MAX), (1.0, f64::MAX)] {
             assert!(matches!(with_scaling_limits(u64::MAX, 0, u64::MAX,
                 |ctx| curve(x, deflection).scaled_owned_admitted(ctx, scale(2.0))),
                 Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR sampled refusal text"));
-            assert_eq!(with_scaling_limits(u64::MAX, u64::MAX, u64::MAX,
-                |ctx| curve(x, deflection).scaled_owned_admitted(ctx, scale(2.0))).expect("admitted refusal"), curve(x, deflection).scaled(scale(2.0)));
+            assert_eq!(
+                with_scaling_limits(u64::MAX, u64::MAX, u64::MAX, |ctx| curve(x, deflection)
+                    .scaled_owned_admitted(ctx, scale(2.0)))
+                .expect("admitted refusal"),
+                curve(x, deflection).scaled(scale(2.0))
+            );
         }
     }
-    let surface = |x, deflection| SolvedSurfaceGeometry::Polygonal(PolygonalSurface::new(
-        vec![Point3::new(x, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
-        vec![[0, 1, 2]], deflection).expect("polygonal"));
+    let surface = |x, deflection| {
+        SolvedSurfaceGeometry::Polygonal(
+            PolygonalSurface::new(
+                vec![
+                    Point3::new(x, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                    Point3::new(0.0, 0.0, 1.0),
+                ],
+                vec![[0, 1, 2]],
+                deflection,
+            )
+            .expect("polygonal"),
+        )
+    };
     for cap in 1..4 {
         assert!(matches!(with_scaling_limits(cap, 0, u64::MAX,
             |ctx| surface(1.0, 0.0).scaled_owned_admitted(ctx, scale(2.0))),
             Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR sampled unit scaling work"));
     }
-    assert_eq!(with_scaling_limits(4, 0, u64::MAX,
-        |ctx| surface(1.0, 0.0).scaled_owned_admitted(ctx, scale(2.0))).expect("admitted"), surface(1.0, 0.0).scaled(scale(2.0)));
+    assert_eq!(
+        with_scaling_limits(4, 0, u64::MAX, |ctx| surface(1.0, 0.0)
+            .scaled_owned_admitted(ctx, scale(2.0)))
+        .expect("admitted"),
+        surface(1.0, 0.0).scaled(scale(2.0))
+    );
     for (x, deflection) in [(f64::MAX, f64::MAX), (1.0, f64::MAX)] {
         assert!(matches!(with_scaling_limits(u64::MAX, 0, u64::MAX,
             |ctx| surface(x, deflection).scaled_owned_admitted(ctx, scale(2.0))),
             Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR sampled refusal text"));
-        assert_eq!(with_scaling_limits(u64::MAX, u64::MAX, u64::MAX,
-            |ctx| surface(x, deflection).scaled_owned_admitted(ctx, scale(2.0))).expect("admitted refusal"), surface(x, deflection).scaled(scale(2.0)));
+        assert_eq!(
+            with_scaling_limits(u64::MAX, u64::MAX, u64::MAX, |ctx| surface(x, deflection)
+                .scaled_owned_admitted(ctx, scale(2.0)))
+            .expect("admitted refusal"),
+            surface(x, deflection).scaled(scale(2.0))
+        );
     }
 }
 
 #[test]
 fn owned_placement_scaling_refuses_nesting_and_geometry_work() {
-    let surface = || SolvedSurfaceGeometry::Transformed(PlacedSurface::try_new(Box::new(plane()), Transform::identity()).expect("placement"));
+    let surface = || {
+        SolvedSurfaceGeometry::Transformed(
+            PlacedSurface::try_new(Box::new(plane()), Transform::identity()).expect("placement"),
+        )
+    };
     assert!(matches!(with_scaling_limits(u64::MAX, 0, 0,
         |ctx| surface().scaled_owned_admitted(ctx, scale(2.0))),
         Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR geometry unit scaling nesting"));
     assert!(matches!(with_scaling_limits(0, 0, 1,
         |ctx| surface().scaled_owned_admitted(ctx, scale(2.0))),
         Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR geometry unit scaling work"));
-    assert_eq!(with_scaling_limits(2, 0, 1,
-        |ctx| surface().scaled_owned_admitted(ctx, scale(2.0))).expect("admitted"), surface().scaled(scale(2.0)));
+    assert_eq!(
+        with_scaling_limits(2, 0, 1, |ctx| surface()
+            .scaled_owned_admitted(ctx, scale(2.0)))
+        .expect("admitted"),
+        surface().scaled(scale(2.0))
+    );
 }

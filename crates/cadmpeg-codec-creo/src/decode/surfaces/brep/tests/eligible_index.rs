@@ -36,8 +36,8 @@ fn index_limit_error(limit: u64) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     BrepEligibleFaceIndexes::from_faces(&ctx, &faces, &rows)
         .err()
         .expect("eligible-face index allocation refused")
@@ -45,9 +45,12 @@ fn index_limit_error(limit: u64) -> CodecError {
 
 fn assert_collection_refusal(limit: u64, operation: &'static str) {
     let error = index_limit_error(limit);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation), "{error:?}");
+            && resource.operation == operation),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -94,7 +97,10 @@ fn brep_eligible_face_indexes_preserve_service_order() {
         BrepEligibleFaceIndexes::from_faces(ctx, &faces, &rows)
     })
     .expect("service eligible-face indexes admitted");
-    assert_eq!(indexes.emitted_half_edges, BTreeSet::from([lp.half_edges[0]]));
+    assert_eq!(
+        indexes.emitted_half_edges,
+        BTreeSet::from([lp.half_edges[0]])
+    );
     assert_eq!(indexes.face_curves, BTreeSet::from([10]));
     assert_eq!(indexes.closed_single_edge_curves, BTreeSet::from([10]));
     assert_eq!(indexes.row_offsets[&10], 12);

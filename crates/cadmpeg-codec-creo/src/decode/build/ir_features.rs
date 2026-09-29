@@ -30,8 +30,9 @@ use super::super::feature_history::named::{
     retain_native_feature_parameters,
 };
 use super::super::feature_history::outputs::{
-    copy_body_id, decoded_feature_reference_name, feature_output_bodies, feature_parameters, feature_reference_name, feature_source_properties,
-    insert_feature_source_property, schema_operation_kind, SchemaClassList,
+    copy_body_id, decoded_feature_reference_name, feature_output_bodies, feature_parameters,
+    feature_reference_name, feature_source_properties, insert_feature_source_property,
+    schema_operation_kind, SchemaClassList,
 };
 use super::super::native::annotate;
 use super::super::sketch_ids::owning_feature_definition_ref;
@@ -50,7 +51,9 @@ fn compose_feature_id<'a>(
     let (text, reservation) = ctx.format_scoped(
         format_args!(
             "{}:{}:{}#{feature_id}",
-            namespace.format(), namespace.scope(), namespace.kind()
+            namespace.format(),
+            namespace.scope(),
+            namespace.kind()
         ),
         "creo model feature identity",
     )?;
@@ -136,7 +139,12 @@ fn ordered_row_feature_ids(
     let mut seen = BTreeSet::new();
     let mut ids = Vec::new();
     for row in rows {
-        if admit_new_feature_id(ctx, &mut seen, row.feature_id, "creo feature row identity nodes")? {
+        if admit_new_feature_id(
+            ctx,
+            &mut seen,
+            row.feature_id,
+            "creo feature row identity nodes",
+        )? {
             ctx.try_reserve_items(&mut ids, 1, "creo feature row IDs")?;
             ids.push(row.feature_id);
         }
@@ -184,7 +192,12 @@ pub(super) fn emit_model_features(
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(ctx, scan)?;
     let mut operation_feature_ids = BTreeSet::new();
     for operation in &scan.features.operations {
-        admit_new_feature_id(ctx, &mut operation_feature_ids, operation.feature_id, "creo operation feature identity nodes")?;
+        admit_new_feature_id(
+            ctx,
+            &mut operation_feature_ids,
+            operation.feature_id,
+            "creo operation feature identity nodes",
+        )?;
     }
     for datum in &scan.planes.datums {
         if operation_feature_ids.contains(&datum.feature_id) {
@@ -194,7 +207,8 @@ pub(super) fn emit_model_features(
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             "ActDatums",
@@ -236,7 +250,8 @@ pub(super) fn emit_model_features(
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -279,7 +294,7 @@ pub(super) fn emit_model_features(
                 cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
                     feature_output_bodies(ctx, scan, ir, feature_id)?,
                 )
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref: None,
         };
@@ -289,9 +304,13 @@ pub(super) fn emit_model_features(
     }
     let operation_ordinal_base = ir.model.features.len();
     for (operation_index, operation) in scan.features.operations.iter().enumerate() {
-        if !ir.model.features.iter().any(|feature| crate::identity::matches_numbered_identity(
-            feature.id.as_str(), "creo:model:feature#", operation.feature_id,
-        )) {
+        if !ir.model.features.iter().any(|feature| {
+            crate::identity::matches_numbered_identity(
+                feature.id.as_str(),
+                "creo:model:feature#",
+                operation.feature_id,
+            )
+        }) {
             ctx.charge_entities(1, "admit Creo model features")?;
         }
         let current_operation =
@@ -301,7 +320,12 @@ pub(super) fn emit_model_features(
         if let Some(prefix) = current_operation
             .and_then(crate::feature::operations::FeatureOperation::stored_name_prefix)
         {
-            insert_feature_source_property(ctx, &mut source_properties, "mdl_stored_name_prefix", char::from(prefix))?;
+            insert_feature_source_property(
+                ctx,
+                &mut source_properties,
+                "mdl_stored_name_prefix",
+                char::from(prefix),
+            )?;
         }
         let mut parameters = feature_parameters(ctx, scan, operation.feature_id)?;
         let schema_class = feature_schema_class(scan, operation.feature_id);
@@ -334,7 +358,11 @@ pub(super) fn emit_model_features(
                     })
                     .or_else(|| {
                         match unbounded_feature_plane_definition(
-                            ctx, scan, ir, source_carriers, operation.feature_id,
+                            ctx,
+                            scan,
+                            ir,
+                            source_carriers,
+                            operation.feature_id,
                         ) {
                             Ok(Some(definition)) => Some(Ok(definition)),
                             Ok(None) => None,
@@ -343,12 +371,16 @@ pub(super) fn emit_model_features(
                     })
                     .unwrap_or_else(|| {
                         Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-                            kind: ctx.copy_retained_text(
-                                current_operation
-                                    .map_or("Native Feature", |operation| operation.kind.as_str()),
-                                "creo native Feature kind",
-                            )?.into(),
-                            parameters: cadmpeg_core::text::named_entries_checked(ctx,
+                            kind: ctx
+                                .copy_retained_text(
+                                    current_operation.map_or("Native Feature", |operation| {
+                                        operation.kind.as_str()
+                                    }),
+                                    "creo native Feature kind",
+                                )?
+                                .into(),
+                            parameters: cadmpeg_core::text::named_entries_checked(
+                                ctx,
                                 format_args!("creo:model:feature#{}", operation.feature_id),
                                 std::mem::take(&mut parameters),
                             )?,
@@ -383,7 +415,12 @@ pub(super) fn emit_model_features(
             .map_or("MdlStatus", |section| section.name());
         let name = current_operation
             .filter(|operation| operation.display_name_stored())
-            .and_then(|operation| operation.name.stored_name_bytes().map(|bytes| (operation, bytes)))
+            .and_then(|operation| {
+                operation
+                    .name
+                    .stored_name_bytes()
+                    .map(|bytes| (operation, bytes))
+            })
             .map(|(operation, bytes)| {
                 let mut prefix_bytes = [0u8; 4];
                 let stripped = operation
@@ -405,7 +442,9 @@ pub(super) fn emit_model_features(
             .and_then(|parent_feature_id| {
                 ir.model.features.iter().find(|feature| {
                     crate::identity::matches_numbered_identity(
-                        feature.id.as_str(), "creo:model:feature#", parent_feature_id,
+                        feature.id.as_str(),
+                        "creo:model:feature#",
+                        parent_feature_id,
                     )
                 })
             })
@@ -442,7 +481,8 @@ pub(super) fn emit_model_features(
             merge_feature_source_properties(
                 ctx,
                 &mut existing.source_properties,
-                cadmpeg_core::text::named_entries_checked(ctx,
+                cadmpeg_core::text::named_entries_checked(
+                    ctx,
                     format_args!("creo:model:feature#{}", operation.feature_id),
                     source_properties,
                 )?,
@@ -454,14 +494,18 @@ pub(super) fn emit_model_features(
                 existing.native_ref = native_ref;
             }
             let mut combined_outputs = Vec::new();
-            for body in existing.evaluation.outputs().iter() {
+            for body in existing.evaluation.outputs() {
                 let copy = copy_body_id(ctx, body)?;
                 ctx.try_reserve_items(&mut combined_outputs, 1, "creo combined feature outputs")?;
                 combined_outputs.push(copy);
             }
             for output in outputs {
                 if !combined_outputs.contains(&output) {
-                    ctx.try_reserve_items(&mut combined_outputs, 1, "creo combined feature outputs")?;
+                    ctx.try_reserve_items(
+                        &mut combined_outputs,
+                        1,
+                        "creo combined feature outputs",
+                    )?;
                     combined_outputs.push(output);
                 }
             }
@@ -479,7 +523,8 @@ pub(super) fn emit_model_features(
         } else {
             ("feature_recipe", Exactness::ByteExact)
         };
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             operation_section,
@@ -495,7 +540,8 @@ pub(super) fn emit_model_features(
             suppressed: Some(false),
             dependencies: DistinctMembers::try_from_reserved_vec(dependencies)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            source_properties: cadmpeg_core::text::named_entries_checked(ctx,
+            source_properties: cadmpeg_core::text::named_entries_checked(
+                ctx,
                 format_args!("creo:model:feature#{}", operation.feature_id),
                 source_properties,
             )?,
@@ -539,7 +585,8 @@ pub(super) fn emit_model_features(
                 .and_then(schema_operation_kind)
                 .unwrap_or("Native Feature")
         });
-        annotate(ctx,
+        annotate(
+            ctx,
             annotations,
             &id,
             "AllFeatur",
@@ -550,16 +597,26 @@ pub(super) fn emit_model_features(
         let mut parameters = feature_parameters(ctx, scan, feature_id)?;
         let mut source_properties = feature_source_properties(ctx, scan, feature_id)?;
         let definition = schema_class.map_or_else(
-            || match match named_feature_definition(ctx, scan, ir, source_carriers, feature_id, kind)? {
+            || match match named_feature_definition(
+                ctx,
+                scan,
+                ir,
+                source_carriers,
+                feature_id,
+                kind,
+            )? {
                 Some(definition) => Some(definition),
-                None => unbounded_feature_plane_definition(
-                    ctx, scan, ir, source_carriers, feature_id,
-                )?,
+                None => {
+                    unbounded_feature_plane_definition(ctx, scan, ir, source_carriers, feature_id)?
+                }
             } {
                 Some(definition) => Ok(definition),
                 None => Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-                    kind: ctx.copy_retained_text(kind, "creo native row Feature kind")?.into(),
-                    parameters: cadmpeg_core::text::named_entries_checked(ctx,
+                    kind: ctx
+                        .copy_retained_text(kind, "creo native row Feature kind")?
+                        .into(),
+                    parameters: cadmpeg_core::text::named_entries_checked(
+                        ctx,
                         format_args!("creo:model:feature#{feature_id}"),
                         std::mem::take(&mut parameters),
                     )?,
@@ -579,10 +636,24 @@ pub(super) fn emit_model_features(
         )?;
         let row_schema_classes = row_feature_schema_classes(ctx, &scan.features.rows, feature_id)?;
         if schema_class.is_none() {
-            insert_feature_source_property(ctx, &mut source_properties, "featdefs_schema_state", if row_schema_classes.is_empty() { "absent" } else { "ambiguous" })?;
+            insert_feature_source_property(
+                ctx,
+                &mut source_properties,
+                "featdefs_schema_state",
+                if row_schema_classes.is_empty() {
+                    "absent"
+                } else {
+                    "ambiguous"
+                },
+            )?;
         }
         if !row_schema_classes.is_empty() {
-            insert_feature_source_property(ctx, &mut source_properties, "featdefs_row_schema_classes", SchemaClassList(&row_schema_classes))?;
+            insert_feature_source_property(
+                ctx,
+                &mut source_properties,
+                "featdefs_row_schema_classes",
+                SchemaClassList(&row_schema_classes),
+            )?;
         }
         retain_native_feature_parameters(ctx, &mut source_properties, &definition, &parameters)?;
         id_bytes.commit()?;
@@ -605,7 +676,8 @@ pub(super) fn emit_model_features(
                 &prototype_feature_dependencies,
             )?)
             .map_err(cadmpeg_core::CodecError::malformed)?,
-            source_properties: cadmpeg_core::text::named_entries_checked(ctx,
+            source_properties: cadmpeg_core::text::named_entries_checked(
+                ctx,
                 format_args!("creo:model:feature#{feature_id}"),
                 source_properties,
             )?,
@@ -618,7 +690,7 @@ pub(super) fn emit_model_features(
                 cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
                     feature_output_bodies(ctx, scan, ir, feature_id)?,
                 )
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref: owning_feature_definition_ref(ctx, scan, feature_id)?,
         };
@@ -766,67 +838,83 @@ pub(super) fn finish_feature_transfers(
                 .filter(|assignment| assignment.activation == activation)
                 .count()
         };
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
             decoded_curve_expression_assignment_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT,
             transferred_curve_expression_parameter_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_TABLE_CELL_ASSIGNMENT_COUNT,
             decoded_curve_expression_table_cell_assignment_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SCOPED_SYMBOL_ASSIGNMENT_COUNT,
             decoded_curve_expression_scoped_symbol_assignment_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SYSTEM_SYMBOL_ASSIGNMENT_COUNT,
             decoded_curve_expression_system_symbol_assignment_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_FUNCTION_WRITE_ASSIGNMENT_COUNT,
             decoded_curve_expression_function_write_assignment_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
             evaluated_curve_expression_assignment_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT,
             decoded_curve_expression_solve_block_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SIMULTANEOUS_EQUATION_COUNT,
             decoded_curve_expression_simultaneous_equation_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_ASSIGNMENT_COUNT,
             decoded_curve_expression_solve_assignment_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT,
             decoded_curve_expression_solve_variable_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT,
             evaluated_curve_expression_solve_block_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT,
             evaluated_curve_expression_solve_variable_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::UNRESOLVED_ACTIVE_CURVE_EXPRESSION_SOLVE_CONTROL_COUNT,
             unresolved_curve_expression_solve_control_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT,
             prohibited_curve_expression_record_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT,
             prohibited_curve_expression_kind_count,
         )?;
@@ -844,7 +932,7 @@ pub(super) fn finish_feature_transfers(
                 crate::curve::CurveExpressionActivation::Conditional,
             ),
         ] {
-            coverage.record_admitted(ctx,key, activation_count(activation))?;
+            coverage.record_admitted(ctx, key, activation_count(activation))?;
         }
         let (decoded_dimension_count, resolved_dimension_count) = scan
             .features
@@ -858,19 +946,23 @@ pub(super) fn finish_feature_transfers(
                     resolved + usize::from(dimension.value.resolved().is_some()),
                 )
             });
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::DECODED_FEATURE_DIMENSION_COUNT,
             decoded_dimension_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT,
             transferred_feature_dimension_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT,
             resolved_dimension_count,
         )?;
-        coverage.record_admitted(ctx,
+        coverage.record_admitted(
+            ctx,
             crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT,
             decoded_dimension_count.saturating_sub(resolved_dimension_count),
         )?;

@@ -24,9 +24,7 @@ fn service_round_support_envelope_cylinder(
     envelope: crate::surface::Type24RoundEnvelope,
 ) -> Option<crate::surface::PositionalCylinderFrame> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        super::round_support_envelope_cylinder(
-            ctx, scan, ir, source_carriers, feature_id, envelope,
-        )
+        super::round_support_envelope_cylinder(ctx, scan, ir, source_carriers, feature_id, envelope)
     })
     .expect("service round envelope admitted")
 }
@@ -59,38 +57,37 @@ fn round_sample_scan() -> crate::container::ContainerScan<'static> {
         raw: vec![0x53, 0, 0, 0, 0, 0, 0],
         offset: 0,
     };
-    scan.surfaces.parameters.push(crate::surface::SurfaceParameterRecord {
-        surface_id: 7,
-        body: token.raw.clone(),
-        scalar_tokens: vec![token],
-        opaque_spans: Vec::new(),
-        scalar_frames: Vec::new(),
-        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
-            crate::surface::SurfaceKind::Cylinder,
-        ),
-        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-        offset: 7,
-        body_offset: 7,
-    });
+    scan.surfaces
+        .parameters
+        .push(crate::surface::SurfaceParameterRecord {
+            surface_id: 7,
+            body: token.raw.clone(),
+            scalar_tokens: vec![token],
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                crate::surface::SurfaceKind::Cylinder,
+            ),
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 7,
+            body_offset: 7,
+        });
     scan
 }
 
 fn round_sample_ir() -> cadmpeg_ir::document::CadIr {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7")
-            .expect("identity grammar"),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-            SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                    0.5,
-                )
-                .expect("cylinder fixture"),
-            ),
-        ),
+        id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7").expect("identity grammar"),
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                0.5,
+            )
+            .expect("cylinder fixture"),
+        )),
         source_object: None,
     });
     ir
@@ -110,19 +107,21 @@ fn mixed_round_sample_scan() -> crate::container::ContainerScan<'static> {
     let body = vec![
         0x18, 0x0d, 0x41, 0xcf, 0xff, 0xff, 0xff, 0xe5, 0x79, 0x7b, 0x0e, 0x29, 0xdf, 0xff,
     ];
-    scan.surfaces.parameters.push(crate::surface::SurfaceParameterRecord {
-        surface_id: 8,
-        body,
-        scalar_tokens: Vec::new(),
-        opaque_spans: Vec::new(),
-        scalar_frames: Vec::new(),
-        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
-            crate::surface::SurfaceKind::TorusOrSphere,
-        ),
-        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-        offset: 8,
-        body_offset: 8,
-    });
+    scan.surfaces
+        .parameters
+        .push(crate::surface::SurfaceParameterRecord {
+            surface_id: 8,
+            body,
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                crate::surface::SurfaceKind::TorusOrSphere,
+            ),
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 8,
+            body_offset: 8,
+        });
     scan
 }
 
@@ -134,8 +133,8 @@ fn mixed_round_sample_limit_error(limit: u64, operation: &'static str) {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = super::mixed_round_radius_samples(
         &ctx,
         &scan,
@@ -144,21 +143,26 @@ fn mixed_round_sample_limit_error(limit: u64, operation: &'static str) {
         &rows,
     )
     .expect_err("mixed round sample growth exceeds the collection limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == operation), "{error:?}");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn generated_round_rows_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
     let mut scan = round_sample_scan();
     scan.surfaces.parameters.clear();
     let ir = cadmpeg_ir::document::CadIr::empty();
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = super::round_constant_radius(
         &ctx,
         &scan,
@@ -167,8 +171,11 @@ fn generated_round_rows_refuse_collection_limit() {
         5,
     )
     .expect_err("generated row exceeds the collection limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo generated round rows"), "{error:?}");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo generated round rows"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -226,11 +233,14 @@ fn round_sample_limit_error(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = run(&ctx, &scan, &ir).expect_err("round samples exceed the collection limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == operation), "{error:?}");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -554,45 +564,47 @@ fn chamfer_uses_transferred_model_plane_carrier() {
 
 #[test]
 fn slot_fillet_cylinder_skips_parallel_midplane_candidates() {
-    let cylinder = crate::decode::with_test_decode_ctx(|ctx| super::slot_fillet_cylinder(
-        ctx,
-        [
-            crate::decode::analytic::equations::PlaneEquation {
-                origin: [0.0, -2.0, 0.0],
-                normal: [0.0, 1.0, 0.0],
-            },
-            crate::decode::analytic::equations::PlaneEquation {
-                origin: [0.0, 3.0, 0.0],
-                normal: [0.0, 1.0, 0.0],
-            },
-        ],
-        &[
-            crate::decode::analytic::equations::PlaneEquation {
-                origin: [-9.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
-            },
-            crate::decode::analytic::equations::PlaneEquation {
-                origin: [-8.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
-            },
-            crate::decode::analytic::equations::PlaneEquation {
-                origin: [-9.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
-            },
-            crate::decode::analytic::equations::PlaneEquation {
-                origin: [-8.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
-            },
-            crate::decode::analytic::equations::PlaneEquation {
-                origin: [0.0, 0.0, -7.0],
-                normal: [0.0, 0.0, 1.0],
-            },
-            crate::decode::analytic::equations::PlaneEquation {
-                origin: [0.0, 0.0, -6.0],
-                normal: [0.0, 0.0, 1.0],
-            },
-        ],
-    ))
+    let cylinder = crate::decode::with_test_decode_ctx(|ctx| {
+        super::slot_fillet_cylinder(
+            ctx,
+            [
+                crate::decode::analytic::equations::PlaneEquation {
+                    origin: [0.0, -2.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+                crate::decode::analytic::equations::PlaneEquation {
+                    origin: [0.0, 3.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+            ],
+            &[
+                crate::decode::analytic::equations::PlaneEquation {
+                    origin: [-9.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                crate::decode::analytic::equations::PlaneEquation {
+                    origin: [-8.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                crate::decode::analytic::equations::PlaneEquation {
+                    origin: [-9.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                crate::decode::analytic::equations::PlaneEquation {
+                    origin: [-8.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                crate::decode::analytic::equations::PlaneEquation {
+                    origin: [0.0, 0.0, -7.0],
+                    normal: [0.0, 0.0, 1.0],
+                },
+                crate::decode::analytic::equations::PlaneEquation {
+                    origin: [0.0, 0.0, -6.0],
+                    normal: [0.0, 0.0, 1.0],
+                },
+            ],
+        )
+    })
     .expect("service profile admits slot midplanes")
     .expect("later independent support pair");
 
@@ -603,7 +615,8 @@ fn slot_fillet_cylinder_skips_parallel_midplane_candidates() {
 #[test]
 fn slot_fillet_midplanes_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let plane = |origin, normal| crate::decode::analytic::equations::PlaneEquation { origin, normal };
+    let plane =
+        |origin, normal| crate::decode::analytic::equations::PlaneEquation { origin, normal };
     let caps = [
         plane([0.0, -2.0, 0.0], [0.0, 1.0, 0.0]),
         plane([0.0, 3.0, 0.0], [0.0, 1.0, 0.0]),
@@ -617,13 +630,16 @@ fn slot_fillet_midplanes_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let Err(error) = super::slot_fillet_cylinder(&ctx, caps, &supports) else {
         panic!("one slot midplane exceeds the collection limit");
     };
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo slot fillet midplanes"), "{error:?}");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo slot fillet midplanes"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -1389,12 +1405,15 @@ fn torus_radius_samples_refuse_collection_limit() {
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
     let error = super::mixed_torus_radius_samples(&ctx, &scan, &rows)
         .expect_err("one torus sample exceeds the collection limit");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo_torus_radius_samples"
-    ), "{error:?}");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo_torus_radius_samples"
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]

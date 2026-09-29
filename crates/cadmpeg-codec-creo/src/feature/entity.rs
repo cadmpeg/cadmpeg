@@ -88,7 +88,10 @@ impl FeatureEntityTable {
 
     pub(crate) fn contains_non_surface_entity_id(&self, entity_id: u32) -> bool {
         !self.surface_ids.contains(&entity_id)
-            && self.entries.iter().any(|entry| entry.entity_id == entity_id)
+            && self
+                .entries
+                .iter()
+                .any(|entry| entry.entity_id == entity_id)
     }
 
     #[cfg(test)]
@@ -615,13 +618,23 @@ mod tests {
         let table = FeatureEntityTable::new(
             4,
             29,
-            vec![dummy_table_entry(7), dummy_table_entry(9), dummy_table_entry(9)],
+            vec![
+                dummy_table_entry(7),
+                dummy_table_entry(9),
+                dummy_table_entry(9),
+            ],
             &std::collections::BTreeSet::from([7]),
             12,
         );
         assert_eq!(table.entry_ids(), [7, 9, 9]);
-        assert_eq!(table.surface_ids_iter().collect::<Vec<_>>(), table.surface_ids());
-        assert_eq!(table.non_surface_entity_ids_iter().collect::<Vec<_>>(), [9, 9]);
+        assert_eq!(
+            table.surface_ids_iter().collect::<Vec<_>>(),
+            table.surface_ids()
+        );
+        assert_eq!(
+            table.non_surface_entity_ids_iter().collect::<Vec<_>>(),
+            [9, 9]
+        );
         assert!(table.contains_surface_id(7));
         assert!(table.contains_non_surface_entity_id(9));
         assert!(!table.contains_non_surface_entity_id(7));

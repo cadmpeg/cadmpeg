@@ -20,8 +20,8 @@ fn assert_numeric_refusal(
     if let Some(limit) = retained_limit {
         policy.limits.max_retained_bytes = limit;
     }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = super::super::numeric_records(
         &ctx,
         data,
@@ -31,8 +31,10 @@ fn assert_numeric_refusal(
         &parents,
     )
     .expect_err("the next numeric allocation exceeds the limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == dimension && resource.operation == operation));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == dimension && resource.operation == operation)
+    );
 }
 
 #[test]

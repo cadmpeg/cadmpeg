@@ -504,8 +504,8 @@ where
                     .take()
                     .map_or(error, NativeConvertError::Resource);
                 return Err(E::from(NativeConvertError::WriteRecord {
-                ordinal,
-                source: Box::new(source),
+                    ordinal,
+                    source: Box::new(source),
                 }));
             }
         };

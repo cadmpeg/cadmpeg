@@ -345,7 +345,12 @@ pub(crate) fn scalar_arrays(
             }
         }
     }
-    crate::sort::stable_sort_by_key(ctx, &mut arrays, |array| array.offset, "creo primitive scalar array ordering")?;
+    crate::sort::stable_sort_by_key(
+        ctx,
+        &mut arrays,
+        |array| array.offset,
+        "creo primitive scalar array ordering",
+    )?;
     Ok(arrays)
 }
 
@@ -438,13 +443,18 @@ mod tests {
     fn primitive_scalar_ordering_refuses_each_index_scratch_before_sorting() {
         use cadmpeg_core::decode::ResourceDimension;
         let bytes: Vec<_> = (0..21).flat_map(|_| named("p1", &[], 0)).collect();
-        let admitted = with_collection_limit(&bytes, 63, |ctx| scalar_arrays(ctx, &bytes)).expect("exact need admits ordering");
+        let admitted = with_collection_limit(&bytes, 63, |ctx| scalar_arrays(ctx, &bytes))
+            .expect("exact need admits ordering");
         assert_eq!(admitted.len(), 21);
-        assert!(admitted.windows(2).all(|pair| pair[0].offset < pair[1].offset));
+        assert!(admitted
+            .windows(2)
+            .all(|pair| pair[0].offset < pair[1].offset));
         for limit in [41, 62] {
             let error = with_collection_limit(&bytes, limit, |ctx| scalar_arrays(ctx, &bytes))
                 .expect_err("ordering scratch needs admission");
-            let cadmpeg_core::CodecError::ResourceLimit(resource) = error else { panic!("ordering resource refusal expected"); };
+            let cadmpeg_core::CodecError::ResourceLimit(resource) = error else {
+                panic!("ordering resource refusal expected");
+            };
             assert_eq!(resource.dimension, ResourceDimension::CollectionItems);
             assert_eq!(resource.operation, "creo primitive scalar array ordering");
             assert_eq!(resource.used + resource.additional, limit + 1);

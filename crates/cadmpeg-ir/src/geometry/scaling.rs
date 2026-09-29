@@ -274,32 +274,47 @@ impl SolvedCurveGeometry {
 impl SolvedCurveGeometry {
     /// Scale an owned carrier without copying its retained text, rows or placement boxes.
     /// Resource refusal is separate from the geometric refusal. Refused candidates are consumed.
-    pub fn scaled_owned_admitted(mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal)
-        -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError>
-    {
+    pub fn scaled_owned_admitted(
+        mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError> {
         match self.scale_in_place_admitted(ctx, scale)? {
             Ok(()) => Ok(Ok(self)),
             Err(error) => Ok(Err(error)),
         }
     }
 
-    fn scale_in_place_admitted(&mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal)
-        -> Result<Result<(), ScaleRefusal>, cadmpeg_core::CodecError>
-    {
+    fn scale_in_place_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<(), ScaleRefusal>, cadmpeg_core::CodecError> {
         ctx.charge_work(1, "IR geometry unit scaling work")?;
         match self {
-            Self::Nurbs(value) => Ok(value.scale_points_admitted(ctx, scale)?.map_err(ScaleRefusal::ControlPoints)),
-            Self::Polyline(value) => Ok(value.scale_points_admitted(ctx, scale)?.map_err(ScaleRefusal::Samples)),
+            Self::Nurbs(value) => Ok(value
+                .scale_points_admitted(ctx, scale)?
+                .map_err(ScaleRefusal::ControlPoints)),
+            Self::Polyline(value) => Ok(value
+                .scale_points_admitted(ctx, scale)?
+                .map_err(ScaleRefusal::Samples)),
             Self::Transformed(placed) => {
                 let _depth = ctx.enter_nested("IR geometry unit scaling nesting")?;
-                if let Err(error) = placed.basis.scale_in_place_admitted(ctx, scale)? { return Ok(Err(error)); }
-                let Some(transform) = placed.transform.scaled_translation(scale) else { return Ok(Err(ScaleRefusal::Translation)); };
+                if let Err(error) = placed.basis.scale_in_place_admitted(ctx, scale)? {
+                    return Ok(Err(error));
+                }
+                let Some(transform) = placed.transform.scaled_translation(scale) else {
+                    return Ok(Err(ScaleRefusal::Translation));
+                };
                 placed.transform = transform;
                 Ok(Ok(()))
             }
             Self::Composite { .. } | Self::Unknown { .. } => Ok(Ok(())),
             analytic => match analytic.scaled(scale) {
-                Ok(scaled) => { *analytic = scaled; Ok(Ok(())) },
+                Ok(scaled) => {
+                    *analytic = scaled;
+                    Ok(Ok(()))
+                }
                 Err(error) => Ok(Err(error)),
             },
         }
@@ -309,32 +324,47 @@ impl SolvedCurveGeometry {
 impl SolvedSurfaceGeometry {
     /// Scale an owned carrier without copying its retained text, rows or placement boxes.
     /// Resource refusal is separate from the geometric refusal. Refused candidates are consumed.
-    pub fn scaled_owned_admitted(mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal)
-        -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError>
-    {
+    pub fn scaled_owned_admitted(
+        mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError> {
         match self.scale_in_place_admitted(ctx, scale)? {
             Ok(()) => Ok(Ok(self)),
             Err(error) => Ok(Err(error)),
         }
     }
 
-    fn scale_in_place_admitted(&mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, scale: PositiveReal)
-        -> Result<Result<(), ScaleRefusal>, cadmpeg_core::CodecError>
-    {
+    fn scale_in_place_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<(), ScaleRefusal>, cadmpeg_core::CodecError> {
         ctx.charge_work(1, "IR geometry unit scaling work")?;
         match self {
-            Self::Nurbs(value) => Ok(value.scale_points_admitted(ctx, scale)?.map_err(ScaleRefusal::ControlPoints)),
-            Self::Polygonal(value) => Ok(value.scale_points_admitted(ctx, scale)?.map_err(ScaleRefusal::Samples)),
+            Self::Nurbs(value) => Ok(value
+                .scale_points_admitted(ctx, scale)?
+                .map_err(ScaleRefusal::ControlPoints)),
+            Self::Polygonal(value) => Ok(value
+                .scale_points_admitted(ctx, scale)?
+                .map_err(ScaleRefusal::Samples)),
             Self::Transformed(placed) => {
                 let _depth = ctx.enter_nested("IR geometry unit scaling nesting")?;
-                if let Err(error) = placed.basis.scale_in_place_admitted(ctx, scale)? { return Ok(Err(error)); }
-                let Some(transform) = placed.transform.scaled_translation(scale) else { return Ok(Err(ScaleRefusal::Translation)); };
+                if let Err(error) = placed.basis.scale_in_place_admitted(ctx, scale)? {
+                    return Ok(Err(error));
+                }
+                let Some(transform) = placed.transform.scaled_translation(scale) else {
+                    return Ok(Err(ScaleRefusal::Translation));
+                };
                 placed.transform = transform;
                 Ok(Ok(()))
             }
             Self::Unknown { .. } => Ok(Ok(())),
             analytic => match analytic.scaled(scale) {
-                Ok(scaled) => { *analytic = scaled; Ok(Ok(())) },
+                Ok(scaled) => {
+                    *analytic = scaled;
+                    Ok(Ok(()))
+                }
                 Err(error) => Ok(Err(error)),
             },
         }

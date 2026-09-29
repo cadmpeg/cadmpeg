@@ -15,18 +15,20 @@ fn with_surface_limits<T>(
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
     policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy)
-        .expect("input fits root byte limit");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(input, &arena, &policy).expect("input fits root byte limit");
     run(&ctx)
 }
 
 fn assert_surface_limit(
-    error: cadmpeg_core::CodecError,
+    error: &cadmpeg_core::CodecError,
     dimension: cadmpeg_core::decode::ResourceDimension,
     operation: &'static str,
 ) {
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == dimension && limit.operation == operation));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == dimension && limit.operation == operation)
+    );
 }
 
 fn limit_reaching_operation(
@@ -34,8 +36,10 @@ fn limit_reaching_operation(
     run: impl Fn(u64) -> cadmpeg_core::CodecError,
 ) -> u64 {
     (0..128)
-        .find(|limit| matches!(run(*limit), cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-            if refusal.operation == operation))
+        .find(|limit| {
+            matches!(run(*limit), cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            if refusal.operation == operation)
+        })
         .expect("the fixture reaches the named resource boundary")
 }
 
@@ -59,7 +63,7 @@ fn named_spline_invalid_scalar_refusal_text_obeys_retained_limit() {
     };
     assert!(parse(u64::MAX).expect("service profile").is_none());
     assert_surface_limit(
-        parse(0).expect_err("refusal text exceeds retained limit"),
+        &parse(0).expect_err("refusal text exceeds retained limit"),
         ResourceDimension::RetainedBytes,
         "creo scalar body refusal text",
     );
@@ -83,7 +87,7 @@ fn named_local_system_invalid_scalar_refusal_text_obeys_retained_limit() {
     };
     assert!(parse(u64::MAX).expect("service profile").is_none());
     assert_surface_limit(
-        parse(0).expect_err("refusal text exceeds retained limit"),
+        &parse(0).expect_err("refusal text exceeds retained limit"),
         ResourceDimension::RetainedBytes,
         "creo scalar body refusal text",
     );
@@ -110,9 +114,12 @@ fn surface_parameter_refuses_header_vector() {
     let error = with_surface_limits(&payload, 0, u64::MAX, |ctx| {
         crate::surface::parameter_records_for_rows(ctx, &payload, &rows)
     })
-    .err()
-    .expect("one header exceeds zero collection items");
-    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo surface parameter headers");
+    .expect_err("one header exceeds zero collection items");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "creo surface parameter headers",
+    );
 }
 
 #[test]
@@ -131,9 +138,12 @@ fn surface_parameter_refuses_body_copy() {
     let error = with_surface_limits(&payload, u64::MAX, 0, |ctx| {
         crate::surface::parameter_records_for_rows(ctx, &payload, &rows)
     })
-    .err()
-    .expect("one body byte exceeds zero retained bytes");
-    assert_surface_limit(error, ResourceDimension::RetainedBytes, "creo surface parameter body");
+    .expect_err("one body byte exceeds zero retained bytes");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::RetainedBytes,
+        "creo surface parameter body",
+    );
 }
 
 #[test]
@@ -152,9 +162,12 @@ fn surface_parameter_refuses_record_vector() {
     let error = with_surface_limits(&payload, 4, u64::MAX, |ctx| {
         crate::surface::parameter_records_for_rows(ctx, &payload, &rows)
     })
-    .err()
-    .expect("the record follows four earlier item admissions");
-    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo surface parameter records");
+    .expect_err("the record follows four earlier item admissions");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "creo surface parameter records",
+    );
 }
 
 #[test]
@@ -162,16 +175,29 @@ fn surface_scalar_refuses_token_vector() {
     use cadmpeg_core::decode::ResourceDimension;
     let body = [0xe4];
     let service = with_surface_limits(&body, u64::MAX, u64::MAX, |ctx| {
-        crate::surface::scalar_tokens(ctx, crate::surface::SurfaceKind::Plane, &body, &scalar::ScalarCache::default())
+        crate::surface::scalar_tokens(
+            ctx,
+            crate::surface::SurfaceKind::Plane,
+            &body,
+            &scalar::ScalarCache::default(),
+        )
     })
     .expect("one token fits service limits");
     assert_eq!(service.len(), 1);
     let error = with_surface_limits(&body, 0, u64::MAX, |ctx| {
-        crate::surface::scalar_tokens(ctx, crate::surface::SurfaceKind::Plane, &body, &scalar::ScalarCache::default())
+        crate::surface::scalar_tokens(
+            ctx,
+            crate::surface::SurfaceKind::Plane,
+            &body,
+            &scalar::ScalarCache::default(),
+        )
     })
-    .err()
-    .expect("one token exceeds zero collection items");
-    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo surface scalar token items");
+    .expect_err("one token exceeds zero collection items");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "creo surface scalar token items",
+    );
 }
 
 #[test]
@@ -179,79 +205,146 @@ fn surface_scalar_refuses_token_bytes() {
     use cadmpeg_core::decode::ResourceDimension;
     let body = [0xe4];
     let error = with_surface_limits(&body, u64::MAX, 0, |ctx| {
-        crate::surface::scalar_tokens(ctx, crate::surface::SurfaceKind::Plane, &body, &scalar::ScalarCache::default())
+        crate::surface::scalar_tokens(
+            ctx,
+            crate::surface::SurfaceKind::Plane,
+            &body,
+            &scalar::ScalarCache::default(),
+        )
     })
-    .err()
-    .expect("one token byte exceeds zero retained bytes");
-    assert_surface_limit(error, ResourceDimension::RetainedBytes, "creo surface scalar token bytes");
+    .expect_err("one token byte exceeds zero retained bytes");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::RetainedBytes,
+        "creo surface scalar token bytes",
+    );
 }
 
 #[test]
 fn surface_token_slot_table_refuses_before_counted_reservation() {
     use cadmpeg_core::decode::ResourceDimension;
     let body = [0xe4, 0x18];
-    let run = |limit| with_surface_limits(&body, limit, u64::MAX, |ctx| {
-        crate::surface::scalar_slots_with_tokens_and_end(
-            ctx, &body, 2, &scalar::ScalarCache::default(),
-        )
-    });
-    assert_eq!(run(2).expect("two slots are admitted").expect("complete table").0.len(), 2);
+    let run = |limit| {
+        with_surface_limits(&body, limit, u64::MAX, |ctx| {
+            crate::surface::scalar_slots_with_tokens_and_end(
+                ctx,
+                &body,
+                2,
+                &scalar::ScalarCache::default(),
+            )
+        })
+    };
+    assert_eq!(
+        run(2)
+            .expect("two slots are admitted")
+            .expect("complete table")
+            .slots
+            .len(),
+        2
+    );
     let error = run(1).expect_err("two slots exceed one collection item");
-    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo surface scalar token slots");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "creo surface scalar token slots",
+    );
 }
 
 #[test]
 fn plane_envelope_slot_table_refuses_before_counted_reservation() {
     use cadmpeg_core::decode::ResourceDimension;
     let body = [0x0e, 0x0e, 0x18];
-    let run = |limit| with_surface_limits(&body, limit, u64::MAX, |ctx| {
-        crate::surface::plane_envelope_scalar_slots_with_tokens_and_end(
-            ctx, &body, 3, &scalar::ScalarCache::default(),
-        )
-    });
-    assert_eq!(run(3).expect("three slots are admitted").expect("complete table").0.len(), 3);
+    let run = |limit| {
+        with_surface_limits(&body, limit, u64::MAX, |ctx| {
+            crate::surface::plane_envelope_scalar_slots_with_tokens_and_end(
+                ctx,
+                &body,
+                3,
+                &scalar::ScalarCache::default(),
+            )
+        })
+    };
+    assert_eq!(
+        run(3)
+            .expect("three slots are admitted")
+            .expect("complete table")
+            .slots
+            .len(),
+        3
+    );
     let error = run(2).expect_err("three slots exceed two collection items");
-    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo plane envelope token slots");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "creo plane envelope token slots",
+    );
 }
 
 #[test]
 fn plane_envelope_final_positive_slot_refuses_before_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     let body = [
-        0x0f, 0xe4, 0x0d, 0x0f, 0x0f, 0x0f, 0xe4, 0x0d, 0x0f,
-        0x99, 1, 2, 3, 4, 5, 6,
+        0x0f, 0xe4, 0x0d, 0x0f, 0x0f, 0x0f, 0xe4, 0x0d, 0x0f, 0x99, 1, 2, 3, 4, 5, 6,
     ];
-    let run = |limit| with_surface_limits(&body, limit, u64::MAX, |ctx| {
-        crate::surface::complete_plane_envelope_slots_with_final_positive_dict(
-            ctx, &body, 9, &scalar::ScalarCache::default(),
-        )
-    });
-    assert_eq!(run(10).expect("ten slots are admitted").expect("complete table").len(), 10);
+    let run = |limit| {
+        with_surface_limits(&body, limit, u64::MAX, |ctx| {
+            crate::surface::complete_plane_envelope_slots_with_final_positive_dict(
+                ctx,
+                &body,
+                9,
+                &scalar::ScalarCache::default(),
+            )
+        })
+    };
+    assert_eq!(
+        run(10)
+            .expect("ten slots are admitted")
+            .expect("complete table")
+            .slots
+            .len(),
+        10
+    );
     let error = run(9).expect_err("the final slot exceeds nine collection items");
-    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo plane envelope final token slot");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "creo plane envelope final token slot",
+    );
 }
 
 #[test]
 fn plane_envelope_close_slot_refuses_before_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     let body = [
-        0x0f, 0xe4, 0x0d, 0x0f, 0x0f, 0x0f, 0xe4, 0x0d, 0x0f,
-        0x99, 1, 2, 3, 4, 5, 6, 0xe3,
+        0x0f, 0xe4, 0x0d, 0x0f, 0x0f, 0x0f, 0xe4, 0x0d, 0x0f, 0x99, 1, 2, 3, 4, 5, 6, 0xe3,
     ];
-    let run = |limit| with_surface_limits(&body, limit, u64::MAX, |ctx| {
-        crate::surface::plane_envelope_compound_close(ctx, &body, &scalar::ScalarCache::default())
-    });
-    assert_eq!(run(10).expect("ten slots are admitted"), Some(body.len() - 1));
+    let run = |limit| {
+        with_surface_limits(&body, limit, u64::MAX, |ctx| {
+            crate::surface::plane_envelope_compound_close(
+                ctx,
+                &body,
+                &scalar::ScalarCache::default(),
+            )
+        })
+    };
+    assert_eq!(
+        run(10).expect("ten slots are admitted"),
+        Some(body.len() - 1)
+    );
     let error = run(9).expect_err("the close slot exceeds nine collection items");
-    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo plane envelope close token slot");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "creo plane envelope close token slot",
+    );
 }
 
 #[test]
 fn plane_envelope_reader_propagates_slot_refusal() {
     use cadmpeg_core::decode::ResourceDimension;
     let payload = [
-        7, 0x22, 4, 0x01, 0, 0, 0x0f, 0xe4, 0x0d, 0x0f, 0x0f, 0x0f, 0xe4,
-        0x0d, 0x0f, 0x99, 1, 2, 3, 4, 5, 6, 0xe3,
+        7, 0x22, 4, 0x01, 0, 0, 0x0f, 0xe4, 0x0d, 0x0f, 0x0f, 0x0f, 0xe4, 0x0d, 0x0f, 0x99, 1, 2,
+        3, 4, 5, 6, 0xe3,
     ];
     let rows = [crate::surface::SurfaceRow {
         id: 7,
@@ -262,69 +355,90 @@ fn plane_envelope_reader_propagates_slot_refusal() {
         next_surface: 0,
         offset: 0,
     }];
-    let run = |limit| with_surface_limits(&payload, limit, u64::MAX, |ctx| {
-        crate::surface::plane_envelopes_for_rows(ctx, &payload, &rows)
-    });
+    let run = |limit| {
+        with_surface_limits(&payload, limit, u64::MAX, |ctx| {
+            crate::surface::plane_envelopes_for_rows(ctx, &payload, &rows)
+        })
+    };
     assert_eq!(run(100).expect("service admits the envelope").len(), 1);
     let error = run(0).expect_err("the first table needs nine slots");
-    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo plane envelope token slots");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "creo plane envelope token slots",
+    );
 }
 
 #[test]
 fn named_surface_scalar_sequence_refuses_before_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     let body = [0x0e];
-    let run = |limit| with_surface_limits(&body, limit, u64::MAX, |ctx| {
-        crate::surface::named_surface_value(
-            ctx,
-            &SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
-            "radius1",
-            &body,
-            &scalar::ScalarCache::default(),
-            &"named torus fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-    });
+    let run = |limit| {
+        with_surface_limits(&body, limit, u64::MAX, |ctx| {
+            crate::surface::named_surface_value(
+                ctx,
+                &SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
+                "radius1",
+                &body,
+                &scalar::ScalarCache::default(),
+                &"named torus fixture",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        })
+    };
     assert_eq!(
         run(1).expect("one scalar is admitted"),
         crate::surface::SurfaceNamedValue::ScalarSequence(vec![0.5])
     );
     let error = run(0).expect_err("one scalar exceeds zero collection items");
-    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo named surface scalar sequence");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "creo named surface scalar sequence",
+    );
 }
 
 #[test]
 fn normalized_plane_frame_refuses_scoped_bytes_before_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let body = [
-        0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x18, 0x2f, 0x05, 0x00,
-        0x00, 0x0c, 0x98,
+        0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x18, 0x2f, 0x05, 0x00, 0x00, 0x0c, 0x98,
     ];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy)
-        .expect("root input is admitted");
-    let error = crate::surface::complete_plane_local_system(
-        &ctx, &body, &scalar::ScalarCache::default(),
-    )
-    .expect_err("normalized bytes need a scoped reservation");
-    assert_surface_limit(error, ResourceDimension::MaterializedBytes, "creo normalized plane frame bytes");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&body, &arena, &policy).expect("root input is admitted");
+    let error =
+        crate::surface::complete_plane_local_system(&ctx, &body, &scalar::ScalarCache::default())
+            .expect_err("normalized bytes need a scoped reservation");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::MaterializedBytes,
+        "creo normalized plane frame bytes",
+    );
 }
 
 #[test]
 fn normalized_plane_frame_refuses_collection_before_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     let body = [
-        0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x18, 0x2f, 0x05, 0x00,
-        0x00, 0x0c, 0x98,
+        0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x18, 0x2f, 0x05, 0x00, 0x00, 0x0c, 0x98,
     ];
-    let run = |limit| with_surface_limits(&body, limit, u64::MAX, |ctx| {
-        crate::surface::complete_plane_local_system(ctx, &body, &scalar::ScalarCache::default())
-    });
-    assert!(run(12).expect("twelve normalized bytes are admitted").is_some());
+    let run = |limit| {
+        with_surface_limits(&body, limit, u64::MAX, |ctx| {
+            crate::surface::complete_plane_local_system(ctx, &body, &scalar::ScalarCache::default())
+        })
+    };
+    assert!(run(12)
+        .expect("twelve normalized bytes are admitted")
+        .is_some());
     let error = run(11).expect_err("twelve items exceed eleven collection items");
-    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo normalized plane frame items");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "creo normalized plane frame items",
+    );
 }
 
 #[test]
@@ -332,11 +446,19 @@ fn torus_scalar_refuses_outline_marker_vector() {
     use cadmpeg_core::decode::ResourceDimension;
     let body = [0x01, 0x12, 0x50, 0x50];
     let error = with_surface_limits(&body, 0, u64::MAX, |ctx| {
-        crate::surface::scalar_tokens(ctx, crate::surface::SurfaceKind::TorusOrSphere, &body, &scalar::ScalarCache::default())
+        crate::surface::scalar_tokens(
+            ctx,
+            crate::surface::SurfaceKind::TorusOrSphere,
+            &body,
+            &scalar::ScalarCache::default(),
+        )
     })
-    .err()
-    .expect("one marker exceeds zero collection items");
-    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo torus outline marker items");
+    .expect_err("one marker exceeds zero collection items");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "creo torus outline marker items",
+    );
 }
 
 fn plane_corner_limit_error(collection_limit: bool) -> cadmpeg_core::CodecError {
@@ -359,8 +481,16 @@ fn plane_corner_limit_error(collection_limit: bool) -> cadmpeg_core::CodecError 
     let before_corner = service.iter().filter(|token| token.offset < 12);
     let prior_items = before_corner.clone().count() as u64;
     let prior_bytes = before_corner.map(|token| token.raw.len() as u64).sum();
-    let collection_items = if collection_limit { prior_items } else { u64::MAX };
-    let retained_bytes = if collection_limit { u64::MAX } else { prior_bytes };
+    let collection_items = if collection_limit {
+        prior_items
+    } else {
+        u64::MAX
+    };
+    let retained_bytes = if collection_limit {
+        u64::MAX
+    } else {
+        prior_bytes
+    };
     with_surface_limits(&body, collection_items, retained_bytes, |ctx| {
         crate::surface::scalar_tokens(
             ctx,
@@ -369,15 +499,14 @@ fn plane_corner_limit_error(collection_limit: bool) -> cadmpeg_core::CodecError 
             &scalar::ScalarCache::default(),
         )
     })
-    .err()
-    .expect("corner frame exceeds requested limit")
+    .expect_err("corner frame exceeds requested limit")
 }
 
 #[test]
 fn plane_corner_refuses_token_vector() {
     use cadmpeg_core::decode::ResourceDimension;
     assert_surface_limit(
-        plane_corner_limit_error(true),
+        &plane_corner_limit_error(true),
         ResourceDimension::CollectionItems,
         "creo surface scalar token items",
     );
@@ -387,7 +516,7 @@ fn plane_corner_refuses_token_vector() {
 fn plane_corner_refuses_token_bytes() {
     use cadmpeg_core::decode::ResourceDimension;
     assert_surface_limit(
-        plane_corner_limit_error(false),
+        &plane_corner_limit_error(false),
         ResourceDimension::RetainedBytes,
         "creo surface scalar token bytes",
     );
@@ -400,9 +529,12 @@ fn surface_opaque_refuses_span_vector() {
     let error = with_surface_limits(&body, 0, u64::MAX, |ctx| {
         crate::surface::opaque_spans(ctx, &body, &[])
     })
-    .err()
-    .expect("one span exceeds zero collection items");
-    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo surface opaque span items");
+    .expect_err("one span exceeds zero collection items");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::CollectionItems,
+        "creo surface opaque span items",
+    );
 }
 
 #[test]
@@ -412,12 +544,18 @@ fn surface_opaque_refuses_span_bytes() {
     let error = with_surface_limits(&body, u64::MAX, 0, |ctx| {
         crate::surface::opaque_spans(ctx, &body, &[])
     })
-    .err()
-    .expect("one span byte exceeds zero retained bytes");
-    assert_surface_limit(error, ResourceDimension::RetainedBytes, "creo surface opaque span bytes");
+    .expect_err("one span byte exceeds zero retained bytes");
+    assert_surface_limit(
+        &error,
+        ResourceDimension::RetainedBytes,
+        "creo surface opaque span bytes",
+    );
 }
 
-fn scalar_frame_limit_error(collection_limit: u64, retained_limit: u64) -> cadmpeg_core::CodecError {
+fn scalar_frame_limit_error(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> cadmpeg_core::CodecError {
     let tokens = [crate::surface::SurfaceParameterScalar {
         value: Some(1.0),
         raw: vec![0xe4],
@@ -426,15 +564,14 @@ fn scalar_frame_limit_error(collection_limit: u64, retained_limit: u64) -> cadmp
     with_surface_limits(&[0xe4], collection_limit, retained_limit, |ctx| {
         crate::surface::scalar_frames(ctx, &tokens)
     })
-    .err()
-    .expect("one scalar frame exceeds requested limit")
+    .expect_err("one scalar frame exceeds requested limit")
 }
 
 #[test]
 fn surface_scalar_frame_refuses_slot_vector() {
     use cadmpeg_core::decode::ResourceDimension;
     assert_surface_limit(
-        scalar_frame_limit_error(0, u64::MAX),
+        &scalar_frame_limit_error(0, u64::MAX),
         ResourceDimension::CollectionItems,
         "creo surface scalar frame slots",
     );
@@ -444,7 +581,7 @@ fn surface_scalar_frame_refuses_slot_vector() {
 fn surface_scalar_frame_refuses_slot_bytes() {
     use cadmpeg_core::decode::ResourceDimension;
     assert_surface_limit(
-        scalar_frame_limit_error(u64::MAX, 0),
+        &scalar_frame_limit_error(u64::MAX, 0),
         ResourceDimension::RetainedBytes,
         "creo surface scalar frame bytes",
     );
@@ -454,7 +591,7 @@ fn surface_scalar_frame_refuses_slot_bytes() {
 fn surface_scalar_frame_refuses_frame_vector() {
     use cadmpeg_core::decode::ResourceDimension;
     assert_surface_limit(
-        scalar_frame_limit_error(1, u64::MAX),
+        &scalar_frame_limit_error(1, u64::MAX),
         ResourceDimension::CollectionItems,
         "creo surface scalar frame items",
     );
@@ -467,8 +604,7 @@ fn plane_envelope_limit_error(
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let payload = [
-        7, 0x22, 4, 0x01, 0, 0,
-        0xe4, 0xe4, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0xe3,
+        7, 0x22, 4, 0x01, 0, 0, 0xe4, 0xe4, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0xe3,
     ];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -476,8 +612,7 @@ fn plane_envelope_limit_error(
     policy.limits.max_retained_bytes = retained_limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
         .expect("plane envelope fits root input limit");
-    crate::surface::plane_envelopes(&ctx, &payload)
-        .expect_err("one envelope exceeds its limit")
+    crate::surface::plane_envelopes(&ctx, &payload).expect_err("one envelope exceeds its limit")
 }
 
 #[test]
@@ -487,27 +622,34 @@ fn plane_envelope_refuses_scalar_token_vector() {
         plane_envelope_limit_error(limit, u64::MAX)
     });
     let error = plane_envelope_limit_error(limit, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo plane envelope scalar token items"), "{error:?}");
+            && limit.operation == "creo plane envelope scalar token items"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn plane_envelope_refuses_scalar_token_bytes() {
     use cadmpeg_core::decode::ResourceDimension;
     let error = plane_envelope_limit_error(u64::MAX, 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo plane envelope scalar token bytes"));
+            && limit.operation == "creo plane envelope scalar token bytes")
+    );
 }
 
 #[test]
 fn plane_envelope_refuses_body_copy() {
     use cadmpeg_core::decode::ResourceDimension;
     let error = plane_envelope_limit_error(u64::MAX, 10);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo plane envelope body"));
+            && limit.operation == "creo plane envelope body")
+    );
 }
 
 #[test]
@@ -517,9 +659,12 @@ fn plane_envelope_refuses_output_vector() {
         plane_envelope_limit_error(limit, u64::MAX)
     });
     let error = plane_envelope_limit_error(limit, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo plane envelopes"), "{error:?}");
+            && limit.operation == "creo plane envelopes"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -537,21 +682,23 @@ fn named_plane_outline_refuses_envelope_output_vector() {
     };
     let limit = limit_reaching_operation("creo plane envelopes", run);
     let error = run(limit);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo plane envelopes"), "{error:?}");
+            && limit.operation == "creo plane envelopes"),
+        "{error:?}"
+    );
 }
 
 fn plane_local_system_limit_error(
     collection_limit: u64,
     retained_limit: u64,
 ) -> cadmpeg_core::CodecError {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::surface::{BoundaryType, SurfaceKind, SurfaceRow};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let payload = [
-        7, 0x22, 4, 0x01, 0, 0,
-        0xe4, 0xe4, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0xe3,
+        7, 0x22, 4, 0x01, 0, 0, 0xe4, 0xe4, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0xe3,
         0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe1, 0xe3,
     ];
     let rows = [SurfaceRow {
@@ -580,9 +727,12 @@ fn plane_local_system_refuses_retained_body() {
         plane_local_system_limit_error(u64::MAX, limit)
     });
     let error = plane_local_system_limit_error(u64::MAX, limit);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo plane local-system body"), "{error:?}");
+            && limit.operation == "creo plane local-system body"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -592,9 +742,12 @@ fn plane_local_system_refuses_row_system_vector() {
         plane_local_system_limit_error(limit, u64::MAX)
     });
     let error = plane_local_system_limit_error(limit, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo plane row systems"), "{error:?}");
+            && limit.operation == "creo plane row systems"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -604,9 +757,12 @@ fn plane_local_system_refuses_output_vector() {
         plane_local_system_limit_error(limit, u64::MAX)
     });
     let error = plane_local_system_limit_error(limit, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo plane local systems"), "{error:?}");
+            && limit.operation == "creo plane local systems"),
+        "{error:?}"
+    );
 }
 
 #[test]

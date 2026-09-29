@@ -7,14 +7,14 @@ use super::{
     existing_plane_agrees_with_topology, placed_carriers, topology_bound_face_points,
     transfer_topology_bound_planes,
 };
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 
 mod orientations;
 
@@ -73,24 +73,29 @@ fn placed_carrier_collection_error(
     }
 }
 
-fn assert_placed_carrier_refusal(error: CodecError, operation: &'static str) {
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
+fn assert_placed_carrier_refusal(error: &CodecError, operation: &'static str) {
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation), "{operation}: {error:?}");
+            && resource.operation == operation),
+        "{operation}: {error:?}"
+    );
 }
 
 #[test]
 fn placed_carriers_refuse_plane_carrier_node() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.planes.positional_frames.push(crate::surface::OutlinePlane {
-        surface_id: 7,
-        origin: [0.0, 0.0, 0.0],
-        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
-        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
-        offset: 0,
-    });
+    scan.planes
+        .positional_frames
+        .push(crate::surface::OutlinePlane {
+            surface_id: 7,
+            origin: [0.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            offset: 0,
+        });
     assert_placed_carrier_refusal(
-        placed_carrier_collection_error(&scan, &CadIr::empty(), 0),
+        &placed_carrier_collection_error(&scan, &CadIr::empty(), 3),
         "creo placed carrier nodes",
     );
 }
@@ -98,9 +103,11 @@ fn placed_carriers_refuse_plane_carrier_node() {
 #[test]
 fn placed_carriers_refuse_row_id_node() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.surfaces.rows.push(carrier_row(7, crate::surface::SurfaceKind::Plane));
+    scan.surfaces
+        .rows
+        .push(carrier_row(7, crate::surface::SurfaceKind::Plane));
     assert_placed_carrier_refusal(
-        placed_carrier_collection_error(&scan, &CadIr::empty(), 0),
+        &placed_carrier_collection_error(&scan, &CadIr::empty(), 0),
         "creo placed carrier row IDs",
     );
 }
@@ -108,9 +115,11 @@ fn placed_carriers_refuse_row_id_node() {
 #[test]
 fn placed_carriers_refuse_row_count_node() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.surfaces.rows.push(carrier_row(7, crate::surface::SurfaceKind::Plane));
+    scan.surfaces
+        .rows
+        .push(carrier_row(7, crate::surface::SurfaceKind::Plane));
     assert_placed_carrier_refusal(
-        placed_carrier_collection_error(&scan, &CadIr::empty(), 1),
+        &placed_carrier_collection_error(&scan, &CadIr::empty(), 1),
         "creo placed carrier row counts",
     );
 }
@@ -126,7 +135,7 @@ fn rowless_cylinder_input() -> (crate::container::ContainerScan<'static>, CadIr)
 fn placed_carriers_refuse_rowless_group_node() {
     let (scan, ir) = rowless_cylinder_input();
     assert_placed_carrier_refusal(
-        placed_carrier_collection_error(&scan, &ir, 0),
+        &placed_carrier_collection_error(&scan, &ir, 0),
         "creo rowless carrier groups",
     );
 }
@@ -135,7 +144,7 @@ fn placed_carriers_refuse_rowless_group_node() {
 fn placed_carriers_refuse_rowless_group_member() {
     let (scan, ir) = rowless_cylinder_input();
     assert_placed_carrier_refusal(
-        placed_carrier_collection_error(&scan, &ir, 1),
+        &placed_carrier_collection_error(&scan, &ir, 1),
         "creo rowless carrier members",
     );
 }
@@ -144,23 +153,27 @@ fn placed_carriers_refuse_rowless_group_member() {
 fn placed_carriers_refuse_rowless_carrier_node() {
     let (scan, ir) = rowless_cylinder_input();
     assert_placed_carrier_refusal(
-        placed_carrier_collection_error(&scan, &ir, 2),
+        &placed_carrier_collection_error(&scan, &ir, 2),
         "creo placed carrier nodes",
     );
 }
 
 fn topology_bound_curve_input() -> (crate::container::ContainerScan<'static>, CadIr) {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.surfaces.rows.push(carrier_row(5, crate::surface::SurfaceKind::Plane));
-    scan.curves.topology_rows.push(crate::curve::CurveTopologyRow {
-        id: 11,
-        type_byte: 0,
-        feature_id: 1,
-        directions: [0; 2],
-        faces: [std::num::NonZeroU32::new(5), None],
-        next_edges: [11, 0],
-        offset: 20,
-    });
+    scan.surfaces
+        .rows
+        .push(carrier_row(5, crate::surface::SurfaceKind::Plane));
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 11,
+            type_byte: 0,
+            feature_id: 1,
+            directions: [0; 2],
+            faces: [std::num::NonZeroU32::new(5), None],
+            next_edges: [11, 0],
+            offset: 20,
+        });
     scan.topology.loops.push(crate::topology::Loop {
         face_id: std::num::NonZeroU32::new(5),
         half_edges: vec![crate::topology::HalfEdgeId {
@@ -205,7 +218,7 @@ fn topology_bound_curve_collection_error(limit: u64) -> CodecError {
 #[test]
 fn topology_bound_plane_refuses_unique_surface_count_node() {
     assert_placed_carrier_refusal(
-        topology_bound_curve_collection_error(9),
+        &topology_bound_curve_collection_error(9),
         "creo unique-row count nodes",
     );
 }
@@ -213,7 +226,7 @@ fn topology_bound_plane_refuses_unique_surface_count_node() {
 #[test]
 fn topology_bound_plane_refuses_unique_surface_projection() {
     assert_placed_carrier_refusal(
-        topology_bound_curve_collection_error(10),
+        &topology_bound_curve_collection_error(10),
         "creo unique-row projection",
     );
 }
@@ -221,7 +234,7 @@ fn topology_bound_plane_refuses_unique_surface_projection() {
 #[test]
 fn topology_bound_plane_refuses_unique_curve_count_node() {
     assert_placed_carrier_refusal(
-        topology_bound_curve_collection_error(11),
+        &topology_bound_curve_collection_error(11),
         "creo unique-row count nodes",
     );
 }
@@ -229,7 +242,7 @@ fn topology_bound_plane_refuses_unique_curve_count_node() {
 #[test]
 fn topology_bound_plane_refuses_unique_curve_projection() {
     assert_placed_carrier_refusal(
-        topology_bound_curve_collection_error(12),
+        &topology_bound_curve_collection_error(12),
         "creo unique-row projection",
     );
 }
@@ -237,7 +250,7 @@ fn topology_bound_plane_refuses_unique_curve_projection() {
 #[test]
 fn topology_bound_plane_refuses_unique_curve_id_node() {
     assert_placed_carrier_refusal(
-        topology_bound_curve_collection_error(13),
+        &topology_bound_curve_collection_error(13),
         "creo topology-bound unique curve IDs",
     );
 }
@@ -245,7 +258,7 @@ fn topology_bound_plane_refuses_unique_curve_id_node() {
 #[test]
 fn topology_bound_plane_refuses_boundary_curve_vector() {
     assert_placed_carrier_refusal(
-        topology_bound_curve_collection_error(14),
+        &topology_bound_curve_collection_error(14),
         "creo topology-bound boundary curves",
     );
 }
@@ -253,7 +266,7 @@ fn topology_bound_plane_refuses_boundary_curve_vector() {
 #[test]
 fn topology_bound_plane_refuses_curve_plane_vector() {
     assert_placed_carrier_refusal(
-        topology_bound_curve_collection_error(15),
+        &topology_bound_curve_collection_error(15),
         "creo topology-bound curve planes",
     );
 }
@@ -268,7 +281,7 @@ fn topology_bound_plane_refuses_face_point_vector() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = topology_bound_face_points(&ctx, &solved_vertices, &vertex_faces, 5)
         .expect_err("one face point exceeds collection limit");
-    assert_placed_carrier_refusal(error, "creo topology-bound face points");
+    assert_placed_carrier_refusal(&error, "creo topology-bound face points");
     let points = crate::decode::with_test_decode_ctx(|ctx| {
         topology_bound_face_points(ctx, &solved_vertices, &vertex_faces, 5)
     })
@@ -356,11 +369,13 @@ fn placed_carriers_reject_duplicate_model_surface_ids() {
         .surfaces
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
 
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| placed_carriers(ctx,
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| placed_carriers(
+        ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default()
-    )).expect("service placed carriers")
+    ))
+    .expect("service placed carriers")
     .contains_key(&7));
 }
 
@@ -407,11 +422,15 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
         .expect("valid CylinderSurface fixture"),
     ));
 
-    let carriers = crate::decode::with_test_decode_ctx(|ctx| placed_carriers(ctx,
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )).expect("service placed carriers");
+    let carriers = crate::decode::with_test_decode_ctx(|ctx| {
+        placed_carriers(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("service placed carriers");
     assert!(matches!(
         carriers.get(&7),
         Some(CarrierEquation::Cylinder(cylinder))
@@ -468,11 +487,15 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 0.2));
 
-    let carriers = crate::decode::with_test_decode_ctx(|ctx| placed_carriers(ctx,
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )).expect("service placed carriers");
+    let carriers = crate::decode::with_test_decode_ctx(|ctx| {
+        placed_carriers(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("service placed carriers");
     assert!(matches!(
         carriers.get(&7),
         Some(CarrierEquation::Cylinder(cylinder)) if cylinder.origin == [0.0, 0.0, 0.0]
@@ -522,11 +545,13 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
         ),
     ]);
 
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| placed_carriers(ctx,
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| placed_carriers(
+        ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default()
-    )).expect("service placed carriers")
+    ))
+    .expect("service placed carriers")
     .contains_key(&7));
 }
 
@@ -536,11 +561,15 @@ fn placed_carriers_admits_unique_rowless_model_surface() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 2.0));
 
-    let carriers = crate::decode::with_test_decode_ctx(|ctx| placed_carriers(ctx,
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )).expect("service placed carriers");
+    let carriers = crate::decode::with_test_decode_ctx(|ctx| {
+        placed_carriers(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("service placed carriers");
     assert!(matches!(
         carriers.get(&7),
         Some(CarrierEquation::Cylinder(cylinder)) if cylinder.radius == 2.0
@@ -555,11 +584,13 @@ fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
         .surfaces
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
 
-    assert!(!crate::decode::with_test_decode_ctx(|ctx| placed_carriers(ctx,
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| placed_carriers(
+        ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default()
-    )).expect("service placed carriers")
+    ))
+    .expect("service placed carriers")
     .contains_key(&7));
 }
 
@@ -616,18 +647,20 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
         .collect::<BTreeMap<_, _>>();
     let solved_vertices = vertices.into_iter().collect::<BTreeMap<_, _>>();
 
-    assert!(crate::decode::with_test_decode_ctx(|ctx| super::ordered_planar_face_loops(
-        ctx,
-        vec![&outer, &inner],
-        PlaneEquation {
-            origin: [0.0, 0.0, 0.0],
-            normal: [0.0, 0.0, 1.0],
-        },
-        &incidence,
-        &solved_vertices,
-    ))
-    .expect("service planar loop ordering")
-    .is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| super::ordered_planar_face_loops(
+            ctx,
+            vec![&outer, &inner],
+            PlaneEquation {
+                origin: [0.0, 0.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
+            },
+            &incidence,
+            &solved_vertices,
+        ))
+        .expect("service planar loop ordering")
+        .is_none()
+    );
 }
 
 fn planar_polygon_collection_error(limit: u64, two_loops: bool) -> CodecError {
@@ -648,11 +681,13 @@ fn planar_polygon_collection_error(limit: u64, two_loops: bool) -> CodecError {
         .copied()
         .zip(1..=3)
         .chain(inner.half_edges.iter().copied().zip(4..=6))
-        .map(|(half_edge, start_vertex_id)| crate::topology::HalfEdgeVertexIncidence {
-            half_edge,
-            start_vertex_id,
-            end_vertex_id: None,
-        })
+        .map(
+            |(half_edge, start_vertex_id)| crate::topology::HalfEdgeVertexIncidence {
+                half_edge,
+                start_vertex_id,
+                end_vertex_id: None,
+            },
+        )
         .collect::<Vec<_>>();
     let incidence = bindings
         .iter()
@@ -684,8 +719,7 @@ fn planar_polygon_collection_error(limit: u64, two_loops: bool) -> CodecError {
         )
         .map(|_| ())
     } else {
-        super::projected_loop_polygon(&ctx, &outer, plane, &incidence, &solved_vertices)
-            .map(|_| ())
+        super::projected_loop_polygon(&ctx, &outer, plane, &incidence, &solved_vertices).map(|_| ())
     };
     result.expect_err("polygon collection exceeds limit")
 }
@@ -693,7 +727,7 @@ fn planar_polygon_collection_error(limit: u64, two_loops: bool) -> CodecError {
 #[test]
 fn projected_loop_polygon_refuses_point_collection() {
     assert_placed_carrier_refusal(
-        planar_polygon_collection_error(0, false),
+        &planar_polygon_collection_error(0, false),
         "creo projected loop polygon points",
     );
 }
@@ -701,7 +735,7 @@ fn projected_loop_polygon_refuses_point_collection() {
 #[test]
 fn ordered_planar_face_loops_refuses_polygon_collection() {
     assert_placed_carrier_refusal(
-        planar_polygon_collection_error(6, true),
+        &planar_polygon_collection_error(6, true),
         "creo projected loop polygons",
     );
 }
@@ -729,26 +763,30 @@ fn parameter_loop_classifier_orders_unique_outer() {
     let outer_polygon = vec![[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
     let inner_polygon = vec![[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
 
-    let ordered = crate::decode::with_test_decode_ctx(|ctx| super::ordered_parameter_face_loops(
-        ctx,
-        vec![&inner, &outer],
-        &[inner_polygon.clone(), outer_polygon.clone()],
-    ))
+    let ordered = crate::decode::with_test_decode_ctx(|ctx| {
+        super::ordered_parameter_face_loops(
+            ctx,
+            vec![&inner, &outer],
+            &[inner_polygon.clone(), outer_polygon.clone()],
+        )
+    })
     .expect("service parameter loop ordering")
     .expect("one parameter-space outer loop");
     assert_eq!(ordered[0].half_edges[0].curve_id, 10);
     assert_eq!(ordered[1].half_edges[0].curve_id, 20);
 
-    assert!(crate::decode::with_test_decode_ctx(|ctx| super::ordered_parameter_face_loops(
-        ctx,
-        vec![&outer, &inner],
-        &[
-            outer_polygon,
-            vec![[3.0, 3.0], [4.0, 3.0], [4.0, 4.0], [3.0, 4.0]]
-        ],
-    ))
-    .expect("service parameter loop ordering")
-    .is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| super::ordered_parameter_face_loops(
+            ctx,
+            vec![&outer, &inner],
+            &[
+                outer_polygon,
+                vec![[3.0, 3.0], [4.0, 3.0], [4.0, 4.0], [3.0, 4.0]]
+            ],
+        ))
+        .expect("service parameter loop ordering")
+        .is_none()
+    );
 }
 
 #[test]
@@ -825,7 +863,8 @@ fn a_geometry_section_holds_every_offset_up_to_its_end_and_none_past_it() {
         assert!(super::geometry_section_record(ctx, &scan, 15)?.is_none());
         assert!(super::geometry_section_record(ctx, &scan, 16)?.is_some());
         Ok::<(), CodecError>(())
-    }).expect("service section identity admitted");
+    })
+    .expect("service section identity admitted");
 }
 
 #[test]
@@ -839,8 +878,8 @@ fn geometry_section_record_refuses_retained_identity_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = super::geometry_section_record(&ctx, &scan, 16)
         .expect_err("section identity exceeds retained limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)

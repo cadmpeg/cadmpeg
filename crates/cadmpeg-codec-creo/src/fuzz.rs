@@ -28,7 +28,10 @@ pub fn curve_prototypes(
 }
 
 /// Exercise Creo surface namespace row extraction.
-pub fn surface_rows(ctx: &cadmpeg_core::decode::DecodeContext<'_>, data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
+pub fn surface_rows(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+) -> Result<(), cadmpeg_core::CodecError> {
     let _probe = crate::surface::rows(ctx, data)?;
     Ok(())
 }
@@ -122,12 +125,14 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
-            .expect("scalar input admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&data, &arena, &policy).expect("scalar input admitted");
         let error = super::scalar(&ctx, &data).expect_err("cache image exceeds collection limit");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo scalar cache unique images"));
+                && resource.operation == "creo scalar cache unique images")
+        );
     }
 
     #[test]
@@ -140,13 +145,15 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
-            .expect("root input is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&data, &arena, &policy).expect("root input is admitted");
         let error = super::container_scan(&ctx, &data)
             .expect_err("the first scanned section needs a collection item");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.limit == refusal.used
-                && refusal.additional > 0));
+                && refusal.additional > 0)
+        );
     }
 }

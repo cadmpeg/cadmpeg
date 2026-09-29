@@ -5,9 +5,9 @@ use super::super::uniqueness::unique_feature_definition_for_transform;
 use crate::container::ContainerScan;
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
-use std::collections::BTreeSet;
 #[cfg(test)]
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 pub(in super::super) fn feature_recipe(
     scan: &ContainerScan,
@@ -115,13 +115,13 @@ pub(in super::super) fn feature_is_first_material_operation(
         if candidate == feature_id {
             target_offset = Some(definition.offset);
         } else {
-            earliest_other_offset = Some(earliest_other_offset.map_or(
-                definition.offset,
-                |previous| previous.min(definition.offset),
-            ));
+            earliest_other_offset =
+                Some(earliest_other_offset.map_or(definition.offset, |previous| {
+                    previous.min(definition.offset)
+                }));
         }
     }
-    target_offset.is_some_and(|target| earliest_other_offset.map_or(true, |other| other > target))
+    target_offset.is_some_and(|target| earliest_other_offset.is_none_or(|other| other > target))
 }
 
 pub(in super::super) fn current_feature_recipe(
@@ -159,7 +159,9 @@ pub(in super::super) fn feature_schema_class(
 ) -> Option<SchemaClass> {
     resolved_feature_schema_class_from_classes(
         &scan.features.operations,
-        scan.features.rows.iter()
+        scan.features
+            .rows
+            .iter()
             .chain(scan.features.depdb_recipe_rows.iter())
             .filter(|row| row.feature_id == feature_id)
             .filter_map(|row| row.root_schema_class),
@@ -200,7 +202,12 @@ pub(in super::super) fn feature_row_schema_classes(
     feature_id: u32,
 ) -> Result<BTreeSet<SchemaClass>, cadmpeg_core::CodecError> {
     let mut classes = BTreeSet::new();
-    for row in scan.features.rows.iter().chain(scan.features.depdb_recipe_rows.iter()) {
+    for row in scan
+        .features
+        .rows
+        .iter()
+        .chain(scan.features.depdb_recipe_rows.iter())
+    {
         if row.feature_id == feature_id {
             if let Some(schema_class) = row.root_schema_class {
                 if !classes.contains(&schema_class) {

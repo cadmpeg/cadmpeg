@@ -2,19 +2,19 @@
 //! Feature plane equations and generated cylinder and cap extents.
 
 use super::super::holes::sweep::blind_extrude_side;
+use super::super::uniqueness::exactly_one;
 use crate::container::ContainerScan;
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled_model_plane};
 use crate::surface::SurfaceParameterRecord;
 use crate::vecmath::dot;
 use crate::vecmath::unit_length;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
-use super::super::uniqueness::exactly_one;
 
 const EPS_CYLINDER_CARRIER: f64 = 1.0e-9;
 
@@ -64,16 +64,11 @@ pub(in super::super) fn feature_plane_equations(
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-) -> Result<Option<Vec<([f64; 3], [f64; 3])>>, CodecError> {
+) -> Result<Option<Vec<crate::decode::analytic::equations::PlaneEquation>>, CodecError> {
     let mut ids = BTreeSet::new();
-    for row in scan
-        .surfaces
-        .rows
-        .iter()
-        .filter(|row| {
-            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
-        })
-    {
+    for row in scan.surfaces.rows.iter().filter(|row| {
+        row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
+    }) {
         if !ids.contains(&row.id) {
             ctx.charge_collection_items(1, "creo feature plane ID nodes")?;
             ids.insert(row.id);
@@ -96,7 +91,7 @@ pub(in super::super) fn feature_plane_equations(
             return Ok(None);
         };
         ctx.try_reserve_items(&mut equations, 1, "creo feature plane equations")?;
-        equations.push((plane.origin, plane.normal));
+        equations.push(plane);
     }
     Ok(Some(equations))
 }
@@ -167,13 +162,9 @@ pub(in super::super) fn feature_outline_planes(
     feature_id: u32,
 ) -> Result<Option<Vec<FeatureOutlinePlane>>, CodecError> {
     let mut planes = Vec::new();
-    for row in scan.surfaces
-        .rows
-        .iter()
-        .filter(|row| {
-            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
-        })
-    {
+    for row in scan.surfaces.rows.iter().filter(|row| {
+        row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
+    }) {
         let Some(plane) = feature_outline_plane(scan, feature_id, row.id) else {
             return Ok(None);
         };
@@ -194,7 +185,11 @@ pub(in super::super) fn generated_arc_cylinder_extent(
     let Some(feature_id) = definition.identity.owner_feature_id() else {
         return Ok(None);
     };
-    let Some(segments) = definition.segments.as_ref().filter(|segments| segments.is_complete()) else {
+    let Some(segments) = definition
+        .segments
+        .as_ref()
+        .filter(|segments| segments.is_complete())
+    else {
         return Ok(None);
     };
     let mut surface_ids = BTreeSet::new();
@@ -235,18 +230,21 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         ctx,
         &surface_ids,
         &scan.surfaces.parameters,
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
-    if frame_records.is_empty() || !frame_records
-        .iter()
-        .all(|(surface_id, frame)| {
+    if frame_records.is_empty()
+        || !frame_records.iter().all(|(surface_id, frame)| {
             cylinder_frame_agrees_with_model(ir, *surface_id, frame, source_carriers)
         })
     {
         return Ok(None);
     }
-    Ok(agreed_generated_cylinder_extent(transform, frame_records.iter().map(|(_, frame)| frame)))
+    Ok(agreed_generated_cylinder_extent(
+        transform,
+        frame_records.iter().map(|(_, frame)| frame),
+    ))
 }
 
 fn cylinder_frame_agrees_with_model(
@@ -255,13 +253,13 @@ fn cylinder_frame_agrees_with_model(
     frame: &crate::surface::PositionalCylinderFrame,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> bool {
-    let mut model_surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .filter(|surface| crate::identity::matches_numbered_identity(
-            surface.id.as_str(), "creo:visibgeom:surface#", surface_id,
-        ));
+    let mut model_surfaces = ir.model.surfaces.iter().filter(|surface| {
+        crate::identity::matches_numbered_identity(
+            surface.id.as_str(),
+            "creo:visibgeom:surface#",
+            surface_id,
+        )
+    });
     let surface = match (model_surfaces.next(), model_surfaces.next()) {
         (None, None) => return true,
         (Some(surface), None) => surface,
@@ -350,27 +348,28 @@ pub(in super::super) fn generated_cap_plane_extent(
     feature_id: u32,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
     let Some((start_id, end_id)) = (|| {
-    let table = exactly_one(scan
-        .features
-        .entity_tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id && table.table_class_id == 29))?;
-    let mut start_id = None;
-    let mut end_id = None;
-    let mut side_count = 0_usize;
-    for entry in &table.entries {
-        match (entry.class_id(), entry.source_entity_id()) {
-            (204, None) if start_id.replace(entry.entity_id).is_none() => {}
-            (203, None) if end_id.replace(entry.entity_id).is_none() => {}
-            (200, Some(_)) => side_count += 1,
-            _ => return None,
+        let table = exactly_one(
+            scan.features
+                .entity_tables
+                .iter()
+                .filter(|table| table.feature_id == feature_id && table.table_class_id == 29),
+        )?;
+        let mut start_id = None;
+        let mut end_id = None;
+        let mut side_count = 0_usize;
+        for entry in &table.entries {
+            match (entry.class_id(), entry.source_entity_id()) {
+                (204, None) if start_id.replace(entry.entity_id).is_none() => {}
+                (203, None) if end_id.replace(entry.entity_id).is_none() => {}
+                (200, Some(_)) => side_count += 1,
+                _ => return None,
+            }
         }
-    }
-    (side_count > 0
-        && table.contains_surface_id(start_id?)
-        && table.contains_surface_id(end_id?))
-    .then_some(())?;
-    Some((start_id?, end_id?))
+        (side_count > 0
+            && table.contains_surface_id(start_id?)
+            && table.contains_surface_id(end_id?))
+        .then_some(())?;
+        Some((start_id?, end_id?))
     })() else {
         return Ok(None);
     };
@@ -421,23 +420,23 @@ pub(in super::super) fn agreed_generated_cylinder_extent<'a>(
         (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * left.abs().max(right.abs()).max(1.0)
     };
     let agrees = |frame: &crate::surface::PositionalCylinderFrame| {
-            frame
-                .length()
-                .is_some_and(|candidate| close(candidate.get(), length.get()))
-                && unit_length(*frame.frame().orthonormal_frame().axis())
-                    .iter()
-                    .zip(direction)
-                    .all(|(left, right)| close(*left, right))
-                && close(
-                    dot(
-                        std::array::from_fn(|index| {
-                            frame.frame().origin()[index] - transform.origin()[index]
-                        }),
-                        normal,
-                    ),
-                    0.0,
-                )
-        };
+        frame
+            .length()
+            .is_some_and(|candidate| close(candidate.get(), length.get()))
+            && unit_length(*frame.frame().orthonormal_frame().axis())
+                .iter()
+                .zip(direction)
+                .all(|(left, right)| close(*left, right))
+            && close(
+                dot(
+                    std::array::from_fn(|index| {
+                        frame.frame().origin()[index] - transform.origin()[index]
+                    }),
+                    normal,
+                ),
+                0.0,
+            )
+    };
     (agrees(&first) && frames.all(agrees)).then_some(())?;
     close(dot(direction, normal).abs(), 1.0).then_some(())?;
     Some((

@@ -81,7 +81,11 @@ struct ComponentGate<'a>(&'a BrepTransferDiagnostics);
 
 impl std::fmt::Display for ComponentGate<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} admitted component(s), selected body count ", self.0.admitted_component_count)?;
+        write!(
+            f,
+            "{} admitted component(s), selected body count ",
+            self.0.admitted_component_count
+        )?;
         match self.0.selected_body_count {
             Some(count) => write!(f, "{count}")?,
             None => f.write_str("unresolved")?,
@@ -103,7 +107,11 @@ impl std::fmt::Display for ComponentGate<'_> {
             if has_reason {
                 f.write_str(", ")?;
             }
-            write!(f, "{} empty admitted component(s)", self.0.empty_component_count)?;
+            write!(
+                f,
+                "{} empty admitted component(s)",
+                self.0.empty_component_count
+            )?;
             has_reason = true;
         }
         if !has_reason {
@@ -262,9 +270,7 @@ impl std::fmt::Display for CarrierRejectionEvidence<'_> {
             write!(
                 f,
                 ";pair:{};triple:{};valid:{};unique:0]",
-                sample.pair_intersections,
-                sample.triple_intersections,
-                sample.valid_candidates,
+                sample.pair_intersections, sample.triple_intersections, sample.valid_candidates,
             )?;
         }
         f.write_str(".")
@@ -281,10 +287,17 @@ fn legacy_type_count(
     type_code: u8,
     suffix: &str,
 ) -> usize {
-    coverage.iter().find_map(|(key, count)| {
-        let stored_type = key.strip_prefix(prefix)?.strip_suffix(suffix)?.parse::<u8>().ok()?;
-        (stored_type == type_code).then_some(*count)
-    }).unwrap_or(0)
+    coverage
+        .iter()
+        .find_map(|(key, count)| {
+            let stored_type = key
+                .strip_prefix(prefix)?
+                .strip_suffix(suffix)?
+                .parse::<u8>()
+                .ok()?;
+            (stored_type == type_code).then_some(*count)
+        })
+        .unwrap_or(0)
 }
 
 pub(super) fn push_legacy_value_losses(
@@ -294,96 +307,160 @@ pub(super) fn push_legacy_value_losses(
 ) -> Result<(), CodecError> {
     let unresolved_legacy_reals = coverage_count(coverage, "unresolved_legacy_real_value_count");
     if unresolved_legacy_reals != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::LegacyRealValueUnresolved, format_args!(
-            "{unresolved_legacy_reals} legacy type-2 value row(s) did not form a complete \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::LegacyRealValueUnresolved,
+            format_args!(
+                "{unresolved_legacy_reals} legacy type-2 value row(s) did not form a complete \
              finite scalar or dimension-complete real array."
-        ))?;
+            ),
+        )?;
     }
     let unresolved_legacy_integers =
         coverage_count(coverage, "unresolved_legacy_integer_value_count");
     if unresolved_legacy_integers != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::LegacyIntegerValueUnresolved, format_args!(
-            "{unresolved_legacy_integers} legacy type-1 value row(s) did not form a signed \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::LegacyIntegerValueUnresolved,
+            format_args!(
+                "{unresolved_legacy_integers} legacy type-1 value row(s) did not form a signed \
              32-bit scalar or dimension-complete integer array."
-        ))?;
+            ),
+        )?;
     }
     for type_code in [3u8, 4] {
         let unresolved = legacy_type_count(
-            coverage, "unresolved_legacy_type_", type_code, "_value_count",
+            coverage,
+            "unresolved_legacy_type_",
+            type_code,
+            "_value_count",
         );
         if unresolved != 0 {
-            push_report_loss(ctx, losses, CreoLossCode::LegacyContinuationFormUndefined, format_args!(
-                "{unresolved} legacy type-{type_code} value row(s) use an undefined \
+            push_report_loss(
+                ctx,
+                losses,
+                CreoLossCode::LegacyContinuationFormUndefined,
+                format_args!(
+                    "{unresolved} legacy type-{type_code} value row(s) use an undefined \
                  continuation form."
-            ))?;
+                ),
+            )?;
         }
         let undecoded = legacy_type_count(
-            coverage, "undecoded_legacy_type_", type_code, "_encoding_count",
+            coverage,
+            "undecoded_legacy_type_",
+            type_code,
+            "_encoding_count",
         );
         if undecoded != 0 {
-            push_report_loss(ctx, losses, CreoLossCode::LegacyByteStringEncodingRetained, format_args!(
-                "{undecoded} legacy type-{type_code} byte-string value(s) retain exact \
+            push_report_loss(
+                ctx,
+                losses,
+                CreoLossCode::LegacyByteStringEncodingRetained,
+                format_args!(
+                    "{undecoded} legacy type-{type_code} byte-string value(s) retain exact \
                  source bytes because their character encoding is not UTF-8."
-            ))?;
+                ),
+            )?;
         }
     }
     for type_code in [5u8, 7, 9, 11] {
         let unresolved = legacy_type_count(
-            coverage, "unresolved_legacy_type_", type_code, "_value_count",
+            coverage,
+            "unresolved_legacy_type_",
+            type_code,
+            "_value_count",
         );
         if unresolved != 0 {
-            push_report_loss(ctx, losses, CreoLossCode::LegacyUnsignedValueUnresolved, format_args!(
-                "{unresolved} legacy type-{type_code} value row(s) did not form an unsigned \
+            push_report_loss(
+                ctx,
+                losses,
+                CreoLossCode::LegacyUnsignedValueUnresolved,
+                format_args!(
+                    "{unresolved} legacy type-{type_code} value row(s) did not form an unsigned \
                  32-bit scalar or dimension-complete unsigned array."
-            ))?;
+                ),
+            )?;
         }
     }
     let unresolved_legacy_type_6 = coverage_count(coverage, "unresolved_legacy_type_6_value_count");
     if unresolved_legacy_type_6 != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::LegacyCompactRealUnresolved, format_args!(
-            "{unresolved_legacy_type_6} legacy type-6 value row(s) did not form a complete \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::LegacyCompactRealUnresolved,
+            format_args!(
+                "{unresolved_legacy_type_6} legacy type-6 value row(s) did not form a complete \
              finite compact-real scalar or dimension-complete real array."
-        ))?;
+            ),
+        )?;
     }
     let incomplete_legacy_object_arrays =
         coverage_count(coverage, "incomplete_legacy_object_array_count");
     if incomplete_legacy_object_arrays != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::LegacyObjectArrayIncomplete, format_args!(
-            "{incomplete_legacy_object_arrays} legacy type-0 object array(s) have a direct \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::LegacyObjectArrayIncomplete,
+            format_args!(
+                "{incomplete_legacy_object_arrays} legacy type-0 object array(s) have a direct \
              element count that differs from their declared extents."
-        ))?;
+            ),
+        )?;
     }
     let unresolved_legacy_objects =
         coverage_count(coverage, "unresolved_legacy_object_value_count");
     if unresolved_legacy_objects != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::LegacyObjectPayloadUndefined, format_args!(
-            "{unresolved_legacy_objects} legacy type-0 value row(s) use an undefined object \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::LegacyObjectPayloadUndefined,
+            format_args!(
+                "{unresolved_legacy_objects} legacy type-0 value row(s) use an undefined object \
              payload form."
-        ))?;
+            ),
+        )?;
     }
     let incomplete_legacy_string_arrays =
         coverage_count(coverage, "incomplete_legacy_string_array_count");
     if incomplete_legacy_string_arrays != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::LegacyStringArrayIncomplete, format_args!(
-            "{incomplete_legacy_string_arrays} legacy type-10 string array(s) have a direct \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::LegacyStringArrayIncomplete,
+            format_args!(
+                "{incomplete_legacy_string_arrays} legacy type-10 string array(s) have a direct \
              element count that differs from their first extent."
-        ))?;
+            ),
+        )?;
     }
     let unresolved_legacy_strings =
         coverage_count(coverage, "unresolved_legacy_string_value_count");
     if unresolved_legacy_strings != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::LegacyStringContinuationUndefined, format_args!(
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::LegacyStringContinuationUndefined,
+            format_args!(
                 "{unresolved_legacy_strings} legacy type-10 value row(s) use an undefined \
              continuation form."
-            ))?;
+            ),
+        )?;
     }
     let undecoded_legacy_string_encodings =
         coverage_count(coverage, "undecoded_legacy_string_encoding_count");
     if undecoded_legacy_string_encodings != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::LegacyStringEncodingRetained, format_args!(
-            "{undecoded_legacy_string_encodings} legacy type-10 string element(s) retain \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::LegacyStringEncodingRetained,
+            format_args!(
+                "{undecoded_legacy_string_encodings} legacy type-10 string element(s) retain \
              exact source bytes because their character encoding is not UTF-8."
-        ))?;
+            ),
+        )?;
     }
 
     let conflicting_triangle_strip_representations = coverage_count(
@@ -391,10 +468,15 @@ pub(super) fn push_legacy_value_losses(
         "conflicting_primitive_triangle_strip_representation_count",
     );
     if conflicting_triangle_strip_representations != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::TriangleStripRepresentationConflict, format_args!(
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::TriangleStripRepresentationConflict,
+            format_args!(
                 "{conflicting_triangle_strip_representations} primitive triangle-strip record(s) \
              contain complete position representations that disagree."
-            ))?;
+            ),
+        )?;
     }
     Ok(())
 }
@@ -406,9 +488,12 @@ pub(super) fn push_brep_transfer_note(
     geometry_section_count: usize,
 ) -> Result<(), CodecError> {
     for (body_id, reason) in &diagnostics.rejected_extrusion_bodies {
-        push_report_loss(ctx, losses, CreoLossCode::ExtrusionBodyRejected, format_args!(
-            "Extrusion body {body_id} was not transferred: {reason}"
-        ))?;
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::ExtrusionBodyRejected,
+            format_args!("Extrusion body {body_id} was not transferred: {reason}"),
+        )?;
     }
     let rejected_face_count = diagnostics.face_rejection_diagnostics.len();
     let rejection_details = BrepRejectionDetails(diagnostics);
@@ -418,8 +503,9 @@ pub(super) fn push_brep_transfer_note(
     let pcurve_carrier_evidence = PcurveCarrierEvidence(diagnostics);
     let two_chart_mapping_evidence = TwoChartMappingEvidence(diagnostics);
     let carrier_rejection_evidence = CarrierRejectionEvidence(diagnostics);
-    let (vertex_evidence, _vertex_evidence_reservation) = ctx.format_scoped(format_args!(
-        "Boundary evidence: {} curve(s), {} without a unique incidence pair, {} with an \
+    let (vertex_evidence, _vertex_evidence_reservation) = ctx.format_scoped(
+        format_args!(
+            "Boundary evidence: {} curve(s), {} without a unique incidence pair, {} with an \
          unsolved endpoint vertex. Vertex solver: {} topological, {} carrier intersections, \
          {} carrier-bearing vertices, {} pair-intersection candidate(s), {} triple-intersection \
          candidate(s), {} validated carrier candidate(s), {} carrier vertices with no candidate, \
@@ -428,45 +514,47 @@ pub(super) fn push_brep_transfer_note(
          inconsistent record(s), {} accepted record(s) ({} complete), {} conflicting curve(s), {} \
          pcurve endpoint evidence ({} complete), {} pcurve constraint(s), {} analytic domain(s), \
          {} NURBS endpoint constraint(s), {} directed endpoint conflict(s), {} solved.{}{}{}{}{}",
-        diagnostics.boundary_curve_count,
-        diagnostics.boundary_curve_missing_incidence_count,
-        diagnostics.boundary_curve_unsolved_vertex_count,
-        diagnostics.vertex_solve.topological_vertices,
-        diagnostics.vertex_solve.carrier_points,
-        diagnostics.vertex_solve.carrier_incident_vertices,
-        diagnostics.vertex_solve.carrier_pair_candidates,
-        diagnostics.vertex_solve.carrier_triple_candidates,
-        diagnostics.vertex_solve.carrier_valid_candidates,
-        diagnostics
-            .vertex_solve
-            .carrier_no_geometric_candidate_vertices
-            + diagnostics.vertex_solve.carrier_no_valid_candidate_vertices,
-        diagnostics
-            .vertex_solve
-            .carrier_ambiguous_candidate_vertices,
-        diagnostics.vertex_solve.pcurve.records,
-        diagnostics.vertex_solve.pcurve.paths(),
-        diagnostics.vertex_solve.pcurve.missing_surfaces,
-        diagnostics.vertex_solve.pcurve.unevaluable_paths,
-        diagnostics.vertex_solve.pcurve.mapped_paths,
-        diagnostics.vertex_solve.pcurve.unmapped_records,
-        diagnostics.vertex_solve.pcurve.inconsistent_records,
-        diagnostics.vertex_solve.pcurve.accepted_records,
-        diagnostics.vertex_solve.pcurve.complete_records,
-        diagnostics.vertex_solve.pcurve.conflicting_curves,
-        diagnostics.vertex_solve.pcurve.evidence,
-        diagnostics.vertex_solve.pcurve.complete_evidence,
-        diagnostics.vertex_solve.pcurve_constraints,
-        diagnostics.vertex_solve.analytic_domain_vertices,
-        diagnostics.vertex_solve.nurbs_endpoint_constraints,
-        diagnostics.vertex_solve.directed_endpoint_conflicts,
-        diagnostics.vertex_solve.solved_vertices,
-        pcurve_mismatch_evidence,
-        pcurve_activity_evidence,
-        pcurve_carrier_evidence,
-        carrier_rejection_evidence,
-        two_chart_mapping_evidence,
-    ), "creo brep vertex evidence")?;
+            diagnostics.boundary_curve_count,
+            diagnostics.boundary_curve_missing_incidence_count,
+            diagnostics.boundary_curve_unsolved_vertex_count,
+            diagnostics.vertex_solve.topological_vertices,
+            diagnostics.vertex_solve.carrier_points,
+            diagnostics.vertex_solve.carrier_incident_vertices,
+            diagnostics.vertex_solve.carrier_pair_candidates,
+            diagnostics.vertex_solve.carrier_triple_candidates,
+            diagnostics.vertex_solve.carrier_valid_candidates,
+            diagnostics
+                .vertex_solve
+                .carrier_no_geometric_candidate_vertices
+                + diagnostics.vertex_solve.carrier_no_valid_candidate_vertices,
+            diagnostics
+                .vertex_solve
+                .carrier_ambiguous_candidate_vertices,
+            diagnostics.vertex_solve.pcurve.records,
+            diagnostics.vertex_solve.pcurve.paths(),
+            diagnostics.vertex_solve.pcurve.missing_surfaces,
+            diagnostics.vertex_solve.pcurve.unevaluable_paths,
+            diagnostics.vertex_solve.pcurve.mapped_paths,
+            diagnostics.vertex_solve.pcurve.unmapped_records,
+            diagnostics.vertex_solve.pcurve.inconsistent_records,
+            diagnostics.vertex_solve.pcurve.accepted_records,
+            diagnostics.vertex_solve.pcurve.complete_records,
+            diagnostics.vertex_solve.pcurve.conflicting_curves,
+            diagnostics.vertex_solve.pcurve.evidence,
+            diagnostics.vertex_solve.pcurve.complete_evidence,
+            diagnostics.vertex_solve.pcurve_constraints,
+            diagnostics.vertex_solve.analytic_domain_vertices,
+            diagnostics.vertex_solve.nurbs_endpoint_constraints,
+            diagnostics.vertex_solve.directed_endpoint_conflicts,
+            diagnostics.vertex_solve.solved_vertices,
+            pcurve_mismatch_evidence,
+            pcurve_activity_evidence,
+            pcurve_carrier_evidence,
+            carrier_rejection_evidence,
+            two_chart_mapping_evidence,
+        ),
+        "creo brep vertex evidence",
+    )?;
 
     push_report_loss(ctx, losses, CreoLossCode::BrepTransferIncomplete, format_args!(
         "General model B-rep transfer remains incomplete. Native face components transfer \
@@ -523,86 +611,141 @@ pub(super) fn push_carrier_transfer_notes(
         "transferred_tabulated_cylinder_spline_extrusion_count",
     );
     if !container_only && placed_plane_count != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierVisibGeomPlanes, format_args!(
-            "Transferred {placed_plane_count} model-space plane carrier(s) from complete \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierVisibGeomPlanes,
+            format_args!(
+                "Transferred {placed_plane_count} model-space plane carrier(s) from complete \
              VisibGeom local-system support frames."
-        ))?;
+            ),
+        )?;
     }
 
     if !container_only && topology_bound_plane_count != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierTopologyBoundPlanes, format_args!(
-            "Transferred {topology_bound_plane_count} model-space plane carrier(s) from \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierTopologyBoundPlanes,
+            format_args!(
+                "Transferred {topology_bound_plane_count} model-space plane carrier(s) from \
              circle, ellipse, or line boundary carriers, coplanar NURBS control nets, or \
              three or more non-collinear solved boundary vertices of the same native face."
-        ))?;
+            ),
+        )?;
     }
 
     if !container_only && first_instance_prototype_surface_count != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierFirstInstancePrototypes, format_args!(
-            "Transferred {first_instance_prototype_surface_count} first-instance ND plane, \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierFirstInstancePrototypes,
+            format_args!(
+                "Transferred {first_instance_prototype_surface_count} first-instance ND plane, \
              cylinder, cone, torus, or interpolation-spline carrier(s) from complete named \
              parameters."
-        ))?;
+            ),
+        )?;
     }
 
     if !container_only && paired_envelope_sphere_count != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierPairedEnvelopeSpheres, format_args!(
-            "Transferred {paired_envelope_sphere_count} sphere carrier(s) from complementary \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierPairedEnvelopeSpheres,
+            format_args!(
+                "Transferred {paired_envelope_sphere_count} sphere carrier(s) from complementary \
              five-coordinate type-26 hemisphere envelopes and their shared zero-major-radius \
              prototype."
-        ))?;
+            ),
+        )?;
     }
 
     if !container_only && positional_torus_count != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierPositionalTori, format_args!(
-            "Transferred {positional_torus_count} exact positional torus carrier(s) from \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierPositionalTori,
+            format_args!(
+                "Transferred {positional_torus_count} exact positional torus carrier(s) from \
              complete local-system, radius, and five-coordinate envelope bodies."
-        ))?;
+            ),
+        )?;
     }
 
     if !container_only && positional_cylinder_count != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierPositionalCylinders, format_args!(
-            "Transferred {positional_cylinder_count} exact positional cylinder carrier(s) \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierPositionalCylinders,
+            format_args!(
+                "Transferred {positional_cylinder_count} exact positional cylinder carrier(s) \
              from complete per-instance parameter bodies."
-        ))?;
+            ),
+        )?;
     }
 
     if !container_only && positional_cone_count != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierPositionalCones, format_args!(
-            "Transferred {positional_cone_count} exact positional cone carrier(s) from \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierPositionalCones,
+            format_args!(
+                "Transferred {positional_cone_count} exact positional cone carrier(s) from \
              complete support-apex or planar-envelope bodies."
-        ))?;
+            ),
+        )?;
     }
 
     if !container_only && positional_line_extrusion_plane_count != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierLineExtrusionPlanes, format_args!(
-            "Transferred {positional_line_extrusion_plane_count} unbound straight positional \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierLineExtrusionPlanes,
+            format_args!(
+                "Transferred {positional_line_extrusion_plane_count} unbound straight positional \
              surface-of-extrusion carrier(s) from complete sweep-direction and directrix \
              frames."
-        ))?;
+            ),
+        )?;
     }
 
     if !container_only && tabulated_cylinder_spline_extrusion_count != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierTabulatedCylinderExtrusions, format_args!(
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierTabulatedCylinderExtrusions,
+            format_args!(
                 "Transferred {tabulated_cylinder_spline_extrusion_count} tabulated-cylinder \
              cubic spline extrusion carrier(s) from uniquely matched directrix and frame spans."
-            ))?;
+            ),
+        )?;
     }
 
     if !container_only && !scan.planes.datums.is_empty() {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierDatumPlanes, format_args!(
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierDatumPlanes,
+            format_args!(
             "Transferred {} exact model-space construction datum plane carrier(s) from ActDatums; \
              these are unbounded reference planes, not model B-rep faces.",
             scan.planes.datums.len()
-        ))?;
+        ),
+        )?;
     }
 
     if !container_only && !scan.references.lines.is_empty() {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierReferenceLines, format_args!(
-            "Transferred {} finite model-space reference line carrier(s) from MdlRefInfo; \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierReferenceLines,
+            format_args!(
+                "Transferred {} finite model-space reference line carrier(s) from MdlRefInfo; \
              their byte-exact endpoints remain attached as native line records.",
-            scan.references.lines.len()
-        ))?;
+                scan.references.lines.len()
+            ),
+        )?;
     }
 
     if !container_only && !scan.references.circles.is_empty() {
@@ -645,11 +788,16 @@ pub(super) fn push_carrier_transfer_notes(
     let extrusion_plane_boundary_curve_count =
         coverage_count(coverage, "transferred_extrusion_plane_boundary_curve_count");
     if !container_only && extrusion_plane_boundary_curve_count != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierExtrusionBoundaryCurves, format_args!(
-            "Transferred {extrusion_plane_boundary_curve_count} exact NURBS boundary \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierExtrusionBoundaryCurves,
+            format_args!(
+                "Transferred {extrusion_plane_boundary_curve_count} exact NURBS boundary \
              carrier(s) where one tabulated-extrusion boundary lies in an adjacent plane \
              and every other control point lies strictly on one side."
-        ))?;
+            ),
+        )?;
     }
 
     let extrusion_plane_section_generator_curve_count = coverage_count(
@@ -657,11 +805,16 @@ pub(super) fn push_carrier_transfer_notes(
         "transferred_extrusion_plane_section_generator_curve_count",
     );
     if !container_only && extrusion_plane_section_generator_curve_count != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierExtrusionSectionGenerators, format_args!(
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierExtrusionSectionGenerators,
+            format_args!(
                 "Transferred {extrusion_plane_section_generator_curve_count} exact NURBS \
              generator carrier(s) where an adjacent plane contains the sweep direction and \
              the cubic directrix has exactly one plane intersection."
-            ))?;
+            ),
+        )?;
     }
 
     let shared_extrusion_generator_curve_count = coverage_count(
@@ -669,11 +822,16 @@ pub(super) fn push_carrier_transfer_notes(
         "transferred_shared_extrusion_generator_curve_count",
     );
     if !container_only && shared_extrusion_generator_curve_count != 0 {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierSharedExtrusionGenerators, format_args!(
-            "Transferred {shared_extrusion_generator_curve_count} exact shared NURBS \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierSharedExtrusionGenerators,
+            format_args!(
+                "Transferred {shared_extrusion_generator_curve_count} exact shared NURBS \
              generator carrier(s) whose two tabulated-extrusion control nets meet on the \
              same linear boundary and lie strictly on opposite sides of a plane through it."
-        ))?;
+            ),
+        )?;
     }
 
     let torus_coverage = torus_parameter_coverage(scan);
@@ -683,18 +841,23 @@ pub(super) fn push_carrier_transfer_notes(
         || torus_coverage.five_coordinate_envelopes != 0
         || torus_coverage.split_coordinate_envelopes != 0
     {
-        push_report_loss(ctx, losses, CreoLossCode::CarrierTorusParameterRetention, format_args!(
-            "Retained {} tagged type-26 radius override(s), {} prototype-minor-radius \
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::CarrierTorusParameterRetention,
+            format_args!(
+                "Retained {} tagged type-26 radius override(s), {} prototype-minor-radius \
              replay(s), {} terminal outline extent(s), {} five-coordinate envelope(s), and \
              {} split-coordinate envelope(s). These row-local fields remain byte-exact native \
              data. Placement-complete paired sphere envelopes additionally transfer as \
              analytic carriers.",
-            torus_coverage.radius_overrides,
-            torus_coverage.replayed_minor_radii,
-            torus_coverage.outline_extents,
-            torus_coverage.five_coordinate_envelopes,
-            torus_coverage.split_coordinate_envelopes,
-        ))?;
+                torus_coverage.radius_overrides,
+                torus_coverage.replayed_minor_radii,
+                torus_coverage.outline_extents,
+                torus_coverage.five_coordinate_envelopes,
+                torus_coverage.split_coordinate_envelopes,
+            ),
+        )?;
     }
     Ok(())
 }
@@ -713,14 +876,17 @@ fn unstatable_vertex_orbit_note(
         return Ok(None);
     };
     let count = orbits.len();
-    Ok(Some(
-        CreoLossCode::TopologyVertexIdentifierUnstatable.note(ctx.format_retained(format_args!(
-            "{count} half-edge orbit(s) lie past the one-based topological vertex identifier \
+    Ok(Some(CreoLossCode::TopologyVertexIdentifierUnstatable.note(
+        ctx.format_retained(
+            format_args!(
+                "{count} half-edge orbit(s) lie past the one-based topological vertex identifier \
          width, so they state no vertex and their half-edges carry no incidence. The first \
          is the orbit at half-edge curve {} side {}.",
-            first.curve_id, first.side,
-        ), "creo unstatable vertex orbit text")?),
-    ))
+                first.curve_id, first.side,
+            ),
+            "creo unstatable vertex orbit text",
+        )?,
+    )))
 }
 
 pub(super) fn push_structural_layer_notes(
@@ -728,7 +894,30 @@ pub(super) fn push_structural_layer_notes(
     losses: &mut Vec<LossNote>,
     scan: &ContainerScan,
 ) -> Result<(), CodecError> {
-    if let Some(note) = unstatable_vertex_orbit_note(ctx, &scan.topology.unstatable_vertex_orbits)? {
+    struct CurveExpressionTransfer(usize);
+    impl std::fmt::Display for CurveExpressionTransfer {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            if self.0 == 0 {
+                f.write_str(
+                    "Curve-equation assignments transfer with their source, dependencies, and closed numeric \
+                     and string operator and deterministic function values."
+                )
+            } else {
+                write!(f,
+                    "Admitted curve-equation assignments transfer with their source, dependencies, and \
+                     closed numeric and string operator and deterministic function values. \
+                     {} active curve-equation record(s) \
+                     containing prohibited datum-curve constructs or unresolved simultaneous-solve \
+                     control retain \
+                     source and dependencies without solve-dependent assignment values or derived curves.",
+                    self.0
+                )
+            }
+        }
+    }
+
+    if let Some(note) = unstatable_vertex_orbit_note(ctx, &scan.topology.unstatable_vertex_orbits)?
+    {
         ctx.try_reserve_items(losses, 1, "creo report losses")?;
         losses.push(note);
     }
@@ -741,11 +930,19 @@ pub(super) fn push_structural_layer_notes(
         .iter()
         .chain(&scan.surfaces.nonvisible_prototype_field_refusals)
     {
-        push_report_loss(ctx, losses, CreoLossCode::SurfacePrototypeFieldRetained, refusal)?;
+        push_report_loss(
+            ctx,
+            losses,
+            CreoLossCode::SurfacePrototypeFieldRetained,
+            refusal,
+        )?;
     }
 
     // The specific undecoded PSB layers that gate per-instance geometry.
-    push_report_loss(ctx, losses, CreoLossCode::GeometryInstanceCarriersGated,
+    push_report_loss(
+        ctx,
+        losses,
+        CreoLossCode::GeometryInstanceCarriersGated,
         "Additional model-space carriers are gated by unresolved lane-specific scalar \
          prefixes, feature-local transform bindings, placement-incomplete or untagged \
          `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps \
@@ -754,7 +951,10 @@ pub(super) fn push_structural_layer_notes(
     )?;
 
     // Topology.
-    push_report_loss(ctx, losses, CreoLossCode::TopologyIncompleteComponents,
+    push_report_loss(
+        ctx,
+        losses,
+        CreoLossCode::TopologyIncompleteComponents,
         "Native curve half-edges and closed loops were decoded. Components with complete \
          solved boundaries and unique face orientations transfer as \
          body/region/shell/face/loop/coedge/edge/vertex graphs; multi-loop faces use \
@@ -786,38 +986,24 @@ pub(super) fn push_structural_layer_notes(
                     || record.unresolved_solve_control)
         })
         .count();
-    struct CurveExpressionTransfer(usize);
-    impl std::fmt::Display for CurveExpressionTransfer {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            if self.0 == 0 {
-                f.write_str(
-                    "Curve-equation assignments transfer with their source, dependencies, and closed numeric \
-                     and string operator and deterministic function values."
-                )
-            } else {
-                write!(f,
-                    "Admitted curve-equation assignments transfer with their source, dependencies, and \
-                     closed numeric and string operator and deterministic function values. \
-                     {} active curve-equation record(s) \
-                     containing prohibited datum-curve constructs or unresolved simultaneous-solve \
-                     control retain \
-                     source and dependencies without solve-dependent assignment values or derived curves.",
-                    self.0
-                )
-            }
-        }
-    }
-    let curve_expression_transfer = CurveExpressionTransfer(unevaluated_curve_expression_record_count);
+
+    let curve_expression_transfer =
+        CurveExpressionTransfer(unevaluated_curve_expression_record_count);
 
     // Features, history, materials.
-    push_report_loss(ctx, losses, CreoLossCode::FeatureNeutralSemanticsIncomplete, format_args!(
+    push_report_loss(
+        ctx,
+        losses,
+        CreoLossCode::FeatureNeutralSemanticsIncomplete,
+        format_args!(
             "Named feature operations and their decoded dependency/input tables transfer as typed \
          or native design records. {curve_expression_transfer} \
          Full neutral operation semantics\
          {configuration_gap}, graph, case-study, cabling, and cross-model relation functions, \
          materials, and display data \
          remain untransferred."
-        ))?;
+        ),
+    )?;
     Ok(())
 }
 
@@ -843,8 +1029,8 @@ mod tests {
             ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = limit,
             _ => panic!("unsupported report test dimension"),
         }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         run(&ctx).expect_err("report allocation refused")
     }
 
@@ -852,7 +1038,12 @@ mod tests {
     fn report_loss_text_refuses_retained_limit() {
         let error = report_limit_error(ResourceDimension::RetainedBytes, 0, |ctx| {
             let mut losses = Vec::new();
-            push_report_loss(ctx, &mut losses, CreoLossCode::BrepTransferIncomplete, "report")
+            push_report_loss(
+                ctx,
+                &mut losses,
+                CreoLossCode::BrepTransferIncomplete,
+                "report",
+            )
         });
         assert!(matches!(error, CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -863,7 +1054,12 @@ mod tests {
     fn report_loss_slots_refuse_collection_limit() {
         let error = report_limit_error(ResourceDimension::CollectionItems, 0, |ctx| {
             let mut losses = Vec::new();
-            push_report_loss(ctx, &mut losses, CreoLossCode::BrepTransferIncomplete, "report")
+            push_report_loss(
+                ctx,
+                &mut losses,
+                CreoLossCode::BrepTransferIncomplete,
+                "report",
+            )
         });
         assert!(matches!(error, CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
@@ -907,8 +1103,14 @@ mod tests {
     #[test]
     fn unstatable_orbit_note_refuses_retained_limit() {
         let error = report_limit_error(ResourceDimension::RetainedBytes, 0, |ctx| {
-            unstatable_vertex_orbit_note(ctx, &[HalfEdgeId { curve_id: 5, side: Side::Zero }])
-                .map(|_| ())
+            unstatable_vertex_orbit_note(
+                ctx,
+                &[HalfEdgeId {
+                    curve_id: 5,
+                    side: Side::Zero,
+                }],
+            )
+            .map(|_| ())
         });
         assert!(matches!(error, CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -920,19 +1122,26 @@ mod tests {
     /// reader can find it; the count alone names nothing.
     #[test]
     fn an_unstatable_vertex_orbit_note_names_the_orbit() {
-        assert!(crate::decode::with_test_decode_ctx(|ctx| unstatable_vertex_orbit_note(ctx, &[]))
-            .expect("empty orbit report admitted")
-            .is_none());
-        let note = crate::decode::with_test_decode_ctx(|ctx| unstatable_vertex_orbit_note(ctx, &[
-            HalfEdgeId {
-                curve_id: 4_100,
-                side: Side::One,
-            },
-            HalfEdgeId {
-                curve_id: 4_101,
-                side: Side::Zero,
-            },
-        ]))
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| unstatable_vertex_orbit_note(ctx, &[]))
+                .expect("empty orbit report admitted")
+                .is_none()
+        );
+        let note = crate::decode::with_test_decode_ctx(|ctx| {
+            unstatable_vertex_orbit_note(
+                ctx,
+                &[
+                    HalfEdgeId {
+                        curve_id: 4_100,
+                        side: Side::One,
+                    },
+                    HalfEdgeId {
+                        curve_id: 4_101,
+                        side: Side::Zero,
+                    },
+                ],
+            )
+        })
         .expect("orbit report allocation admitted")
         .expect("a stated orbit refusal");
         assert!(

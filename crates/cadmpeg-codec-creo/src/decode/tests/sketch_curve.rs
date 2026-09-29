@@ -86,12 +86,32 @@ fn sketch_curve_references_require_a_materialized_curve() {
     .expect("valid test fixture");
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(ctx, Some(&transform), &sketch, 3, &line)).expect("test curve reference"),
+        crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(
+            ctx,
+            Some(&transform),
+            &sketch,
+            3,
+            &line
+        ))
+        .expect("test curve reference"),
         Some("creo:featdefs:section_curve#5:3".to_string())
     );
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(ctx, None, &sketch, 3, &line)).expect("test absent curve reference"), None);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(ctx, Some(&transform), &sketch, 4, &point)).expect("test point curve reference"),
+        crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(
+            ctx, None, &sketch, 3, &line
+        ))
+        .expect("test absent curve reference"),
+        None
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| placed_sketch_curve_ref(
+            ctx,
+            Some(&transform),
+            &sketch,
+            4,
+            &point
+        ))
+        .expect("test point curve reference"),
         None
     );
 }
@@ -99,23 +119,32 @@ fn sketch_curve_references_require_a_materialized_curve() {
 #[test]
 fn placed_sketch_curve_reference_refuses_before_retained_formatting() {
     let transform = crate::placement::FeatureSectionTransform::new(
-        5, Some(5), [10.0, 20.0, 30.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], 7,
-    ).expect("valid section frame");
+        5,
+        Some(5),
+        [10.0, 20.0, 30.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        7,
+    )
+    .expect("valid section frame");
     let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
     let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(2.0, 0.0),
-    }).expect("valid line");
+    })
+    .expect("valid line");
     let expected = "creo:featdefs:section_curve#5:3";
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = expected.len() as u64 - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
-    assert!(matches!(placed_sketch_curve_ref(&ctx, Some(&transform), &sketch, 3, &line),
+    assert!(
+        matches!(placed_sketch_curve_ref(&ctx, Some(&transform), &sketch, 3, &line),
         Err(cadmpeg_core::CodecError::ResourceLimit(resource))
             if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && resource.operation == "creo section curve reference"));
+                && resource.operation == "creo section curve reference")
+    );
 }
 
 #[test]
@@ -204,16 +233,26 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     let entity = SketchEntityId::mint("synthetic:test:id#entity").expect("valid test fixture");
     let sketch = SketchId::mint("synthetic:test:id#sketch").expect("valid test fixture");
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(ctx, &segment, &sketch, entity.clone()))
-            .expect("service verhor admission"),
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(
+            ctx,
+            &segment,
+            &sketch,
+            entity.clone()
+        ))
+        .expect("service verhor admission"),
         Some(SketchConstraintDefinitionInput::Vertical {
             entity: entity.clone()
         })
     );
     segment.vertical_horizontal = Some(1);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(ctx, &segment, &sketch, entity.clone()))
-            .expect("service verhor admission"),
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(
+            ctx,
+            &segment,
+            &sketch,
+            entity.clone()
+        ))
+        .expect("service verhor admission"),
         Some(SketchConstraintDefinitionInput::Horizontal {
             entity: entity.clone()
         })
@@ -224,8 +263,10 @@ fn segment_verhor_projection_is_closed_and_lossless() {
         entities,
         operands,
         ..
-    }) = crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(ctx, &segment, &sketch, entity.clone()))
-        .expect("service verhor admission")
+    }) = crate::decode::with_test_decode_ctx(|ctx| {
+        section_segment_verhor_definition(ctx, &segment, &sketch, entity.clone())
+    })
+    .expect("service verhor admission")
     else {
         panic!("an undefined line selector must remain native");
     };
@@ -240,8 +281,10 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     segment.kind = crate::feature::definitions::FeatureSegmentKind::Arc(segment.point_ids());
     segment.vertical_horizontal = Some(0);
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(ctx, &segment, &sketch, entity))
-            .expect("service verhor admission"),
+        crate::decode::with_test_decode_ctx(|ctx| section_segment_verhor_definition(
+            ctx, &segment, &sketch, entity
+        ))
+        .expect("service verhor admission"),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     segment.vertical_horizontal = None;
@@ -251,7 +294,8 @@ fn segment_verhor_projection_is_closed_and_lossless() {
             &segment,
             &sketch,
             SketchEntityId::mint("synthetic:test:id#entity").expect("valid test fixture")
-        )).expect("service verhor admission"),
+        ))
+        .expect("service verhor admission"),
         None
     );
 }
@@ -285,12 +329,17 @@ fn dimension_identity_includes_its_feature_definition() {
         "creo:featdefs:parameter#917:3"
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_layout(ctx, &[
-            (sketch_917.clone(), 3),
-            (sketch_1104.clone(), 3),
-            (sketch_1104.clone(), 4),
-            (sketch_1200, 3),
-        ])).expect("layout fits service limits"),
+        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_layout(
+            ctx,
+            &[
+                (sketch_917.clone(), 3),
+                (sketch_1104.clone(), 3),
+                (sketch_1104.clone(), 4),
+                (sketch_1200, 3),
+            ]
+        )
+        .map(|result| result.map(std::iter::Iterator::collect::<Vec<_>>)))
+        .expect("layout fits service limits"),
         Some(vec![
             (0, "d3".to_string(), None),
             (0, "d3".to_string(), None),
@@ -299,9 +348,12 @@ fn dimension_identity_includes_its_feature_definition() {
         ])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_layout(ctx,
+        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_layout(
+            ctx,
             &[(sketch_917.clone(), 3), (sketch_917.clone(), 3)]
-        )).expect("layout fits service limits"),
+        )
+        .map(|result| result.map(std::iter::Iterator::collect::<Vec<_>>)))
+        .expect("layout fits service limits"),
         Some(vec![
             (0, "d917_3_1".to_string(), Some(0)),
             (1, "d917_3_2".to_string(), Some(1)),
@@ -755,7 +807,8 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         visible: None,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_output_bodies(ctx, &ir, 40)).expect("service profile admits output bodies"),
+        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_output_bodies(ctx, &ir, 40))
+            .expect("service profile admits output bodies"),
         vec![
             BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
             BodyId::mint("creo:feature:revolution#40:body".to_string()).expect("identity grammar"),

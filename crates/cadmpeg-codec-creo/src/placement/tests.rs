@@ -13,10 +13,9 @@ use crate::CreoCodec;
 use super::{
     definition_local_plane_equation,
     generated_cylinder_section_transform as parse_generated_cylinder_section_transform,
-    generated_planar_table_shape,
     generated_planar_section_transform as parse_generated_planar_section_transform,
-    plane_equation, resolve as parse_resolve, FeatureSectionTransform,
-    PlacementSources, SignedPlaneEquation, EPS_PLACEMENT_GEOMETRY,
+    generated_planar_table_shape, plane_equation, resolve as parse_resolve,
+    FeatureSectionTransform, PlacementSources, SignedPlaneEquation, EPS_PLACEMENT_GEOMETRY,
 };
 use crate::datum::DatumPlaneRecord;
 use crate::feature::definitions::ReferencePlanes;
@@ -73,7 +72,11 @@ fn generated_planar_table_entry_nodes_refuse_collection_limit() {
     let table = FeatureEntityTable::new(
         10,
         79,
-        vec![entry(13, 204, None), entry(18, 203, None), entry(23, 200, Some(4))],
+        vec![
+            entry(13, 204, None),
+            entry(18, 203, None),
+            entry(23, 200, Some(4)),
+        ],
         &std::collections::BTreeSet::new(),
         200,
     );
@@ -84,15 +87,21 @@ fn generated_planar_table_entry_nodes_refuse_collection_limit() {
         .expect("empty root");
     let error = generated_planar_table_shape(&ctx, &table)
         .expect_err("first entry node exceeds collection limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo generated planar table entry nodes"));
+            && resource.operation == "creo generated planar table entry nodes")
+    );
     crate::decode::with_test_decode_ctx(|ctx| {
         assert!(generated_planar_table_shape(ctx, &table)?);
         let duplicate = FeatureEntityTable::new(
             10,
             79,
-            vec![entry(13, 204, None), entry(18, 203, None), entry(13, 200, Some(4))],
+            vec![
+                entry(13, 204, None),
+                entry(18, 203, None),
+                entry(13, 200, Some(4)),
+            ],
             &std::collections::BTreeSet::new(),
             200,
         );
@@ -166,17 +175,25 @@ fn placement_reference_ids_refuse_before_growth() {
         offset: 10,
     });
     let sources = PlacementSources {
-        datums: &[], surface_rows: &[], model_planes: &[], outline_planes: &[],
-        plane_envelopes: &[], surface_parameters: &[], geometry_tables: &[], affected_ids: &[],
+        datums: &[],
+        surface_rows: &[],
+        model_planes: &[],
+        outline_planes: &[],
+        plane_envelopes: &[],
+        surface_parameters: &[],
+        geometry_tables: &[],
+        affected_ids: &[],
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("test input admitted");
-    assert!(matches!(parse_resolve(&ctx, &[definition.clone()], &sources, &[]),
+    assert!(
+        matches!(parse_resolve(&ctx, &[definition.clone()], &sources, &[]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "creo placement reference IDs"));
+            if limit.operation == "creo placement reference IDs")
+    );
     assert!(resolve(&[definition], &sources, &[]).is_empty());
 }
 

@@ -9,7 +9,10 @@ use super::draft::{
     thicken_feature_definition,
 };
 use super::knit::{filled_surface_feature_definition, knit_surface_feature_definition};
-use super::outputs::{decoded_feature_reference_name, feature_reference_name, insert_feature_source_property, sweep_output_kind, sweep_solid};
+use super::outputs::{
+    decoded_feature_reference_name, feature_reference_name, insert_feature_source_property,
+    sweep_output_kind, sweep_solid,
+};
 use cadmpeg_core::CodecError;
 
 use crate::container::ContainerScan;
@@ -23,8 +26,7 @@ use cadmpeg_ir::features::{
     patterns::PatternKind, BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
     FaceSelection, FeatureDefinition as IrFeatureDefinition,
     FeatureOperation as IrFeatureOperation, FeatureTreeNodeRole, LinearTermination,
-    PartialRevolveConstruction, ProfileRef, RevolveConstruction,
-    UnresolvedFamily,
+    PartialRevolveConstruction, ProfileRef, RevolveConstruction, UnresolvedFamily,
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::BodyKind;
@@ -92,7 +94,9 @@ fn name_only_feature_definition(
         return Ok(Some(thicken_feature_definition(ctx, scan, ir, feature_id)?));
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return Ok(Some(knit_surface_feature_definition(ctx, scan, feature_id)?));
+        return Ok(Some(knit_surface_feature_definition(
+            ctx, scan, feature_id,
+        )?));
     }
     if let Some(definition) = surface_intersect_feature_definition(scan, feature_id, kind) {
         return Ok(Some(definition));
@@ -204,8 +208,7 @@ pub(in super::super) fn named_or_referenced_feature_definition(
     {
         return Ok(None);
     }
-    let Some(reference_name) = feature_reference_name(scan, feature_id)
-    else {
+    let Some(reference_name) = feature_reference_name(scan, feature_id) else {
         return Ok(None);
     };
     let reference_name = decoded_feature_reference_name(ctx, reference_name)?;
@@ -225,7 +228,11 @@ pub(super) fn extrude_feature_definition_with_profile(
 ) -> Result<IrFeatureDefinition, CodecError> {
     let profile = match unique_feature_profile_ref(ctx, scan, ir, feature_id)? {
         Some(profile) => profile,
-        None => unresolved_feature_profile_ref(ctx, feature_id, "creo unresolved named profile identity")?,
+        None => unresolved_feature_profile_ref(
+            ctx,
+            feature_id,
+            "creo unresolved named profile identity",
+        )?,
     };
     let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
     let op = if op == BooleanOp::Unresolved && output_kind == Some(BodyKind::Sheet) {
@@ -252,18 +259,20 @@ pub(super) fn extrude_feature_definition_with_profile(
                 )
             },
         );
-    Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
-        profile,
-        direction,
-        start: cadmpeg_ir::features::ExtrudeStart::default(),
-        extent,
-        op,
-        solid: sweep_solid(output_kind),
-        face_maker: None,
-        inner_wire_taper: None,
-        length_along_profile_normal: None,
-        allow_multi_profile_faces: None,
-    }))
+    Ok(IrFeatureDefinition::Operation(
+        IrFeatureOperation::Extrude {
+            profile,
+            direction,
+            start: cadmpeg_ir::features::ExtrudeStart::default(),
+            extent,
+            op,
+            solid: sweep_solid(output_kind),
+            face_maker: None,
+            inner_wire_taper: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
+        },
+    ))
 }
 
 fn revolve_feature_definition_with_profile(
@@ -276,12 +285,11 @@ fn revolve_feature_definition_with_profile(
 ) -> Result<IrFeatureDefinition, CodecError> {
     let extent = feature_revolution_extent(scan, feature_id);
     let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
-    let profile = unique_feature_profile_ref(ctx, scan, ir, feature_id)?.and_then(|profile| {
-        match profile {
+    let profile =
+        unique_feature_profile_ref(ctx, scan, ir, feature_id)?.and_then(|profile| match profile {
             ProfileRef::Planar(planar) => Some(planar),
             _ => None,
-        }
-    });
+        });
     let axis = feature_revolution_axis_for_transfer(
         ctx,
         scan,
@@ -423,7 +431,12 @@ pub(in super::super) fn retain_native_feature_parameters(
         return Ok(());
     }
     for (name, value) in parameters {
-        insert_feature_source_property(ctx, source_properties, format_args!("native_parameter.{name}"), value)?;
+        insert_feature_source_property(
+            ctx,
+            source_properties,
+            format_args!("native_parameter.{name}"),
+            value,
+        )?;
     }
     Ok(())
 }

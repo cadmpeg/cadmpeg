@@ -465,12 +465,20 @@ fn typed_identity_copy_refuses_retained_bytes_before_duplication() {
     policy.limits.max_retained_bytes = id.as_str().len() as u64 - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
-    let error = id.copy_admitted(&ctx, "typed identity copy").expect_err("copy exceeds cap");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    let error = id
+        .copy_admitted(&ctx, "typed identity copy")
+        .expect_err("copy exceeds cap");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && resource.operation == "typed identity copy"));
+            && resource.operation == "typed identity copy")
+    );
     let service = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &service)
         .expect("empty root");
-    assert_eq!(id.copy_admitted(&ctx, "typed identity copy").expect("service copy"), id);
+    assert_eq!(
+        id.copy_admitted(&ctx, "typed identity copy")
+            .expect("service copy"),
+        id
+    );
 }
