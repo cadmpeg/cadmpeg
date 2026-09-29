@@ -1,7 +1,7 @@
 //! Compact selection projection and resource-limit tests.
 
 use super::super::{
-    bind_parameter_scalars,
+    bind_parameter_scalars, synthesize_display_relation_parameters,
     compact_surface_selection_set_value, cut_with_surface_selection_pair, draft_face_selection,
     full_round_fillet_selection_triple,
     project_compact_body_selections, project_compact_edge_selections,
@@ -153,6 +153,99 @@ fn parameter_scalar_binding_refuses_work_limit() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "bind SLDPRT parameter scalars"));
+}
+
+fn display_relation_synthesis_fixture() -> (
+    Vec<cadmpeg_ir::features::DesignParameter>,
+    Vec<cadmpeg_ir::features::Feature>,
+    Vec<FeatureInputLane>,
+) {
+    use crate::records::{FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalarRole};
+    let (_, features, _, mut lanes) = parameter_scalar_binding_fixture();
+    lanes[0].scalars[0].role = FeatureInputScalarRole::Display;
+    lanes[0].scalars[0].value = cadmpeg_ir::scalar::FiniteReal::new(0.012).unwrap();
+    lanes[0].relation_instances.push(FeatureInputRelationInstance {
+        id: "sldprt:feature-input:relation-instance#lane:10".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 10,
+        family: FeatureInputRelationFamily::PointPointDistance,
+        class_ref: "class".into(),
+        feature_ref: "native-feature".into(),
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec!["native-scalar".into()], None, Some("native-scalar".into()),
+        ).expect("display scalar relation"),
+        operands: Vec::new(),
+    });
+    (Vec::new(), features, lanes)
+}
+
+#[test]
+fn display_relation_synthesis_preserves_reference_parameter() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (mut parameters, features, lanes) = display_relation_synthesis_fixture();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("test context");
+    synthesize_display_relation_parameters(&ctx, &mut parameters, &features, &lanes)
+        .expect("display relation synthesis");
+    assert_eq!(parameters.len(), 1);
+    assert_eq!(parameters[0].name, "D1@reference");
+    assert_eq!(parameters[0].owner.as_ref(), Some(&features[0].id));
+    assert_eq!(parameters[0].properties.get("sldprt_relation_parameter_role"),
+        Some(&"reference".into()));
+}
+
+fn display_relation_synthesis_limit_result(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let (mut parameters, features, lanes) = display_relation_synthesis_fixture();
+    let mut policy = DecodePolicy::service();
+    match dimension {
+        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+        ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+        ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+        other => panic!("unsupported display relation limit: {other:?}"),
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    synthesize_display_relation_parameters(&ctx, &mut parameters, &features, &lanes)
+        .expect_err("display relation synthesis exceeds configured limit")
+}
+
+#[test]
+fn display_relation_synthesis_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    assert!(matches!(display_relation_synthesis_limit_result(ResourceDimension::CollectionItems),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn display_relation_synthesis_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    assert!(matches!(display_relation_synthesis_limit_result(ResourceDimension::RetainedBytes),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn display_relation_synthesis_refuses_scoped_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    assert!(matches!(display_relation_synthesis_limit_result(ResourceDimension::MaterializedBytes),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn display_relation_synthesis_refuses_work_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    assert!(matches!(display_relation_synthesis_limit_result(ResourceDimension::WorkUnits),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits));
 }
 
 fn offset_plane_fixture() -> (
