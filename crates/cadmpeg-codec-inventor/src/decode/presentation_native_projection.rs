@@ -13,7 +13,7 @@ use crate::presentation::PresentationInventory;
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 
 use super::{
-    charge_items, charge_retained_len, retained_clone, retained_format, retained_native_sha256,
+    charge_items, charge_retained_len, retained_format, retained_native_sha256,
     retained_sha256, wire_len,
 };
 
@@ -49,7 +49,7 @@ pub(super) fn project(
                 ),
                 "retain Inventor default style id",
             )?,
-            segment_token: retained_clone(ctx, token, "retain Inventor default style token")?,
+            segment_token: ctx.copy_retained_text(token, "retain Inventor default style token")?,
             record_ordinal: style.identity.record_ordinal,
             segment_version_major: style.segment_version_major,
             header_value: style.header_value,
@@ -83,7 +83,7 @@ pub(super) fn project(
                 ),
                 "retain Inventor rendering style id",
             )?,
-            segment_token: retained_clone(ctx, token, "retain Inventor rendering style token")?,
+            segment_token: ctx.copy_retained_text(token, "retain Inventor rendering style token")?,
             record_ordinal: style.identity.record_ordinal,
             segment_version_major: style.segment_version_major,
             header_value: style.header_value,
@@ -94,54 +94,34 @@ pub(super) fn project(
             default_state: style.default_state,
             value: style.value,
             name_reference: style.name_reference,
-            name: retained_clone(ctx, &style.name, "retain Inventor rendering style text")?,
-            comment: retained_clone(ctx, &style.comment, "retain Inventor rendering style text")?,
-            long_name: retained_clone(
-                ctx,
-                &style.long_name,
-                "retain Inventor rendering style text",
-            )?,
+            name: ctx.copy_retained_text(&style.name, "retain Inventor rendering style text")?,
+            comment: ctx.copy_retained_text(&style.comment, "retain Inventor rendering style text")?,
+            long_name: ctx.copy_retained_text(&style.long_name, "retain Inventor rendering style text")?,
             style_state: extension.map(|value| value.style_state),
             style_label: extension
                 .map(|value| {
-                    retained_clone(
-                        ctx,
-                        &value.style_label,
-                        "retain Inventor rendering extension text",
-                    )
+                    ctx.copy_retained_text(&value.style_label, "retain Inventor rendering extension text")
                 })
                 .transpose()?,
             asset_guid: extension
                 .map(|value| {
-                    retained_clone(
-                        ctx,
-                        &value.asset_guid,
-                        "retain Inventor rendering extension text",
-                    )
+                    ctx.copy_retained_text(&value.asset_guid, "retain Inventor rendering extension text")
                 })
                 .transpose()?,
             material_id: extension
                 .map(|value| {
-                    retained_clone(
-                        ctx,
-                        &value.material_id,
-                        "retain Inventor rendering extension text",
-                    )
+                    ctx.copy_retained_text(&value.material_id, "retain Inventor rendering extension text")
                 })
                 .transpose()?,
             asset_library_id: extension
                 .map(|value| {
-                    retained_clone(
-                        ctx,
-                        &value.asset_library_id,
-                        "retain Inventor rendering extension text",
-                    )
+                    ctx.copy_retained_text(&value.asset_library_id, "retain Inventor rendering extension text")
                 })
                 .transpose()?,
             style_values: extension.map(|value| value.style_values),
             guid: extension
                 .map(|value| {
-                    retained_clone(ctx, &value.guid, "retain Inventor rendering extension text")
+                    ctx.copy_retained_text(&value.guid, "retain Inventor rendering extension text")
                 })
                 .transpose()?,
             suffix_len: wire_len(
@@ -177,11 +157,7 @@ pub(super) fn project(
                 ctx.charge_entities(1, "admit Inventor rendering conversion issue")?;
                 inventory.issues.push(RecordIssue {
                     family: RecordIssueFamily::Presentation,
-                    segment_token: retained_clone(
-                        ctx,
-                        token,
-                        "retain Inventor rendering issue token",
-                    )?,
+                    segment_token: ctx.copy_retained_text(token, "retain Inventor rendering issue token")?,
                     record_ordinal: style.identity.record_ordinal,
                     detail,
                 });
@@ -198,7 +174,7 @@ pub(super) fn project(
             ),
             "retain Inventor graphics face id",
         )?;
-        let segment_token = retained_clone(ctx, token, "retain Inventor graphics face token")?;
+        let segment_token = ctx.copy_retained_text(token, "retain Inventor graphics face token")?;
         charge_items(
             ctx,
             face.edge_references.references().len(),
@@ -235,11 +211,7 @@ pub(super) fn project(
             ),
             "retain Inventor graphics style collection id",
         )?;
-        let segment_token = retained_clone(
-            ctx,
-            token,
-            "retain Inventor graphics style collection token",
-        )?;
+        let segment_token = ctx.copy_retained_text(token, "retain Inventor graphics style collection token")?;
         charge_items(
             ctx,
             collection.style_references.references().len(),
@@ -272,11 +244,7 @@ pub(super) fn project(
                     ),
                     "retain Inventor primary color style id",
                 )?,
-                segment_token: retained_clone(
-                    ctx,
-                    token,
-                    "retain Inventor primary color style token",
-                )?,
+                segment_token: ctx.copy_retained_text(token, "retain Inventor primary color style token")?,
                 record_ordinal: style.identity.record_ordinal,
                 segment_version_major: style.segment_version_major,
                 header_value: style.header_value,

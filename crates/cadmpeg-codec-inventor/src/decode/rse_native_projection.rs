@@ -13,7 +13,7 @@ use crate::native::{
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentMetaState};
 
 use super::{
-    admit_native_items, retained_clone, retained_format, retained_hex, retained_sha256, wire_len,
+    admit_native_items, retained_format, retained_hex, retained_sha256, wire_len,
 };
 
 pub(super) struct RseNativeProjection {
@@ -60,11 +60,7 @@ pub(super) fn project(
                     format_args!("segment:{token}"),
                     "retain Inventor segment identity issue scope",
                 )?,
-                detail: retained_clone(
-                    ctx,
-                    detail,
-                    "retain Inventor segment identity issue detail",
-                )?,
+                detail: ctx.copy_retained_text(detail, "retain Inventor segment identity issue detail")?,
             });
         }
         admit_native_items(ctx, 1)?;
@@ -74,7 +70,7 @@ pub(super) fn project(
                 format_args!("inventor:rse:segment#{token}"),
                 "retain Inventor segment pair id",
             )?,
-            token: retained_clone(ctx, token, "retain Inventor segment pair token")?,
+            token: ctx.copy_retained_text(token, "retain Inventor segment pair token")?,
             metadata_directory_id: segment.pair.metadata.directory_id(),
             bulk_directory_id: segment.pair.bulk.directory_id(),
         });
@@ -87,18 +83,10 @@ pub(super) fn project(
                         format_args!("inventor:rse:segment-meta#{token}"),
                         "retain Inventor segment metadata id",
                     )?,
-                    token: retained_clone(ctx, token, "retain Inventor segment metadata token")?,
+                    token: ctx.copy_retained_text(token, "retain Inventor segment metadata token")?,
                     version: meta.declared.version,
-                    kind: retained_clone(
-                        ctx,
-                        segment.kind.label(),
-                        "retain Inventor segment kind",
-                    )?,
-                    display_name: retained_clone(
-                        ctx,
-                        &meta.display_name,
-                        "retain Inventor segment display name",
-                    )?,
+                    kind: ctx.copy_retained_text(segment.kind.label(), "retain Inventor segment kind")?,
+                    display_name: ctx.copy_retained_text(&meta.display_name, "retain Inventor segment display name")?,
                     segment_id: retained_hex(
                         ctx,
                         &meta.segment_id,
@@ -106,16 +94,8 @@ pub(super) fn project(
                     )?,
                     header_values: meta.header_values,
                     state_words: meta.state_words,
-                    created: retained_clone(
-                        ctx,
-                        &meta.created,
-                        "retain Inventor segment creation text",
-                    )?,
-                    modified: retained_clone(
-                        ctx,
-                        &meta.modified,
-                        "retain Inventor segment modification text",
-                    )?,
+                    created: ctx.copy_retained_text(&meta.created, "retain Inventor segment creation text")?,
+                    modified: ctx.copy_retained_text(&meta.modified, "retain Inventor segment modification text")?,
                     body_form: meta.body_form,
                     expanded_body_len: wire_len(
                         ctx,
@@ -152,11 +132,7 @@ pub(super) fn project(
                             format_args!("inventor:rse:meta-section#{token}-{}", section.number),
                             "retain Inventor metadata section id",
                         )?,
-                        token: retained_clone(
-                            ctx,
-                            token,
-                            "retain Inventor metadata section token",
-                        )?,
+                        token: ctx.copy_retained_text(token, "retain Inventor metadata section token")?,
                         number: section.number,
                         discriminator: section.discriminator,
                         payload_len: wire_len(
@@ -179,7 +155,7 @@ pub(super) fn project(
                             format_args!("inventor:rse:meta-type#{token}-{}", descriptor.index),
                             "retain Inventor metadata type id",
                         )?,
-                        token: retained_clone(ctx, token, "retain Inventor metadata type token")?,
+                        token: ctx.copy_retained_text(token, "retain Inventor metadata type token")?,
                         index: descriptor.index,
                         type_id: retained_hex(
                             ctx,
@@ -198,8 +174,8 @@ pub(super) fn project(
                         format_args!("inventor:rse:segment-meta-issue#{token}"),
                         "retain Inventor metadata issue id",
                     )?,
-                    token: retained_clone(ctx, token, "retain Inventor metadata issue token")?,
-                    detail: retained_clone(ctx, detail, "retain Inventor metadata issue detail")?,
+                    token: ctx.copy_retained_text(token, "retain Inventor metadata issue token")?,
+                    detail: ctx.copy_retained_text(detail, "retain Inventor metadata issue detail")?,
                 });
             }
         }
@@ -232,7 +208,7 @@ pub(super) fn project(
                         }
                     }
                     RecordFrameState::Unavailable(detail) => SegmentBulkFrame::Unavailable {
-                        detail: retained_clone(ctx, detail, "retain Inventor RSe frame issue")?,
+                        detail: ctx.copy_retained_text(detail, "retain Inventor RSe frame issue")?,
                     },
                 };
                 admit_native_items(ctx, 1)?;
@@ -242,7 +218,7 @@ pub(super) fn project(
                         format_args!("inventor:rse:segment-bulk#{token}"),
                         "retain Inventor segment bulk id",
                     )?,
-                    token: retained_clone(ctx, token, "retain Inventor segment bulk token")?,
+                    token: ctx.copy_retained_text(token, "retain Inventor segment bulk token")?,
                     prefix: retained_hex(ctx, &bulk.prefix, "retain Inventor segment bulk prefix")?,
                     form: bulk.form.value(),
                     compressed_len: wire_len(
@@ -276,8 +252,8 @@ pub(super) fn project(
                         format_args!("inventor:rse:segment-bulk-issue#{token}"),
                         "retain Inventor bulk issue id",
                     )?,
-                    token: retained_clone(ctx, token, "retain Inventor bulk issue token")?,
-                    detail: retained_clone(ctx, detail, "retain Inventor bulk issue detail")?,
+                    token: ctx.copy_retained_text(token, "retain Inventor bulk issue token")?,
+                    detail: ctx.copy_retained_text(detail, "retain Inventor bulk issue detail")?,
                 });
             }
         }
@@ -290,11 +266,7 @@ pub(super) fn project(
                 format_args!("inventor:rse:unpaired-metadata#{}", token.as_str()),
                 "retain Inventor unpaired metadata id",
             )?,
-            token: retained_clone(
-                ctx,
-                token.as_str(),
-                "retain Inventor unpaired metadata token",
-            )?,
+            token: ctx.copy_retained_text(token.as_str(), "retain Inventor unpaired metadata token")?,
             missing_member: UnpairedMember::Bulk,
         });
     }
@@ -306,7 +278,7 @@ pub(super) fn project(
                 format_args!("inventor:rse:unpaired-bulk#{}", token.as_str()),
                 "retain Inventor unpaired bulk id",
             )?,
-            token: retained_clone(ctx, token.as_str(), "retain Inventor unpaired bulk token")?,
+            token: ctx.copy_retained_text(token.as_str(), "retain Inventor unpaired bulk token")?,
             missing_member: UnpairedMember::Metadata,
         });
     }
