@@ -983,11 +983,20 @@ pub(in crate::native) fn feature_draft_construction_binary32_lanes(
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
+            let id = format_feature_child_id(ctx, &payload.id, "-binary32-lane-", ordinal)?;
+            let operation_label = copy_operation_text(ctx, &payload.operation_label, "NX draft binary32 lane operation")?;
+            let graph_payload = copy_operation_text(ctx, &payload.id, "NX draft binary32 lane graph")?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX draft binary32 lane ordinal", 0, 1))?;
+            ctx.charge_collection_items(1, "NX draft construction binary32 lanes")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureDraftConstructionBinary32Lane>()), "NX draft construction binary32 lane")?;
+            lanes.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX draft construction binary32 lanes", 0, 1))?;
             lanes.push(FeatureDraftConstructionBinary32Lane {
-                id: format!("{}-binary32-lane-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
-                graph_payload: payload.id.clone(),
-                ordinal: ordinal as u32,
+                id,
+                operation_label,
+                graph_payload,
+                ordinal,
                 lane,
                 source_offset,
             });

@@ -8,6 +8,7 @@ use crate::native::features::draft::feature_draft_construction_references;
 use crate::native::features::draft::feature_draft_construction_payloads;
 use crate::native::features::draft::feature_draft_construction_graph_payloads;
 use crate::native::features::draft::feature_draft_construction_fixed_lanes;
+use crate::native::features::draft::feature_draft_construction_binary32_lanes;
 use crate::native::features::draft::FeatureDraftConstructionGraphPayload;
 use crate::native::features::draft::FeatureDraftConstructionReference;
 use crate::native::features::draft::FeatureDraftConstructionIndexLane;
@@ -355,6 +356,64 @@ fn draft_fixed_route_refuses_scoped_limit() {
 #[test]
 fn draft_fixed_route_refuses_work_limit() {
     let error = draft_fixed_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+fn draft_binary32_bytes() -> Vec<u8> {
+    let discriminator = [
+        0x90, 0x18, 0x45, 0x01, 0x04, 0x01, 0x04, 0x01, 0xc0, 0x45, 0x04, 0x04, 0x80, 0x86, 0x02,
+        0x00, 0x03, 0x00,
+    ];
+    let mut bytes = vec![0xff];
+    bytes.extend_from_slice(&discriminator);
+    bytes.extend_from_slice(&[0x4f, 0x80, 0, 0]);
+    bytes.extend_from_slice(&[0xcf, 0x80, 0, 0]);
+    bytes.push(0);
+    bytes
+}
+
+fn draft_binary32_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let (container, payload) = draft_graph_fixture_with_content(&draft_binary32_bytes());
+    let lanes = crate::test_support::with_decode_context(|ctx| {
+        feature_draft_construction_binary32_lanes(ctx, &container, &[payload.clone()])
+    }).expect("admitted draft binary32 lane");
+    assert_eq!(lanes.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    feature_draft_construction_binary32_lanes(&ctx, &container, &[payload])
+        .err().expect("draft binary32 lane resource limit")
+}
+
+#[test]
+fn draft_binary32_route_refuses_collection_limit() {
+    let error = draft_binary32_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn draft_binary32_route_refuses_retained_limit() {
+    let error = draft_binary32_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn draft_binary32_route_refuses_scoped_limit() {
+    let error = draft_binary32_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn draft_binary32_route_refuses_work_limit() {
+    let error = draft_binary32_route_refusal(|policy| policy.limits.max_work_units = 0);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
