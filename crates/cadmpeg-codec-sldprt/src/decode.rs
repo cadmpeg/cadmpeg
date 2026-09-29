@@ -2739,11 +2739,13 @@ fn build_geometry_ir(
         &mut supplemental_config_lanes,
     );
     crate::resolved_features::projections::project_compact_edge_selections(
+        ctx,
         &mut ir.model.features,
         &[],
         &supplemental_config_lanes,
     )?;
     crate::history::configuration::project_configuration_supplemental_edge_selections(
+        ctx,
         &mut ir,
         &supplemental_config_lanes,
     )?;
@@ -4068,11 +4070,13 @@ fn build_metadata_ir(
         &mut supplemental_config_lanes,
     );
     crate::resolved_features::projections::project_compact_edge_selections(
+        ctx,
         &mut ir.model.features,
         &[],
         &supplemental_config_lanes,
     )?;
     crate::history::configuration::project_configuration_supplemental_edge_selections(
+        ctx,
         &mut ir,
         &supplemental_config_lanes,
     )?;
