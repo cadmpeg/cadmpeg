@@ -7707,21 +7707,36 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
     constructions: &[FeatureDatumCsysConstruction],
     scalars: &[FeaturePayloadScalar],
 ) -> Result<Vec<FeatureSketchDatumCsysDependency>, CodecError> {
-    let positions = feature_operation_chronological_labels(ctx, labels)?
-        .into_iter()
-        .enumerate()
-        .map(|(position, label)| (label.id.as_str(), position))
-        .collect::<BTreeMap<_, _>>();
-    let points = named_points
-        .iter()
-        .map(|point| (point.id.as_str(), point))
-        .collect::<BTreeMap<_, _>>();
+    #[derive(PartialEq, Eq)]
+    enum BorrowedRelation<'a> {
+        Shared(&'a str),
+        Consecutive(&'a str, &'a str),
+    }
+    let ordered_labels = feature_operation_chronological_labels(ctx, labels)?;
+    let mut positions = BTreeMap::new();
+    let mut position_reservation = ctx.reserve_scoped(0, "NX sketch datum label positions")?;
+    for (position, label) in ordered_labels.iter().enumerate() {
+        ctx.charge_collection_items(1, "NX sketch datum label positions")?;
+        position_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, usize)>() * 4))?;
+        positions.insert(label.id.as_str(), position);
+    }
+    let mut points = BTreeMap::new();
+    let mut point_reservation = ctx.reserve_scoped(0, "NX sketch datum named points")?;
+    for point in named_points {
+        ctx.charge_collection_items(1, "NX sketch datum named points")?;
+        point_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, &OffsetStoreNamedPoint)>() * 4))?;
+        points.insert(point.id.as_str(), point);
+    }
     let mut dependencies = Vec::new();
     for construction in constructions {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(point_uses.len()),
+            "match NX sketch datum dependencies")?;
         let Some(consumer_position) = positions.get(construction.operation_label.as_str()) else {
             continue;
         };
-        let mut candidate: Option<(usize, FeatureSketchDatumCsysBlockRelation)> = None;
+        let mut candidate: Option<(usize, BorrowedRelation<'_>)> = None;
         let mut ambiguous = false;
         'point_uses: for (point_use_index, point_use) in point_uses.iter().enumerate() {
             let Some(producer_position) = positions.get(point_use.operation_label.as_str()) else {
@@ -7733,6 +7748,12 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
             let Some(point) = points.get(point_use.named_point.as_str()) else {
                 continue;
             };
+            let comparisons = point.data_blocks.len()
+                .checked_mul(construction.frame.members().len())
+                .ok_or_else(|| ctx.refuse_codec_limit(
+                    "match NX sketch datum blocks", 0, 1))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(comparisons),
+                "match NX sketch datum blocks")?;
             for shared_block in construction
                 .frame
                 .members()
@@ -7740,9 +7761,7 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
                 .map(|(_, binding)| binding)
                 .filter(|block| point.data_blocks.contains(block))
             {
-                let relation = FeatureSketchDatumCsysBlockRelation::Shared {
-                    data_block: shared_block.clone(),
-                };
+                let relation = BorrowedRelation::Shared(shared_block);
                 let is_new_ambiguity =
                     candidate
                         .as_ref()
@@ -7770,10 +7789,8 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
                 if point_store == construction_store
                     && point_ordinal.checked_add(1) == Some(construction_ordinal)
                 {
-                    let relation = FeatureSketchDatumCsysBlockRelation::Consecutive {
-                        point_data_block: point_last_block.clone(),
-                        construction_data_block: construction_first_block.clone(),
-                    };
+                    let relation = BorrowedRelation::Consecutive(
+                        point_last_block, construction_first_block);
                     let is_new_ambiguity =
                         candidate
                             .as_ref()
@@ -7799,41 +7816,81 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
             continue;
         };
         let point_use = &point_uses[point_use_index];
+        let Some(reference) = point_use.references.first() else {
+            continue;
+        };
         let point = points[point_use.named_point.as_str()];
-        let scalar_aliases = point
-            .values
-            .iter()
-            .enumerate()
-            .flat_map(|(coordinate_ordinal, value)| {
-                let value_source_offset = value.source_offset;
-                scalars
-                    .iter()
-                    .filter(move |scalar| {
-                        scalar.operation_label == construction.operation_label
-                            && scalar.source_offset == value_source_offset
-                    })
-                    .map(move |scalar| FeatureSketchDatumCsysScalarAlias {
-                        sketch_coordinate_ordinal: coordinate_ordinal as u8,
-                        datum_csys_scalar: scalar.id.clone(),
-                        value_source_offset,
-                    })
-            })
-            .collect();
+        let mut scalar_aliases = Vec::new();
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(scalars.len())
+            .checked_mul(cadmpeg_core::decode::u64_from_index(point.values.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("match NX sketch datum scalars", 0, 1))?,
+            "match NX sketch datum scalars")?;
+        for (coordinate_ordinal, value) in point.values.iter().enumerate() {
+            for scalar in scalars.iter().filter(|scalar| {
+                scalar.operation_label == construction.operation_label
+                    && scalar.source_offset == value.source_offset
+            }) {
+                let datum_csys_scalar = copy_operation_text(ctx, &scalar.id,
+                    "NX sketch datum scalar identity")?;
+                ctx.charge_collection_items(1, "NX sketch datum scalar aliases")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<FeatureSketchDatumCsysScalarAlias>()),
+                    "NX sketch datum scalar aliases")?;
+                scalar_aliases.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX sketch datum scalar aliases", 0, 1))?;
+                scalar_aliases.push(FeatureSketchDatumCsysScalarAlias {
+                    sketch_coordinate_ordinal: u8::try_from(coordinate_ordinal).map_err(|_| {
+                        ctx.refuse_codec_limit("NX sketch datum coordinate ordinal", 0, 1)
+                    })?,
+                    datum_csys_scalar,
+                    value_source_offset: value.source_offset,
+                });
+            }
+        }
+        let block_relation = match block_relation {
+            BorrowedRelation::Shared(data_block) => FeatureSketchDatumCsysBlockRelation::Shared {
+                data_block: copy_operation_text(ctx, data_block, "NX sketch datum shared block")?,
+            },
+            BorrowedRelation::Consecutive(point_data_block, construction_data_block) =>
+                FeatureSketchDatumCsysBlockRelation::Consecutive {
+                    point_data_block: copy_operation_text(ctx, point_data_block,
+                        "NX sketch datum point block")?,
+                    construction_data_block: copy_operation_text(ctx, construction_data_block,
+                        "NX sketch datum construction block")?,
+                },
+        };
+        let id = replace_operation_text(ctx, &construction.id,
+            "datum-csys-construction", "sketch-datum-csys-dependency",
+            "NX sketch datum dependency identity")?;
+        let sketch_operation_label = copy_operation_text(ctx, &point_use.operation_label,
+            "NX sketch datum producer label")?;
+        let datum_csys_operation_label = copy_operation_text(ctx, &construction.operation_label,
+            "NX sketch datum consumer label")?;
+        let sketch_point_use = copy_operation_text(ctx, &point_use.id,
+            "NX sketch datum point use")?;
+        let datum_csys_construction = copy_operation_text(ctx, &construction.id,
+            "NX sketch datum construction")?;
+        ctx.charge_collection_items(1, "NX sketch datum dependencies")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureSketchDatumCsysDependency>()),
+            "NX sketch datum dependencies")?;
+        dependencies.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX sketch datum dependencies", 0, 1))?;
         dependencies.push(FeatureSketchDatumCsysDependency {
-            id: construction.id.replacen(
-                "datum-csys-construction",
-                "sketch-datum-csys-dependency",
-                1,
-            ),
-            sketch_operation_label: point_use.operation_label.clone(),
-            datum_csys_operation_label: construction.operation_label.clone(),
-            sketch_point_use: point_use.id.clone(),
-            datum_csys_construction: construction.id.clone(),
-            block_relation: block_relation.clone(),
+            id,
+            sketch_operation_label,
+            datum_csys_operation_label,
+            sketch_point_use,
+            datum_csys_construction,
+            block_relation,
             scalar_aliases,
-            source_offset: point_use.references[0].source_offset,
+            source_offset: reference.source_offset,
         });
     }
+    let sort_work = dependencies.len().checked_mul(dependencies.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("sort NX sketch datum dependencies", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(sort_work),
+        "sort NX sketch datum dependencies")?;
     dependencies.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(dependencies)
 }
