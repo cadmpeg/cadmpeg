@@ -2481,19 +2481,27 @@ fn expanded_feature_ids(
     }
 }
 
-fn direct_subfeature_ids(feature: &Entity) -> Option<Vec<&str>> {
+fn direct_subfeature_ids(feature: &Entity) -> Option<impl Iterator<Item = &str>> {
     let collection = unique_related(feature, "SubFeatures")?;
-    let mut ids = Vec::new();
+    if collection.entity.related.is_empty() {
+        return None;
+    }
     for applied in &collection.entity.related {
         if !applied.class.ends_with(".GdtAppliedFeature") {
             return None;
         }
-        let [reference] = applied.entity.features.references.as_slice() else {
+        let [_] = applied.entity.features.references.as_slice() else {
             return None;
         };
-        ids.push(reference.id.as_str());
     }
-    (!ids.is_empty()).then_some(ids)
+    Some(collection.entity.related.iter().filter_map(|applied| {
+        applied
+            .entity
+            .features
+            .references
+            .first()
+            .map(|reference| reference.id.as_str())
+    }))
 }
 
 fn tolerance_modifiers(entity: &Entity) -> Vec<String> {
