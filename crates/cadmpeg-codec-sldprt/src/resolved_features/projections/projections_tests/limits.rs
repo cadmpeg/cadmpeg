@@ -1,10 +1,10 @@
 //! Compact selection projection and resource-limit tests.
 
 use super::super::{
-    project_compact_body_selections, project_compact_edge_selections,
+    full_round_fillet_selection_triple, project_compact_body_selections, project_compact_edge_selections,
     project_compact_surface_selections,
 };
-use crate::records::{FeatureInputBodySelection, FeatureInputLane};
+use crate::records::{FeatureInputBodySelection, FeatureInputLane, FeatureInputSurfaceSelection, FeatureInputSurfaceSelectionKind};
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, FeatureDefinition, FeatureId, FeatureOperation,
     UnresolvedFamily,
@@ -276,4 +276,52 @@ fn compact_surface_projection_refuses_index_work_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "index SLDPRT compact surface selections"));
+}
+
+fn full_round_selection() -> FeatureInputSurfaceSelection {
+    FeatureInputSurfaceSelection {
+        id: "surface".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 0,
+        selector: 0,
+        kind: FeatureInputSurfaceSelectionKind::Component,
+        object_name_ref: "name".into(),
+        feature_ref: "fillet".into(),
+        producer_feature_refs: Vec::new(),
+        terminal_feature_ref: None,
+        components: Vec::new(),
+    }
+}
+
+#[test]
+fn full_round_fillet_grouping_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let selection = full_round_selection();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = full_round_fillet_selection_triple(&ctx, &[&selection])
+        .expect_err("lane grouping exceeds collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "group SLDPRT full round fillet selections"));
+}
+
+#[test]
+fn full_round_fillet_grouping_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let selection = full_round_selection();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = full_round_fillet_selection_triple(&ctx, &[&selection])
+        .expect_err("lane scan exceeds work limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "group SLDPRT full round fillet selections"));
 }

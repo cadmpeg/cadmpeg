@@ -1881,6 +1881,7 @@ fn a_sole_unresolved_fillet_group_carries_its_tangency_weight() {
 
 #[test]
 fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
+    with_projection_context(|ctx| {
     let selection = |parent: &str, offset: u64, local_id: u32| FeatureInputSurfaceSelection {
         id: format!("{parent}-{offset}"),
         parent: parent.into(),
@@ -1906,18 +1907,18 @@ fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
     ];
     let borrowed = lane.iter().collect::<Vec<_>>();
     let [center, side_one, side_two] =
-        full_round_fillet_selection_triple(&borrowed).expect("one lane of three is a triple");
+        full_round_fillet_selection_triple(ctx, &borrowed).expect("grouping").expect("one lane of three is a triple");
     assert_eq!(
         [center.offset, side_one.offset, side_two.offset],
         [20, 40, 60]
     );
 
     let short = lane[..2].iter().collect::<Vec<_>>();
-    assert!(full_round_fillet_selection_triple(&short).is_none());
+    assert!(full_round_fillet_selection_triple(ctx, &short).expect("grouping").is_none());
 
     let short_lane = [selection("lane-two", 20, 2), selection("lane-two", 40, 3)];
     let with_short_lane = lane.iter().chain(&short_lane).collect::<Vec<_>>();
-    assert!(full_round_fillet_selection_triple(&with_short_lane).is_none());
+    assert!(full_round_fillet_selection_triple(ctx, &with_short_lane).expect("grouping").is_none());
 
     let other_lane = [
         selection("lane-two", 20, 9),
@@ -1925,9 +1926,10 @@ fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
         selection("lane-two", 60, 7),
     ];
     let disagreeing = lane.iter().chain(&other_lane).collect::<Vec<_>>();
-    assert!(full_round_fillet_selection_triple(&disagreeing).is_none());
+    assert!(full_round_fillet_selection_triple(ctx, &disagreeing).expect("grouping").is_none());
 
     let fourth = [selection("lane-one", 80, 4)];
     let over_long = lane.iter().chain(&fourth).collect::<Vec<_>>();
-    assert!(full_round_fillet_selection_triple(&over_long).is_none());
+    assert!(full_round_fillet_selection_triple(ctx, &over_long).expect("grouping").is_none());
+    });
 }
