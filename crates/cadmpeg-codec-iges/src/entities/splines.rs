@@ -835,7 +835,10 @@ pub(super) fn project(
                         u64::MAX,
                     ));
                 }
-                Some(requested) if requested > cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES) => {
+                Some(requested)
+                    if requested
+                        > cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES) =>
+                {
                     return Err(refuse_local_limit(
                         "iges_spline_surface_poles",
                         cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),

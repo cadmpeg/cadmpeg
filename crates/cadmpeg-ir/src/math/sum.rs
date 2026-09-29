@@ -242,6 +242,7 @@ impl ScaledValue {
         // The mask keeps eleven bits, so the field is an `i32` by
         // construction; a normal field is at least one.
         let field_bits = ((bits >> 52) & 0x7ff).to_le_bytes();
+        // endian-exception: reconstructed-scalar
         let field = i32::from(u16::from_le_bytes([field_bits[0], field_bits[1]]));
         let significand = (1_u64 << 52) | (bits & ((1_u64 << 52) - 1));
         Self {
@@ -272,20 +273,21 @@ impl ScaledValue {
         let magnitude = if negative { sum.negative } else { sum.positive };
         // `word` indexes `EXACT_SUM_WORDS` words of 64 bits, so a bit index of
         // the accumulator is a `u16`; a zero word takes no part.
-        let highest_bit = magnitude
-            .iter()
-            .enumerate()
-            .try_fold(0_u16, |highest, (word, value)| {
-                if *value == 0 {
-                    Some(highest)
-                } else {
-                    u16::try_from(
-                        word * 64 + 63
-                            - cadmpeg_core::decode::index_from_u32(value.leading_zeros()),
-                    )
-                    .ok()
-                }
-            })?;
+        let highest_bit =
+            magnitude
+                .iter()
+                .enumerate()
+                .try_fold(0_u16, |highest, (word, value)| {
+                    if *value == 0 {
+                        Some(highest)
+                    } else {
+                        u16::try_from(
+                            word * 64 + 63
+                                - cadmpeg_core::decode::index_from_u32(value.leading_zeros()),
+                        )
+                        .ok()
+                    }
+                })?;
         rounded_magnitude(negative, &magnitude, highest_bit)
     }
 }
@@ -327,9 +329,11 @@ fn add_word(words: &mut [u64; EXACT_SUM_WORDS], index: usize, value: u64) {
 
 fn add_shifted(words: &mut [u64; EXACT_SUM_WORDS], value: u128, shift: usize) {
     let bytes = value.to_le_bytes();
+    // endian-exception: reconstructed-scalar
     let low = u64::from_le_bytes([
         bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
     ]);
+    // endian-exception: reconstructed-scalar
     let high = u64::from_le_bytes([
         bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
     ]);
@@ -370,6 +374,7 @@ impl ExactSignedSum {
             for word in &mut product {
                 let value = u128::from(*word) * u128::from(significand) + carry;
                 let bytes = value.to_le_bytes();
+                // endian-exception: reconstructed-scalar
                 *word = u64::from_le_bytes([
                     bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
                 ]);

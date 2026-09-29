@@ -562,7 +562,10 @@ fn decode_validates_selected_component_parameter_pointer() {
         })
         .unwrap();
     let provenance = even_loss.provenance.as_ref().unwrap();
-    assert_eq!(provenance.offset, cadmpeg_core::decode::u64_from_index(even_pointer_offset));
+    assert_eq!(
+        provenance.offset,
+        cadmpeg_core::decode::u64_from_index(even_pointer_offset)
+    );
     assert_eq!(provenance.tag.as_deref(), Some("D7:parameter[1]"));
 }
 

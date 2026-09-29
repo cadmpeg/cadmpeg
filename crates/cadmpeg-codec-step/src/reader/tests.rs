@@ -19,7 +19,10 @@ fn step_integer_number_refuses_inexact_f64() {
         crate::parse::Value::Integer(1_i64 << 53).number(),
         Some(9_007_199_254_740_992.0)
     );
-    assert_eq!(crate::parse::Value::Integer((1_i64 << 53) + 1).number(), None);
+    assert_eq!(
+        crate::parse::Value::Integer((1_i64 << 53) + 1).number(),
+        None
+    );
 }
 
 #[test]
@@ -373,7 +376,9 @@ pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
     assert_eq!(
         retained.data(),
         Some(
-            &bytes[usize::try_from(retained.offset()).expect("retained offset fits memory")..usize::try_from(retained.offset() + retained.byte_len()).expect("retained end fits memory")],
+            &bytes[usize::try_from(retained.offset()).expect("retained offset fits memory")
+                ..usize::try_from(retained.offset() + retained.byte_len())
+                    .expect("retained end fits memory")],
         )
     );
     assert!(unknowns[0]
@@ -411,7 +416,9 @@ fn decode_retains_signature_opaque_without_verification_result() {
     assert_eq!(
         retained.data(),
         Some(
-            &bytes[usize::try_from(retained.offset()).expect("retained offset fits memory")..usize::try_from(retained.offset() + retained.byte_len()).expect("retained end fits memory")],
+            &bytes[usize::try_from(retained.offset()).expect("retained offset fits memory")
+                ..usize::try_from(retained.offset() + retained.byte_len())
+                    .expect("retained end fits memory")],
         )
     );
     assert!(result.report().losses.iter().any(|loss| {
@@ -937,7 +944,9 @@ fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
     );
     assert_eq!(
         provenance.offset,
-        cadmpeg_core::decode::u64_from_index(bytes.windows(2).position(|window| window == b"#1").unwrap())
+        cadmpeg_core::decode::u64_from_index(
+            bytes.windows(2).position(|window| window == b"#1").unwrap()
+        )
     );
     assert_eq!(provenance.tag.as_deref(), Some("complex_entity"));
     assert_eq!(result.ir().native_unknowns("step").unwrap().len(), 0);

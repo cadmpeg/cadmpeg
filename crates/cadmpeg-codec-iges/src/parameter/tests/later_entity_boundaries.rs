@@ -256,7 +256,10 @@ fn type316_entity_table_boundary_follows_unit_entry_count() {
         let mut source = directory_target(9, 316);
         source.form = 0;
         let directory = BTreeMap::from([(1, &association), (5, &property), (9, &source)]);
-        let mut values: Vec<TokenValue> = vec![316_i64.into(), (i64::try_from(count).expect("test count fits i64")).into()];
+        let mut values: Vec<TokenValue> = vec![
+            316_i64.into(),
+            (i64::try_from(count).expect("test count fits i64")).into(),
+        ];
         for _ in 0..count {
             values.extend([
                 TokenValue::String(b"LENGTH".to_vec()),

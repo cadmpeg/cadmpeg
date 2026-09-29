@@ -1691,7 +1691,9 @@ mod tests {
         writer.push_bits(0, 1);
         writer.push_bits(2048, 12);
         writer.push_bits((1_u64 << 53) + 1, 54);
-        assert!(super::BitReader::new(&writer.bytes).read_real(12, 54).is_err());
+        assert!(super::BitReader::new(&writer.bytes)
+            .read_real(12, 54)
+            .is_err());
     }
 
     #[test]
@@ -1733,7 +1735,7 @@ mod tests {
     impl BitWriter {
         fn push_bits(&mut self, value: u64, count: u8) {
             for index in (0..count).rev() {
-            let bit = u8::try_from((value >> index) & 1).expect("test bit fits u8");
+                let bit = u8::try_from((value >> index) & 1).expect("test bit fits u8");
                 if self.bit == 0 {
                     self.bytes.push(0);
                 }
@@ -1790,14 +1792,16 @@ mod tests {
             let value = value.abs();
             let mut exponent = cadmpeg_core::convert::truncate_f64_to_i64(value.log2().floor())
                 .expect("test exponent fits i64");
-            let mut fraction = value / 2_f64.powi(i32::try_from(exponent).expect("test exponent fits i32"));
+            let mut fraction =
+                value / 2_f64.powi(i32::try_from(exponent).expect("test exponent fits i32"));
             if fraction >= 1.0 {
                 exponent += 1;
                 fraction /= 2.0;
             }
             let scale = 2_f64.powi(i32::from(fraction_bits) + 1);
-            let raw_fraction = cadmpeg_core::convert::truncate_f64_to_u64(((fraction - 0.5) * scale).round())
-                .expect("test fraction fits u64");
+            let raw_fraction =
+                cadmpeg_core::convert::truncate_f64_to_u64(((fraction - 0.5) * scale).round())
+                    .expect("test fraction fits u64");
             let bias = 1_i64 << (exponent_bits - 1);
             let biased = u64::try_from(exponent + bias)
                 .expect("Binary test real exponent fits the selected field");

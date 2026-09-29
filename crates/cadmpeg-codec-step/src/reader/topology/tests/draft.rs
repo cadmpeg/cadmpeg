@@ -286,9 +286,10 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
         assert!(point_set_residual(fraction) <= COINCIDENCE_TOLERANCE);
     }
     for gap in 0..(PCURVE_LOCUS_SAMPLE_COUNT - 1) {
-            let fraction = (cadmpeg_core::convert::f64_from_index(gap).expect("test gap is exact") + 0.5)
-                / cadmpeg_core::convert::f64_from_index(PCURVE_LOCUS_SAMPLE_COUNT - 1)
-                    .expect("test sample count is exact");
+        let fraction = (cadmpeg_core::convert::f64_from_index(gap).expect("test gap is exact")
+            + 0.5)
+            / cadmpeg_core::convert::f64_from_index(PCURVE_LOCUS_SAMPLE_COUNT - 1)
+                .expect("test sample count is exact");
         assert!(point_set_residual(fraction) > 1.0);
     }
 

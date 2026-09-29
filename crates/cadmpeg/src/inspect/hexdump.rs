@@ -34,7 +34,9 @@ pub(super) fn render_default_width(base: u64, bytes: &[u8]) -> String {
 /// as a `NonZeroUsize` and the other as the literal beside this walk, so the
 /// row length is at least one byte.
 fn rows(base: u64, bytes: &[u8], width: usize) -> String {
-    let last = base.saturating_add(cadmpeg_core::decode::u64_from_index(bytes.len().saturating_sub(1)));
+    let last = base.saturating_add(cadmpeg_core::decode::u64_from_index(
+        bytes.len().saturating_sub(1),
+    ));
     let digits = offset_digits(last);
     let mut out = String::new();
     for (index, chunk) in bytes.chunks(width).enumerate() {

@@ -6,11 +6,11 @@ use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
 use crate::CodecError;
 
+use super::u64_from_index;
 use super::{
     refuse_local_limit, ByteRange, DecodeArena, DecodeContext, DecodePolicy, ExpandSpec,
     ResourceDimension, ResourceLimits, WorkBudget,
 };
-use super::u64_from_index;
 
 fn policy_with(mut edit: impl FnMut(&mut ResourceLimits)) -> DecodePolicy {
     let mut policy = DecodePolicy::default();

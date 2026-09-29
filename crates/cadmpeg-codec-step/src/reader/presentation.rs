@@ -1786,7 +1786,8 @@ fn find_color(
                 let Some((r, g, b)) = cadmpeg_core::convert::f32_from_f64(r)
                     .zip(cadmpeg_core::convert::f32_from_f64(g))
                     .zip(cadmpeg_core::convert::f32_from_f64(b))
-                    .map(|((r, g), b)| (r, g, b)) else {
+                    .map(|((r, g), b)| (r, g, b))
+                else {
                     return Ok(None);
                 };
                 let Some(color) = Color::new(r, g, b, 1.0) else {

@@ -5621,7 +5621,9 @@ fn default_nurbs_knots(
                 } else {
                     1
                 };
-                let knot = geometry_or_none!(FiniteReal::new(geometry_or_none!(cadmpeg_core::convert::f64_from_index(index))));
+                let knot = geometry_or_none!(FiniteReal::new(geometry_or_none!(
+                    cadmpeg_core::convert::f64_from_index(index)
+                )));
                 for _ in 0..multiplicity {
                     push_geometry_vec(&mut knots, knot, ctx, "step_default_nurbs_knots")?;
                 }
@@ -5643,7 +5645,9 @@ fn default_nurbs_knots(
                 } else {
                     degree
                 };
-                let knot = geometry_or_none!(FiniteReal::new(geometry_or_none!(cadmpeg_core::convert::f64_from_index(index))));
+                let knot = geometry_or_none!(FiniteReal::new(geometry_or_none!(
+                    cadmpeg_core::convert::f64_from_index(index)
+                )));
                 for _ in 0..multiplicity {
                     push_geometry_vec(&mut knots, knot, ctx, "step_default_nurbs_knots")?;
                 }
@@ -6525,7 +6529,9 @@ fn polyline_pcurve(
     if control_points.len() < 2 {
         return Ok(None);
     }
-    let last = geometry_or_none!(cadmpeg_core::convert::f64_from_index(control_points.len() - 1));
+    let last = geometry_or_none!(cadmpeg_core::convert::f64_from_index(
+        control_points.len() - 1
+    ));
     let mut knots = Vec::new();
     push_geometry_vec(&mut knots, 0.0, ctx, "step_polyline_pcurve_knots")?;
     for index in 0..control_points.len() {
@@ -6567,7 +6573,9 @@ fn polyline(
     if control_points.len() < 2 {
         return Ok(None);
     }
-    let last = geometry_or_none!(cadmpeg_core::convert::f64_from_index(control_points.len() - 1));
+    let last = geometry_or_none!(cadmpeg_core::convert::f64_from_index(
+        control_points.len() - 1
+    ));
     let mut knots = Vec::new();
     push_geometry_vec(&mut knots, 0.0, ctx, "step_polyline_knots")?;
     for index in 0..control_points.len() {
@@ -6632,9 +6640,10 @@ fn nurbs_surface(
     if v_count == 0
         || u_degree >= u_count
         || v_degree >= v_count
-        || rows
-            .iter()
-            .any(|row| row.list().is_none_or(|row| row.len() != cadmpeg_core::decode::index_from_u32(v_count)))
+        || rows.iter().any(|row| {
+            row.list()
+                .is_none_or(|row| row.len() != cadmpeg_core::decode::index_from_u32(v_count))
+        })
     {
         return Ok(None);
     }

@@ -124,7 +124,10 @@ fn push_occurrence_loss(
 ) -> Result<(), CodecError> {
     reserve_vec_growth(ctx, losses, 1, "iges occurrence loss slots")?;
     let message = format_retained(ctx, message, "iges occurrence loss message")?;
-    ctx.charge_retained(4 + cadmpeg_core::decode::u64_from_index(code.code().len()), "iges occurrence loss kind")?;
+    ctx.charge_retained(
+        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+        "iges occurrence loss kind",
+    )?;
     let note = code.note(message);
     if let Some(entry) = directory
         .iter()
@@ -271,7 +274,10 @@ fn append_generic_losses(
                 ), "iges generic loss message")?,
             )
         };
-        ctx.charge_retained(4 + cadmpeg_core::decode::u64_from_index(code.code().len()), "iges generic loss kind")?;
+        ctx.charge_retained(
+            4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+            "iges generic loss kind",
+        )?;
         losses.push(
             code.note(message)
                 .with_provenance(entry.admitted_loss_provenance(ctx)?),
@@ -401,8 +407,15 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
                 "iges_inspect_parameter_parse",
             ),
         };
-        charge_work(ctx, cadmpeg_core::decode::u64_from_index(bytes.len()), card_scan)?;
-        let scan_storage = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(bytes.len()), card_storage)?;
+        charge_work(
+            ctx,
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            card_scan,
+        )?;
+        let scan_storage = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            card_storage,
+        )?;
         let scan = card::scan_with_context(bytes, Some(ctx))?;
         let (global, mut global_losses) = global::parse(&scan, ctx)?;
         let (directory, quarantined_directory) =

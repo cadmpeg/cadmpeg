@@ -596,7 +596,11 @@ mod tests {
     fn card(payload: &str, section: u8, sequence: u32) -> String {
         if section == b'P' {
             assert!(payload.len() <= 64);
-            format!("{payload:<64}{:>8}{}{sequence:>7}\n", 1, char::from(section))
+            format!(
+                "{payload:<64}{:>8}{}{sequence:>7}\n",
+                1,
+                char::from(section)
+            )
         } else {
             assert!(payload.len() <= 72);
             format!("{payload:<72}{}{sequence:>7}\n", char::from(section))
@@ -689,7 +693,10 @@ mod tests {
         // magnitude, and must still be reported.
         let count = 1_000_000_000_000_000_i64;
         assert!(
-            (1.0_f64) <= FLOAT_TOLERANCE * (cadmpeg_core::convert::f64_from_i64(count).expect("test count is exactly representable")),
+            (1.0_f64)
+                <= FLOAT_TOLERANCE
+                    * (cadmpeg_core::convert::f64_from_i64(count)
+                        .expect("test count is exactly representable")),
             "the magnitudes must make this a genuine test of integer exactness"
         );
         let error = agree(

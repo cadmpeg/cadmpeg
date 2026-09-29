@@ -825,7 +825,10 @@ fn window(bytes: &[u8], start: u64, len: u64) -> String {
         Some(Ok(end)) if end < bytes.len() => end,
         _ => bytes.len(),
     };
-    hexdump::render_default_width(cadmpeg_core::decode::u64_from_index(begin), &bytes[begin..end])
+    hexdump::render_default_width(
+        cadmpeg_core::decode::u64_from_index(begin),
+        &bytes[begin..end],
+    )
 }
 
 #[cfg(test)]

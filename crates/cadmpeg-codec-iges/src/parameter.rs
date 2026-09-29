@@ -3745,7 +3745,8 @@ fn stream_offset(
     lines: &BTreeMap<u32, &PhysicalLine>,
 ) -> Option<u64> {
     let line = lines.get(cards.get(offset / 64)?)?;
-    line.offset.checked_add(cadmpeg_core::decode::u64_from_index(offset % 64))
+    line.offset
+        .checked_add(cadmpeg_core::decode::u64_from_index(offset % 64))
 }
 
 fn quarantine(

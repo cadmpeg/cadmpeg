@@ -623,11 +623,11 @@ fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
     for (index, (a, b)) in pairs.into_iter().enumerate() {
         assert_eq!(a.controls.len(), 2);
         assert_eq!(b.controls.len(), 2);
-        for (pole, expected) in a
-            .controls
-            .iter()
-            .zip([0.5 * cadmpeg_core::convert::f64_from_index(index).expect("test index is exact"), 0.5 * cadmpeg_core::convert::f64_from_index(index + 1).expect("test next index is exact")])
-        {
+        for (pole, expected) in a.controls.iter().zip([
+            0.5 * cadmpeg_core::convert::f64_from_index(index).expect("test index is exact"),
+            0.5 * cadmpeg_core::convert::f64_from_index(index + 1)
+                .expect("test next index is exact"),
+        ]) {
             assert!((pole[0] / pole[3] - expected).abs() < 16. * f64::EPSILON);
         }
     }

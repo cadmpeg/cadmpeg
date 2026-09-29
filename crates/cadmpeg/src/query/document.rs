@@ -195,7 +195,12 @@ impl CadirDocument {
     pub(super) fn addressable(&self) -> Vec<(String, u64)> {
         self.arenas
             .iter()
-            .map(|arena| (arena.target.dotted(), cadmpeg_core::decode::u64_from_index(arena.records.len())))
+            .map(|arena| {
+                (
+                    arena.target.dotted(),
+                    cadmpeg_core::decode::u64_from_index(arena.records.len()),
+                )
+            })
             .collect()
     }
 

@@ -473,7 +473,12 @@ fn finite_reals_halve_average_and_count_without_a_check() {
     assert_eq!(max.midpoint(max).get(), f64::MAX);
     assert_eq!(max.midpoint(max.negated()).get(), 0.0);
     assert_eq!(max.halved().get(), f64::MAX / 2.0);
-    assert_eq!(FiniteReal::from_index(7).expect("small index is exactly representable").get(), 7.0);
+    assert_eq!(
+        FiniteReal::from_index(7)
+            .expect("small index is exactly representable")
+            .get(),
+        7.0
+    );
     assert_eq!(
         FiniteVector::<2>::new([1.5, -2.0])
             .unwrap()

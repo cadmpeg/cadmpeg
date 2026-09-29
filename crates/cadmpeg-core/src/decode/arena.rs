@@ -59,7 +59,9 @@ mod tests {
     fn check(index: usize, slice: &[u8]) {
         assert_eq!(slice.len(), (index % 7) + 1, "length of buffer {index}");
         assert!(
-            slice.iter().all(|&byte| byte == u8::try_from(index).expect("test index fits u8")),
+            slice
+                .iter()
+                .all(|&byte| byte == u8::try_from(index).expect("test index fits u8")),
             "contents of buffer {index}",
         );
     }

@@ -52,7 +52,9 @@ fn configuration_body_membership_round_trips_and_validates() {
         native_ref: None,
     });
     ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
     assert_eq!(
         round_trip.model.configurations[0].bodies.as_deref(),
@@ -187,7 +189,9 @@ fn configuration_body_membership_round_trips_and_validates() {
             }),
         },
     )]);
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
     ir.model.configurations[0].feature_states.clear();
 
     ir.model.configurations[0].active = true;
@@ -216,7 +220,9 @@ fn configuration_body_membership_round_trips_and_validates() {
     )]);
     // A dependency with no state in this configuration inherits its model-level
     // state; `feature_states` is allowed to be sparse, so that is not a finding.
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
     ir.model.configurations[0].feature_states.insert(
         first_feature.clone(),
         ConfigurationFeatureState {
@@ -244,7 +250,9 @@ fn configuration_body_membership_round_trips_and_validates() {
         .evaluation = ConfigurationEvaluation::Active {
         outputs: DistinctMembers::default(),
     };
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
     ir.model.configurations[0].feature_states.clear();
 
     ir.model.configurations[0].bodies = Some(

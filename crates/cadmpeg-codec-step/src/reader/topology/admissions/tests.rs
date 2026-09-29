@@ -37,8 +37,8 @@ fn admission_warning_names_the_bounded_exemplars_and_counts_the_rest() {
             "{message}"
         );
     }
-    for index in
-        cadmpeg_core::decode::u64_from_index(PCURVE_UNPROVED_NOTE_EXEMPLARS)..cadmpeg_core::decode::u64_from_index(PCURVE_UNPROVED_NOTE_EXEMPLARS + extra)
+    for index in cadmpeg_core::decode::u64_from_index(PCURVE_UNPROVED_NOTE_EXEMPLARS)
+        ..cadmpeg_core::decode::u64_from_index(PCURVE_UNPROVED_NOTE_EXEMPLARS + extra)
     {
         assert!(
             !message.contains(&format!("curve #{index} on surface")),

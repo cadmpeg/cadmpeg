@@ -22,15 +22,27 @@ impl TextureAsset {
     /// Bind this texture to an appearance property.
     pub fn to_ref(&self, ctx: &DecodeContext<'_>, slot: &str) -> Result<TextureRef, CodecError> {
         ctx.charge_collection_items(1, "Protein appearance texture")?;
-        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(self.paths.len()), "Protein appearance texture paths")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(self.paths.len()),
+            "Protein appearance texture paths",
+        )?;
         for value in [self.asset_guid.as_str(), slot, &self.schema] {
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), "Protein appearance texture field")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(value.len()),
+                "Protein appearance texture field",
+            )?;
         }
         for path in &self.paths {
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(path.len()), "Protein appearance texture path")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(path.len()),
+                "Protein appearance texture path",
+            )?;
         }
         if let Some(urn) = &self.urn {
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(urn.len()), "Protein appearance texture URN")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(urn.len()),
+                "Protein appearance texture URN",
+            )?;
         }
         Ok(TextureRef {
             asset_guid: self.asset_guid.clone(),
@@ -111,9 +123,15 @@ pub fn texture_asset(
             })
     });
     let paths = if let Some(source_paths) = source_paths {
-        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(source_paths.len()), "Protein texture paths")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(source_paths.len()),
+            "Protein texture paths",
+        )?;
         for path in source_paths {
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(path.len()), "Protein texture path")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(path.len()),
+                "Protein texture path",
+            )?;
         }
         source_paths.clone()
     } else {
@@ -129,7 +147,10 @@ pub fn texture_asset(
             })
     });
     let urn = if let Some(source_urn) = source_urn {
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(source_urn.len()), "Protein texture URN")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(source_urn.len()),
+            "Protein texture URN",
+        )?;
         Some(source_urn.clone())
     } else {
         None
@@ -167,8 +188,14 @@ pub fn texture_asset(
     } else {
         None
     };
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(record.guid.len()), "Protein texture GUID")?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(record.schema.len()), "Protein texture schema")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(record.guid.len()),
+        "Protein texture GUID",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(record.schema.len()),
+        "Protein texture schema",
+    )?;
     let texture = TextureAsset {
         asset_guid: record.guid.clone(),
         schema: record.schema.clone(),

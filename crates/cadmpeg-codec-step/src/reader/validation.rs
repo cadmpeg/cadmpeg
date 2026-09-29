@@ -460,9 +460,11 @@ fn mesh_properties(
         .iter()
         .filter(|mesh| mesh.body.as_ref() == Some(body));
     let Some(origin) = meshes.clone().find_map(|mesh| {
-        mesh.triangles()
-            .first()
-            .and_then(|triangle| mesh.vertices().get(cadmpeg_core::decode::index_from_u32(triangle[0])).copied())
+        mesh.triangles().first().and_then(|triangle| {
+            mesh.vertices()
+                .get(cadmpeg_core::decode::index_from_u32(triangle[0]))
+                .copied()
+        })
     }) else {
         return Ok(None);
     };
@@ -489,7 +491,11 @@ fn mesh_properties(
         let mut edge_uses = BTreeMap::<(u32, u32), usize>::new();
         for triangle in mesh.triangles() {
             ctx.charge_work(1, "step_validation_mesh_triangles")?;
-            let [a, b, c] = triangle.map(|index| mesh.vertices().get(cadmpeg_core::decode::index_from_u32(index)).copied());
+            let [a, b, c] = triangle.map(|index| {
+                mesh.vertices()
+                    .get(cadmpeg_core::decode::index_from_u32(index))
+                    .copied()
+            });
             let (Some(a), Some(b), Some(c)) = (a, b, c) else {
                 return Ok(None);
             };

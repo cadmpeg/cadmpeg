@@ -19,6 +19,7 @@ impl NonWhitespaceChar {
     #[must_use]
     pub const fn from_ascii(byte: u8) -> Option<Self> {
         if byte.is_ascii() && !matches!(byte, b'\t'..=b'\r' | b' ') {
+            // endian-exception: reconstructed-scalar
             match char::from_u32(u32::from_be_bytes([0, 0, 0, byte])) {
                 Some(character) => Some(Self(character)),
                 None => None,

@@ -6,41 +6,49 @@
 
 /// Assemble a 16-bit little-endian integer from an exact byte array.
 pub const fn assemble_u16_le(bytes: [u8; 2]) -> u16 {
+    // endian-exception: reconstructed-scalar
     u16::from_le_bytes(bytes)
 }
 
 /// Assemble a 16-bit big-endian integer from an exact byte array.
 pub const fn assemble_u16_be(bytes: [u8; 2]) -> u16 {
+    // endian-exception: reconstructed-scalar
     u16::from_be_bytes(bytes)
 }
 
 /// Assemble a 24-bit little-endian integer from an exact byte array.
 pub const fn assemble_u24_le(bytes: [u8; 3]) -> u32 {
+    // endian-exception: reconstructed-scalar
     u32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0])
 }
 
 /// Assemble a 24-bit big-endian integer from an exact byte array.
 pub const fn assemble_u24_be(bytes: [u8; 3]) -> u32 {
+    // endian-exception: reconstructed-scalar
     u32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]])
 }
 
 /// Assemble a 32-bit little-endian integer from an exact byte array.
 pub const fn assemble_u32_le(bytes: [u8; 4]) -> u32 {
+    // endian-exception: reconstructed-scalar
     u32::from_le_bytes(bytes)
 }
 
 /// Assemble a 32-bit big-endian integer from an exact byte array.
 pub const fn assemble_u32_be(bytes: [u8; 4]) -> u32 {
+    // endian-exception: reconstructed-scalar
     u32::from_be_bytes(bytes)
 }
 
 /// Assemble a 64-bit little-endian integer from an exact byte array.
 pub const fn assemble_u64_le(bytes: [u8; 8]) -> u64 {
+    // endian-exception: reconstructed-scalar
     u64::from_le_bytes(bytes)
 }
 
 /// Assemble a 64-bit big-endian integer from an exact byte array.
 pub const fn assemble_u64_be(bytes: [u8; 8]) -> u64 {
+    // endian-exception: reconstructed-scalar
     u64::from_be_bytes(bytes)
 }
 

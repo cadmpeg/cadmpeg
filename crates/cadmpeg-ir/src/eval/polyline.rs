@@ -12,11 +12,15 @@ use crate::scalar::{FiniteReal, SegmentPosition};
 ///
 /// A sample row carries its own parameter, so the two lists this returns agree
 /// by construction. An unparameterized polyline evaluates on its sample index.
-pub(super) fn polyline_samples(polyline: &PolylineCurve) -> Option<(Vec<FinitePoint3>, Vec<FiniteReal>)> {
+pub(super) fn polyline_samples(
+    polyline: &PolylineCurve,
+) -> Option<(Vec<FinitePoint3>, Vec<FiniteReal>)> {
     let points: Vec<FinitePoint3> = polyline.points().collect();
     let parameters = match polyline.parameters() {
         Some(parameters) => parameters.collect(),
-        None => (0..points.len()).map(FiniteReal::from_index).collect::<Option<Vec<_>>>()?,
+        None => (0..points.len())
+            .map(FiniteReal::from_index)
+            .collect::<Option<Vec<_>>>()?,
     };
     Some((points, parameters))
 }

@@ -401,8 +401,10 @@ fn graph_losses_admit_indexes_notes_and_provenance_text() {
     )]);
     let source = point_file();
     let scan = crate::card::scan(&source).unwrap();
-    let directory_count = cadmpeg_core::decode::u64_from_index(scan.section(crate::card::Section::Directory).count());
-    let parameter_count = cadmpeg_core::decode::u64_from_index(scan.section(crate::card::Section::Parameter).count());
+    let directory_count =
+        cadmpeg_core::decode::u64_from_index(scan.section(crate::card::Section::Directory).count());
+    let parameter_count =
+        cadmpeg_core::decode::u64_from_index(scan.section(crate::card::Section::Parameter).count());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;

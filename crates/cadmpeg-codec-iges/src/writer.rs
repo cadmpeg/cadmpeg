@@ -7024,7 +7024,11 @@ fn polyline_parameters(polyline: &PolylineCurve) -> Result<PolylineParameters, C
                 })
                 .collect::<Result<Vec<_>, _>>()
         },
-        |parameters| Ok(parameters.map(cadmpeg_ir::scalar::FiniteReal::get).collect()),
+        |parameters| {
+            Ok(parameters
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+                .collect())
+        },
     )?;
     if !values.windows(2).all(|pair| pair[0] < pair[1]) {
         return Err(CodecError::NotImplemented(

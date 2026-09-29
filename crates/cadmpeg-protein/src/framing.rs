@@ -59,7 +59,8 @@ fn frame_records(
         ));
     }
     if View::u32_le_at(bytes, instance_stream_header::DECLARED_SIZE)
-        .map(cadmpeg_core::decode::index_from_u32) != Some(PAGE_SIZE)
+        .map(cadmpeg_core::decode::index_from_u32)
+        != Some(PAGE_SIZE)
     {
         return Err(CodecError::Malformed(
             "Protein declared page size is invalid".into(),
@@ -89,7 +90,9 @@ fn frame_records(
             if let Some(ctx) = ctx {
                 ctx.charge_collection_items(1, "Protein logical record frame")?;
                 ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(RECORD_MARKER.len() + page[record_start_page::BODY..].len()),
+                    cadmpeg_core::decode::u64_from_index(
+                        RECORD_MARKER.len() + page[record_start_page::BODY..].len(),
+                    ),
                     "Protein copied record range",
                 )?;
             }
@@ -117,9 +120,10 @@ fn frame_records(
                 .bytes
                 .extend_from_slice(&page[continuation_page::BODY..]);
         } else if page.get(terminal_page::MARKER..terminal_page::USED) == Some(TERMINAL_MARKER) {
-            let used = usize::from(View::u16_le_at(page, terminal_page::USED).ok_or_else(|| {
-                CodecError::Malformed("Protein terminal used-byte count is truncated".into())
-            })?);
+            let used =
+                usize::from(View::u16_le_at(page, terminal_page::USED).ok_or_else(|| {
+                    CodecError::Malformed("Protein terminal used-byte count is truncated".into())
+                })?);
             let payload = page
                 .get(terminal_page::BODY..terminal_page::BODY + used)
                 .ok_or_else(|| {
@@ -128,11 +132,17 @@ fn frame_records(
             if current.is_none() {
                 if let Some(ctx) = ctx {
                     ctx.charge_collection_items(1, "Protein logical record frame")?;
-                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(RECORD_MARKER.len()), "Protein copied record range")?;
+                    ctx.charge_retained(
+                        cadmpeg_core::decode::u64_from_index(RECORD_MARKER.len()),
+                        "Protein copied record range",
+                    )?;
                 }
             }
             if let Some(ctx) = ctx {
-                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(payload.len()), "Protein copied record range")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(payload.len()),
+                    "Protein copied record range",
+                )?;
             }
             let mut frame = current.take().unwrap_or_else(|| RecordFrame {
                 logical_offset,

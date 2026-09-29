@@ -4,10 +4,10 @@
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
+use crate::decode::u64_from_index;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use crate::decode::u64_from_index;
 
 macro_rules! label_enum {
     ($(#[$meta:meta])* $name:ident { $($variant:ident => $label:literal,)* }) => {
