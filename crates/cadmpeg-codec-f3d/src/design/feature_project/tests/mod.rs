@@ -7,6 +7,7 @@
 )]
 
 mod body_selection;
+mod boundary_fill_limits;
 mod coil;
 mod combine_limits;
 mod dispatcher;

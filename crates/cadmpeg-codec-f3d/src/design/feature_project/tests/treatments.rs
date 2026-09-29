@@ -1767,7 +1767,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let mut cell = group(300, 3, vec![301]);
     cell.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
     assert!(matches!(
-        crate::design::feature_project::project_boundary_fill(&fill_scope, &[tools.clone(), cell.clone()]),
+        crate::design::feature_project::project_boundary_fill(None, &fill_scope, &[tools.clone(), cell.clone()]).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::BoundaryFill {
             tools: cadmpeg_ir::features::BodySelection::Native(ref tool_selection),
             cells: ref cell_selections,
