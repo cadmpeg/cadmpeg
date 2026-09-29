@@ -191,6 +191,165 @@ fn ordered_circle_with_limit(
     super::ordered_extrusion_profiles(&ctx, vec![vec![entity]])
 }
 
+fn under_work_limit<T>(
+    limit: u64,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> Result<T, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    run(&ctx)
+}
+
+fn profile_circle(center: [f64; 2], radius: f64, reversed: bool) -> super::ProfileEntity {
+    super::ProfileEntity {
+        geometry: super::ProfileGeometry::Circle {
+            center: Point2::new(center[0], center[1]),
+            radius: cadmpeg_ir::scalar::Length::new(radius).expect("positive radius"),
+        },
+        reversed,
+        start: [center[0] + radius, center[1]],
+        end: [center[0] + radius, center[1]],
+    }
+}
+
+fn profile_line(start: [f64; 2], end: [f64; 2]) -> super::ProfileEntity {
+    super::ProfileEntity {
+        geometry: super::ProfileGeometry::Line {
+            start: Point2::new(start[0], start[1]),
+            end: Point2::new(end[0], end[1]),
+        },
+        reversed: false,
+        start,
+        end,
+    }
+}
+
+fn profile_nurbs_line() -> super::ProfileEntity {
+    let curve = PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("linear profile pcurve");
+    super::ProfileEntity {
+        geometry: super::ProfileGeometry::Nurbs { curve },
+        reversed: false,
+        start: [0.0, 0.0],
+        end: [1.0, 0.0],
+    }
+}
+
+fn assert_work(error: cadmpeg_core::CodecError, operation: &str) {
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == operation));
+}
+
+#[test]
+fn profile_polyline_pairs_refuse_work_limit() {
+    let error = under_work_limit(0, |ctx| {
+        super::polylines_intersect(ctx, &[[0.0, 0.0], [1.0, 0.0]], &[[0.0, 1.0], [1.0, 1.0]], 0.0)
+    }).expect_err("one segment pair exceeds zero work");
+    assert_work(error, "creo profile polyline intersection pairs");
+}
+
+#[test]
+fn profile_segment_intersection_refuses_work_limit() {
+    let first = profile_line([0.0, 0.0], [1.0, 0.0]);
+    let second = profile_line([0.0, 1.0], [1.0, 1.0]);
+    let error = under_work_limit(0, |ctx| super::profile_segments_intersect(ctx, &first, &second, 0.0))
+        .expect_err("one geometry pair exceeds zero work");
+    assert_work(error, "creo profile segment intersection");
+}
+
+#[test]
+fn profile_nurbs_arc_intersection_refuses_segment_work() {
+    let first = profile_nurbs_line();
+    let second = profile_circle([10.0, 10.0], 1.0, false);
+    let error = under_work_limit(2, |ctx| super::profile_segments_intersect(ctx, &first, &second, 0.01))
+        .expect_err("NURBS arc segment exceeds prior pair and sample work");
+    assert_work(error, "creo profile NURBS arc intersection segments");
+}
+
+#[test]
+fn profile_nurbs_winding_refuses_segment_work() {
+    let profile = vec![profile_nurbs_line()];
+    let error = under_work_limit(1, |ctx| super::profile_strictly_contains(ctx, &profile, [0.5, 0.5]))
+        .expect_err("NURBS winding segment exceeds prior sample work");
+    assert_work(error, "creo profile NURBS winding segments");
+}
+
+#[test]
+fn profile_line_winding_refuses_work_limit() {
+    let profile = vec![profile_line([0.0, 0.0], [1.0, 0.0])];
+    let error = under_work_limit(0, |ctx| super::profile_strictly_contains(ctx, &profile, [0.5, 0.5]))
+        .expect_err("one line exceeds zero work");
+    assert_work(error, "creo profile line winding segments");
+}
+
+#[test]
+fn profile_arc_winding_refuses_work_limit() {
+    let profile = vec![profile_circle([0.0, 0.0], 1.0, false)];
+    let error = under_work_limit(3, |ctx| super::profile_strictly_contains(ctx, &profile, [0.0, 0.0]))
+        .expect_err("four arc pieces exceed three work units");
+    assert_work(error, "creo profile arc winding pieces");
+}
+
+#[test]
+fn profile_self_pairs_refuse_work_limit() {
+    let profile = vec![
+        profile_line([0.0, 0.0], [1.0, 0.0]),
+        profile_line([1.0, 0.0], [1.0, 1.0]),
+        profile_line([1.0, 1.0], [0.0, 1.0]),
+        profile_line([0.0, 1.0], [0.0, 0.0]),
+    ];
+    let error = under_work_limit(0, |ctx| super::ordered_extrusion_profiles(ctx, vec![profile]))
+        .expect_err("one nonadjacent pair exceeds zero work");
+    assert_work(error, "creo profile self intersection pairs");
+}
+
+#[test]
+fn profile_cross_pairs_refuse_work_limit() {
+    let profiles = vec![
+        vec![profile_circle([0.0, 0.0], 5.0, false)],
+        vec![profile_circle([2.0, 0.0], 1.0, true)],
+    ];
+    let error = under_work_limit(0, |ctx| super::ordered_extrusion_profiles(ctx, profiles))
+        .expect_err("one cross-profile pair exceeds zero work");
+    assert_work(error, "creo profile cross intersection pairs");
+}
+
+#[test]
+fn outer_profile_containment_pairs_refuse_work_limit() {
+    let profiles = vec![
+        vec![profile_circle([0.0, 0.0], 5.0, false)],
+        vec![profile_circle([2.0, 0.0], 1.0, true)],
+    ];
+    let error = under_work_limit(2, |ctx| super::ordered_extrusion_profiles(ctx, profiles))
+        .expect_err("containment pair exceeds prior cross-pair work");
+    assert_work(error, "creo outer profile containment pairs");
+}
+
+#[test]
+fn hole_profile_containment_pairs_refuse_work_limit() {
+    let profiles = || vec![
+        vec![profile_circle([0.0, 0.0], 5.0, false)],
+        vec![profile_circle([-2.0, 0.0], 1.0, true)],
+        vec![profile_circle([2.0, 0.0], 1.0, true)],
+    ];
+    let error = under_work_limit(26, |ctx| super::ordered_extrusion_profiles(ctx, profiles()))
+        .expect_err("hole containment pair exceeds 26 prior work units");
+    assert_work(error, "creo hole profile containment pairs");
+    assert!(under_work_limit(100, |ctx| super::ordered_extrusion_profiles(ctx, profiles()))
+        .expect("service work budget")
+        .is_some());
+}
+
 #[test]
 fn outer_extrusion_candidate_refuses_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;
