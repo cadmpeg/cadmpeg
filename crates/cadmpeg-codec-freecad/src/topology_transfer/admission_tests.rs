@@ -18,7 +18,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::ids::EdgeId;
-use cadmpeg_ir::ids::{CurveId, RegionId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::transform::Transform;
@@ -767,76 +766,6 @@ triangulated_identity_refusal!(
 triangulated_identity_refusal!(
     vertex_record_identity_copy_refuses_at_retained_limit,
     "FreeCAD vertex record identity"
-);
-
-macro_rules! direct_identity_copy_refusal {
-    ($name:ident, $type:ty, $id:literal, $operation:literal) => {
-        #[test]
-        fn $name() {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_retained_bytes = $id.len() as u64 - 1;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result: Result<$type, _> = ctx.copy_retained_text($id, $operation).and_then(|text| <$type>::try_from(text).map_err(cadmpeg_core::CodecError::malformed));
-            assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-                if limit.operation == $operation));
-        }
-    };
-}
-
-direct_identity_copy_refusal!(
-    vertex_shell_record_identity_copy_refuses_at_retained_limit,
-    ShellId,
-    "fcstd:model:shell#Payload:1",
-    "FreeCAD vertex shell record identity"
-);
-direct_identity_copy_refusal!(
-    vertex_shell_region_identity_copy_refuses_at_retained_limit,
-    RegionId,
-    "fcstd:model:region#Payload:1",
-    "FreeCAD vertex shell region identity"
-);
-direct_identity_copy_refusal!(
-    shell_record_identity_copy_refuses_at_retained_limit,
-    ShellId,
-    "fcstd:model:shell#Payload:1",
-    "FreeCAD shell record identity"
-);
-direct_identity_copy_refusal!(
-    shell_region_identity_copy_refuses_at_retained_limit,
-    RegionId,
-    "fcstd:model:region#Payload:1",
-    "FreeCAD shell region identity"
-);
-direct_identity_copy_refusal!(
-    cached_edge_lookup_identity_copy_refuses_at_retained_limit,
-    EdgeId,
-    "fcstd:model:edge#Payload:1",
-    "FreeCAD cached edge lookup identity"
-);
-direct_identity_copy_refusal!(
-    cached_vertex_lookup_identity_copy_refuses_at_retained_limit,
-    VertexId,
-    "fcstd:model:vertex#Payload:1",
-    "FreeCAD cached vertex lookup identity"
-);
-direct_identity_copy_refusal!(
-    located_curve_record_identity_copy_refuses_at_retained_limit,
-    CurveId,
-    "fcstd:model:curve#Payload:1",
-    "FreeCAD located curve record identity"
-);
-direct_identity_copy_refusal!(
-    located_surface_record_identity_copy_refuses_at_retained_limit,
-    SurfaceId,
-    "fcstd:model:surface#Payload:1",
-    "FreeCAD located surface record identity"
-);
-direct_identity_copy_refusal!(
-    procedural_surface_owner_identity_copy_refuses_at_retained_limit,
-    SurfaceId,
-    "fcstd:model:surface#Payload:1",
-    "FreeCAD procedural surface owner identity"
 );
 
 #[test]

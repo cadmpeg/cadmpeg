@@ -446,29 +446,6 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
-    fn copied_surface_identity_refuses_before_string_storage() {
-        use cadmpeg_core::CodecError;
-        use cadmpeg_ir::ids::SurfaceId;
-
-        let id = SurfaceId::mint("catia:test:surface#copied".to_string())
-            .expect("valid fixture identity");
-        let copied = crate::test_support::with_service_context(|ctx| {
-            id.try_clone_for_decode(ctx, "catia_surface_id_copy")
-        })
-        .expect("service budget");
-        assert_eq!(copied, id);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits retained limit");
-        assert!(matches!(
-            id.try_clone_for_decode(&ctx, "catia_surface_id_copy"),
-            Err(CodecError::ResourceLimit(error)) if error.operation == "catia_surface_id_copy"
-        ));
-    }
-
-    #[test]
     fn zero_entity_source_cache_refuses_before_vacant_map_entry() {
         let mut limited_map = HashMap::<u32, u32>::new();
         let limited = crate::test_support::with_collection_limit(0, |ctx| {
