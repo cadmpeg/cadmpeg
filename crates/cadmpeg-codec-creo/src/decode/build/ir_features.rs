@@ -42,6 +42,51 @@ use crate::decode::sketch_transfer::recipe::{
     feature_schema_class, row_feature_schema_classes,
 };
 
+fn compose_feature_id<'a>(
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'_>,
+    feature_id: u32,
+) -> Result<(IrFeatureId, cadmpeg_core::decode::ScopedReservation<'a>), cadmpeg_core::CodecError> {
+    let namespace = &crate::identity::MODEL_FEATURE;
+    let (text, reservation) = ctx.format_scoped(
+        format_args!(
+            "{}:{}:{}#{feature_id}",
+            namespace.format(), namespace.scope(), namespace.kind()
+        ),
+        "creo model feature identity",
+    )?;
+    let id = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
+    Ok((id, reservation))
+}
+
+fn append_regeneration_edge(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    edges: &mut Vec<(IrFeatureId, IrFeatureId)>,
+    child: &IrFeatureId,
+    parent: &IrFeatureId,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.try_reserve_items(edges, 1, "creo regeneration edges")?;
+    let child = child.copy_admitted(ctx, "creo regeneration child identity")?;
+    let parent = parent.copy_admitted(ctx, "creo regeneration parent identity")?;
+    edges.push((child, parent));
+    Ok(())
+}
+
+fn commit_regeneration_edges(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &mut CadIr,
+    edges: Vec<(IrFeatureId, IrFeatureId)>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    for (child, parent) in edges {
+        if ir.model.feature_parent(&child).is_none() {
+            ctx.charge_collection_items(1, "creo regeneration parent nodes")?;
+        }
+        ir.model
+            .set_feature_regeneration_parent(child, parent)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+    }
+    Ok(())
+}
+
 fn refresh_feature_outputs(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -145,7 +190,7 @@ pub(super) fn emit_model_features(
         if operation_feature_ids.contains(&datum.feature_id) {
             continue;
         }
-        let id = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, datum.feature_id);
+        let (id, id_bytes) = compose_feature_id(ctx, datum.feature_id)?;
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
@@ -158,6 +203,7 @@ pub(super) fn emit_model_features(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model features")?;
+        id_bytes.commit()?;
         let feature = Feature {
             id,
             ordinal: ir.model.features.len() as u64,
@@ -186,7 +232,7 @@ pub(super) fn emit_model_features(
     let mut geometry_generator_feature_count = 0;
     for generator in geometry_generator_features(ctx, scan)? {
         let feature_id = generator.feature_id;
-        let id = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, feature_id);
+        let (id, id_bytes) = compose_feature_id(ctx, feature_id)?;
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
@@ -199,6 +245,7 @@ pub(super) fn emit_model_features(
             Exactness::ByteExact,
         )?;
         ctx.charge_entities(1, "admit Creo model features")?;
+        id_bytes.commit()?;
         let feature = Feature {
             id,
             ordinal: ir.model.features.len() as u64,
@@ -242,8 +289,9 @@ pub(super) fn emit_model_features(
     }
     let operation_ordinal_base = ir.model.features.len();
     for (operation_index, operation) in scan.features.operations.iter().enumerate() {
-        let id = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, operation.feature_id);
-        if !ir.model.features.iter().any(|feature| feature.id == id) {
+        if !ir.model.features.iter().any(|feature| crate::identity::matches_numbered_identity(
+            feature.id.as_str(), "creo:model:feature#", operation.feature_id,
+        )) {
             ctx.charge_entities(1, "admit Creo model features")?;
         }
         let current_operation =
@@ -327,19 +375,6 @@ pub(super) fn emit_model_features(
             operation.feature_id,
             &prototype_feature_dependencies,
         )?;
-        let parent = current_feature_recipe_parent(&scan.features.operations, operation.feature_id)
-            .and_then(|parent_feature_id| {
-                let parent =
-                    IrFeatureId::compose(&crate::identity::MODEL_FEATURE, parent_feature_id);
-                ir.model
-                    .features
-                    .iter()
-                    .any(|feature| feature.id == parent)
-                    .then_some(parent)
-            });
-        if let Some(parent) = parent {
-            regeneration_edges.push((id.clone(), parent));
-        }
         let operation_section = scan
             .framing
             .sections
@@ -365,6 +400,19 @@ pub(super) fn emit_model_features(
             .map(|recipe| ctx.copy_retained_text(recipe.name(), "creo Feature source tag"))
             .transpose()?;
         let native_ref = owning_feature_definition_ref(ctx, scan, operation.feature_id)?;
+        let (id, id_bytes) = compose_feature_id(ctx, operation.feature_id)?;
+        let parent = current_feature_recipe_parent(&scan.features.operations, operation.feature_id)
+            .and_then(|parent_feature_id| {
+                ir.model.features.iter().find(|feature| {
+                    crate::identity::matches_numbered_identity(
+                        feature.id.as_str(), "creo:model:feature#", parent_feature_id,
+                    )
+                })
+            })
+            .map(|feature| &feature.id);
+        if let Some(parent) = parent {
+            append_regeneration_edge(ctx, &mut regeneration_edges, &id, parent)?;
+        }
         if let Some(existing) = ir
             .model
             .features
@@ -439,6 +487,7 @@ pub(super) fn emit_model_features(
             operation_annotation_kind,
             operation_exactness,
         )?;
+        id_bytes.commit()?;
         let feature = Feature {
             id,
             ordinal: (operation_ordinal_base + operation_index) as u64,
@@ -465,7 +514,7 @@ pub(super) fn emit_model_features(
         refresh_feature_outputs(ctx, scan, ir)?;
     }
     for feature_id in row_feature_ids {
-        let id = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, feature_id);
+        let (id, id_bytes) = compose_feature_id(ctx, feature_id)?;
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
@@ -536,6 +585,7 @@ pub(super) fn emit_model_features(
             insert_feature_source_property(ctx, &mut source_properties, "featdefs_row_schema_classes", SchemaClassList(&row_schema_classes))?;
         }
         retain_native_feature_parameters(ctx, &mut source_properties, &definition, &parameters)?;
+        id_bytes.commit()?;
         let feature = Feature {
             id,
             ordinal: ir.model.features.len() as u64,
@@ -575,11 +625,7 @@ pub(super) fn emit_model_features(
         source_carriers.admit_feature(ctx, ir, feature)?;
         refresh_feature_outputs(ctx, scan, ir)?;
     }
-    for (child, parent) in regeneration_edges {
-        ir.model
-            .set_feature_regeneration_parent(child, parent)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-    }
+    commit_regeneration_edges(ctx, ir, regeneration_edges)?;
     Ok(geometry_generator_feature_count)
 }
 
