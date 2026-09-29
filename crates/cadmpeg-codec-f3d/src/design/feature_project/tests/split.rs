@@ -219,8 +219,7 @@ fn split_body_historical_face_tool_id_refuses_retained_limit() {
     );
 }
 
-#[test]
-fn class_277_258_compact_split_face_frame_projects() {
+fn compact_split_face_fixture() -> (DesignParameterScope, [DesignConstructionOperandGroup; 2]) {
     let scope_record_index = 77;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#77",
@@ -258,6 +257,12 @@ fn class_277_258_compact_split_face_frame_projects() {
             DesignOperandRole::ROLE_0X10,
         ),
     ];
+    (scope, groups)
+}
+
+#[test]
+fn class_277_258_compact_split_face_frame_projects() {
+    let (mut scope, groups) = compact_split_face_fixture();
     let definition = project_split_face(None, &scope, &[scope.clone()], &groups, &[], &[], &[]).expect("projection resource budget")
         .expect("class-277 SplitFace frame");
     assert!(matches!(
@@ -281,6 +286,38 @@ fn class_277_258_compact_split_face_frame_projects() {
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("266".to_owned()).unwrap();
     assert!(project_split_face(None, &scope, &[scope.clone()], &groups, &[], &[], &[]).expect("projection resource budget").is_none());
+}
+
+fn assert_split_face_retained_refusal(operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (scope, groups) = compact_split_face_fixture();
+    let scopes = [scope.clone()];
+    for limit in 0..192 {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(
+            project_split_face(Some(&ctx), &scope, &scopes, &groups, &[], &[], &[]),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == operation
+        ) {
+            return;
+        }
+    }
+    panic!("no SplitFace refusal at {operation}");
+}
+
+#[test]
+fn split_face_path_tool_group_id_refuses_retained_limit() {
+    assert_split_face_retained_refusal("f3d SplitFace path tool group id");
+}
+
+#[test]
+fn split_face_target_group_id_refuses_retained_limit() {
+    assert_split_face_retained_refusal("f3d SplitFace target group id");
 }
 
 #[test]
