@@ -586,16 +586,16 @@ pub(super) fn try_decode_freeform_surfaces(
         let mut admission = FamilyEntityAdmission::new(ctx);
         let mut annotations = AnnotationBuilder::new();
         let mut unknowns = Vec::new();
-        let payload_id = UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
-            cadmpeg_ir::identity_key!("freeform"),
-        );
+        let payload_id = admitted!(crate::resource::copy_id(ctx,
+            "catia:payload:unknown#freeform", UnknownId::mint,
+            "catia_freeform_payload_id"));
         let payload_index = match preserve_raw_payload(
             ctx,
             &mut unknowns,
             &mut annotations,
             scan,
-            payload_id.clone(),
+            admitted!(crate::resource::copy_id(ctx, payload_id.as_str(),
+                UnknownId::mint, "catia_freeform_payload_record_id")),
         ) {
             Ok(index) => index,
             Err(error) => return Some(Err(error)),
@@ -667,11 +667,10 @@ pub(super) fn try_decode_freeform_surfaces(
                     }
                 }
             };
-            for (index, surface) in surfaces.iter().enumerate() {
-                let id = SurfaceId::compose(
+            for (index, surface) in surfaces.into_iter().enumerate() {
+                let id = admitted!(crate::resource::compose_index_id(ctx,
                     &cadmpeg_ir::identity_namespace!("catia", "a8", "surf"),
-                    index,
-                );
+                    index, SurfaceId::mint, "catia_freeform_fallback_surface_id"));
                 admitted!(annotate(
                     ctx,
                     &mut annotations,
@@ -685,8 +684,8 @@ pub(super) fn try_decode_freeform_surfaces(
                 }
                 ir.model.surfaces.push(Surface {
                     id,
-                    geometry: surface.geometry.clone(),
-                    source_object: Some(surface.source_object.clone()),
+                    geometry: surface.geometry,
+                    source_object: Some(surface.source_object),
                 });
             }
         }
@@ -730,10 +729,9 @@ pub(super) fn try_decode_freeform_surfaces(
             return Some(Err(error));
         }
         for curve in b2_nurbs_curves {
-            let id = CurveId::compose(
+            let id = admitted!(crate::resource::compose_index_id(ctx,
                 &cadmpeg_ir::identity_namespace!("catia", "b2", "nurbs-curve"),
-                ir.model.curves.len(),
-            );
+                ir.model.curves.len(), CurveId::mint, "catia_freeform_b2_curve_id"));
             let parameter_range = curve.geometry.full_knot_endpoints();
             admitted!(annotate(
                 ctx,
@@ -747,20 +745,21 @@ pub(super) fn try_decode_freeform_surfaces(
                 return Some(Err(error));
             }
             ir.model.curves.push(Curve {
-                id: id.clone(),
+                id: admitted!(crate::resource::copy_id(ctx, id.as_str(), CurveId::mint,
+                    "catia_freeform_b2_curve_record_id")),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
                 source_object: Some(admitted!(cgm_source_key(ctx,
                     "b2-nurbs-curve-frame",
                     format_args!("{:010}", curve.pos),
                 ))),
             });
-            standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
+            admitted!(crate::resource::push(ctx, &mut standalone_wires,
+                (id, parameter_range.endpoints(), curve.pos), "catia_freeform_standalone_wires"));
         }
         for curve in a5_nurbs_curves {
-            let id = CurveId::compose(
+            let id = admitted!(crate::resource::compose_index_id(ctx,
                 &cadmpeg_ir::identity_namespace!("catia", "a5", "nurbs-curve"),
-                ir.model.curves.len(),
-            );
+                ir.model.curves.len(), CurveId::mint, "catia_freeform_a5_curve_id"));
             let parameter_range = curve.geometry.full_knot_endpoints();
             admitted!(annotate(
                 ctx,
@@ -774,20 +773,21 @@ pub(super) fn try_decode_freeform_surfaces(
                 return Some(Err(error));
             }
             ir.model.curves.push(Curve {
-                id: id.clone(),
+                id: admitted!(crate::resource::copy_id(ctx, id.as_str(), CurveId::mint,
+                    "catia_freeform_a5_curve_record_id")),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
                 source_object: Some(admitted!(cgm_source_key(ctx,
                     "a5-nurbs-curve-frame",
                     format_args!("{:010}", curve.pos),
                 ))),
             });
-            standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
+            admitted!(crate::resource::push(ctx, &mut standalone_wires,
+                (id, parameter_range.endpoints(), curve.pos), "catia_freeform_standalone_wires"));
         }
         for circle in b2_spatial_circles {
-            let id = CurveId::compose(
+            let id = admitted!(crate::resource::compose_index_id(ctx,
                 &cadmpeg_ir::identity_namespace!("catia", "b2", "circle"),
-                ir.model.curves.len(),
-            );
+                ir.model.curves.len(), CurveId::mint, "catia_freeform_b2_circle_id"));
             let parameter_range = [
                 circle.range.lower() / circle.radius.get(),
                 circle.range.upper() / circle.radius.get(),
@@ -809,7 +809,8 @@ pub(super) fn try_decode_freeform_surfaces(
                 return Some(Err(error));
             }
             ir.model.curves.push(Curve {
-                id: id.clone(),
+                id: admitted!(crate::resource::copy_id(ctx, id.as_str(), CurveId::mint,
+                    "catia_freeform_b2_circle_record_id")),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::new(
                         circle.center,
@@ -822,7 +823,8 @@ pub(super) fn try_decode_freeform_surfaces(
                     format_args!("{:010}", circle.pos),
                 ))),
             });
-            standalone_wires.push((id, parameter_range, circle.pos));
+            admitted!(crate::resource::push(ctx, &mut standalone_wires,
+                (id, parameter_range, circle.pos), "catia_freeform_standalone_wires"));
         }
         let wire_topology_transferred = if !topology_transferred
             && ir.model.surfaces.is_empty()
@@ -5443,6 +5445,37 @@ mod tests {
             freeform_surface_carriers(ctx, &bytes, &records, &mut crate::nurbs::LaneRefusals::new())
         }).expect("service profile admits sphere carrier");
         assert_eq!(service.len(), 1);
+    }
+
+    #[test]
+    fn freeform_fallback_carrier_identity_refuses_retained_limit() {
+        let file = crate::test_support::test_container::outer_body_catpart(
+            &crate::test_support::test_b2::b2_sphere_stream());
+        let scan = crate::test_support::with_service_context(|ctx| {
+            crate::container::scan_bytes(ctx, file.clone())
+        }).expect("service scan");
+        let service = crate::test_support::with_service_context(|ctx| {
+            super::try_decode_freeform_surfaces(ctx, &scan,
+                &mut crate::nurbs::LaneRefusals::new())
+        }).expect("service budget");
+        assert!(service.is_some());
+        let mut found = false;
+        for cap in 0..4096 {
+            let limited = crate::test_support::with_retained_limit(cap, |ctx| {
+                super::try_decode_freeform_surfaces(ctx, &scan,
+                    &mut crate::nurbs::LaneRefusals::new())
+            });
+            match limited {
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.operation == "catia_freeform_payload_id" => {
+                        found = true;
+                        break;
+                    }
+                Err(cadmpeg_core::CodecError::ResourceLimit(_)) => {}
+                _ => panic!("fallback carrier passed without its identity refusal"),
+            }
+        }
+        assert!(found, "the retained sweep must reach the payload identity");
     }
 
     #[test]
