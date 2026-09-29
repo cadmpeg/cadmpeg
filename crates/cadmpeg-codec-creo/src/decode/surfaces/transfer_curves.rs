@@ -27,6 +27,7 @@ use super::intersection_resolve::{
     fc14_held_coordinate, multi_component_intersection_candidates, resolve_curve_candidates,
     select_fc14_axis_coordinate_candidate,
 };
+use super::intersection_candidates::FixedCandidates;
 use super::intersections::carrier_intersection_curve;
 use super::nurbs_boundaries::{
     cubic_extrusion_plane_generator_curve, nurbs_plane_boundary_curve,
@@ -36,17 +37,20 @@ use super::nurbs_boundaries::{
 pub(in super::super) fn analytic_curve_branches(
     geometry: &CurveGeometry,
     tag: &'static str,
-) -> Vec<(CurveGeometry, &'static str)> {
-    let mut branches = vec![(geometry.clone(), tag)];
-    if let CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) = geometry {
-        branches.push((
+) -> FixedCandidates<(CurveGeometry, &'static str)> {
+    let opposite = if let CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) = geometry {
+        Some((
             CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
                 hyperbola_curve.opposite_branch(),
             )),
             tag,
-        ));
-    }
-    branches
+        ))
+    } else {
+        None
+    };
+    std::iter::once((geometry.clone(), tag))
+        .chain(opposite)
+        .collect()
 }
 
 fn resolve_carrier_intersection_curve(
