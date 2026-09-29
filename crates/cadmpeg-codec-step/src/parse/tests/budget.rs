@@ -772,8 +772,8 @@ fn reference_stack_refuses_retained_limit() {
     }];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = super::super::btree_node_storage::<ReferenceName, &str>()
-        .expect("node size fits u64");
+    policy.limits.max_retained_bytes =
+        super::super::btree_node_storage::<ReferenceName, &str>().expect("node size fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &policy)
         .expect("root fits selected profile");
     let error = ReferenceResolver::new(&references, &anchors, Some(&ctx))

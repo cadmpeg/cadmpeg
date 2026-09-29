@@ -2512,9 +2512,10 @@ fn advance_compact_boundary_domains<'a>(
                             "catia_compact_boundary_oriented_edges",
                         )?;
                     }
-                    let Some(work) = candidate.signature_work().and_then(|work| {
-                        work.checked_add(work_units(next_oriented.len()))
-                    }) else {
+                    let Some(work) = candidate
+                        .signature_work()
+                        .and_then(|work| work.checked_add(work_units(next_oriented.len())))
+                    else {
                         return Ok(CompactBoundaryAdvanceOutcome::Exhausted);
                     };
                     if !budget.charge_by(work) {

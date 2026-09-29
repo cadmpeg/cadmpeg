@@ -725,7 +725,9 @@ pub(crate) fn transfer_parameters(
     }
     let typed_parameter_count = transferred
         .checked_sub(legacy_transfer.parameters)
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("CATIA formula transfer count is inconsistent"))?;
+        .ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed("CATIA formula transfer count is inconsistent")
+        })?;
     Ok(FormulaTransfer {
         typed_parameter_count,
         definition_chain_parameter_count,

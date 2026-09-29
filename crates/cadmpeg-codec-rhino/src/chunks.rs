@@ -243,7 +243,9 @@ pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
         .ok_or(FramingError::InvalidHeader)?;
     let header_end = start_offset
         .checked_add(file_header::LEN)
-        .ok_or(FramingError::Overflow { offset: start_offset })?;
+        .ok_or(FramingError::Overflow {
+            offset: start_offset,
+        })?;
     if bytes.len() < header_end {
         return Err(FramingError::Truncated {
             offset: bytes.len(),
@@ -468,11 +470,7 @@ pub(crate) fn checked_count_bytes(
         let bound = offset
             .checked_add(remaining)
             .ok_or(FramingError::Overflow { offset })?;
-        return Err(FramingError::OutOfBounds {
-            offset,
-            end,
-            bound,
-        });
+        return Err(FramingError::OutOfBounds { offset, end, bound });
     }
     Ok(bytes)
 }

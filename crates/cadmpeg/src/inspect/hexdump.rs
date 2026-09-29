@@ -39,8 +39,8 @@ fn rows(base: u64, bytes: &[u8], width: usize) -> Result<String> {
     if bytes.is_empty() {
         return Ok(String::new());
     }
-    let last_index = u64::try_from(bytes.len() - 1)
-        .map_err(|_| anyhow!("hex offset exceeds u64"))?;
+    let last_index =
+        u64::try_from(bytes.len() - 1).map_err(|_| anyhow!("hex offset exceeds u64"))?;
     let last = base
         .checked_add(last_index)
         .ok_or_else(|| anyhow!("hex offset exceeds u64"))?;
@@ -123,13 +123,15 @@ mod tests {
             0,
             &[0x00, 0x20, 0x7e, 0x7f, 0xff],
             NonZeroUsize::new(8).unwrap(),
-        ).expect("offset fits");
+        )
+        .expect("offset fits");
         assert!(text.ends_with("|. ~..|\n"), "got {text}");
     }
 
     #[test]
     fn offsets_are_absolute_and_widen_past_four_gibibytes() {
-        let text = render(0x1_0000_0000, &[0u8; 1], NonZeroUsize::new(16).unwrap()).expect("offset fits");
+        let text =
+            render(0x1_0000_0000, &[0u8; 1], NonZeroUsize::new(16).unwrap()).expect("offset fits");
         assert!(text.starts_with("100000000  00 "), "got {text}");
         let narrow = render(0xff, &[0u8; 1], NonZeroUsize::new(16).unwrap()).expect("offset fits");
         assert!(narrow.starts_with("000000ff  00 "), "got {narrow}");

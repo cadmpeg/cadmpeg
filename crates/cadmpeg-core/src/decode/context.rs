@@ -188,7 +188,11 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn per_expand_allowance(&self) -> u64 {
-        let policy_limit = self.budget.policy().limits.max_decompressed_bytes_per_expand;
+        let policy_limit = self
+            .budget
+            .policy()
+            .limits
+            .max_decompressed_bytes_per_expand;
         let Some(proportional) = DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE
             .checked_mul(self.budget.input_bytes())
             .and_then(|bytes| DECOMPRESSED_PER_EXPAND_BASE.checked_add(bytes))
@@ -414,10 +418,10 @@ impl<'a> DecodeContext<'a> {
                     "begin_expand",
                 ));
             }
-            if !self
+            if self
                 .decompression_allowance()
                 .checked_sub(self.budget.decompressed_used())
-                .is_some_and(|remaining| size <= remaining)
+                .is_none_or(|remaining| size > remaining)
             {
                 return Err(self.fuse(
                     ResourceFailure::BudgetExceeded,
@@ -581,10 +585,17 @@ impl<'a> DecodeContext<'a> {
 
 /// Builds the root-input resource error before a context exists.
 fn root_error(reason: ResourceFailure, limit: u64, used: u64) -> CodecError {
-    let additional = match used.checked_sub(limit) {
-        Some(excess) => excess,
-        None => 0,
-    };
+    if used <= limit {
+        return CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::InputBytes,
+            reason,
+            limit,
+            used,
+            additional: 0,
+            operation: "read_root",
+        });
+    }
+    let additional = used - limit;
     CodecError::ResourceLimit(ResourceLimit {
         dimension: ResourceDimension::InputBytes,
         reason,

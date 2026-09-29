@@ -908,12 +908,9 @@ pub(crate) fn enforce_transform_depth(
         let mut depth = 0_usize;
         loop {
             if depth >= depth_limit {
-                let requested = depth
-                    .checked_add(1)
-                    .map(u64_from_index)
-                    .ok_or_else(|| {
-                        refuse_local_limit("iges_transform_depth", depth_limit as u64, u64::MAX)
-                    })?;
+                let requested = depth.checked_add(1).map(u64_from_index).ok_or_else(|| {
+                    refuse_local_limit("iges_transform_depth", depth_limit as u64, u64::MAX)
+                })?;
                 return Err(refuse_local_limit(
                     "iges_transform_depth",
                     depth_limit as u64,

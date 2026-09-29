@@ -179,10 +179,9 @@ impl MeshSelectionSearch<'_, '_> {
                         .or_insert(reduction);
                 }
             }
-            let Some(capacity) = independent_capacity.checked_add(independent_face_capacity)
-                else {
-                    return Ok(None);
-                };
+            let Some(capacity) = independent_capacity.checked_add(independent_face_capacity) else {
+                return Ok(None);
+            };
             independent_capacity = capacity;
             for (component, capacity) in face_capacity {
                 *component_merge_capacity.entry(component).or_default() += capacity;

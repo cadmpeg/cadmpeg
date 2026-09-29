@@ -5662,13 +5662,11 @@ pub(crate) fn store(
                         Some(0)
                     } else {
                         match record.value(cursor + 2) {
-                            Some(TokenValue::Omitted) => {
-                                cursor
-                                    .checked_add(3)
-                                    .and_then(|start| end.checked_sub(start))
-                                    .filter(|available| stride <= *available)
-                                    .map(|_| 1)
-                            }
+                            Some(TokenValue::Omitted) => cursor
+                                .checked_add(3)
+                                .and_then(|start| end.checked_sub(start))
+                                .filter(|available| stride <= *available)
+                                .map(|_| 1),
                             Some(TokenValue::Integer(_)) => {
                                 record.count_with_stride_before(cursor + 2, stride, end)
                             }
@@ -7280,7 +7278,9 @@ pub(crate) fn store(
         quarantined_parameter_records.len(),
     ]
     .into_iter()
-    .try_fold(0_u64, |total, count| total.checked_add(u64_from_index(count)))
+    .try_fold(0_u64, |total, count| {
+        total.checked_add(u64_from_index(count))
+    })
     .ok_or_else(|| ctx.refuse_codec_limit("iges_native_entities", u64::MAX, u64::MAX))?;
     ctx.charge_entities(native_entity_count, "iges_native_entities")?;
     let namespace = ir.native.namespace_mut("iges");

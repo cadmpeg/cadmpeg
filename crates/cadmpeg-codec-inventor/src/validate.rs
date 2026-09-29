@@ -205,9 +205,8 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
             )
         })
         .collect::<HashMap<_, _>>();
-    let resolves = |token: &str, reference: u32| {
-        reference == 0 || raw.contains_key(&(token, reference - 1))
-    };
+    let resolves =
+        |token: &str, reference: u32| reference == 0 || raw.contains_key(&(token, reference - 1));
     unique(
         findings,
         data.pm_dc_parameters.iter().map(|record| {
@@ -376,9 +375,9 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         raw.get(&(token, ordinal)).copied() == Some(type_id)
     };
     let references_resolve = |token: &str, references: &[u32]| {
-        references.iter().all(|reference| {
-            *reference == 0 || raw.contains_key(&(token, reference - 1))
-        })
+        references
+            .iter()
+            .all(|reference| *reference == 0 || raw.contains_key(&(token, reference - 1)))
     };
     unique(
         findings,
@@ -702,9 +701,8 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             )
         })
         .collect::<HashMap<_, _>>();
-    let resolves = |token: &str, reference: u32| {
-        reference == 0 || raw.contains_key(&(token, reference - 1))
-    };
+    let resolves =
+        |token: &str, reference: u32| reference == 0 || raw.contains_key(&(token, reference - 1));
     unique(
         findings,
         data.pm_dc_features.iter().map(|record| {
@@ -1294,10 +1292,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         }
         for reference in record.style_references.references() {
             if reference.index == 0
-                || !raw_keys.contains(&(
-                    record.segment_token.as_str(),
-                    reference.index - 1,
-                ))
+                || !raw_keys.contains(&(record.segment_token.as_str(), reference.index - 1))
             {
                 findings.push(finding(
                     Check::NativeLinks,

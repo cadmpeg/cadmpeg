@@ -1405,9 +1405,9 @@ fn charge_normalization(
     source_len: usize,
     normalized_len: usize,
 ) -> Result<(), CodecError> {
-    let total = source_len.checked_add(normalized_len).ok_or_else(|| {
-        ctx.refuse_codec_limit("iges_binary_normalization", u64::MAX, u64::MAX)
-    })?;
+    let total = source_len
+        .checked_add(normalized_len)
+        .ok_or_else(|| ctx.refuse_codec_limit("iges_binary_normalization", u64::MAX, u64::MAX))?;
     ctx.charge_work(u64_from_index(total), "iges_binary_normalization")
 }
 

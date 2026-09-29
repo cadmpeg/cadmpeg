@@ -690,8 +690,7 @@ fn edge_prefix(
     let tail16 = fixed_tail
         .checked_add(16)
         .ok_or_else(|| CodecError::malformed("Inventor edge tail size overflow"))?;
-    if cursor.remaining() >= tail8
-        && cursor.peek_u32("edge auxiliary-list marker")? == 0x3000_0002
+    if cursor.remaining() >= tail8 && cursor.peek_u32("edge auxiliary-list marker")? == 0x3000_0002
     {
         auxiliary.push(reference_list(
             ctx,
@@ -1139,18 +1138,13 @@ pub(crate) fn project(
             unresolved_entities += 1;
             continue;
         };
-        if !sketch
-            .entities
-            .references()
-            .iter()
-            .any(|reference| {
-                entity
-                    .identity
-                    .record_ordinal
-                    .checked_add(1)
-                    .is_some_and(|next| reference.index == next)
-            })
-        {
+        if !sketch.entities.references().iter().any(|reference| {
+            entity
+                .identity
+                .record_ordinal
+                .checked_add(1)
+                .is_some_and(|next| reference.index == next)
+        }) {
             unresolved_entities += 1;
             continue;
         }

@@ -636,16 +636,16 @@ fn find(args: &FindArgs) -> Result<()> {
     for offset in &hits {
         println!("0x{offset:08x}  {offset}");
         if args.context > 0 {
-            let start = match offset.checked_sub(args.context) {
-                Some(start) => start,
-                None => 0,
-            };
             let len = args
                 .context
                 .checked_mul(2)
                 .and_then(|len| len.checked_add(pattern.len() as u64))
                 .ok_or_else(|| anyhow!("inspection context length exceeds u64"))?;
-            print!("{}", window(&bytes, start, len)?);
+            if let Some(start) = offset.checked_sub(args.context) {
+                print!("{}", window(&bytes, start, len)?);
+            } else {
+                print!("{}", window(&bytes, 0, len)?);
+            }
         }
     }
     if truncated {
@@ -805,14 +805,17 @@ fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
         );
     }
     if args.context > 0 {
-        let window_start = match first.checked_sub(args.context / 2) {
-            Some(start) => start,
-            None => 0,
-        };
-        println!("\na @ 0x{window_start:x}:");
-        print!("{}", window(&a, window_start, args.context)?);
-        println!("b @ 0x{window_start:x}:");
-        print!("{}", window(&b, window_start, args.context)?);
+        if let Some(window_start) = first.checked_sub(args.context / 2) {
+            println!("\na @ 0x{window_start:x}:");
+            print!("{}", window(&a, window_start, args.context)?);
+            println!("b @ 0x{window_start:x}:");
+            print!("{}", window(&b, window_start, args.context)?);
+        } else {
+            println!("\na @ 0x0:");
+            print!("{}", window(&a, 0, args.context)?);
+            println!("b @ 0x0:");
+            print!("{}", window(&b, 0, args.context)?);
+        }
     }
     Ok(ExitCode::from(1))
 }

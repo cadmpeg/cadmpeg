@@ -119,9 +119,9 @@ impl DecodeBudget {
             return Err(resource);
         }
         let before = used.get();
-        if !limit
+        if limit
             .checked_sub(before)
-            .is_some_and(|remaining| amount <= remaining)
+            .is_none_or(|remaining| amount > remaining)
         {
             return Err(self.refuse_limit(
                 dimension,
@@ -510,8 +510,7 @@ impl<'a> WorkBudget<'a> {
             self.exhaust();
             return None;
         }
-        self.recursion_depth
-            .set(self.recursion_depth.get() + 1);
+        self.recursion_depth.set(self.recursion_depth.get() + 1);
         Some(WorkBudgetRecursionGuard { budget: self })
     }
 

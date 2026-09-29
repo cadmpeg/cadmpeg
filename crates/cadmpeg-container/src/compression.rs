@@ -157,9 +157,9 @@ fn probe_decoder(
         if read == 0 {
             return Some(output);
         }
-        if !cap
+        if cap
             .checked_sub(output.len())
-            .is_some_and(|remaining| read <= remaining)
+            .is_none_or(|remaining| read > remaining)
         {
             return None;
         }
