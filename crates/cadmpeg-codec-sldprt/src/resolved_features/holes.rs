@@ -2616,11 +2616,18 @@ fn partition_seeded_hole_axes(
     siblings: &[usize],
     candidates: &[HolePlacement],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_collection_items(candidates.len() as u64, "SLDPRT seeded hole-axis keys")?;
-    let candidate_keys = candidates
-        .iter()
-        .filter_map(hole_axis_key)
-        .collect::<HashSet<_>>();
+    const KEY_OPERATION: &str = "SLDPRT seeded hole-axis keys";
+    let mut candidate_keys = HashSet::new();
+    for key in candidates.iter().filter_map(hole_axis_key) {
+        ctx.charge_work(1, KEY_OPERATION)?;
+        if !candidate_keys.contains(&key) {
+            ctx.charge_collection_items(1, KEY_OPERATION)?;
+            candidate_keys.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(KEY_OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        candidate_keys.insert(key);
+    }
     if candidate_keys.len() != candidates.len() {
         return Ok(());
     }
@@ -2671,24 +2678,23 @@ fn partition_seeded_hole_axes(
             return Ok(());
         };
         let direction = canonical_axis(axis.get());
-        ctx.charge_collection_items(
-            seed_directions.len() as u64,
-            "SLDPRT seeded hole-axis matches",
+        ctx.charge_work(
+            u64_from_index(seed_directions.len()),
+            "match SLDPRT seeded hole-axis directions",
         )?;
-        let matches = seed_directions
+        let mut matches = seed_directions
             .iter()
             .enumerate()
             .filter(|(_, seed)| seed.dot(direction) >= 1.0 - EPS_HOLE_GEOMETRY)
-            .map(|(index, _)| index)
-            .collect::<Vec<_>>();
-        let [partition] = matches.as_slice() else {
+            .map(|(index, _)| index);
+        let (Some(partition), None) = (matches.next(), matches.next()) else {
             return Ok(());
         };
         ctx.charge_collection_items(1, "SLDPRT seeded hole-axis placements")?;
-        partitions[*partition]
+        partitions[partition]
             .try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit("SLDPRT seeded hole-axis placements", 1, 1))?;
-        partitions[*partition].push(placement.clone());
+        partitions[partition].push(placement.clone());
     }
     if partitions.iter().any(Vec::is_empty) {
         return Ok(());
