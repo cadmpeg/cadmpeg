@@ -139,7 +139,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
         .unwrap(),
     ];
 
-    bind_extrude_selection_history(&mut members, &naming_spaces, &body_bindings, &histories);
+    bind_extrude_selection_history(None, &mut members, &naming_spaces, &body_bindings, &histories).unwrap();
 
     assert_eq!(
         members[0].historical.as_ref().map(|binding| binding.kind),

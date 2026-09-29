@@ -157,14 +157,14 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         ],
     };
 
-    bind_mirror_selection_planes(
+    bind_mirror_selection_planes(None,
         std::slice::from_mut(&mut scope),
         std::slice::from_ref(&group),
         std::slice::from_ref(&operand),
         &[],
         &[],
         std::slice::from_ref(&history),
-    );
+    ).unwrap();
 
     let construction = scope.mirror_construction().expect("mirror construction");
     assert_eq!(
@@ -178,14 +178,14 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     );
 
     operand.primary_identity = 44;
-    bind_mirror_selection_planes(
+    bind_mirror_selection_planes(None,
         std::slice::from_mut(&mut scope),
         std::slice::from_ref(&group),
         std::slice::from_ref(&operand),
         &[],
         &[],
         std::slice::from_ref(&history),
-    );
+    ).unwrap();
 
     let construction = scope.mirror_construction().expect("mirror construction");
     assert_eq!(

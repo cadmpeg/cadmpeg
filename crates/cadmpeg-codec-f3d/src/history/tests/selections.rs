@@ -104,7 +104,7 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
     );
 
     assert_eq!(
-        entity_selection_face_candidates(18044, &[unrelated, selected]),
+        entity_selection_face_candidates(None, 18044, &[unrelated, selected]).unwrap(),
         [
             crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
                 history_id: "selected".into(),
@@ -214,7 +214,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         *slot = Some(construction);
     }
 
-    bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]);
+    bind_hole_selection_history(None, std::slice::from_mut(&mut scope), &[history]).unwrap();
 
     assert_eq!(
         scope

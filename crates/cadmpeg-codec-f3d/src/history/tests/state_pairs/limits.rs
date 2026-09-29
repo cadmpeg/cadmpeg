@@ -3,13 +3,47 @@
 
 use super::{
     edge_changes_across_state_chain, face_changes_across_state_chain,
-    history_state_index, AsmDeltaState, AsmHistoricalTopology, AsmHistoricalEntityDelta,
+    history_state_index, historical_identity_edge, HistoricalIdentityIndex, AsmDeltaState, AsmHistoricalTopology, AsmHistoricalEntityDelta,
     AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, HashMap,
 };
 use crate::history::resolve_pattern_face_by_surface_radius;
 use crate::history::{boundary_edges_in_changes, collect_reference_edge_sets, face_boundary_contexts_for_slots, face_boundary_edge_index, face_boundary_edges, faces_in_topology, historical_face_support_contexts, historical_loop_boundary, preceding_support_face_slots, recipe_selector_candidates, terminal_edge_recipe_faces, terminal_edge_recipe_reference_faces, treatment_edge_candidates, treatment_face_supports};
 use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalEdge, AsmHistoricalRelation, AsmHistoricalSurfaceRadius};
 use std::collections::HashSet;
+use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
+
+#[test]
+fn identity_index_refuses_history_collection_limit() {
+    let history = AsmHistory {
+        id: "history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![change_state(1)],
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = HistoricalIdentityIndex::build(Some(&ctx), &[history], [1]).err().expect("limit refusal");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D identity histories"));
+}
+
+#[test]
+fn identity_edges_refuse_collection_limit() {
+    let topology = AsmHistoricalTopology {
+        edges: vec![7],
+        ..Default::default()
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = historical_identity_edge(Some(&ctx), AsmHistoricalEntityKind::Edge, 7, &topology).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D identity edges"));
+}
 
 pub(super) fn change_state(state_id: i64) -> AsmDeltaState {
     AsmDeltaState {

@@ -6199,11 +6199,12 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) ->
                 .map(|wrapper| wrapper.byte_offset)
         });
         let expected_history = history::historical_extrude_selection_identity_kind(
+            ctx.decode,
             member,
             &native.design_component_naming_spaces,
             &native.design_body_bindings,
             &native.asm_histories,
-        );
+        )?;
         let history_matches = if history::projection_was_finalized(&native.asm_histories) {
             if let Some(binding) = member.historical.as_ref() {
                 ctx.collect_set(binding.state_ids.iter().copied(),
