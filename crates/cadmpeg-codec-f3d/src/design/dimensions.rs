@@ -6082,17 +6082,13 @@ fn reflected_symmetry<'a>(
 )> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    if entities.len() != 3
-        || entities
-            .iter()
-            .map(|entity| entity.id())
-            .collect::<HashSet<_>>()
-            .len()
-            != 3
-    {
+    let [first, second, third] = entities else {
+        return None;
+    };
+    if first.id() == second.id() || first.id() == third.id() || second.id() == third.id() {
         return None;
     }
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     for axis_ordinal in 0..entities.len() {
         let axis = entities[axis_ordinal];
         let SketchGeometryDefinition::Line {
@@ -6102,22 +6098,23 @@ fn reflected_symmetry<'a>(
         else {
             continue;
         };
-        let others = entities
-            .iter()
-            .enumerate()
-            .filter(|(ordinal, _)| *ordinal != axis_ordinal)
-            .map(|(_, entity)| *entity)
-            .collect::<Vec<_>>();
+        let others = match axis_ordinal {
+            0 => [*second, *third],
+            1 => [*first, *third],
+            _ => [*first, *second],
+        };
         if reflected_geometry_matches(
             &others[0].geometry,
             &others[1].geometry,
             axis_start,
             axis_end,
         ) {
-            candidates.push((others[0], others[1], axis));
+            if candidate.replace((others[0], others[1], axis)).is_some() {
+                return None;
+            }
         }
     }
-    (candidates.len() == 1).then(|| candidates.remove(0))
+    candidate
 }
 
 fn reflected_geometry_matches(
