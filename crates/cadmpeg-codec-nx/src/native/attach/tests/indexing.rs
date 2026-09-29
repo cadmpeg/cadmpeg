@@ -4,6 +4,46 @@ use crate::native::attach::records_by_operation;
 use crate::native::attach::push_grouped_operation;
 use crate::native::attach::last_record_index;
 use crate::native::attach::segment_binding_body_indexes;
+use crate::native::attach::insert_source_property;
+
+fn source_property_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut properties = std::collections::BTreeMap::new();
+    insert_source_property(&ctx, &mut properties, format_args!("body_write.{}", 7), format_args!("{}", "write"))?;
+    assert_eq!(properties["body_write.7"], "write");
+    Ok(())
+}
+
+#[test]
+fn source_property_formats_key_and_value() {
+    source_property_with_limit(|_| {}).unwrap();
+}
+
+#[test]
+fn source_property_refuses_collection_limit() {
+    let error = source_property_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn source_property_refuses_retained_limit() {
+    let error = source_property_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn source_property_refuses_work_limit() {
+    let error = source_property_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
 
 fn segment_body_index_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),

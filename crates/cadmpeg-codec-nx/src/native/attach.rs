@@ -2607,7 +2607,12 @@ fn attach_feature_operations(
         let mut source_properties = BTreeMap::new();
         for write in retained_operation_body_writes {
             let ordinal = write.ordinal;
-            source_properties.insert(format!("body_write.{ordinal}"), write.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("body_write.{ordinal}"),
+                format_args!("{}", write.id),
+            )?;
             source_properties.insert(
                 format!("body_write.{ordinal}.body_identity"),
                 write.frame.body_identity().to_string(),
@@ -5042,6 +5047,48 @@ fn insert_operation_source_property(
     let mut owned_value = String::new();
     owned_value.try_reserve(value.len()).map_err(|_| ctx.refuse_codec_limit("allocate NX operation source property value", 0, cadmpeg_core::decode::u64_from_index(value.len())))?;
     owned_value.push_str(value);
+    properties.insert(owned_key, owned_value);
+    Ok(())
+}
+
+fn insert_source_property(
+    ctx: &DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
+    key: std::fmt::Arguments<'_>,
+    value: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    struct Length(usize);
+
+    impl std::fmt::Write for Length {
+        fn write_str(&mut self, text: &str) -> std::fmt::Result {
+            self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
+            Ok(())
+        }
+    }
+
+    let mut key_length = Length(0);
+    std::fmt::write(&mut key_length, key)
+        .map_err(|_| ctx.refuse_codec_limit("NX source property key length", 0, 1))?;
+    let mut value_length = Length(0);
+    std::fmt::write(&mut value_length, value)
+        .map_err(|_| ctx.refuse_codec_limit("NX source property value length", 0, 1))?;
+    let text_bytes = key_length.0.checked_add(value_length.0)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX source property text", 0, cadmpeg_core::decode::u64_from_index(value_length.0)))?;
+    let retained_bytes = std::mem::size_of::<(String, String)>().checked_add(text_bytes)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX source property", 0, cadmpeg_core::decode::u64_from_index(text_bytes)))?;
+    let work = text_bytes.checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX source property formatting", 0, cadmpeg_core::decode::u64_from_index(text_bytes)))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX source property formatting")?;
+    ctx.charge_collection_items(1, "NX source properties")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(retained_bytes), "NX source property")?;
+    let mut owned_key = String::new();
+    owned_key.try_reserve(key_length.0).map_err(|_| ctx.refuse_codec_limit("allocate NX source property key", 0, cadmpeg_core::decode::u64_from_index(key_length.0)))?;
+    std::fmt::write(&mut owned_key, key)
+        .map_err(|_| CodecError::InvalidInput("NX source property key formatting failed".to_string()))?;
+    let mut owned_value = String::new();
+    owned_value.try_reserve(value_length.0).map_err(|_| ctx.refuse_codec_limit("allocate NX source property value", 0, cadmpeg_core::decode::u64_from_index(value_length.0)))?;
+    std::fmt::write(&mut owned_value, value)
+        .map_err(|_| CodecError::InvalidInput("NX source property value formatting failed".to_string()))?;
     properties.insert(owned_key, owned_value);
     Ok(())
 }
