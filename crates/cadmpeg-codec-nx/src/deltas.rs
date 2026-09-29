@@ -3517,7 +3517,7 @@ fn compact_tombstone(stream: &[u8], offset: usize) -> Option<u32> {
         return (quotient == 1)
             .then_some(u32::from(quotient) * 32_767 + u32::from(first.unsigned_abs()));
     }
-    (stream.get(offset + 4..offset + 6)? == [0, 1]).then_some(first as u32)
+    (stream.get(offset + 4..offset + 6)? == [0, 1]).then_some(u32::try_from(first).ok()?)
 }
 
 fn plausible_next(stream: &[u8], offset: usize) -> bool {

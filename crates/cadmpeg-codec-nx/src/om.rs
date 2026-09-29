@@ -2425,7 +2425,7 @@ pub(crate) fn operation_body_members(
                 });
             }
             Some(OperationBodyMemberGroup {
-                body_reference_ordinal: body_ordinal as u32,
+                body_reference_ordinal: u32::try_from(body_ordinal).ok()?,
                 body_object_index: reference.object_index.value(),
                 members,
             })
@@ -2507,7 +2507,7 @@ pub(crate) fn operation_body_11_continuations(
                 return None;
             }
             Some(OperationBody11Continuation {
-                body_reference_ordinal: body_ordinal as u32,
+                body_reference_ordinal: u32::try_from(body_ordinal).ok()?,
                 body_object_index: reference.object_index.value(),
                 continuation,
                 terminal: PayloadObjectReference {
@@ -2600,7 +2600,7 @@ pub(crate) fn operation_body_reference_lanes(
                 _ => return None,
             };
             Some(OperationBodyReferenceLane {
-                body_reference_ordinal: body_ordinal as u32,
+                body_reference_ordinal: u32::try_from(body_ordinal).ok()?,
                 body_object_index: reference.object_index.value(),
                 branch,
                 values,
@@ -4270,7 +4270,7 @@ pub(crate) fn sections<'a>(
             break;
         };
         let offset = at + relative;
-        let Some(payload_len) = View::u32_be_at(bytes, offset + 8).map(|value| value as usize)
+        let Some(payload_len) = View::u32_be_at(bytes, offset + 8).map(cadmpeg_core::decode::index_from_u32)
         else {
             break;
         };
@@ -4573,7 +4573,7 @@ pub(crate) fn indexed_sections<'a>(
     }
     let descending_u32_edges = DescendingU32Edges::new(ctx, &mut temporary, bytes)?;
     for table in 0..bytes.len().saturating_sub(4) {
-        let Some(count) = View::u32_le_at(bytes, table).map(|value| value as usize) else {
+        let Some(count) = View::u32_le_at(bytes, table).map(cadmpeg_core::decode::index_from_u32) else {
             continue;
         };
         if !(2..=100_000).contains(&count) {
@@ -4597,7 +4597,7 @@ pub(crate) fn indexed_sections<'a>(
         if View::u32_le_at(bytes, index_start) != Some(0) {
             continue;
         }
-        let Some(first) = View::u32_le_at(bytes, index_start + 4).map(|value| value as usize)
+        let Some(first) = View::u32_le_at(bytes, index_start + 4).map(cadmpeg_core::decode::index_from_u32)
         else {
             continue;
         };
@@ -4628,7 +4628,7 @@ pub(crate) fn indexed_sections<'a>(
         });
     }
     for count_offset in 8..bytes.len().saturating_sub(4) {
-        let Some(record_count) = View::u32_le_at(bytes, count_offset).map(|value| value as usize)
+        let Some(record_count) = View::u32_le_at(bytes, count_offset).map(cadmpeg_core::decode::index_from_u32)
         else {
             continue;
         };
@@ -4642,18 +4642,18 @@ pub(crate) fn indexed_sections<'a>(
         let Some(index_start) = count_offset.checked_sub(index_len) else {
             continue;
         };
-        let Some(first) = View::u32_le_at(bytes, index_start).map(|value| value as usize) else {
+        let Some(first) = View::u32_le_at(bytes, index_start).map(cadmpeg_core::decode::index_from_u32) else {
             continue;
         };
-        let Some(second) = View::u32_le_at(bytes, index_start + 4).map(|value| value as usize)
+        let Some(second) = View::u32_le_at(bytes, index_start + 4).map(cadmpeg_core::decode::index_from_u32)
         else {
             continue;
         };
-        let Some(third) = View::u32_le_at(bytes, index_start + 8).map(|value| value as usize)
+        let Some(third) = View::u32_le_at(bytes, index_start + 8).map(cadmpeg_core::decode::index_from_u32)
         else {
             continue;
         };
-        let Some(last) = View::u32_le_at(bytes, count_offset - 4).map(|value| value as usize)
+        let Some(last) = View::u32_le_at(bytes, count_offset - 4).map(cadmpeg_core::decode::index_from_u32)
         else {
             continue;
         };

@@ -790,3 +790,9 @@ fn jt_vertex_flags_require_a_complete_binary_value_packet() {
     array[last] |= 1;
     assert!(decode_vertex_flags(&array, 3).is_none());
 }
+
+#[test]
+fn dequantization_refuses_value_below_binary32_range_before_rounding() {
+    let range = super::QuantizedRange::new(-f32::MAX, (-f32::MAX).next_up()).expect("finite ordered quantization range");
+    assert!(super::dequantize_uniform(0, range, 2).is_none());
+}

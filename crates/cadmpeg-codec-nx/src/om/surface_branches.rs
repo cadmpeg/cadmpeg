@@ -19,7 +19,10 @@ pub(crate) enum SurfaceFamily {
 
 impl From<SurfaceFamily> for u8 {
     fn from(value: SurfaceFamily) -> Self {
-        value as Self
+        match value {
+            SurfaceFamily::Form14 => 0x14,
+            SurfaceFamily::Form50 => 0x50,
+        }
     }
 }
 

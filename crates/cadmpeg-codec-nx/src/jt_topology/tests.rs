@@ -141,7 +141,7 @@ fn every_face_degree_selects_its_stated_attribute_mask_context() {
     };
     for degree in 1..=100_usize {
         let context =
-            super::AttributeMaskContext::of(NonZeroUsize::new(degree).expect("degree is nonzero"));
+            super::AttributeMaskContext::of(NonZeroUsize::new(degree).expect("degree is nonzero")).expect("degree maps to a context");
         assert_eq!(context.lane(), expected(degree), "degree {degree}");
         assert_eq!(
             context == super::AttributeMaskContext::COMBINED,

@@ -189,7 +189,11 @@ impl TryFrom<u8> for CsysDescriptorSlot {
 }
 impl From<CsysDescriptorSlot> for u8 {
     fn from(value: CsysDescriptorSlot) -> Self {
-        value as Self
+        match value {
+            CsysDescriptorSlot::Five => 5,
+            CsysDescriptorSlot::Six => 6,
+            CsysDescriptorSlot::Seven => 7,
+        }
     }
 }
 

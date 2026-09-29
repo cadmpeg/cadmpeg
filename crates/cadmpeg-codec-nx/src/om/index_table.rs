@@ -58,8 +58,8 @@ impl<'a> DescendingU32Edges<'a> {
         if !self.is_nondecreasing(start, end) {
             return None;
         }
-        let first = base.checked_add(words.u32_le()? as usize)?;
-        let last = base.checked_add(View::u32_le_at(self.bytes, end - 4)? as usize)?;
+        let first = base.checked_add(cadmpeg_core::decode::index_from_u32(words.u32_le()?))?;
+        let last = base.checked_add(cadmpeg_core::decode::index_from_u32(View::u32_le_at(self.bytes, end - 4)?))?;
         let source = self.bytes.get(..last)?;
         Some(IndexRecords {
             source,
@@ -85,7 +85,7 @@ impl<'a> IndexRecords<'a> {
         let mut words = self.words;
         let mut start = self.first;
         std::iter::from_fn(move || {
-            let end = self.base + words.u32_le()? as usize;
+            let end = self.base + cadmpeg_core::decode::index_from_u32(words.u32_le()?);
             let record = EntityRecord {
                 offset: start,
                 bytes: &self.source[start..end],
@@ -185,7 +185,7 @@ impl<'a> OffsetIndex<'a> {
             return None;
         }
         let control_start = records.first;
-        let control_end = records.words.u32_le()? as usize;
+        let control_end = cadmpeg_core::decode::index_from_u32(records.words.u32_le()?);
         let control = EntityRecord {
             offset: control_start,
             bytes: &records.source[control_start..control_end],
