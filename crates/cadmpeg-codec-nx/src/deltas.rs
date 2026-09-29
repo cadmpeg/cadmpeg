@@ -593,11 +593,15 @@ fn tagged_reference_lanes(
         }
         if complete && at == end {
             if let Ok(references) = TaggedReferences::try_from(references) {
-                ctx.push_vec(&mut lanes, TaggedReferenceLane {
+                ctx.push_vec(
+                    &mut lanes,
+                    TaggedReferenceLane {
                         references,
                         offset,
                         end,
-                    }, "NX tagged reference lanes")?;
+                    },
+                    "NX tagged reference lanes",
+                )?;
             }
         }
     }
@@ -752,7 +756,11 @@ fn reference_type_map(
         if expected_end.is_some_and(|end| at > end) {
             return Ok(None);
         }
-        ctx.push_vec(&mut entries, (reference, kind), "NX reference type map entries")?;
+        ctx.push_vec(
+            &mut entries,
+            (reference, kind),
+            "NX reference type map entries",
+        )?;
     }
 }
 
@@ -953,7 +961,11 @@ fn schema_reference_preamble(
             .ok()
             .map(|state| SchemaReferencePreamble { state, offset, end }));
         }
-        ctx.push_vec(&mut entries, (entry_kind, reference), "NX schema reference entries")?;
+        ctx.push_vec(
+            &mut entries,
+            (entry_kind, reference),
+            "NX schema reference entries",
+        )?;
     }
 }
 
@@ -1031,7 +1043,11 @@ fn inline_schema_declarations(
                 break;
             };
             at = declaration.end;
-            ctx.push_vec(&mut declarations, declaration, "NX inline schema declarations")?;
+            ctx.push_vec(
+                &mut declarations,
+                declaration,
+                "NX inline schema declarations",
+            )?;
         }
     }
     Ok(declarations)
@@ -1681,7 +1697,11 @@ fn merged_event_spans(
         })?;
     ctx.charge_work(sort_work, "sort NX deltas event spans")?;
     let mut covered = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut covered, count, "NX deltas event span allocation")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut covered,
+        count,
+        "NX deltas event span allocation",
+    )?;
     covered.extend(
         census
             .transmit_header
@@ -2107,7 +2127,11 @@ fn merge_records(
         let reservation =
             ctx.reserve_scoped(u64_from_index(total_len), "NX merged partition bytes")?;
         let mut merged = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut merged, total_len, "NX merged partition bytes")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut merged,
+            total_len,
+            "NX merged partition bytes",
+        )?;
         merged.extend_from_slice(partition);
         for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
             if included(kind) {
@@ -2314,7 +2338,8 @@ fn current_revision_scopes(
         .iter()
         .filter(|revision| u32::from(revision.xmt) == 3)
         .count();
-    let (mut snapshot_revisions, _snapshot_reservation) = ctx.temporary_vec(count, "NX snapshot revision indices")?;
+    let (mut snapshot_revisions, _snapshot_reservation) =
+        ctx.temporary_vec(count, "NX snapshot revision indices")?;
     for (index, revision) in census.body_revisions.iter().enumerate() {
         if u32::from(revision.xmt) == 3 {
             snapshot_revisions.push(index);
@@ -2343,7 +2368,12 @@ fn current_revision_scopes(
         let previous = census.body_revisions[pair[0]].node_id;
         let current = census.body_revisions[pair[1]].node_id;
         if !revision_follows_direction(previous, current, direction) {
-            ctx.reserve_scoped_vec(&mut run_reservation, &mut run_starts, 1, "NX revision run starts")?;
+            ctx.reserve_scoped_vec(
+                &mut run_reservation,
+                &mut run_starts,
+                1,
+                "NX revision run starts",
+            )?;
             run_starts.push(position + 1);
         }
     }
@@ -2361,7 +2391,12 @@ fn current_revision_scopes(
             census.body_revisions[snapshot_revisions[next_run_start]].offset
         });
         if current_revision.offset < end {
-            ctx.reserve_scoped_vec(&mut scopes_reservation, &mut scopes, 1, "NX current revision scopes")?;
+            ctx.reserve_scoped_vec(
+                &mut scopes_reservation,
+                &mut scopes,
+                1,
+                "NX current revision scopes",
+            )?;
             scopes.push(RevisionScope {
                 start: current_revision.offset,
                 end,
@@ -2475,7 +2510,11 @@ pub(crate) fn semantic_residual_with_census(
     }
     ctx.charge_retained(u64_from_index(total_len), "NX semantic residual bytes")?;
     let mut residual = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut residual, total_len, "NX semantic residual bytes")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut residual,
+        total_len,
+        "NX semantic residual bytes",
+    )?;
     residual.extend_from_slice(stream);
     residual.fill(0xff);
     for scope in &current_scopes {
@@ -2546,7 +2585,11 @@ impl FixedCandidate {
         let canonical_len = cadmpeg_core::decode::u64_from_index(self.canonical_len);
         ctx.charge_retained(canonical_len, "NX deltas fixed record bytes")?;
         let mut canonical_bytes = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut canonical_bytes, self.canonical_len, "NX deltas fixed record bytes")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut canonical_bytes,
+            self.canonical_len,
+            "NX deltas fixed record bytes",
+        )?;
         canonical_bytes.extend_from_slice(&stream[self.offset..self.prefix_end]);
         let mut at = self.prefix_end;
         for token in signature {

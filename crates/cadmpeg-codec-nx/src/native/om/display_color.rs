@@ -83,7 +83,8 @@ fn push_assignment(
         ordinal: 0,
         frame,
         target_object_id,
-        color_definition: ctx.copy_retained_text(color_definition, "retain NX display color text")?,
+        color_definition: ctx
+            .copy_retained_text(color_definition, "retain NX display color text")?,
         source_entry: ctx.copy_retained_text(source_entry, "retain NX display color text")?,
     });
     Ok(())

@@ -399,10 +399,13 @@ impl<'a> Container<'a> {
             .om_section_cache
             .get()
             .ok_or_else(|| ctx.refuse_codec_limit("nx framed OM cache", 0, 1))?;
-        let mut result = ctx.retained_vec(match framed_cache {
+        let mut result = ctx.retained_vec(
+            match framed_cache {
                 FramedSectionCache::Borrowed { sections } => sections.len(),
                 FramedSectionCache::Owned { layouts } => layouts.len(),
-            }, "NX framed section readers")?;
+            },
+            "NX framed section readers",
+        )?;
         match framed_cache {
             FramedSectionCache::Borrowed { sections } => {
                 for (entry_index, section) in sections {
@@ -485,10 +488,13 @@ impl<'a> Container<'a> {
             .indexed_section_layouts
             .get()
             .ok_or_else(|| ctx.refuse_codec_limit("nx indexed OM cache", 0, 1))?;
-        let mut result = ctx.retained_vec(match cache {
+        let mut result = ctx.retained_vec(
+            match cache {
                 IndexedSectionCache::Borrowed { sections, .. } => sections.len(),
                 IndexedSectionCache::Owned { layouts } => layouts.len(),
-            }, "NX indexed section readers")?;
+            },
+            "NX indexed section readers",
+        )?;
         match cache {
             IndexedSectionCache::Borrowed { sections, .. } => {
                 for (entry_index, section) in sections {
@@ -698,7 +704,11 @@ impl<'a> Container<'a> {
         ctx.charge_collection_items(count_u64, "admit NX FastLoad object IDs")?;
         ctx.charge_retained(id_bytes_u64, "retain NX FastLoad object IDs")?;
         let mut object_ids = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut object_ids, count, "allocate NX FastLoad object IDs")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut object_ids,
+            count,
+            "allocate NX FastLoad object IDs",
+        )?;
         for ordinal in 0..count {
             let offset = ids_start + ordinal * 4;
             let object_id = View::u32_le_at(bytes, offset).ok_or_else(|| {
@@ -1338,7 +1348,11 @@ pub(crate) fn scan_bytes<'a>(
             cadmpeg_core::decode::u64_from_index(footer_bytes),
             "join NX directory regions",
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut entries, footer_entries.len(), "join NX directory regions")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut entries,
+            footer_entries.len(),
+            "join NX directory regions",
+        )?;
         entries.extend(footer_entries);
     }
     if header_end > fo {
@@ -1464,13 +1478,21 @@ pub(crate) fn scan_legacy<'a>(
                 }),
             CompoundEntry::Storage(_) => DirEntryBody::Directory,
         };
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut entries, 1, "retain legacy NX directory entry")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut entries,
+            1,
+            "retain legacy NX directory entry",
+        )?;
         let name_len = "/Root/"
             .len()
             .checked_add(entry.path().len())
             .ok_or_else(|| ctx.refuse_codec_limit("retain legacy NX directory entry", 0, 1))?;
         let mut name = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut name, name_len, "retain legacy NX directory entry")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut name,
+            name_len,
+            "retain legacy NX directory entry",
+        )?;
         name.push_str("/Root/");
         name.push_str(entry.path());
         entries.push(DirEntry {
@@ -1535,7 +1557,11 @@ fn directory_region(
         .map_err(|_| CodecError::NotImplemented("NX directory entries exceed u64".into()))?;
     ctx.charge_retained(entry_bytes_u64, "retain NX directory entries")?;
     let mut entries = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut entries, capacity, "allocate NX directory entries")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut entries,
+        capacity,
+        "allocate NX directory entries",
+    )?;
     let mut at = entries_offset;
     for ordinal in 0..count {
         let Some((entry, next)) = try_entry(ctx, data, at, region, region_end, ordinal)? else {
@@ -1596,7 +1622,11 @@ fn try_entry(
         return Ok(None);
     };
     let mut name = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut name, name_len, "retain NX directory name")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut name,
+        name_len,
+        "retain NX directory name",
+    )?;
     name.push_str(value);
     // Interpret the 16-byte payload as a file span when it lands within the file.
     let body = match (

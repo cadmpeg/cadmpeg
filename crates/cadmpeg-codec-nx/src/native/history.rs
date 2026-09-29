@@ -63,7 +63,11 @@ impl BodyWriterHistory {
     ) -> Result<(), CodecError> {
         let mut append = |writer: &FeatureId| -> Result<(), CodecError> {
             if !dependencies.contains(writer) {
-                ctx.push_retained_vec(dependencies, writer.try_clone_for_decode(ctx, "NX primary writer dependencies")?, "NX primary writer dependencies")?;
+                ctx.push_retained_vec(
+                    dependencies,
+                    writer.try_clone_for_decode(ctx, "NX primary writer dependencies")?,
+                    "NX primary writer dependencies",
+                )?;
             }
             Ok(())
         };
@@ -99,21 +103,45 @@ impl BodyWriterHistory {
     ) -> Result<(), CodecError> {
         if let Some(body) = native_body {
             if !self.native.contains_key(&body) {
-                ctx.charge_retained(u64_from_index(std::mem::size_of::<(u32, FeatureId)>()), "NX native body writer history")?;
+                ctx.charge_retained(
+                    u64_from_index(std::mem::size_of::<(u32, FeatureId)>()),
+                    "NX native body writer history",
+                )?;
             }
-            ctx.insert_btree_map(&mut self.native, body, feature.try_clone_for_decode(ctx, "NX native body writer history")?, "NX native body writer history")?;
+            ctx.insert_btree_map(
+                &mut self.native,
+                body,
+                feature.try_clone_for_decode(ctx, "NX native body writer history")?,
+                "NX native body writer history",
+            )?;
         }
         if let Some(data_block) = offset_store_body {
             if !self.offset_store.contains_key(data_block) {
-                ctx.charge_retained(u64_from_index(std::mem::size_of::<(String, FeatureId)>()), "NX offset-store writer history")?;
+                ctx.charge_retained(
+                    u64_from_index(std::mem::size_of::<(String, FeatureId)>()),
+                    "NX offset-store writer history",
+                )?;
             }
-            ctx.insert_btree_map(&mut self.offset_store, ctx.copy_retained_text(data_block, "NX offset-store writer history")?, feature.try_clone_for_decode(ctx, "NX offset-store writer history")?, "NX offset-store writer history")?;
+            ctx.insert_btree_map(
+                &mut self.offset_store,
+                ctx.copy_retained_text(data_block, "NX offset-store writer history")?,
+                feature.try_clone_for_decode(ctx, "NX offset-store writer history")?,
+                "NX offset-store writer history",
+            )?;
         }
         for output in outputs {
             if !self.outputs.contains_key(output) {
-                ctx.charge_retained(u64_from_index(std::mem::size_of::<(BodyId, FeatureId)>()), "NX neutral body writer history")?;
+                ctx.charge_retained(
+                    u64_from_index(std::mem::size_of::<(BodyId, FeatureId)>()),
+                    "NX neutral body writer history",
+                )?;
             }
-            ctx.insert_btree_map(&mut self.outputs, output.try_clone_for_decode(ctx, "NX neutral body writer history")?, feature.try_clone_for_decode(ctx, "NX neutral body writer history")?, "NX neutral body writer history")?;
+            ctx.insert_btree_map(
+                &mut self.outputs,
+                output.try_clone_for_decode(ctx, "NX neutral body writer history")?,
+                feature.try_clone_for_decode(ctx, "NX neutral body writer history")?,
+                "NX neutral body writer history",
+            )?;
         }
         Ok(())
     }
@@ -328,7 +356,9 @@ pub(crate) fn active_feature_closure_for_decode(
         if features.contains_key(&feature.id) {
             return Ok(Err(
                 ActiveFeatureClosureRejection::DuplicateFeatureIdentity {
-                    feature: feature.id.try_clone_for_decode(ctx, "NX active feature closure identity")?,
+                    feature: feature
+                        .id
+                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
                 },
             ));
         }
@@ -426,15 +456,21 @@ pub(crate) fn active_feature_closure_for_decode(
                 features.get_key_value(dependency)
             else {
                 return Ok(Err(ActiveFeatureClosureRejection::MissingDependency {
-                    feature: feature.id.try_clone_for_decode(ctx, "NX active feature closure identity")?,
-                    dependency: dependency.try_clone_for_decode(ctx, "NX active feature closure identity")?,
+                    feature: feature
+                        .id
+                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
+                    dependency: dependency
+                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
                 }));
             };
             if dependency_feature.ordinal >= feature.ordinal {
                 return Ok(Err(ActiveFeatureClosureRejection::DependencyNotEarlier {
-                    feature: feature.id.try_clone_for_decode(ctx, "NX active feature closure identity")?,
+                    feature: feature
+                        .id
+                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
                     feature_ordinal: feature.ordinal,
-                    dependency: dependency.try_clone_for_decode(ctx, "NX active feature closure identity")?,
+                    dependency: dependency
+                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
                     dependency_ordinal: dependency_feature.ordinal,
                 }));
             }
@@ -451,7 +487,9 @@ pub(crate) fn active_feature_closure_for_decode(
         .find(|(_, feature)| feature.suppressed == Some(true))
     {
         return Ok(Err(ActiveFeatureClosureRejection::ExplicitlySuppressed {
-            feature: feature.id.try_clone_for_decode(ctx, "NX active feature closure identity")?,
+            feature: feature
+                .id
+                .try_clone_for_decode(ctx, "NX active feature closure identity")?,
         }));
     }
     let mut result = BTreeMap::new();
@@ -467,7 +505,10 @@ pub(crate) fn active_feature_closure_for_decode(
                 )
             })?;
         ctx.charge_retained(u64_from_index(bytes), "NX active feature closure result")?;
-        result.insert(id.try_clone_for_decode(ctx, "NX active feature closure result")?, index);
+        result.insert(
+            id.try_clone_for_decode(ctx, "NX active feature closure result")?,
+            index,
+        );
     }
     Ok(Ok(result))
 }

@@ -446,7 +446,8 @@ fn parse_saved_toggle_stream(
         let Some((toggle_id, state)) = value.rsplit_once(':') else {
             return Ok(None);
         };
-        let mut owned_id = ctx.retained_string(toggle_id.len(), "retain NX saved toggle identity")?;
+        let mut owned_id =
+            ctx.retained_string(toggle_id.len(), "retain NX saved toggle identity")?;
         owned_id.push_str(toggle_id);
         let Ok(toggle_id) = ToggleId::try_from(owned_id) else {
             return Ok(None);
@@ -838,7 +839,7 @@ mod tests {
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain NX saved toggle entries")
+                && limit.operation == "store NX saved toggle entries")
         );
         assert!(parse_service(&bytes, 0).is_some());
     }

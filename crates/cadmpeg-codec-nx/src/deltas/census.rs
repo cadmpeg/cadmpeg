@@ -148,14 +148,22 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             census.bytes_decoded += preamble.end - preamble.offset;
             offset = preamble.end;
             value_boundary = true;
-            ctx.push_vec(&mut census.events.schema_reference_preambles, preamble, "NX deltas schema preambles")?;
+            ctx.push_vec(
+                &mut census.events.schema_reference_preambles,
+                preamble,
+                "NX deltas schema preambles",
+            )?;
             continue;
         }
         if let Some(declaration) = inline_schema_declaration(ctx, stream, offset, stream.len())? {
             census.bytes_decoded += declaration.end - declaration.offset;
             offset = declaration.end;
             value_boundary = true;
-            ctx.push_vec(&mut census.events.inline_schema_declarations, declaration, "NX deltas schema declarations")?;
+            ctx.push_vec(
+                &mut census.events.inline_schema_declarations,
+                declaration,
+                "NX deltas schema declarations",
+            )?;
             continue;
         }
         if let Some(map) =
@@ -164,7 +172,11 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             census.bytes_decoded += map.end - map.offset;
             offset = map.end;
             value_boundary = true;
-            ctx.push_vec(&mut census.events.reference_type_maps, map, "NX deltas reference type maps")?;
+            ctx.push_vec(
+                &mut census.events.reference_type_maps,
+                map,
+                "NX deltas reference type maps",
+            )?;
             continue;
         }
         let shared_record = consume_shared_record(
@@ -204,7 +216,11 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
                 census.bytes_decoded += revision.prefix_end - revision.offset;
                 offset = revision.prefix_end;
                 value_boundary = true;
-                ctx.push_vec(&mut census.events.body_revisions, revision, "NX deltas body revisions")?;
+                ctx.push_vec(
+                    &mut census.events.body_revisions,
+                    revision,
+                    "NX deltas body revisions",
+                )?;
                 continue;
             }
         }
@@ -255,11 +271,15 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             .flatten()
         {
             if xmt > 1 {
-                ctx.push_vec(&mut census.events.tombstones, Tombstone {
+                ctx.push_vec(
+                    &mut census.events.tombstones,
+                    Tombstone {
                         kind: record_kind,
                         xmt,
                         offset,
-                    }, "NX deltas tombstones")?;
+                    },
+                    "NX deltas tombstones",
+                )?;
                 census.bytes_decoded += 6;
                 offset += 6;
                 value_boundary = true;
@@ -294,28 +314,60 @@ fn populate_gap_events(
             .sum::<usize>();
 
         let lanes = tagged_reference_lanes(ctx, stream, census)?;
-        ctx.extend_vec(&mut census.events.tagged_reference_lanes, lanes, "NX tagged reference lanes")?;
+        ctx.extend_vec(
+            &mut census.events.tagged_reference_lanes,
+            lanes,
+            "NX tagged reference lanes",
+        )?;
 
         let maps = reference_type_maps(ctx, stream, census)?;
-        ctx.extend_vec(&mut census.events.reference_type_maps, maps, "NX reference type maps")?;
+        ctx.extend_vec(
+            &mut census.events.reference_type_maps,
+            maps,
+            "NX reference type maps",
+        )?;
 
         let state_packets = reference_state_packets(ctx, stream, census)?;
-        ctx.extend_vec(&mut census.events.reference_state_packets, state_packets, "NX reference state packets")?;
+        ctx.extend_vec(
+            &mut census.events.reference_state_packets,
+            state_packets,
+            "NX reference state packets",
+        )?;
 
         let preambles = schema_reference_preambles(ctx, stream, census)?;
-        ctx.extend_vec(&mut census.events.schema_reference_preambles, preambles, "NX schema reference preambles")?;
+        ctx.extend_vec(
+            &mut census.events.schema_reference_preambles,
+            preambles,
+            "NX schema reference preambles",
+        )?;
 
         let declarations = inline_schema_declarations(ctx, stream, census)?;
-        ctx.extend_vec(&mut census.events.inline_schema_declarations, declarations, "NX inline schema declarations")?;
+        ctx.extend_vec(
+            &mut census.events.inline_schema_declarations,
+            declarations,
+            "NX inline schema declarations",
+        )?;
 
         let body_states = inline_body_states(ctx, stream, census)?;
-        ctx.extend_vec(&mut census.events.inline_body_states, body_states, "NX inline body states")?;
+        ctx.extend_vec(
+            &mut census.events.inline_body_states,
+            body_states,
+            "NX inline body states",
+        )?;
 
         let marker_packets = reference_marker_packets(ctx, stream, census)?;
-        ctx.extend_vec(&mut census.events.reference_marker_packets, marker_packets, "NX reference marker packets")?;
+        ctx.extend_vec(
+            &mut census.events.reference_marker_packets,
+            marker_packets,
+            "NX reference marker packets",
+        )?;
 
         let type_150_packets = type_150_state_packets(ctx, stream, census)?;
-        ctx.extend_vec(&mut census.events.type_150_state_packets, type_150_packets, "NX type 150 state packets")?;
+        ctx.extend_vec(
+            &mut census.events.type_150_state_packets,
+            type_150_packets,
+            "NX type 150 state packets",
+        )?;
 
         let covered_after = merged_event_spans(ctx, census, true)?
             .into_iter()

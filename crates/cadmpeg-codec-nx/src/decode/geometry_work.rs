@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared work accounting for adaptive geometry certification.
 
-use cadmpeg_core::decode::{
-    DecodeContext, ResourceLimit, WorkBudget,
-};
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit, WorkBudget};
 use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::Rc;

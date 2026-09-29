@@ -6,7 +6,7 @@ use crate::om::roll_forward::{GroupTableFooter, OperationStateGroup, OperationSt
 use crate::om::state_group::{
     OperationStateGroupCount, OperationStateGroupOpener, StateGroupMembers,
 };
-use cadmpeg_core::decode::{DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
@@ -273,8 +273,10 @@ impl OmRollForwardStateTable {
             });
         }
         Ok(Self {
-            section_link: ctx.copy_retained_text(section_link, "retain NX roll-forward table text")?,
-            source_entry: ctx.copy_retained_text(source_entry, "retain NX roll-forward table text")?,
+            section_link: ctx
+                .copy_retained_text(section_link, "retain NX roll-forward table text")?,
+            source_entry: ctx
+                .copy_retained_text(source_entry, "retain NX roll-forward table text")?,
             table_footer,
             table_end_offset,
             groups,

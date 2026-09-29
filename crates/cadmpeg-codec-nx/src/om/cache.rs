@@ -294,7 +294,10 @@ impl SectionLayout {
                 definition.registry_tail,
             )?);
         }
-        let mut operation_labels = ctx.retained_vec(section.cached_operation_labels.len(), "NX cached operation labels")?;
+        let mut operation_labels = ctx.retained_vec(
+            section.cached_operation_labels.len(),
+            "NX cached operation labels",
+        )?;
         for label in section.cached_operation_labels.iter() {
             operation_labels.push(CachedOperationLabel::new(ctx, label)?);
         }
@@ -316,7 +319,10 @@ impl SectionLayout {
         for definition in &self.fields {
             fields.push(definition.field_definition());
         }
-        let mut cached_operation_labels = ctx.retained_vec(self.operation_labels.len(), "NX materialized operation labels")?;
+        let mut cached_operation_labels = ctx.retained_vec(
+            self.operation_labels.len(),
+            "NX materialized operation labels",
+        )?;
         for label in &self.operation_labels {
             cached_operation_labels.push(label.materialize());
         }

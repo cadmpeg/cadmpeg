@@ -143,7 +143,8 @@ fn thru_curve_payload_branch(
         for _ in 1..declared_count {
             let token = PayloadIndexToken::read(record.payload().get(cursor..)?)?;
             cursor += token.raw().len();
-            if let Err(error) = ctx.reserve_retained_vec(&mut members, 1, "NX thru-curve branch members")
+            if let Err(error) =
+                ctx.reserve_retained_vec(&mut members, 1, "NX thru-curve branch members")
             {
                 failure = Some(error);
                 return None;

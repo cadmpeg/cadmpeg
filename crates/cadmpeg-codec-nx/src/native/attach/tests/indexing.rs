@@ -177,4 +177,3 @@ fn segment_body_index_refuses_work_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
-

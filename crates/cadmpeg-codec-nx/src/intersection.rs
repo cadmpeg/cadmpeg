@@ -40,7 +40,6 @@ pub(crate) type SupportUv = [Option<SupportUvLane>; 2];
 pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 
 impl SupportUvLane {
-
     pub(crate) fn from_present_values_charged(
         ctx: &DecodeContext<'_>,
         values: Vec<[f64; 2]>,
@@ -363,13 +362,31 @@ impl CurveScan {
             let [support_first, support_second] = [0, 1].map(|side| {
                 curve.support_uv[side]
                     .as_ref()
-                    .map(|lane| crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.as_slice().len()).ok_or_else(|| CodecError::malformed("NX copied support-UV lane count")))
+                    .map(|lane| {
+                        crate::intersection::SupportUvLane::from_checked(
+                            ctx.copy_retained_slice(
+                                lane.as_slice(),
+                                "NX solved support-UV lane copy",
+                            )?,
+                            lane.as_slice().len(),
+                        )
+                        .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
+                    })
                     .transpose()
             });
             let [ext_first, ext_second] = [0, 1].map(|side| {
                 curve.ext_support_uv[side]
                     .as_ref()
-                    .map(|lane| crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.as_slice().len()).ok_or_else(|| CodecError::malformed("NX copied support-UV lane count")))
+                    .map(|lane| {
+                        crate::intersection::SupportUvLane::from_checked(
+                            ctx.copy_retained_slice(
+                                lane.as_slice(),
+                                "NX solved support-UV lane copy",
+                            )?,
+                            lane.as_slice().len(),
+                        )
+                        .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
+                    })
                     .transpose()
             });
             curves.push(IntersectionCurve {
@@ -385,10 +402,13 @@ impl CurveScan {
             });
         }
         Ok(Self {
-            source_constructions: ctx.copy_slice_with_work(&self.source_constructions, "NX source intersection copy")?,
-            constructions: ctx.copy_slice_with_work(&self.constructions, "NX intersection construction copy")?,
+            source_constructions: ctx
+                .copy_slice_with_work(&self.source_constructions, "NX source intersection copy")?,
+            constructions: ctx
+                .copy_slice_with_work(&self.constructions, "NX intersection construction copy")?,
             curves,
-            uncharted: ctx.copy_slice_with_work(&self.uncharted, "NX uncharted intersection copy")?,
+            uncharted: ctx
+                .copy_slice_with_work(&self.uncharted, "NX uncharted intersection copy")?,
             rejected: self.rejected,
         })
     }
@@ -631,7 +651,11 @@ fn scan_with_auxiliaries(
     for construction in constructions.iter().copied() {
         match enrich(ctx, construction, charts, terms, uv, bridges, graph) {
             Ok(curve) => {
-                ctx.push_retained_vec(&mut result.constructions, construction, "NX intersection constructions")?;
+                ctx.push_retained_vec(
+                    &mut result.constructions,
+                    construction,
+                    "NX intersection constructions",
+                )?;
                 ctx.push_retained_vec(&mut result.curves, curve, "NX intersection solved curves")?;
             }
             Err(EnrichError::Rejected(rejection))
@@ -639,7 +663,11 @@ fn scan_with_auxiliaries(
                     && construction_supports(construction, uv, bridges, graph).is_some()
                     && construction_has_endpoint_witnesses(construction, terms, graph) =>
             {
-                ctx.push_retained_vec(&mut result.constructions, construction, "NX intersection constructions")?;
+                ctx.push_retained_vec(
+                    &mut result.constructions,
+                    construction,
+                    "NX intersection constructions",
+                )?;
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some((endpoints, tolerance))) = (
                         construction_supports(construction, uv, bridges, graph).and_then(
@@ -654,12 +682,16 @@ fn scan_with_auxiliaries(
                                 ))
                             }),
                     ) {
-                        ctx.push_retained_vec(&mut result.uncharted, UnchartedIntersection {
+                        ctx.push_retained_vec(
+                            &mut result.uncharted,
+                            UnchartedIntersection {
                                 xmt: construction.xmt,
                                 supports,
                                 endpoints,
                                 tolerance,
-                            }, "NX uncharted intersections")?;
+                            },
+                            "NX uncharted intersections",
+                        )?;
                     }
                 }
                 result.rejected.add(rejection);
@@ -748,11 +780,23 @@ fn enrich(
     let ext_support_uv = [
         chart.ext_support_uv[0]
             .as_ref()
-            .map(|lane| crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.as_slice().len()).ok_or_else(|| CodecError::malformed("NX copied support-UV lane count")))
+            .map(|lane| {
+                crate::intersection::SupportUvLane::from_checked(
+                    ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+                    lane.as_slice().len(),
+                )
+                .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
+            })
             .transpose()?,
         chart.ext_support_uv[1]
             .as_ref()
-            .map(|lane| crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.as_slice().len()).ok_or_else(|| CodecError::malformed("NX copied support-UV lane count")))
+            .map(|lane| {
+                crate::intersection::SupportUvLane::from_checked(
+                    ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+                    lane.as_slice().len(),
+                )
+                .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
+            })
             .transpose()?,
     ];
     Ok(IntersectionCurve {
@@ -1190,7 +1234,11 @@ fn chart_points(
     let mut points = Vec::new();
     cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut points, count, operation)?;
     let mut native_parameters = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut native_parameters, count, operation)?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut native_parameters,
+        count,
+        operation,
+    )?;
     let mut ext_support_uv = [Some(Vec::new()), Some(Vec::new())];
     let mut lane_reservations = [
         ctx.reserve_scoped(0, "NX raw ext11 support-UV lane")?,
@@ -1208,7 +1256,12 @@ fn chart_points(
                 .all(|value| value.is_finite() && *value != MISSING_PARAMETER)
             {
                 if let Some(values) = &mut ext_support_uv[lane] {
-                    ctx.reserve_scoped_vec(&mut lane_reservations[lane], values, 1, "NX raw ext11 support-UV lane")?;
+                    ctx.reserve_scoped_vec(
+                        &mut lane_reservations[lane],
+                        values,
+                        1,
+                        "NX raw ext11 support-UV lane",
+                    )?;
                     values.push(lanes[lane]);
                 }
             } else {
@@ -1488,7 +1541,11 @@ fn uv_at(
         operation,
     )?;
     let mut scalars = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut scalars, count_usize, operation)?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut scalars,
+        count_usize,
+        operation,
+    )?;
     for _ in 0..count_usize {
         let Some(value) = view.f64_be() else {
             return Ok(None);

@@ -84,7 +84,8 @@ fn push_relation(
         .checked_add(decimal_len(entry_index))
         .and_then(|length| length.checked_add(decimal_len(definition_offset)))
         .ok_or_else(|| ctx.refuse_codec_limit("NX creation display class identity length", 0, 1))?;
-    let mut class_definition = ctx.retained_string(class_len, "retain NX creation display class identity")?;
+    let mut class_definition =
+        ctx.retained_string(class_len, "retain NX creation display class identity")?;
     write!(
         class_definition,
         "nx:om-entry-{entry_index}:class#{definition_offset}"

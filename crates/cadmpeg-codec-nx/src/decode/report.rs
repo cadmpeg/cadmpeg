@@ -47,7 +47,7 @@ fn push_report_loss(
     code: NxLossCode,
     message: fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let message = ctx.format_retained(format_args!("{}", message), "nx geometry report loss text")?;
+    let message = ctx.format_retained(message, "nx geometry report loss text")?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index("nx".len()),
         "nx geometry report loss namespace",
@@ -412,9 +412,13 @@ pub(crate) fn append_design_intent_losses(
     ir: &CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut current_body_ids = ctx.collection_vec(ir.model.bodies.len(), "nx report current body identities")?;
+    let mut current_body_ids =
+        ctx.collection_vec(ir.model.bodies.len(), "nx report current body identities")?;
     for body in &ir.model.bodies {
-        current_body_ids.push(body.id.try_clone_for_decode(ctx, "nx report current body identity")?);
+        current_body_ids.push(
+            body.id
+                .try_clone_for_decode(ctx, "nx report current body identity")?,
+        );
     }
     // Require a non-BaseFeature writer before treating body-to-history as proven.
     let (active_features, closure_rejection) =
@@ -959,7 +963,8 @@ pub(crate) fn append_design_intent_losses(
         }) = feature.evaluation.definition()
         {
             ctx.charge_collection_items(1, "nx report active sketch identities")?;
-            active_sketch_ids.insert(sketch.try_clone_for_decode(ctx, "nx report active sketch identity")?);
+            active_sketch_ids
+                .insert(sketch.try_clone_for_decode(ctx, "nx report active sketch identity")?);
         }
     }
     let sketch_in_active_scope = |sketch: &cadmpeg_ir::sketches::SketchId| {

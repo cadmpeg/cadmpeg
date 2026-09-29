@@ -1660,11 +1660,6 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
     assert!(boolean_target_output(Some(&ambiguous)).is_none());
 }
 
-
-
-
-
-
 #[test]
 fn topology_inferred_hole_axis_is_not_an_authored_direction() {
     use cadmpeg_ir::features::{holes::HolePlacement, FeatureDefinition, FeatureOperation};

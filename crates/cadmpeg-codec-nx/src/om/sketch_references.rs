@@ -105,7 +105,9 @@ impl SketchReferenceField {
             Some(Self(match count {
                 None => References::Implicit(terminal),
                 Some(count) => {
-                    if let Err(error) = ctx.reserve_retained_vec(&mut references, 1, "nx sketch references") {
+                    if let Err(error) =
+                        ctx.reserve_retained_vec(&mut references, 1, "nx sketch references")
+                    {
                         failure = Some(error);
                         return None;
                     }

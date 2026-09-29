@@ -379,7 +379,7 @@ fn display_jt_element_index_refuses_before_retained_reservation() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "retain DisplayJT element index")
+            && limit.operation == "store DisplayJT element")
     );
 
     let (service, _) =

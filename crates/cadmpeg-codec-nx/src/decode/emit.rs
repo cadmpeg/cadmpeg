@@ -264,7 +264,9 @@ pub(super) fn emit_topology(
                 .find(|candidate| candidate.id == body)
             {
                 ctx.reserve_vec(&mut parent.regions, 1, "nx body regions")?;
-                parent.regions.push(region.try_clone_for_decode(ctx, "nx body region identity")?);
+                parent
+                    .regions
+                    .push(region.try_clone_for_decode(ctx, "nx body region identity")?);
             }
             ctx.charge_collection_items(1, "nx emitted region index")?;
             regions.insert(
@@ -326,7 +328,9 @@ pub(super) fn emit_topology(
             .find(|candidate| candidate.id == region_id)
         {
             ctx.reserve_vec(&mut parent.shells, 1, "nx region shells")?;
-            parent.shells.push(shell_id.try_clone_for_decode(ctx, "nx region shell identity")?);
+            parent
+                .shells
+                .push(shell_id.try_clone_for_decode(ctx, "nx region shell identity")?);
         }
         ctx.charge_collection_items(1, "nx emitted shell index")?;
         shells.insert(node.xmt, shell_id);
@@ -336,7 +340,9 @@ pub(super) fn emit_topology(
         if !point_positions.contains_key(&point.id) {
             ctx.charge_collection_items(1, "nx point position index")?;
             point_positions.insert(
-                point.id.try_clone_for_decode(ctx, "nx indexed point identity")?,
+                point
+                    .id
+                    .try_clone_for_decode(ctx, "nx indexed point identity")?,
                 point.position().get(),
             );
         }
@@ -399,7 +405,9 @@ pub(super) fn emit_topology(
     for (index, pcurve) in ir.model.pcurves.iter().enumerate() {
         ctx.charge_collection_items(1, "nx pcurve index")?;
         pcurve_indices.insert(
-            pcurve.id.try_clone_for_decode(ctx, "nx indexed pcurve identity")?,
+            pcurve
+                .id
+                .try_clone_for_decode(ctx, "nx indexed pcurve identity")?,
             index,
         );
     }
@@ -408,7 +416,9 @@ pub(super) fn emit_topology(
         if !curve_indices.contains_key(&curve.id) {
             ctx.charge_collection_items(1, "nx curve index")?;
             curve_indices.insert(
-                curve.id.try_clone_for_decode(ctx, "nx indexed curve identity")?,
+                curve
+                    .id
+                    .try_clone_for_decode(ctx, "nx indexed curve identity")?,
                 index,
             );
         }
@@ -417,7 +427,8 @@ pub(super) fn emit_topology(
     for procedural in &ir.model.procedural_curves {
         if let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) {
             ctx.charge_collection_items(1, "nx procedural curve index")?;
-            procedural_curve_ids.insert(owner.try_clone_for_decode(ctx, "nx indexed procedural curve identity")?);
+            procedural_curve_ids
+                .insert(owner.try_clone_for_decode(ctx, "nx indexed procedural curve identity")?);
         }
     }
     let mut curve_point_cache = CurvePointCache::default();
@@ -506,12 +517,17 @@ pub(super) fn emit_topology(
                 ir.model.curves.push(Curve {
                     id: carrier.try_clone_for_decode(ctx, "nx parametric edge carrier")?,
                     geometry: CurveGeometry::Procedural {
-                        construction: construction.try_clone_for_decode(ctx, "nx parametric edge construction")?,
+                        construction: construction
+                            .try_clone_for_decode(ctx, "nx parametric edge construction")?,
                         cache: None,
                     },
                     source_object: None,
                 });
-                ctx.reserve_vec(&mut ir.model.procedural_curves, 1, "nx parametric edge constructions")?;
+                ctx.reserve_vec(
+                    &mut ir.model.procedural_curves,
+                    1,
+                    "nx parametric edge constructions",
+                )?;
                 let _attached = ir.model.add_procedural_curve(
                     &carrier.try_clone_for_decode(ctx, "nx parametric construction owner")?,
                     ProceduralCurve::new(
@@ -674,7 +690,8 @@ pub(super) fn emit_topology(
         if let Some(curve) = edge.curve() {
             ctx.charge_collection_items(1, "nx edge curve index")?;
             edge_curves_by_id.insert(
-                edge.id.try_clone_for_decode(ctx, "nx indexed edge identity")?,
+                edge.id
+                    .try_clone_for_decode(ctx, "nx indexed edge identity")?,
                 curve.try_clone_for_decode(ctx, "nx indexed edge curve identity")?,
             );
         }
@@ -1018,7 +1035,10 @@ pub(super) fn emit_topology(
             .and_then(|target| fin_ids.get(&u32::from(target)))
             .map(|partner| partner.try_clone_for_decode(ctx, "nx fin partner identity"))
             .transpose()?;
-        let radial_next = partner.as_ref().unwrap_or(&id).try_clone_for_decode(ctx, "nx fin radial successor identity")?;
+        let radial_next = partner
+            .as_ref()
+            .unwrap_or(&id)
+            .try_clone_for_decode(ctx, "nx fin radial successor identity")?;
         let support = graph
             .get_target(NodeKind::Loop, fields.loop_xmt)
             .and_then(Node::loop_fields)
@@ -1250,7 +1270,11 @@ pub(super) fn emit_topology(
     let mut owned_edges: BTreeSet<EdgeId> = BTreeSet::new();
     for coedge in &ir.model.coedges {
         ctx.charge_collection_items(1, "nx owned edge index")?;
-        owned_edges.insert(coedge.edge.try_clone_for_decode(ctx, "nx owned edge identity")?);
+        owned_edges.insert(
+            coedge
+                .edge
+                .try_clone_for_decode(ctx, "nx owned edge identity")?,
+        );
     }
     let mut candidate_edges = BTreeSet::new();
     for edge in edges.into_values() {
@@ -1264,7 +1288,8 @@ pub(super) fn emit_topology(
     for edge in &ir.model.edges {
         for vertex in [&edge.start, &edge.end] {
             ctx.charge_collection_items(1, "nx retained vertex index")?;
-            retained_vertices.insert(vertex.try_clone_for_decode(ctx, "nx retained vertex identity")?);
+            retained_vertices
+                .insert(vertex.try_clone_for_decode(ctx, "nx retained vertex identity")?);
         }
     }
     let scope_prefix = scope.prefix_charged(ctx)?;
@@ -1740,7 +1765,10 @@ fn unknown_stream_record(
     stream: &Stream,
     data: Option<Vec<u8>>,
 ) -> Result<UnknownRecord, CodecError> {
-    let id = ctx.format_retained(format_args!("nx:container:parasolid#{si}"), "nx unknown stream id")?;
+    let id = ctx.format_retained(
+        format_args!("nx:container:parasolid#{si}"),
+        "nx unknown stream id",
+    )?;
     let id = UnknownId::mint(id).map_err(|error| CodecError::Malformed(error.to_string()))?;
     let offset = stream.file_offset as u64;
     match data {
@@ -1750,7 +1778,10 @@ fn unknown_stream_record(
                 cadmpeg_core::decode::u64_from_index(stream.inflated.len()),
                 "hash NX unknown stream",
             )?;
-            let digest = ctx.format_retained(format_args!("{}", HexDigest(sha256(&stream.inflated))), "nx unknown stream digest")?;
+            let digest = ctx.format_retained(
+                format_args!("{}", HexDigest(sha256(&stream.inflated))),
+                "nx unknown stream digest",
+            )?;
             Ok(UnknownRecord::unavailable(
                 id,
                 offset,
@@ -2082,11 +2113,19 @@ fn insert_source_attribute(
         "nx source attribute text",
     )?;
     let mut key_text = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut key_text, key_len.0, "nx source attribute text")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut key_text,
+        key_len.0,
+        "nx source attribute text",
+    )?;
     write!(&mut key_text, "{key}")
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
     let mut value_text = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut value_text, value_len.0, "nx source attribute text")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut value_text,
+        value_len.0,
+        "nx source attribute text",
+    )?;
     write!(&mut value_text, "{value}")
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
     attributes.insert(key_text, value_text);

@@ -37,12 +37,6 @@ fn high_degree_lane_count(representation: &[u8], bindings: u64) -> Option<usize>
     })
 }
 
-
-
-
-
-
-
 #[test]
 fn transformed_jt_geometry_holds_checked_points_and_normals() {
     let identity = [

@@ -67,17 +67,57 @@ impl DisplayJtGraph {
             u64::try_from(length)
                 .map_err(|_| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))
         };
-        let _documents = ctx.reserve_scoped(count(wire.documents.len())?.checked_mul(128).ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))?, "index DisplayJT graph records")?;
-        let _segments = ctx.reserve_scoped(count(wire.segments.len())?.checked_mul(128).ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))?, "index DisplayJT graph records")?;
-        let _elements = ctx.reserve_scoped(count(wire.compressed_elements.len())?.checked_mul(128).ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))?, "index DisplayJT graph records")?;
-        let _shape_lods = ctx.reserve_scoped(count(wire.shape_lod_elements.len())?.checked_mul(128).ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))?, "index DisplayJT graph records")?;
-        let _sequences = ctx.reserve_scoped(count(wire.compressed_element_sequences.len())?.checked_mul(128).ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))?, "index DisplayJT graph records")?;
+        let _documents = ctx.reserve_scoped(
+            count(wire.documents.len())?
+                .checked_mul(128)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX)
+                })?,
+            "index DisplayJT graph records",
+        )?;
+        let _segments = ctx.reserve_scoped(
+            count(wire.segments.len())?
+                .checked_mul(128)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX)
+                })?,
+            "index DisplayJT graph records",
+        )?;
+        let _elements = ctx.reserve_scoped(
+            count(wire.compressed_elements.len())?
+                .checked_mul(128)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX)
+                })?,
+            "index DisplayJT graph records",
+        )?;
+        let _shape_lods = ctx.reserve_scoped(
+            count(wire.shape_lod_elements.len())?
+                .checked_mul(128)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX)
+                })?,
+            "index DisplayJT graph records",
+        )?;
+        let _sequences = ctx.reserve_scoped(
+            count(wire.compressed_element_sequences.len())?
+                .checked_mul(128)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX)
+                })?,
+            "index DisplayJT graph records",
+        )?;
         let toc_count = wire.documents.iter().try_fold(0_u64, |sum, document| {
             count(document.toc_entries.len())?
                 .checked_add(sum)
                 .ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT TOC entries", 0, u64::MAX))
         })?;
-        let _toc = ctx.reserve_scoped(toc_count.checked_mul(128).ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT TOC entries", 0, u64::MAX))?, "index DisplayJT TOC entries")?;
+        let _toc = ctx.reserve_scoped(
+            toc_count.checked_mul(128).ok_or_else(|| {
+                ctx.refuse_codec_limit("index DisplayJT TOC entries", 0, u64::MAX)
+            })?,
+            "index DisplayJT TOC entries",
+        )?;
         Self::from_wire(ctx, wire)
     }
 

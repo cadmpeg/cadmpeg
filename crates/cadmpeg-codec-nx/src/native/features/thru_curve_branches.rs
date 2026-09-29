@@ -118,8 +118,16 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
     type Error = &'static str;
 
     fn try_from(wire: GroupWire) -> Result<Self, Self::Error> {
-        let mut branches = cadmpeg_core::decode::DecodeContext::admitted_vec(wire.branches.len(), "NX thru-curve wire branches").map_err(|_| "branches: allocation failed")?;
-        let mut locations = cadmpeg_core::decode::DecodeContext::admitted_vec(wire.branches.len(), "NX thru-curve wire locations").map_err(|_| "locations: allocation failed")?;
+        let mut branches = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            wire.branches.len(),
+            "NX thru-curve wire branches",
+        )
+        .map_err(|_| "branches: allocation failed")?;
+        let mut locations = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            wire.branches.len(),
+            "NX thru-curve wire locations",
+        )
+        .map_err(|_| "locations: allocation failed")?;
         for (ordinal, branch) in wire.branches.into_iter().enumerate() {
             if branch.ordinal as usize != ordinal {
                 return Err("branches.ordinal must equal branch order");
@@ -127,8 +135,16 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
             if usize::from(branch.declared_count) != branch.members.len() + 1 {
                 return Err("declared_count must equal members length plus one");
             }
-            let mut members = cadmpeg_core::decode::DecodeContext::admitted_vec(branch.members.len(), "NX thru-curve wire members").map_err(|_| "members: allocation failed")?;
-            let mut positions = cadmpeg_core::decode::DecodeContext::admitted_vec(branch.members.len(), "NX thru-curve wire positions").map_err(|_| "positions: allocation failed")?;
+            let mut members = cadmpeg_core::decode::DecodeContext::admitted_vec(
+                branch.members.len(),
+                "NX thru-curve wire members",
+            )
+            .map_err(|_| "members: allocation failed")?;
+            let mut positions = cadmpeg_core::decode::DecodeContext::admitted_vec(
+                branch.members.len(),
+                "NX thru-curve wire positions",
+            )
+            .map_err(|_| "positions: allocation failed")?;
             for (ordinal, reference) in branch.members.into_iter().enumerate() {
                 if reference.ordinal as usize != ordinal {
                     return Err("members.ordinal must equal member order");
@@ -232,7 +248,11 @@ pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
                     operation_ordinal,
                     None,
                 )?;
-                ctx.reserve_retained_vec(&mut groups, 1, "NX thru-curve construction branch groups")?;
+                ctx.reserve_retained_vec(
+                    &mut groups,
+                    1,
+                    "NX thru-curve construction branch groups",
+                )?;
                 Ok(FeatureThruCurveConstructionBranchGroup {
                     id,
                     operation_label,

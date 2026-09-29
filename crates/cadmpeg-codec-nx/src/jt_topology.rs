@@ -4,7 +4,7 @@
 const MAX_TOPOLOGY_ITEMS: usize = 1_000_000;
 const MAX_TOPOLOGY_SLOTS: usize = 8_000_000;
 
-use cadmpeg_core::decode::{DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::num::NonZeroUsize;
 
@@ -232,7 +232,11 @@ impl Decoder<'_> {
         let faces = ctx.alloc_filled(valence, None, "nx JT vertex face slots")?;
         ctx.charge_collection_items(1, "nx JT topology vertices")?;
         let index = self.vertices.len();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut self.vertices, 1, "nx JT topology vertices")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut self.vertices,
+            1,
+            "nx JT topology vertices",
+        )?;
         self.vertices.push(Vertex {
             faces,
             group,
