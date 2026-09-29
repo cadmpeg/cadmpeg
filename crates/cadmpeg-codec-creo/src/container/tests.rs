@@ -815,8 +815,8 @@ fn feature_row_definition_refuses_before_vec_growth() {
             .expect("feature row is admitted");
         super::feature_row_definitions(&ctx, std::slice::from_ref(&row))
     };
-    assert_eq!(run(1).expect("one definition admitted").len(), 1);
-    let error = run(0).expect_err("one definition needs one item");
+    assert_eq!(run(2).expect("one definition admitted").len(), 1);
+    let error = run(1).expect_err("one definition needs another item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo feature row definitions"));
