@@ -1119,16 +1119,25 @@ fn nurbs_profile_signed_area_twice(
     Ok(area_twice.is_finite().then_some(area_twice))
 }
 
-fn polylines_intersect(first: &[[f64; 2]], second: &[[f64; 2]], tolerance: f64) -> bool {
-    first.windows(2).any(|first_segment| {
-        second.windows(2).any(|second_segment| {
-            segments_intersect(
+fn polylines_intersect(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    first: &[[f64; 2]],
+    second: &[[f64; 2]],
+    tolerance: f64,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    for first_segment in first.windows(2) {
+        for second_segment in second.windows(2) {
+            ctx.charge_work(1, "creo profile polyline intersection pairs")?;
+            if segments_intersect(
                 [first_segment[0], first_segment[1]],
                 [second_segment[0], second_segment[1]],
                 tolerance,
-            )
-        })
-    })
+            ) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 pub(in super::super) fn profile_segments_intersect(
@@ -1137,25 +1146,36 @@ pub(in super::super) fn profile_segments_intersect(
     second: &ProfileEntity,
     tolerance: f64,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    ctx.charge_work(1, "creo profile segment intersection")?;
     let first_nurbs = matches!(first.geometry, ProfileGeometry::Nurbs { .. });
     let second_nurbs = matches!(second.geometry, ProfileGeometry::Nurbs { .. });
     if first_nurbs || second_nurbs {
         if first_nurbs {
             if let Some(arc) = profile_arc(second) {
-                return Ok(profile_nurbs_polyline(ctx, first, tolerance)?.is_some_and(|polyline| {
-                    polyline
-                        .windows(2)
-                        .any(|segment| line_arc_intersect([segment[0], segment[1]], arc, tolerance))
-                }));
+                let Some(polyline) = profile_nurbs_polyline(ctx, first, tolerance)? else {
+                    return Ok(false);
+                };
+                for segment in polyline.windows(2) {
+                    ctx.charge_work(1, "creo profile NURBS arc intersection segments")?;
+                    if line_arc_intersect([segment[0], segment[1]], arc, tolerance) {
+                        return Ok(true);
+                    }
+                }
+                return Ok(false);
             }
         }
         if second_nurbs {
             if let Some(arc) = profile_arc(first) {
-                return Ok(profile_nurbs_polyline(ctx, second, tolerance)?.is_some_and(|polyline| {
-                    polyline
-                        .windows(2)
-                        .any(|segment| line_arc_intersect([segment[0], segment[1]], arc, tolerance))
-                }));
+                let Some(polyline) = profile_nurbs_polyline(ctx, second, tolerance)? else {
+                    return Ok(false);
+                };
+                for segment in polyline.windows(2) {
+                    ctx.charge_work(1, "creo profile NURBS arc intersection segments")?;
+                    if line_arc_intersect([segment[0], segment[1]], arc, tolerance) {
+                        return Ok(true);
+                    }
+                }
+                return Ok(false);
             }
         }
         let first_line = [first.start, first.end];
@@ -1176,11 +1196,12 @@ pub(in super::super) fn profile_segments_intersect(
         if second_nurbs && second_polyline.is_none() {
             return Ok(true);
         }
-        return Ok(polylines_intersect(
+        return polylines_intersect(
+            ctx,
             first_polyline.as_deref().unwrap_or(&first_line),
             second_polyline.as_deref().unwrap_or(&second_line),
             tolerance,
-        ));
+        );
     }
     Ok(match (profile_arc(first), profile_arc(second)) {
         (None, None) => segments_intersect(
@@ -1219,10 +1240,15 @@ pub(in super::super) fn profile_strictly_contains(
                 return Ok(false);
             };
             for pair in polyline.windows(2) {
+                ctx.charge_work(1, "creo profile NURBS winding segments")?;
                 accumulate(pair[0], pair[1]);
             }
         } else if let Some((center, radius, start, delta)) = profile_arc(segment) {
             let pieces = (delta.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0) as usize;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(pieces),
+                "creo profile arc winding pieces",
+            )?;
             for piece in 0..pieces {
                 let first = start + delta * piece as f64 / pieces as f64;
                 let second = start + delta * (piece + 1) as f64 / pieces as f64;
@@ -1238,6 +1264,7 @@ pub(in super::super) fn profile_strictly_contains(
                 );
             }
         } else {
+            ctx.charge_work(1, "creo profile line winding segments")?;
             accumulate(segment.start, segment.end);
         }
     }
@@ -1261,6 +1288,7 @@ pub(in super::super) fn ordered_extrusion_profiles(
                 if second == first + 1 || (first == 0 && second + 1 == profile.len()) {
                     continue;
                 }
+                ctx.charge_work(1, "creo profile self intersection pairs")?;
                 if profile_segments_intersect(ctx, &profile[first], &profile[second], tolerance)? {
                     return Ok(None);
                 }
@@ -1271,6 +1299,7 @@ pub(in super::super) fn ordered_extrusion_profiles(
         for second in first + 1..profiles.len() {
             for first_segment in &profiles[first] {
                 for second_segment in &profiles[second] {
+                    ctx.charge_work(1, "creo profile cross intersection pairs")?;
                     if profile_segments_intersect(ctx, first_segment, second_segment, tolerance)? {
                         return Ok(None);
                     }
@@ -1282,7 +1311,11 @@ pub(in super::super) fn ordered_extrusion_profiles(
     for (candidate, profile) in profiles.iter().enumerate() {
         let mut contains_all = true;
         for (index, inner) in profiles.iter().enumerate() {
-            if index != candidate && !profile_strictly_contains(ctx, profile, inner[0].start)? {
+            if index == candidate {
+                continue;
+            }
+            ctx.charge_work(1, "creo outer profile containment pairs")?;
+            if !profile_strictly_contains(ctx, profile, inner[0].start)? {
                 contains_all = false;
                 break;
             }
@@ -1303,6 +1336,7 @@ pub(in super::super) fn ordered_extrusion_profiles(
             if second == *outer {
                 continue;
             }
+            ctx.charge_work(1, "creo hole profile containment pairs")?;
             if profile_strictly_contains(ctx, &profiles[first], profiles[second][0].start)?
                 || profile_strictly_contains(ctx, &profiles[second], profiles[first][0].start)?
             {
