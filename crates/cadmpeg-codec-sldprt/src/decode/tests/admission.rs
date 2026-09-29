@@ -1190,3 +1190,32 @@ fn metadata_hole_projection_refuses_retained_limit() {
                 && limit.operation == "retain SLDPRT hole face reference"
     ));
 }
+
+fn construction_reference_source() -> Vec<u8> {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43, "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch" id="1"/><Extrusion Name="Boss" id="2" Profile="1"><Dimension Name="Depth">1mm</Dimension></Extrusion></Keywords>"#,
+    ));
+    source
+}
+
+#[test]
+fn metadata_construction_binding_refuses_collection_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = collection_refusal_with_options(
+        &construction_reference_source(), options, "index SLDPRT native construction features",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(refusal.additional, 1);
+}
+
+#[test]
+fn metadata_construction_binding_refuses_work_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = work_refusal_with_options(
+        &construction_reference_source(), options, "index SLDPRT native construction sources",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(refusal.additional, 1);
+}
