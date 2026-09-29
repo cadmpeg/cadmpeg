@@ -1422,6 +1422,39 @@ fn block_faces_refuse_work_limit() {
 }
 
 #[test]
+fn block_placement_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    for (axis, extent) in [(1usize, 20.0), (2, 30.0)] {
+        let plane = ir.model.surfaces.iter_mut().find_map(|surface| {
+            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = &mut surface.geometry else {
+                return None;
+            };
+            let origin = plane.origin();
+            let normal = plane.frame().axis().as_raw();
+            let components = [normal.x.abs(), normal.y.abs(), normal.z.abs()];
+            let coordinates = [origin.x, origin.y, origin.z];
+            (components[axis] > 0.5 && coordinates[axis] > 0.0).then_some(plane)
+        }).unwrap();
+        let mut origin = *plane.origin();
+        let normal = *plane.frame().axis().as_raw();
+        let reference = *plane.frame().reference().as_raw();
+        if axis == 1 {
+            origin.y = extent;
+        } else {
+            origin.z = extent;
+        }
+        *plane = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, reference).unwrap();
+    }
+    let body = &ir.model.bodies[0].id;
+    assert!(matches!(block_placement(&ctx, &ir, [10.0, 20.0, 30.0], std::slice::from_ref(body)), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
 fn sphere_faces_refuse_collection_limit() {
     let dimension = cadmpeg_core::decode::ResourceDimension::CollectionItems;
     assert!(matches!(primitive_faces_with_limit(true, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
@@ -1437,6 +1470,31 @@ fn sphere_faces_refuse_scoped_limit() {
 fn sphere_faces_refuse_work_limit() {
     let dimension = cadmpeg_core::decode::ResourceDimension::WorkUnits;
     assert!(matches!(primitive_faces_with_limit(true, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+}
+
+#[test]
+fn sphere_projection_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let face = ir.model.faces[0].id.clone();
+    let surface = ir.model.faces[0].surface.clone();
+    ir.model.shells[0].edit_topology(|faces, _, _| *faces = vec![face.clone()]).unwrap();
+    ir.model.faces.retain(|candidate| candidate.id == face);
+    ir.model.surfaces.retain(|candidate| candidate.id == surface);
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        ).unwrap(),
+    ));
+    let body = &ir.model.bodies[0].id;
+    assert!(matches!(sphere_body_projection(&ctx, &ir, std::slice::from_ref(body)), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
 }
 
 #[test]
