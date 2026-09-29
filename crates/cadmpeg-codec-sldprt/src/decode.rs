@@ -2919,6 +2919,7 @@ fn build_geometry_ir(
     let edge_use_sequences = std::mem::take(&mut brep.edge_use_sequences);
     let vertex_use_sequences = std::mem::take(&mut brep.vertex_use_sequences);
     let topology_index = crate::swift::TopologyIdentityIndex::from_model(
+        ctx,
         &ir.model.bodies,
         &ir.model.faces,
         &ir.model.edges,
@@ -2926,7 +2927,7 @@ fn build_geometry_ir(
         &face_bridge_sequences,
         &edge_use_sequences,
         &vertex_use_sequences,
-    );
+    )?;
     let face_atoms = std::mem::take(&mut brep.face_atoms);
     let mut face_identities = Vec::new();
     ctx.reserve_collection_vec(
