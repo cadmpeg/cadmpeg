@@ -2189,6 +2189,7 @@ fn body_revision_without_topology_change(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn bind_feature_face_selections(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     features: &mut [cadmpeg_ir::features::Feature],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
@@ -2197,7 +2198,7 @@ pub(crate) fn bind_feature_face_selections(
     entity_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     body_recipe_operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
@@ -2240,12 +2241,13 @@ pub(crate) fn bind_feature_face_selections(
                 ) => {
                     if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
                         bind_face_selection(
+                            ctx,
                             face,
                             scope,
                             groups,
                             operands,
                             &transition.topology.faces.updated,
-                        );
+                        )?;
                         bind_entity_face_selection(
                             face,
                             &feature_id,
@@ -2269,12 +2271,13 @@ pub(crate) fn bind_feature_face_selections(
                             &mut side.termination
                         {
                             bind_face_selection(
+                                ctx,
                                 face,
                                 scope,
                                 groups,
                                 operands,
                                 &transition.topology.faces.updated,
-                            );
+                            )?;
                         }
                     }
                 }
@@ -2286,12 +2289,13 @@ pub(crate) fn bind_feature_face_selections(
                             continue;
                         };
                         bind_face_selection(
+                            ctx,
                             faces,
                             scope,
                             groups,
                             operands,
                             &transition.topology.faces.updated,
-                        );
+                        )?;
                         bind_entity_face_selection(
                             faces,
                             &feature_id,
@@ -2308,23 +2312,25 @@ pub(crate) fn bind_feature_face_selections(
                     cadmpeg_ir::features::FeatureOperation::MoveFace { faces, .. },
                 ) => {
                     bind_face_selection(
+                        ctx,
                         faces,
                         scope,
                         groups,
                         operands,
                         &transition.topology.faces.updated,
-                    );
+                    )?;
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Thicken { faces, .. },
                 ) => {
                     bind_face_selection(
+                        ctx,
                         faces,
                         scope,
                         groups,
                         operands,
                         &transition.topology.faces.updated,
-                    );
+                    )?;
                     bind_body_recipe_face_selection(
                         faces,
                         &feature_id,
@@ -2352,12 +2358,13 @@ pub(crate) fn bind_feature_face_selections(
                     cadmpeg_ir::features::FeatureOperation::SplitFace { targets, .. },
                 ) => {
                     bind_face_selection(
+                        ctx,
                         targets,
                         scope,
                         groups,
                         operands,
                         &transition.topology.faces.updated,
-                    );
+                    )?;
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Hole {
@@ -2378,6 +2385,7 @@ pub(crate) fn bind_feature_face_selections(
         }
         feature.evaluation.set_definition(definition);
     }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6682,51 +6690,51 @@ fn incident_loop_counts_satisfy_sides(counts: &[i64], required: &[Option<i64>]) 
 }
 
 fn bind_face_selection(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::face::DesignFaceOperand],
     updated_face_slots: &[i64],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
-        return;
+        return Ok(());
     };
     if native == &scope.id {
         if let Some(resolved) =
-            crate::design::feature_project::direct_face_selection(None, scope, operands)
-                .unwrap_or(None)
+            crate::design::feature_project::direct_face_selection(ctx, scope, operands)?
         {
             if !matches!(resolved, cadmpeg_ir::features::FaceSelection::Native(_)) {
                 *selection = resolved;
             }
         }
-        return;
+        return Ok(());
     }
     let mut matching_groups = groups.iter().filter(|group| group.id == *native);
     let Some(group) = matching_groups.next() else {
-        return;
+        return Ok(());
     };
     if matching_groups.next().is_some()
         || group.scope_record_index != scope.record_index
         || crate::ids::native_stream(&group.id) != crate::ids::native_stream(&scope.id)
     {
-        return;
+        return Ok(());
     }
     if let Some(resolved) =
         crate::design::face_resolve::resolved_historical_split_face_target_group_with_updated_faces(
-            None,
+            ctx,
             scope,
             scope.previous_history_state_id(),
             group,
             operands,
             updated_face_slots,
-        ).unwrap_or(None)
+        )?
     {
         *selection = resolved;
-        return;
+        return Ok(());
     }
     let Some(stream) = crate::ids::native_stream(&scope.id) else {
-        return;
+        return Ok(());
     };
     let mut faces = Vec::new();
     for record_index in group.members().iter().map(|member| &member.value) {
@@ -6736,17 +6744,17 @@ fn bind_face_selection(
                 && operand.record_index() == *record_index
         });
         let Some(operand) = matches.next() else {
-            return;
+            return Ok(());
         };
         if matches.next().is_some() {
-            return;
+            return Ok(());
         }
         let previous_candidates = &operand.preceding_candidate_faces;
         let candidate = match previous_candidates.as_slice() {
             [face] => face,
             _ => {
                 let [face] = operand.changed_candidate_faces.as_slice() else {
-                    return;
+                    return Ok(());
                 };
                 face
             }
@@ -6755,7 +6763,7 @@ fn bind_face_selection(
             continue;
         }
         if !operand.candidate_faces.contains(candidate) {
-            return;
+            return Ok(());
         }
         faces.push(candidate.clone());
     }
@@ -6765,6 +6773,7 @@ fn bind_face_selection(
             native: native.clone(),
         };
     }
+    Ok(())
 }
 
 fn bind_body_recipe_face_selection(
