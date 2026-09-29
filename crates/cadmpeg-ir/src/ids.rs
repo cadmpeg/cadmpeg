@@ -156,24 +156,35 @@ impl Display for Identity {
 const fn decode_scalar(bytes: &[u8], index: usize) -> (u32, usize) {
     let first = bytes[index];
     if first < 0x80 {
+        // endian-exception: reconstructed-scalar
         (u32::from_be_bytes([0, 0, 0, first]), 1)
     } else if first < 0xe0 {
         (
-            ((u32::from_be_bytes([0, 0, 0, first & 0x1f])) << 6) | (u32::from_be_bytes([0, 0, 0, bytes[index + 1] & 0x3f])),
+            // endian-exception: reconstructed-scalar
+            ((u32::from_be_bytes([0, 0, 0, first & 0x1f])) << 6)
+                // endian-exception: reconstructed-scalar
+                | (u32::from_be_bytes([0, 0, 0, bytes[index + 1] & 0x3f])),
             2,
         )
     } else if first < 0xf0 {
         (
+            // endian-exception: reconstructed-scalar
             ((u32::from_be_bytes([0, 0, 0, first & 0x0f])) << 12)
+                // endian-exception: reconstructed-scalar
                 | ((u32::from_be_bytes([0, 0, 0, bytes[index + 1] & 0x3f])) << 6)
+                // endian-exception: reconstructed-scalar
                 | (u32::from_be_bytes([0, 0, 0, bytes[index + 2] & 0x3f])),
             3,
         )
     } else {
         (
+            // endian-exception: reconstructed-scalar
             ((u32::from_be_bytes([0, 0, 0, first & 0x07])) << 18)
+                // endian-exception: reconstructed-scalar
                 | ((u32::from_be_bytes([0, 0, 0, bytes[index + 1] & 0x3f])) << 12)
+                // endian-exception: reconstructed-scalar
                 | ((u32::from_be_bytes([0, 0, 0, bytes[index + 2] & 0x3f])) << 6)
+                // endian-exception: reconstructed-scalar
                 | (u32::from_be_bytes([0, 0, 0, bytes[index + 3] & 0x3f])),
             4,
         )

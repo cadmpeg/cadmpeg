@@ -43,7 +43,14 @@ fn admitted_pcurve_point_replacement_preserves_weights_and_rejects_short_lanes()
     let mut positions = Vec::new();
     let mut index = 0;
     while curve.pole_rows().point_at(index).is_some() {
-        positions.push(FinitePoint2::new(Point2::new(cadmpeg_core::convert::f64_from_index(index).expect("test index is exactly representable"), 2.0)).unwrap());
+        positions.push(
+            FinitePoint2::new(Point2::new(
+                cadmpeg_core::convert::f64_from_index(index)
+                    .expect("test index is exactly representable"),
+                2.0,
+            ))
+            .unwrap(),
+        );
         index += 1;
     }
     let weights = curve.weights();

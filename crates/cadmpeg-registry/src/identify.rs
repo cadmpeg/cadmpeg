@@ -210,7 +210,11 @@ mod tests {
         for (offset, word) in encoded.iter().enumerate() {
             put_u16(entry, offset * 2, *word);
         }
-        put_u16(entry, 64, u16::try_from(encoded.len() * 2).expect("test name length fits u16"));
+        put_u16(
+            entry,
+            64,
+            u16::try_from(encoded.len() * 2).expect("test name length fits u16"),
+        );
         entry[66] = kind;
         entry[67] = 1;
         put_u32(entry, 68, FREE);

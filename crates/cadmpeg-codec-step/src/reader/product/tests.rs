@@ -841,7 +841,8 @@ fn ps07_duplicate_context_placements_remain_opaque_in_any_order() {
                 retained.data(),
                 Some(
                     &input[usize::try_from(retained.offset()).expect("retained offset fits memory")
-                        ..usize::try_from(retained.offset() + retained.byte_len()).expect("retained end fits memory")]
+                        ..usize::try_from(retained.offset() + retained.byte_len())
+                            .expect("retained end fits memory")]
                 )
             );
         }
@@ -907,7 +908,8 @@ fn ps08_mixed_placement_mechanisms_remain_opaque_in_any_order() {
                 retained.data(),
                 Some(
                     &input[usize::try_from(retained.offset()).expect("retained offset fits memory")
-                        ..usize::try_from(retained.offset() + retained.byte_len()).expect("retained end fits memory")]
+                        ..usize::try_from(retained.offset() + retained.byte_len())
+                            .expect("retained end fits memory")]
                 )
             );
         }
@@ -1379,7 +1381,8 @@ fn ps09_ambiguous_occurrence_owned_placements_remain_opaque() {
             retained.data(),
             Some(
                 &input[usize::try_from(retained.offset()).expect("retained offset fits memory")
-                    ..usize::try_from(retained.offset() + retained.byte_len()).expect("retained end fits memory")]
+                    ..usize::try_from(retained.offset() + retained.byte_len())
+                        .expect("retained end fits memory")]
             )
         );
     }

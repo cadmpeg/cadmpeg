@@ -240,15 +240,15 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
     let control_count = 2049;
     let mut knots = vec![lower, lower];
     knots.extend((1..control_count - 1).map(|index| {
-            cadmpeg_ir::math::interpolate(
-                lower,
-                upper,
-                cadmpeg_core::convert::f64_from_index(index).expect("test index is exact")
-                    / cadmpeg_core::convert::f64_from_index(control_count - 1)
-                        .expect("test control count is exact"),
-            )
-            .expect("finite interior knot")
-            .get()
+        cadmpeg_ir::math::interpolate(
+            lower,
+            upper,
+            cadmpeg_core::convert::f64_from_index(index).expect("test index is exact")
+                / cadmpeg_core::convert::f64_from_index(control_count - 1)
+                    .expect("test control count is exact"),
+        )
+        .expect("finite interior knot")
+        .get()
     }));
     knots.extend([upper, upper]);
     let controls = (0..control_count)

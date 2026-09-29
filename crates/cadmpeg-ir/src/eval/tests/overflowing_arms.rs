@@ -238,7 +238,14 @@ fn a_nurbs_pcurve_whose_point_or_basis_overflows_reports_the_point_it_reached() 
     let degree = 20;
     let knots = [vec![0.0; degree + 1], vec![1.0; degree + 1]].concat();
     let poles = (0..=degree)
-        .map(|index| Point2::new(crate::scalar::FiniteReal::from_index(index).expect("test index is exactly representable").get(), 0.0))
+        .map(|index| {
+            Point2::new(
+                crate::scalar::FiniteReal::from_index(index)
+                    .expect("test index is exactly representable")
+                    .get(),
+                0.0,
+            )
+        })
         .collect();
     let high_degree = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(20, knots, poles, None, false)

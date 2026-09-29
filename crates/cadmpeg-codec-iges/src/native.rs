@@ -7270,7 +7270,9 @@ pub(crate) fn store(
         quarantined_parameter_records.len(),
     ]
     .into_iter()
-    .fold(0_u64, |total, count| total.saturating_add(cadmpeg_core::decode::u64_from_index(count)));
+    .fold(0_u64, |total, count| {
+        total.saturating_add(cadmpeg_core::decode::u64_from_index(count))
+    });
     ctx.charge_entities(native_entity_count, "iges_native_entities")?;
     let namespace = ir.native.namespace_mut("iges");
     namespace.set_arena_from(ctx, "cards", cards)?;

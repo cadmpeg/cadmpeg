@@ -986,7 +986,9 @@ fn property_fields_valid(
         }),
         13 => {
             matches!(record.integer(1), Some(2 | 3))
-                && record.integer(1).and_then(|value| usize::try_from(value).ok())
+                && record
+                    .integer(1)
+                    .and_then(|value| usize::try_from(value).ok())
                     .is_some_and(|value| end == value + 2)
                 && record.number(2).is_some()
                 && record.string(3).is_some()
@@ -1155,7 +1157,9 @@ fn property_fields_valid(
             }),
         36 => {
             matches!(record.integer(1), Some(1 | 2))
-                && record.integer(1).and_then(|value| usize::try_from(value).ok())
+                && record
+                    .integer(1)
+                    .and_then(|value| usize::try_from(value).ok())
                     .is_some_and(|value| end == value + 2)
                 && integer_range(2, 0..=2)
                 && (record.integer(1) == Some(1) || integer_range(3, 0..=2))

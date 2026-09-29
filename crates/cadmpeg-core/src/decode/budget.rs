@@ -388,24 +388,21 @@ impl WorkBudget<'static> {
 
 impl<'a> WorkBudget<'a> {
     pub(super) fn for_session(limit: u64, session: &'a DecodeBudget) -> Self {
-        let limit = match usize::try_from(limit) {
-            Ok(limit) => limit,
-            Err(_) => {
-                drop(session.refuse(
-                    ResourceDimension::WorkUnits,
-                    ResourceFailure::BudgetExceeded,
-                    u64_from_index(usize::MAX),
-                    0,
-                    limit,
-                    "work_budget",
-                ));
-                return Self {
-                    limit: 0,
-                    remaining: Cell::new(None),
-                    recursion_depth: Cell::new(0),
-                    session: Some(session),
-                };
-            }
+        let Ok(limit) = usize::try_from(limit) else {
+            drop(session.refuse(
+                ResourceDimension::WorkUnits,
+                ResourceFailure::BudgetExceeded,
+                u64_from_index(usize::MAX),
+                0,
+                limit,
+                "work_budget",
+            ));
+            return Self {
+                limit: 0,
+                remaining: Cell::new(None),
+                recursion_depth: Cell::new(0),
+                session: Some(session),
+            };
         };
         Self {
             limit,
@@ -434,7 +431,10 @@ impl<'a> WorkBudget<'a> {
             false
         } else {
             if let Some(session) = session {
-                if session.charge_work(u64_from_index(work), "work_budget").is_err() {
+                if session
+                    .charge_work(u64_from_index(work), "work_budget")
+                    .is_err()
+                {
                     self.remaining.set(None);
                     return false;
                 }

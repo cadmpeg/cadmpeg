@@ -353,11 +353,9 @@ pub(super) fn decode(
             local_triangle_bytes,
             _coordinate_index_bytes,
         ) = if pnindex.is_empty() {
-            if triangles
-                .iter()
-                .flatten()
-                .any(|index| *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len())
-            {
+            if triangles.iter().flatten().any(|index| {
+                *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len()
+            }) {
                 push_loss(
                     &mut losses,
                     StepLossCode::DecodeWarning,
@@ -435,14 +433,11 @@ pub(super) fn decode(
                 Some(coordinate_index_bytes),
             )
         } else {
-            if pnindex
-                .iter()
-                .any(|index| *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len())
-                || triangles
-                    .iter()
-                    .flatten()
-                    .any(|index| *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > pnindex.len())
-            {
+            if pnindex.iter().any(|index| {
+                *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len()
+            }) || triangles.iter().flatten().any(|index| {
+                *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > pnindex.len()
+            }) {
                 push_loss(
                     &mut losses,
                     StepLossCode::DecodeWarning,
@@ -466,7 +461,9 @@ pub(super) fn decode(
                     ctx,
                     pnindex.len(),
                     "step_tessellation_pn_vertices",
-                    pnindex.iter().map(|index| vertices[cadmpeg_core::decode::index_from_u32(*index) - 1]),
+                    pnindex
+                        .iter()
+                        .map(|index| vertices[cadmpeg_core::decode::index_from_u32(*index) - 1]),
                 )?,
                 collect_checked(
                     ctx,
@@ -537,9 +534,9 @@ pub(super) fn decode(
                         ctx,
                         coordinate_indices.len(),
                         "step_tessellation_projected_normals",
-                        coordinate_indices
-                            .iter()
-                            .map(|index| source_normals[cadmpeg_core::decode::index_from_u32(*index) - 1]),
+                        coordinate_indices.iter().map(|index| {
+                            source_normals[cadmpeg_core::decode::index_from_u32(*index) - 1]
+                        }),
                     )?)
                 }
                 CoordinateAddressing::PnIndex | CoordinateAddressing::TriangleIndices(_) => {

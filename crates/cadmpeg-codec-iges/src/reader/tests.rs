@@ -410,7 +410,8 @@ fn source_metadata_admits_formatted_values_before_building_attributes() {
     let representation = Representation::FixedAscii;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(representation.as_str().len()) - 1;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(representation.as_str().len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::source_meta(
         &ctx,

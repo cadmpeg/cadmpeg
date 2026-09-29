@@ -2433,7 +2433,9 @@ impl SketchRectangularPattern {
         let column_count = u32::try_from(rows.first()?.len()).ok()?;
         if row_count == 0
             || column_count == 0
-            || rows.iter().any(|row| row.len() != cadmpeg_core::decode::index_from_u32(column_count))
+            || rows
+                .iter()
+                .any(|row| row.len() != cadmpeg_core::decode::index_from_u32(column_count))
         {
             return None;
         }

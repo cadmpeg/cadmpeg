@@ -857,7 +857,10 @@ pub(crate) fn losses(
                 "iges graph loss message",
             )?;
             let code = IgesLossCode::PointerUnresolved;
-            ctx.charge_retained(4 + cadmpeg_core::decode::u64_from_index(code.code().len()), "iges graph loss kind")?;
+            ctx.charge_retained(
+                4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+                "iges graph loss kind",
+            )?;
             let mut note = code.note(message);
             if let Some((offset, tag)) = location {
                 let format =

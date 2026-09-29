@@ -261,8 +261,7 @@ pub fn boundaries_within_resolution(
                 let Some(second_control) = second.get(second_index) else {
                     continue;
                 };
-                let coefficient = binomial(degree, first_index)?
-                    * binomial(degree, second_index)?
+                let coefficient = binomial(degree, first_index)? * binomial(degree, second_index)?
                     / binomial(product_degree, index)?;
                 if !coefficient.is_finite() {
                     return None;

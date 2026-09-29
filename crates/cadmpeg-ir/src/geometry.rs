@@ -3803,7 +3803,12 @@ impl<R> LoftSubdataTable<R> {
         if rows.iter().any(|row| row.columns.len() != column_count) {
             return Err(RaggedLoftTable);
         }
-        Ok(Self { type_code, rows, row_count, column_count: column_count_i64 })
+        Ok(Self {
+            type_code,
+            rows,
+            row_count,
+            column_count: column_count_i64,
+        })
     }
 }
 

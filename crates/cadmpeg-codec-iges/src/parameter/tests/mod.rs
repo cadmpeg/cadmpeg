@@ -56,7 +56,8 @@ fn parameter_summary_refuses_note_slot_and_text_limits() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(b"parameter_records=0".len()) - 1;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(b"parameter_records=0".len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::summary_notes(&records, &ctx);
     assert!(matches!(

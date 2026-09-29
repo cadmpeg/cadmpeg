@@ -3,7 +3,6 @@
 
 use clap::ValueEnum;
 
-
 /// Parses a byte count or file offset written in hexadecimal or decimal.
 ///
 /// `0x`/`0X` selects hexadecimal, anything else is decimal. Underscores
@@ -217,14 +216,29 @@ impl ScalarWindow<'_> {
         }
         match self.ty {
             ScalarType::U8 => ScalarValue::U8(raw[0]),
+            // endian-exception: reconstructed-scalar
             ScalarType::I8 => ScalarValue::I8(i8::from_le_bytes([raw[0]])),
+            // endian-exception: reconstructed-scalar
             ScalarType::U16 => ScalarValue::U16(u16::from_le_bytes([raw[0], raw[1]])),
+            // endian-exception: reconstructed-scalar
             ScalarType::I16 => ScalarValue::I16(i16::from_le_bytes([raw[0], raw[1]])),
-            ScalarType::U32 => ScalarValue::U32(u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])),
-            ScalarType::I32 => ScalarValue::I32(i32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])),
+            ScalarType::U32 => {
+                // endian-exception: reconstructed-scalar
+                ScalarValue::U32(u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]))
+            }
+            ScalarType::I32 => {
+                // endian-exception: reconstructed-scalar
+                ScalarValue::I32(i32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]))
+            }
+            // endian-exception: reconstructed-scalar
             ScalarType::U64 => ScalarValue::U64(u64::from_le_bytes(raw)),
+            // endian-exception: reconstructed-scalar
             ScalarType::I64 => ScalarValue::I64(i64::from_le_bytes(raw)),
-            ScalarType::F32 => ScalarValue::F32(f32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])),
+            ScalarType::F32 => {
+                // endian-exception: reconstructed-scalar
+                ScalarValue::F32(f32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]))
+            }
+            // endian-exception: reconstructed-scalar
             ScalarType::F64 => ScalarValue::F64(f64::from_le_bytes(raw)),
         }
     }

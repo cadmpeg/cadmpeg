@@ -102,8 +102,8 @@ impl Record {
         // written digit by digit rather than padded by a formatter.
         let thousandths = magnitude % 1000;
         for place in [100, 10, 1] {
-            let digit = u8::try_from(thousandths / place % 10)
-                .map_err(|_| "decimal digit exceeds u8")?;
+            let digit =
+                u8::try_from(thousandths / place % 10).map_err(|_| "decimal digit exceeds u8")?;
             self.0.push(char::from(b'0' + digit));
         }
         Ok(())
@@ -216,7 +216,12 @@ fn directory_card(out: &mut Vec<u8>, fields: [&str; 9], sequence: u64) -> Result
     card(out, &data, b'D', sequence)
 }
 
-fn parameter_card(out: &mut Vec<u8>, data: &[u8], owner: u64, sequence: u64) -> Result<(), &'static str> {
+fn parameter_card(
+    out: &mut Vec<u8>,
+    data: &[u8],
+    owner: u64,
+    sequence: u64,
+) -> Result<(), &'static str> {
     assert!(
         data.len() <= PARAMETER_COLUMNS,
         "parameter fragment exceeds the sixty-four data columns"
@@ -433,7 +438,11 @@ fn trimmed_surfaces(scale: Scale) -> Result<Vec<u8>, &'static str> {
             let corners = if loop_index == 0 {
                 unit_square(1000, 0)
             } else {
-                unit_square(150, 100 + 250 * (i64::try_from(loop_index).map_err(|_| "stress index exceeds i64")? - 1))
+                unit_square(
+                    150,
+                    100 + 250
+                        * (i64::try_from(loop_index).map_err(|_| "stress index exceeds i64")? - 1),
+                )
             };
             let model = entities.len();
             entities.push(item(
@@ -525,7 +534,8 @@ fn counted_lists(scale: Scale) -> Result<Vec<u8>, &'static str> {
         record.count(triples);
         let defaulted_tail = index % 2 == 1;
         for tuple in 0..triples {
-            let step = i64::try_from(index * triples + tuple).map_err(|_| "stress index exceeds i64")?;
+            let step =
+                i64::try_from(index * triples + tuple).map_err(|_| "stress index exceeds i64")?;
             record.real(step % 9973 * 3)?;
             record.real(step % 8971 * 5)?;
             if !defaulted_tail || tuple + 1 < triples {
@@ -672,7 +682,11 @@ fn annotation_runs(scale: Scale) -> Result<Vec<u8>, &'static str> {
             record.verbatim(RIGHT_ANGLE);
             record.real(0)?;
             record.integers(&[0, 0]);
-            record.reals(&[(i64::try_from(index).map_err(|_| "stress index exceeds i64")? % 97) * 250, (i64::try_from(string).map_err(|_| "stress index exceeds i64")? % 89) * 250, 0])?;
+            record.reals(&[
+                (i64::try_from(index).map_err(|_| "stress index exceeds i64")? % 97) * 250,
+                (i64::try_from(string).map_err(|_| "stress index exceeds i64")? % 89) * 250,
+                0,
+            ])?;
             record.hollerith(&text);
         }
         entities.push(item(212, 0, "NOTE", INDEPENDENT, record.finish()));
@@ -699,7 +713,11 @@ fn annotation_runs(scale: Scale) -> Result<Vec<u8>, &'static str> {
             record.verbatim(RIGHT_ANGLE);
             record.real(0)?;
             record.integers(&[0, 0]);
-            record.reals(&[(i64::try_from(index).map_err(|_| "stress index exceeds i64")? % 83) * 250, (i64::try_from(string).map_err(|_| "stress index exceeds i64")? % 79) * 250, 0])?;
+            record.reals(&[
+                (i64::try_from(index).map_err(|_| "stress index exceeds i64")? % 83) * 250,
+                (i64::try_from(string).map_err(|_| "stress index exceeds i64")? % 79) * 250,
+                0,
+            ])?;
             record.hollerith(&text);
         }
         entities.push(item(213, 0, "NEWNOTE", INDEPENDENT, record.finish()));
@@ -828,7 +846,10 @@ mod tests {
     #[test]
     #[cfg(target_pointer_width = "64")]
     fn chain_vertex_refuses_index_above_i64_range() {
-        assert_eq!(super::chain_vertex(usize::MAX), Err("chain vertex index exceeds i64"));
+        assert_eq!(
+            super::chain_vertex(usize::MAX),
+            Err("chain vertex index exceeds i64")
+        );
     }
     use super::{generate, Scale, CARD_DATA_COLUMNS, SEQUENCE_COLUMNS};
     use cadmpeg_ir::hash::sha256_hex;
@@ -967,11 +988,10 @@ mod tests {
 
     #[test]
     fn repeated_generation_is_byte_identical() {
-        for ((first_name, first), (second_name, second)) in
-            generate(Scale::Fast)
-                .expect("stress fixture counts fit i64")
-                .into_iter()
-                .zip(generate(Scale::Fast).expect("stress fixture counts fit i64"))
+        for ((first_name, first), (second_name, second)) in generate(Scale::Fast)
+            .expect("stress fixture counts fit i64")
+            .into_iter()
+            .zip(generate(Scale::Fast).expect("stress fixture counts fit i64"))
         {
             assert_eq!(first_name, second_name);
             assert_eq!(first, second, "{first_name}");

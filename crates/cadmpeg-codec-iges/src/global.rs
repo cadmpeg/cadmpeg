@@ -381,7 +381,10 @@ fn admitted_global_loss(
     code: IgesLossCode,
     message: String,
 ) -> Result<LossNote, CodecError> {
-    ctx.charge_retained(4 + cadmpeg_core::decode::u64_from_index(code.code().len()), "iges global loss kind")?;
+    ctx.charge_retained(
+        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+        "iges global loss kind",
+    )?;
     Ok(code.note(message))
 }
 

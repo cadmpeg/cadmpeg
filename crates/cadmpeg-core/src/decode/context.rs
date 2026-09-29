@@ -57,9 +57,13 @@ impl<'a> DecodeContext<'a> {
             let reserve = usize::try_from(reserve)
                 .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, reserve))?;
             let mut buffer = Vec::new();
-            buffer
-                .try_reserve(reserve)
-                .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, u64_from_index(reserve)))?;
+            buffer.try_reserve(reserve).map_err(|_| {
+                root_error(
+                    ResourceFailure::AllocationFailed,
+                    max,
+                    u64_from_index(reserve),
+                )
+            })?;
             let mut chunk =
                 alloc_filled(256 * 1024, 0_u8, "decode root read chunk")?.into_boxed_slice();
             while (u64_from_index(buffer.len())) < cap {
@@ -76,9 +80,9 @@ impl<'a> DecodeContext<'a> {
                 if read == 0 {
                     break;
                 }
-                buffer
-                    .try_reserve(read)
-                    .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, u64_from_index(read)))?;
+                buffer.try_reserve(read).map_err(|_| {
+                    root_error(ResourceFailure::AllocationFailed, max, u64_from_index(read))
+                })?;
                 buffer.extend_from_slice(&chunk[..read]);
             }
             buffer
@@ -102,9 +106,9 @@ impl<'a> DecodeContext<'a> {
                 if read == 0 {
                     break;
                 }
-                buffer
-                    .try_reserve(read)
-                    .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, u64_from_index(read)))?;
+                buffer.try_reserve(read).map_err(|_| {
+                    root_error(ResourceFailure::AllocationFailed, max, u64_from_index(read))
+                })?;
                 buffer.extend_from_slice(&chunk[..read]);
             }
             buffer

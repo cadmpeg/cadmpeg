@@ -1982,10 +1982,9 @@ impl<'a> Builder<'a> {
             let mesh_normals = mesh.vertex_normals();
             if mesh_vertices.is_empty()
                 || mesh_triangles.is_empty()
-                || mesh_triangles
-                    .iter()
-                    .flatten()
-                    .any(|index| cadmpeg_core::decode::index_from_u32(*index) >= mesh_vertices.len())
+                || mesh_triangles.iter().flatten().any(|index| {
+                    cadmpeg_core::decode::index_from_u32(*index) >= mesh_vertices.len()
+                })
                 || (!mesh_normals.is_empty() && mesh_normals.len() != mesh_vertices.len())
             {
                 self.loss(

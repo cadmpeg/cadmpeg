@@ -190,7 +190,9 @@ fn duplicate_first_central_record(mut bytes: Vec<u8>) -> Vec<u8> {
         .windows(4)
         .rposition(|signature| signature == b"PK\x05\x06")
         .expect("ZIP end record");
-    let central_start = cadmpeg_core::decode::index_from_u32(u32::from_le_bytes(bytes[end + 16..end + 20].try_into().unwrap()));
+    let central_start = cadmpeg_core::decode::index_from_u32(u32::from_le_bytes(
+        bytes[end + 16..end + 20].try_into().unwrap(),
+    ));
     let name_len = usize::from(u16::from_le_bytes(
         bytes[central_start + 28..central_start + 30]
             .try_into()
@@ -215,7 +217,9 @@ fn duplicate_first_central_record(mut bytes: Vec<u8>) -> Vec<u8> {
     bytes[new_end + 8..new_end + 10].copy_from_slice(&(count + 1).to_le_bytes());
     bytes[new_end + 10..new_end + 12].copy_from_slice(&(count + 1).to_le_bytes());
     let size = u32::from_le_bytes(bytes[new_end + 12..new_end + 16].try_into().unwrap());
-    bytes[new_end + 12..new_end + 16].copy_from_slice(&(size + u32::try_from(record_len).expect("test record length fits u32")).to_le_bytes());
+    bytes[new_end + 12..new_end + 16].copy_from_slice(
+        &(size + u32::try_from(record_len).expect("test record length fits u32")).to_le_bytes(),
+    );
     bytes
 }
 
@@ -227,7 +231,8 @@ fn mark_entries_encrypted(mut bytes: Vec<u8>) -> Vec<u8> {
                 let file = archive.by_index(index).unwrap();
                 (
                     usize::try_from(file.header_start()).expect("test header offset fits memory"),
-                    usize::try_from(file.central_header_start()).expect("test central offset fits memory"),
+                    usize::try_from(file.central_header_start())
+                        .expect("test central offset fits memory"),
                 )
             })
             .collect::<Vec<_>>()
@@ -244,7 +249,8 @@ fn mark_entries_encrypted(mut bytes: Vec<u8>) -> Vec<u8> {
 
 fn corrupt_first_payload(mut bytes: Vec<u8>) -> Vec<u8> {
     let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
-    let data_start = usize::try_from(archive.by_index(0).unwrap().data_start().unwrap()).expect("test data offset fits memory");
+    let data_start = usize::try_from(archive.by_index(0).unwrap().data_start().unwrap())
+        .expect("test data offset fits memory");
     bytes[data_start] ^= 1;
     bytes
 }

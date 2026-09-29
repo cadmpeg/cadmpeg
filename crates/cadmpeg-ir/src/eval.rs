@@ -12,10 +12,10 @@
 //! [`model_curve_point_by_id`] resolves construction-backed curves whose
 //! parameterization is established by model entities.
 
+use cadmpeg_core::convert::f64_from_index;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use cadmpeg_core::convert::f64_from_index;
 
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::nurbs::bezier::{homogeneous_spans, positive_controls};
@@ -1448,8 +1448,7 @@ pub fn nurbs_surface_parameter_near_point(
                 let Some(u_index) = f64_from_index(u_index) else {
                     return Ok(None);
                 };
-                let Some(u) =
-                    crate::math::interpolate(u_start, u_end, u_index / COARSE_GRID_F64)
+                let Some(u) = crate::math::interpolate(u_start, u_end, u_index / COARSE_GRID_F64)
                 else {
                     return Ok(None);
                 };
@@ -1457,11 +1456,9 @@ pub fn nurbs_surface_parameter_near_point(
                     let Some(v_index) = f64_from_index(v_index) else {
                         return Ok(None);
                     };
-                    let Some(v) = crate::math::interpolate(
-                        v_start,
-                        v_end,
-                        v_index / COARSE_GRID_F64,
-                    ) else {
+                    let Some(v) =
+                        crate::math::interpolate(v_start, v_end, v_index / COARSE_GRID_F64)
+                    else {
                         return Ok(None);
                     };
                     let Some(candidate) =
@@ -3855,7 +3852,8 @@ fn curve_derivative_evaluation(
             )
         }
         SolvedCurveGeometry::Polyline(polyline) => {
-            let (points, parameters) = polyline_samples(polyline).ok_or(EvaluationFailure::NoValue)?;
+            let (points, parameters) =
+                polyline_samples(polyline).ok_or(EvaluationFailure::NoValue)?;
             let tangent = polyline_tangent(&points, &parameters, t)?;
             Ok(if second { FiniteVector3::ZERO } else { tangent })
         }
@@ -6873,8 +6871,7 @@ fn scalar_unary_sweep_law_differential(
             let (value, sign, denominator) = match operator {
                 "ARCTAN" | "ARCOT" => {
                     let hypotenuse = operand.value.hypot_one_nonzero();
-                    let denominator =
-                        ScaledValue::product_of_nonzero([hypotenuse, hypotenuse]);
+                    let denominator = ScaledValue::product_of_nonzero([hypotenuse, hypotenuse]);
                     if operator == "ARCTAN" {
                         (x.atan(), 1.0, denominator)
                     } else {
@@ -6899,8 +6896,7 @@ fn scalar_unary_sweep_law_differential(
                 _ => {
                     let magnitude = NonZeroReal::new(x).ok_or(no_value)?.magnitude();
                     let hypotenuse = operand.value.hypot_one_nonzero();
-                    let denominator =
-                        ScaledValue::product_of_nonzero([magnitude, hypotenuse]);
+                    let denominator = ScaledValue::product_of_nonzero([magnitude, hypotenuse]);
                     let inverse = 1.0 / x;
                     let value = if inverse.is_finite() {
                         inverse.asinh()

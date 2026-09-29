@@ -625,7 +625,10 @@ fn elevate_bezier_homogeneous(
             return Ok(None);
         };
         if let Some(ctx) = ctx {
-            ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(next_count), "iges composite Bezier elevated net")?;
+            ctx.charge_collection_items(
+                cadmpeg_core::decode::u64_from_index(next_count),
+                "iges composite Bezier elevated net",
+            )?;
         }
         let mut next = reserve_admitted_vec(next_count, "iges composite Bezier elevated net")?;
         next.push(elevated[0]);
@@ -1815,10 +1818,16 @@ fn bounded_nurbs_for_id(
     if depth >= depth_limit {
         let requested = cadmpeg_core::decode::u64_from_index(depth.saturating_add(1));
         return Err(CompositeCurveError::Budget(match ctx {
-            Some(ctx) => {
-                ctx.refuse_codec_limit("iges_composite_depth", cadmpeg_core::decode::u64_from_index(depth_limit), requested)
-            }
-            None => refuse_local_limit("iges_composite_depth", cadmpeg_core::decode::u64_from_index(depth_limit), requested),
+            Some(ctx) => ctx.refuse_codec_limit(
+                "iges_composite_depth",
+                cadmpeg_core::decode::u64_from_index(depth_limit),
+                requested,
+            ),
+            None => refuse_local_limit(
+                "iges_composite_depth",
+                cadmpeg_core::decode::u64_from_index(depth_limit),
+                requested,
+            ),
         }));
     }
     let curve = match index {

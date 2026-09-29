@@ -140,11 +140,14 @@ impl SubdCage {
                 .edges
                 .iter()
                 .map(|use_| {
-                    let edge = self.edges.get(cadmpeg_core::decode::index_from_u32(use_.edge)).ok_or_else(|| {
-                        SubdError::Admission(format!(
-                            "faces[{index}].edges references a missing edge"
-                        ))
-                    })?;
+                    let edge = self
+                        .edges
+                        .get(cadmpeg_core::decode::index_from_u32(use_.edge))
+                        .ok_or_else(|| {
+                            SubdError::Admission(format!(
+                                "faces[{index}].edges references a missing edge"
+                            ))
+                        })?;
                     Ok(if use_.reversed {
                         [edge.vertices[1], edge.vertices[0]]
                     } else {
@@ -169,7 +172,11 @@ impl SubdCage {
                 ("edge_pairs", &symmetry.edge_pairs, self.edges.len()),
                 ("vertex_pairs", &symmetry.vertex_pairs, self.vertices.len()),
             ] {
-                if pairs.iter().flatten().any(|index| cadmpeg_core::decode::index_from_u32(*index) >= count) {
+                if pairs
+                    .iter()
+                    .flatten()
+                    .any(|index| cadmpeg_core::decode::index_from_u32(*index) >= count)
+                {
                     return Err(SubdError::Admission(format!(
                         "symmetries.{field} contains an out-of-range index"
                     )));
@@ -196,23 +203,33 @@ impl SubdCage {
                     continue;
                 };
                 if let Some(edge) = edge {
-                    let edge = self.edges.get(cadmpeg_core::decode::index_from_u32(*edge)).ok_or_else(|| {
-                        SubdError::Admission(format!(
-                            "vertices[{index}].secondary_grips edge is out of range"
-                        ))
-                    })?;
-                    if !edge.vertices.iter().any(|owner| cadmpeg_core::decode::index_from_u32(*owner) == index) {
+                    let edge = self
+                        .edges
+                        .get(cadmpeg_core::decode::index_from_u32(*edge))
+                        .ok_or_else(|| {
+                            SubdError::Admission(format!(
+                                "vertices[{index}].secondary_grips edge is out of range"
+                            ))
+                        })?;
+                    if !edge
+                        .vertices
+                        .iter()
+                        .any(|owner| cadmpeg_core::decode::index_from_u32(*owner) == index)
+                    {
                         return Err(SubdError::Admission(format!(
                             "vertices[{index}].secondary_grips edge is not incident to its owner"
                         )));
                     }
                 }
                 if let Some(face) = sector_face {
-                    let face = self.faces.get(cadmpeg_core::decode::index_from_u32(*face)).ok_or_else(|| {
-                        SubdError::Admission(format!(
-                            "vertices[{index}].secondary_grips sector_face is out of range"
-                        ))
-                    })?;
+                    let face = self
+                        .faces
+                        .get(cadmpeg_core::decode::index_from_u32(*face))
+                        .ok_or_else(|| {
+                            SubdError::Admission(format!(
+                                "vertices[{index}].secondary_grips sector_face is out of range"
+                            ))
+                        })?;
                     if !face.edges.iter().any(|use_| {
                         self.edges[cadmpeg_core::decode::index_from_u32(use_.edge)]
                             .vertices
