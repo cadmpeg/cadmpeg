@@ -35,9 +35,11 @@ fn offset_plane_frame_pair_accepts_complete_matrix_frames() {
     payload.extend(frame(0.0));
 
     let (offset, reference) = offset_reference_plane_frame_pair(
+        &cadmpeg_test_support::service_decode_context(),
         &payload,
         cadmpeg_ir::scalar::Length::new(27.25).unwrap(),
     )
+    .unwrap()
     .unwrap();
     assert_eq!(offset.0, Point3::new(-sine * 27.25, 0.0, cosine * 27.25));
     assert_eq!(reference.0, Point3::new(0.0, 0.0, 0.0));
