@@ -3,7 +3,6 @@
 
 use crate::curve::curve_scalar_lane;
 use crate::curve::depdb_cross_section_rows;
-use crate::curve::expression_helix;
 use crate::curve::expression_records;
 use crate::curve::fc02_short_pcurve_endpoints;
 use crate::curve::fc05_cylinder_cap_pairs;
@@ -37,6 +36,11 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
+
+fn expression_helix(record: &crate::curve::CurveExpressionRecord) -> Option<CurveExpressionHelix> {
+    crate::decode::with_test_decode_ctx(|ctx| crate::curve::expression_helix(ctx, record))
+        .expect("service helix admission")
+}
 
 fn two_chart_samples_service(
     payload: &[u8],

@@ -38,8 +38,12 @@ fn curve_expression_frame_admits_only_finite_local_origin() {
     nonfinite[9] = f64::NAN;
     assert!(cadmpeg_ir::units::FiniteVector::new(nonfinite).is_none());
 
-    assert!(crate::curve::expression_helix(&record).is_some());
-    assert!(super::curve_expression_helix_definition(&record).is_some());
+    let helix = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::curve::expression_helix(ctx, &record)
+    })
+    .expect("service helix admission")
+    .expect("affine helix");
+    assert!(super::curve_expression_helix_definition(&record, &helix).is_some());
 }
 
 #[test]

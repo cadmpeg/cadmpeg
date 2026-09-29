@@ -50,8 +50,8 @@ type CurveExpressionParameterOrder = (Vec<u32>, HashSet<(usize, usize)>);
 
 fn curve_expression_helix_definition(
     record: &crate::curve::CurveExpressionRecord,
+    helix: &crate::curve::CurveExpressionHelix,
 ) -> Option<ProceduralCurveDefinition> {
-    let helix = crate::curve::expression_helix(record)?;
     let slots = record.local_system.as_ref()?.explicit_slots?.get();
     let u = Vector3::new(slots[0], slots[1], slots[2]);
     let v = Vector3::new(slots[6], slots[7], slots[8]);
@@ -844,8 +844,10 @@ pub(super) fn transfer_curve_expression_features(
             "curve_expression_feature",
             Exactness::Derived,
         );
-        let helix = crate::curve::expression_helix(record);
-        let placed_helix = curve_expression_helix_definition(record);
+        let helix = crate::curve::expression_helix(ctx, record)?;
+        let placed_helix = helix
+            .as_ref()
+            .and_then(|helix| curve_expression_helix_definition(record, helix));
         let neutral_helix =
             helix
                 .as_ref()
