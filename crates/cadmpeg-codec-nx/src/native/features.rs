@@ -6312,59 +6312,68 @@ pub(super) fn feature_sketch_payload_names(
     constructions: &[FeatureSketchConstructionInputs],
 ) -> Result<Vec<FeaturePayloadName>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    let projected = constructions
-        .iter()
-        .map(
-            |construction| -> Result<Vec<FeaturePayloadName>, CodecError> {
-                let mut data_blocks = construction
-                    .members
-                    .iter()
-                    .map(|member| member.data_block.clone())
-                    .collect::<Vec<_>>();
-                data_blocks.push(construction.terminal_data_block.clone());
-                let Some(joined) = JoinedPayload::from_source(ctx, data_blocks.iter(), &blocks)? else {
-                    return Ok(Vec::new());
-                };
-                let construction_payload = construction.id.replacen(
-                    "sketch-construction-inputs",
-                    "sketch-construction-payload",
-                    1,
-                );
-                crate::om::name_field::scan(ctx, joined.bytes())?
-                    .into_iter()
-                    .enumerate()
-                    .map(
-                        |(ordinal, field)| -> Result<Option<FeaturePayloadName>, CodecError> {
-                            let relative = field.offset() as u64;
-                            let Some(source_offset) = joined.source_offset(relative) else {
-                                return Ok(None);
-                            };
-                            let Some(frame) =
-                                field.into_native(ctx, |offset| joined.source_offset(offset))?
-                            else {
-                                return Ok(None);
-                            };
-                            Ok(Some(FeaturePayloadName {
-                                id: format!(
-                                    "nx:feature-history:sketch-payload-name#{}-{ordinal:010}",
-                                    construction_payload
-                                        .rsplit_once('#')
-                                        .map_or("unknown", |(_, key)| key)
-                                ),
-                                operation_label: construction.operation_label.clone(),
-                                construction_payload: construction_payload.clone(),
-                                ordinal: ordinal as u32,
-                                frame,
-                                source_offset,
-                            }))
-                        },
-                    )
-                    .collect::<Result<Vec<_>, _>>()
-                    .map(|values| values.into_iter().flatten().collect())
-            },
-        )
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(projected.into_iter().flatten().collect())
+    let mut names = Vec::new();
+    for construction in constructions {
+        let count = construction.members.len().checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX sketch name source blocks", 0, 1))?;
+        let bytes = count.checked_mul(std::mem::size_of::<&String>())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX sketch name source blocks", 0, 1))?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "NX sketch name source blocks")?;
+        let _ids_reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(bytes), "NX sketch name source blocks")?;
+        let mut ids = Vec::new();
+        ids.try_reserve_exact(count)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch name source blocks", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+        ids.extend(construction.members.iter().map(|member| &member.data_block));
+        ids.push(&construction.terminal_data_block);
+        let Some(joined) = JoinedPayload::from_source(ctx, ids.iter().copied(), &blocks)? else {
+            continue;
+        };
+        let old = "sketch-construction-inputs";
+        let new = "sketch-construction-payload";
+        let construction_payload = if let Some(start) = construction.id.find(old) {
+            let end = start.checked_add(old.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("NX sketch payload identity", 0, 1))?;
+            let length = construction.id.len().checked_sub(old.len())
+                .and_then(|length| length.checked_add(new.len()))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX sketch payload identity", 0, 1))?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX sketch payload identity")?;
+            let mut id = String::new();
+            id.try_reserve_exact(length)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch payload identity", 0, 1))?;
+            id.push_str(&construction.id[..start]);
+            id.push_str(new);
+            id.push_str(&construction.id[end..]);
+            id
+        } else {
+            copy_operation_text(ctx, &construction.id, "NX sketch payload identity")?
+        };
+        let key = construction_payload.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        for (ordinal, field) in crate::om::name_field::scan(ctx, joined.bytes())?.into_iter().enumerate() {
+            let relative = cadmpeg_core::decode::u64_from_index(field.offset());
+            let Some(source_offset) = joined.source_offset(relative) else {
+                continue;
+            };
+            let Some(frame) = field.into_native(ctx, |offset| joined.source_offset(offset))? else {
+                continue;
+            };
+            let ordinal_u32 = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX sketch payload name ordinal", 0, 1))?;
+            let id = format_feature_history_id(ctx, "sketch-payload-name", key, ordinal, None)?;
+            ctx.charge_collection_items(1, "NX sketch payload names")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeaturePayloadName>()), "NX sketch payload name record")?;
+            names.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch payload names", 0, 1))?;
+            names.push(FeaturePayloadName {
+                id,
+                operation_label: copy_operation_text(ctx, &construction.operation_label, "NX sketch payload name label")?,
+                construction_payload: copy_operation_text(ctx, &construction_payload, "NX sketch payload name owner")?,
+                ordinal: ordinal_u32,
+                frame,
+                source_offset,
+            });
+        }
+    }
+    Ok(names)
 }
 
 /// Join complete name-delimited intervals to their framed scalar fields.
