@@ -4809,10 +4809,13 @@ pub(crate) fn bind_face_operand_history_candidates(
     if projection_was_finalized(histories) {
         return Ok(());
     }
-    let recipe_record_indices = recipes
-        .iter()
-        .filter_map(|recipe| Some((recipe.id.as_str(), recipe.record_index?.value)))
-        .collect::<HashMap<_, _>>();
+    let recipe_record_indices = history_index(
+        decode,
+        recipes
+            .iter()
+            .filter_map(|recipe| Some((recipe.id.as_str(), recipe.record_index?.value))),
+        "index F3D face operand recipe records",
+    )?;
     for operand in &mut *operands {
         operand.preceding_candidate_faces.clear();
         operand.changed_candidate_faces.clear();
@@ -5479,14 +5482,9 @@ fn resolve_thread_face_by_transition(
                 && cylinder.radius + tolerance >= minimum_radius
                 && cylinder.radius <= maximum_radius + tolerance)
                 .then_some(face)
-        })
-        .collect::<Vec<_>>();
-    matching_faces.sort_unstable();
-    matching_faces.dedup();
-    let [face] = matching_faces.as_slice() else {
-        return None;
-    };
-    Some(*face)
+        });
+    let face = matching_faces.next()?;
+    matching_faces.all(|candidate| candidate == face).then_some(face)
 }
 
 fn grouped_reference_face_candidate(
@@ -5501,19 +5499,15 @@ fn grouped_reference_face_candidate(
     {
         return None;
     }
-    let topology_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
     let mut candidates = operand
         .recipe_references
         .iter()
         .map(|reference| reference.design_reference)
-        .filter(|reference| topology_faces.contains(reference) && changed_faces.contains(reference))
-        .collect::<Vec<_>>();
-    candidates.sort_unstable();
-    candidates.dedup();
-    let [face] = candidates.as_slice() else {
-        return None;
-    };
-    Some(crate::ids::brep_face_id(*face))
+        .filter(|reference| topology.faces.contains(reference) && changed_faces.contains(reference));
+    let face = candidates.next()?;
+    candidates
+        .all(|candidate| candidate == face)
+        .then(|| crate::ids::brep_face_id(face))
 }
 
 fn relation_members(
@@ -7351,14 +7345,9 @@ fn surface_patch_edge_operand_slot(
 }
 
 fn common_surface_patch_reference(left: [u32; 2], right: [u32; 2]) -> Option<u32> {
-    let common = left
-        .into_iter()
-        .filter(|reference| right.contains(reference))
-        .collect::<Vec<_>>();
-    let [reference] = common.as_slice() else {
-        return None;
-    };
-    Some(*reference)
+    let mut common = left.into_iter().filter(|reference| right.contains(reference));
+    let reference = common.next()?;
+    common.next().is_none().then_some(reference)
 }
 
 fn bind_active_edge_operand_candidates(
@@ -9050,7 +9039,7 @@ pub(crate) fn bind_mirror_selection_planes(
         if matching_groups.next().is_some() {
             continue;
         }
-        let matching_operands = operands
+        let mut matching_operands = operands
             .iter()
             .filter(|operand| {
                 crate::ids::native_stream(&operand.id) == stream.as_deref()
@@ -9058,9 +9047,12 @@ pub(crate) fn bind_mirror_selection_planes(
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == 0
                     && operand.record_index() == selection_record_index
-            })
-            .collect::<Vec<_>>();
-        let matching_face_operands = face_operands
+            });
+        let matching_operand = matching_operands.next();
+        if matching_operands.next().is_some() {
+            continue;
+        }
+        let mut matching_face_operands = face_operands
             .iter()
             .filter(|operand| {
                 crate::ids::native_stream(&operand.id) == stream.as_deref()
@@ -9068,13 +9060,13 @@ pub(crate) fn bind_mirror_selection_planes(
                     && operand.group_record_index() == Some(group.record_index)
                     && operand.group_member_ordinal() == Some(0)
                     && operand.record_index() == selection_record_index
-            })
-            .collect::<Vec<_>>();
-        if matching_operands.len() > 1 || matching_face_operands.len() > 1 {
+            });
+        let matching_face_operand = matching_face_operands.next();
+        if matching_face_operands.next().is_some() {
             continue;
         }
-        let plane = if let [operand] = matching_operands.as_slice() {
-            if !matching_face_operands.is_empty() {
+        let plane = if let Some(operand) = matching_operand {
+            if matching_face_operand.is_some() {
                 continue;
             }
             let mut matching_identities = identities.iter().filter(|identity| {
@@ -9103,7 +9095,7 @@ pub(crate) fn bind_mirror_selection_planes(
                 };
                 historical_mirror_plane(decode, &candidate, previous_state_id, histories)?
             }
-        } else if let [operand] = matching_face_operands.as_slice() {
+        } else if let Some(operand) = matching_face_operand {
             historical_mirror_face_operand_plane(operand, history, previous_state_id)
         } else {
             continue;
