@@ -106,7 +106,17 @@ pub(super) fn emit_annotation_records(
         "ASM annotation procedural IDs",
     )?;
     for record in records {
-        let entity_id = id(format, record.index as i64).into_string();
+        let entity_id = id(
+            format,
+            i64::try_from(record.index).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "ASM record index",
+                    9_223_372_036_854_775_807,
+                    cadmpeg_core::decode::u64_from_index(record.index),
+                )
+            })?,
+        )
+        .into_string();
         if emitted_ids.contains(entity_id.as_str()) {
             let mut derived_fields = Vec::new();
             match record.head() {
@@ -148,7 +158,7 @@ pub(super) fn emit_annotation_records(
             out.annotation_records.push(AnnotationRecord {
                 id: entity_id,
                 stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
-                offset: record.offset as u64,
+                offset: cadmpeg_core::decode::u64_from_index(record.offset),
                 tag: AnnotationTag::Record(
                     ctx.copy_retained_text(&record.name, "ASM annotation record name")?,
                 ),
@@ -161,7 +171,7 @@ pub(super) fn emit_annotation_records(
             out.annotation_records.push(AnnotationRecord {
                 id: attribute_id,
                 stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
-                offset: record.offset as u64,
+                offset: cadmpeg_core::decode::u64_from_index(record.offset),
                 tag: AnnotationTag::Record(
                     ctx.copy_retained_text(&record.name, "ASM annotation record name")?,
                 ),
@@ -174,7 +184,7 @@ pub(super) fn emit_annotation_records(
             out.annotation_records.push(AnnotationRecord {
                 id: unknown_id.into_string(),
                 stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
-                offset: record.offset as u64,
+                offset: cadmpeg_core::decode::u64_from_index(record.offset),
                 tag: AnnotationTag::Record(
                     ctx.copy_retained_text(&record.name, "ASM annotation record name")?,
                 ),
@@ -202,7 +212,7 @@ pub(super) fn emit_annotation_records(
                 out.annotation_records.push(AnnotationRecord {
                     id: synthetic_id,
                     stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
-                    offset: record.offset as u64,
+                    offset: cadmpeg_core::decode::u64_from_index(record.offset),
                     tag,
                     derived_fields: Vec::new(),
                 });
@@ -229,7 +239,7 @@ pub(super) fn emit_annotation_records(
         out.annotation_records.push(AnnotationRecord {
             id: ctx.copy_retained_text(entity_id, "ASM synthetic annotation id")?,
             stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
-            offset: record.offset as u64,
+            offset: cadmpeg_core::decode::u64_from_index(record.offset),
             tag,
             derived_fields: Vec::new(),
         });

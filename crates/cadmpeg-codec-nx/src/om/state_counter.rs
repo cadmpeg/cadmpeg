@@ -173,15 +173,7 @@ impl StateCounterMap {
         };
         let rest_count = row_count - 2;
         let operation = "NX operation-state counter rows";
-        let count = u64_from_index(rest_count);
-        ctx.charge_collection_items(count, operation)?;
-        let retained = count
-            .checked_mul(u64_from_index(std::mem::size_of::<StateCounter<usize>>()))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count))?;
-        ctx.charge_retained(retained, operation)?;
-        let mut rest = Vec::new();
-        rest.try_reserve_exact(rest_count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+        let mut rest = ctx.retained_vec(rest_count, operation)?;
         let Some(mut cursor) = second_at.checked_add(second.byte_len()) else {
             return Ok(None);
         };

@@ -38,28 +38,12 @@ use std::num::NonZeroU8;
 
 mod borrowed_wires;
 
-use super::copy_operation_text;
 use super::format_feature_child_id;
 use super::format_feature_history_id;
 use super::offset_data_block_bytes;
 
 use super::charged_unique_offset_data_block;
 use super::visit_feature_history_operation_records;
-
-fn reserve_pattern_output<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    output: &mut Vec<T>,
-    operation: &'static str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
-        operation,
-    )?;
-    output
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
-}
 
 /// Ordered construction reference carried by a bounded pattern payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -992,7 +976,7 @@ pub(in crate::native) fn feature_pattern_references(
                     }
                 };
                 if let Err(error) =
-                    reserve_pattern_output(ctx, &mut references, "NX pattern references")
+                    ctx.reserve_retained_vec(&mut references, 1, "NX pattern references")
                 {
                     failure = Some(error);
                     return;
@@ -1068,7 +1052,7 @@ pub(in crate::native) fn feature_pattern_counted_reference_lanes(
                 }
             };
             if let Err(error) =
-                reserve_pattern_output(ctx, &mut lanes, "NX counted pattern reference lanes")
+                ctx.reserve_retained_vec(&mut lanes, 1, "NX counted pattern reference lanes")
             {
                 refusal = Some(error);
                 return;
@@ -1136,13 +1120,12 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
         {
-            ctx.charge_collection_items(1, "NX pattern construction graph")?;
-            graph_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                &FeaturePatternReference,
-            >()))?;
-            graph.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX pattern construction graph", 0, 1)
-            })?;
+            ctx.reserve_scoped_vec(
+                &mut graph_reservation,
+                &mut graph,
+                1,
+                "NX pattern construction graph",
+            )?;
             graph.push(reference);
         }
         let sort_work = graph
@@ -1181,19 +1164,8 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             let Some(block) = reference.data_block.as_deref() else {
                 continue 'operations;
             };
-            ctx.charge_collection_items(1, "NX pattern construction block IDs")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                "NX pattern construction block ID slots",
-            )?;
-            data_blocks.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX pattern construction block IDs", 0, 1)
-            })?;
-            data_blocks.push(copy_operation_text(
-                ctx,
-                block,
-                "NX pattern construction block ID",
-            )?);
+            ctx.reserve_retained_vec(&mut data_blocks, 1, "NX pattern construction block IDs")?;
+            data_blocks.push(ctx.copy_retained_text(block, "NX pattern construction block ID")?);
         }
         let Some(store) = data_blocks
             .first()
@@ -1221,39 +1193,24 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("NX pattern construction payload identity", 0, 1)
             })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX pattern construction payload identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX pattern construction payload identity", 0, 1)
-        })?;
+        let mut id = ctx.retained_string(id_len, "NX pattern construction payload identity")?;
         id.push_str(prefix);
         id.push_str(operation_key);
         let mut construction_references = Vec::new();
         for reference in &graph {
-            ctx.charge_collection_items(1, "NX pattern construction reference IDs")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                "NX pattern construction reference ID slots",
+            ctx.reserve_retained_vec(
+                &mut construction_references,
+                1,
+                "NX pattern construction reference IDs",
             )?;
-            construction_references.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX pattern construction reference IDs", 0, 1)
-            })?;
-            construction_references.push(copy_operation_text(
-                ctx,
-                &reference.id,
-                "NX pattern construction reference ID",
-            )?);
+            construction_references.push(
+                ctx.copy_retained_text(&reference.id, "NX pattern construction reference ID")?,
+            );
         }
         let record = FeatureConstructionPayload {
             id,
-            operation_label: copy_operation_text(
-                ctx,
-                operation_label,
-                "NX pattern construction operation label",
-            )?,
+            operation_label: ctx
+                .copy_retained_text(operation_label, "NX pattern construction operation label")?,
             owner: FeatureConstructionOwner::Pattern {
                 operation_kind,
                 reference_layout: graph[0].layout,
@@ -1261,7 +1218,7 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             },
             content,
         };
-        reserve_pattern_output(ctx, &mut output, "NX pattern construction payloads")?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX pattern construction payloads")?;
         output.push(record);
     }
     Ok(output)
@@ -1291,21 +1248,17 @@ pub(in crate::native) fn feature_pattern_construction_strings(
             let ordinal_u32 = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX pattern string ordinal", 0, 1))?;
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
-            let value = copy_operation_text(
-                ctx,
-                value.value.as_str(),
-                "NX pattern construction string value",
-            )?;
+            let value = ctx
+                .copy_retained_text(value.value.as_str(), "NX pattern construction string value")?;
             let value = PrintableString::new(value)
                 .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?;
-            let operation_label = copy_operation_text(
-                ctx,
+            let operation_label = ctx.copy_retained_text(
                 &payload.operation_label,
                 "NX pattern construction string label",
             )?;
             let construction_payload =
-                copy_operation_text(ctx, &payload.id, "NX pattern construction string payload")?;
-            reserve_pattern_output(ctx, &mut strings, "NX pattern construction strings")?;
+                ctx.copy_retained_text(&payload.id, "NX pattern construction string payload")?;
+            ctx.reserve_retained_vec(&mut strings, 1, "NX pattern construction strings")?;
             strings.push(FeaturePatternConstructionString {
                 id,
                 operation_label,
@@ -1350,10 +1303,10 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
                 .map_err(|_| ctx.refuse_codec_limit("NX pattern fixed lane ordinal", 0, 1))?;
             let id = format_feature_child_id(ctx, &payload.id, "-fixed-lane-", ordinal)?;
             let operation_label =
-                copy_operation_text(ctx, &payload.operation_label, "NX pattern fixed lane label")?;
+                ctx.copy_retained_text(&payload.operation_label, "NX pattern fixed lane label")?;
             let construction_payload =
-                copy_operation_text(ctx, &payload.id, "NX pattern fixed lane payload")?;
-            reserve_pattern_output(ctx, &mut lanes, "NX pattern construction fixed lanes")?;
+                ctx.copy_retained_text(&payload.id, "NX pattern fixed lane payload")?;
+            ctx.reserve_retained_vec(&mut lanes, 1, "NX pattern construction fixed lanes")?;
             lanes.push(FeaturePatternConstructionFixedLane {
                 id,
                 operation_label,
@@ -1430,7 +1383,7 @@ pub(in crate::native) fn feature_pattern_transform_lanes(
                 }
             };
             if let Err(error) =
-                reserve_pattern_output(ctx, &mut lanes, "NX pattern transform lanes")
+                ctx.reserve_retained_vec(&mut lanes, 1, "NX pattern transform lanes")
             {
                 failure = Some(error);
                 return;
@@ -1510,7 +1463,7 @@ pub(in crate::native) fn feature_multi_instance_output_lanes(
                 }
             };
             if let Err(error) =
-                reserve_pattern_output(ctx, &mut lanes, "NX multi-instance output lanes")
+                ctx.reserve_retained_vec(&mut lanes, 1, "NX multi-instance output lanes")
             {
                 failure = Some(error);
                 return;
@@ -1595,7 +1548,7 @@ pub(in crate::native) fn feature_identical_instance_output_lanes(
                 }
             };
             if let Err(error) =
-                reserve_pattern_output(ctx, &mut lanes, "NX identical-instance output lanes")
+                ctx.reserve_retained_vec(&mut lanes, 1, "NX identical-instance output lanes")
             {
                 failure = Some(error);
                 return;

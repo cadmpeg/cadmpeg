@@ -576,7 +576,7 @@ fn retain_v1_record(
         &cadmpeg_ir::identity_namespace!("rhino", "legacy", "record"),
         key,
     );
-    let offset = range.start as u64;
+    let offset = cadmpeg_core::decode::u64_from_index(range.start);
     Ok(match retained_end {
         Some(end) => {
             *retained_bytes = end;
@@ -590,7 +590,7 @@ fn retain_v1_record(
         None => UnknownRecord::unavailable(
             id,
             offset,
-            bytes.len() as u64,
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
             sha256_hex(bytes),
             Vec::new(),
         ),
@@ -2181,7 +2181,9 @@ fn append_legacy_brep(
     )?;
     admit_v1_values::<PcurveUse>(ctx, trim_count, "Rhino V1 Brep pcurve uses")?;
     for (class, samples) in class_samples {
-        let count = samples.len() as f64;
+        let count = cadmpeg_core::convert::f64_from_index(samples.len()).ok_or_else(|| {
+            CodecError::Malformed("Rhino V1 endpoint count exceeds exact float range".into())
+        })?;
         let (position, tolerance) = samples.into_iter().fold(
             (Point3::new(0.0, 0.0, 0.0), 0.0_f64),
             |(sum, maximum_tolerance), (point, sample_tolerance)| {
@@ -2892,9 +2894,24 @@ fn legacy_mesh(
     if let Some(normals) = normals.as_mut() {
         for _ in 0..point_count {
             normals.push(Vector3::new(
-                f64::from(reader.u8().map_err(|error| malformed(&error))? as i8) / 127.0,
-                f64::from(reader.u8().map_err(|error| malformed(&error))? as i8) / 127.0,
-                f64::from(reader.u8().map_err(|error| malformed(&error))? as i8) / 127.0,
+                f64::from(
+                    reader
+                        .u8()
+                        .map_err(|error| malformed(&error))?
+                        .cast_signed(),
+                ) / 127.0,
+                f64::from(
+                    reader
+                        .u8()
+                        .map_err(|error| malformed(&error))?
+                        .cast_signed(),
+                ) / 127.0,
+                f64::from(
+                    reader
+                        .u8()
+                        .map_err(|error| malformed(&error))?
+                        .cast_signed(),
+                ) / 127.0,
             ));
         }
     }

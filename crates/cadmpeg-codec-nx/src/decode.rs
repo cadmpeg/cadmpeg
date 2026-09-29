@@ -38,7 +38,7 @@ pub(crate) mod report;
 mod support_uv;
 
 use build::try_decode_geometry;
-use emit::{render_retained_text, source_meta, unknown_stream};
+use emit::{source_meta, unknown_stream};
 
 const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
 /// Parsed container data shared by inspection and entity decoding.
@@ -95,7 +95,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         let (ir, annotations, unknowns, native_losses) =
             build_metadata_ir(ctx, root, &scan, &dialects)?;
         let mut body = build_container_body(ctx, &scan, dialect_losses, notes)?;
-        append_losses(ctx, &mut body, native_losses)?;
+        ctx.extend_vec(&mut body.losses, native_losses, "nx decode losses")?;
         report_untransferred_streams(ctx, &scan, &mut body, TypedNative::ContainerOnly)?;
         return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
     }
@@ -115,7 +115,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     let (ir, annotations, unknowns, native_losses) =
         build_metadata_ir(ctx, root, &scan, &dialects)?;
     let mut body = build_container_body(ctx, &scan, dialect_losses, notes)?;
-    append_losses(ctx, &mut body, native_losses)?;
+    ctx.extend_vec(&mut body.losses, native_losses, "nx decode losses")?;
     report_untransferred_streams(ctx, &scan, &mut body, TypedNative::Available)?;
     decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities)
 }
@@ -152,14 +152,10 @@ fn report_untransferred_streams(
         offset_store_control_counts(ctx, &scan.container)?;
     if classified_control_count != control_count {
         charge_loss_code(ctx, NxLossCode::OffsetStoreControlUntyped)?;
-        push_loss(ctx, body, NxLossCode::OffsetStoreControlUntyped.note(render_retained_text(
-            ctx,
-            format_args!(
+        ctx.push_vec(&mut body.losses, NxLossCode::OffsetStoreControlUntyped.note(ctx.format_retained(format_args!(
                 "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
                 control_count - classified_control_count
-            ),
-            "nx offset control loss text",
-        )?))?;
+            ), "nx offset control loss text")?), "nx decode losses")?;
     }
     for entry in &scan.container.entries {
         let content = entry.content();
@@ -169,31 +165,26 @@ fn report_untransferred_streams(
                 && crate::native::toggle::has_complete_saved_toggle_stream(&scan.container))
         {
             charge_loss_code(ctx, NxLossCode::ContainerStreamOpaque)?;
-            push_loss(ctx, body, NxLossCode::ContainerStreamOpaque.note(render_retained_text(
-                ctx,
-                format_args!(
+            ctx.push_vec(&mut body.losses, NxLossCode::ContainerStreamOpaque.note(ctx.format_retained(format_args!(
                     "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not completely typed.",
                     entry.name,
                     content.label()
-                ),
-                "nx opaque stream loss text",
-            )?))?;
+                ), "nx opaque stream loss text")?), "nx decode losses")?;
         }
     }
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
             charge_loss_code(ctx, NxLossCode::NonParasolidStreamOmitted)?;
-            push_loss(
-                ctx,
-                body,
-                NxLossCode::NonParasolidStreamOmitted.note(render_retained_text(
-                    ctx,
+            ctx.push_vec(
+                &mut body.losses,
+                NxLossCode::NonParasolidStreamOmitted.note(ctx.format_retained(
                     format_args!(
                         "Non-Parasolid {} stream #{index} was classified but not transferred.",
                         stream.kind().label()
                     ),
                     "nx omitted stream loss text",
                 )?),
+                "nx decode losses",
             )?;
         }
     }
@@ -209,33 +200,6 @@ fn charge_loss_code(ctx: &DecodeContext<'_>, code: NxLossCode) -> Result<(), Cod
         cadmpeg_core::decode::u64_from_index(bytes),
         "nx loss code text",
     )
-}
-
-fn push_loss(
-    ctx: &DecodeContext<'_>,
-    body: &mut DecodeBody,
-    loss: LossNote,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "nx decode losses")?;
-    body.losses
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("nx decode losses", 0, 1))?;
-    body.losses.push(loss);
-    Ok(())
-}
-
-fn append_losses(
-    ctx: &DecodeContext<'_>,
-    body: &mut DecodeBody,
-    losses: Vec<LossNote>,
-) -> Result<(), CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(losses.len());
-    ctx.charge_collection_items(count, "nx decode losses")?;
-    body.losses
-        .try_reserve(losses.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx decode losses", 0, count))?;
-    body.losses.extend(losses);
-    Ok(())
 }
 
 pub(super) fn offset_store_control_counts(
@@ -317,14 +281,7 @@ fn build_metadata_ir(
         .iter()
         .filter(|stream| stream.kind().is_parasolid())
         .count();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(unknown_count),
-        "nx metadata unknown streams",
-    )?;
-    let mut unknowns = Vec::new();
-    unknowns
-        .try_reserve_exact(unknown_count)
-        .map_err(|_| ctx.refuse_codec_limit("nx metadata unknown streams", 0, 1))?;
+    let mut unknowns = ctx.collection_vec(unknown_count, "nx metadata unknown streams")?;
     let mut ir = CadIr::decoded(source_meta(ctx, scan, dialects)?);
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();
@@ -419,8 +376,8 @@ fn build_container_body(
         notes,
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     };
-    push_loss(ctx, &mut body, loss)?;
-    append_losses(ctx, &mut body, dialect_losses)?;
+    ctx.push_vec(&mut body.losses, loss, "nx decode losses")?;
+    ctx.extend_vec(&mut body.losses, dialect_losses, "nx decode losses")?;
     Ok(body)
 }
 

@@ -69,16 +69,6 @@ pub(in crate::native) struct RmDisplayColorAssignment {
     pub(in crate::native) source_entry: String,
 }
 
-fn retained_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    ctx.charge_retained(u64_from_index(text.len()), "retain NX display color text")?;
-    let mut owned = String::new();
-    owned
-        .try_reserve_exact(text.len())
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX display color text", 0, 1))?;
-    owned.push_str(text);
-    Ok(owned)
-}
-
 fn push_assignment(
     ctx: &DecodeContext<'_>,
     assignments: &mut Vec<RmDisplayColorAssignment>,
@@ -87,21 +77,15 @@ fn push_assignment(
     color_definition: &str,
     source_entry: &str,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "NX display color assignments")?;
-    ctx.charge_retained(
-        u64_from_index(std::mem::size_of::<RmDisplayColorAssignment>()),
-        "retain NX display color assignments",
-    )?;
-    assignments
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX display color assignments", 0, 1))?;
+    ctx.reserve_retained_vec(assignments, 1, "NX display color assignments")?;
     assignments.push(RmDisplayColorAssignment {
         id: String::new(),
         ordinal: 0,
         frame,
         target_object_id,
-        color_definition: retained_text(ctx, color_definition)?,
-        source_entry: retained_text(ctx, source_entry)?,
+        color_definition: ctx
+            .copy_retained_text(color_definition, "retain NX display color text")?,
+        source_entry: ctx.copy_retained_text(source_entry, "retain NX display color text")?,
     });
     Ok(())
 }
@@ -117,10 +101,7 @@ fn assignment_id(ctx: &DecodeContext<'_>, ordinal: usize) -> Result<String, Code
         .len()
         .checked_add(digits)
         .ok_or_else(|| ctx.refuse_codec_limit("NX display color identity length", 0, 1))?;
-    ctx.charge_retained(u64_from_index(length), "retain NX display color identity")?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX display color identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "retain NX display color identity")?;
     write!(id, "nx:rm-display-color-assignments:assignment#{ordinal}")
         .map_err(|_| ctx.refuse_codec_limit("write NX display color identity", 0, 1))?;
     Ok(id)

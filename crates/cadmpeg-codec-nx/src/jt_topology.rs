@@ -4,7 +4,7 @@
 const MAX_TOPOLOGY_ITEMS: usize = 1_000_000;
 const MAX_TOPOLOGY_SLOTS: usize = 8_000_000;
 
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::num::NonZeroUsize;
 
@@ -232,9 +232,11 @@ impl Decoder<'_> {
         let faces = ctx.alloc_filled(valence, None, "nx JT vertex face slots")?;
         ctx.charge_collection_items(1, "nx JT topology vertices")?;
         let index = self.vertices.len();
-        self.vertices
-            .try_reserve(1)
-            .map_err(|_| refuse_local_limit("nx JT topology vertices", 1, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut self.vertices,
+            1,
+            "nx JT topology vertices",
+        )?;
         self.vertices.push(Vertex {
             faces,
             group,
@@ -368,29 +370,12 @@ impl Decoder<'_> {
             let Some(attribute_len) = usize::try_from(face_attribute_count).ok() else {
                 return Ok(None);
             };
-            ctx.charge_collection_items(attribute_len as u64, "nx JT face attributes")?;
-            let mut attributes = Vec::new();
-            attributes.try_reserve_exact(attribute_len).map_err(|_| {
-                refuse_local_limit(
-                    "nx JT face attributes",
-                    attribute_len as u64,
-                    attribute_len as u64,
-                )
-            })?;
+            let mut attributes = ctx.collection_vec(attribute_len, "nx JT face attributes")?;
             attributes.extend(self.attribute_count..attribute_end);
             let vertices = FaceSlots::new(ctx, degree.get())?;
-            ctx.charge_collection_items(1, "nx JT topology faces")?;
-            self.faces
-                .try_reserve(1)
-                .map_err(|_| refuse_local_limit("nx JT topology faces", 1, 1))?;
-            ctx.charge_collection_items(1, "nx JT removed faces")?;
-            self.removed
-                .try_reserve(1)
-                .map_err(|_| refuse_local_limit("nx JT removed faces", 1, 1))?;
-            ctx.charge_collection_items(1, "nx JT active faces")?;
-            self.active
-                .try_reserve(1)
-                .map_err(|_| refuse_local_limit("nx JT active faces", 1, 1))?;
+            ctx.reserve_vec(&mut self.faces, 1, "nx JT topology faces")?;
+            ctx.reserve_vec(&mut self.removed, 1, "nx JT removed faces")?;
+            ctx.reserve_vec(&mut self.active, 1, "nx JT active faces")?;
             self.faces.push(Face {
                 vertices,
                 attribute_mask,
@@ -598,27 +583,9 @@ impl Decoder<'_> {
         {
             return Ok(None);
         }
-        ctx.charge_collection_items(self.vertices.len() as u64, "nx JT output polygons")?;
-        let mut polygons = Vec::new();
-        polygons
-            .try_reserve_exact(self.vertices.len())
-            .map_err(|_| {
-                refuse_local_limit(
-                    "nx JT output polygons",
-                    self.vertices.len() as u64,
-                    self.vertices.len() as u64,
-                )
-            })?;
+        let mut polygons = ctx.collection_vec(self.vertices.len(), "nx JT output polygons")?;
         for (vertex_index, vertex) in self.vertices.into_iter().enumerate() {
-            ctx.charge_collection_items(vertex.faces.len() as u64, "nx JT polygon corners")?;
-            let mut corners = Vec::new();
-            corners.try_reserve_exact(vertex.faces.len()).map_err(|_| {
-                refuse_local_limit(
-                    "nx JT polygon corners",
-                    vertex.faces.len() as u64,
-                    vertex.faces.len() as u64,
-                )
-            })?;
+            let mut corners = ctx.collection_vec(vertex.faces.len(), "nx JT polygon corners")?;
             for face_index in vertex.faces {
                 let Some(face_index) = face_index else {
                     return Ok(None);

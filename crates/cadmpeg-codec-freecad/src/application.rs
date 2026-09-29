@@ -193,7 +193,7 @@ fn wire_records<'a>(
                 links: property.links(),
                 byte_start: property.xml.start(),
                 byte_end: property.xml.end(),
-                byte_len: data.len() as u64,
+                byte_len: cadmpeg_core::decode::u64_from_index(data.len()),
                 sha256: cadmpeg_ir::hash::sha256_hex(data),
                 data,
                 payloads,
@@ -221,7 +221,7 @@ fn wire_records<'a>(
                 .data
                 .as_ref()
                 .map_or(0, crate::native::RetainedXml::end),
-            byte_len: data.len() as u64,
+            byte_len: cadmpeg_core::decode::u64_from_index(data.len()),
             sha256: cadmpeg_ir::hash::sha256_hex(data),
             data,
             property_records,

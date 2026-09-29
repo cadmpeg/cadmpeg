@@ -456,7 +456,7 @@ fn require_long(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), Frami
 }
 
 fn require_short_zero(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), FramingError> {
-    if chunk.typecode != typecode || !chunk.short() || chunk.value() != 0 {
+    if chunk.typecode != typecode || !chunk.short() || chunk.value()? != 0 {
         return Err(FramingError::structural(
             chunk.header_start,
             format!(
@@ -1471,7 +1471,7 @@ pub(crate) fn parse_attribute_userdata(
                         item_uuid,
                         application_uuid,
                         writer_version: save_context
-                            .map(|value| i64::from(value.writer_version as u32)),
+                            .map(|value| i64::from(value.writer_version.cast_unsigned())),
                         payload_range,
                     }));
                 }
@@ -1614,7 +1614,7 @@ fn parse_per_object_mesh_userdata(
             false,
         )?;
         require_long(&inner, ANONYMOUS)?;
-        if inner.value() <= 0 || inner.body().is_empty() {
+        if inner.value()? <= 0 || inner.body().is_empty() {
             return Err(FramingError::structural(
                 inner.header_start,
                 "per-object mesh userdata mesh child is empty",
@@ -1795,7 +1795,7 @@ pub(crate) fn parse_object_record(
             "object type must be the first short child",
         ));
     }
-    let object_type = u32::try_from(type_chunk.value())
+    let object_type = u32::try_from(type_chunk.value()?)
         .map_err(|_| FramingError::structural(type_chunk.header_start, "negative object type"))?;
     offset = type_chunk.next_offset();
     let class = chunk_at(bytes, offset, record.body().end, archive, false)?;

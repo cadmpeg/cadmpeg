@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Owned OM caches retain their validated source bytes and decoded text.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::{ops::Range, sync::Arc};
 
@@ -72,44 +72,12 @@ impl CachedDefinition {
     ) -> Result<Self, CodecError> {
         Ok(Self {
             offset,
-            name: cached_text(ctx, name, "NX cached definition name")?,
+            name: ctx.copy_retained_text(name, "NX cached definition name")?,
             registry_tail: ctx
                 .copy_retained(tail, "NX cached definition tail")?
                 .into_boxed_slice(),
         })
     }
-}
-
-pub(crate) fn charged_items<T>(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let count_u64 = u64_from_index(count);
-    let bytes = count_u64
-        .checked_mul(u64_from_index(std::mem::size_of::<T>()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, count_u64))?;
-    ctx.charge_collection_items(count_u64, operation)?;
-    ctx.charge_retained(bytes, operation)?;
-    let mut values = Vec::new();
-    values
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, count_u64, count_u64))?;
-    Ok(values)
-}
-
-fn cached_text(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let length = u64_from_index(value.len());
-    ctx.charge_retained(length, operation)?;
-    let mut text = String::new();
-    text.try_reserve_exact(value.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, length, length))?;
-    text.push_str(value);
-    Ok(text)
 }
 
 #[derive(Debug, Clone)]
@@ -148,7 +116,7 @@ impl IndexedSectionLayout {
     ) -> Result<Option<Self>, CodecError> {
         let store = match &section.store {
             IndexedStore::Fixed { records } => {
-                let mut cached = charged_items(ctx, records.len(), "NX cached fixed records")?;
+                let mut cached = ctx.retained_vec(records.len(), "NX cached fixed records")?;
                 for record in records.iter() {
                     let Some(bytes) = CachedRange::new(source, record.offset, record.bytes.len())
                     else {
@@ -177,7 +145,7 @@ impl IndexedSectionLayout {
                 else {
                     return Ok(None);
                 };
-                let mut cached = charged_items(ctx, records.len(), "NX cached offset records")?;
+                let mut cached = ctx.retained_vec(records.len(), "NX cached offset records")?;
                 for record in records.iter() {
                     let Some(range) = CachedRange::new(source, record.offset, record.bytes.len())
                     else {
@@ -192,7 +160,7 @@ impl IndexedSectionLayout {
                 }
             }
         };
-        let mut types = charged_items(ctx, section.types.len(), "NX cached types")?;
+        let mut types = ctx.retained_vec(section.types.len(), "NX cached types")?;
         for definition in section.types.iter() {
             types.push(CachedDefinition::new(
                 ctx,
@@ -201,7 +169,7 @@ impl IndexedSectionLayout {
                 definition.registry_tail,
             )?);
         }
-        let mut fields = charged_items(ctx, section.fields.len(), "NX cached fields")?;
+        let mut fields = ctx.retained_vec(section.fields.len(), "NX cached fields")?;
         for definition in section.fields.iter() {
             fields.push(CachedDefinition::new(
                 ctx,
@@ -227,7 +195,7 @@ impl IndexedSectionLayout {
         let store = match &self.store {
             CachedStore::Fixed { records } => {
                 let mut materialized =
-                    charged_items(ctx, records.len(), "NX materialized fixed records")?;
+                    ctx.retained_vec(records.len(), "NX materialized fixed records")?;
                 for record in records {
                     materialized.push(FixedEntityRecord {
                         object_id: record.object_id,
@@ -245,7 +213,7 @@ impl IndexedSectionLayout {
                 records,
             } => {
                 let mut materialized =
-                    charged_items(ctx, records.len(), "NX materialized offset records")?;
+                    ctx.retained_vec(records.len(), "NX materialized offset records")?;
                 for record in records {
                     materialized.push(EntityRecord {
                         offset: record.offset(),
@@ -262,11 +230,11 @@ impl IndexedSectionLayout {
                 }
             }
         };
-        let mut types = charged_items(ctx, self.types.len(), "NX materialized types")?;
+        let mut types = ctx.retained_vec(self.types.len(), "NX materialized types")?;
         for definition in &self.types {
             types.push(definition.type_definition());
         }
-        let mut fields = charged_items(ctx, self.fields.len(), "NX materialized fields")?;
+        let mut fields = ctx.retained_vec(self.fields.len(), "NX materialized fields")?;
         for definition in &self.fields {
             fields.push(definition.field_definition());
         }
@@ -308,7 +276,7 @@ impl SectionLayout {
         let Some(frame) = CachedRange::new(source, section.offset, section.byte_len) else {
             return Ok(None);
         };
-        let mut types = charged_items(ctx, section.types.len(), "NX cached framed types")?;
+        let mut types = ctx.retained_vec(section.types.len(), "NX cached framed types")?;
         for definition in section.types.iter() {
             types.push(CachedDefinition::new(
                 ctx,
@@ -317,7 +285,7 @@ impl SectionLayout {
                 definition.registry_tail,
             )?);
         }
-        let mut fields = charged_items(ctx, section.fields.len(), "NX cached framed fields")?;
+        let mut fields = ctx.retained_vec(section.fields.len(), "NX cached framed fields")?;
         for definition in section.fields.iter() {
             fields.push(CachedDefinition::new(
                 ctx,
@@ -326,8 +294,7 @@ impl SectionLayout {
                 definition.registry_tail,
             )?);
         }
-        let mut operation_labels = charged_items(
-            ctx,
+        let mut operation_labels = ctx.retained_vec(
             section.cached_operation_labels.len(),
             "NX cached operation labels",
         )?;
@@ -344,16 +311,15 @@ impl SectionLayout {
     }
 
     pub(crate) fn materialize(&self, ctx: &DecodeContext<'_>) -> Result<Section<'_>, CodecError> {
-        let mut types = charged_items(ctx, self.types.len(), "NX materialized framed types")?;
+        let mut types = ctx.retained_vec(self.types.len(), "NX materialized framed types")?;
         for definition in &self.types {
             types.push(definition.type_definition());
         }
-        let mut fields = charged_items(ctx, self.fields.len(), "NX materialized framed fields")?;
+        let mut fields = ctx.retained_vec(self.fields.len(), "NX materialized framed fields")?;
         for definition in &self.fields {
             fields.push(definition.field_definition());
         }
-        let mut cached_operation_labels = charged_items(
-            ctx,
+        let mut cached_operation_labels = ctx.retained_vec(
             self.operation_labels.len(),
             "NX materialized operation labels",
         )?;
@@ -384,7 +350,7 @@ impl CachedOperationLabel {
     fn new(ctx: &DecodeContext<'_>, value: &OperationLabel<'_>) -> Result<Self, CodecError> {
         Ok(Self {
             header: value.header,
-            value: cached_text(ctx, value.value, "NX cached operation label")?,
+            value: ctx.copy_retained_text(value.value, "NX cached operation label")?,
         })
     }
     fn materialize(&self) -> OperationLabel<'_> {

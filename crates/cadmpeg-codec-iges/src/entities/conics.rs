@@ -3,7 +3,7 @@
 
 use super::curve_conversion::angularly_equal;
 use super::geometry::{resolve_transform, source_object, WireProjectionOutcome};
-use super::push_optional_entity_loss;
+use super::push_entity_loss;
 
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -31,12 +31,12 @@ fn admit_conic<T>(
     result: Result<T, &str>,
     entry: &DirectoryEntry,
     losses: &mut Vec<LossNote>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<T>, CodecError> {
     match result {
         Ok(value) => Ok(Some(value)),
         Err(message) => {
-            push_optional_entity_loss(ctx, losses, entry, format_args!("{message}"))?;
+            push_entity_loss(ctx, losses, entry, format_args!("{message}"))?;
             Ok(None)
         }
     }
@@ -57,7 +57,7 @@ fn add_bounded_curve(
     geometry: CurveGeometry,
     span: BoundedSpan,
     sequences: &mut super::geometry::SourceSequences,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<EdgeId, cadmpeg_core::CodecError> {
     let BoundedSpan {
         start,
@@ -74,13 +74,8 @@ fn add_bounded_curve(
     let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
     let curve = crate::ids::curve_admitted(&stem, ctx)?;
     let edge = crate::ids::edge_admitted(&stem, ctx)?;
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-        ctx,
-        &mut ir.model.points,
-        2,
-        "iges conic neutral points",
-    )?;
-    crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_conics")?;
+    ctx.reserve_vec(&mut ir.model.points, 2, "iges conic neutral points")?;
+    ctx.charge_entities(2, "iges_geometry_conics")?;
     ir.model.points.extend([
         Point::new(
             start_point.try_clone_for_decode(ctx, "iges conics identity copy")?,
@@ -93,13 +88,8 @@ fn add_bounded_curve(
             None,
         ),
     ]);
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-        ctx,
-        &mut ir.model.vertices,
-        2,
-        "iges conic neutral vertices",
-    )?;
-    crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_conics")?;
+    ctx.reserve_vec(&mut ir.model.vertices, 2, "iges conic neutral vertices")?;
+    ctx.charge_entities(2, "iges_geometry_conics")?;
     ir.model.vertices.extend([
         Vertex {
             id: start_vertex.try_clone_for_decode(ctx, "iges conics identity copy")?,
@@ -113,25 +103,15 @@ fn add_bounded_curve(
         },
     ]);
     sequences.record_curve(&curve, entry.sequence, ctx)?;
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-        ctx,
-        &mut ir.model.curves,
-        1,
-        "iges conic neutral curves",
-    )?;
-    crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_conics")?;
+    ctx.reserve_vec(&mut ir.model.curves, 1, "iges conic neutral curves")?;
+    ctx.charge_entities(1, "iges_geometry_conics")?;
     ir.model.curves.push(Curve {
         id: curve.try_clone_for_decode(ctx, "iges conics identity copy")?,
         geometry,
         source_object: Some(source_object(entry, ctx)?),
     });
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-        ctx,
-        &mut ir.model.edges,
-        1,
-        "iges conic neutral edges",
-    )?;
-    crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_conics")?;
+    ctx.reserve_vec(&mut ir.model.edges, 1, "iges conic neutral edges")?;
+    ctx.charge_entities(1, "iges_geometry_conics")?;
     ir.model.edges.push(Edge {
         id: edge.try_clone_for_decode(ctx, "iges conics identity copy")?,
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some(parameter_range))
@@ -157,13 +137,12 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut records,
             record.directory_sequence,
             record,
@@ -172,8 +151,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
@@ -190,7 +168,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -203,7 +181,7 @@ pub(super) fn project(
         let [Some(coeff_a), Some(coeff_b), Some(coeff_c), Some(coeff_d), Some(coeff_e), Some(coeff_f), Some(plane_z), Some(start_x), Some(start_y), Some(end_x), Some(end_y)] =
             values
         else {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -228,7 +206,7 @@ pub(super) fn project(
             value.abs() <= coefficient_scale * CONIC_STANDARD_POSITION_RELATIVE_EPSILON
         };
         if !zero(coeff_b) || (!zero(coeff_d) && !zero(coeff_e)) {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -248,7 +226,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
@@ -261,7 +239,7 @@ pub(super) fn project(
                 Some((UnitVector3::normalized_nonzero(v)?, n))
             })
         else {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -278,7 +256,7 @@ pub(super) fn project(
                 Some((UnitVector3::normalized_nonzero(v)?, n))
             })
         else {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -287,7 +265,7 @@ pub(super) fn project(
             continue;
         };
         if basis_x.as_raw().dot(*basis_y.as_raw()).abs() > EPS_CONIC_DEGENERATE {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -301,7 +279,7 @@ pub(super) fn project(
             (n.is_finite() && n > 0.0)
                 .then(|| (UnitVector3::normalized_by_reciprocal(v), v.scale(1.0 / n)))
         }) else {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -311,7 +289,7 @@ pub(super) fn project(
         };
         let Some(plane_origin) = transform.apply_point(Point3::new(0.0, 0.0, plane_z * factor))
         else {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -324,7 +302,7 @@ pub(super) fn project(
             start_y * factor,
             plane_z * factor,
         )) else {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -337,7 +315,7 @@ pub(super) fn project(
             end_y * factor,
             plane_z * factor,
         )) else {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -518,7 +496,7 @@ pub(super) fn project(
                 [4.0, coeff_a, scale_y],
             )
             .map(cadmpeg_ir::scalar::FiniteReal::abs) else {
-                push_optional_entity_loss(
+                push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -542,7 +520,7 @@ pub(super) fn project(
             let (Some(mut start_parameter), Some(mut end_parameter)) =
                 (parameter(start, axis_raw), parameter(end, axis_raw))
             else {
-                push_optional_entity_loss(
+                push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -590,7 +568,7 @@ pub(super) fn project(
                 [4.0, coeff_c, scale_x],
             )
             .map(cadmpeg_ir::scalar::FiniteReal::abs) else {
-                push_optional_entity_loss(
+                push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -614,7 +592,7 @@ pub(super) fn project(
             let (Some(mut start_parameter), Some(mut end_parameter)) =
                 (parameter(start, axis_raw), parameter(end, axis_raw))
             else {
-                push_optional_entity_loss(
+                push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -655,7 +633,7 @@ pub(super) fn project(
         };
 
         let Some((geometry, parameter_range)) = geometry_and_range else {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -668,7 +646,7 @@ pub(super) fn project(
         let Some(evaluated_start) =
             finite_or_refusal(cadmpeg_ir::eval::curve_point(&geometry, parameter_range[0]))?
         else {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -679,7 +657,7 @@ pub(super) fn project(
         let Some(evaluated_end) =
             finite_or_refusal(cadmpeg_ir::eval::curve_point(&geometry, parameter_range[1]))?
         else {
-            push_optional_entity_loss(
+            push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -691,16 +669,16 @@ pub(super) fn project(
         // does not prescribe an endpoint-consistency test or receiver action.
         let resolution = global.minimum_resolution_mm();
         if !endpoint_agrees_with_coefficient_carrier(start, evaluated_start.get(), resolution) {
-            push_optional_entity_loss(ctx, &mut losses, entry, format_args!("conic start point disagrees with the evaluated carrier beyond the minimum resolution"))?;
+            push_entity_loss(ctx, &mut losses, entry, format_args!("conic start point disagrees with the evaluated carrier beyond the minimum resolution"))?;
             continue;
         }
         if !endpoint_agrees_with_coefficient_carrier(end, evaluated_end.get(), resolution) {
-            push_optional_entity_loss(ctx, &mut losses, entry, format_args!("conic terminate point disagrees with the evaluated carrier beyond the minimum resolution"))?;
+            push_entity_loss(ctx, &mut losses, entry, format_args!("conic terminate point disagrees with the evaluated carrier beyond the minimum resolution"))?;
             continue;
         }
         let tolerance = if resolution > 0.0 {
             let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(resolution) else {
-                push_optional_entity_loss(
+                push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -728,23 +706,13 @@ pub(super) fn project(
             Ok(edge) => edge,
             Err(error) => {
                 let message = super::non_resource_error(error, ctx)?;
-                push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
-            &mut wire_edges,
-            1,
-            "iges conic wire edges",
-        )?;
+        ctx.reserve_vec(&mut wire_edges, 1, "iges conic wire edges")?;
         wire_edges.push(edge);
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
-            &mut decoded,
-            entry.sequence,
-            "iges conic decoded sequences",
-        )?;
+        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges conic decoded sequences")?;
     }
 
     Ok(WireProjectionOutcome {

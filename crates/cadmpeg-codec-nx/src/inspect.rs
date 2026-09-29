@@ -24,14 +24,7 @@ pub(super) fn summarize(
         .len()
         .checked_add(scan.streams.len())
         .ok_or_else(|| ctx.refuse_codec_limit("nx summary entries", 0, u64::MAX))?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(entry_count),
-        "nx summary entries",
-    )?;
-    let mut entries = Vec::new();
-    entries
-        .try_reserve_exact(entry_count)
-        .map_err(|_| ctx.refuse_codec_limit("nx summary entries", 0, 1))?;
+    let mut entries = ctx.collection_vec(entry_count, "nx summary entries")?;
     let semantic_streams = scan
         .streams
         .iter()
@@ -74,12 +67,8 @@ pub(super) fn summarize(
             }
         };
         entries.push(ContainerEntry {
-            name: render_summary_text(
-                ctx,
-                "nx summary directory name",
-                entry.name.len(),
-                format_args!("{}", entry.name),
-            )?,
+            name: ctx
+                .format_retained(format_args!("{}", entry.name), "nx summary directory name")?,
             role: entry.content().role(),
             storage,
             attributes,
@@ -295,50 +284,22 @@ pub(super) fn summarize(
                 match EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed) {
                     Ok(storage) => storage,
                     Err(message) => {
-                        let note_len = [
-                            "parasolid#".len(),
-                            decimal_len(cadmpeg_core::decode::u64_from_index(si)),
-                            ": ".len(),
-                            message.len(),
-                            ": ".len(),
-                            decimal_len(stream.consumed),
-                            "/".len(),
-                            decimal_len(inflated_len),
-                        ]
-                        .into_iter()
-                        .try_fold(0usize, usize::checked_add)
-                        .ok_or_else(|| {
-                            ctx.refuse_codec_limit("nx summary storage note", 0, u64::MAX)
-                        })?;
-                        ctx.charge_collection_items(1, "nx summary storage notes")?;
-                        storage_notes.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("nx summary storage notes", 0, 1)
-                        })?;
-                        storage_notes.push(render_summary_text(
-                            ctx,
-                            "nx summary storage note",
-                            note_len,
+                        ctx.reserve_vec(&mut storage_notes, 1, "nx summary storage notes")?;
+                        storage_notes.push(ctx.format_retained(
                             format_args!(
                                 "parasolid#{si}: {message}: {}/{inflated_len}",
                                 stream.consumed
                             ),
+                            "nx summary storage note",
                         )?);
                         EntryStorage::payload_only(VerbatimLabel::Stored, inflated_len)
                     }
                 }
             }
         };
-        let name_len = "parasolid#"
-            .len()
-            .checked_add(decimal_len(cadmpeg_core::decode::u64_from_index(si)))
-            .ok_or_else(|| ctx.refuse_codec_limit("nx summary stream name", 0, u64::MAX))?;
+
         entries.push(ContainerEntry {
-            name: render_summary_text(
-                ctx,
-                "nx summary stream name",
-                name_len,
-                format_args!("parasolid#{si}"),
-            )?,
+            name: ctx.format_retained(format_args!("parasolid#{si}"), "nx summary stream name")?,
             role: if stream.kind().is_parasolid() {
                 ContainerRole::ParasolidStream
             } else {
@@ -350,13 +311,11 @@ pub(super) fn summarize(
     }
 
     let (classification, mut notes) = crate::scan_notes::summarize(ctx, scan)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(storage_notes.len()),
+    ctx.reserve_vec(
+        &mut notes,
+        storage_notes.len(),
         "nx combined inspection notes",
     )?;
-    notes
-        .try_reserve(storage_notes.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx combined inspection notes", 0, 1))?;
     notes.extend(storage_notes);
     let container_kind = classification.container_kind();
     let (dialects, dialect_losses) = classification.into_report_parts();
@@ -381,21 +340,6 @@ fn decimal_len(number: u64) -> usize {
     } else {
         cadmpeg_core::decode::index_from_u32(number.ilog10() + 1)
     }
-}
-
-fn render_summary_text(
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-    len: usize,
-    args: std::fmt::Arguments<'_>,
-) -> Result<String, CodecError> {
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(len), operation)?;
-    let mut text = String::new();
-    text.try_reserve_exact(len)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    text.write_fmt(args)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(text)
 }
 
 fn insert_summary_attribute(
@@ -423,8 +367,11 @@ fn insert_summary_attribute(
         "nx summary attribute text",
     )?;
     let mut key = String::new();
-    key.try_reserve_exact(key_len)
-        .map_err(|_| ctx.refuse_codec_limit("nx summary attribute text", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut key,
+        key_len,
+        "nx summary attribute text",
+    )?;
     key.push_str(prefix);
     if lowercase_suffix {
         for character in suffix.chars() {
@@ -434,9 +381,11 @@ fn insert_summary_attribute(
         key.push_str(suffix);
     }
     let mut rendered = String::new();
-    rendered
-        .try_reserve_exact(value_len)
-        .map_err(|_| ctx.refuse_codec_limit("nx summary attribute text", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut rendered,
+        value_len,
+        "nx summary attribute text",
+    )?;
     match value {
         SummaryValue::Text(text) => rendered.push_str(text),
         SummaryValue::Number(number) => write!(&mut rendered, "{number}")

@@ -15,20 +15,6 @@ pub(super) const NATIVE_PRIMARY_BODY_CLOSURE_WITNESS: &str = "native_primary_bod
 /// Source property carrying an admitted native primary-body object index.
 pub(super) const NATIVE_PRIMARY_BODY_OBJECT_INDEX: &str = "primary_body_object_index";
 
-fn charge_history_bytes(
-    ctx: &DecodeContext<'_>,
-    fixed_bytes: usize,
-    key_bytes: usize,
-    value_bytes: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let bytes = fixed_bytes
-        .checked_add(key_bytes)
-        .and_then(|bytes| bytes.checked_add(value_bytes))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64_from_index(value_bytes)))?;
-    ctx.charge_retained(u64_from_index(bytes), operation)
-}
-
 /// Ordered feature writers indexed by both native history identity and the
 /// neutral body identity established by projection.
 #[derive(Default)]
@@ -77,18 +63,11 @@ impl BodyWriterHistory {
     ) -> Result<(), CodecError> {
         let mut append = |writer: &FeatureId| -> Result<(), CodecError> {
             if !dependencies.contains(writer) {
-                ctx.charge_collection_items(1, "NX primary writer dependencies")?;
-                charge_history_bytes(
-                    ctx,
-                    std::mem::size_of::<FeatureId>(),
-                    0,
-                    writer.as_str().len(),
+                ctx.push_retained_vec(
+                    dependencies,
+                    writer.try_clone_for_decode(ctx, "NX primary writer dependencies")?,
                     "NX primary writer dependencies",
                 )?;
-                dependencies
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("NX primary writer dependencies", 0, 1))?;
-                dependencies.push(writer.clone());
             }
             Ok(())
         };
@@ -122,61 +101,47 @@ impl BodyWriterHistory {
         outputs: &[BodyId],
         feature: &FeatureId,
     ) -> Result<(), CodecError> {
-        let feature_bytes = feature.as_str().len();
         if let Some(body) = native_body {
-            if self.native.contains_key(&body) {
+            if !self.native.contains_key(&body) {
                 ctx.charge_retained(
-                    u64_from_index(feature_bytes),
-                    "NX native body writer history",
-                )?;
-            } else {
-                ctx.charge_collection_items(1, "NX native body writer history")?;
-                charge_history_bytes(
-                    ctx,
-                    std::mem::size_of::<(u32, FeatureId)>(),
-                    0,
-                    feature_bytes,
+                    u64_from_index(std::mem::size_of::<(u32, FeatureId)>()),
                     "NX native body writer history",
                 )?;
             }
-            self.native.insert(body, feature.clone());
+            ctx.insert_btree_map(
+                &mut self.native,
+                body,
+                feature.try_clone_for_decode(ctx, "NX native body writer history")?,
+                "NX native body writer history",
+            )?;
         }
         if let Some(data_block) = offset_store_body {
-            if self.offset_store.contains_key(data_block) {
+            if !self.offset_store.contains_key(data_block) {
                 ctx.charge_retained(
-                    u64_from_index(feature_bytes),
-                    "NX offset-store writer history",
-                )?;
-            } else {
-                ctx.charge_collection_items(1, "NX offset-store writer history")?;
-                charge_history_bytes(
-                    ctx,
-                    std::mem::size_of::<(String, FeatureId)>(),
-                    data_block.len(),
-                    feature_bytes,
+                    u64_from_index(std::mem::size_of::<(String, FeatureId)>()),
                     "NX offset-store writer history",
                 )?;
             }
-            self.offset_store
-                .insert(data_block.to_string(), feature.clone());
+            ctx.insert_btree_map(
+                &mut self.offset_store,
+                ctx.copy_retained_text(data_block, "NX offset-store writer history")?,
+                feature.try_clone_for_decode(ctx, "NX offset-store writer history")?,
+                "NX offset-store writer history",
+            )?;
         }
         for output in outputs {
-            if self.outputs.contains_key(output) {
+            if !self.outputs.contains_key(output) {
                 ctx.charge_retained(
-                    u64_from_index(feature_bytes),
-                    "NX neutral body writer history",
-                )?;
-            } else {
-                ctx.charge_collection_items(1, "NX neutral body writer history")?;
-                charge_history_bytes(
-                    ctx,
-                    std::mem::size_of::<(BodyId, FeatureId)>(),
-                    output.as_str().len(),
-                    feature_bytes,
+                    u64_from_index(std::mem::size_of::<(BodyId, FeatureId)>()),
                     "NX neutral body writer history",
                 )?;
             }
-            self.outputs.insert(output.clone(), feature.clone());
+            ctx.insert_btree_map(
+                &mut self.outputs,
+                output.try_clone_for_decode(ctx, "NX neutral body writer history")?,
+                feature.try_clone_for_decode(ctx, "NX neutral body writer history")?,
+                "NX neutral body writer history",
+            )?;
         }
         Ok(())
     }
@@ -348,13 +313,6 @@ pub(crate) fn active_feature_closure(
         .collect())
 }
 
-fn charge_closure_identity(ctx: &DecodeContext<'_>, id: &FeatureId) -> Result<(), CodecError> {
-    ctx.charge_retained(
-        u64_from_index(id.as_str().len()),
-        "NX active feature closure identity",
-    )
-}
-
 /// Resolve the active feature closure while accounting for decode scratch and
 /// the returned identities. The CADIR evaluator uses the context-free form.
 pub(crate) fn active_feature_closure_for_decode(
@@ -396,10 +354,11 @@ pub(crate) fn active_feature_closure_for_decode(
             "NX active feature identity lookup",
         )?;
         if features.contains_key(&feature.id) {
-            charge_closure_identity(ctx, &feature.id)?;
             return Ok(Err(
                 ActiveFeatureClosureRejection::DuplicateFeatureIdentity {
-                    feature: feature.id.clone(),
+                    feature: feature
+                        .id
+                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
                 },
             ));
         }
@@ -484,10 +443,7 @@ pub(crate) fn active_feature_closure_for_decode(
     }
     let mut pending = Vec::new();
     for &resolved in active_features.values() {
-        ctx.charge_collection_items(1, "NX pending active features")?;
-        pending
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("NX pending active features", 0, 1))?;
+        ctx.reserve_vec(&mut pending, 1, "NX pending active features")?;
         pending.push(resolved);
     }
     while let Some((_, feature)) = pending.pop() {
@@ -499,30 +455,29 @@ pub(crate) fn active_feature_closure_for_decode(
             let Some((&dependency_id, &(index, dependency_feature))) =
                 features.get_key_value(dependency)
             else {
-                charge_closure_identity(ctx, &feature.id)?;
-                charge_closure_identity(ctx, dependency)?;
                 return Ok(Err(ActiveFeatureClosureRejection::MissingDependency {
-                    feature: feature.id.clone(),
-                    dependency: dependency.clone(),
+                    feature: feature
+                        .id
+                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
+                    dependency: dependency
+                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
                 }));
             };
             if dependency_feature.ordinal >= feature.ordinal {
-                charge_closure_identity(ctx, &feature.id)?;
-                charge_closure_identity(ctx, dependency)?;
                 return Ok(Err(ActiveFeatureClosureRejection::DependencyNotEarlier {
-                    feature: feature.id.clone(),
+                    feature: feature
+                        .id
+                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
                     feature_ordinal: feature.ordinal,
-                    dependency: dependency.clone(),
+                    dependency: dependency
+                        .try_clone_for_decode(ctx, "NX active feature closure identity")?,
                     dependency_ordinal: dependency_feature.ordinal,
                 }));
             }
             if !active_features.contains_key(dependency_id) {
                 ctx.charge_collection_items(1, "NX active feature dependencies")?;
                 active_features.insert(dependency_id, (index, dependency_feature));
-                ctx.charge_collection_items(1, "NX pending active features")?;
-                pending
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("NX pending active features", 0, 1))?;
+                ctx.reserve_vec(&mut pending, 1, "NX pending active features")?;
                 pending.push((index, dependency_feature));
             }
         }
@@ -531,9 +486,10 @@ pub(crate) fn active_feature_closure_for_decode(
         .values()
         .find(|(_, feature)| feature.suppressed == Some(true))
     {
-        charge_closure_identity(ctx, &feature.id)?;
         return Ok(Err(ActiveFeatureClosureRejection::ExplicitlySuppressed {
-            feature: feature.id.clone(),
+            feature: feature
+                .id
+                .try_clone_for_decode(ctx, "NX active feature closure identity")?,
         }));
     }
     let mut result = BTreeMap::new();
@@ -541,7 +497,6 @@ pub(crate) fn active_feature_closure_for_decode(
         ctx.charge_collection_items(1, "NX active feature closure result")?;
         let bytes = std::mem::size_of::<(FeatureId, usize)>()
             .checked_mul(4)
-            .and_then(|bytes| bytes.checked_add(id.as_str().len()))
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "NX active feature closure result",
@@ -550,7 +505,10 @@ pub(crate) fn active_feature_closure_for_decode(
                 )
             })?;
         ctx.charge_retained(u64_from_index(bytes), "NX active feature closure result")?;
-        result.insert(id.clone(), index);
+        result.insert(
+            id.try_clone_for_decode(ctx, "NX active feature closure result")?,
+            index,
+        );
     }
     Ok(Ok(result))
 }

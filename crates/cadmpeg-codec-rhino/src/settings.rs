@@ -298,7 +298,61 @@ impl StandardUnit {
     }
 
     pub(crate) fn value(self) -> i32 {
-        self as i32
+        match self {
+            Self::Microns => 1,
+            Self::Millimeters => 2,
+            Self::Centimeters => 3,
+            Self::Meters => 4,
+            Self::Kilometers => 5,
+            Self::Microinches => 6,
+            Self::Mils => 7,
+            Self::Inches => 8,
+            Self::Feet => 9,
+            Self::Miles => 10,
+            Self::Angstroms => 12,
+            Self::Nanometers => 13,
+            Self::Decimeters => 14,
+            Self::Dekameters => 15,
+            Self::Hectometers => 16,
+            Self::Megameters => 17,
+            Self::Gigameters => 18,
+            Self::Yards => 19,
+            Self::PrinterPoints => 20,
+            Self::PrinterPicas => 21,
+            Self::NauticalMiles => 22,
+            Self::AstronomicalUnits => 23,
+            Self::LightYears => 24,
+            Self::Parsecs => 25,
+        }
+    }
+
+    const fn code(self) -> usize {
+        match self {
+            Self::Microns => 1,
+            Self::Millimeters => 2,
+            Self::Centimeters => 3,
+            Self::Meters => 4,
+            Self::Kilometers => 5,
+            Self::Microinches => 6,
+            Self::Mils => 7,
+            Self::Inches => 8,
+            Self::Feet => 9,
+            Self::Miles => 10,
+            Self::Angstroms => 12,
+            Self::Nanometers => 13,
+            Self::Decimeters => 14,
+            Self::Dekameters => 15,
+            Self::Hectometers => 16,
+            Self::Megameters => 17,
+            Self::Gigameters => 18,
+            Self::Yards => 19,
+            Self::PrinterPoints => 20,
+            Self::PrinterPicas => 21,
+            Self::NauticalMiles => 22,
+            Self::AstronomicalUnits => 23,
+            Self::LightYears => 24,
+            Self::Parsecs => 25,
+        }
     }
 
     const fn millimeters_per_unit(self) -> f64 {
@@ -342,7 +396,7 @@ const STANDARD_MILLIMETER_SCALES: [PositiveReal; 26] = {
     let mut value = 0;
     while value <= LAST_STANDARD_UNIT_VALUE {
         if let Some(unit) = StandardUnit::from_value(value) {
-            table[unit as usize] = match PositiveReal::new(unit.millimeters_per_unit()) {
+            table[unit.code()] = match PositiveReal::new(unit.millimeters_per_unit()) {
                 Some(scale) => scale,
                 None => panic!("a standard unit scale must be finite and positive"),
             };
@@ -446,7 +500,7 @@ pub(crate) struct MillimeterScale(PositiveReal);
 
 impl From<StandardUnit> for MillimeterScale {
     fn from(unit: StandardUnit) -> Self {
-        Self(STANDARD_MILLIMETER_SCALES[unit as usize])
+        Self(STANDARD_MILLIMETER_SCALES[unit.code()])
     }
 }
 
@@ -1598,8 +1652,8 @@ fn parse_subd_display_parameters<'a>(
 ) -> Result<SubDDisplayParameters, FramingError> {
     let (mut payload, _) = anonymous_payload(data, reader, archive, "SubD display parameters")?;
     let version = anonymous_version(&mut payload, "SubD display parameters")?.1;
-    let display_density = payload.i32()? as u32;
-    let mesh_location = payload.i32()? as u32;
+    let display_density = payload.i32()?.cast_unsigned();
+    let mesh_location = payload.i32()?.cast_unsigned();
     let display_density_is_absolute = if version >= 2 {
         Some(payload.bool()?)
     } else {
@@ -1650,7 +1704,7 @@ pub(crate) fn parse_mesh_parameters<'a>(
     let obsolete_combine_angle = read_finite(reader, "mesh combine angle")?;
     let face_type = reader.i32()?;
     let texture_range = if version.1 >= 1 {
-        Some(reader.i32()? as u32)
+        Some(reader.i32()?.cast_unsigned())
     } else {
         None
     };
@@ -2597,7 +2651,7 @@ fn parse_layer(
                 let mut description = utf16_retained(ctx, &mut reader, "Rhino layer description")?;
                 let trim = |character: char| {
                     matches!(
-                        character as u32,
+                        u32::from(character),
                         0x0001..=0x0020
                             | 0x007f
                             | 0x0080..=0x009f

@@ -147,19 +147,13 @@ pub(super) fn feature_operation_chronological_labels<'a>(
             .or_insert(label.source_offset);
     }
     let count = cadmpeg_core::decode::u64_from_index(labels.len());
-    ctx.charge_collection_items(count, "NX chronological feature labels")?;
     let bytes = labels
         .len()
         .checked_mul(std::mem::size_of::<&FeatureOperationLabel>())
-        .ok_or_else(|| ctx.refuse_codec_limit("retain NX chronological feature labels", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX chronological feature labels",
-    )?;
-    let mut ordered = Vec::new();
-    ordered
-        .try_reserve_exact(labels.len())
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX chronological feature labels", 0, 1))?;
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("retain NX chronological feature labels", 0, count)
+        })?;
+    let mut ordered = ctx.retained_vec(labels.len(), "NX chronological feature labels")?;
     ordered.extend(labels);
     let _sorting = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index(bytes),
@@ -3713,14 +3707,7 @@ fn operation_header_identity_key(
             length.checked_add(slot.len())
         })
         .ok_or_else(|| ctx.refuse_codec_limit("retain NX operation header identity", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "retain NX operation header identity",
-    )?;
-    let mut identity = String::new();
-    identity
-        .try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX operation header identity", 0, 1))?;
+    let mut identity = ctx.retained_string(length, "retain NX operation header identity")?;
     identity.push_str(prefix);
     identity.push_str(slots[0]);
     for slot in slots.iter().skip(1) {
@@ -3743,18 +3730,7 @@ fn assign_operation_header_identities(
         cadmpeg_core::decode::u64_from_index(key_bytes),
         "reserve NX operation header keys",
     )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(labels.len()),
-        "NX operation header keys",
-    )?;
-    let mut keys = Vec::new();
-    keys.try_reserve_exact(labels.len()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "allocate NX operation header keys",
-            0,
-            cadmpeg_core::decode::u64_from_index(labels.len()),
-        )
-    })?;
+    let mut keys = ctx.collection_vec(labels.len(), "NX operation header keys")?;
     for label in labels.iter() {
         keys.push(operation_header_identity_key(
             ctx,
@@ -3776,9 +3752,11 @@ fn assign_operation_header_identities(
             ctx.charge_collection_items(1, "NX operation header counts")?;
             counts_guard.grow(cadmpeg_core::decode::u64_from_index(key.len()))?;
             let mut copy = String::new();
-            copy.try_reserve_exact(key.len()).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX operation header count key", 0, 1)
-            })?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                &mut copy,
+                key.len(),
+                "allocate NX operation header count key",
+            )?;
             copy.push_str(key);
             counts.insert(copy, 0);
         }
@@ -3793,71 +3771,6 @@ fn assign_operation_header_identities(
         label.stable_identity = key.filter(|key| counts.get(key.as_str()) == Some(&1));
     }
     Ok(())
-}
-
-fn copy_operation_text(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
-    let mut text = String::new();
-    text.try_reserve_exact(value.len()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            operation,
-            0,
-            cadmpeg_core::decode::u64_from_index(value.len()),
-        )
-    })?;
-    text.push_str(value);
-    Ok(text)
-}
-
-fn copy_payload_source_blocks<'a>(
-    ctx: &'a DecodeContext<'_>,
-    blocks: impl IntoIterator<Item = &'a str>,
-    operation: &'static str,
-) -> Result<(Vec<String>, cadmpeg_core::decode::ScopedReservation<'a>), CodecError> {
-    let mut ids = Vec::new();
-    let mut reservation = ctx.reserve_scoped(0, operation)?;
-    for block in blocks {
-        let bytes = std::mem::size_of::<String>()
-            .checked_add(block.len())
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-        ctx.charge_collection_items(1, operation)?;
-        ids.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-        let mut id = String::new();
-        id.try_reserve_exact(block.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-        id.push_str(block);
-        ids.push(id);
-    }
-    Ok((ids, reservation))
-}
-
-fn format_charged_text(
-    ctx: &DecodeContext<'_>,
-    args: std::fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    struct CountBytes(usize);
-    impl std::fmt::Write for CountBytes {
-        fn write_str(&mut self, text: &str) -> std::fmt::Result {
-            self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
-            Ok(())
-        }
-    }
-    let mut count = CountBytes(0);
-    std::fmt::write(&mut count, args).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(count.0), operation)?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count.0), operation)?;
-    let mut text = String::new();
-    text.try_reserve_exact(count.0)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    std::fmt::write(&mut text, args).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(text)
 }
 
 fn format_feature_history_id(
@@ -3890,13 +3803,7 @@ fn format_feature_history_id(
             .and_then(|length| length.checked_add(decimal_width(subordinal)))
             .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature history identity", 0, 1))?;
     }
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "retain NX feature history identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX feature history identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "retain NX feature history identity")?;
     write!(
         &mut id,
         "{prefix}{kind}#{section_key}-{operation_ordinal:010}"
@@ -3928,13 +3835,7 @@ fn format_feature_child_id(
         .checked_add(suffix.len())
         .and_then(|length| length.checked_add(digits))
         .ok_or_else(|| ctx.refuse_codec_limit("NX feature child identity", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "NX feature child identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX feature child identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "NX feature child identity")?;
     write!(&mut id, "{parent}{suffix}{ordinal:010}")
         .map_err(|_| ctx.refuse_codec_limit("write NX feature child identity", 0, 1))?;
     Ok(id)
@@ -3975,26 +3876,16 @@ pub(super) fn feature_operation_labels(
             "NX feature label section key",
         )?;
         let mut section_key = String::new();
-        section_key
-            .try_reserve_exact(section_key_len)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX feature label section key", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut section_key,
+            section_key_len,
+            "allocate NX feature label section key",
+        )?;
         write!(&mut section_key, "{section_ordinal:010}")
             .map_err(|_| ctx.refuse_codec_limit("write NX feature label section key", 0, 1))?;
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let records = section.operation_records_with_label_ordinals(ctx)?;
-        let record_count = cadmpeg_core::decode::u64_from_index(records.len());
-        ctx.charge_collection_items(record_count, "NX feature operation labels")?;
-        let retained_bytes = records
-            .len()
-            .checked_mul(std::mem::size_of::<FeatureOperationLabel>())
-            .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature operation labels", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(retained_bytes),
-            "retain NX feature operation labels",
-        )?;
-        labels.try_reserve(records.len()).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX feature operation labels", 0, record_count)
-        })?;
+        ctx.reserve_retained_vec(&mut labels, records.len(), "NX feature operation labels")?;
         for (ordinal, record) in records {
             let label = record.label();
             let ordinal_u32 = u32::try_from(ordinal)
@@ -4008,17 +3899,11 @@ pub(super) fn feature_operation_labels(
                 .ok_or_else(|| ctx.refuse_codec_limit("NX feature operation label offset", 0, 1))?;
             labels.push(FeatureOperationLabel {
                 id,
-                section_link: copy_operation_text(
-                    ctx,
-                    &link.id,
-                    "retain NX feature operation section link",
-                )?,
+                section_link: ctx
+                    .copy_retained_text(&link.id, "retain NX feature operation section link")?,
                 ordinal: ordinal_u32,
-                value: copy_operation_text(
-                    ctx,
-                    label.value,
-                    "retain NX feature operation label text",
-                )?,
+                value: ctx
+                    .copy_retained_text(label.value, "retain NX feature operation label text")?,
                 objects: label.header.objects(),
                 stable_identity: None,
                 source_offset,
@@ -4064,19 +3949,7 @@ pub(super) fn feature_boolean_operations(
             let item = (|| -> Result<FeatureBooleanOperation, CodecError> {
                 let mut tools = Vec::new();
                 for tool in operation.tools {
-                    ctx.charge_collection_items(1, "NX Boolean tool references")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            crate::om::PayloadObjectReference<
-                                crate::om::reference_index::ReferenceIndexToken,
-                                u64,
-                            >,
-                        >()),
-                        "NX Boolean tool references",
-                    )?;
-                    tools.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX Boolean tool references", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut tools, 1, "NX Boolean tool references")?;
                     tools.push(crate::om::PayloadObjectReference {
                         token: tool.token,
                         offset: entry_offset + tool.offset as u64,
@@ -4124,9 +3997,11 @@ pub(super) fn feature_boolean_operations(
                     )
                 })
                 .and_then(|()| {
-                    operations
-                        .try_reserve(1)
-                        .map_err(|_| ctx.refuse_codec_limit("allocate NX Boolean operations", 0, 1))
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                        &mut operations,
+                        1,
+                        "allocate NX Boolean operations",
+                    )
                 })
             {
                 failure = Some(error);
@@ -4193,13 +4068,11 @@ pub(super) fn feature_operation_records(
                         ctx.charge_collection_items(1, "NX operation record identity counts")?;
                         counts_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
                         let mut copy = String::new();
-                        copy.try_reserve_exact(key.len()).map_err(|_| {
-                            ctx.refuse_codec_limit(
-                                "allocate NX operation record identity key",
-                                0,
-                                1,
-                            )
-                        })?;
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                            &mut copy,
+                            key.len(),
+                            "allocate NX operation record identity key",
+                        )?;
                         copy.push_str(key);
                         identity_counts.insert(copy, 1);
                     }
@@ -4246,9 +4119,11 @@ pub(super) fn feature_operation_records(
                     )
                 })
                 .and_then(|()| {
-                    records.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX feature operation records", 0, 1)
-                    })
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                        &mut records,
+                        1,
+                        "allocate NX feature operation records",
+                    )
                 })
             {
                 failure = Some(error);
@@ -4299,16 +4174,7 @@ pub(super) fn feature_unlabeled_operation_records(
                 record,
             )? {
                 ctx.charge_entities(1, "NX unlabeled operation record")?;
-                ctx.charge_collection_items(1, "NX unlabeled operation records")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        FeatureUnlabeledOperationRecord,
-                    >()),
-                    "retain NX unlabeled operation record",
-                )?;
-                records.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX unlabeled operation records", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut records, 1, "NX unlabeled operation records")?;
                 records.push(record);
             }
             Ok(())
@@ -4361,16 +4227,7 @@ pub(super) fn feature_unlabeled_operation_body_writes(
                 let ordinal = u32::try_from(ordinal)
                     .map_err(|_| ctx.refuse_codec_limit("NX unlabeled body write ordinal", 0, 1))?;
                 ctx.charge_entities(1, "NX unlabeled operation body write")?;
-                ctx.charge_collection_items(1, "NX unlabeled operation body writes")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        FeatureOperationBodyWrite,
-                    >()),
-                    "retain NX unlabeled operation body write",
-                )?;
-                writes.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX unlabeled operation body writes", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut writes, 1, "NX unlabeled operation body writes")?;
                 writes.push(FeatureOperationBodyWrite {
                     operation_label: None,
                     id,
@@ -4478,9 +4335,11 @@ pub(super) fn feature_operation_body_writes(
                         )
                     })
                     .and_then(|()| {
-                        writes.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("allocate NX operation body writes", 0, 1)
-                        })
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                            &mut writes,
+                            1,
+                            "allocate NX operation body writes",
+                        )
                     })
                 {
                     failure = Some(error);
@@ -4538,32 +4397,14 @@ pub(super) fn feature_operation_body_image_segment_uses(
                 "operation-body-image-segment-use",
                 "NX body-image segment use identity",
             )?,
-            operation_body_write: copy_operation_text(
-                ctx,
-                &write.id,
-                "NX body-image write identity",
-            )?,
-            body_image_data_block: copy_operation_text(
-                ctx,
-                body_image_data_block,
-                "NX body-image data block identity",
-            )?,
-            segment_body_binding: copy_operation_text(
-                ctx,
-                &binding.id,
-                "NX body-image segment binding identity",
-            )?,
+            operation_body_write: ctx
+                .copy_retained_text(&write.id, "NX body-image write identity")?,
+            body_image_data_block: ctx
+                .copy_retained_text(body_image_data_block, "NX body-image data block identity")?,
+            segment_body_binding: ctx
+                .copy_retained_text(&binding.id, "NX body-image segment binding identity")?,
         };
-        ctx.charge_collection_items(1, "NX body-image segment uses")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FeatureOperationBodyImageSegmentUse,
-            >()),
-            "NX body-image segment uses",
-        )?;
-        output
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX body-image segment uses", 0, 1))?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX body-image segment uses")?;
         output.push(item);
     }
     Ok(output)
@@ -4607,28 +4448,13 @@ pub(super) fn feature_operation_body_identity_segment_uses(
                 "operation-body-identity-segment-use",
                 "NX body-identity segment use identity",
             )?,
-            operation_body_write: copy_operation_text(
-                ctx,
-                &write.id,
-                "NX body-identity write identity",
-            )?,
+            operation_body_write: ctx
+                .copy_retained_text(&write.id, "NX body-identity write identity")?,
             body_identity: write.frame.body_identity(),
-            segment_body_binding: copy_operation_text(
-                ctx,
-                &binding.id,
-                "NX body-identity segment binding identity",
-            )?,
+            segment_body_binding: ctx
+                .copy_retained_text(&binding.id, "NX body-identity segment binding identity")?,
         };
-        ctx.charge_collection_items(1, "NX body-identity segment uses")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FeatureOperationBodyIdentitySegmentUse,
-            >()),
-            "NX body-identity segment uses",
-        )?;
-        output
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX body-identity segment uses", 0, 1))?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX body-identity segment uses")?;
         output.push(item);
     }
     Ok(output)
@@ -4773,38 +4599,28 @@ pub(super) fn feature_operation_body_partition_uses(
             group.origin.partition_stream_ordinal() == Some(partition_stream_ordinal)
                 && group.node_id == write.frame.group_node().value()
         }) {
-            ctx.charge_collection_items(1, "NX body partition group records")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                "NX body partition group record slots",
+            ctx.reserve_retained_vec(
+                &mut parasolid_group_records,
+                1,
+                "NX body partition group records",
             )?;
-            parasolid_group_records.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX body partition group records", 0, 1)
-            })?;
-            parasolid_group_records.push(copy_operation_text(
-                ctx,
-                &group.id,
-                "NX body partition group record identity",
-            )?);
+            parasolid_group_records.push(
+                ctx.copy_retained_text(&group.id, "NX body partition group record identity")?,
+            );
         }
         let mut parasolid_group_members = Vec::new();
         for member in group_members.iter().filter(|member| {
             member.partition_stream_ordinal == partition_stream_ordinal
                 && member.group_node_id == write.frame.group_node().value()
         }) {
-            ctx.charge_collection_items(1, "NX body partition group members")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                "NX body partition group member slots",
+            ctx.reserve_retained_vec(
+                &mut parasolid_group_members,
+                1,
+                "NX body partition group members",
             )?;
-            parasolid_group_members.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX body partition group members", 0, 1)
-            })?;
-            parasolid_group_members.push(copy_operation_text(
-                ctx,
-                &member.id,
-                "NX body partition group member identity",
-            )?);
+            parasolid_group_members.push(
+                ctx.copy_retained_text(&member.id, "NX body partition group member identity")?,
+            );
         }
         let item = FeatureOperationBodyPartitionUse {
             id: replace_operation_text(
@@ -4814,36 +4630,18 @@ pub(super) fn feature_operation_body_partition_uses(
                 "operation-body-partition-use",
                 "NX body partition use identity",
             )?,
-            operation_body_write: copy_operation_text(
-                ctx,
-                &write.id,
-                "NX body partition write identity",
-            )?,
-            body_image_segment_use: copy_operation_text(
-                ctx,
-                &image_use.id,
-                "NX body partition image use identity",
-            )?,
-            segment_body_binding: copy_operation_text(
-                ctx,
-                &binding.id,
-                "NX body partition binding identity",
-            )?,
+            operation_body_write: ctx
+                .copy_retained_text(&write.id, "NX body partition write identity")?,
+            body_image_segment_use: ctx
+                .copy_retained_text(&image_use.id, "NX body partition image use identity")?,
+            segment_body_binding: ctx
+                .copy_retained_text(&binding.id, "NX body partition binding identity")?,
             partition_stream_ordinal,
             group_node: write.frame.group_node().value(),
             parasolid_group_records,
             parasolid_group_members,
         };
-        ctx.charge_collection_items(1, "NX body partition uses")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FeatureOperationBodyPartitionUse,
-            >()),
-            "NX body partition uses",
-        )?;
-        output
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX body partition uses", 0, 1))?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX body partition uses")?;
         output.push(item);
     }
     Ok(output)
@@ -4901,38 +4699,26 @@ pub(super) fn feature_body_write_group_partition_uses(
         }
         let mut parasolid_group_records = Vec::new();
         for group in groups.iter().filter(|group| group.node_id == group_node) {
-            ctx.charge_collection_items(1, "NX body-write group records")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                "NX body-write group record slots",
+            ctx.reserve_retained_vec(
+                &mut parasolid_group_records,
+                1,
+                "NX body-write group records",
             )?;
-            parasolid_group_records.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX body-write group records", 0, 1)
-            })?;
-            parasolid_group_records.push(copy_operation_text(
-                ctx,
-                &group.id,
-                "NX body-write group record identity",
-            )?);
+            parasolid_group_records
+                .push(ctx.copy_retained_text(&group.id, "NX body-write group record identity")?);
         }
         let mut parasolid_group_members = Vec::new();
         for member in group_members.iter().filter(|member| {
             member.partition_stream_ordinal == partition_stream_ordinal
                 && member.group_node_id == group_node
         }) {
-            ctx.charge_collection_items(1, "NX body-write group members")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                "NX body-write group member slots",
+            ctx.reserve_retained_vec(
+                &mut parasolid_group_members,
+                1,
+                "NX body-write group members",
             )?;
-            parasolid_group_members.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX body-write group members", 0, 1)
-            })?;
-            parasolid_group_members.push(copy_operation_text(
-                ctx,
-                &member.id,
-                "NX body-write group member identity",
-            )?);
+            parasolid_group_members
+                .push(ctx.copy_retained_text(&member.id, "NX body-write group member identity")?);
         }
         let use_record = FeatureBodyWriteGroupPartitionUse {
             id: replace_operation_text(
@@ -4942,23 +4728,14 @@ pub(super) fn feature_body_write_group_partition_uses(
                 "body-write-group-partition-use",
                 "NX body-write group use identity",
             )?,
-            body_write: copy_operation_text(ctx, id, "NX body-write group write identity")?,
+            body_write: ctx.copy_retained_text(id, "NX body-write group write identity")?,
             body_identity: write.frame.body_identity(),
             group_node,
             partition_stream_ordinal,
             parasolid_group_records,
             parasolid_group_members,
         };
-        ctx.charge_collection_items(1, "NX body-write group partition uses")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FeatureBodyWriteGroupPartitionUse,
-            >()),
-            "NX body-write group partition uses",
-        )?;
-        output.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX body-write group partition uses", 0, 1)
-        })?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX body-write group partition uses")?;
         output.push(use_record);
     }
     Ok(output)
@@ -5010,16 +4787,7 @@ pub(super) fn feature_operation_object_references(
                         continue;
                     };
                     ctx.charge_work(1, "resolve NX operation object reference")?;
-                    ctx.charge_collection_items(1, "NX operation object references")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureOperationObjectReference,
-                        >()),
-                        "NX operation object references",
-                    )?;
-                    references.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX operation object references", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut references, 1, "NX operation object references")?;
                     references.push(FeatureOperationObjectReference {
                         id: format_feature_history_id(
                             ctx,
@@ -5106,16 +4874,7 @@ pub(super) fn feature_operation_common_frames(
                     else {
                         continue;
                     };
-                    ctx.charge_collection_items(1, "NX operation common frames")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureOperationCommonFrame,
-                        >()),
-                        "NX operation common frames",
-                    )?;
-                    frames.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX operation common frames", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut frames, 1, "NX operation common frames")?;
                     frames.push(FeatureOperationCommonFrame {
                         id: format_feature_history_id(
                             ctx,
@@ -5211,16 +4970,7 @@ pub(super) fn feature_operation_terminal_frames(
                 else {
                     return Ok(());
                 };
-                ctx.charge_collection_items(1, "NX operation terminal frames")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        FeatureOperationTerminalFrame,
-                    >()),
-                    "NX operation terminal frames",
-                )?;
-                frames.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX operation terminal frames", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut frames, 1, "NX operation terminal frames")?;
                 frames.push(FeatureOperationTerminalFrame {
                     id: format_feature_history_id(
                         ctx,
@@ -5232,8 +4982,7 @@ pub(super) fn feature_operation_terminal_frames(
                     operation_record,
                     immediate_common_frame: immediate_common_frame
                         .map(|id| {
-                            copy_operation_text(
-                                ctx,
+                            ctx.copy_retained_text(
                                 id,
                                 "NX operation immediate common frame identity",
                             )
@@ -5343,55 +5092,27 @@ pub(super) fn feature_operation_state_journal_uses(
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("format NX operation journal use identity", 0, 1)
             })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX operation journal use identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX operation journal use identity", 0, 1)
-        })?;
+        let mut id = ctx.retained_string(id_len, "NX operation journal use identity")?;
         write!(
             &mut id,
             "{prefix}{operation_key}-{journal_key}-{journal_row_ordinal:010}"
         )
         .map_err(|_| ctx.refuse_codec_limit("format NX operation journal use identity", 0, 1))?;
-        ctx.charge_collection_items(1, "NX operation journal uses")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FeatureOperationStateJournalUse,
-            >()),
-            "NX operation journal uses",
-        )?;
-        uses.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX operation journal uses", 0, 1))?;
+        ctx.reserve_retained_vec(&mut uses, 1, "NX operation journal uses")?;
         uses.push(FeatureOperationStateJournalUse {
             id,
-            section_link: copy_operation_text(
-                ctx,
-                &label.section_link,
-                "NX operation journal section link",
-            )?,
-            operation_label: copy_operation_text(
-                ctx,
-                &label.id,
-                "NX operation journal label identity",
-            )?,
-            operation_record: copy_operation_text(
-                ctx,
+            section_link: ctx
+                .copy_retained_text(&label.section_link, "NX operation journal section link")?,
+            operation_label: ctx
+                .copy_retained_text(&label.id, "NX operation journal label identity")?,
+            operation_record: ctx.copy_retained_text(
                 &frame.operation_record,
                 "NX operation journal record identity",
             )?,
-            operation_terminal_frame: copy_operation_text(
-                ctx,
-                &frame.id,
-                "NX operation journal terminal identity",
-            )?,
-            journal_group: copy_operation_text(
-                ctx,
-                &group.id,
-                "NX operation journal group identity",
-            )?,
+            operation_terminal_frame: ctx
+                .copy_retained_text(&frame.id, "NX operation journal terminal identity")?,
+            journal_group: ctx
+                .copy_retained_text(&group.id, "NX operation journal group identity")?,
             journal_row_ordinal,
             state_ordinal: row.ordinal().value(),
             operation_source_offset: frame.frame.offset(),
@@ -5427,18 +5148,8 @@ pub(super) fn feature_payload_strings(
                     else {
                         continue;
                     };
-                    ctx.charge_collection_items(1, "NX feature payload strings")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeaturePayloadString,
-                        >()),
-                        "NX feature payload strings",
-                    )?;
-                    strings.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX feature payload strings", 0, 1)
-                    })?;
-                    let text = copy_operation_text(
-                        ctx,
+                    ctx.reserve_retained_vec(&mut strings, 1, "NX feature payload strings")?;
+                    let text = ctx.copy_retained_text(
                         value.value.as_str(),
                         "NX feature payload string text",
                     )?;
@@ -5501,16 +5212,7 @@ pub(super) fn feature_body_references(
                     return Ok(());
                 };
                 ctx.charge_work(1, "resolve NX feature body reference")?;
-                ctx.charge_collection_items(1, "NX feature body references")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<FeatureBodyReference>(),
-                    ),
-                    "NX feature body references",
-                )?;
-                references.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX feature body references", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut references, 1, "NX feature body references")?;
                 references.push(FeatureBodyReference {
                     ordinal: None,
                     id: format_feature_history_id(
@@ -5612,16 +5314,7 @@ pub(super) fn feature_body_reference_occurrences(
                         continue;
                     };
                     ctx.charge_work(1, "resolve NX body reference occurrence")?;
-                    ctx.charge_collection_items(1, "NX body reference occurrences")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureBodyReference,
-                        >()),
-                        "NX body reference occurrences",
-                    )?;
-                    references.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX body reference occurrences", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut references, 1, "NX body reference occurrences")?;
                     references.push(FeatureBodyReference {
                         id: format_feature_history_id(
                             ctx,
@@ -5773,38 +5466,18 @@ pub(super) fn feature_body_segment_uses(
             .checked_add(suffix.len())
             .and_then(|count| count.checked_add(replacement.len()))
             .ok_or_else(|| ctx.refuse_codec_limit("NX body segment use identity", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX body segment use identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX body segment use identity", 0, 1))?;
+        let mut id = ctx.retained_string(id_len, "NX body segment use identity")?;
         id.push_str(prefix);
         id.push_str(replacement);
         id.push_str(suffix);
         let copy = |source: &str, operation: &'static str| -> Result<String, CodecError> {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(source.len()),
-                operation,
-            )?;
-            let mut value = String::new();
-            value
-                .try_reserve_exact(source.len())
-                .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            let mut value = ctx.retained_string(source.len(), operation)?;
             value.push_str(source);
             Ok(value)
         };
         let feature_body_reference = copy(&reference.id, "NX body segment reference identity")?;
         let segment_body_binding = copy(&binding.id, "NX body segment binding identity")?;
-        ctx.charge_collection_items(1, "NX body segment uses")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureBodySegmentUse>()),
-            "NX body segment uses",
-        )?;
-        output
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX body segment uses", 0, 1))?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX body segment uses")?;
         output.push(FeatureBodySegmentUse {
             id,
             feature_body_reference,
@@ -5891,9 +5564,11 @@ fn feature_input_store_sections(
             "NX input-store operation groups",
         )?;
         let mut label = String::new();
-        label
-            .try_reserve_exact(key_len)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX input-store operation label", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut label,
+            key_len,
+            "allocate NX input-store operation label",
+        )?;
         label.push_str(&input.operation_label);
         let mut sections = BTreeSet::new();
         sections.insert(block.section_ordinal);
@@ -5988,33 +5663,18 @@ pub(super) fn feature_body_data_block_uses(
                 })
             })
             .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature body block use id", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "retain NX feature body block use id",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX feature body block use id", 0, 1))?;
+        let mut id = ctx.retained_string(id_len, "retain NX feature body block use id")?;
         id.push_str(prefix);
         if prefix.len() != reference.id.len() {
             id.push_str(new);
         }
         id.push_str(suffix);
-        ctx.charge_collection_items(1, "NX feature body block uses")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureBodyDataBlockUse>()),
-            "retain NX feature body block uses",
-        )?;
-        uses.try_reserve_exact(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX feature body block uses", 0, 1))?;
+        ctx.reserve_retained_vec(&mut uses, 1, "NX feature body block uses")?;
         uses.push(FeatureBodyDataBlockUse {
             id,
-            feature_body_reference: copy_operation_text(
-                ctx,
-                &reference.id,
-                "retain NX feature body reference id",
-            )?,
-            data_block: copy_operation_text(ctx, &block.id, "retain NX feature body block id")?,
+            feature_body_reference: ctx
+                .copy_retained_text(&reference.id, "retain NX feature body reference id")?,
+            data_block: ctx.copy_retained_text(&block.id, "retain NX feature body block id")?,
         });
     }
     Ok(uses)
@@ -6053,16 +5713,7 @@ pub(super) fn feature_input_blocks(
                     else {
                         return Ok(());
                     };
-                    ctx.charge_collection_items(1, "NX feature input blocks")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(
-                            std::mem::size_of::<FeatureInputBlock>(),
-                        ),
-                        "NX feature input blocks",
-                    )?;
-                    inputs.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX feature input blocks", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut inputs, 1, "NX feature input blocks")?;
                     inputs.push(FeatureInputBlock {
                         id: format_feature_history_id(
                             ctx,
@@ -6123,13 +5774,12 @@ pub(super) fn feature_input_block_identity_groups(
             ))?;
         }
         let members = by_block.entry(input.data_block.as_str()).or_default();
-        ctx.charge_collection_items(1, "NX input block group members")?;
-        member_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            &FeatureInputBlock,
-        >()))?;
-        members
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX input block group members", 0, 1))?;
+        ctx.reserve_scoped_vec(
+            &mut member_reservation,
+            members,
+            1,
+            "NX input block group members",
+        )?;
         members.push(input);
     }
     let mut group_reservation = ctx.reserve_scoped(0, "NX input block group order")?;
@@ -6153,14 +5803,12 @@ pub(super) fn feature_input_block_identity_groups(
             "sort NX input block group members",
         )?;
         members.sort_by_key(|member| member.source_offset);
-        ctx.charge_collection_items(1, "NX input block group order")?;
-        group_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-            &str,
-            Vec<&FeatureInputBlock>,
-        )>()))?;
-        groups
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX input block group order", 0, 1))?;
+        ctx.reserve_scoped_vec(
+            &mut group_reservation,
+            &mut groups,
+            1,
+            "NX input block group order",
+        )?;
         groups.push((data_block, members));
     }
     drop(map_reservation);
@@ -6178,24 +5826,11 @@ pub(super) fn feature_input_block_identity_groups(
     for (ordinal, (data_block, members)) in groups.into_iter().enumerate() {
         let mut retained_members = Vec::new();
         for member in members {
-            ctx.charge_collection_items(1, "NX input block identity members")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    FeatureInputBlockIdentityMember,
-                >()),
-                "NX input block identity members",
-            )?;
-            retained_members.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX input block identity members", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut retained_members, 1, "NX input block identity members")?;
             retained_members.push(FeatureInputBlockIdentityMember {
-                input_block: copy_operation_text(
-                    ctx,
-                    &member.id,
-                    "NX input block identity member",
-                )?,
-                operation_label: copy_operation_text(
-                    ctx,
+                input_block: ctx
+                    .copy_retained_text(&member.id, "NX input block identity member")?,
+                operation_label: ctx.copy_retained_text(
                     &member.operation_label,
                     "NX input block member operation label",
                 )?,
@@ -6214,29 +5849,13 @@ pub(super) fn feature_input_block_identity_groups(
             .len()
             .checked_add(digits.max(10))
             .ok_or_else(|| ctx.refuse_codec_limit("NX input block identity group id", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX input block identity group id",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX input block identity group id", 0, 1)
-        })?;
+        let mut id = ctx.retained_string(id_len, "NX input block identity group id")?;
         write!(&mut id, "{prefix}{ordinal:010}")
             .map_err(|_| ctx.refuse_codec_limit("format NX input block identity group id", 0, 1))?;
-        ctx.charge_collection_items(1, "NX input block identity groups")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<FeatureInputBlockIdentityGroup>(),
-            ),
-            "NX input block identity groups",
-        )?;
-        output
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX input block identity groups", 0, 1))?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX input block identity groups")?;
         output.push(FeatureInputBlockIdentityGroup {
             id,
-            data_block: copy_operation_text(ctx, data_block, "NX grouped input data block")?,
+            data_block: ctx.copy_retained_text(data_block, "NX grouped input data block")?,
             members: retained_members,
         });
     }
@@ -6347,13 +5966,7 @@ fn format_column_relation_id(
         .and_then(|length| length.checked_add(digits.max(10)))
         .and_then(|length| length.checked_add(if construction_slot.is_some() { 13 } else { 2 }))
         .ok_or_else(|| ctx.refuse_codec_limit("format NX column relation identity", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "NX column relation identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX column relation identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "NX column relation identity")?;
     if let Some(slot) = construction_slot {
         write!(&mut id, "{prefix}{key}-{slot:010}-{kind}-{ordinal:010}")
             .map_err(|_| ctx.refuse_codec_limit("format NX column relation identity", 0, 1))?;
@@ -6386,16 +5999,7 @@ pub(super) fn feature_input_column_row_uses(
                     return Ok(());
                 }
                 let table = unique_column_table(ctx, row, tables)?;
-                ctx.charge_collection_items(1, "NX input column row uses")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        FeatureInputColumnRowUse,
-                    >()),
-                    "NX input column row uses",
-                )?;
-                output.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX input column row uses", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut output, 1, "NX input column row uses")?;
                 output.push(FeatureInputColumnRowUse {
                     id: format_column_relation_id(
                         ctx,
@@ -6405,28 +6009,21 @@ pub(super) fn feature_input_column_row_uses(
                         row_kind,
                         ordinal,
                     )?,
-                    input_block: copy_operation_text(
-                        ctx,
-                        &input.id,
-                        "NX input column row input identity",
-                    )?,
-                    operation_label: copy_operation_text(
-                        ctx,
+                    input_block: ctx
+                        .copy_retained_text(&input.id, "NX input column row input identity")?,
+                    operation_label: ctx.copy_retained_text(
                         &input.operation_label,
                         "NX input column row operation label",
                     )?,
                     input_slot: input.input_slot,
                     row_kind,
-                    column_row: copy_operation_text(ctx, row, "NX input column row identity")?,
+                    column_row: ctx.copy_retained_text(row, "NX input column row identity")?,
                     column_table: table
-                        .map(|id| copy_operation_text(ctx, id, "NX input column table identity"))
+                        .map(|id| ctx.copy_retained_text(id, "NX input column table identity"))
                         .transpose()?,
                     row_slot: slot,
-                    data_block: copy_operation_text(
-                        ctx,
-                        &input.data_block,
-                        "NX input column data block",
-                    )?,
+                    data_block: ctx
+                        .copy_retained_text(&input.data_block, "NX input column data block")?,
                     source_offset,
                 });
                 ordinal = ordinal.checked_add(1).ok_or_else(|| {
@@ -6466,16 +6063,7 @@ pub(super) fn feature_datum_csys_column_row_uses(
                         return Ok(());
                     }
                     let table = unique_column_table(ctx, row, tables)?;
-                    ctx.charge_collection_items(1, "NX datum CSYS column row uses")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureDatumCsysColumnRowUse,
-                        >()),
-                        "NX datum CSYS column row uses",
-                    )?;
-                    output.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX datum CSYS column row uses", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut output, 1, "NX datum CSYS column row uses")?;
                     output.push(FeatureDatumCsysColumnRowUse {
                         id: format_column_relation_id(
                             ctx,
@@ -6488,34 +6076,26 @@ pub(super) fn feature_datum_csys_column_row_uses(
                             row_kind,
                             ordinal,
                         )?,
-                        construction: copy_operation_text(
-                            ctx,
+                        construction: ctx.copy_retained_text(
                             &construction.id,
                             "NX datum CSYS column construction identity",
                         )?,
-                        operation_label: copy_operation_text(
-                            ctx,
+                        operation_label: ctx.copy_retained_text(
                             &construction.operation_label,
                             "NX datum CSYS column operation label",
                         )?,
                         construction_slot,
                         row_kind,
-                        column_row: copy_operation_text(
-                            ctx,
-                            row,
-                            "NX datum CSYS column row identity",
-                        )?,
+                        column_row: ctx
+                            .copy_retained_text(row, "NX datum CSYS column row identity")?,
                         column_table: table
                             .map(|id| {
-                                copy_operation_text(ctx, id, "NX datum CSYS column table identity")
+                                ctx.copy_retained_text(id, "NX datum CSYS column table identity")
                             })
                             .transpose()?,
                         row_slot,
-                        data_block: copy_operation_text(
-                            ctx,
-                            data_block,
-                            "NX datum CSYS column data block",
-                        )?,
+                        data_block: ctx
+                            .copy_retained_text(data_block, "NX datum CSYS column data block")?,
                         construction_source_offset: source_offset,
                         row_source_offset,
                     });
@@ -6568,118 +6148,84 @@ pub(super) fn feature_input_column_targets(
         let Some(column_table) = target.column_table.as_ref() else {
             continue;
         };
-        let (row, field_indices, field_data_blocks, field_source_offsets, mode) =
-            match target.row_kind {
-                ColumnIndexRowKind::LinkedIndex => {
-                    let mut rows = linked_rows.iter().filter(|row| row.id == target.column_row);
-                    let Some(row) = rows.next() else {
-                        continue;
-                    };
-                    if rows.next().is_some() {
-                        continue;
-                    }
-                    let [first, second, third] = row.frame.indices().map(|token| {
-                        copy_operation_text(
-                            ctx,
-                            token.target,
-                            "NX input column target field data block",
-                        )
-                    });
-                    (
-                        FeatureInputColumnTargetRow::Linked {
-                            leading_index: row.frame.first_index().atom.value(),
-                            leading_index_source_offset: row.frame.first_index().offset,
-                            discriminator: row.frame.discriminator(),
-                            flag: row.frame.flag(),
-                        },
-                        row.frame.indices().map(|token| token.atom.value()),
-                        [first?, second?, third?],
-                        row.frame.indices().map(|token| token.offset),
-                        row.frame.mode(),
-                    )
+        let (row, field_indices, field_data_blocks, field_source_offsets, mode) = match target
+            .row_kind
+        {
+            ColumnIndexRowKind::LinkedIndex => {
+                let mut rows = linked_rows.iter().filter(|row| row.id == target.column_row);
+                let Some(row) = rows.next() else {
+                    continue;
+                };
+                if rows.next().is_some() {
+                    continue;
                 }
-                ColumnIndexRowKind::TargetIndex => {
-                    let mut rows = target_rows.iter().filter(|row| row.id == target.column_row);
-                    let Some(row) = rows.next() else {
-                        continue;
-                    };
-                    if rows.next().is_some() {
-                        continue;
-                    }
-                    let [first, second, third] = row.frame.indices().map(|token| {
-                        copy_operation_text(
-                            ctx,
-                            token.target,
-                            "NX input column target field data block",
-                        )
-                    });
-                    (
-                        FeatureInputColumnTargetRow::Target,
-                        row.frame.indices().map(|token| token.atom.value()),
-                        [first?, second?, third?],
-                        row.frame.indices().map(|token| token.offset),
-                        row.frame.mode(),
-                    )
+                let [first, second, third] = row.frame.indices().map(|token| {
+                    ctx.copy_retained_text(token.target, "NX input column target field data block")
+                });
+                (
+                    FeatureInputColumnTargetRow::Linked {
+                        leading_index: row.frame.first_index().atom.value(),
+                        leading_index_source_offset: row.frame.first_index().offset,
+                        discriminator: row.frame.discriminator(),
+                        flag: row.frame.flag(),
+                    },
+                    row.frame.indices().map(|token| token.atom.value()),
+                    [first?, second?, third?],
+                    row.frame.indices().map(|token| token.offset),
+                    row.frame.mode(),
+                )
+            }
+            ColumnIndexRowKind::TargetIndex => {
+                let mut rows = target_rows.iter().filter(|row| row.id == target.column_row);
+                let Some(row) = rows.next() else {
+                    continue;
+                };
+                if rows.next().is_some() {
+                    continue;
                 }
-                ColumnIndexRowKind::Index => continue,
-            };
+                let [first, second, third] = row.frame.indices().map(|token| {
+                    ctx.copy_retained_text(token.target, "NX input column target field data block")
+                });
+                (
+                    FeatureInputColumnTargetRow::Target,
+                    row.frame.indices().map(|token| token.atom.value()),
+                    [first?, second?, third?],
+                    row.frame.indices().map(|token| token.offset),
+                    row.frame.mode(),
+                )
+            }
+            ColumnIndexRowKind::Index => continue,
+        };
         let key = input.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let prefix = "nx:feature-history:input-column-target#";
         let id_len = prefix
             .len()
             .checked_add(key.len())
             .ok_or_else(|| ctx.refuse_codec_limit("NX input column target identity", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX input column target identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX input column target identity", 0, 1)
-        })?;
+        let mut id = ctx.retained_string(id_len, "NX input column target identity")?;
         id.push_str(prefix);
         id.push_str(key);
-        ctx.charge_collection_items(1, "NX input column targets")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureInputColumnTarget>()),
-            "NX input column targets",
-        )?;
-        output
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX input column targets", 0, 1))?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX input column targets")?;
         output.push(FeatureInputColumnTarget {
             id,
-            input_block: copy_operation_text(
-                ctx,
-                &input.id,
-                "NX input column target input identity",
-            )?,
-            operation_label: copy_operation_text(
-                ctx,
+            input_block: ctx
+                .copy_retained_text(&input.id, "NX input column target input identity")?,
+            operation_label: ctx.copy_retained_text(
                 &input.operation_label,
                 "NX input column target operation label",
             )?,
             input_slot: input.input_slot,
-            column_row: copy_operation_text(
-                ctx,
-                &target.column_row,
-                "NX input column target row identity",
-            )?,
+            column_row: ctx
+                .copy_retained_text(&target.column_row, "NX input column target row identity")?,
             row,
             field_indices,
             field_data_blocks,
             field_source_offsets,
             mode,
-            column_table: copy_operation_text(
-                ctx,
-                column_table,
-                "NX input column target table identity",
-            )?,
-            data_block: copy_operation_text(
-                ctx,
-                &input.data_block,
-                "NX input column target data block",
-            )?,
+            column_table: ctx
+                .copy_retained_text(column_table, "NX input column target table identity")?,
+            data_block: ctx
+                .copy_retained_text(&input.data_block, "NX input column target data block")?,
             source_offset: target.source_offset,
         });
     }
@@ -6758,16 +6304,7 @@ pub(super) fn feature_datum_csys_constructions(
                     operation_ordinal,
                     None,
                 )?;
-                ctx.charge_collection_items(1, "NX datum CSYS constructions")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        FeatureDatumCsysConstruction,
-                    >()),
-                    "NX datum CSYS constructions",
-                )?;
-                constructions.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX datum CSYS constructions", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut constructions, 1, "NX datum CSYS constructions")?;
                 constructions.push(FeatureDatumCsysConstruction {
                     id,
                     operation_label,
@@ -6802,8 +6339,7 @@ pub(super) fn feature_datum_plane_payloads(
         {
             continue;
         }
-        let (data_blocks, reservation) = copy_payload_source_blocks(
-            ctx,
+        let (data_blocks, reservation) = ctx.collect_scoped_texts(
             header
                 .resolved_data_blocks(DatumPlaneBlockLane::Object)
                 .map(String::as_str),
@@ -6824,31 +6360,16 @@ pub(super) fn feature_datum_plane_payloads(
             .len()
             .checked_add(key.len())
             .ok_or_else(|| ctx.refuse_codec_limit("NX datum plane payload identity", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX datum plane payload identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX datum plane payload identity", 0, 1)
-        })?;
+        let mut id = ctx.retained_string(id_len, "NX datum plane payload identity")?;
         id.push_str(prefix);
         id.push_str(key);
-        let operation_label = copy_operation_text(
-            ctx,
+        let operation_label = ctx.copy_retained_text(
             &header.operation_label,
             "NX datum plane payload operation label",
         )?;
         let datum_plane_header =
-            copy_operation_text(ctx, &header.id, "NX datum plane payload header identity")?;
-        ctx.charge_collection_items(1, "NX datum plane payloads")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureDatumPlanePayload>()),
-            "NX datum plane payloads",
-        )?;
-        output
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX datum plane payloads", 0, 1))?;
+            ctx.copy_retained_text(&header.id, "NX datum plane payload header identity")?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX datum plane payloads")?;
         output.push(FeatureDatumPlanePayload {
             id,
             operation_label,
@@ -6881,9 +6402,11 @@ pub(super) fn feature_datum_csys_payloads(
         )?;
         let copy = |value: &str| -> Result<String, CodecError> {
             let mut id = String::new();
-            id.try_reserve_exact(value.len()).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX datum CSYS source block identity", 0, 1)
-            })?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                &mut id,
+                value.len(),
+                "allocate NX datum CSYS source block identity",
+            )?;
             id.push_str(value);
             Ok(id)
         };
@@ -6899,24 +6422,15 @@ pub(super) fn feature_datum_csys_payloads(
             "datum-csys-payload",
             "NX datum CSYS payload identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
+        let operation_label = ctx.copy_retained_text(
             &construction.operation_label,
             "NX datum CSYS payload operation label",
         )?;
-        let construction_id = copy_operation_text(
-            ctx,
+        let construction_id = ctx.copy_retained_text(
             &construction.id,
             "NX datum CSYS payload construction identity",
         )?;
-        ctx.charge_collection_items(1, "NX datum CSYS payloads")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureDatumCsysPayload>()),
-            "NX datum CSYS payloads",
-        )?;
-        output
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX datum CSYS payloads", 0, 1))?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX datum CSYS payloads")?;
         output.push(FeatureDatumCsysPayload {
             id,
             operation_label,
@@ -6956,14 +6470,7 @@ fn construction_payload_frames<P, S, R>(
             let Some(record) = build(payload, ordinal, row, &source_offset)? else {
                 continue;
             };
-            ctx.charge_collection_items(1, "NX construction payload frames")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<R>()),
-                "NX construction payload frames",
-            )?;
-            output.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX construction payload frames", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut output, 1, "NX construction payload frames")?;
             output.push(record);
         }
     }
@@ -6998,17 +6505,13 @@ pub(super) fn feature_datum_csys_payload_scalar_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS scalar pair ordinal", 0, 1))?;
             Ok(Some(FeaturePayloadScalarPair {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
+                operation_label: ctx.copy_retained_text(
                     &payload.operation_label,
                     "NX datum CSYS scalar pair label",
                 )?,
                 payload: FeatureScalarPairPayload::DatumCsys {
-                    datum_csys_payload: copy_operation_text(
-                        ctx,
-                        &payload.id,
-                        "NX datum CSYS scalar pair payload",
-                    )?,
+                    datum_csys_payload: ctx
+                        .copy_retained_text(&payload.id, "NX datum CSYS scalar pair payload")?,
                     frame,
                 },
                 ordinal,
@@ -7047,16 +6550,12 @@ pub(super) fn feature_datum_csys_payload_fixed_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS fixed pair ordinal", 0, 1))?;
             Ok(Some(FeatureDatumCsysPayloadFixedPair {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
+                operation_label: ctx.copy_retained_text(
                     &payload.operation_label,
                     "NX datum CSYS fixed pair label",
                 )?,
-                datum_csys_payload: copy_operation_text(
-                    ctx,
-                    &payload.id,
-                    "NX datum CSYS fixed pair payload",
-                )?,
+                datum_csys_payload: ctx
+                    .copy_retained_text(&payload.id, "NX datum CSYS fixed pair payload")?,
                 ordinal,
                 values: pair.values,
                 position,
@@ -7088,17 +6587,11 @@ pub(super) fn feature_datum_csys_payload_scalars(
                 .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS scalar ordinal", 0, 1))?;
             Ok(Some(FeaturePayloadScalar {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX datum CSYS scalar label",
-                )?,
+                operation_label: ctx
+                    .copy_retained_text(&payload.operation_label, "NX datum CSYS scalar label")?,
                 payload: FeatureScalarPayload::DatumCsys {
-                    datum_csys_payload: copy_operation_text(
-                        ctx,
-                        &payload.id,
-                        "NX datum CSYS scalar payload",
-                    )?,
+                    datum_csys_payload: ctx
+                        .copy_retained_text(&payload.id, "NX datum CSYS scalar payload")?,
                 },
                 ordinal,
                 field_code: scalar.field_code,
@@ -7136,33 +6629,21 @@ pub(super) fn feature_datum_csys_descriptors(
             else {
                 continue;
             };
-            let id = format_charged_text(
-                ctx,
+            let id = ctx.format_retained_with_work(
                 format_args!("{}-descriptor-{reference_ordinal}", construction.id),
                 "NX datum CSYS descriptor identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
+            let operation_label = ctx.copy_retained_text(
                 &construction.operation_label,
                 "NX datum CSYS descriptor operation label",
             )?;
-            let construction_id = copy_operation_text(
-                ctx,
+            let construction_id = ctx.copy_retained_text(
                 &construction.id,
                 "NX datum CSYS descriptor construction identity",
             )?;
             let data_block =
-                copy_operation_text(ctx, data_block, "NX datum CSYS descriptor data block")?;
-            ctx.charge_collection_items(1, "NX datum CSYS descriptors")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<FeatureDatumCsysDescriptor>(),
-                ),
-                "NX datum CSYS descriptors",
-            )?;
-            descriptors
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX datum CSYS descriptors", 0, 1))?;
+                ctx.copy_retained_text(data_block, "NX datum CSYS descriptor data block")?;
+            ctx.reserve_retained_vec(&mut descriptors, 1, "NX datum CSYS descriptors")?;
             descriptors.push(FeatureDatumCsysDescriptor {
                 id,
                 operation_label,
@@ -7198,38 +6679,27 @@ pub(super) fn feature_datum_plane_csys_identity_uses(
             }
             let plane_key = plane.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
             let csys_key = csys.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-            let id = format_charged_text(
-                ctx,
+            let id = ctx.format_retained_with_work(
                 format_args!(
                     "nx:feature-history:datum-plane-csys-identity-use#{plane_key}-{csys_key}"
                 ),
                 "NX datum descriptor identity use",
             )?;
-            let identity_text = copy_operation_text(
-                ctx,
+            let identity_text = ctx.copy_retained_text(
                 csys.descriptor.descriptor().identity().as_str(),
                 "NX datum descriptor shared identity",
             )?;
             let identity = CsysIdentity::try_from(identity_text)
                 .map_err(|error| CodecError::Malformed(error.to_owned()))?;
             let datum_plane_descriptor =
-                copy_operation_text(ctx, &plane.id, "NX datum identity plane descriptor")?;
+                ctx.copy_retained_text(&plane.id, "NX datum identity plane descriptor")?;
             let datum_plane_operation_label =
-                copy_operation_text(ctx, &plane.operation_label, "NX datum identity plane label")?;
+                ctx.copy_retained_text(&plane.operation_label, "NX datum identity plane label")?;
             let datum_csys_descriptor =
-                copy_operation_text(ctx, &csys.id, "NX datum identity CSYS descriptor")?;
+                ctx.copy_retained_text(&csys.id, "NX datum identity CSYS descriptor")?;
             let datum_csys_operation_label =
-                copy_operation_text(ctx, &csys.operation_label, "NX datum identity CSYS label")?;
-            ctx.charge_collection_items(1, "NX datum descriptor identity uses")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    FeatureDatumPlaneCsysIdentityUse,
-                >()),
-                "NX datum descriptor identity uses",
-            )?;
-            uses.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX datum descriptor identity uses", 0, 1)
-            })?;
+                ctx.copy_retained_text(&csys.operation_label, "NX datum identity CSYS label")?;
+            ctx.reserve_retained_vec(&mut uses, 1, "NX datum descriptor identity uses")?;
             uses.push(FeatureDatumPlaneCsysIdentityUse {
                 id,
                 identity,
@@ -7272,17 +6742,13 @@ pub(super) fn feature_datum_plane_payload_scalar_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX datum plane scalar pair ordinal", 0, 1))?;
             Ok(Some(FeaturePayloadScalarPair {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
+                operation_label: ctx.copy_retained_text(
                     &payload.operation_label,
                     "NX datum plane scalar pair label",
                 )?,
                 payload: FeatureScalarPairPayload::DatumPlane {
-                    datum_plane_payload: copy_operation_text(
-                        ctx,
-                        &payload.id,
-                        "NX datum plane scalar pair payload",
-                    )?,
+                    datum_plane_payload: ctx
+                        .copy_retained_text(&payload.id, "NX datum plane scalar pair payload")?,
                     frame,
                 },
                 ordinal,
@@ -7312,32 +6778,21 @@ pub(super) fn feature_datum_plane_descriptors(
             let Some(descriptor) = crate::om::datum_plane_descriptor_block(ctx, bytes)? else {
                 continue;
             };
-            let id = format_charged_text(
-                ctx,
+            let id = ctx.format_retained_with_work(
                 format_args!("{}-descriptor-{ordinal:010}", header.id),
                 "NX datum plane descriptor identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
+            let operation_label = ctx.copy_retained_text(
                 &header.operation_label,
                 "NX datum plane descriptor operation label",
             )?;
             let datum_plane_header =
-                copy_operation_text(ctx, &header.id, "NX datum plane descriptor header identity")?;
+                ctx.copy_retained_text(&header.id, "NX datum plane descriptor header identity")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX datum plane descriptor ordinal", 0, 1))?;
             let data_block =
-                copy_operation_text(ctx, data_block, "NX datum plane descriptor data block")?;
-            ctx.charge_collection_items(1, "NX datum plane descriptors")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    FeatureDatumPlaneDescriptor,
-                >()),
-                "NX datum plane descriptors",
-            )?;
-            descriptors
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX datum plane descriptors", 0, 1))?;
+                ctx.copy_retained_text(data_block, "NX datum plane descriptor data block")?;
+            ctx.reserve_retained_vec(&mut descriptors, 1, "NX datum plane descriptors")?;
             descriptors.push(FeatureDatumPlaneDescriptor {
                 id,
                 operation_label,
@@ -7382,41 +6837,27 @@ pub(super) fn feature_datum_plane_block_uses(
                         DatumPlaneBlockLane::Descriptor => "descriptor",
                         DatumPlaneBlockLane::Object => "object",
                     };
-                    let id = format_charged_text(ctx, format_args!(
+                    let id = ctx.format_retained_with_work(format_args!(
                         "nx:feature-history:datum-plane-block-use#{construction_key}-{lane_key}-{reference_ordinal}-{input_key}-{}",
                         input.input_slot), "NX datum plane block use identity")?;
                     let datum_plane_header =
-                        copy_operation_text(ctx, &header.id, "NX datum plane block use header")?;
-                    let construction_operation_label = copy_operation_text(
-                        ctx,
+                        ctx.copy_retained_text(&header.id, "NX datum plane block use header")?;
+                    let construction_operation_label = ctx.copy_retained_text(
                         &header.operation_label,
                         "NX datum plane block use construction label",
                     )?;
                     let reference_ordinal = u32::try_from(reference_ordinal).map_err(|_| {
                         ctx.refuse_codec_limit("NX datum plane block use ordinal", 0, 1)
                     })?;
-                    let data_block = copy_operation_text(
-                        ctx,
-                        data_block,
-                        "NX datum plane block use data block",
-                    )?;
+                    let data_block =
+                        ctx.copy_retained_text(data_block, "NX datum plane block use data block")?;
                     let input_binding =
-                        copy_operation_text(ctx, &input.id, "NX datum plane block use input")?;
-                    let input_operation_label = copy_operation_text(
-                        ctx,
+                        ctx.copy_retained_text(&input.id, "NX datum plane block use input")?;
+                    let input_operation_label = ctx.copy_retained_text(
                         &input.operation_label,
                         "NX datum plane block use input label",
                     )?;
-                    ctx.charge_collection_items(1, "NX datum plane block uses")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureDatumPlaneBlockUse,
-                        >()),
-                        "NX datum plane block uses",
-                    )?;
-                    uses.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX datum plane block uses", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut uses, 1, "NX datum plane block uses")?;
                     uses.push(FeatureDatumPlaneBlockUse {
                         id,
                         datum_plane_header,
@@ -7465,38 +6906,24 @@ pub(super) fn feature_datum_csys_block_uses(
                     .operation_label
                     .rsplit_once('#')
                     .map_or(input.operation_label.as_str(), |(_, key)| key);
-                let id = format_charged_text(ctx, format_args!(
+                let id = ctx.format_retained_with_work(format_args!(
                     "nx:feature-history:datum-csys-block-use#{construction_key}-{reference_ordinal}-{input_key}-{}",
                     input.input_slot), "NX datum CSYS block use identity")?;
-                let construction_id = copy_operation_text(
-                    ctx,
-                    &construction.id,
-                    "NX datum CSYS block use construction",
-                )?;
-                let construction_operation_label = copy_operation_text(
-                    ctx,
+                let construction_id = ctx
+                    .copy_retained_text(&construction.id, "NX datum CSYS block use construction")?;
+                let construction_operation_label = ctx.copy_retained_text(
                     &construction.operation_label,
                     "NX datum CSYS block use construction label",
                 )?;
                 let data_block =
-                    copy_operation_text(ctx, data_block, "NX datum CSYS block use data block")?;
+                    ctx.copy_retained_text(data_block, "NX datum CSYS block use data block")?;
                 let input_binding =
-                    copy_operation_text(ctx, &input.id, "NX datum CSYS block use input")?;
-                let input_operation_label = copy_operation_text(
-                    ctx,
+                    ctx.copy_retained_text(&input.id, "NX datum CSYS block use input")?;
+                let input_operation_label = ctx.copy_retained_text(
                     &input.operation_label,
                     "NX datum CSYS block use input label",
                 )?;
-                ctx.charge_collection_items(1, "NX datum CSYS block uses")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        FeatureDatumCsysBlockUse,
-                    >()),
-                    "NX datum CSYS block uses",
-                )?;
-                uses.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX datum CSYS block uses", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut uses, 1, "NX datum CSYS block uses")?;
                 uses.push(FeatureDatumCsysBlockUse {
                     id,
                     construction: construction_id,
@@ -7550,10 +6977,7 @@ pub(super) fn feature_sketch_records(
             input_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
                 &FeatureInputBlock,
             >()))?;
-            ctx.charge_collection_items(1, "NX sketch input block order")?;
-            input_blocks.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX sketch input block order", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut input_blocks, 1, "NX sketch input block order")?;
             input_blocks.push(input);
         }
         input_blocks.sort_by_key(|input| input.input_slot);
@@ -7571,39 +6995,22 @@ pub(super) fn feature_sketch_records(
             reference_reservation.grow(cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<&FeatureSketchReference>(),
             ))?;
-            ctx.charge_collection_items(1, "NX sketch reference order")?;
-            payload_references
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch reference order", 0, 1))?;
+            ctx.reserve_vec(&mut payload_references, 1, "NX sketch reference order")?;
             payload_references.push(reference);
         }
         payload_references.sort_by_key(|reference| reference.position.ordinal());
 
         let mut input_ids = Vec::new();
         for input in input_blocks {
-            let id = copy_operation_text(ctx, &input.id, "NX sketch input identity")?;
-            ctx.charge_collection_items(1, "NX sketch input identities")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                "NX sketch input identities",
-            )?;
-            input_ids
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch input identities", 0, 1))?;
+            let id = ctx.copy_retained_text(&input.id, "NX sketch input identity")?;
+            ctx.reserve_retained_vec(&mut input_ids, 1, "NX sketch input identities")?;
             input_ids.push(id);
         }
         drop(input_reservation);
         let mut reference_ids = Vec::new();
         for reference in payload_references {
-            let id = copy_operation_text(ctx, &reference.id, "NX sketch reference identity")?;
-            ctx.charge_collection_items(1, "NX sketch reference identities")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                "NX sketch reference identities",
-            )?;
-            reference_ids.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX sketch reference identities", 0, 1)
-            })?;
+            let id = ctx.copy_retained_text(&reference.id, "NX sketch reference identity")?;
+            ctx.reserve_retained_vec(&mut reference_ids, 1, "NX sketch reference identities")?;
             reference_ids.push(id);
         }
         drop(reference_reservation);
@@ -7615,17 +7022,10 @@ pub(super) fn feature_sketch_records(
             "NX sketch record identity",
         )?;
         let operation_label =
-            copy_operation_text(ctx, &label.id, "NX sketch record operation label")?;
+            ctx.copy_retained_text(&label.id, "NX sketch record operation label")?;
         let operation_record =
-            copy_operation_text(ctx, &record.id, "NX sketch operation record identity")?;
-        ctx.charge_collection_items(1, "NX sketch records")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSketchRecord>()),
-            "NX sketch records",
-        )?;
-        sketches
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch records", 0, 1))?;
+            ctx.copy_retained_text(&record.id, "NX sketch operation record identity")?;
+        ctx.reserve_retained_vec(&mut sketches, 1, "NX sketch records")?;
         sketches.push(FeatureSketchRecord {
             id,
             operation_label,
@@ -7661,10 +7061,7 @@ pub(super) fn feature_sketch_construction_inputs(
             field_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
                 &FeatureSketchReference,
             >()))?;
-            ctx.charge_collection_items(1, "NX sketch construction reference order")?;
-            field.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX sketch construction reference order", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut field, 1, "NX sketch construction reference order")?;
             field.push(reference);
         }
         field.sort_by_key(|reference| reference.position.ordinal());
@@ -7699,26 +7096,14 @@ pub(super) fn feature_sketch_construction_inputs(
         };
         let mut member_rows = Vec::new();
         for reference in members {
-            let reference_id = copy_operation_text(
-                ctx,
-                &reference.id,
-                "NX sketch construction member reference",
-            )?;
+            let reference_id =
+                ctx.copy_retained_text(&reference.id, "NX sketch construction member reference")?;
             let Some(data_block) = reference.data_block.as_ref() else {
                 continue;
             };
             let data_block =
-                copy_operation_text(ctx, data_block, "NX sketch construction member block")?;
-            ctx.charge_collection_items(1, "NX sketch construction members")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<FeatureConstructionMember>(),
-                ),
-                "NX sketch construction members",
-            )?;
-            member_rows.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX sketch construction members", 0, 1)
-            })?;
+                ctx.copy_retained_text(data_block, "NX sketch construction member block")?;
+            ctx.reserve_retained_vec(&mut member_rows, 1, "NX sketch construction members")?;
             member_rows.push(FeatureConstructionMember {
                 reference: reference_id,
                 data_block,
@@ -7731,35 +7116,19 @@ pub(super) fn feature_sketch_construction_inputs(
             "sketch-construction-inputs",
             "NX sketch construction input identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
+        let operation_label = ctx.copy_retained_text(
             &sketch.operation_label,
             "NX sketch construction input label",
         )?;
         let sketch_record =
-            copy_operation_text(ctx, &sketch.id, "NX sketch construction sketch record")?;
-        let terminal_reference = copy_operation_text(
-            ctx,
-            &terminal.id,
-            "NX sketch construction terminal reference",
-        )?;
-        let terminal_data_block = copy_operation_text(
-            ctx,
-            terminal_data_block,
-            "NX sketch construction terminal block",
-        )?;
+            ctx.copy_retained_text(&sketch.id, "NX sketch construction sketch record")?;
+        let terminal_reference =
+            ctx.copy_retained_text(&terminal.id, "NX sketch construction terminal reference")?;
+        let terminal_data_block =
+            ctx.copy_retained_text(terminal_data_block, "NX sketch construction terminal block")?;
         drop(field);
         drop(field_reservation);
-        ctx.charge_collection_items(1, "NX sketch construction inputs")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FeatureSketchConstructionInputs,
-            >()),
-            "NX sketch construction inputs",
-        )?;
-        inputs
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch construction inputs", 0, 1))?;
+        ctx.reserve_retained_vec(&mut inputs, 1, "NX sketch construction inputs")?;
         inputs.push(FeatureSketchConstructionInputs {
             id,
             operation_label,
@@ -7787,11 +7156,8 @@ pub(super) fn feature_sketch_construction_payloads(
             .iter()
             .map(|member| member.data_block.as_str())
             .chain(std::iter::once(construction.terminal_data_block.as_str()));
-        let (data_blocks, reservation) = copy_payload_source_blocks(
-            ctx,
-            source_ids,
-            "copy NX sketch construction source blocks",
-        )?;
+        let (data_blocks, reservation) =
+            ctx.collect_scoped_texts(source_ids, "copy NX sketch construction source blocks")?;
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
@@ -7803,24 +7169,15 @@ pub(super) fn feature_sketch_construction_payloads(
             "sketch-construction-payload",
             "NX sketch construction payload identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
+        let operation_label = ctx.copy_retained_text(
             &construction.operation_label,
             "NX sketch construction payload label",
         )?;
-        let construction_inputs = copy_operation_text(
-            ctx,
+        let construction_inputs = ctx.copy_retained_text(
             &construction.id,
             "NX sketch construction payload input identity",
         )?;
-        ctx.charge_collection_items(1, "NX sketch construction payloads")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureConstructionPayload>()),
-            "NX sketch construction payloads",
-        )?;
-        output.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX sketch construction payloads", 0, 1)
-        })?;
+        ctx.reserve_retained_vec(&mut output, 1, "NX sketch construction payloads")?;
         output.push(FeatureConstructionPayload {
             id,
             operation_label,
@@ -7861,17 +7218,13 @@ pub(super) fn feature_sketch_payload_coordinate_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX sketch coordinate pair ordinal", 0, 1))?;
             Ok(Some(FeaturePayloadScalarPair {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
+                operation_label: ctx.copy_retained_text(
                     &payload.operation_label,
                     "NX sketch coordinate pair label",
                 )?,
                 payload: FeatureScalarPairPayload::Construction {
-                    construction_payload: copy_operation_text(
-                        ctx,
-                        &payload.id,
-                        "NX sketch coordinate pair payload",
-                    )?,
+                    construction_payload: ctx
+                        .copy_retained_text(&payload.id, "NX sketch coordinate pair payload")?,
                     frame,
                 },
                 ordinal,
@@ -7910,16 +7263,10 @@ pub(super) fn feature_sketch_payload_fixed_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX sketch fixed pair ordinal", 0, 1))?;
             Ok(Some(FeatureSketchPayloadFixedPair {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX sketch fixed pair label",
-                )?,
-                construction_payload: copy_operation_text(
-                    ctx,
-                    &payload.id,
-                    "NX sketch fixed pair payload",
-                )?,
+                operation_label: ctx
+                    .copy_retained_text(&payload.operation_label, "NX sketch fixed pair label")?,
+                construction_payload: ctx
+                    .copy_retained_text(&payload.id, "NX sketch fixed pair payload")?,
                 ordinal,
                 values: pair.values,
                 position,
@@ -7958,16 +7305,10 @@ pub(super) fn feature_sketch_payload_mixed_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX sketch mixed pair ordinal", 0, 1))?;
             Ok(Some(FeatureSketchPayloadMixedPair {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX sketch mixed pair label",
-                )?,
-                construction_payload: copy_operation_text(
-                    ctx,
-                    &payload.id,
-                    "NX sketch mixed pair payload",
-                )?,
+                operation_label: ctx
+                    .copy_retained_text(&payload.operation_label, "NX sketch mixed pair label")?,
+                construction_payload: ctx
+                    .copy_retained_text(&payload.id, "NX sketch mixed pair payload")?,
                 ordinal,
                 scalars: pair.scalars,
                 position,
@@ -8034,8 +7375,11 @@ fn offset_data_block_bytes_for_section<'a>(
         )?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(map_bytes))?;
         let mut key = String::new();
-        key.try_reserve_exact(length)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX offset block view key", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut key,
+            length,
+            "allocate NX offset block view key",
+        )?;
         write!(&mut key, "{prefix}{section_ordinal}{infix}{block_ordinal}")
             .map_err(|_| ctx.refuse_codec_limit("format NX offset block view key", 0, 1))?;
         let offset = entry_offset
@@ -8123,24 +7467,15 @@ pub(super) fn feature_sketch_payload_scalars(
             let key = construction_payload
                 .rsplit_once('#')
                 .map_or("unknown", |(_, key)| key);
-            let id = format_charged_text(
-                ctx,
+            let id = ctx.format_retained_with_work(
                 format_args!("nx:feature-history:sketch-payload-scalar#{key}-{ordinal:010}"),
                 "NX sketch payload scalar identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
+            let operation_label = ctx.copy_retained_text(
                 &construction.operation_label,
                 "NX sketch payload scalar operation label",
             )?;
-            ctx.charge_collection_items(1, "NX sketch payload scalars")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeaturePayloadScalar>()),
-                "NX sketch payload scalars",
-            )?;
-            output
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch payload scalars", 0, 1))?;
+            ctx.reserve_retained_vec(&mut output, 1, "NX sketch payload scalars")?;
             output.push(FeaturePayloadScalar {
                 id,
                 operation_label,
@@ -8187,16 +7522,10 @@ pub(super) fn feature_sketch_payload_scalar_lanes(
                 .map_err(|_| ctx.refuse_codec_limit("NX sketch scalar lane ordinal", 0, 1))?;
             Ok(Some(FeatureSketchPayloadScalarLane {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX sketch scalar lane label",
-                )?,
-                construction_payload: copy_operation_text(
-                    ctx,
-                    &payload.id,
-                    "NX sketch scalar lane payload",
-                )?,
+                operation_label: ctx
+                    .copy_retained_text(&payload.operation_label, "NX sketch scalar lane label")?,
+                construction_payload: ctx
+                    .copy_retained_text(&payload.id, "NX sketch scalar lane payload")?,
                 ordinal,
                 lane,
                 source_offset: header_source,
@@ -8220,25 +7549,9 @@ pub(super) fn feature_sketch_payload_names(
             .len()
             .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit("NX sketch name source blocks", 0, 1))?;
-        let bytes = count
-            .checked_mul(std::mem::size_of::<&String>())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX sketch name source blocks", 0, 1))?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(count),
-            "NX sketch name source blocks",
-        )?;
-        let _ids_reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(bytes),
-            "NX sketch name source blocks",
-        )?;
-        let mut ids = Vec::new();
-        ids.try_reserve_exact(count).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "allocate NX sketch name source blocks",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
+
+        let (mut ids, _ids_reservation) =
+            ctx.temporary_vec(count, "NX sketch name source blocks")?;
         ids.extend(construction.members.iter().map(|member| &member.data_block));
         ids.push(&construction.terminal_data_block);
         let Some(joined) = JoinedPayload::from_source(ctx, ids.iter().copied(), &blocks)? else {
@@ -8256,19 +7569,13 @@ pub(super) fn feature_sketch_payload_names(
                 .checked_sub(old.len())
                 .and_then(|length| length.checked_add(new.len()))
                 .ok_or_else(|| ctx.refuse_codec_limit("NX sketch payload identity", 0, 1))?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(length),
-                "NX sketch payload identity",
-            )?;
-            let mut id = String::new();
-            id.try_reserve_exact(length)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch payload identity", 0, 1))?;
+            let mut id = ctx.retained_string(length, "NX sketch payload identity")?;
             id.push_str(&construction.id[..start]);
             id.push_str(new);
             id.push_str(&construction.id[end..]);
             id
         } else {
-            copy_operation_text(ctx, &construction.id, "NX sketch payload identity")?
+            ctx.copy_retained_text(&construction.id, "NX sketch payload identity")?
         };
         let key = construction_payload
             .rsplit_once('#')
@@ -8287,26 +7594,15 @@ pub(super) fn feature_sketch_payload_names(
             let ordinal_u32 = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX sketch payload name ordinal", 0, 1))?;
             let id = format_feature_history_id(ctx, "sketch-payload-name", key, ordinal, None)?;
-            ctx.charge_collection_items(1, "NX sketch payload names")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeaturePayloadName>()),
-                "NX sketch payload name record",
-            )?;
-            names
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch payload names", 0, 1))?;
+            ctx.reserve_retained_vec(&mut names, 1, "NX sketch payload names")?;
             names.push(FeaturePayloadName {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
+                operation_label: ctx.copy_retained_text(
                     &construction.operation_label,
                     "NX sketch payload name label",
                 )?,
-                construction_payload: copy_operation_text(
-                    ctx,
-                    &construction_payload,
-                    "NX sketch payload name owner",
-                )?,
+                construction_payload: ctx
+                    .copy_retained_text(&construction_payload, "NX sketch payload name owner")?,
                 ordinal: ordinal_u32,
                 frame,
                 source_offset,
@@ -8331,22 +7627,9 @@ fn sorted_payload_refs<'ctx, 'a, T>(
     let bytes = count
         .checked_mul(std::mem::size_of::<&T>())
         .ok_or_else(|| ctx.refuse_codec_limit("NX sketch payload record references", 0, 1))?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "NX sketch payload record references",
-    )?;
-    let reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX sketch payload record references",
-    )?;
-    let mut references = Vec::new();
-    references.try_reserve_exact(count).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "allocate NX sketch payload record references",
-            0,
-            cadmpeg_core::decode::u64_from_index(count),
-        )
-    })?;
+
+    let (mut references, reservation) =
+        ctx.temporary_vec(count, "NX sketch payload record references")?;
     references.extend(source.iter().filter(|record| include(record)));
     let sort_work = cadmpeg_core::decode::u64_from_index(count)
         .checked_mul(u64::from(usize::BITS - count.leading_zeros()))
@@ -8358,41 +7641,6 @@ fn sorted_payload_refs<'ctx, 'a, T>(
     )?;
     references.sort_by_key(|record| key(record));
     Ok((references, reservation))
-}
-
-fn copy_sketch_record_ids<T>(
-    ctx: &DecodeContext<'_>,
-    references: &[&T],
-    id: impl Fn(&T) -> &str,
-) -> Result<Vec<String>, CodecError> {
-    let bytes = references
-        .len()
-        .checked_mul(std::mem::size_of::<String>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX sketch payload record IDs", 0, 1))?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(references.len()),
-        "NX sketch payload record IDs",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX sketch payload record ID slots",
-    )?;
-    let mut ids = Vec::new();
-    ids.try_reserve_exact(references.len()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "allocate NX sketch payload record IDs",
-            0,
-            cadmpeg_core::decode::u64_from_index(references.len()),
-        )
-    })?;
-    for reference in references {
-        ids.push(copy_operation_text(
-            ctx,
-            id(reference),
-            "NX sketch payload record ID",
-        )?);
-    }
-    Ok(ids)
 }
 
 pub(super) fn feature_sketch_payload_named_records(
@@ -8450,32 +7698,28 @@ pub(super) fn feature_sketch_payload_named_records(
                 .rsplit_once('#')
                 .map_or("unknown", |(_, key)| key);
             let id = format_feature_history_id(ctx, "sketch-payload-record", key, ordinal, None)?;
-            let scalar_fields = copy_sketch_record_ids(ctx, &scalar_fields, |scalar| &scalar.id)?;
-            let fixed_pairs = copy_sketch_record_ids(ctx, &record_fixed_pairs, |pair| &pair.id)?;
-            let mixed_pairs = copy_sketch_record_ids(ctx, &record_mixed_pairs, |pair| &pair.id)?;
-            ctx.charge_collection_items(1, "NX sketch payload named records")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    FeatureSketchPayloadNamedRecord,
-                >()),
-                "NX sketch payload named record",
+            let scalar_fields = ctx.collect_retained_texts(
+                scalar_fields.iter().map(|scalar| scalar.id.as_str()),
+                "NX sketch payload record IDs",
             )?;
-            records.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX sketch payload named records", 0, 1)
-            })?;
+            let fixed_pairs = ctx.collect_retained_texts(
+                record_fixed_pairs.iter().map(|pair| pair.id.as_str()),
+                "NX sketch payload record IDs",
+            )?;
+            let mixed_pairs = ctx.collect_retained_texts(
+                record_mixed_pairs.iter().map(|pair| pair.id.as_str()),
+                "NX sketch payload record IDs",
+            )?;
+            ctx.reserve_retained_vec(&mut records, 1, "NX sketch payload named records")?;
             records.push(FeatureSketchPayloadNamedRecord {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
+                operation_label: ctx.copy_retained_text(
                     &payload.operation_label,
                     "NX sketch payload record label",
                 )?,
-                construction_payload: copy_operation_text(
-                    ctx,
-                    &payload.id,
-                    "NX sketch payload record owner",
-                )?,
-                name_field: copy_operation_text(ctx, &name.id, "NX sketch payload record name")?,
+                construction_payload: ctx
+                    .copy_retained_text(&payload.id, "NX sketch payload record owner")?,
+                name_field: ctx.copy_retained_text(&name.id, "NX sketch payload record name")?,
                 scalar_fields,
                 fixed_pairs,
                 mixed_pairs,
@@ -8533,28 +7777,17 @@ pub(super) fn feature_sketch_points(
             continue;
         }
         let key = record.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-        let id = format_charged_text(
-            ctx,
+        let id = ctx.format_retained_with_work(
             format_args!("nx:feature-history:sketch-point#{key}"),
             "NX sketch point identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &record.operation_label,
-            "NX sketch point operation label",
-        )?;
-        let named_record = copy_operation_text(ctx, &record.id, "NX sketch point named record")?;
-        let name = copy_operation_text(ctx, name.frame.value(), "NX sketch point name")?;
-        let first_id = copy_operation_text(ctx, &first.id, "NX sketch point first scalar")?;
-        let second_id = copy_operation_text(ctx, &second.id, "NX sketch point second scalar")?;
-        ctx.charge_collection_items(1, "NX sketch points")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSketchPoint>()),
-            "NX sketch points",
-        )?;
-        points
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch points", 0, 1))?;
+        let operation_label =
+            ctx.copy_retained_text(&record.operation_label, "NX sketch point operation label")?;
+        let named_record = ctx.copy_retained_text(&record.id, "NX sketch point named record")?;
+        let name = ctx.copy_retained_text(name.frame.value(), "NX sketch point name")?;
+        let first_id = ctx.copy_retained_text(&first.id, "NX sketch point first scalar")?;
+        let second_id = ctx.copy_retained_text(&second.id, "NX sketch point second scalar")?;
+        ctx.reserve_retained_vec(&mut points, 1, "NX sketch points")?;
         points.push(FeatureSketchPoint {
             id,
             operation_label,
@@ -8640,23 +7873,15 @@ pub(super) fn feature_sketch_fixed_points(
             "sketch-fixed-point",
             "NX sketch fixed point identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
+        let operation_label = ctx.copy_retained_text(
             &record.operation_label,
             "NX sketch fixed point operation label",
         )?;
         let named_record =
-            copy_operation_text(ctx, &record.id, "NX sketch fixed point named record")?;
-        let name = copy_operation_text(ctx, name.frame.value(), "NX sketch fixed point name")?;
-        let fixed_pair = copy_operation_text(ctx, &pair.id, "NX sketch fixed point pair")?;
-        ctx.charge_collection_items(1, "NX sketch fixed points")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSketchFixedPoint>()),
-            "NX sketch fixed points",
-        )?;
-        points
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch fixed points", 0, 1))?;
+            ctx.copy_retained_text(&record.id, "NX sketch fixed point named record")?;
+        let name = ctx.copy_retained_text(name.frame.value(), "NX sketch fixed point name")?;
+        let fixed_pair = ctx.copy_retained_text(&pair.id, "NX sketch fixed point pair")?;
+        ctx.reserve_retained_vec(&mut points, 1, "NX sketch fixed points")?;
         points.push(FeatureSketchFixedPoint {
             id,
             operation_label,
@@ -8706,31 +7931,10 @@ pub(super) fn feature_sketch_point_groups(
         }) {
             continue;
         }
-        let bytes = count
-            .checked_mul(std::mem::size_of::<String>())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX sketch point group members", 0, 1))?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(count),
-            "NX sketch point group members",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(bytes),
-            "NX sketch point group member slots",
-        )?;
-        let mut members = Vec::new();
-        members.try_reserve_exact(count).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "allocate NX sketch point group members",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
-            )
-        })?;
+
+        let mut members = ctx.retained_vec(count, "NX sketch point group members")?;
         for witness in points.iter().filter(&matches) {
-            members.push(copy_operation_text(
-                ctx,
-                &witness.id,
-                "NX sketch point group member",
-            )?);
+            members.push(ctx.copy_retained_text(&witness.id, "NX sketch point group member")?);
         }
         let prefix = "nx:feature-history:sketch-point-group#";
         let key = point.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
@@ -8738,31 +7942,15 @@ pub(super) fn feature_sketch_point_groups(
             .len()
             .checked_add(key.len())
             .ok_or_else(|| ctx.refuse_codec_limit("NX sketch point group identity", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(length),
-            "NX sketch point group identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(length)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch point group identity", 0, 1))?;
+        let mut id = ctx.retained_string(length, "NX sketch point group identity")?;
         id.push_str(prefix);
         id.push_str(key);
-        ctx.charge_collection_items(1, "NX sketch point groups")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSketchPointGroup>()),
-            "NX sketch point group record",
-        )?;
-        groups
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch point groups", 0, 1))?;
+        ctx.reserve_retained_vec(&mut groups, 1, "NX sketch point groups")?;
         groups.push(FeatureSketchPointGroup {
             id,
-            operation_label: copy_operation_text(
-                ctx,
-                &point.operation_label,
-                "NX sketch point group label",
-            )?,
-            name: copy_operation_text(ctx, &point.name, "NX sketch point group name")?,
+            operation_label: ctx
+                .copy_retained_text(&point.operation_label, "NX sketch point group label")?,
+            name: ctx.copy_retained_text(&point.name, "NX sketch point group name")?,
             points: members,
             coordinates: point.coordinates,
         });
@@ -8814,8 +8002,7 @@ pub(super) fn offset_store_named_points(
             let point_ordinal = ordinal
                 .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit("NX named point ordinal", 0, 1))?;
-            let id = format_charged_text(
-                ctx,
+            let id = ctx.format_retained_with_work(
                 format_args!("nx:offset-store:named-point#{section_ordinal}-{point_ordinal}"),
                 "NX named point identity",
             )?;
@@ -8825,29 +8012,14 @@ pub(super) fn offset_store_named_points(
                     .checked_add(relative)
                     .and_then(|ordinal| ordinal.checked_add(1))
                     .ok_or_else(|| ctx.refuse_codec_limit("NX named point block ordinal", 0, 1))?;
-                let block_id = format_charged_text(
-                    ctx,
+                let block_id = ctx.format_retained_with_work(
                     format_args!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
                     "NX named point data block identity",
                 )?;
-                ctx.charge_collection_items(1, "NX named point data blocks")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
-                    "NX named point data blocks",
-                )?;
-                data_blocks.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX named point data blocks", 0, 1)
-                })?;
+                ctx.reserve_retained_vec(&mut data_blocks, 1, "NX named point data blocks")?;
                 data_blocks.push(block_id);
             }
-            ctx.charge_collection_items(1, "NX named points")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OffsetStoreNamedPoint>()),
-                "NX named points",
-            )?;
-            points
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX named points", 0, 1))?;
+            ctx.reserve_retained_vec(&mut points, 1, "NX named points")?;
             points.push(OffsetStoreNamedPoint {
                 id,
                 name: point.name,
@@ -8895,38 +8067,22 @@ pub(super) fn feature_sketch_named_point_block_uses(
                 .id
                 .rsplit_once('#')
                 .map_or(point.id.as_str(), |(_, key)| key);
-            let id = format_charged_text(ctx, format_args!(
+            let id = ctx.format_retained_with_work(format_args!(
                 "nx:feature-history:sketch-named-point-block-use#{operation_key}-{}-{point_key}-{point_block_ordinal}",
                 reference.position.ordinal()), "NX sketch named point block use identity")?;
-            let operation_label = copy_operation_text(
-                ctx,
+            let operation_label = ctx.copy_retained_text(
                 &reference.operation_label,
                 "NX sketch named point block use label",
             )?;
-            let sketch_reference = copy_operation_text(
-                ctx,
-                &reference.id,
-                "NX sketch named point block use reference",
-            )?;
+            let sketch_reference =
+                ctx.copy_retained_text(&reference.id, "NX sketch named point block use reference")?;
             let named_point =
-                copy_operation_text(ctx, &point.id, "NX sketch named point block use point")?;
-            let data_block = copy_operation_text(
-                ctx,
-                data_block,
-                "NX sketch named point block use data block",
-            )?;
+                ctx.copy_retained_text(&point.id, "NX sketch named point block use point")?;
+            let data_block =
+                ctx.copy_retained_text(data_block, "NX sketch named point block use data block")?;
             let point_block_ordinal = u32::try_from(point_block_ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX named point block ordinal", 0, 1))?;
-            ctx.charge_collection_items(1, "NX sketch named point block uses")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    FeatureSketchNamedPointBlockUse,
-                >()),
-                "NX sketch named point block uses",
-            )?;
-            uses.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX sketch named point block uses", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut uses, 1, "NX sketch named point block uses")?;
             uses.push(FeatureSketchNamedPointBlockUse {
                 id,
                 operation_label,
@@ -8977,10 +8133,7 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
         index_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             &FeatureSketchReference,
         >()))?;
-        ctx.charge_collection_items(1, "NX preceding named-point references")?;
-        group.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX preceding named-point references", 0, 1)
-        })?;
+        ctx.reserve_vec(group, 1, "NX preceding named-point references")?;
         group.push(reference);
     }
     let mut uses = Vec::new();
@@ -9043,48 +8196,32 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
             .id
             .rsplit_once('#')
             .map_or(point.id.as_str(), |(_, key)| key);
-        let id = format_charged_text(
-            ctx,
+        let id = ctx.format_retained_with_work(
             format_args!(
                 "nx:feature-history:sketch-preceding-named-point-use#{operation_key}-{point_key}"
             ),
             "NX preceding named-point use identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            operation_label,
-            "NX preceding named-point operation label",
-        )?;
-        let first_sketch_reference = copy_operation_text(
-            ctx,
+        let operation_label =
+            ctx.copy_retained_text(operation_label, "NX preceding named-point operation label")?;
+        let first_sketch_reference = ctx.copy_retained_text(
             &first_reference.id,
             "NX preceding named-point first reference",
         )?;
-        let named_point = copy_operation_text(ctx, &point.id, "NX preceding named-point identity")?;
+        let named_point = ctx.copy_retained_text(&point.id, "NX preceding named-point identity")?;
         let following_data_block =
-            copy_operation_text(ctx, first_block, "NX preceding named-point following block")?;
+            ctx.copy_retained_text(first_block, "NX preceding named-point following block")?;
         let mut point_data_blocks = Vec::new();
         for block in &point.data_blocks {
-            let block = copy_operation_text(ctx, block, "NX preceding named-point source block")?;
-            ctx.charge_collection_items(1, "NX preceding named-point source blocks")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
+            let block = ctx.copy_retained_text(block, "NX preceding named-point source block")?;
+            ctx.reserve_retained_vec(
+                &mut point_data_blocks,
+                1,
                 "NX preceding named-point source blocks",
             )?;
-            point_data_blocks.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX preceding named-point source blocks", 0, 1)
-            })?;
             point_data_blocks.push(block);
         }
-        ctx.charge_collection_items(1, "NX preceding named-point uses")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FeatureSketchPrecedingNamedPointUse,
-            >()),
-            "NX preceding named-point uses",
-        )?;
-        uses.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX preceding named-point uses", 0, 1))?;
+        ctx.reserve_retained_vec(&mut uses, 1, "NX preceding named-point uses")?;
         uses.push(FeatureSketchPrecedingNamedPointUse {
             id,
             operation_label,
@@ -9143,10 +8280,7 @@ pub(super) fn feature_sketch_point_uses(
             order_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
                 &FeatureSketchNamedPointBlockUse,
             >()))?;
-            ctx.charge_collection_items(1, "NX sketch point block use order")?;
-            point_block_uses.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX sketch point block use order", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut point_block_uses, 1, "NX sketch point block use order")?;
             point_block_uses.push(candidate);
         }
         point_block_uses.sort_by_key(|block_use| {
@@ -9190,30 +8324,17 @@ pub(super) fn feature_sketch_point_uses(
             "sketch-point-use",
             "NX sketch point use identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
+        let operation_label = ctx.copy_retained_text(
             &block_use.operation_label,
             "NX sketch point use operation label",
         )?;
         let mut references = Vec::new();
         for block_use in &point_block_uses {
-            let sketch_reference = copy_operation_text(
-                ctx,
-                &block_use.sketch_reference,
-                "NX sketch point use reference",
-            )?;
+            let sketch_reference = ctx
+                .copy_retained_text(&block_use.sketch_reference, "NX sketch point use reference")?;
             let block_use_id =
-                copy_operation_text(ctx, &block_use.id, "NX sketch point use block identity")?;
-            ctx.charge_collection_items(1, "NX sketch point use references")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    FeatureSketchPointUseReference,
-                >()),
-                "NX sketch point use references",
-            )?;
-            references.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX sketch point use references", 0, 1)
-            })?;
+                ctx.copy_retained_text(&block_use.id, "NX sketch point use block identity")?;
+            ctx.reserve_retained_vec(&mut references, 1, "NX sketch point use references")?;
             references.push(FeatureSketchPointUseReference {
                 sketch_reference,
                 block_use: block_use_id,
@@ -9223,16 +8344,10 @@ pub(super) fn feature_sketch_point_uses(
         drop(point_block_uses);
         drop(order_reservation);
         let sketch_point_group =
-            copy_operation_text(ctx, &point_group.id, "NX sketch point use group identity")?;
+            ctx.copy_retained_text(&point_group.id, "NX sketch point use group identity")?;
         let named_point =
-            copy_operation_text(ctx, &named_point.id, "NX sketch point use named point")?;
-        ctx.charge_collection_items(1, "NX sketch point uses")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSketchPointUse>()),
-            "NX sketch point uses",
-        )?;
-        uses.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch point uses", 0, 1))?;
+            ctx.copy_retained_text(&named_point.id, "NX sketch point use named point")?;
+        ctx.reserve_retained_vec(&mut uses, 1, "NX sketch point uses")?;
         uses.push(FeatureSketchPointUse {
             id,
             operation_label,
@@ -9386,17 +8501,8 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
                     && scalar.source_offset == value.source_offset
             }) {
                 let datum_csys_scalar =
-                    copy_operation_text(ctx, &scalar.id, "NX sketch datum scalar identity")?;
-                ctx.charge_collection_items(1, "NX sketch datum scalar aliases")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        FeatureSketchDatumCsysScalarAlias,
-                    >()),
-                    "NX sketch datum scalar aliases",
-                )?;
-                scalar_aliases.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX sketch datum scalar aliases", 0, 1)
-                })?;
+                    ctx.copy_retained_text(&scalar.id, "NX sketch datum scalar identity")?;
+                ctx.reserve_retained_vec(&mut scalar_aliases, 1, "NX sketch datum scalar aliases")?;
                 scalar_aliases.push(FeatureSketchDatumCsysScalarAlias {
                     sketch_coordinate_ordinal: u8::try_from(coordinate_ordinal).map_err(|_| {
                         ctx.refuse_codec_limit("NX sketch datum coordinate ordinal", 0, 1)
@@ -9408,17 +8514,13 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
         }
         let block_relation = match block_relation {
             BorrowedRelation::Shared(data_block) => FeatureSketchDatumCsysBlockRelation::Shared {
-                data_block: copy_operation_text(ctx, data_block, "NX sketch datum shared block")?,
+                data_block: ctx.copy_retained_text(data_block, "NX sketch datum shared block")?,
             },
             BorrowedRelation::Consecutive(point_data_block, construction_data_block) => {
                 FeatureSketchDatumCsysBlockRelation::Consecutive {
-                    point_data_block: copy_operation_text(
-                        ctx,
-                        point_data_block,
-                        "NX sketch datum point block",
-                    )?,
-                    construction_data_block: copy_operation_text(
-                        ctx,
+                    point_data_block: ctx
+                        .copy_retained_text(point_data_block, "NX sketch datum point block")?,
+                    construction_data_block: ctx.copy_retained_text(
                         construction_data_block,
                         "NX sketch datum construction block",
                     )?,
@@ -9432,30 +8534,17 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
             "sketch-datum-csys-dependency",
             "NX sketch datum dependency identity",
         )?;
-        let sketch_operation_label = copy_operation_text(
-            ctx,
-            &point_use.operation_label,
-            "NX sketch datum producer label",
-        )?;
-        let datum_csys_operation_label = copy_operation_text(
-            ctx,
+        let sketch_operation_label =
+            ctx.copy_retained_text(&point_use.operation_label, "NX sketch datum producer label")?;
+        let datum_csys_operation_label = ctx.copy_retained_text(
             &construction.operation_label,
             "NX sketch datum consumer label",
         )?;
         let sketch_point_use =
-            copy_operation_text(ctx, &point_use.id, "NX sketch datum point use")?;
+            ctx.copy_retained_text(&point_use.id, "NX sketch datum point use")?;
         let datum_csys_construction =
-            copy_operation_text(ctx, &construction.id, "NX sketch datum construction")?;
-        ctx.charge_collection_items(1, "NX sketch datum dependencies")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FeatureSketchDatumCsysDependency,
-            >()),
-            "NX sketch datum dependencies",
-        )?;
-        dependencies
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch datum dependencies", 0, 1))?;
+            ctx.copy_retained_text(&construction.id, "NX sketch datum construction")?;
+        ctx.reserve_retained_vec(&mut dependencies, 1, "NX sketch datum dependencies")?;
         dependencies.push(FeatureSketchDatumCsysDependency {
             id,
             sketch_operation_label,
@@ -9536,16 +8625,7 @@ pub(super) fn feature_sketch_references(
                         .ok_or_else(|| {
                             ctx.refuse_codec_limit("NX sketch reference source offset", 0, 1)
                         })?;
-                    ctx.charge_collection_items(1, "NX sketch references")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureSketchReference,
-                        >()),
-                        "NX sketch references",
-                    )?;
-                    references.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX sketch references", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut references, 1, "NX sketch references")?;
                     references.push(FeatureSketchReference {
                         id,
                         operation_label,
@@ -9592,26 +8672,19 @@ pub(super) fn feature_parameter_bindings(
                 .operation_label
                 .rsplit_once('#')
                 .map_or(input.operation_label.as_str(), |(_, key)| key);
-            let id = format_charged_text(
-                ctx,
+            let id = ctx.format_retained_with_work(
                 format_args!(
                     "nx:feature-history:parameter-binding#{operation_key}-{}-{}",
                     input.input_slot, reference.ordinal
                 ),
                 "NX parameter binding identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
-                &input.operation_label,
-                "NX parameter binding operation",
-            )?;
+            let operation_label =
+                ctx.copy_retained_text(&input.operation_label, "NX parameter binding operation")?;
             let input_block =
-                copy_operation_text(ctx, &input.data_block, "NX parameter binding input block")?;
-            let declaration = copy_operation_text(
-                ctx,
-                expression_declaration,
-                "NX parameter binding declaration",
-            )?;
+                ctx.copy_retained_text(&input.data_block, "NX parameter binding input block")?;
+            let declaration =
+                ctx.copy_retained_text(expression_declaration, "NX parameter binding declaration")?;
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(expressions.len()),
                 "scan NX parameter binding expressions",
@@ -9620,19 +8693,12 @@ pub(super) fn feature_parameter_bindings(
                 expression.declaration.as_deref() == Some(expression_declaration.as_str())
             });
             let expression = match (matches.next(), matches.next()) {
-                (Some(expression), None) => Some(copy_operation_text(
-                    ctx,
-                    &expression.id,
-                    "NX parameter binding expression",
-                )?),
+                (Some(expression), None) => {
+                    Some(ctx.copy_retained_text(&expression.id, "NX parameter binding expression")?)
+                }
                 _ => None,
             };
-            ctx.charge_collection_items(1, "NX parameter bindings")?;
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<FeatureParameterBinding>()), "NX parameter bindings")?;
-            bindings
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX parameter bindings", 0, 1))?;
+            ctx.reserve_retained_vec(&mut bindings, 1, "NX parameter bindings")?;
             bindings.push(FeatureParameterBinding {
                 id,
                 operation_label,
@@ -9681,43 +8747,27 @@ pub(super) fn feature_parameter_uses(
         let expression_key = expression
             .rsplit_once('#')
             .map_or(expression, |(_, key)| key);
-        let id = format_charged_text(
-            ctx,
+        let id = ctx.format_retained_with_work(
             format_args!("nx:feature-history:parameter-use#{operation_key}-{expression_key}"),
             "NX parameter use identity",
         )?;
         let operation_label =
-            copy_operation_text(ctx, &binding.operation_label, "NX parameter use operation")?;
-        let expression_id = copy_operation_text(ctx, expression, "NX parameter use expression")?;
+            ctx.copy_retained_text(&binding.operation_label, "NX parameter use operation")?;
+        let expression_id = ctx.copy_retained_text(expression, "NX parameter use expression")?;
         let mut occurrences = Vec::new();
         for candidate in bindings.iter().filter(|candidate| {
             candidate.operation_label == binding.operation_label
                 && candidate.expression.as_deref() == Some(expression)
         }) {
-            let binding_id = copy_operation_text(ctx, &candidate.id, "NX parameter use binding")?;
-            ctx.charge_collection_items(1, "NX parameter use bindings")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<FeatureParameterUseBinding>(),
-                ),
-                "NX parameter use bindings",
-            )?;
-            occurrences
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX parameter use bindings", 0, 1))?;
+            let binding_id = ctx.copy_retained_text(&candidate.id, "NX parameter use binding")?;
+            ctx.reserve_retained_vec(&mut occurrences, 1, "NX parameter use bindings")?;
             occurrences.push(FeatureParameterUseBinding {
                 binding: binding_id,
                 source_offset: candidate.source_offset,
             });
         }
         occurrences.sort_by_key(|occurrence| occurrence.source_offset);
-        ctx.charge_collection_items(1, "NX parameter uses")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureParameterUse>()),
-            "NX parameter uses",
-        )?;
-        uses.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX parameter uses", 0, 1))?;
+        ctx.reserve_retained_vec(&mut uses, 1, "NX parameter uses")?;
         uses.push(FeatureParameterUse {
             id,
             operation_label,

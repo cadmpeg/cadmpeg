@@ -59,17 +59,8 @@ impl SupportUvValues {
             return Ok(None);
         }
         let count = values.len();
-        let count_u64 = u64_from_index(count);
         let operation = "NX finite support-UV values";
-        ctx.charge_collection_items(count_u64, operation)?;
-        let bytes = count_u64
-            .checked_mul(u64_from_index(std::mem::size_of::<FiniteReal>()))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-        ctx.charge_retained(bytes, operation)?;
-        let mut finite = Vec::new();
-        finite
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        let mut finite = ctx.retained_vec(count, operation)?;
         for value in values {
             let Some(value) = FiniteReal::new(value) else {
                 return Ok(None);
@@ -162,13 +153,10 @@ impl SupportUvValues {
             .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
         ctx.charge_retained(bytes, operation)?;
         let mut first = Vec::new();
-        first
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut first, count, operation)?;
         let mut second = if lane_count == 2 {
             let mut lane = Vec::new();
-            lane.try_reserve_exact(count)
-                .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut lane, count, operation)?;
             Some(lane)
         } else {
             None

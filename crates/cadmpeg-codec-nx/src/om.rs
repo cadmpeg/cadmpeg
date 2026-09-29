@@ -336,33 +336,44 @@ fn color_table_end(bytes: &[u8], start: usize) -> Option<usize> {
     Some(at)
 }
 
-fn color_table_at(bytes: &[u8], start: usize) -> Option<ColorTable<'_>> {
+fn color_table_at(bytes: &[u8], start: usize) -> Result<Option<ColorTable<'_>>, CodecError> {
     let mut at = start + COLOR_TABLE_NAME_HEADER.len();
-    let mut names = Vec::with_capacity(217);
+    let mut names = cadmpeg_core::decode::DecodeContext::admitted_vec(217, "NX color table names")?;
     for _ in 0..217 {
-        let (name, width) = color_name_frame(bytes, at)?;
+        let Some((name, width)) = color_name_frame(bytes, at) else {
+            return Ok(None);
+        };
         names.push(name);
         at += width;
     }
     at += COLOR_TABLE_DEFINITION_PREAMBLE.len();
-
-    let background = color_components(bytes, &mut at)?;
-    let mut definitions = Vec::with_capacity(PALETTE_SIZE);
+    let Some(background) = color_components(bytes, &mut at) else {
+        return Ok(None);
+    };
+    let mut definitions = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        PALETTE_SIZE,
+        "NX color table definitions",
+    )?;
     for color_index in PaletteIndex::all() {
         let offset = at;
         at += 1 + color_index.definition_token().1 + 3;
-        let components = color_components(bytes, &mut at)?;
+        let Some(components) = color_components(bytes, &mut at) else {
+            return Ok(None);
+        };
         definitions.push(ColorTableDefinition {
             name: names[usize::from(color_index.value())],
             components,
             offset,
         });
     }
-    Some(ColorTable {
+    let Ok(definitions) = definitions.try_into() else {
+        return Ok(None);
+    };
+    Ok(Some(ColorTable {
         offset: start,
         background,
-        definitions: definitions.try_into().ok()?,
-    })
+        definitions,
+    }))
 }
 
 /// Decode every complete NX part color table in a bounded byte region.
@@ -386,15 +397,8 @@ pub(crate) fn color_tables<'a>(
             start += 1;
             continue;
         };
-        if let Some(table) = color_table_at(bytes, start) {
-            ctx.charge_collection_items(1, "nx part color tables")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ColorTable<'_>>()),
-                "retain NX part color table",
-            )?;
-            tables
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx part color tables", 0, 1))?;
+        if let Some(table) = color_table_at(bytes, start)? {
+            ctx.reserve_retained_vec(&mut tables, 1, "nx part color tables")?;
             tables.push(table);
         }
         start = end;
@@ -435,16 +439,7 @@ pub(crate) fn construction_payload_scalar_fields(
         else {
             continue;
         };
-        ctx.charge_collection_items(1, "NX construction scalar fields")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<ConstructionPayloadScalarField>(),
-            ),
-            "NX construction scalar fields",
-        )?;
-        fields
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("NX construction scalar fields", 0, 1))?;
+        ctx.reserve_retained_vec(&mut fields, 1, "NX construction scalar fields")?;
         fields.push(ConstructionPayloadScalarField {
             offset: start,
             field_code: bytes[start + 3],
@@ -490,17 +485,7 @@ pub(crate) fn offset_store_named_point<'a>(
             cadmpeg_core::decode::u64_from_index(length),
             "NX named point block bytes",
         )?);
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(block.len()),
-            "NX named point block bytes",
-        )?;
-        bytes.try_reserve(block.len()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "NX named point block bytes",
-                0,
-                cadmpeg_core::decode::u64_from_index(length),
-            )
-        })?;
+        ctx.reserve_vec(&mut bytes, block.len(), "NX named point block bytes")?;
         bytes.extend_from_slice(block);
         let names = name_field::scan(ctx, &bytes)?;
         let Some(name) = names.first() else {
@@ -526,18 +511,7 @@ pub(crate) fn offset_store_named_point<'a>(
             (Some(first_scalar), Some(second_scalar), None) => {
                 if candidate.is_none() {
                     let value = name.value();
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(value.len()),
-                        "NX named point name",
-                    )?;
-                    let mut owned = String::new();
-                    owned.try_reserve_exact(value.len()).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "NX named point name",
-                            0,
-                            cadmpeg_core::decode::u64_from_index(value.len()),
-                        )
-                    })?;
+                    let mut owned = ctx.retained_string(value.len(), "NX named point name")?;
                     owned.push_str(value);
                     candidate = Some(OffsetStoreNamedPoint {
                         name: owned,
@@ -1048,7 +1022,7 @@ impl<'a> IndexedSection<'a> {
         let records = self.numeric_expression_records(ctx)?;
         let mut expressions = Vec::new();
         for (_, expression) in records {
-            reserve_om_retained_item(ctx, &mut expressions, "nx indexed numeric expressions")?;
+            ctx.reserve_retained_vec(&mut expressions, 1, "nx indexed numeric expressions")?;
             expressions.push(expression);
         }
         Ok(expressions)
@@ -1064,10 +1038,10 @@ impl<'a> IndexedSection<'a> {
         match &self.store {
             IndexedStore::Fixed { records: source } => {
                 for record in source.iter() {
-                    reserve_om_scoped_item(
-                        ctx,
+                    ctx.reserve_scoped_vec(
                         &mut temporary,
                         &mut records,
+                        1,
                         "nx indexed numeric record scan",
                     )?;
                     records.push((record.offset, record.bytes, Some(record.object_id.0)));
@@ -1077,10 +1051,10 @@ impl<'a> IndexedSection<'a> {
                 records: source, ..
             } => {
                 for record in source.iter() {
-                    reserve_om_scoped_item(
-                        ctx,
+                    ctx.reserve_scoped_vec(
                         &mut temporary,
                         &mut records,
+                        1,
                         "nx indexed numeric record scan",
                     )?;
                     records.push((record.offset, record.bytes, None));
@@ -1097,9 +1071,9 @@ impl<'a> IndexedSection<'a> {
         let mut expressions = Vec::new();
         for (record_ordinal, (offset, bytes, object_id)) in records.into_iter().enumerate() {
             if let Some(expression) = numeric_expression_at(bytes, offset, object_id) {
-                reserve_om_retained_item(
-                    ctx,
+                ctx.reserve_retained_vec(
                     &mut expressions,
+                    1,
                     "nx indexed numeric expression records",
                 )?;
                 expressions.push((record_ordinal, expression));
@@ -1128,14 +1102,14 @@ impl<'a> FixedEntityRecord<'a> {
         let counted = counted_record_references(ctx, self.bytes, self.offset, record_count)?;
         let mut references = Vec::new();
         for reference in direct {
-            reserve_om_retained_item(ctx, &mut references, "NX fixed entity references")?;
+            ctx.reserve_retained_vec(&mut references, 1, "NX fixed entity references")?;
             references.push(LocatedReference {
                 offset: reference.offset,
                 value: RecordReference::Direct(reference.value),
             });
         }
         for reference in counted {
-            reserve_om_retained_item(ctx, &mut references, "NX fixed entity references")?;
+            ctx.reserve_retained_vec(&mut references, 1, "NX fixed entity references")?;
             references.push(LocatedReference {
                 offset: reference.offset,
                 value: RecordReference::RecordOrdinal16 {
@@ -1339,7 +1313,8 @@ impl<'a> Section<'a> {
         else {
             return Ok(None);
         };
-        let mut ends = Vec::with_capacity(2);
+        let mut ends =
+            cadmpeg_core::decode::DecodeContext::admitted_vec(2, "NX operation state boundaries")?;
         if let Some(table) = &group {
             let Some(overlap_end) =
                 terminal.checked_add(table.groups().first().opener().bytes().len())
@@ -1429,9 +1404,9 @@ impl<'a> Section<'a> {
         let mut references = Vec::new();
         for (ordinal, record) in self.operation_records_with_label_ordinals(ctx)? {
             if let Some(reference) = operation_body_reference(record.body_view()) {
-                reserve_om_retained_item(
-                    ctx,
+                ctx.reserve_retained_vec(
                     &mut references,
+                    1,
                     "nx section operation body references",
                 )?;
                 references.push((ordinal, reference));
@@ -1450,7 +1425,7 @@ fn operation_labels<'a>(
     let mut labels = Vec::new();
     for header in validated_operation_headers(ctx, bytes, base_offset)? {
         if let Some(label) = operation_label_at(bytes, base_offset, header) {
-            reserve_om_retained_item(ctx, &mut labels, "nx operation labels")?;
+            ctx.reserve_retained_vec(&mut labels, 1, "nx operation labels")?;
             labels.push(label);
         }
     }
@@ -1492,7 +1467,7 @@ fn validated_operation_headers(
         else {
             continue;
         };
-        reserve_om_retained_item(ctx, &mut headers, "nx operation headers")?;
+        ctx.reserve_retained_vec(&mut headers, 1, "nx operation headers")?;
         headers.push(header);
     }
     Ok(headers)
@@ -1548,7 +1523,7 @@ fn operation_records_with_labels_and_ordinals<'a>(
             OperationRecord::new(bytes.get(start..end)?, *label)
         })();
         if let Some(record) = record {
-            reserve_om_retained_item(ctx, &mut records, "nx labeled operation records")?;
+            ctx.reserve_retained_vec(&mut records, 1, "nx labeled operation records")?;
             records.push((ordinal, record));
         }
     }
@@ -1578,7 +1553,7 @@ fn unlabeled_operation_records_with_ordinals<'a>(
             UnlabeledOperationRecord::new(*header, bytes.get(start..end)?)
         })();
         if let Some(record) = record {
-            reserve_om_retained_item(ctx, &mut records, "nx unlabeled operation records")?;
+            ctx.reserve_retained_vec(&mut records, 1, "nx unlabeled operation records")?;
             records.push((ordinal, record));
         }
     }
@@ -1625,7 +1600,7 @@ pub(crate) fn operation_payload_text_frames<'a>(
             at += 1;
             continue;
         }
-        reserve_om_retained_item(ctx, &mut frames, "nx operation payload text frames")?;
+        ctx.reserve_retained_vec(&mut frames, 1, "nx operation payload text frames")?;
         frames.push(OperationPayloadTextFrame {
             marker,
             offset: record.payload_offset() + at,
@@ -1644,7 +1619,7 @@ pub(crate) fn operation_payload_strings<'a>(
     let mut strings = Vec::new();
     for frame in operation_payload_text_frames(ctx, record)? {
         if frame.marker == OperationTextMarker::String {
-            reserve_om_retained_item(ctx, &mut strings, "nx operation payload strings")?;
+            ctx.reserve_retained_vec(&mut strings, 1, "nx operation payload strings")?;
             strings.push(OperationPayloadString {
                 offset: frame.offset,
                 value: frame.value,
@@ -1686,7 +1661,7 @@ pub(crate) fn simple_hole_repeated_scalar_lane(
     while at + 8 <= prefix.len() {
         if prefix[at] == 0x30 {
             if let Some(scalar) = ShiftedBinary64::read(&prefix[at..at + 8]) {
-                reserve_om_retained_item(ctx, &mut scalars, "nx simple hole scalar witnesses")?;
+                ctx.reserve_retained_vec(&mut scalars, 1, "nx simple hole scalar witnesses")?;
                 scalars.push((scalar, record.payload_offset() + at));
                 at += 8;
                 continue;
@@ -1708,7 +1683,7 @@ pub(crate) fn simple_hole_repeated_scalar_lane(
     }
     let mut repeated = Vec::new();
     for (left, right) in first.iter().zip(second) {
-        reserve_om_retained_item(ctx, &mut repeated, "nx simple hole repeated scalars")?;
+        ctx.reserve_retained_vec(&mut repeated, 1, "nx simple hole repeated scalars")?;
         repeated.push(RepeatedScalar {
             scalar: left.0,
             witness_offsets: [left.1, right.1],
@@ -1887,8 +1862,7 @@ pub(crate) fn pattern_payload_transform_lane(
                 atom,
                 offset: record.payload_offset() + selector_offset,
             };
-            if let Err(error) =
-                reserve_om_retained_item(ctx, &mut rows, "nx pattern transform rows")
+            if let Err(error) = ctx.reserve_retained_vec(&mut rows, 1, "nx pattern transform rows")
             {
                 *failure.borrow_mut() = Some(error);
                 return None;
@@ -1970,7 +1944,7 @@ pub(crate) fn pattern_payload_transform_lane(
                 offset: record.payload_offset() + selector_offset,
             };
             if let Err(error) =
-                reserve_om_retained_item(ctx, &mut rows, "nx pattern wide transform rows")
+                ctx.reserve_retained_vec(&mut rows, 1, "nx pattern wide transform rows")
             {
                 *failure.borrow_mut() = Some(error);
                 return None;
@@ -2050,7 +2024,7 @@ pub(crate) fn multi_instance_output_payload_lane(
             instance_count = instance_count.max(ordinal);
             (record.payload().get(at + 2) == Some(&expected_row_index)).then_some(())?;
             if let Err(error) =
-                reserve_om_retained_item(ctx, &mut rows, "nx multi-instance selector rows")
+                ctx.reserve_retained_vec(&mut rows, 1, "nx multi-instance selector rows")
             {
                 failure = Some(error);
                 return None;
@@ -2072,9 +2046,9 @@ pub(crate) fn multi_instance_output_payload_lane(
             let object_index =
                 reference_index::FeatureReferenceToken::read(record.payload().get(at..)?)?;
             let end = at + object_index.raw().len();
-            if let Err(error) = reserve_om_retained_item(
-                ctx,
+            if let Err(error) = ctx.reserve_retained_vec(
                 &mut trailing_references,
+                1,
                 "nx multi-instance trailing references",
             ) {
                 failure = Some(error);
@@ -2166,19 +2140,8 @@ pub(crate) fn identical_instance_output_payload_lane(
         return Ok(None);
     };
     let selector_count = usize::from(declared_count - 1);
-    let count = cadmpeg_core::decode::u64_from_index(selector_count);
     let operation = "NX identical-instance selectors";
-    ctx.charge_collection_items(count, operation)?;
-    let bytes = count
-        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            LocatedCompactIndex,
-        >()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count))?;
-    ctx.charge_retained(bytes, operation)?;
-    let mut selectors = Vec::new();
-    selectors
-        .try_reserve_exact(selector_count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+    let mut selectors = ctx.retained_vec(selector_count, operation)?;
     let mut at = start + 4;
     for _ in 2..=declared_count {
         at += 5;
@@ -2241,26 +2204,38 @@ pub(crate) fn point_feature_payload_header(
 pub(crate) fn point_feature_scalar_lane(
     preceding_block: &[u8],
     target_block: &[u8],
-) -> Option<PointFeatureScalarLane> {
+) -> Result<Option<PointFeatureScalarLane>, CodecError> {
     const SUFFIX: [u8; 19] = [
         0x00, 0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86,
         0x02, 0x00, 0x01, 0x00,
     ];
-    let preceding_start = preceding_block.len().checked_sub(3)?;
-    (target_block.get(45..64) == Some(&SUFFIX)).then_some(())?;
-    let mut lane = Vec::with_capacity(48);
+    let Some(preceding_start) = preceding_block.len().checked_sub(3) else {
+        return Ok(None);
+    };
+    if target_block.get(45..64) != Some(&SUFFIX) {
+        return Ok(None);
+    }
+    let Some(target) = target_block.get(..45) else {
+        return Ok(None);
+    };
+    let mut lane =
+        cadmpeg_core::decode::DecodeContext::admitted_vec(48, "NX point feature scalar lane")?;
     lane.extend_from_slice(&preceding_block[preceding_start..]);
-    lane.extend_from_slice(target_block.get(..45)?);
-    let values = lane
+    lane.extend_from_slice(target);
+    let Some(values) = lane
         .chunks_exact(8)
         .map(ShiftedBinary64::read)
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
-    Some(PointFeatureScalarLane {
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    let Ok(values) = values.try_into() else {
+        return Ok(None);
+    };
+    Ok(Some(PointFeatureScalarLane {
         values,
         offset: preceding_start,
-    })
+    }))
 }
 
 /// Decode the exact leading construction branch in a bounded `SWP104`
@@ -2305,19 +2280,8 @@ pub(crate) fn swp104_payload_leading_branch(
         return Ok(None);
     };
     let len = usize::from(declared_count) - 1;
-    let count = cadmpeg_core::decode::u64_from_index(len);
     let operation = "NX SWP104 members";
-    ctx.charge_collection_items(count, operation)?;
-    let retained = count
-        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            reference_index::PayloadIndexToken,
-        >()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count))?;
-    ctx.charge_retained(retained, operation)?;
-    let mut members = Vec::new();
-    members
-        .try_reserve_exact(len)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+    let mut members = ctx.retained_vec(len, operation)?;
     for _ in 1..declared_count {
         let Some(object_index) = record
             .payload()
@@ -2450,7 +2414,7 @@ pub(crate) fn operation_body_members(
                 }
                 at += 1;
                 if let Err(error) =
-                    reserve_om_retained_item(ctx, &mut members, "NX operation body members")
+                    ctx.reserve_retained_vec(&mut members, 1, "NX operation body members")
                 {
                     failure = Some(error);
                     return None;
@@ -2470,7 +2434,7 @@ pub(crate) fn operation_body_members(
             return Err(error);
         }
         if let Some(group) = group {
-            reserve_om_retained_item(ctx, &mut groups, "NX operation body member groups")?;
+            ctx.reserve_retained_vec(&mut groups, 1, "NX operation body member groups")?;
             groups.push(group);
         }
     }
@@ -2553,7 +2517,7 @@ pub(crate) fn operation_body_11_continuations(
             })
         })();
         if let Some(continuation) = continuation {
-            reserve_om_retained_item(ctx, &mut continuations, "NX operation body continuations")?;
+            ctx.reserve_retained_vec(&mut continuations, 1, "NX operation body continuations")?;
             continuations.push(continuation);
         }
     }
@@ -2646,7 +2610,7 @@ pub(crate) fn operation_body_reference_lanes(
             return Err(error);
         }
         if let Some(lane) = lane {
-            reserve_om_retained_item(ctx, &mut lanes, "NX operation body reference lanes")?;
+            ctx.reserve_retained_vec(&mut lanes, 1, "NX operation body reference lanes")?;
             lanes.push(lane);
         }
     }
@@ -2670,7 +2634,7 @@ fn operation_body_reference_lane_values<T>(
             return Ok(None);
         };
         at += width;
-        reserve_om_retained_item(ctx, &mut values, "NX operation body lane values")?;
+        ctx.reserve_retained_vec(&mut values, 1, "NX operation body lane values")?;
         values.push(value);
     }
     Ok((record.bytes().get(at..at + 4) == Some(&[0x00, 0x00, 0x0b, 0x00])).then_some(values))
@@ -2718,7 +2682,7 @@ pub(crate) fn sketch_payload_scalar_lanes(
                     break false;
                 };
                 at += scalar.raw().len();
-                reserve_om_retained_item(ctx, &mut values, "NX sketch scalar atoms")?;
+                ctx.reserve_retained_vec(&mut values, 1, "NX sketch scalar atoms")?;
                 values.push((scalar, ()));
             };
             if !complete {
@@ -2732,7 +2696,7 @@ pub(crate) fn sketch_payload_scalar_lanes(
             else {
                 continue;
             };
-            reserve_om_retained_item(ctx, &mut lanes, "NX sketch scalar lanes")?;
+            ctx.reserve_retained_vec(&mut lanes, 1, "NX sketch scalar lanes")?;
             lanes.push(lane);
         }
     }
@@ -2779,7 +2743,7 @@ pub(crate) fn sketch_payload_fixed_pairs(
             let Some(second_value) = sketch_fixed_atom(bytes, second) else {
                 continue;
             };
-            reserve_om_retained_item(ctx, &mut pairs, "NX sketch fixed pairs")?;
+            ctx.reserve_retained_vec(&mut pairs, 1, "NX sketch fixed pairs")?;
             pairs.push(SketchPayloadFixedPair {
                 offset,
                 values: [first_value, second_value],
@@ -2823,7 +2787,7 @@ pub(crate) fn sketch_payload_mixed_pairs(
         let Some(fixed) = sketch_fixed_atom(bytes, fixed_offset) else {
             continue;
         };
-        reserve_om_retained_item(ctx, &mut pairs, "NX sketch mixed pairs")?;
+        ctx.reserve_retained_vec(&mut pairs, 1, "NX sketch mixed pairs")?;
         pairs.push(SketchPayloadMixedPair {
             offset,
             scalars: SketchMixedScalars {
@@ -2885,7 +2849,7 @@ pub(crate) fn datum_csys_payload_fixed_pairs(
             else {
                 continue;
             };
-            reserve_om_retained_item(ctx, &mut pairs, "NX datum CSYS pairs")?;
+            ctx.reserve_retained_vec(&mut pairs, 1, "NX datum CSYS pairs")?;
             pairs.push(DatumCsysPayloadFixedPair {
                 offset,
                 values: [Q155::from_raw(first_raw), Q155::from_raw(second_raw)],
@@ -2927,7 +2891,7 @@ pub(crate) fn draft_construction_fixed_lanes(
             else {
                 break false;
             };
-            reserve_om_retained_item(ctx, &mut values, "NX draft fixed atoms")?;
+            ctx.reserve_retained_vec(&mut values, 1, "NX draft fixed atoms")?;
             values.push((
                 Q155Atom {
                     marker,
@@ -2950,7 +2914,7 @@ pub(crate) fn draft_construction_fixed_lanes(
         ) else {
             continue;
         };
-        reserve_om_retained_item(ctx, &mut lanes, "NX draft fixed lanes")?;
+        ctx.reserve_retained_vec(&mut lanes, 1, "NX draft fixed lanes")?;
         lanes.push(lane);
     }
     Ok(lanes)
@@ -2988,7 +2952,7 @@ pub(crate) fn draft_construction_binary32_lanes(
                 let Some(scalar) = bytes.get(at..at + 4).and_then(ShiftedBinary32::read) else {
                     break false;
                 };
-                reserve_om_retained_item(ctx, &mut values, "NX draft binary32 atoms")?;
+                ctx.reserve_retained_vec(&mut values, 1, "NX draft binary32 atoms")?;
                 values.push((scalar, ()));
                 at += 4;
             };
@@ -3003,7 +2967,7 @@ pub(crate) fn draft_construction_binary32_lanes(
             else {
                 continue;
             };
-            reserve_om_retained_item(ctx, &mut lanes, "NX draft binary32 lanes")?;
+            ctx.reserve_retained_vec(&mut lanes, 1, "NX draft binary32 lanes")?;
             lanes.push(lane);
         }
     }
@@ -3031,16 +2995,7 @@ pub(crate) fn draft_construction_identity_frames(
     let mut frames = Vec::new();
     for offset in 0..bytes.len() {
         if let Some(frame) = draft_identity::DraftIdentityFrame::read(ctx, bytes, offset)? {
-            ctx.charge_collection_items(1, "NX draft identity frames")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    draft_identity::DraftIdentityFrame,
-                >()),
-                "NX draft identity frames",
-            )?;
-            frames
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("NX draft identity frames", 0, 1))?;
+            ctx.reserve_retained_vec(&mut frames, 1, "NX draft identity frames")?;
             frames.push(frame);
         }
     }
@@ -3072,7 +3027,7 @@ pub(crate) fn data_block_object_frames(
             offset += 1;
             continue;
         }
-        reserve_om_retained_item(ctx, &mut references, "NX data-block object frames")?;
+        ctx.reserve_retained_vec(&mut references, 1, "NX data-block object frames")?;
         references.push(LocatedCompactIndex { atom, offset });
         offset += width + DISCRIMINATOR.len();
     }
@@ -3189,7 +3144,7 @@ pub(crate) fn operation_body_references(
     )?;
     let mut references = Vec::new();
     for reference in operation_body_reference_candidates(record) {
-        reserve_om_retained_item(ctx, &mut references, "NX operation body references")?;
+        ctx.reserve_retained_vec(&mut references, 1, "NX operation body references")?;
         references.push(reference);
     }
     Ok(references)
@@ -3230,7 +3185,7 @@ fn body_write_frames(
         .filter_map(|(offset, window)| (window == [0x01, 0x02]).then_some(offset))
     {
         if let Some(write) = operation_body_write_frame_at(payload, payload_offset, marker) {
-            reserve_om_retained_item(ctx, &mut relations, "nx body-write frames")?;
+            ctx.reserve_retained_vec(&mut relations, 1, "nx body-write frames")?;
             relations.push(write);
         }
     }
@@ -3315,8 +3270,7 @@ fn operation_state_group_table_before_counter_map(
             continue;
         };
         ctx.charge_collection_items(1, "nx operation-state group candidates")?;
-        reserve_group_vec(
-            ctx,
+        ctx.reserve_retained_admitted_vec(
             &mut candidates,
             1,
             "nx operation-state group candidates",
@@ -3384,12 +3338,7 @@ fn operation_state_group_table_before_counter_map(
         "nx operation-state group path",
     )?;
     let mut path = Vec::new();
-    reserve_group_vec(
-        ctx,
-        &mut path,
-        terminal.length,
-        "nx operation-state group path",
-    )?;
+    ctx.reserve_retained_admitted_vec(&mut path, terminal.length, "nx operation-state group path")?;
     let mut candidate = Some(terminal.last_candidate);
     while let Some(candidate_index) = candidate {
         path.push(candidate_index);
@@ -3404,7 +3353,7 @@ fn operation_state_group_table_before_counter_map(
         "nx operation-state groups",
     )?;
     let mut groups = Vec::new();
-    reserve_group_vec(ctx, &mut groups, path.len(), "nx operation-state groups")?;
+    ctx.reserve_retained_admitted_vec(&mut groups, path.len(), "nx operation-state groups")?;
     for candidate in path {
         let Some(group) =
             operation_state_group_at(ctx, bytes, candidates[candidate].0, map_start, base_offset)?
@@ -3417,31 +3366,6 @@ fn operation_state_group_table_before_counter_map(
         return Ok(None);
     };
     Ok(OperationStateGroupTable::new(groups, trailing))
-}
-
-fn reserve_group_vec<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    additional: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let bytes = additional
-        .checked_mul(std::mem::size_of::<T>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                operation,
-                0,
-                cadmpeg_core::decode::u64_from_index(additional),
-            )
-        })?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), operation)?;
-    values.try_reserve_exact(additional).map_err(|_| {
-        ctx.refuse_codec_limit(
-            operation,
-            0,
-            cadmpeg_core::decode::u64_from_index(additional),
-        )
-    })
 }
 
 /// Decode a complete bounded `m_rollForwardStates` group table.
@@ -3562,7 +3486,7 @@ fn audit_trail_rows(
         }
         previous_ordinal = Some(ordinal);
         at = row.local_end();
-        reserve_om_retained_item(ctx, &mut rows, "NX audit-trail rows")?;
+        ctx.reserve_retained_vec(&mut rows, 1, "NX audit-trail rows")?;
         rows.push(row);
     }
     Ok(Some(rows))
@@ -3640,7 +3564,7 @@ fn operation_state_journal_groups_before_boundary(
             return Ok(None);
         };
         at = next;
-        reserve_om_retained_item(ctx, &mut groups, "NX state-journal groups")?;
+        ctx.reserve_retained_vec(&mut groups, 1, "NX state-journal groups")?;
         groups.push(group);
     }
     Ok((!groups.is_empty()).then_some(groups))
@@ -3716,11 +3640,11 @@ pub(crate) fn operation_common_frames(
     let mut frames = Vec::new();
     for start in 0..record.payload().len() {
         if let Some(frame) = decode(start, [1, 3, 2]) {
-            reserve_om_retained_item(ctx, &mut frames, "nx common frames")?;
+            ctx.reserve_retained_vec(&mut frames, 1, "nx common frames")?;
             frames.push(frame);
         }
         if let Some(frame) = decode(start, [1, 1, 1]) {
-            reserve_om_retained_item(ctx, &mut frames, "nx common frames")?;
+            ctx.reserve_retained_vec(&mut frames, 1, "nx common frames")?;
             frames.push(frame);
         }
     }
@@ -3788,7 +3712,7 @@ pub(crate) fn data_block_object_references(
             at += 1;
             continue;
         }
-        reserve_om_retained_item(ctx, &mut references, "nx data-block object references")?;
+        ctx.reserve_retained_vec(&mut references, 1, "nx data-block object references")?;
         references.push(DataBlockObjectReference {
             offset: token,
             object_index,
@@ -3867,7 +3791,7 @@ fn boolean_operations_with_labels(
             return Err(error);
         }
         if let Some(operation) = operation {
-            reserve_om_retained_item(ctx, &mut operations, "NX Boolean operations")?;
+            ctx.reserve_retained_vec(&mut operations, 1, "NX Boolean operations")?;
             operations.push(operation);
         }
     }
@@ -3912,7 +3836,7 @@ fn counted_feature_object_indices(
             return Ok(None);
         };
         let next = cursor + value.raw().len();
-        reserve_om_retained_item(ctx, &mut values, "NX Boolean references")?;
+        ctx.reserve_retained_vec(&mut values, 1, "NX Boolean references")?;
         values.push(PayloadObjectReference {
             offset: base_offset + cursor,
             token: value,
@@ -3965,7 +3889,7 @@ pub(crate) fn counted_record_references(
             let Some(value) = View::u16_be_at(bytes, token + 1) else {
                 break;
             };
-            reserve_om_retained_item(ctx, &mut references, "NX counted record references")?;
+            ctx.reserve_retained_vec(&mut references, 1, "NX counted record references")?;
             references.push(LocatedReference {
                 offset: base_offset + token,
                 value,
@@ -3993,7 +3917,7 @@ fn record_references(
         .copied()
         .filter(|reference| matches!(reference.value, DirectReference::PersistentHandle(_)))
     {
-        reserve_om_retained_item(ctx, &mut out, "NX record references")?;
+        ctx.reserve_retained_vec(&mut out, 1, "NX record references")?;
         out.push(reference);
     }
     for (persistent, tagged) in parsed.iter().zip(parsed.iter().skip(1)) {
@@ -4005,7 +3929,7 @@ fn record_references(
             && matches!(tagged.value, DirectReference::Tagged28(_))
             && adjacent
         {
-            reserve_om_retained_item(ctx, &mut out, "NX record references")?;
+            ctx.reserve_retained_vec(&mut out, 1, "NX record references")?;
             out.push(*tagged);
         }
     }
@@ -4028,7 +3952,7 @@ pub(crate) fn references(
     while at < bytes.len() {
         if bytes[at] == 0xe0 {
             if let Some(value) = View::u32_be_at(bytes, at + 1) {
-                reserve_om_retained_item(ctx, &mut out, "NX tagged references")?;
+                ctx.reserve_retained_vec(&mut out, 1, "NX tagged references")?;
                 out.push(LocatedReference {
                     offset: base_offset + at,
                     value: DirectReference::PersistentHandle(value),
@@ -4038,7 +3962,7 @@ pub(crate) fn references(
             }
         } else if bytes[at] & 0xf0 == 0xc0 {
             if let Some(value) = View::u32_be_at(bytes, at) {
-                reserve_om_retained_item(ctx, &mut out, "NX tagged references")?;
+                ctx.reserve_retained_vec(&mut out, 1, "NX tagged references")?;
                 out.push(LocatedReference {
                     offset: base_offset + at,
                     value: DirectReference::Tagged28(Tagged28::from_word(value)),
@@ -4083,7 +4007,7 @@ pub(crate) fn string_values<'a>(
             })
         })();
         if let Some(value) = value {
-            reserve_om_retained_item(ctx, &mut values, "NX printable strings")?;
+            ctx.reserve_retained_vec(&mut values, 1, "NX printable strings")?;
             values.push(value);
         }
     }
@@ -4133,14 +4057,7 @@ pub(crate) fn uuid_string_values<'a>(
         let Some(absolute_offset) = base_offset.checked_add(offset) else {
             continue;
         };
-        ctx.charge_collection_items(1, "nx UUID strings")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<UuidStringValue<'_>>()),
-            "retain NX UUID string frame",
-        )?;
-        values
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx UUID strings", 0, 1))?;
+        ctx.reserve_retained_vec(&mut values, 1, "nx UUID strings")?;
         values.push(UuidStringValue {
             offset: absolute_offset,
             value,
@@ -4289,14 +4206,7 @@ pub(crate) fn surface_payload_strings<'a>(
             continue;
         }
         let value = SurfacePayloadString { offset, value };
-        ctx.charge_collection_items(1, "nx surface payload strings")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SurfacePayloadString<'_>>()),
-            "retain NX surface payload string frame",
-        )?;
-        strings
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx surface payload strings", 0, 1))?;
+        ctx.reserve_retained_vec(&mut strings, 1, "nx surface payload strings")?;
         strings.push(value);
     }
     Ok(strings)
@@ -4335,14 +4245,7 @@ pub(crate) fn numeric_expressions<'a>(
         ) else {
             continue;
         };
-        ctx.charge_collection_items(1, "nx numeric expressions")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NumericExpression<'_>>()),
-            "retain NX numeric expression",
-        )?;
-        expressions
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx numeric expressions", 0, 1))?;
+        ctx.reserve_retained_vec(&mut expressions, 1, "nx numeric expressions")?;
         expressions.push(expression);
     }
     Ok(expressions)
@@ -4416,7 +4319,7 @@ pub(crate) fn sections<'a>(
             Some(area) => operation_labels(ctx, area.bytes, area.offset)?,
             None => Vec::new(),
         };
-        reserve_om_retained_item(ctx, &mut out, "nx framed OM sections")?;
+        ctx.reserve_retained_vec(&mut out, 1, "nx framed OM sections")?;
         out.push(Section {
             offset,
             byte_len: end - offset,
@@ -4603,7 +4506,7 @@ fn materialize_indexed_candidate<'a>(
                 records: {
                     let mut records = Vec::new();
                     for record in index.records() {
-                        reserve_om_retained_item(ctx, &mut records, "nx fixed OM records")?;
+                        ctx.reserve_retained_vec(&mut records, 1, "nx fixed OM records")?;
                         records.push(record);
                     }
                     records.into()
@@ -4620,7 +4523,7 @@ fn materialize_indexed_candidate<'a>(
                     records: {
                         let mut records = Vec::new();
                         for record in index.records() {
-                            reserve_om_retained_item(ctx, &mut records, "nx offset OM records")?;
+                            ctx.reserve_retained_vec(&mut records, 1, "nx offset OM records")?;
                             records.push(record);
                         }
                         records.into()
@@ -4659,10 +4562,10 @@ pub(crate) fn indexed_sections<'a>(
     let mut product_record_ranges = Vec::new();
     for offset in 0..bytes.len() {
         if let Some(range) = product_record_range_at(bytes, offset) {
-            reserve_om_scoped_item(
-                ctx,
+            ctx.reserve_scoped_vec(
                 &mut temporary,
                 &mut product_record_ranges,
+                1,
                 "nx product record ranges",
             )?;
             product_record_ranges.push(range);
@@ -4713,10 +4616,10 @@ pub(crate) fn indexed_sections<'a>(
             usize,
         >()))?;
         seen_record_starts.insert(table_end);
-        reserve_om_scoped_item(
-            ctx,
+        ctx.reserve_scoped_vec(
             &mut temporary,
             &mut candidates,
+            1,
             "nx indexed OM candidates",
         )?;
         candidates.push(IndexedCandidate {
@@ -4789,10 +4692,10 @@ pub(crate) fn indexed_sections<'a>(
             usize,
         >()))?;
         seen_record_starts.insert(second);
-        reserve_om_scoped_item(
-            ctx,
+        ctx.reserve_scoped_vec(
             &mut temporary,
             &mut candidates,
+            1,
             "nx indexed OM candidates",
         )?;
         candidates.push(IndexedCandidate {
@@ -4803,40 +4706,10 @@ pub(crate) fn indexed_sections<'a>(
     let mut sections = Vec::new();
     for candidate in select_outer_indexed_candidates(candidates) {
         let section = materialize_indexed_candidate(ctx, candidate)?;
-        reserve_om_retained_item(ctx, &mut sections, "nx indexed OM sections")?;
+        ctx.reserve_retained_vec(&mut sections, 1, "nx indexed OM sections")?;
         sections.push(section);
     }
     Ok(sections)
-}
-
-fn reserve_om_retained_item<T>(
-    ctx: &DecodeContext<'_>,
-    items: &mut Vec<T>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
-        operation,
-    )?;
-    items
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
-}
-
-fn reserve_om_scoped_item<T>(
-    ctx: &DecodeContext<'_>,
-    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    items: &mut Vec<T>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    reservation.grow(cadmpeg_core::decode::u64_from_index(
-        std::mem::size_of::<T>(),
-    ))?;
-    items
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
 }
 
 /// Decode the first self-framed NX product/version marker in `bytes`.
@@ -4931,18 +4804,7 @@ pub(crate) fn offset_store_control_class_ordinals(
     let Some(boundary) = boundary else {
         return Ok(None);
     };
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(boundary),
-        "nx offset-store class ordinals",
-    )?;
-    let mut ordinals = Vec::new();
-    ordinals.try_reserve_exact(boundary).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "nx offset-store class ordinals",
-            0,
-            cadmpeg_core::decode::u64_from_index(boundary),
-        )
-    })?;
+    let mut ordinals = ctx.collection_vec(boundary, "nx offset-store class ordinals")?;
     for index in 0..boundary {
         let Some(identity) = value_at(index) else {
             return Ok(None);
@@ -5159,13 +5021,8 @@ pub(crate) fn evaluate_constant_expression(
 
     impl Parser<'_, '_, '_> {
         fn push_value(&mut self, value: FiniteReal) -> Option<()> {
-            let charged = self
-                .ctx
-                .charge_collection_items(1, "NX expression value stack")
-                .and_then(|()| {
-                    if self.values.len() < self.charged_values_len {
-                        return Ok(());
-                    }
+            let charged = (|| -> Result<(), CodecError> {
+                if self.values.len() >= self.charged_values_len {
                     self.values_reservation
                         .grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
                             FiniteReal,
@@ -5176,17 +5033,12 @@ pub(crate) fn evaluate_constant_expression(
                             self.ctx
                                 .refuse_codec_limit("NX expression value stack", 0, u64::MAX)
                         })?;
-                    Ok(())
-                });
+                }
+                self.ctx
+                    .reserve_vec(&mut self.values, 1, "NX expression value stack")
+            })();
             if let Err(error) = charged {
                 self.failure = Some(error);
-                return None;
-            }
-            if self.values.try_reserve(1).is_err() {
-                self.failure = Some(
-                    self.ctx
-                        .refuse_codec_limit("NX expression value stack", 0, 1),
-                );
                 return None;
             }
             self.values.push(value);
@@ -5194,13 +5046,8 @@ pub(crate) fn evaluate_constant_expression(
         }
 
         fn push_operator(&mut self, operator: Operator) -> Option<()> {
-            let charged = self
-                .ctx
-                .charge_collection_items(1, "NX expression operator stack")
-                .and_then(|()| {
-                    if self.operators.len() < self.charged_operators_len {
-                        return Ok(());
-                    }
+            let charged = (|| -> Result<(), CodecError> {
+                if self.operators.len() >= self.charged_operators_len {
                     self.operators_reservation
                         .grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
                             Operator,
@@ -5211,18 +5058,12 @@ pub(crate) fn evaluate_constant_expression(
                             self.ctx
                                 .refuse_codec_limit("NX expression operator stack", 0, u64::MAX)
                         })?;
-                    Ok(())
-                });
+                }
+                self.ctx
+                    .reserve_vec(&mut self.operators, 1, "NX expression operator stack")
+            })();
             if let Err(error) = charged {
                 self.failure = Some(error);
-                return None;
-            }
-            if self.operators.try_reserve(1).is_err() {
-                self.failure = Some(self.ctx.refuse_codec_limit(
-                    "NX expression operator stack",
-                    0,
-                    1,
-                ));
                 return None;
             }
             self.operators.push(operator);

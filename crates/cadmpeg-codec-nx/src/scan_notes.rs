@@ -180,19 +180,7 @@ fn push_note(
             cadmpeg_core::decode::u64_from_index(MAX_SCAN_NOTE_BYTES + 1),
         )
     })?;
-    ctx.charge_collection_items(1, "nx scan notes")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(measured.len),
-        "nx scan note text",
-    )?;
-    notes
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("nx scan notes", 0, 1))?;
-    let mut note = String::new();
-    note.try_reserve_exact(measured.len)
-        .map_err(|_| ctx.refuse_codec_limit("nx scan note text", 0, 1))?;
-    note.write_fmt(args)
-        .map_err(|_| ctx.refuse_codec_limit("nx scan note text", 0, 1))?;
-    notes.push(note);
+    ctx.reserve_vec(notes, 1, "nx scan notes")?;
+    notes.push(ctx.format_retained(args, "nx scan note text")?);
     Ok(())
 }

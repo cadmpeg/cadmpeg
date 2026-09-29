@@ -137,9 +137,11 @@ fn counted(
             "polyedge count exceeds cap",
         ));
     }
-    let bound = view.counted(count as u64, width).ok_or_else(|| {
-        FramingError::structural(offset, "polyedge count exceeds remaining window")
-    })?;
+    let bound = view
+        .counted(cadmpeg_core::decode::u64_from_index(count), width)
+        .ok_or_else(|| {
+            FramingError::structural(offset, "polyedge count exceeds remaining window")
+        })?;
     Ok((count, bound))
 }
 

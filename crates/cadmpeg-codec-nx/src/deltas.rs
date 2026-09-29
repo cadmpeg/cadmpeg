@@ -524,11 +524,7 @@ fn term_use_numeric_tails(
             ctx.refuse_codec_limit("NX deltas event start bytes", 0, u64_from_index(count))
         })?;
     let _reservation = ctx.reserve_scoped(u64_from_index(bytes), "NX deltas event starts")?;
-    ctx.charge_collection_items(u64_from_index(count), "NX deltas event starts")?;
-    let mut event_starts = Vec::new();
-    event_starts
-        .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit("NX deltas event starts", 0, u64_from_index(count)))?;
+    let mut event_starts = ctx.collection_vec(count, "NX deltas event starts")?;
     event_starts.extend(
         census
             .records
@@ -565,7 +561,7 @@ fn term_use_numeric_tails(
         let next_event =
             event_starts.get(event_starts.partition_point(|start| *start <= record.end));
         if next_event.is_none_or(|start| *start >= tail.end()) {
-            census::push_event(ctx, &mut tails, tail, "NX deltas term use numeric tails")?;
+            ctx.push_vec(&mut tails, tail, "NX deltas term use numeric tails")?;
         }
     }
     Ok(tails)
@@ -593,12 +589,11 @@ fn tagged_reference_lanes(
                 break;
             };
             at = next;
-            census::push_event(ctx, &mut references, (kind, xmt), "NX tagged references")?;
+            ctx.push_vec(&mut references, (kind, xmt), "NX tagged references")?;
         }
         if complete && at == end {
             if let Ok(references) = TaggedReferences::try_from(references) {
-                census::push_event(
-                    ctx,
+                ctx.push_vec(
                     &mut lanes,
                     TaggedReferenceLane {
                         references,
@@ -651,7 +646,7 @@ fn reference_type_maps(
             }
         };
         if let Some(map) = map {
-            census::push_event(ctx, &mut maps, map, "NX reference type maps")?;
+            ctx.push_vec(&mut maps, map, "NX reference type maps")?;
         }
     }
     Ok(maps)
@@ -761,8 +756,7 @@ fn reference_type_map(
         if expected_end.is_some_and(|end| at > end) {
             return Ok(None);
         }
-        census::push_event(
-            ctx,
+        ctx.push_vec(
             &mut entries,
             (reference, kind),
             "NX reference type map entries",
@@ -780,7 +774,7 @@ fn reference_state_packets(
         let mut at = offset;
         while let Some(packet) = reference_state_packet(ctx, stream, at, gap_end)? {
             at = packet.end;
-            census::push_event(ctx, &mut packets, packet, "NX reference state packets")?;
+            ctx.push_vec(&mut packets, packet, "NX reference state packets")?;
         }
     }
     Ok(packets)
@@ -874,12 +868,7 @@ fn schema_reference_preambles(
         let mut at = offset;
         while let Some(preamble) = schema_reference_preamble(ctx, stream, at, gap_end)? {
             at = preamble.end;
-            census::push_event(
-                ctx,
-                &mut preambles,
-                preamble,
-                "NX schema reference preambles",
-            )?;
+            ctx.push_vec(&mut preambles, preamble, "NX schema reference preambles")?;
         }
     }
     Ok(preambles)
@@ -972,8 +961,7 @@ fn schema_reference_preamble(
             .ok()
             .map(|state| SchemaReferencePreamble { state, offset, end }));
         }
-        census::push_event(
-            ctx,
+        ctx.push_vec(
             &mut entries,
             (entry_kind, reference),
             "NX schema reference entries",
@@ -989,7 +977,7 @@ fn reference_marker_packets(
     let mut packets = Vec::new();
     for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
         if let Some(packet) = reference_marker_packet(stream, offset, end) {
-            census::push_event(ctx, &mut packets, packet, "NX reference marker packets")?;
+            ctx.push_vec(&mut packets, packet, "NX reference marker packets")?;
         }
     }
     Ok(packets)
@@ -1055,8 +1043,7 @@ fn inline_schema_declarations(
                 break;
             };
             at = declaration.end;
-            census::push_event(
-                ctx,
+            ctx.push_vec(
                 &mut declarations,
                 declaration,
                 "NX inline schema declarations",
@@ -1443,7 +1430,7 @@ fn inline_body_states(
             continue;
         }
         if let Some(state) = inline_body_state(ctx, stream, offset, gap_end)? {
-            census::push_event(ctx, &mut states, state, "NX inline BODY states")?;
+            ctx.push_vec(&mut states, state, "NX inline BODY states")?;
         }
     }
     Ok(states)
@@ -1597,7 +1584,7 @@ fn type_150_state_packets(
     let mut packets = Vec::new();
     for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
         if let Some(packet) = type_150_state_packet(stream, offset, end) {
-            census::push_event(ctx, &mut packets, packet, "NX type 150 state packets")?;
+            ctx.push_vec(&mut packets, packet, "NX type 150 state packets")?;
         }
     }
     Ok(packets)
@@ -1643,18 +1630,13 @@ fn uncovered_spans(
     let mut at = 0;
     for (start, end) in covered {
         if at < start {
-            ctx.charge_collection_items(1, "NX deltas uncovered spans")?;
-            gaps.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("NX deltas uncovered spans allocation", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut gaps, 1, "NX deltas uncovered spans")?;
             gaps.push((at, start));
         }
         at = at.max(end);
     }
     if at < stream_len {
-        ctx.charge_collection_items(1, "NX deltas uncovered spans")?;
-        gaps.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("NX deltas uncovered spans allocation", 0, 1))?;
+        ctx.reserve_vec(&mut gaps, 1, "NX deltas uncovered spans")?;
         gaps.push((at, stream_len));
     }
     Ok(gaps.into_iter())
@@ -1715,9 +1697,11 @@ fn merged_event_spans(
         })?;
     ctx.charge_work(sort_work, "sort NX deltas event spans")?;
     let mut covered = Vec::new();
-    covered.try_reserve(count).map_err(|_| {
-        ctx.refuse_codec_limit("NX deltas event span allocation", 0, u64_from_index(count))
-    })?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut covered,
+        count,
+        "NX deltas event span allocation",
+    )?;
     covered.extend(
         census
             .transmit_header
@@ -1810,10 +1794,7 @@ fn merged_event_spans(
         if let Some((_, merged_end)) = merged.last_mut().filter(|(_, end)| start <= *end) {
             *merged_end = (*merged_end).max(end);
         } else {
-            ctx.charge_collection_items(1, "NX deltas merged spans")?;
-            merged
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("NX deltas merged spans allocation", 0, 1))?;
+            ctx.reserve_vec(&mut merged, 1, "NX deltas merged spans")?;
             merged.push((start, end));
         }
     }
@@ -1974,11 +1955,7 @@ fn push_merge_event(
         )>()))?;
     }
     let bucket = events.entry(key).or_default();
-    ctx.charge_collection_items(1, "NX deltas merge events")?;
-    reservation.grow(u64_from_index(std::mem::size_of::<MergeEvent>()))?;
-    bucket
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("NX deltas merge events", 0, 1))?;
+    ctx.reserve_scoped_vec(reservation, bucket, 1, "NX deltas merge events")?;
     bucket.push(event);
     Ok(())
 }
@@ -2150,9 +2127,11 @@ fn merge_records(
         let reservation =
             ctx.reserve_scoped(u64_from_index(total_len), "NX merged partition bytes")?;
         let mut merged = Vec::new();
-        merged.try_reserve_exact(total_len).map_err(|_| {
-            ctx.refuse_codec_limit("NX merged partition bytes", 0, u64_from_index(total_len))
-        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut merged,
+            total_len,
+            "NX merged partition bytes",
+        )?;
         merged.extend_from_slice(partition);
         for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
             if included(kind) {
@@ -2359,20 +2338,8 @@ fn current_revision_scopes(
         .iter()
         .filter(|revision| u32::from(revision.xmt) == 3)
         .count();
-    ctx.charge_collection_items(u64_from_index(count), "NX snapshot revision indices")?;
-    let snapshot_bytes = count
-        .checked_mul(std::mem::size_of::<usize>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("NX snapshot revision indices", 0, u64_from_index(count))
-        })?;
-    let _snapshot_reservation = ctx.reserve_scoped(
-        u64_from_index(snapshot_bytes),
-        "NX snapshot revision indices",
-    )?;
-    let mut snapshot_revisions = Vec::new();
-    snapshot_revisions.try_reserve_exact(count).map_err(|_| {
-        ctx.refuse_codec_limit("NX snapshot revision indices", 0, u64_from_index(count))
-    })?;
+    let (mut snapshot_revisions, _snapshot_reservation) =
+        ctx.temporary_vec(count, "NX snapshot revision indices")?;
     for (index, revision) in census.body_revisions.iter().enumerate() {
         if u32::from(revision.xmt) == 3 {
             snapshot_revisions.push(index);
@@ -2401,11 +2368,12 @@ fn current_revision_scopes(
         let previous = census.body_revisions[pair[0]].node_id;
         let current = census.body_revisions[pair[1]].node_id;
         if !revision_follows_direction(previous, current, direction) {
-            ctx.charge_collection_items(1, "NX revision run starts")?;
-            run_reservation.grow(u64_from_index(std::mem::size_of::<usize>()))?;
-            run_starts
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("NX revision run starts", 0, 1))?;
+            ctx.reserve_scoped_vec(
+                &mut run_reservation,
+                &mut run_starts,
+                1,
+                "NX revision run starts",
+            )?;
             run_starts.push(position + 1);
         }
     }
@@ -2423,11 +2391,12 @@ fn current_revision_scopes(
             census.body_revisions[snapshot_revisions[next_run_start]].offset
         });
         if current_revision.offset < end {
-            ctx.charge_collection_items(1, "NX current revision scopes")?;
-            scopes_reservation.grow(u64_from_index(std::mem::size_of::<RevisionScope>()))?;
-            scopes
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("NX current revision scopes", 0, 1))?;
+            ctx.reserve_scoped_vec(
+                &mut scopes_reservation,
+                &mut scopes,
+                1,
+                "NX current revision scopes",
+            )?;
             scopes.push(RevisionScope {
                 start: current_revision.offset,
                 end,
@@ -2541,9 +2510,11 @@ pub(crate) fn semantic_residual_with_census(
     }
     ctx.charge_retained(u64_from_index(total_len), "NX semantic residual bytes")?;
     let mut residual = Vec::new();
-    residual.try_reserve_exact(total_len).map_err(|_| {
-        ctx.refuse_codec_limit("NX semantic residual bytes", 0, u64_from_index(total_len))
-    })?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut residual,
+        total_len,
+        "NX semantic residual bytes",
+    )?;
     residual.extend_from_slice(stream);
     residual.fill(0xff);
     for scope in &current_scopes {
@@ -2614,11 +2585,11 @@ impl FixedCandidate {
         let canonical_len = cadmpeg_core::decode::u64_from_index(self.canonical_len);
         ctx.charge_retained(canonical_len, "NX deltas fixed record bytes")?;
         let mut canonical_bytes = Vec::new();
-        canonical_bytes
-            .try_reserve_exact(self.canonical_len)
-            .map_err(|_| {
-                ctx.refuse_codec_limit("NX deltas fixed record bytes", 0, canonical_len)
-            })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut canonical_bytes,
+            self.canonical_len,
+            "NX deltas fixed record bytes",
+        )?;
         canonical_bytes.extend_from_slice(&stream[self.offset..self.prefix_end]);
         let mut at = self.prefix_end;
         for token in signature {
@@ -3079,18 +3050,7 @@ fn materialize_attdef_list(
     let count = usize::try_from(shape.slot_count).map_err(|_| {
         ctx.refuse_codec_limit("NX ATTDEF references", 0, u64::from(shape.slot_count))
     })?;
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-    ctx.charge_collection_items(count_u64, "NX ATTDEF references")?;
-    let bytes = count_u64
-        .checked_mul(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<u32>(),
-        ))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX ATTDEF references", 0, count_u64))?;
-    ctx.charge_retained(bytes, "NX ATTDEF references")?;
-    let mut references = Vec::new();
-    references
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit("NX ATTDEF references", 0, count_u64))?;
+    let mut references = ctx.retained_vec(count, "NX ATTDEF references")?;
     let mut at = shape.references_start;
     for _ in 0..count {
         let Some((reference, consumed)) = read_xmt(stream, at) else {

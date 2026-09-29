@@ -97,38 +97,3 @@ fn display_jt_range_vectors_refuse_before_conversion_allocation() {
         super::JtOptionalReservation::Admitted(_)
     ));
 }
-
-#[test]
-fn display_jt_scene_record_refuses_before_identity_allocation() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_entities = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut records: Vec<String> = Vec::new();
-    let error = super::admit_display_jt_pair(
-        &ctx,
-        &mut records,
-        "segment",
-        "-base-node-",
-        "-inflated-element-",
-        0,
-        "store DisplayJT base node",
-    )
-    .unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::Entities
-            && limit.operation == "store DisplayJT base node"));
-    assert!(records.is_empty());
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    super::admit_display_jt_pair(
-        &service,
-        &mut records,
-        "segment",
-        "-base-node-",
-        "-inflated-element-",
-        0,
-        "store DisplayJT base node",
-    )
-    .unwrap();
-}

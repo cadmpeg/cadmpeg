@@ -251,10 +251,7 @@ pub(crate) fn incomplete_expression_parameters(
             .iter()
             .filter(|parameter| &parameter.owner == owner)
         {
-            ctx.charge_collection_items(1, "nx owned expression parameters")?;
-            parameters
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx owned expression parameters", 0, 1))?;
+            ctx.reserve_vec(&mut parameters, 1, "nx owned expression parameters")?;
             parameters.push(parameter);
         }
         let mut ids_by_name = BTreeMap::<(&str, Option<&str>), Vec<&ParameterId>>::new();
@@ -269,9 +266,7 @@ pub(crate) fn incomplete_expression_parameters(
                     entry.insert(Vec::new())
                 }
             };
-            ctx.charge_collection_items(1, "nx expression name identities")?;
-            ids.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx expression name identities", 0, 1))?;
+            ctx.reserve_vec(ids, 1, "nx expression name identities")?;
             ids.push(&parameter.id);
         }
         let mut expected = ctx.alloc_filled(
@@ -305,15 +300,11 @@ pub(crate) fn incomplete_expression_parameters(
                         if dependencies.iter().any(|id| id == *dependency) {
                             continue;
                         }
-                        ctx.charge_collection_items(1, "nx expression dependencies")?;
-                        dependencies.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("nx expression dependencies", 0, 1)
-                        })?;
-                        dependencies.push(crate::decode::ids::copy_typed_id(
-                            ctx,
-                            dependency.as_str(),
-                            "nx expression dependency identity",
-                        )?);
+                        ctx.reserve_vec(&mut dependencies, 1, "nx expression dependencies")?;
+                        dependencies.push(
+                            dependency
+                                .try_clone_for_decode(ctx, "nx expression dependency identity")?,
+                        );
                     }
                     Ok(Some(dependencies))
                 })()?;
@@ -390,11 +381,11 @@ pub(crate) fn incomplete_expression_parameters(
                 || !evaluated.contains_key(&parameter.id)
             {
                 ctx.charge_collection_items(1, "nx incomplete expression parameters")?;
-                incomplete.insert(crate::decode::ids::copy_typed_id(
-                    ctx,
-                    parameter.id.as_str(),
-                    "nx incomplete expression identity",
-                )?);
+                incomplete.insert(
+                    parameter
+                        .id
+                        .try_clone_for_decode(ctx, "nx incomplete expression identity")?,
+                );
             }
         }
     }

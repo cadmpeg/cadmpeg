@@ -3,9 +3,8 @@
 
 use super::payload_content::FeaturePayloadContent;
 use super::{
-    charged_unique_offset_data_block, copy_operation_text, format_feature_history_id,
-    offset_data_block_bytes, visit_feature_history_operation_records, FeatureConstructionOwner,
-    FeatureConstructionPayload,
+    charged_unique_offset_data_block, format_feature_history_id, offset_data_block_bytes,
+    visit_feature_history_operation_records, FeatureConstructionOwner, FeatureConstructionPayload,
 };
 use crate::container::Container;
 use crate::om::fset_references::{word_reference_bytes, FsetReferences};
@@ -236,16 +235,7 @@ pub(in crate::native) fn feature_fset_reference_graphs(
                         operation_ordinal,
                         None,
                     )?;
-                    ctx.charge_collection_items(1, "NX FSET reference graphs")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FeatureFsetReferenceGraph,
-                        >()),
-                        "NX FSET reference graph",
-                    )?;
-                    graphs.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("allocate NX FSET reference graphs", 0, 1)
-                    })?;
+                    ctx.reserve_retained_vec(&mut graphs, 1, "NX FSET reference graphs")?;
                     Ok(Some(FeatureFsetReferenceGraph {
                         id,
                         operation_label,
@@ -290,16 +280,7 @@ pub(in crate::native) fn feature_fset_construction_payloads(
             else {
                 continue;
             };
-            ctx.charge_collection_items(1, "NX FSET construction payloads")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<FeatureConstructionPayload>(),
-                ),
-                "NX FSET construction payload",
-            )?;
-            output.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX FSET construction payloads", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut output, 1, "NX FSET construction payloads")?;
             output.push(payload);
         }
     }
@@ -337,16 +318,21 @@ fn fset_construction_payload_from_group(
         "NX FSET source block references",
     )?;
     let mut data_blocks = Vec::new();
-    data_blocks
-        .try_reserve_exact(source_blocks.len())
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX FSET source block references", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut data_blocks,
+        source_blocks.len(),
+        "allocate NX FSET source block references",
+    )?;
     for (_, target) in source_blocks {
         let Some(block) = target else {
             return Ok(None);
         };
         let mut id = String::new();
-        id.try_reserve_exact(block.len())
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX FSET source block reference", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut id,
+            block.len(),
+            "allocate NX FSET source block reference",
+        )?;
         id.push_str(block);
         data_blocks.push(id);
     }
@@ -382,24 +368,15 @@ fn fset_construction_payload_from_group(
         .checked_add(operation_key.len())
         .and_then(|length| length.checked_add(1 + group_name.len()))
         .ok_or_else(|| ctx.refuse_codec_limit("NX FSET construction identity", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(id_len),
-        "NX FSET construction identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(id_len)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX FSET construction identity", 0, 1))?;
+    let mut id = ctx.retained_string(id_len, "NX FSET construction identity")?;
     write!(&mut id, "{prefix}{operation_key}-{group_name}")
         .map_err(|_| ctx.refuse_codec_limit("write NX FSET construction identity", 0, 1))?;
     Ok(Some(FeatureConstructionPayload {
         id,
-        operation_label: copy_operation_text(
-            ctx,
-            &graph.operation_label,
-            "NX FSET construction operation",
-        )?,
+        operation_label: ctx
+            .copy_retained_text(&graph.operation_label, "NX FSET construction operation")?,
         owner: FeatureConstructionOwner::Fset {
-            reference_graph: copy_operation_text(ctx, &graph.id, "NX FSET construction reference")?,
+            reference_graph: ctx.copy_retained_text(&graph.id, "NX FSET construction reference")?,
             group,
         },
         content,

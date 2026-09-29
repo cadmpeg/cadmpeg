@@ -25,13 +25,7 @@ impl<'a> DescendingU32Edges<'a> {
                 .is_some_and(|(current, next)| current > next)
             {
                 let offsets = &mut offsets_by_alignment[offset % 4];
-                ctx.charge_collection_items(1, "nx descending index edges")?;
-                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    usize,
-                >()))?;
-                offsets
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx descending index edges", 0, 1))?;
+                ctx.reserve_scoped_vec(reservation, offsets, 1, "nx descending index edges")?;
                 offsets.push(offset);
             }
         }

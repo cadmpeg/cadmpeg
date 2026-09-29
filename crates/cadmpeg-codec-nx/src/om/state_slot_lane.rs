@@ -3,7 +3,7 @@
 
 use super::state_index::{OperationStateIndex, StateIndexToken};
 use super::state_slots::StateSlots;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,14 +69,7 @@ impl StateSlotLane {
             };
             cursor = next;
             ctx.charge_work(1, "scan NX state slots")?;
-            ctx.charge_collection_items(1, "nx state slots")?;
-            ctx.charge_retained(
-                u64_from_index(std::mem::size_of::<Option<StateIndexToken>>()),
-                "retain NX state slot",
-            )?;
-            slots
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx state slots", 0, 1))?;
+            ctx.reserve_retained_vec(&mut slots, 1, "nx state slots")?;
             slots.push(slot.token());
         }
         Ok(None)

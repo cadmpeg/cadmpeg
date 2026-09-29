@@ -129,7 +129,7 @@ pub(crate) fn operation_reference_fields(
         else {
             continue;
         };
-        super::reserve_om_retained_item(ctx, &mut fields, "nx direct reference fields")?;
+        ctx.reserve_retained_vec(&mut fields, 1, "nx direct reference fields")?;
         fields.push(frame);
     }
     Ok(fields)

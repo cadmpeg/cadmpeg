@@ -69,20 +69,13 @@ fn boolean_tree_is_valid(
     boolean_definitions: &BTreeMap<u32, Vec<BooleanTerm>>,
     path: &mut BTreeSet<u32>,
     memo: &mut BTreeMap<u32, bool>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    let _depth = ctx
-        .map(|ctx| ctx.enter_nested("iges boolean tree validation"))
-        .transpose()?;
+    let _depth = ctx.enter_nested("iges boolean tree validation")?;
     if let Some(valid) = memo.get(&sequence) {
         return Ok(*valid);
     }
-    if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-        ctx,
-        path,
-        sequence,
-        "iges boolean validation path",
-    )? {
+    if !ctx.insert_btree_set(path, sequence, "iges boolean validation path")? {
         return Ok(false);
     }
     let Some(entry) = entries.get(&sequence) else {
@@ -104,9 +97,7 @@ fn boolean_tree_is_valid(
     });
     let mut operands_valid = true;
     for term in terms {
-        if let Some(ctx) = ctx {
-            ctx.charge_work(1, "iges boolean term validation")?;
-        }
+        ctx.charge_work(1, "iges boolean term validation")?;
         let valid = match term {
             BooleanTerm::Operation => true,
             BooleanTerm::Operand(target_sequence) => match entries.get(target_sequence) {
@@ -137,13 +128,7 @@ fn boolean_tree_is_valid(
     }
     let valid = operands_valid && has_direct_brep == (entry.form == 1);
     path.remove(&sequence);
-    cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-        ctx,
-        memo,
-        sequence,
-        valid,
-        "iges boolean validity memo",
-    )?;
+    ctx.insert_btree_map(memo, sequence, valid, "iges boolean validity memo")?;
     Ok(valid)
 }
 
@@ -152,12 +137,11 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut records,
             record.directory_sequence,
             record,
@@ -166,8 +150,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
@@ -181,7 +164,7 @@ pub(super) fn project(
         matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) && entry.form == 0
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -200,7 +183,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -231,7 +214,7 @@ pub(super) fn project(
             }
         }
         if !dimensions_present {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -275,7 +258,7 @@ pub(super) fn project(
             _ => false,
         };
         if !dimensions_valid {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -292,7 +275,7 @@ pub(super) fn project(
             160 => (3, None, Some(6)),
             168 => (4, Some(7), Some(10)),
             _ => {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -302,7 +285,7 @@ pub(super) fn project(
             }
         };
         let Some(origin) = vector_or(record, origin_start, Vector3::new(0.0, 0.0, 0.0)) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -311,7 +294,7 @@ pub(super) fn project(
             continue;
         };
         if !origin.is_finite() {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -341,7 +324,7 @@ pub(super) fn project(
                     )
                 })
         {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -349,12 +332,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
-            &mut decoded,
-            entry.sequence,
-            "iges csg decoded sequences",
-        )?;
+        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
     }
 
     for entry in directory.iter().filter(|entry| {
@@ -362,7 +340,7 @@ pub(super) fn project(
             || (entry.entity_type == 164 && entry.form == 0)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -372,7 +350,7 @@ pub(super) fn project(
         };
         let factor = global.length_factor_mm();
         let Some(profile) = pointer(record, 1) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -389,7 +367,7 @@ pub(super) fn project(
             .iter()
             .any(|curve| Some(curve.id.as_str()) == profile_id)
         {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -401,7 +379,7 @@ pub(super) fn project(
             .number_or(2, 1.0)
             .filter(|value| value.is_finite() && *value > 0.0)
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -410,7 +388,7 @@ pub(super) fn project(
             continue;
         };
         if entry.entity_type == 162 && amount > 1.0 {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -430,7 +408,7 @@ pub(super) fn project(
                     .is_none()
             })
         {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -439,7 +417,7 @@ pub(super) fn project(
             continue;
         }
         let Some(closed) = profile_closed(ir, profile, global.minimum_resolution_mm()) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -450,7 +428,7 @@ pub(super) fn project(
         if (entry.entity_type == 162 && entry.form == 0 && closed)
             || (entry.entity_type == 164 && !closed)
         {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -468,7 +446,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -476,12 +454,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
-            &mut decoded,
-            entry.sequence,
-            "iges csg decoded sequences",
-        )?;
+        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
     }
 
     let mut boolean_definitions = BTreeMap::new();
@@ -490,7 +463,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -499,7 +472,7 @@ pub(super) fn project(
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 2) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -507,11 +480,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut terms = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            count,
-            "iges Boolean postfix terms",
-        )?;
+        let mut terms = ctx.collection_vec(count, "iges Boolean postfix terms")?;
         let mut terms_valid = true;
         for index in 0..count {
             let term = (|| {
@@ -533,7 +502,7 @@ pub(super) fn project(
             }
         }
         if !terms_valid {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -554,7 +523,7 @@ pub(super) fn project(
             BooleanTerm::Operation => false,
         });
         if !valid_stack || depth != 1 {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -562,8 +531,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut boolean_definitions,
             entry.sequence,
             terms,
@@ -595,7 +563,7 @@ pub(super) fn project(
                 })
         })?;
         if !operands_valid || cyclic {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -617,7 +585,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -625,12 +593,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
-            &mut decoded,
-            *sequence,
-            "iges csg decoded sequences",
-        )?;
+        ctx.insert_btree_set(&mut decoded, *sequence, "iges csg decoded sequences")?;
     }
 
     for entry in directory
@@ -638,7 +601,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 182 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -652,7 +615,7 @@ pub(super) fn project(
                     .get(sequence)
                     .is_some_and(|target| target.entity_type == 180)
         }) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -662,7 +625,7 @@ pub(super) fn project(
         };
         let point_valid = (2..=4).all(|index| record.number(index).is_some());
         if !point_valid || entry.status.use_flag(global.global_table()) != Some(UseFlag::Other) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -684,7 +647,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -692,12 +655,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
-            &mut decoded,
-            entry.sequence,
-            "iges csg decoded sequences",
-        )?;
+        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
     }
 
     Ok(ProjectionOutcome { decoded, losses })

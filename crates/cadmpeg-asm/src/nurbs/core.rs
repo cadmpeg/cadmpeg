@@ -91,10 +91,18 @@ pub(super) fn surface_block(
         return None;
     }
 
-    let (u_knots, n_poles_u) =
-        propagate_resource!(knots(ctx, &mut cur, n_uniq_u as usize, degree_u)?);
-    let (v_knots, n_poles_v) =
-        propagate_resource!(knots(ctx, &mut cur, n_uniq_v as usize, degree_v)?);
+    let (u_knots, n_poles_u) = propagate_resource!(knots(
+        ctx,
+        &mut cur,
+        usize::try_from(n_uniq_u).ok()?,
+        degree_u
+    )?);
+    let (v_knots, n_poles_v) = propagate_resource!(knots(
+        ctx,
+        &mut cur,
+        usize::try_from(n_uniq_v).ok()?,
+        degree_v
+    )?);
     if n_poles_u.checked_mul(n_poles_v).is_none_or(|n| n > 200_000) {
         return None;
     }
@@ -109,8 +117,16 @@ pub(super) fn surface_block(
     )?);
     let grid = propagate_resource!(poles.into_counted_transposed_grid(ctx, n_poles_u, n_poles_v)?);
     let surface = NurbsSurface::new(
-        NurbsSurfaceAxis::new(degree_u as u32, u_knots, is_periodic(enums[0])),
-        NurbsSurfaceAxis::new(degree_v as u32, v_knots, is_periodic(enums[1])),
+        NurbsSurfaceAxis::new(
+            u32::try_from(degree_u).ok()?,
+            u_knots,
+            is_periodic(enums[0]),
+        ),
+        NurbsSurfaceAxis::new(
+            u32::try_from(degree_v).ok()?,
+            v_knots,
+            is_periodic(enums[1]),
+        ),
         grid,
         false,
     )
@@ -139,11 +155,11 @@ pub(super) fn curve_block(
         return None;
     }
     let (knot_vector, n_poles) =
-        propagate_resource!(knots(ctx, &mut cur, n_uniq as usize, degree)?);
+        propagate_resource!(knots(ctx, &mut cur, usize::try_from(n_uniq).ok()?, degree)?);
     let poles = propagate_resource!(control_points(ctx, &mut cur, n_poles, marker)?);
 
     let curve = NurbsCurve::new(
-        degree as u32,
+        u32::try_from(degree).ok()?,
         knot_vector,
         poles.into_lane(),
         is_periodic(closure),
@@ -366,7 +382,7 @@ pub(super) fn decode_surface_block(
     // Some caches carry an optional scope identifier (`u`/`v`/`both`) before the
     // enum block; skip it so knot counts stay aligned.
     if b.get(pos) == Some(&0x0d) {
-        let len = *b.get(pos + 1)? as usize;
+        let len = usize::from(*b.get(pos + 1)?);
         pos += 2 + len;
     }
     let mut enums = [0i64; 4];
@@ -381,10 +397,20 @@ pub(super) fn decode_surface_block(
         return None;
     }
 
-    let (u_knots, n_poles_u, u_knot_layout) =
-        read_knots(b, &mut pos, n_uniq_u as usize, degree_u, int_width)?;
-    let (v_knots, n_poles_v, v_knot_layout) =
-        read_knots(b, &mut pos, n_uniq_v as usize, degree_v, int_width)?;
+    let (u_knots, n_poles_u, u_knot_layout) = read_knots(
+        b,
+        &mut pos,
+        usize::try_from(n_uniq_u).ok()?,
+        degree_u,
+        int_width,
+    )?;
+    let (v_knots, n_poles_v, v_knot_layout) = read_knots(
+        b,
+        &mut pos,
+        usize::try_from(n_uniq_v).ok()?,
+        degree_v,
+        int_width,
+    )?;
     if n_poles_u.checked_mul(n_poles_v).is_none_or(|n| n > 200_000) {
         return None;
     }
@@ -395,8 +421,16 @@ pub(super) fn decode_surface_block(
     let poles = read_control_points(b, &mut pos, n_poles_u * n_poles_v, marker)?;
     let grid = poles.into_transposed_grid(n_poles_u, n_poles_v)?;
     let surface = NurbsSurface::new(
-        NurbsSurfaceAxis::new(degree_u as u32, u_knots, is_periodic(enums[0])),
-        NurbsSurfaceAxis::new(degree_v as u32, v_knots, is_periodic(enums[1])),
+        NurbsSurfaceAxis::new(
+            u32::try_from(degree_u).ok()?,
+            u_knots,
+            is_periodic(enums[0]),
+        ),
+        NurbsSurfaceAxis::new(
+            u32::try_from(degree_v).ok()?,
+            v_knots,
+            is_periodic(enums[1]),
+        ),
         grid,
         false,
     )
@@ -483,13 +517,18 @@ pub(super) fn decode_curve_block(
     if !(1..=1000).contains(&n_uniq) {
         return None;
     }
-    let (knots, n_poles, knot_layout) =
-        read_knots(b, &mut pos, n_uniq as usize, degree, int_width)?;
+    let (knots, n_poles, knot_layout) = read_knots(
+        b,
+        &mut pos,
+        usize::try_from(n_uniq).ok()?,
+        degree,
+        int_width,
+    )?;
     let control_start = pos;
     let poles = read_control_points(b, &mut pos, n_poles, marker)?;
 
     let curve = NurbsCurve::new(
-        degree as u32,
+        u32::try_from(degree).ok()?,
         knots,
         poles.into_lane(),
         is_periodic(closure),

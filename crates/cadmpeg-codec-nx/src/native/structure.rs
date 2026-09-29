@@ -305,51 +305,35 @@ pub(super) fn fast_load_component_object_groups(
             "NX fast-load group temporary lists",
         )?;
         let mut uses = Vec::new();
-        uses.try_reserve_exact(use_count)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX fast-load group uses", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut uses,
+            use_count,
+            "allocate NX fast-load group uses",
+        )?;
         for occurrence in occurrences
             .iter()
             .filter(|occurrence| occurrence.component_uuid == uuid.id)
         {
-            uses.push(copy_structure_text_raw(
-                ctx,
-                &occurrence.id,
-                "allocate NX fast-load group use",
-            )?);
+            uses.push(ctx.copy_retained_text(&occurrence.id, "allocate NX fast-load group use")?);
         }
         let mut values = Vec::new();
-        values
-            .try_reserve_exact(value_count)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX fast-load group values", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut values,
+            value_count,
+            "allocate NX fast-load group values",
+        )?;
         for value in object_uuid_values
             .iter()
             .filter(|value| value.uuid == uuid.uuid)
         {
-            values.push(copy_structure_text_raw(
-                ctx,
-                &value.id,
-                "allocate NX fast-load group value",
-            )?);
+            values.push(ctx.copy_retained_text(&value.id, "allocate NX fast-load group value")?);
         }
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(text_bytes),
-            "retain NX fast-load group member text",
-        )?;
         let Some(members) = UuidGroupMembers::new_charged(ctx, uses, values)? else {
             continue;
         };
-        ctx.charge_collection_items(1, "NX fast-load object groups")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<FastLoadComponentObjectGroup>(),
-            ),
-            "retain NX fast-load object groups",
-        )?;
-        groups
-            .try_reserve_exact(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX fast-load object groups", 0, 1))?;
+        ctx.reserve_retained_vec(&mut groups, 1, "NX fast-load object groups")?;
         let uuid_text =
-            copy_structure_text(ctx, uuid.uuid.as_str(), "retain NX fast-load group UUID")?;
+            ctx.copy_retained_text(uuid.uuid.as_str(), "retain NX fast-load group UUID")?;
         groups.push(FastLoadComponentObjectGroup {
             id: structure_identity(
                 ctx,
@@ -357,49 +341,17 @@ pub(super) fn fast_load_component_object_groups(
                 uuid.ordinal,
                 "retain NX fast-load group identity",
             )?,
-            component_uuid: copy_structure_text(
-                ctx,
-                &uuid.id,
-                "retain NX fast-load group component UUID",
-            )?,
+            component_uuid: ctx
+                .copy_retained_text(&uuid.id, "retain NX fast-load group component UUID")?,
             uuid: crate::canonical_uuid::CanonicalUuid::new(uuid_text)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             members,
-            source_entry: copy_structure_text(
-                ctx,
-                &uuid.source_entry,
-                "retain NX fast-load group source entry",
-            )?,
+            source_entry: ctx
+                .copy_retained_text(&uuid.source_entry, "retain NX fast-load group source entry")?,
             source_offset: uuid.source_offset,
         });
     }
     Ok(groups)
-}
-
-fn copy_structure_text_raw(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let mut text = String::new();
-    text.try_reserve_exact(value.len()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            operation,
-            0,
-            cadmpeg_core::decode::u64_from_index(value.len()),
-        )
-    })?;
-    text.push_str(value);
-    Ok(text)
-}
-
-fn copy_structure_text(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
-    copy_structure_text_raw(ctx, value, operation)
 }
 
 fn structure_identity(
@@ -418,29 +370,9 @@ fn structure_identity(
         .len()
         .checked_add(digits)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    let mut id = ctx.retained_string(length, operation)?;
     write!(id, "{prefix}{ordinal}").map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
     Ok(id)
-}
-
-fn roster_slots<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, cadmpeg_core::CodecError> {
-    let bytes = count
-        .checked_mul(std::mem::size_of::<T>())
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), operation)?;
-    let mut records = Vec::new();
-    records
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(records)
 }
 
 fn roster_offset(
@@ -571,8 +503,7 @@ pub(super) fn fast_load_component_roster(
         return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
 
-    let mut prototypes = roster_slots::<FastLoadComponentPrototype>(
-        ctx,
+    let mut prototypes = ctx.retained_vec::<FastLoadComponentPrototype>(
         candidate.prototype_count,
         "NX fast-load prototypes",
     )?;
@@ -591,17 +522,14 @@ pub(super) fn fast_load_component_roster(
                 "retain NX fast-load prototype identity",
             )?,
             ordinal,
-            name: copy_structure_text(ctx, name, "retain NX fast-load prototype name")?,
-            source_entry: copy_structure_text(
-                ctx,
-                &entry.name,
-                "retain NX fast-load prototype source entry",
-            )?,
+            name: ctx.copy_retained_text(name, "retain NX fast-load prototype name")?,
+            source_entry: ctx
+                .copy_retained_text(&entry.name, "retain NX fast-load prototype source entry")?,
             source_offset: roster_offset(ctx, entry_offset, offset)?,
         });
     }
     let mut uuids =
-        roster_slots::<FastLoadComponentUuid>(ctx, candidate.uuid_count, "NX fast-load UUIDs")?;
+        ctx.retained_vec::<FastLoadComponentUuid>(candidate.uuid_count, "NX fast-load UUIDs")?;
     let mut at = candidate.uuids_offset;
     for ordinal in 0..candidate.uuid_count {
         let (offset, text) = parse_tagged_string(payload, &mut at, 3).ok_or_else(|| {
@@ -609,7 +537,7 @@ pub(super) fn fast_load_component_roster(
         })?;
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX fast-load UUID ordinal", 0, 1))?;
-        let text = copy_structure_text(ctx, text, "retain NX fast-load UUID text")?;
+        let text = ctx.copy_retained_text(text, "retain NX fast-load UUID text")?;
         let uuid = crate::canonical_uuid::CanonicalUuid::new(text)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         uuids.push(FastLoadComponentUuid {
@@ -621,11 +549,8 @@ pub(super) fn fast_load_component_roster(
             )?,
             ordinal,
             uuid,
-            source_entry: copy_structure_text(
-                ctx,
-                &entry.name,
-                "retain NX fast-load UUID source entry",
-            )?,
+            source_entry: ctx
+                .copy_retained_text(&entry.name, "retain NX fast-load UUID source entry")?,
             source_offset: roster_offset(ctx, entry_offset, offset)?,
         });
     }
@@ -640,8 +565,7 @@ pub(super) fn fast_load_component_roster(
     let markers = lane_bytes(candidate.occurrence_markers_offset)?;
     let prototype_indices = lane_bytes(candidate.occurrences_offset)?;
     let uuid_indices = lane_bytes(candidate.uuid_indices_offset)?;
-    let mut records = roster_slots::<FastLoadComponentOccurrence>(
-        ctx,
+    let mut records = ctx.retained_vec::<FastLoadComponentOccurrence>(
         candidate.occurrence_count,
         "NX fast-load occurrences",
     )?;
@@ -683,17 +607,13 @@ pub(super) fn fast_load_component_roster(
             marker,
             marker_source_offset: roster_offset(ctx, entry_offset, marker_offset)?,
             prototype_index,
-            component_uuid: copy_structure_text(
-                ctx,
+            component_uuid: ctx.copy_retained_text(
                 &component_uuid.id,
                 "retain NX fast-load occurrence UUID reference",
             )?,
             uuid_source_offset: roster_offset(ctx, entry_offset, uuid_offset)?,
-            source_entry: copy_structure_text(
-                ctx,
-                &entry.name,
-                "retain NX fast-load occurrence source entry",
-            )?,
+            source_entry: ctx
+                .copy_retained_text(&entry.name, "retain NX fast-load occurrence source entry")?,
             source_offset: roster_offset(ctx, entry_offset, occurrence_offset)?,
         });
     }

@@ -212,16 +212,7 @@ pub(super) fn operation_state_group_at(
     let count_u64 = cadmpeg_core::decode::u64_from_index(member_count);
     let operation = "NX operation-state group rows";
     ctx.charge_work(count_u64, operation)?;
-    ctx.charge_collection_items(count_u64, operation)?;
-    let row_bytes = count_u64
-        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            OperationStateGroupRow,
-        >()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-    ctx.charge_retained(row_bytes, operation)?;
-    let mut rows = Vec::new();
-    rows.try_reserve_exact(member_count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+    let mut rows = ctx.retained_vec(member_count, operation)?;
     for _ in 0..member_count {
         let Some((row, row_end)) = operation_state_group_row_at(bytes, cursor, base_offset) else {
             return Ok(None);

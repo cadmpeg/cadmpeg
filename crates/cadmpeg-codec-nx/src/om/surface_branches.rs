@@ -9,18 +9,6 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Deserializer, Serialize};
 
-fn reserve_surface_item<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
 #[repr(u8)]
@@ -232,7 +220,7 @@ fn surface_feature_branch_paths(
             return Ok(Vec::new());
         };
         cursor += token.raw().len();
-        reserve_surface_item(ctx, &mut members, "NX surface branch members")?;
+        ctx.reserve_retained_vec(&mut members, 1, "NX surface branch members")?;
         members.push((token, ()));
     }
     let Ok(members) = BranchItems::new(members) else {
@@ -277,7 +265,7 @@ fn surface_feature_branch_paths(
         let continuations = if remaining == 1 {
             let mut continuations = Vec::new();
             if payload.get(next..next + terminator.len()) == Some(terminator) {
-                reserve_surface_item(ctx, &mut continuations, "NX surface terminal paths")?;
+                ctx.reserve_retained_vec(&mut continuations, 1, "NX surface terminal paths")?;
                 continuations.push(Vec::new());
             }
             continuations
@@ -300,7 +288,7 @@ fn surface_feature_branch_paths(
         for mut continuation in continuations {
             let mut member_copy = Vec::new();
             for member in members.as_slice().iter().copied() {
-                reserve_surface_item(ctx, &mut member_copy, "NX surface branch member copy")?;
+                ctx.reserve_retained_vec(&mut member_copy, 1, "NX surface branch member copy")?;
                 member_copy.push(member);
             }
             let Ok(member_copy) = BranchItems::new(member_copy) else {
@@ -321,9 +309,9 @@ fn surface_feature_branch_paths(
             ) else {
                 continue;
             };
-            reserve_surface_item(ctx, &mut continuation, "NX surface branch path entries")?;
+            ctx.reserve_retained_vec(&mut continuation, 1, "NX surface branch path entries")?;
             continuation.insert(0, branch);
-            reserve_surface_item(ctx, &mut paths, "NX surface branch paths")?;
+            ctx.reserve_retained_vec(&mut paths, 1, "NX surface branch paths")?;
             paths.push(continuation);
             if paths.len() == 2 {
                 return Ok(paths);

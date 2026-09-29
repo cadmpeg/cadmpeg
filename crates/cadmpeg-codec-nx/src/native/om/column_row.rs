@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native column rows retain one checked source frame with resolved targets.
 
-use super::{
-    column_storage_block_at, control_index_data_block, copy_om_retained_text, retained_om_index_id,
-};
+use super::{column_storage_block_at, control_index_data_block, retained_om_index_id};
 use crate::container::Container;
 use crate::om::column_row::{IndexRow, LinkedRow, TargetRow};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -263,14 +261,7 @@ fn project_column_rows<R, F, T>(
             else {
                 continue;
             };
-            ctx.charge_collection_items(1, "NX native column rows")?;
-            ctx.charge_retained(
-                u64_from_index(std::mem::size_of::<T>()),
-                "retain NX native column row",
-            )?;
-            result
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX native column row", 0, 1))?;
+            ctx.reserve_retained_vec(&mut result, 1, "NX native column rows")?;
             let section_number = u32::try_from(section_ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX column row section ordinal", 0, 1))?;
             let row_number = u32::try_from(ordinal)
@@ -286,8 +277,7 @@ fn project_column_rows<R, F, T>(
                 )?,
                 block_offset,
             );
-            let source_entry =
-                copy_om_retained_text(ctx, &entry.name, "NX column row source entry")?;
+            let source_entry = ctx.copy_retained_text(&entry.name, "NX column row source entry")?;
             result.push(project(
                 section_ordinal,
                 section_number,

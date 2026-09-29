@@ -669,13 +669,12 @@ pub(crate) fn terminal_feature_body_ids(
         let prefix_len = 5_u64 + digits;
         let _prefix_reservation = ctx.reserve_scoped(prefix_len, "nx terminal body prefix")?;
         let mut prefix = String::new();
-        prefix
-            .try_reserve_exact(
-                cadmpeg_core::decode::index_from_u64(prefix_len).ok_or_else(|| {
-                    ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len)
-                })?,
-            )
-            .map_err(|_| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut prefix,
+            cadmpeg_core::decode::index_from_u64(prefix_len)
+                .ok_or_else(|| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?,
+            "nx terminal body prefix",
+        )?;
         write!(&mut prefix, "nx:s{}:", binding.stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?;
         ctx.charge_work(
@@ -1359,11 +1358,7 @@ impl NativeModel {
         let (rmfastload_object_id_tables, rmfastload_object_ids) =
             match rmfastload_object_id_table(ctx, container)? {
                 Some((table, object_ids)) => {
-                    ctx.charge_collection_items(1, "nx RMFastLoad object ID tables")?;
-                    let mut tables = Vec::new();
-                    tables.try_reserve_exact(1).map_err(|_| {
-                        ctx.refuse_codec_limit("nx RMFastLoad object ID tables", 0, 1)
-                    })?;
+                    let mut tables = ctx.collection_vec(1, "nx RMFastLoad object ID tables")?;
                     tables.push(table);
                     (tables, object_ids)
                 }

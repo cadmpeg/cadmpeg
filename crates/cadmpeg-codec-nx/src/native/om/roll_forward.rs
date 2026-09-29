@@ -6,7 +6,7 @@ use crate::om::roll_forward::{GroupTableFooter, OperationStateGroup, OperationSt
 use crate::om::state_group::{
     OperationStateGroupCount, OperationStateGroupOpener, StateGroupMembers,
 };
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
@@ -21,19 +21,6 @@ fn decimal_len(mut value: usize) -> usize {
     length
 }
 
-fn retained_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    ctx.charge_retained(
-        u64_from_index(text.len()),
-        "retain NX roll-forward table text",
-    )?;
-    let mut owned = String::new();
-    owned
-        .try_reserve_exact(text.len())
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX roll-forward table text", 0, 1))?;
-    owned.push_str(text);
-    Ok(owned)
-}
-
 fn group_id(ctx: &DecodeContext<'_>, section: usize, ordinal: u32) -> Result<String, CodecError> {
     let section_digits = decimal_len(section).max(10);
     let ordinal_digits = decimal_len(
@@ -46,13 +33,7 @@ fn group_id(ctx: &DecodeContext<'_>, section: usize, ordinal: u32) -> Result<Str
         .checked_add(section_digits)
         .and_then(|length| length.checked_add(ordinal_digits))
         .ok_or_else(|| ctx.refuse_codec_limit("NX roll-forward group identity length", 0, 1))?;
-    ctx.charge_retained(
-        u64_from_index(length),
-        "retain NX roll-forward group identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX roll-forward group identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "retain NX roll-forward group identity")?;
     write!(
         id,
         "nx:feature-history:roll-forward-state-group#{section:010}-{ordinal:010}"
@@ -285,22 +266,17 @@ impl OmRollForwardStateTable {
                     crate::loss::NxLossCode::RollForwardTableRejected.code()
                 ))
             })?;
-            ctx.charge_collection_items(1, "NX roll-forward state groups")?;
-            ctx.charge_retained(
-                u64_from_index(std::mem::size_of::<OmRollForwardStateGroup>()),
-                "retain NX roll-forward state groups",
-            )?;
-            groups.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX roll-forward state groups", 0, 1)
-            })?;
+            ctx.reserve_retained_vec(&mut groups, 1, "NX roll-forward state groups")?;
             groups.push(OmRollForwardStateGroup {
                 id: group_id(ctx, section_ordinal, ordinal)?,
                 frame,
             });
         }
         Ok(Self {
-            section_link: retained_text(ctx, section_link)?,
-            source_entry: retained_text(ctx, source_entry)?,
+            section_link: ctx
+                .copy_retained_text(section_link, "retain NX roll-forward table text")?,
+            source_entry: ctx
+                .copy_retained_text(source_entry, "retain NX roll-forward table text")?,
             table_footer,
             table_end_offset,
             groups,

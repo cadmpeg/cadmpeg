@@ -2426,9 +2426,9 @@ pub(crate) fn carrier_census(
             curves_3d: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             topology: BTreeMap::new(),
-            polygons_3d: polygons3d as u64,
-            polygons_on_triangulations: indexed as u64,
-            triangulations: triangulations as u64,
+            polygons_3d: cadmpeg_core::decode::u64_from_index(polygons3d),
+            polygons_on_triangulations: cadmpeg_core::decode::u64_from_index(indexed),
+            triangulations: cadmpeg_core::decode::u64_from_index(triangulations),
         };
         for curve in curve2ds {
             census_curve(ctx, CensusCurve::Parameter(curve), &mut record.curves_2d)?;
@@ -4041,9 +4041,12 @@ impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
     /// `element_size` is the minimum encoded bytes of one element; a count that
     /// could not physically fit in the remaining input is rejected.
     fn bounded(&self, count: usize, element_size: usize, label: &str) -> Result<usize, CodecError> {
-        bounded_len(count as u64, element_size, self.remaining()).ok_or_else(|| {
-            CodecError::malformed(format_args!("{label} count exceeds remaining input"))
-        })
+        bounded_len(
+            cadmpeg_core::decode::u64_from_index(count),
+            element_size,
+            self.remaining(),
+        )
+        .ok_or_else(|| CodecError::malformed(format_args!("{label} count exceeds remaining input")))
     }
 
     fn take(&mut self, count: usize, label: &str) -> Result<&'a [u8], CodecError> {
@@ -4401,7 +4404,8 @@ fn parse_bezier_curve2d(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCur
         }
     }
     Ok(NurbsCurve2d {
-        degree: degree as u32,
+        degree: u32::try_from(degree)
+            .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
         knots: clamped_bezier_knots(cursor.ctx, degree)?,
         control_points,
         weights,
@@ -4431,10 +4435,17 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurv
         }
     }
     let knots = parse_knots(cursor, knot_count, degree, "2D B-spline")?;
-    let (knots, padding) = normalize_periodic_knots(cursor.ctx, knots, degree as u32, periodic)?;
+    let (knots, padding) = normalize_periodic_knots(
+        cursor.ctx,
+        knots,
+        u32::try_from(degree)
+            .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
+        periodic,
+    )?;
     append_periodic_curve_poles(cursor.ctx, &mut control_points, weights.as_mut(), padding)?;
     Ok(NurbsCurve2d {
-        degree: degree as u32,
+        degree: u32::try_from(degree)
+            .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
         knots,
         control_points,
         weights,
@@ -4543,13 +4554,21 @@ fn parse_polygons_on_triangulations(
             "FreeCAD B-rep parse_polygons_on_triangulations",
         )?;
         for _ in 0..node_count {
-            let node = cursor.count("polygon-on-triangulation node index", u32::MAX as usize)?;
+            let node = cursor.count(
+                "polygon-on-triangulation node index",
+                usize::try_from(u32::MAX).map_err(|_| {
+                    CodecError::Malformed("B-rep node limit exceeds address space".into())
+                })?,
+            )?;
             if node == 0 {
                 return Err(CodecError::Malformed(
                     "polygon-on-triangulation node index is zero".into(),
                 ));
             }
-            nodes.push(node as u32);
+            nodes.push(
+                u32::try_from(node)
+                    .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
+            );
         }
         if cursor.next("polygon-on-triangulation parameter marker")? != "p" {
             return Err(CodecError::Malformed(
@@ -4635,7 +4654,8 @@ fn parse_triangulations(
                         "triangulation node index is zero".into(),
                     ));
                 }
-                *node = index as u32;
+                *node = u32::try_from(index)
+                    .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?;
             }
             triangles.push(triangle);
         }
@@ -5390,7 +5410,12 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSurf
     let v_knots = parse_knots(cursor, v_knot_count, v_degree, "B-spline v")?;
     normalize_periodic_surface(
         cursor.ctx,
-        [u_degree as u32, v_degree as u32],
+        [
+            u32::try_from(u_degree)
+                .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
+            u32::try_from(v_degree)
+                .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
+        ],
         [u_knots, v_knots],
         [u_count, v_count],
         control_points,
@@ -5425,12 +5450,14 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSur
     }
     NurbsSurface::from_finite_lanes(
         NurbsSurfaceAxis::new(
-            u_degree as u32,
+            u32::try_from(u_degree)
+                .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
             clamped_bezier_knots(cursor.ctx, u_degree)?,
             false,
         ),
         NurbsSurfaceAxis::new(
-            v_degree as u32,
+            u32::try_from(v_degree)
+                .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
             clamped_bezier_knots(cursor.ctx, v_degree)?,
             false,
         ),
@@ -5632,9 +5659,27 @@ fn normalize_periodic_surface(
         NurbsSurfaceAxis::new(degrees[0], u_knots, periodic[0]),
         NurbsSurfaceAxis::new(degrees[1], v_knots, periodic[1]),
         NurbsSurfaceLanes::new(
-            grid_rows(ctx, control_points, v_count as usize)?,
+            grid_rows(
+                ctx,
+                control_points,
+                usize::try_from(v_count).map_err(|_| {
+                    CodecError::Malformed(
+                        "periodic B-spline v pole count exceeds address space".into(),
+                    )
+                })?,
+            )?,
             weights
-                .map(|values| grid_rows(ctx, values, v_count as usize))
+                .map(|values| {
+                    grid_rows(
+                        ctx,
+                        values,
+                        usize::try_from(v_count).map_err(|_| {
+                            CodecError::Malformed(
+                                "periodic B-spline v pole count exceeds address space".into(),
+                            )
+                        })?,
+                    )
+                })
                 .transpose()?,
         ),
         false,
@@ -5769,10 +5814,23 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve,
         }
     }
     let knots = parse_knots(cursor, knot_count, degree, "B-spline")?;
-    let (knots, padding) = normalize_periodic_knots(cursor.ctx, knots, degree as u32, periodic)?;
+    let (knots, padding) = normalize_periodic_knots(
+        cursor.ctx,
+        knots,
+        u32::try_from(degree)
+            .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
+        periodic,
+    )?;
     append_periodic_curve_poles(cursor.ctx, &mut control_points, weights.as_mut(), padding)?;
-    NurbsCurve::from_finite_lanes(degree as u32, knots, control_points, weights, periodic)
-        .map_err(|error| CodecError::Malformed(error.to_string()))
+    NurbsCurve::from_finite_lanes(
+        u32::try_from(degree)
+            .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    )
+    .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
 fn parse_bezier_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve, CodecError> {
@@ -5793,7 +5851,8 @@ fn parse_bezier_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve
         }
     }
     NurbsCurve::from_finite_lanes(
-        degree as u32,
+        u32::try_from(degree)
+            .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
         clamped_bezier_knots(cursor.ctx, degree)?,
         control_points,
         weights,
@@ -5880,7 +5939,12 @@ impl<'a, 'c, 'r> TokenCursor<'a, 'c, 'r> {
     /// `element_size` is the minimum tokens one element consumes; a count that
     /// could not fit in the remaining tokens is rejected.
     fn bounded(&self, count: usize, element_size: usize, label: &str) -> Result<usize, CodecError> {
-        bounded_len(count as u64, element_size, self.remaining()).ok_or_else(|| {
+        bounded_len(
+            cadmpeg_core::decode::u64_from_index(count),
+            element_size,
+            self.remaining(),
+        )
+        .ok_or_else(|| {
             CodecError::malformed(format_args!("{label} count exceeds available tokens"))
         })
     }

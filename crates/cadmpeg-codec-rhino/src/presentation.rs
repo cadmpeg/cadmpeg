@@ -1726,7 +1726,9 @@ fn classify_rdk_material_payload(
         reader.skip_remaining()?;
         return Ok(RdkMaterialPayload::Compatibility(None));
     }
-    let xml = reader.take(length as usize)?;
+    let xml = reader.take(usize::try_from(length).map_err(|_| {
+        FramingError::structural(reader.position(), "XML length exceeds address space")
+    })?)?;
     reader.skip_remaining()?;
 
     // The legacy writer omits the UTF-8 terminator that ON_XMLUserData::Write
@@ -1918,7 +1920,7 @@ fn parse_light_record_attributes(
     while offset < record.body().end {
         let item = chunk_at(data, offset, record.body().end, archive, false)?;
         if item.typecode == LIGHT_RECORD_END {
-            if !item.short() || item.value() != 0 {
+            if !item.short() || item.value()? != 0 {
                 return Err(FramingError::structural(
                     item.header_start,
                     "light record end must be short with value zero",
@@ -2071,9 +2073,11 @@ fn parse_light_record_attributes(
         )?;
     }
     Ok(Some(LightAttributesRecord {
-        source_offset: attributes_chunk
-            .as_ref()
-            .map_or(record.range.start, |chunk| chunk.header_start) as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(
+            attributes_chunk
+                .as_ref()
+                .map_or(record.range.start, |chunk| chunk.header_start),
+        ),
         attributes: presentation,
         userdata_requires_opaque,
     }))
@@ -2135,8 +2139,11 @@ fn append_file_reference_diagnostics(
         )?;
         losses.push(
             loss.with_provenance(
-                SourceProvenance::root("rhino", source_offset as u64)
-                    .with_tag("PRESENTATION/TEXTURE/FILE_REFERENCE"),
+                SourceProvenance::root(
+                    "rhino",
+                    cadmpeg_core::decode::u64_from_index(source_offset),
+                )
+                .with_tag("PRESENTATION/TEXTURE/FILE_REFERENCE"),
             ),
         );
     }
@@ -2240,7 +2247,7 @@ fn parse_texture(
     let treat_as_linear = (version.1 >= 2).then(|| reader.bool()).transpose()?;
     reader.skip_remaining()?;
     Ok(TextureRecord {
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         source_uuid: (!id.is_nil())
             .then(|| ctx.format_retained(format_args!("{id}"), "Rhino texture source UUID"))
             .transpose()?,
@@ -2377,7 +2384,7 @@ fn parse_v2_v3_texture(
         return Ok(None);
     }
     Ok(Some(TextureRecord {
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         source_uuid: None,
         mapping_channel_id: 1,
         legacy_file_path,
@@ -2533,7 +2540,7 @@ fn parse_v2_v3_material(
                 "Rhino material ID",
             )?
         },
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: Some(archive_index),
         source_uuid: (!id.is_nil())
             .then(|| ctx.format_retained(format_args!("{id}"), "Rhino material source UUID"))
@@ -2719,7 +2726,7 @@ fn parse_material(
                 "Rhino material ID",
             )?
         },
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: component.index,
         source_uuid: (!component.id.is_nil())
             .then(|| {
@@ -2789,7 +2796,7 @@ fn parse_group(
                 "Rhino group ID",
             )?
         },
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: index,
         source_uuid: id
             .map(|id| ctx.format_retained(format_args!("{id}"), "Rhino group source UUID"))
@@ -2921,7 +2928,7 @@ fn parse_light(
                 "Rhino light ID",
             )?
         },
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         source_uuid: ctx.format_retained(format_args!("{id}"), "Rhino light source UUID")?,
         archive_index: index,
         name,
@@ -3136,7 +3143,7 @@ fn parse_linetype(
                 "Rhino linetype ID",
             )?
         },
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: component.index,
         source_uuid: (!id.is_nil())
             .then(|| ctx.format_retained(format_args!("{id}"), "Rhino linetype source UUID"))
@@ -3383,7 +3390,7 @@ fn parse_hatch_pattern(
                 "Rhino hatch ID",
             )?
         },
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: component.index,
         source_uuid: (!component.id.is_nil())
             .then(|| {
@@ -3889,7 +3896,7 @@ fn parse_v5_dimension_style(
                 "Rhino dimension style ID",
             )?
         },
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: Some(archive_index),
         source_uuid: (!id.is_nil())
             .then(|| ctx.format_retained(format_args!("{id}"), "Rhino dimension style source UUID"))
@@ -3983,7 +3990,7 @@ fn parse_dimension_style(
                 "Rhino dimension style ID",
             )?
         },
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: component.index,
         source_uuid: (!component.id.is_nil())
             .then(|| {
@@ -4138,7 +4145,7 @@ fn parse_embedded_image(
                 "Rhino image ID",
             )?
         },
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         source_uuid: source_uuid
             .map(|id| ctx.format_retained(format_args!("{id}"), "Rhino image source UUID"))
             .transpose()?,
@@ -4147,8 +4154,8 @@ fn parse_embedded_image(
         image_crc32,
         compression_method,
         uncompressed_byte_len,
-        buffer_offset: buffer_offset as u64,
-        buffer_byte_len: (buffer_end - buffer_offset) as u64,
+        buffer_offset: cadmpeg_core::decode::u64_from_index(buffer_offset),
+        buffer_byte_len: cadmpeg_core::decode::u64_from_index(buffer_end - buffer_offset),
         buffer_sha256: hex(
             ctx,
             &cadmpeg_ir::hash::sha256(&data[buffer_offset..buffer_end]),
@@ -4287,7 +4294,7 @@ fn parse_windows_bitmap(
             format_args!("rhino:presentation:windows_bitmap#offset-{source_offset}"),
             "Rhino Windows bitmap ID",
         )?,
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         class_uuid: ctx.format_retained(
             format_args!("{class_uuid}"),
             "Rhino Windows bitmap class UUID",
@@ -4299,12 +4306,14 @@ fn parse_windows_bitmap(
         planes,
         bits_per_pixel,
         compression,
-        image_byte_len: image_byte_len as i32,
+        image_byte_len: i32::try_from(image_byte_len).map_err(|_| {
+            FramingError::structural(reader.position(), "Windows bitmap image exceeds i32")
+        })?,
         pixels_per_meter,
         colors_used,
         important_colors,
-        pixel_buffer_offset: pixel_buffer_offset as u64,
-        pixel_buffer_byte_len: buffer.len() as u64,
+        pixel_buffer_offset: cadmpeg_core::decode::u64_from_index(pixel_buffer_offset),
+        pixel_buffer_byte_len: cadmpeg_core::decode::u64_from_index(buffer.len()),
         pixel_buffer_sha256: hex(
             ctx,
             &cadmpeg_ir::hash::sha256(buffer),
@@ -4393,7 +4402,7 @@ fn parse_texture_mapping(
                     "Rhino texture mapping ID",
                 )?
             },
-            source_offset: source_offset as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
             source_uuid: (!id.is_nil())
                 .then(|| {
                     ctx.format_retained(format_args!("{id}"), "Rhino texture mapping source UUID")
@@ -4869,7 +4878,7 @@ fn parse_text_style(
                 format_args!("rhino:presentation:text_style#index-{index}-offset-{source_offset}"),
                 "Rhino text style ID",
             )?,
-            source_offset: source_offset as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
             archive_index: Some(index),
             source_uuid: (!id.is_nil())
                 .then(|| ctx.format_retained(format_args!("{id}"), "Rhino text style source UUID"))
@@ -4932,7 +4941,7 @@ fn parse_text_style(
                 "Rhino text style ID",
             )
         }?,
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: index,
         source_uuid: (!id.is_nil())
             .then(|| ctx.format_retained(format_args!("{id}"), "Rhino text style source UUID"))
@@ -5582,7 +5591,7 @@ pub(crate) fn install(
                         "Rhino object presentation ID",
                     )?
                 },
-                source_offset: object.range.start as u64,
+                source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                 attributes: attributes_presentation,
                 links,
             });
@@ -5650,7 +5659,7 @@ pub(crate) fn install(
                     "Rhino layer presentation ID",
                 )?
             },
-            source_offset: layer.source.range.start as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(layer.source.range.start),
             archive_index: layer.index,
             source_uuid: layer
                 .id

@@ -81,7 +81,7 @@ impl SketchReferenceField {
                 let token = ReferenceIndexToken::read_payload(bytes.get(at..)?)?;
                 let width = token.raw().len();
                 if let Err(error) =
-                    super::reserve_om_retained_item(ctx, &mut references, "nx sketch references")
+                    ctx.reserve_retained_vec(&mut references, 1, "nx sketch references")
                 {
                     failure = Some(error);
                     return None;
@@ -105,11 +105,9 @@ impl SketchReferenceField {
             Some(Self(match count {
                 None => References::Implicit(terminal),
                 Some(count) => {
-                    if let Err(error) = super::reserve_om_retained_item(
-                        ctx,
-                        &mut references,
-                        "nx sketch references",
-                    ) {
+                    if let Err(error) =
+                        ctx.reserve_retained_vec(&mut references, 1, "nx sketch references")
+                    {
                         failure = Some(error);
                         return None;
                     }

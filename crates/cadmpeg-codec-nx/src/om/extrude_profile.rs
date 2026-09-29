@@ -80,18 +80,8 @@ pub(crate) fn extrude_profile_references(
         return Ok(None);
     };
     let count = usize::from(count - 1);
-    let count_u64 = u64_from_index(count);
-    let bytes = count_u64
-        .checked_mul(u64_from_index(std::mem::size_of::<PayloadIndexToken>()))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("NX extrude profile references", u64::MAX, u64::MAX)
-        })?;
-    ctx.charge_collection_items(count_u64, "NX extrude profile references")?;
-    ctx.charge_retained(bytes, "NX extrude profile references")?;
-    let mut references = Vec::new();
-    references
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit("NX extrude profile references", 0, count_u64))?;
+
+    let mut references = ctx.retained_vec(count, "NX extrude profile references")?;
     let mut at = references_start;
     for _ in 0..count {
         let Some(token) = record.payload().get(at..).and_then(PayloadIndexToken::read) else {

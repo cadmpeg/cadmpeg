@@ -7,20 +7,6 @@ use crate::om::{color::PaletteIndex, discriminators};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
-fn push_row<T>(
-    ctx: &DecodeContext<'_>,
-    rows: &mut Vec<T>,
-    row: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), operation)?;
-    rows.try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    rows.push(row);
-    Ok(())
-}
-
 /// Decode complete self-framed index rows from contiguous column storage.
 pub(crate) fn index_rows(
     ctx: &DecodeContext<'_>,
@@ -72,7 +58,7 @@ pub(crate) fn index_rows(
             index_tokens.map(|token| token.atom.into()),
             start,
         ) {
-            push_row(ctx, &mut rows, row, "NX index rows")?;
+            ctx.push_retained_vec(&mut rows, row, "NX index rows")?;
         }
         start = end;
     }
@@ -163,7 +149,7 @@ pub(crate) fn linked_rows(
             mode,
             start,
         ) {
-            push_row(ctx, &mut rows, row, "NX linked rows")?;
+            ctx.push_retained_vec(&mut rows, row, "NX linked rows")?;
         }
         start = end;
     }
@@ -226,7 +212,7 @@ pub(crate) fn target_rows(
             mode,
             start,
         ) {
-            push_row(ctx, &mut rows, row, "NX target rows")?;
+            ctx.push_retained_vec(&mut rows, row, "NX target rows")?;
         }
         start = end;
     }

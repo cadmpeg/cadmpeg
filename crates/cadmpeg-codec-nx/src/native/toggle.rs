@@ -341,15 +341,7 @@ pub(super) fn saved_toggle_records(
     let Some(parsed) = parse_saved_toggle_stream(ctx, bytes, source_offset)? else {
         return Ok((Vec::new(), Vec::new()));
     };
-    ctx.charge_collection_items(1, "store NX saved toggle stream")?;
-    ctx.charge_retained(
-        std::mem::size_of::<SavedToggleStream>() as u64,
-        "retain NX saved toggle stream",
-    )?;
-    let mut streams = Vec::new();
-    streams
-        .try_reserve_exact(1)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX saved toggle stream", 0, 1))?;
+    let mut streams = ctx.retained_vec(1, "store NX saved toggle stream")?;
     streams.push(parsed.stream);
     Ok((streams, parsed.entries))
 }
@@ -429,26 +421,7 @@ fn parse_saved_toggle_stream(
     let count = usize::try_from(entry_count).map_err(|_| {
         ctx.refuse_codec_limit("index NX saved toggle entries", 0, u64::from(entry_count))
     })?;
-    ctx.charge_collection_items(u64::from(entry_count), "store NX saved toggle entries")?;
-    let entry_bytes = count
-        .checked_mul(std::mem::size_of::<SavedToggleEntry>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("size NX saved toggle entries", 0, u64::from(entry_count))
-        })?;
-    ctx.charge_retained(
-        u64::try_from(entry_bytes).map_err(|_| {
-            ctx.refuse_codec_limit("size NX saved toggle entries", 0, u64::from(entry_count))
-        })?,
-        "retain NX saved toggle entries",
-    )?;
-    let mut entries = Vec::new();
-    entries.try_reserve_exact(count).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "allocate NX saved toggle entries",
-            0,
-            u64::from(entry_count),
-        )
-    })?;
+    let mut entries = ctx.retained_vec(count, "store NX saved toggle entries")?;
     let mut view = View::over_retained(bytes);
     let Some(_version) = view.u8() else {
         return Ok(None);
@@ -473,15 +446,8 @@ fn parse_saved_toggle_stream(
         let Some((toggle_id, state)) = value.rsplit_once(':') else {
             return Ok(None);
         };
-        ctx.charge_retained(toggle_id.len() as u64, "retain NX saved toggle identity")?;
-        let mut owned_id = String::new();
-        owned_id.try_reserve_exact(toggle_id.len()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "allocate NX saved toggle identity",
-                0,
-                toggle_id.len() as u64,
-            )
-        })?;
+        let mut owned_id =
+            ctx.retained_string(toggle_id.len(), "retain NX saved toggle identity")?;
         owned_id.push_str(toggle_id);
         let Ok(toggle_id) = ToggleId::try_from(owned_id) else {
             return Ok(None);
@@ -503,11 +469,7 @@ fn parse_saved_toggle_stream(
             ordinal.ilog10() as usize + 1
         };
         let id_len = PREFIX.len() + digits;
-        ctx.charge_retained(id_len as u64, "retain NX saved toggle entry id")?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX saved toggle entry id", 0, id_len as u64)
-        })?;
+        let mut id = ctx.retained_string(id_len, "retain NX saved toggle entry id")?;
         id.push_str(PREFIX);
         if write!(&mut id, "{ordinal}").is_err() {
             return Ok(None);
@@ -573,11 +535,7 @@ fn assign_stable_toggle_identities(
         if counts.get(&entry.toggle_id) == Some(&1) {
             const PREFIX: &str = "nx:saved-toggle:identity#";
             let byte_len = PREFIX.len() + 32;
-            ctx.charge_retained(byte_len as u64, "retain NX stable toggle identity")?;
-            let mut identity = String::new();
-            identity.try_reserve_exact(byte_len).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX stable toggle identity", 0, byte_len as u64)
-            })?;
+            let mut identity = ctx.retained_string(byte_len, "retain NX stable toggle identity")?;
             identity.push_str(PREFIX);
             identity.push_str(entry.toggle_id.as_str());
             entry.stable_identity = Some(identity);
@@ -881,7 +839,7 @@ mod tests {
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain NX saved toggle entries")
+                && limit.operation == "store NX saved toggle entries")
         );
         assert!(parse_service(&bytes, 0).is_some());
     }

@@ -399,8 +399,7 @@ impl<'a> Container<'a> {
             .om_section_cache
             .get()
             .ok_or_else(|| ctx.refuse_codec_limit("nx framed OM cache", 0, 1))?;
-        let mut result = crate::om::cache::charged_items(
-            ctx,
+        let mut result = ctx.retained_vec(
             match framed_cache {
                 FramedSectionCache::Borrowed { sections } => sections.len(),
                 FramedSectionCache::Owned { layouts } => layouts.len(),
@@ -489,8 +488,7 @@ impl<'a> Container<'a> {
             .indexed_section_layouts
             .get()
             .ok_or_else(|| ctx.refuse_codec_limit("nx indexed OM cache", 0, 1))?;
-        let mut result = crate::om::cache::charged_items(
-            ctx,
+        let mut result = ctx.retained_vec(
             match cache {
                 IndexedSectionCache::Borrowed { sections, .. } => sections.len(),
                 IndexedSectionCache::Owned { layouts } => layouts.len(),
@@ -538,25 +536,9 @@ impl<'a> Container<'a> {
     ) -> Result<Vec<String>, CodecError> {
         let strings = self.external_reference_strings(ctx)?;
         let count = strings.len();
-        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-        ctx.charge_collection_items(count_u64, "nx external reference paths")?;
-        let slot_bytes = count
-            .checked_mul(std::mem::size_of::<String>())
-            .ok_or_else(|| ctx.refuse_codec_limit("nx external reference paths", 0, count_u64))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(slot_bytes),
-            "nx external reference paths",
-        )?;
-        let mut paths = Vec::new();
-        paths
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit("nx external reference paths", 0, count_u64))?;
+        let mut paths = ctx.retained_vec(count, "nx external reference paths")?;
         for (_, _, path) in strings {
-            let path_len = cadmpeg_core::decode::u64_from_index(path.len());
-            ctx.charge_retained(path_len, "nx external reference path")?;
-            let mut copy = String::new();
-            copy.try_reserve_exact(path.len())
-                .map_err(|_| ctx.refuse_codec_limit("nx external reference path", 0, path_len))?;
+            let mut copy = ctx.retained_string(path.len(), "nx external reference path")?;
             copy.push_str(&path);
             paths.push(copy);
         }
@@ -590,20 +572,7 @@ impl<'a> Container<'a> {
                 continue;
             };
             let count = strings.len();
-            let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-            ctx.charge_collection_items(count_u64, "nx external reference strings")?;
-            let bytes = count
-                .checked_mul(std::mem::size_of::<(&DirEntry, usize, String)>())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("nx external reference strings", 0, count_u64)
-                })?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "nx external reference strings",
-            )?;
-            out.try_reserve(count).map_err(|_| {
-                ctx.refuse_codec_limit("nx external reference strings", 0, count_u64)
-            })?;
+            ctx.reserve_retained_vec(&mut out, count, "nx external reference strings")?;
             out.extend(
                 strings
                     .into_iter()
@@ -638,20 +607,7 @@ impl<'a> Container<'a> {
             };
             let records = parse_extref_records(ctx, payload)?;
             let count = records.len();
-            let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-            ctx.charge_collection_items(count_u64, "nx external reference record entries")?;
-            let bytes = count
-                .checked_mul(std::mem::size_of::<(&DirEntry, ExtrefRecord)>())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("nx external reference record entries", 0, count_u64)
-                })?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "nx external reference record entries",
-            )?;
-            out.try_reserve(count).map_err(|_| {
-                ctx.refuse_codec_limit("nx external reference record entries", 0, count_u64)
-            })?;
+            ctx.reserve_retained_vec(&mut out, count, "nx external reference record entries")?;
             out.extend(records.into_iter().map(|record| (entry, record)));
         }
         Ok(out)
@@ -684,20 +640,7 @@ impl<'a> Container<'a> {
                 continue;
             };
             let count = records.len();
-            let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-            ctx.charge_collection_items(count_u64, "nx external reference indexed entries")?;
-            let bytes = count
-                .checked_mul(std::mem::size_of::<(&DirEntry, ExtrefIndexedRecord)>())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("nx external reference indexed entries", 0, count_u64)
-                })?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "nx external reference indexed entries",
-            )?;
-            out.try_reserve(count).map_err(|_| {
-                ctx.refuse_codec_limit("nx external reference indexed entries", 0, count_u64)
-            })?;
+            ctx.reserve_retained_vec(&mut out, count, "nx external reference indexed entries")?;
             out.extend(records.into_iter().map(|record| (entry, record)));
         }
         Ok(out)
@@ -761,9 +704,11 @@ impl<'a> Container<'a> {
         ctx.charge_collection_items(count_u64, "admit NX FastLoad object IDs")?;
         ctx.charge_retained(id_bytes_u64, "retain NX FastLoad object IDs")?;
         let mut object_ids = Vec::new();
-        object_ids
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX FastLoad object IDs", 0, count_u64))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut object_ids,
+            count,
+            "allocate NX FastLoad object IDs",
+        )?;
         for ordinal in 0..count {
             let offset = ids_start + ordinal * 4;
             let object_id = View::u32_le_at(bytes, offset).ok_or_else(|| {
@@ -867,20 +812,7 @@ fn parse_extref_string_table(
     let Some((marker, count, start)) = locate_extref_string_table(ctx, payload)? else {
         return Ok(None);
     };
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-    ctx.charge_collection_items(count_u64, "nx external reference string table")?;
-    let bytes = count
-        .checked_mul(std::mem::size_of::<(usize, String)>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("nx external reference string table", 0, count_u64)
-        })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "nx external reference string table",
-    )?;
-    let mut out = Vec::new();
-    out.try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit("nx external reference string table", 0, count_u64))?;
+    let mut out = ctx.retained_vec(count, "nx external reference string table")?;
     let mut pos = start;
     for _ in 0..count {
         let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
@@ -898,11 +830,7 @@ fn parse_extref_string_table(
         let Ok(value) = std::str::from_utf8(raw) else {
             return Ok(None);
         };
-        let len = cadmpeg_core::decode::u64_from_index(value.len());
-        ctx.charge_retained(len, "nx external reference string")?;
-        let mut copy = String::new();
-        copy.try_reserve_exact(value.len())
-            .map_err(|_| ctx.refuse_codec_limit("nx external reference string", 0, len))?;
+        let mut copy = ctx.retained_string(value.len(), "nx external reference string")?;
         copy.push_str(value);
         out.push((string_offset, copy));
         pos = end;
@@ -955,21 +883,7 @@ fn parse_extref_records(
                 return Ok(None);
             }
         }
-        let handle_count = cadmpeg_core::decode::u64_from_index(handle_token_count);
-        ctx.charge_collection_items(handle_count, "nx external reference handles")?;
-        let handle_bytes = handle_token_count
-            .checked_mul(std::mem::size_of::<u32>())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("nx external reference handles", 0, handle_count)
-            })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(handle_bytes),
-            "nx external reference handles",
-        )?;
-        let mut handles = Vec::new();
-        handles.try_reserve_exact(handle_token_count).map_err(|_| {
-            ctx.refuse_codec_limit("nx external reference handles", 0, handle_count)
-        })?;
+        let mut handles = ctx.retained_vec(handle_token_count, "nx external reference handles")?;
         for handle_index in 0..handle_token_count {
             let token = handle_set::LEN + handle_index * 5;
             let Some(handle) = View::u32_be_at(bytes, token + 1) else {
@@ -1001,14 +915,7 @@ fn parse_extref_records(
         let Some(parsed) = parse_record(record.record_id, record.offset, end)? else {
             continue;
         };
-        ctx.charge_collection_items(1, "nx external reference records")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ExtrefRecord>()),
-            "nx external reference records",
-        )?;
-        records
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx external reference records", 0, 1))?;
+        ctx.reserve_retained_vec(&mut records, 1, "nx external reference records")?;
         records.push(parsed);
     }
     Ok(records)
@@ -1054,14 +961,7 @@ fn parse_extref_record_index(
         if offset >= string_table {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "nx external reference directory")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, usize)>()),
-            "nx external reference directory",
-        )?;
-        directory
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx external reference directory", 0, 1))?;
+        ctx.reserve_retained_vec(&mut directory, 1, "nx external reference directory")?;
         directory.push((record_id, offset));
     }
     if directory.is_empty()
@@ -1071,19 +971,7 @@ fn parse_extref_record_index(
         return Ok(None);
     }
     let count = directory.len();
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-    ctx.charge_collection_items(count_u64, "nx external reference index")?;
-    let slot_bytes = count
-        .checked_mul(std::mem::size_of::<ExtrefIndexedRecord>())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx external reference index", 0, count_u64))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(slot_bytes),
-        "nx external reference index",
-    )?;
-    let mut records = Vec::new();
-    records
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit("nx external reference index", 0, count_u64))?;
+    let mut records = ctx.retained_vec(count, "nx external reference index")?;
     for (index, (record_id, offset)) in directory.iter().copied().enumerate() {
         let end = directory
             .get(index + 1)
@@ -1129,18 +1017,7 @@ pub(crate) fn parse_extref_reference_pairs(
             ))
         })();
         if let Some((handle, tagged_reference)) = pair {
-            ctx.charge_collection_items(1, "nx external reference tail pairs")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                    usize,
-                    u32,
-                    crate::om::reference_value::Tagged28,
-                )>()),
-                "nx external reference tail pairs",
-            )?;
-            pairs
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx external reference tail pairs", 0, 1))?;
+            ctx.reserve_retained_vec(&mut pairs, 1, "nx external reference tail pairs")?;
             pairs.push((at, handle, tagged_reference));
             at += 9;
         } else {
@@ -1239,18 +1116,6 @@ pub(crate) enum FramedSectionCache<'a> {
 type FramedSections<'a> = Vec<(usize, crate::om::Section<'a>)>;
 type FramedSectionLayouts = Vec<(usize, crate::om::cache::SectionLayout)>;
 
-fn reserve_cache_slot<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
-}
-
 fn decimal_len(mut value: usize) -> usize {
     let mut length = 1;
     while value >= 10 {
@@ -1272,15 +1137,7 @@ fn offset_block_key(
         .and_then(|length| length.checked_add(":block#".len()))
         .and_then(|length| length.checked_add(decimal_len(block)))
         .ok_or_else(|| ctx.refuse_codec_limit("NX offset block key", u64::MAX, u64::MAX))?;
-    ctx.charge_retained(u64_from_index(length), "NX offset block key")?;
-    let mut key = String::new();
-    key.try_reserve_exact(length).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "NX offset block key",
-            u64_from_index(length),
-            u64_from_index(length),
-        )
-    })?;
+    let mut key = ctx.retained_string(length, "NX offset block key")?;
     write!(&mut key, "nx:om-data-blocks-{section}:block#{block}").map_err(|_| {
         ctx.refuse_codec_limit(
             "NX offset block key",
@@ -1326,10 +1183,10 @@ fn parse_framed_section_cache<'bytes>(
                 else {
                     continue;
                 };
-                reserve_cache_slot(ctx, &mut layouts, "NX framed cache layouts")?;
+                ctx.reserve_retained_vec(&mut layouts, 1, "NX framed cache layouts")?;
                 layouts.push((entry_index, layout));
             }
-            reserve_cache_slot(ctx, &mut sections, "NX framed cache sections")?;
+            ctx.reserve_retained_vec(&mut sections, 1, "NX framed cache sections")?;
             sections.push((entry_index, section));
         }
     }
@@ -1383,10 +1240,10 @@ fn parse_indexed_section_cache<'bytes>(
                 else {
                     continue;
                 };
-                reserve_cache_slot(ctx, &mut layouts, "NX indexed cache layouts")?;
+                ctx.reserve_retained_vec(&mut layouts, 1, "NX indexed cache layouts")?;
                 layouts.push((entry_index, layout));
             }
-            reserve_cache_slot(ctx, &mut sections, "NX indexed cache sections")?;
+            ctx.reserve_retained_vec(&mut sections, 1, "NX indexed cache sections")?;
             sections.push((entry_index, section));
         }
     }
@@ -1491,9 +1348,11 @@ pub(crate) fn scan_bytes<'a>(
             cadmpeg_core::decode::u64_from_index(footer_bytes),
             "join NX directory regions",
         )?;
-        entries
-            .try_reserve_exact(footer_entries.len())
-            .map_err(|_| ctx.refuse_codec_limit("join NX directory regions", 0, footer_items))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut entries,
+            footer_entries.len(),
+            "join NX directory regions",
+        )?;
         entries.extend(footer_entries);
     }
     if header_end > fo {
@@ -1595,14 +1454,7 @@ pub(crate) fn scan_legacy<'a>(
             "legacy NX stream spans",
         )?;
         stream_spans.insert(stream.id(), span);
-        ctx.charge_collection_items(1, "legacy NX stream views")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&view)),
-            "legacy NX stream views",
-        )?;
-        stream_views
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("legacy NX stream views", 0, 1))?;
+        ctx.reserve_retained_vec(&mut stream_views, 1, "legacy NX stream views")?;
         stream_views.push(view);
     }
     let logical_data = ctx.concat_views(&stream_views)?;
@@ -1626,21 +1478,21 @@ pub(crate) fn scan_legacy<'a>(
                 }),
             CompoundEntry::Storage(_) => DirEntryBody::Directory,
         };
-        entries
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("retain legacy NX directory entry", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut entries,
+            1,
+            "retain legacy NX directory entry",
+        )?;
         let name_len = "/Root/"
             .len()
             .checked_add(entry.path().len())
             .ok_or_else(|| ctx.refuse_codec_limit("retain legacy NX directory entry", 0, 1))?;
         let mut name = String::new();
-        name.try_reserve_exact(name_len).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "retain legacy NX directory entry",
-                0,
-                cadmpeg_core::decode::u64_from_index(name_len),
-            )
-        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut name,
+            name_len,
+            "retain legacy NX directory entry",
+        )?;
         name.push_str("/Root/");
         name.push_str(entry.path());
         entries.push(DirEntry {
@@ -1705,9 +1557,11 @@ fn directory_region(
         .map_err(|_| CodecError::NotImplemented("NX directory entries exceed u64".into()))?;
     ctx.charge_retained(entry_bytes_u64, "retain NX directory entries")?;
     let mut entries = Vec::new();
-    entries.try_reserve_exact(capacity).map_err(|_| {
-        ctx.refuse_codec_limit("allocate NX directory entries", 0, u64::from(count))
-    })?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut entries,
+        capacity,
+        "allocate NX directory entries",
+    )?;
     let mut at = entries_offset;
     for ordinal in 0..count {
         let Some((entry, next)) = try_entry(ctx, data, at, region, region_end, ordinal)? else {
@@ -1768,13 +1622,11 @@ fn try_entry(
         return Ok(None);
     };
     let mut name = String::new();
-    name.try_reserve_exact(name_len).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "retain NX directory name",
-            0,
-            cadmpeg_core::decode::u64_from_index(name_len),
-        )
-    })?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut name,
+        name_len,
+        "retain NX directory name",
+    )?;
     name.push_str(value);
     // Interpret the 16-byte payload as a file span when it lands within the file.
     let body = match (

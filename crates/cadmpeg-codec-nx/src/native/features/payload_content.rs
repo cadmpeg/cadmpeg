@@ -74,9 +74,7 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
                 .checked_add(id.len())
                 .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature payload blocks", 0, 1))?;
             reservation.grow(u64_from_index(record_bytes))?;
-            ctx.charge_collection_items(1, "NX feature payload blocks")?;
-            rows.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX feature payload blocks", 0, 1))?;
+            ctx.reserve_vec(&mut rows, 1, "NX feature payload blocks")?;
             hash.update(bytes);
             rows.push(FeaturePayloadBlock {
                 id,

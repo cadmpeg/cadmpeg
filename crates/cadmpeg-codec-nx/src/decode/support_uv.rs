@@ -136,7 +136,12 @@ pub(super) fn linear_knots(
                 operation: "nx linear knot count",
             })?;
     let mut knots = Vec::new();
-    let _reservation = geometry_budget.reserve_vec(&mut knots, count, "nx linear knots")?;
+    let _reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
+        geometry_budget.charges,
+        &mut knots,
+        count,
+        "nx linear knots",
+    )?;
     knots.extend(parameters.first().copied());
     knots.extend_from_slice(parameters);
     knots.extend(parameters.last().copied());
@@ -149,12 +154,7 @@ fn linear_pcurve_geometry(
     controls: &[Point2],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<PcurveGeometry, cadmpeg_core::CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(controls.len());
-    ctx.charge_collection_items(count, "nx support UV admitted controls")?;
-    let mut points = Vec::new();
-    points
-        .try_reserve_exact(controls.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx support UV admitted controls", 0, count))?;
+    let mut points = ctx.collection_vec(controls.len(), "nx support UV admitted controls")?;
     for control in controls {
         points.push(FinitePoint2::new(*control).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("control_points contains a non-finite point")
@@ -187,13 +187,7 @@ pub(super) fn assign_ext11_support_uv_with_index(
     let [first, second] = supports.map(|support| {
         support
             .and_then(|support| surfaces_by_xmt.get(&u32::from(support)))
-            .map(|surface| {
-                crate::decode::ids::copy_typed_id(
-                    ctx,
-                    surface.as_str(),
-                    "nx EXT11 support identity",
-                )
-            })
+            .map(|surface| surface.try_clone_for_decode(ctx, "nx EXT11 support identity"))
             .transpose()
     });
     let surface_ids = [first?, second?];
@@ -243,7 +237,15 @@ pub(super) fn validate_serialized_support_uv_with_index(
             Some(values),
             geometry_budget,
         )? {
-            admitted[side] = Some(values.clone_charged(ctx)?);
+            admitted[side] = Some(
+                crate::intersection::SupportUvLane::from_checked(
+                    ctx.copy_retained_slice(values.as_slice(), "NX solved support-UV lane copy")?,
+                    values.as_slice().len(),
+                )
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("NX copied support-UV lane count")
+                })?,
+            );
         }
     }
     Ok(admitted)
@@ -368,7 +370,15 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
         }
         assigned[support] = lanes[lane]
             .as_ref()
-            .map(|lane| lane.clone_charged(ctx))
+            .map(|lane| {
+                crate::intersection::SupportUvLane::from_checked(
+                    ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+                    lane.as_slice().len(),
+                )
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("NX copied support-UV lane count")
+                })
+            })
             .transpose()?;
         assigned_lanes[support] = Some(lane);
     }
@@ -384,7 +394,15 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
         if lane_matches_surface(surfaces[other_support], other_lane)? {
             assigned[other_support] = lanes[other_lane]
                 .as_ref()
-                .map(|lane| lane.clone_charged(ctx))
+                .map(|lane| {
+                    crate::intersection::SupportUvLane::from_checked(
+                        ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+                        lane.as_slice().len(),
+                    )
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("NX copied support-UV lane count")
+                    })
+                })
                 .transpose()?;
         }
     }
@@ -473,11 +491,7 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
         }
         for (side, support) in context.sides().iter().enumerate() {
             if !validated_lanes.contains(&(
-                crate::decode::ids::copy_typed_id(
-                    ctx,
-                    procedural_id.as_str(),
-                    "nx validated lane lookup",
-                )?,
+                procedural_id.try_clone_for_decode(ctx, "nx validated lane lookup")?,
                 side,
             )) || pcurve_requires_completion(
                 support.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
@@ -491,16 +505,8 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
                 continue;
             };
             let key = (
-                crate::decode::ids::copy_typed_id(
-                    ctx,
-                    owner.as_str(),
-                    "nx validated witness owner",
-                )?,
-                crate::decode::ids::copy_typed_id(
-                    ctx,
-                    surface.as_str(),
-                    "nx validated witness surface",
-                )?,
+                owner.try_clone_for_decode(ctx, "nx validated witness owner")?,
+                surface.try_clone_for_decode(ctx, "nx validated witness surface")?,
             );
             let entries = match witnesses.entry(key) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -509,10 +515,7 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
                     entry.insert(Vec::new())
                 }
             };
-            ctx.charge_collection_items(1, "nx validated endpoint witnesses")?;
-            entries
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx validated endpoint witnesses", 0, 1))?;
+            ctx.reserve_vec(entries, 1, "nx validated endpoint witnesses")?;
             entries.push((
                 pcurve
                     .geometry
@@ -739,17 +742,11 @@ pub(super) fn complete_ext11_support_uv_with_budget(
                 continue;
             }
             let mut controls = Vec::new();
-            ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(values.len()),
+            ctx.reserve_vec(
+                &mut controls,
+                values.len(),
                 "nx serialized support UV controls",
             )?;
-            controls.try_reserve_exact(values.len()).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "nx serialized support UV controls",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(values.len()),
-                )
-            })?;
             let mut valid = true;
             for uv in values.iter() {
                 if let Some(point) = surface_parameters(surface_geometry, **uv) {
@@ -769,16 +766,13 @@ pub(super) fn complete_ext11_support_uv_with_budget(
             };
             let replacement =
                 linear_pcurve_geometry(ctx, parameters, &control_points, geometry_budget)?;
-            ctx.charge_collection_items(1, "nx serialized support UV replacements")?;
-            replacements.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx serialized support UV replacements", 0, 1)
-            })?;
+            ctx.reserve_vec(
+                &mut replacements,
+                1,
+                "nx serialized support UV replacements",
+            )?;
             replacements.push((
-                crate::decode::ids::copy_typed_id(
-                    ctx,
-                    procedural_id.as_str(),
-                    "nx serialized support UV owner",
-                )?,
+                procedural_id.try_clone_for_decode(ctx, "nx serialized support UV owner")?,
                 side,
                 replacement,
             ));
@@ -958,11 +952,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                     break;
                 }
                 if validated_lanes.contains(&(
-                    crate::decode::ids::copy_typed_id(
-                        ctx,
-                        procedural_id.as_str(),
-                        "nx validation lane lookup",
-                    )?,
+                    procedural_id.try_clone_for_decode(ctx, "nx validation lane lookup")?,
                     side,
                 )) {
                     continue;
@@ -1045,31 +1035,17 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                     lane_geometry_exhausted |= child_exhausted || parent_exhausted;
                 }
                 if inconsistent {
-                    ctx.charge_collection_items(1, "nx inconsistent support UV lanes")?;
-                    invalid.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("nx inconsistent support UV lanes", 0, 1)
-                    })?;
+                    ctx.reserve_vec(&mut invalid, 1, "nx inconsistent support UV lanes")?;
                     invalid.push((
-                        crate::decode::ids::copy_typed_id(
-                            ctx,
-                            procedural_id.as_str(),
-                            "nx inconsistent support UV owner",
-                        )?,
+                        procedural_id
+                            .try_clone_for_decode(ctx, "nx inconsistent support UV owner")?,
                         side,
                     ));
                 } else if fully_validated {
                     if let [Some(first), Some(last)] = endpoints {
                         let key = (
-                            crate::decode::ids::copy_typed_id(
-                                ctx,
-                                owner.as_str(),
-                                "nx validated endpoint owner",
-                            )?,
-                            crate::decode::ids::copy_typed_id(
-                                ctx,
-                                surface.as_str(),
-                                "nx validated endpoint support",
-                            )?,
+                            owner.try_clone_for_decode(ctx, "nx validated endpoint owner")?,
+                            surface.try_clone_for_decode(ctx, "nx validated endpoint support")?,
                         );
                         let entries = match endpoint_witnesses.entry(key) {
                             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -1078,10 +1054,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                                 entry.insert(Vec::new())
                             }
                         };
-                        ctx.charge_collection_items(1, "nx validated endpoint witnesses")?;
-                        entries.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("nx validated endpoint witnesses", 0, 1)
-                        })?;
+                        ctx.reserve_vec(entries, 1, "nx validated endpoint witnesses")?;
                         entries.push((
                             pcurve
                                 .geometry
@@ -1206,11 +1179,7 @@ fn complete_support_uv_wave(
                     continue;
                 };
                 let attempt_key = (
-                    crate::decode::ids::copy_typed_id(
-                        ctx,
-                        procedural_id.as_str(),
-                        "nx support UV retry identity",
-                    )?,
+                    procedural_id.try_clone_for_decode(ctx, "nx support UV retry identity")?,
                     side,
                 );
                 let source_pcurve = context.sides()[1 - side].pcurve.as_ref();
@@ -1465,9 +1434,8 @@ fn complete_support_uv_wave(
                                                 "nx support UV blend grid index",
                                             )?;
                                             blend_parameter_grids.insert(
-                                                crate::decode::ids::copy_typed_id(
+                                                surface_id.try_clone_for_decode(
                                                     ctx,
-                                                    surface_id.as_str(),
                                                     "nx support UV blend grid identity",
                                                 )?,
                                                 grid,
@@ -1503,10 +1471,7 @@ fn complete_support_uv_wave(
                             return Ok(None);
                         };
                         all_parameters_certified &= certified;
-                        ctx.charge_collection_items(1, "nx support UV fitted parameters")?;
-                        uv.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("nx support UV fitted parameters", 0, 1)
-                        })?;
+                        ctx.reserve_vec(&mut uv, 1, "nx support UV fitted parameters")?;
                         uv.push(parameters);
                     }
                     Ok(Some((uv, all_parameters_certified)))
@@ -1618,16 +1583,9 @@ fn complete_support_uv_wave(
                     let pcurve = linear_pcurve_geometry(ctx, parameters, &uv, geometry_budget)?;
                     if let [Some(first), Some(last)] = endpoint_values {
                         let key = (
-                            crate::decode::ids::copy_typed_id(
-                                ctx,
-                                owner.as_str(),
-                                "nx support UV witness owner",
-                            )?,
-                            crate::decode::ids::copy_typed_id(
-                                ctx,
-                                surface_id.as_str(),
-                                "nx support UV witness surface",
-                            )?,
+                            owner.try_clone_for_decode(ctx, "nx support UV witness owner")?,
+                            surface_id
+                                .try_clone_for_decode(ctx, "nx support UV witness surface")?,
                         );
                         let entries = match endpoint_witnesses.entry(key) {
                             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -1636,26 +1594,17 @@ fn complete_support_uv_wave(
                                 entry.insert(Vec::new())
                             }
                         };
-                        ctx.charge_collection_items(1, "nx support UV endpoint witnesses")?;
-                        entries.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("nx support UV endpoint witnesses", 0, 1)
-                        })?;
+                        ctx.reserve_vec(entries, 1, "nx support UV endpoint witnesses")?;
                         entries.push((
                             pcurve.try_clone_for_decode(ctx, "nx support UV witness pcurve")?,
                             parameter_range,
                             [first, last],
                         ));
                     }
-                    ctx.charge_collection_items(1, "nx support UV replacements")?;
-                    replacements
-                        .try_reserve(1)
-                        .map_err(|_| ctx.refuse_codec_limit("nx support UV replacements", 0, 1))?;
+                    ctx.reserve_vec(&mut replacements, 1, "nx support UV replacements")?;
                     replacements.push((
-                        crate::decode::ids::copy_typed_id(
-                            ctx,
-                            procedural_id.as_str(),
-                            "nx support UV replacement owner",
-                        )?,
+                        procedural_id
+                            .try_clone_for_decode(ctx, "nx support UV replacement owner")?,
                         side,
                         pcurve,
                         admitted_fit_tolerance,
@@ -1689,11 +1638,10 @@ fn complete_support_uv_wave(
             }
             if let Some(construction) = curve.geometry.procedural_construction() {
                 ctx.charge_collection_items(1, "nx support UV cache backed constructions")?;
-                cache_backed_constructions.insert(crate::decode::ids::copy_typed_id(
-                    ctx,
-                    construction.as_str(),
-                    "nx support UV cache backed identity",
-                )?);
+                cache_backed_constructions.insert(
+                    construction
+                        .try_clone_for_decode(ctx, "nx support UV cache backed identity")?,
+                );
             }
         }
         for (procedural_id, side, pcurve, effective_fit_tolerance) in replacements {
@@ -1828,9 +1776,11 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
         };
         ctx.charge_collection_items(2, "nx coupled support UV boundary lanes")?;
         for lane in &mut lanes {
-            lane.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx coupled support UV boundary lanes", 0, 1)
-            })?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                lane,
+                1,
+                "nx coupled support UV boundary lanes",
+            )?;
         }
         lanes[blend_side].push(blend_parameters);
         lanes[support_side].push(support_parameters);
@@ -1993,11 +1943,7 @@ fn complete_coupled_support_uv(
         let Some(lanes) = lanes else {
             ctx.charge_collection_items(1, "nx coupled support UV failed retries")?;
             failed_attempts.insert(
-                crate::decode::ids::copy_typed_id(
-                    ctx,
-                    procedural_id.as_str(),
-                    "nx coupled support UV retry identity",
-                )?,
+                procedural_id.try_clone_for_decode(ctx, "nx coupled support UV retry identity")?,
                 lane_state,
             );
             let parent_exhausted = parent_geometry_budget
@@ -2048,16 +1994,9 @@ fn complete_coupled_support_uv(
                     linear_pcurve_geometry(ctx, parameters, &lanes[side], geometry_budget)?;
                 if let Some([Some(first), Some(last)]) = endpoint_values {
                     let key = (
-                        crate::decode::ids::copy_typed_id(
-                            ctx,
-                            owner.as_str(),
-                            "nx coupled support UV witness owner",
-                        )?,
-                        crate::decode::ids::copy_typed_id(
-                            ctx,
-                            surfaces[side].as_str(),
-                            "nx coupled support UV witness surface",
-                        )?,
+                        owner.try_clone_for_decode(ctx, "nx coupled support UV witness owner")?,
+                        surfaces[side]
+                            .try_clone_for_decode(ctx, "nx coupled support UV witness surface")?,
                     );
                     let entries = match endpoint_witnesses.entry(key) {
                         std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -2066,26 +2005,17 @@ fn complete_coupled_support_uv(
                             entry.insert(Vec::new())
                         }
                     };
-                    ctx.charge_collection_items(1, "nx coupled support UV endpoint witnesses")?;
-                    entries.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("nx coupled support UV endpoint witnesses", 0, 1)
-                    })?;
+                    ctx.reserve_vec(entries, 1, "nx coupled support UV endpoint witnesses")?;
                     entries.push((
                         pcurve.try_clone_for_decode(ctx, "nx coupled support UV witness pcurve")?,
                         parameter_range,
                         [first, last],
                     ));
                 }
-                ctx.charge_collection_items(1, "nx coupled support UV replacements")?;
-                replacements.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx coupled support UV replacements", 0, 1)
-                })?;
+                ctx.reserve_vec(&mut replacements, 1, "nx coupled support UV replacements")?;
                 replacements.push((
-                    crate::decode::ids::copy_typed_id(
-                        ctx,
-                        procedural_id.as_str(),
-                        "nx coupled support UV replacement owner",
-                    )?,
+                    procedural_id
+                        .try_clone_for_decode(ctx, "nx coupled support UV replacement owner")?,
                     side,
                     pcurve,
                 ));
@@ -2193,10 +2123,11 @@ pub(super) fn complete_parameterization_equivalent_support_uv(
                 target_surface,
                 source_surface,
             ) {
-                ctx.charge_collection_items(1, "nx equivalent support UV replacements")?;
-                replacements.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx equivalent support UV replacements", 0, 1)
-                })?;
+                ctx.reserve_vec(
+                    &mut replacements,
+                    1,
+                    "nx equivalent support UV replacements",
+                )?;
                 replacements.push((procedural_index, target, source));
             }
         }
@@ -2394,12 +2325,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
     validated_endpoint_witnesses: &EndpointWitnesses,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let source_count = cadmpeg_core::decode::u64_from_index(sources.len());
-    ctx.charge_collection_items(source_count, "nx completion source prefixes")?;
-    let mut source_prefixes = Vec::new();
-    source_prefixes
-        .try_reserve_exact(sources.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx completion source prefixes", 0, source_count))?;
+    let mut source_prefixes = ctx.collection_vec(sources.len(), "nx completion source prefixes")?;
     for source in sources {
         source_prefixes.push(source.scope.prefix_charged(ctx)?);
     }
@@ -2449,31 +2375,16 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         let Some(curve) = edge_curves.get(&coedge.edge) else {
             continue;
         };
-        ctx.charge_collection_items(1, "nx completion coedge candidates")?;
-        coedge_candidates
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx completion coedge candidates", 0, 1))?;
+        ctx.reserve_vec(&mut coedge_candidates, 1, "nx completion coedge candidates")?;
         coedge_candidates.push((
-            crate::decode::ids::copy_typed_id::<cadmpeg_ir::ids::CoedgeId>(
-                ctx,
-                coedge.id.as_str(),
-                "nx completion coedge identity",
-            )?,
-            crate::decode::ids::copy_typed_id::<cadmpeg_ir::ids::EdgeId>(
-                ctx,
-                coedge.edge.as_str(),
-                "nx completion edge identity",
-            )?,
-            crate::decode::ids::copy_typed_id::<CurveId>(
-                ctx,
-                curve.as_str(),
-                "nx completion curve identity",
-            )?,
-            crate::decode::ids::copy_typed_id::<SurfaceId>(
-                ctx,
-                surface.as_str(),
-                "nx completion surface identity",
-            )?,
+            coedge
+                .id
+                .try_clone_for_decode(ctx, "nx completion coedge identity")?,
+            coedge
+                .edge
+                .try_clone_for_decode(ctx, "nx completion edge identity")?,
+            curve.try_clone_for_decode(ctx, "nx completion curve identity")?,
+            surface.try_clone_for_decode(ctx, "nx completion surface identity")?,
             edge_tolerances.get(&coedge.edge).copied(),
             source_index,
         ));
@@ -2485,12 +2396,8 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
     for (_, _, curve, surface, _, _) in &coedge_candidates {
         ctx.charge_collection_items(1, "nx completion required chart keys")?;
         required_keys.insert((
-            crate::decode::ids::copy_typed_id(ctx, curve.as_str(), "nx completion required curve")?,
-            crate::decode::ids::copy_typed_id(
-                ctx,
-                surface.as_str(),
-                "nx completion required surface",
-            )?,
+            curve.try_clone_for_decode(ctx, "nx completion required curve")?,
+            surface.try_clone_for_decode(ctx, "nx completion required surface")?,
         ));
     }
     let mut candidates =
@@ -2531,16 +2438,8 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 continue;
             };
             let key = (
-                crate::decode::ids::copy_typed_id(
-                    ctx,
-                    owner.as_str(),
-                    "nx completion candidate owner",
-                )?,
-                crate::decode::ids::copy_typed_id(
-                    ctx,
-                    surface.as_str(),
-                    "nx completion candidate surface",
-                )?,
+                owner.try_clone_for_decode(ctx, "nx completion candidate owner")?,
+                surface.try_clone_for_decode(ctx, "nx completion candidate surface")?,
             );
             if !required_keys.contains(&key) {
                 continue;
@@ -2562,10 +2461,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                     .map(cadmpeg_ir::geometry::FitTolerance::get),
             );
             if !values.contains(&candidate) {
-                ctx.charge_collection_items(1, "nx completion candidate values")?;
-                values
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx completion candidate values", 0, 1))?;
+                ctx.reserve_vec(values, 1, "nx completion candidate values")?;
                 values.push(candidate);
             }
         }
@@ -2582,11 +2478,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             {
                 ctx.charge_collection_items(1, "nx completion edge endpoint contracts")?;
                 edge_endpoint_contracts.insert(
-                    crate::decode::ids::copy_typed_id::<cadmpeg_ir::ids::EdgeId>(
-                        ctx,
-                        edge_id.as_str(),
-                        "nx completion contract edge",
-                    )?,
+                    edge_id.try_clone_for_decode(ctx, "nx completion contract edge")?,
                     contract,
                 );
             }
@@ -2597,16 +2489,8 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         let mut endpoint_admissible_keys = BTreeSet::new();
         for (_, edge_id, curve, surface, edge_tolerance, _) in &coedge_candidates {
             let key = (
-                crate::decode::ids::copy_typed_id(
-                    ctx,
-                    curve.as_str(),
-                    "nx completion admissible curve",
-                )?,
-                crate::decode::ids::copy_typed_id(
-                    ctx,
-                    surface.as_str(),
-                    "nx completion admissible surface",
-                )?,
+                curve.try_clone_for_decode(ctx, "nx completion admissible curve")?,
+                surface.try_clone_for_decode(ctx, "nx completion admissible surface")?,
             );
             let Some(values) = candidates.get(&key) else {
                 continue;
@@ -2655,16 +2539,10 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             if witness.is_some() {
                 ctx.charge_collection_items(1, "nx completion witnessed chart keys")?;
                 witnessed_keys.insert((
-                    crate::decode::ids::copy_typed_id(
-                        ctx,
-                        key.0.as_str(),
-                        "nx completion witnessed curve",
-                    )?,
-                    crate::decode::ids::copy_typed_id(
-                        ctx,
-                        key.1.as_str(),
-                        "nx completion witnessed surface",
-                    )?,
+                    key.0
+                        .try_clone_for_decode(ctx, "nx completion witnessed curve")?,
+                    key.1
+                        .try_clone_for_decode(ctx, "nx completion witnessed surface")?,
                 ));
             }
             let endpoints = if witness.is_some() {
@@ -2681,16 +2559,10 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             ctx.charge_collection_items(1, "nx completion candidate endpoints")?;
             candidate_endpoints.insert(
                 (
-                    crate::decode::ids::copy_typed_id(
-                        ctx,
-                        key.0.as_str(),
-                        "nx completion endpoint curve",
-                    )?,
-                    crate::decode::ids::copy_typed_id(
-                        ctx,
-                        key.1.as_str(),
-                        "nx completion endpoint surface",
-                    )?,
+                    key.0
+                        .try_clone_for_decode(ctx, "nx completion endpoint curve")?,
+                    key.1
+                        .try_clone_for_decode(ctx, "nx completion endpoint surface")?,
                 ),
                 endpoints,
             );
@@ -2766,10 +2638,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             let Some(metadata) = metadata else {
                 continue;
             };
-            ctx.charge_collection_items(1, "nx completion pcurve replacements")?;
-            replacements
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx completion pcurve replacements", 0, 1))?;
+            ctx.reserve_vec(&mut replacements, 1, "nx completion pcurve replacements")?;
             replacements.push((
                 coedge_id,
                 source_index,
@@ -2848,17 +2717,9 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 .derived(&pcurve_id, "fit_tolerance")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        ctx.charge_collection_items(1, "nx completed pcurve records")?;
-        ir.model
-            .pcurves
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx completed pcurve records", 0, 1))?;
+        ctx.reserve_vec(&mut ir.model.pcurves, 1, "nx completed pcurve records")?;
         ir.model.pcurves.push(Pcurve {
-            id: crate::decode::ids::copy_typed_id(
-                ctx,
-                pcurve_id.as_str(),
-                "nx completed pcurve record identity",
-            )?,
+            id: pcurve_id.try_clone_for_decode(ctx, "nx completed pcurve record identity")?,
             geometry,
             metadata,
         });
@@ -2868,11 +2729,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             .iter_mut()
             .find(|coedge| coedge.id == coedge_id && coedge.pcurves.is_empty())
         {
-            ctx.charge_collection_items(1, "nx completed coedge pcurve uses")?;
-            coedge
-                .pcurves
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx completed coedge pcurve uses", 0, 1))?;
+            ctx.reserve_vec(&mut coedge.pcurves, 1, "nx completed coedge pcurve uses")?;
             coedge.pcurves.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: pcurve_id,
                 isoparametric: None,

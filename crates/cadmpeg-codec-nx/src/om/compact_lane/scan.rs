@@ -6,21 +6,6 @@ use crate::om::compact::{CountedIndexMembers, LocatedCompactIndex, NullableCompa
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
-fn push_lane<T>(
-    ctx: &DecodeContext<'_>,
-    lanes: &mut Vec<T>,
-    lane: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), operation)?;
-    lanes
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    lanes.push(lane);
-    Ok(())
-}
-
 /// Decode fixed-width `ABR` block-reference lanes from contiguous column storage.
 pub(crate) fn abr_lanes(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<AbrLane>, CodecError> {
     let mut lanes = Vec::new();
@@ -51,7 +36,7 @@ pub(crate) fn abr_lanes(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Abr
         };
         if bytes.get(at..end) == Some(&ABR_TERMINATOR) {
             if let Some(lane) = AbrLane::<(), usize>::new(tokens, start) {
-                push_lane(ctx, &mut lanes, lane, "NX ABR lanes")?;
+                ctx.push_retained_vec(&mut lanes, lane, "NX ABR lanes")?;
             }
             start = end;
         } else {
@@ -88,18 +73,7 @@ pub(crate) fn counted_lanes(
             return Ok(None);
         };
         let operation = "NX counted index lane members";
-        let count_u64 = u64_from_index(member_count);
-        ctx.charge_collection_items(count_u64, operation)?;
-        let bytes_needed = count_u64
-            .checked_mul(u64_from_index(std::mem::size_of::<
-                crate::om::compact::CompactIndexTarget<()>,
-            >()))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-        ctx.charge_retained(bytes_needed, operation)?;
-        let mut members = Vec::new();
-        members
-            .try_reserve_exact(member_count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        let mut members = ctx.retained_vec(member_count, operation)?;
         let mut at = members_start;
         for _ in 0..member_count {
             let Some(token) = LocatedCompactIndex::read(bytes, at) else {
@@ -118,7 +92,7 @@ pub(crate) fn counted_lanes(
     let mut start = 0;
     while start + 4 <= bytes.len() {
         if let Some((lane, end)) = decode(start)? {
-            push_lane(ctx, &mut lanes, lane, "NX counted index lanes")?;
+            ctx.push_retained_vec(&mut lanes, lane, "NX counted index lanes")?;
             start = end;
         } else {
             start += 1;

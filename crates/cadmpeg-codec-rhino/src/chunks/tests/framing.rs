@@ -124,7 +124,7 @@ fn parses_widths_short_long_and_bounds() {
     let parsed =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V4, false).expect("required invariant");
     assert!(parsed.short());
-    assert_eq!(parsed.value(), 42);
+    assert_eq!(parsed.value().expect("short chunk value"), 42);
     assert_eq!(parsed.next_offset(), long_narrow::LEN);
 
     let bytes = long_chunk(ArchiveVersion::V4, 9, &[1, 2, 3]);

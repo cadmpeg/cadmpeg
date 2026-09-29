@@ -8,7 +8,6 @@ use super::blend::{
 use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
-use super::ids::copy_typed_id;
 use super::support_uv::{linear_knots, missing_support_parameter};
 use crate::framing::node_kind::NodeKind;
 use crate::topology::{Graph, Node};
@@ -81,10 +80,7 @@ pub(super) fn saved_offset_carriers(
             .then_some((id, geometry))
         });
         if let Some(candidate) = candidate {
-            ctx.charge_collection_items(1, "nx offset candidates")?;
-            candidates
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx offset candidates", 0, 1))?;
+            ctx.reserve_vec(&mut candidates, 1, "nx offset candidates")?;
             candidates.push(candidate);
         }
     }
@@ -142,19 +138,13 @@ pub(super) fn saved_offset_carriers(
                     ctx.charge_collection_items(1, "nx offset match owners")?;
                 }
                 let group = matches.entry(offset.xmt).or_default();
-                ctx.charge_collection_items(1, "nx offset matches")?;
-                group
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx offset matches", 0, 1))?;
+                ctx.reserve_vec(group, 1, "nx offset matches")?;
                 group.push((*candidate_id, fit));
                 if !candidate_owners.contains_key(*candidate_id) {
                     ctx.charge_collection_items(1, "nx offset candidate owners")?;
                 }
                 let owners = candidate_owners.entry(*candidate_id).or_default();
-                ctx.charge_collection_items(1, "nx offset candidate owner entries")?;
-                owners.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx offset candidate owner entries", 0, 1)
-                })?;
+                ctx.reserve_vec(owners, 1, "nx offset candidate owner entries")?;
                 owners.push(offset.xmt);
             }
         }
@@ -170,7 +160,7 @@ pub(super) fn saved_offset_carriers(
             result.insert(
                 offset,
                 (
-                    copy_typed_id(ctx, candidate.as_str(), "nx saved offset surface identity")?,
+                    candidate.try_clone_for_decode(ctx, "nx saved offset surface identity")?,
                     *fit,
                 ),
             );
@@ -440,7 +430,12 @@ impl HomogeneousSurfaceNet {
         let mut controls = Vec::new();
         for u in 0..u_count {
             let _reservation =
-                geometry_budget.reserve_vec(&mut controls, v_count, "nx offset net controls")?;
+                cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
+                    geometry_budget.charges,
+                    &mut controls,
+                    v_count,
+                    "nx offset net controls",
+                )?;
             for v in 0..v_count {
                 let Some(point) = surface.pole(u, v) else {
                     return Ok(None);
@@ -463,8 +458,18 @@ impl HomogeneousSurfaceNet {
         Ok(Some(Self {
             u_degree,
             v_degree,
-            u_knots: copy_offset_knots(surface.u_knots(), geometry_budget)?,
-            v_knots: copy_offset_knots(surface.v_knots(), geometry_budget)?,
+            u_knots: cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
+                geometry_budget.charges,
+                surface.u_knots(),
+                "nx offset net knots",
+            )
+            .map(|(copy, _reservation)| copy)?,
+            v_knots: cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
+                geometry_budget.charges,
+                surface.v_knots(),
+                "nx offset net knots",
+            )
+            .map(|(copy, _reservation)| copy)?,
             u_count,
             v_count,
             controls,
@@ -488,11 +493,13 @@ impl HomogeneousSurfaceNet {
         let next_v_count = self.v_count - usize::from(!u_axis);
         let mut controls = Vec::new();
         for u in 0..next_u_count {
-            let _reservation = geometry_budget.reserve_vec(
-                &mut controls,
-                next_v_count,
-                "nx offset derivative controls",
-            )?;
+            let _reservation =
+                cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
+                    geometry_budget.charges,
+                    &mut controls,
+                    next_v_count,
+                    "nx offset derivative controls",
+                )?;
             for v in 0..next_v_count {
                 let index = |u, v| u * self.v_count + v;
                 let (first, second, derivative_index) = if u_axis {
@@ -527,14 +534,34 @@ impl HomogeneousSurfaceNet {
             u_degree: self.u_degree - usize::from(u_axis),
             v_degree: self.v_degree - usize::from(!u_axis),
             u_knots: if u_axis {
-                copy_offset_knots(&self.u_knots[1..self.u_knots.len() - 1], geometry_budget)?
+                cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
+                    geometry_budget.charges,
+                    &self.u_knots[1..self.u_knots.len() - 1],
+                    "nx offset net knots",
+                )
+                .map(|(copy, _reservation)| copy)?
             } else {
-                copy_offset_knots(&self.u_knots, geometry_budget)?
+                cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
+                    geometry_budget.charges,
+                    &self.u_knots,
+                    "nx offset net knots",
+                )
+                .map(|(copy, _reservation)| copy)?
             },
             v_knots: if u_axis {
-                copy_offset_knots(&self.v_knots, geometry_budget)?
+                cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
+                    geometry_budget.charges,
+                    &self.v_knots,
+                    "nx offset net knots",
+                )
+                .map(|(copy, _reservation)| copy)?
             } else {
-                copy_offset_knots(&self.v_knots[1..self.v_knots.len() - 1], geometry_budget)?
+                cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
+                    geometry_budget.charges,
+                    &self.v_knots[1..self.v_knots.len() - 1],
+                    "nx offset net knots",
+                )
+                .map(|(copy, _reservation)| copy)?
             },
             u_count: next_u_count,
             v_count: next_v_count,
@@ -574,17 +601,6 @@ impl HomogeneousSurfaceNet {
         }
         Some(bounds)
     }
-}
-
-fn copy_offset_knots(
-    knots: &[f64],
-    geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit> {
-    let mut copied = Vec::new();
-    let _reservation =
-        geometry_budget.reserve_vec(&mut copied, knots.len(), "nx offset net knots")?;
-    copied.extend_from_slice(knots);
-    Ok(copied)
 }
 
 #[derive(Clone, Copy)]
@@ -670,39 +686,53 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             None => None,
         };
 
-        let mut u_breaks = match copy_offset_knots(
-            &support_net.u_knots[support_net.u_degree..=support_net.u_count],
-            geometry_budget,
-        ) {
-            Ok(breaks) => breaks,
-            Err(limit) => return Some(Err(limit)),
-        };
+        let mut u_breaks =
+            match cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
+                geometry_budget.charges,
+                &support_net.u_knots[support_net.u_degree..=support_net.u_count],
+                "nx offset net knots",
+            )
+            .map(|(copy, _reservation)| copy)
+            {
+                Ok(breaks) => breaks,
+                Err(limit) => return Some(Err(limit)),
+            };
         let candidate_u_breaks =
             &candidate_net.u_knots[candidate_net.u_degree..=candidate_net.u_count];
-        if let Err(limit) = geometry_budget.reserve_vec(
-            &mut u_breaks,
-            candidate_u_breaks.len(),
-            "nx offset u breaks",
-        ) {
+        if let Err(limit) =
+            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
+                geometry_budget.charges,
+                &mut u_breaks,
+                candidate_u_breaks.len(),
+                "nx offset u breaks",
+            )
+        {
             return Some(Err(limit));
         }
         u_breaks.extend(candidate_u_breaks);
         u_breaks.sort_by(f64::total_cmp);
         u_breaks.dedup();
-        let mut v_breaks = match copy_offset_knots(
-            &support_net.v_knots[support_net.v_degree..=support_net.v_count],
-            geometry_budget,
-        ) {
-            Ok(breaks) => breaks,
-            Err(limit) => return Some(Err(limit)),
-        };
+        let mut v_breaks =
+            match cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
+                geometry_budget.charges,
+                &support_net.v_knots[support_net.v_degree..=support_net.v_count],
+                "nx offset net knots",
+            )
+            .map(|(copy, _reservation)| copy)
+            {
+                Ok(breaks) => breaks,
+                Err(limit) => return Some(Err(limit)),
+            };
         let candidate_v_breaks =
             &candidate_net.v_knots[candidate_net.v_degree..=candidate_net.v_count];
-        if let Err(limit) = geometry_budget.reserve_vec(
-            &mut v_breaks,
-            candidate_v_breaks.len(),
-            "nx offset v breaks",
-        ) {
+        if let Err(limit) =
+            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
+                geometry_budget.charges,
+                &mut v_breaks,
+                candidate_v_breaks.len(),
+                "nx offset v breaks",
+            )
+        {
             return Some(Err(limit));
         }
         v_breaks.extend(candidate_v_breaks);
@@ -712,7 +742,12 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
         for u in u_breaks.windows(2).filter(|span| span[0] < span[1]) {
             for v in v_breaks.windows(2).filter(|span| span[0] < span[1]) {
                 if let Err(limit) =
-                    geometry_budget.reserve_vec(&mut rectangles, 1, "nx offset rectangles")
+                    cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
+                        geometry_budget.charges,
+                        &mut rectangles,
+                        1,
+                        "nx offset rectangles",
+                    )
                 {
                     return Some(Err(limit));
                 }
@@ -966,12 +1001,22 @@ pub(super) fn subdivide_offset_rectangle(
     let v_divisible = v != v0 && v != v1;
     if u_divisible && (split_u || !v_divisible) {
         let _reservation =
-            geometry_budget.reserve_vec(rectangles, 2, "nx offset subdivision rectangles")?;
+            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
+                geometry_budget.charges,
+                rectangles,
+                2,
+                "nx offset subdivision rectangles",
+            )?;
         rectangles.extend([[u0, u, v0, v1], [u, u1, v0, v1]]);
         Ok(true)
     } else if v_divisible {
         let _reservation =
-            geometry_budget.reserve_vec(rectangles, 2, "nx offset subdivision rectangles")?;
+            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
+                geometry_budget.charges,
+                rectangles,
+                2,
+                "nx offset subdivision rectangles",
+            )?;
         rectangles.extend([[u0, u1, v0, v], [u0, u1, v, v1]]);
         Ok(true)
     } else {
@@ -1233,7 +1278,14 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     {
         return Ok(None);
     }
-    let mut starts = Vec::with_capacity(3);
+    let mut starts = Vec::new();
+    let _starts_reservation =
+        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
+            geometry_budget.charges,
+            &mut starts,
+            3,
+            "nx offset support starting parameters",
+        )?;
     let add_start = |starts: &mut Vec<Point2>, candidate: Option<Point2>| {
         let Some(mut candidate) = candidate else {
             return;
@@ -1939,8 +1991,9 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                         0,
                         geometry_budget,
                     )?;
-                    geometry_budget
-                        .charge_collection_items(1, "nx intersection blend grid cache")?;
+                    geometry_budget.charges.map_or(Ok(()), |ctx| {
+                        ctx.charge_collection_items_limit(1, "nx intersection blend grid cache")
+                    })?;
                     blend_parameter_grids.insert(surface.as_str(), grid);
                 }
                 let grid = blend_parameter_grids
@@ -2011,16 +2064,20 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         return Ok(None);
     }
     let mut lanes = [Vec::new(), Vec::new()];
-    let _first_lane_reservation = geometry_budget.reserve_vec(
-        &mut lanes[0],
-        chart.len(),
-        "nx intersection first parameter lane",
-    )?;
-    let _second_lane_reservation = geometry_budget.reserve_vec(
-        &mut lanes[1],
-        chart.len(),
-        "nx intersection second parameter lane",
-    )?;
+    let _first_lane_reservation =
+        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
+            geometry_budget.charges,
+            &mut lanes[0],
+            chart.len(),
+            "nx intersection first parameter lane",
+        )?;
+    let _second_lane_reservation =
+        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
+            geometry_budget.charges,
+            &mut lanes[1],
+            chart.len(),
+            "nx intersection second parameter lane",
+        )?;
     lanes[0].push(Point2::new(current[0], current[1]));
     lanes[1].push(Point2::new(current[2], current[3]));
 
@@ -2580,13 +2637,7 @@ pub(super) fn intersection_side(
 ) -> Result<IntcurveSupportSide, cadmpeg_core::CodecError> {
     let surface = surface_xmt
         .and_then(|xmt| surfaces_by_xmt.get(&u32::from(xmt)))
-        .map(|surface| {
-            crate::decode::ids::copy_typed_id(
-                ctx,
-                surface.as_str(),
-                "nx intersection support identity",
-            )
-        })
+        .map(|surface| surface.try_clone_for_decode(ctx, "nx intersection support identity"))
         .transpose()?;
     let lanes = if let (Some(surface_id), Some((uv, parameters))) = (&surface, uv) {
         let geometry = ir
@@ -2603,11 +2654,13 @@ pub(super) fn intersection_side(
             None
         } else if let Some(geometry) = geometry {
             let mut control_points = Vec::new();
-            let _reservation = geometry_budget.reserve_vec(
-                &mut control_points,
-                uv.len(),
-                "nx intersection support controls",
-            )?;
+            let _reservation =
+                cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
+                    geometry_budget.charges,
+                    &mut control_points,
+                    uv.len(),
+                    "nx intersection support controls",
+                )?;
             let mut valid = true;
             for pair in uv {
                 if let Some(point) = surface_parameters(geometry, **pair) {
@@ -2713,10 +2766,7 @@ pub(super) fn normalize_pcurve_parameters(
                 let Some(position) = surface_parameters(surface, [point.u, point.v]) else {
                     return Ok(None);
                 };
-                ctx.charge_collection_items(1, "nx normalized pcurve controls")?;
-                converted
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx normalized pcurve controls", 0, 1))?;
+                ctx.reserve_vec(&mut converted, 1, "nx normalized pcurve controls")?;
                 converted.push(position);
                 ordinal = ordinal.checked_add(1).ok_or_else(|| {
                     ctx.refuse_codec_limit("nx normalized pcurve controls", 0, u64::MAX)

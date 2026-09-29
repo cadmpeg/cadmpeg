@@ -80,7 +80,8 @@ use crate::IgesCodec;
 const EPS_BOUNDARY_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_BOUND_REPRESENTATION: f64 = 5.0e-7;
 
-fn assert_trimming_collection_refusal(bytes: &[u8], operation: &str) {
+fn assert_trimming_collection_refusal(bytes: &[u8], operation: &str, occurrence: usize) {
+    let mut matched = 0;
     let mut cap = 0_u64;
     for _ in 0..4096 {
         let mut policy = DecodePolicy::service();
@@ -97,7 +98,10 @@ fn assert_trimming_collection_refusal(bytes: &[u8], operation: &str) {
             )) => {
                 assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
                 if limit.operation == operation {
-                    return;
+                    if matched == occurrence {
+                        return;
+                    }
+                    matched += 1;
                 }
                 cap = limit.used.checked_add(limit.additional).unwrap();
             }
@@ -149,13 +153,9 @@ fn trimmed_support_nurbs_copy_refuses_nested_storage() {
     IgesCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
-    for operation in [
-        "iges copied support u knots",
-        "iges copied support v knots",
-        "iges copied support pole rows",
-        "iges copied support pole row",
-    ] {
-        assert_trimming_collection_refusal(&bytes, operation);
+    // The copy visits u knots, v knots, outer pole rows, then the first inner row.
+    for occurrence in 0..4 {
+        assert_trimming_collection_refusal(&bytes, "iges copied support surface", occurrence);
     }
 }
 
@@ -180,7 +180,7 @@ fn trimming_projection_refuses_counted_boundary_vectors() {
         ),
         (bounded_plane_file(), "loop ring members"),
     ] {
-        assert_trimming_collection_refusal(&bytes, operation);
+        assert_trimming_collection_refusal(&bytes, operation, 0);
     }
 }
 
@@ -192,7 +192,7 @@ fn type142_boundary_creation_refuses_nested_slots_and_index_node() {
         "iges Type142 boundary segments",
         "iges trimming boundary index nodes",
     ] {
-        assert_trimming_collection_refusal(&bytes, operation);
+        assert_trimming_collection_refusal(&bytes, operation, 0);
     }
     assert!(IgesCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
@@ -206,7 +206,7 @@ fn boundary_carrier_index_and_selected_edge_refuse_unadmitted_storage() {
         "iges boundary carrier index nodes",
         "iges boundary carrier edge references",
     ] {
-        assert_trimming_collection_refusal(&bytes, operation);
+        assert_trimming_collection_refusal(&bytes, operation, 0);
     }
     for operation in [
         "iges selected edge curve ID",
@@ -221,8 +221,8 @@ fn boundary_carrier_index_and_selected_edge_refuse_unadmitted_storage() {
 #[test]
 fn trimming_model_index_refuses_identity_storage_before_lookup() {
     let bytes = bounded_plane_file();
-    assert_trimming_collection_refusal(&bytes, "model identity universe slots");
-    assert_trimming_collection_refusal(&bytes, "model identity index slots");
+    assert_trimming_collection_refusal(&bytes, "model identity universe slots", 0);
+    assert_trimming_collection_refusal(&bytes, "model identity index slots", 0);
     assert_trimming_retained_refusal(&bytes, "model identity universe text");
     assert!(IgesCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
@@ -233,7 +233,7 @@ fn trimming_model_index_refuses_identity_storage_before_lookup() {
 fn support_bound_walk_refuses_surface_identity_and_node() {
     let bytes = bounded_plane_file();
     assert_trimming_retained_refusal(&bytes, "iges support-bound visiting surface ID");
-    assert_trimming_collection_refusal(&bytes, "iges support-bound visiting surface nodes");
+    assert_trimming_collection_refusal(&bytes, "iges support-bound visiting surface nodes", 0);
     assert!(IgesCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .is_ok());
@@ -288,9 +288,9 @@ fn implicit_outer_surface_attachment_refuses_procedural_slot() {
 #[test]
 fn implicit_outer_boundary_refuses_curve_id_storage() {
     let bytes = trimmed_plane_with_boundaries("106,1,5,0,0,0,1,0,1,1,0,1,0,0;", "144,1,0,1,,13;");
-    assert_trimming_collection_refusal(&bytes, "iges implicit boundary curve IDs");
+    assert_trimming_collection_refusal(&bytes, "iges implicit boundary curve IDs", 0);
     assert_trimming_retained_refusal(&bytes, "iges implicit boundary curve ID text");
-    assert_trimming_collection_refusal(&bytes, "iges implicit boundary pcurve IDs");
+    assert_trimming_collection_refusal(&bytes, "iges implicit boundary pcurve IDs", 0);
     assert_trimming_retained_refusal(&bytes, "iges implicit boundary pcurve ID text");
     assert!(IgesCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
@@ -304,7 +304,7 @@ fn trimmed_pcurve_uses_refuse_nested_storage() {
         "iges trimming coedge pcurve uses",
         "iges trimming pcurve slots",
     ] {
-        assert_trimming_collection_refusal(&bytes, operation);
+        assert_trimming_collection_refusal(&bytes, operation, 0);
     }
     assert_trimming_retained_refusal(&bytes, "iges trimming pcurve ID copy");
     assert!(IgesCodec
@@ -323,11 +323,12 @@ fn trimmed_face_refuses_nested_topology_lanes_and_staging() {
         "iges trimming staged candidates",
         "iges trimming committed vertex derivations",
     ] {
-        assert_trimming_collection_refusal(&bytes, operation);
+        assert_trimming_collection_refusal(&bytes, operation, 0);
     }
     assert_trimming_collection_refusal(
         &trimmed_plane_with_inner_loop_file(),
         "iges trimming inner loop IDs",
+        0,
     );
     assert!(IgesCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
@@ -525,7 +526,7 @@ fn decode_reports_an_out_of_domain_alternate_for_model_preferred_type_142() {
 #[test]
 fn boundary_parameter_loss_refuses_unadmitted_note_storage() {
     let bytes = subrange_nurbs_surface_boundary_file(2);
-    assert_trimming_collection_refusal(&bytes, "iges entity loss slots");
+    assert_trimming_collection_refusal(&bytes, "iges entity loss slots", 0);
     for operation in ["iges entity loss message", "iges entity loss kind"] {
         assert_trimming_retained_refusal(&bytes, operation);
     }
@@ -610,7 +611,7 @@ fn source_control_interval_fallback_refuses_unadmitted_storage() {
         "iges source active curve nodes",
         "iges Type126 declared control intervals",
     ] {
-        assert_trimming_collection_refusal(&bytes, operation);
+        assert_trimming_collection_refusal(&bytes, operation, 0);
     }
     assert_trimming_retained_refusal(&bytes, "iges source active curve ID");
 }
@@ -629,7 +630,7 @@ fn pcurve_support_check_refuses_unadmitted_span_and_split_storage() {
         "iges pcurve split left controls",
         "iges pcurve split right controls",
     ] {
-        assert_trimming_collection_refusal(&bytes, operation);
+        assert_trimming_collection_refusal(&bytes, operation, 0);
     }
 }
 
@@ -873,7 +874,7 @@ fn boundary_vertex_clustering_refuses_pairwise_work_before_comparisons() {
 #[test]
 fn face_tolerance_policy_separates_declared_and_coordinate_bounds() {
     let global = crate::test_support::parse_global(
-        &crate::card::scan(&fixed_ascii_with_global(
+        &crate::test_support::scan(&fixed_ascii_with_global(
             b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,3,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
         ))
         .unwrap(),
@@ -1110,12 +1111,12 @@ fn trimmed_pcurve_mapping_refuses_before_an_absent_surface_candidate() {
 #[test]
 fn pcurve_geometry_refuses_mapped_polynomial_and_rational_pole_storage() {
     let polynomial = trimmed_procedural_line_surface_of_revolution_file();
-    assert_trimming_collection_refusal(&polynomial, "iges pcurve mapped polynomial poles");
+    assert_trimming_collection_refusal(&polynomial, "iges pcurve mapped polynomial poles", 0);
     let rational = subrange_nurbs_surface_boundary_file_with_pcurve(
         3,
         "126,2,2,1,1,0,0,0,0,0,1,1,1,1,0.5,1,0.2,0.2,0,0.1,0.5,0,0.2,0.2,0,0,1,0,0,1;",
     );
-    assert_trimming_collection_refusal(&rational, "iges pcurve mapped rational poles");
+    assert_trimming_collection_refusal(&rational, "iges pcurve mapped rational poles", 0);
     IgesCodec
         .decode(&mut Cursor::new(polynomial), &DecodeOptions::default())
         .unwrap();

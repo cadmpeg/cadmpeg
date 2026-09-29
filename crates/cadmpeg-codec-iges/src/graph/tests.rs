@@ -371,7 +371,7 @@ fn semantic_expectation_labels_are_preserved_in_pointer_losses() {
     let mut graph = BTreeMap::new();
     resolver.append_to(&mut graph).unwrap();
     let source = point_file();
-    let scan = crate::card::scan(&source).unwrap();
+    let scan = crate::test_support::scan(&source).unwrap();
     let messages = super::losses(&graph, &scan, &[], &ctx)
         .unwrap()
         .into_iter()
@@ -400,7 +400,7 @@ fn graph_losses_admit_indexes_notes_and_provenance_text() {
         }],
     )]);
     let source = point_file();
-    let scan = crate::card::scan(&source).unwrap();
+    let scan = crate::test_support::scan(&source).unwrap();
     let directory_count =
         cadmpeg_core::decode::u64_from_index(scan.section(crate::card::Section::Directory).count());
     let parameter_count =

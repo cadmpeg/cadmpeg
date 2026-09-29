@@ -336,8 +336,11 @@ impl DefinitionDiagnostic {
             .unwrap_or(RhinoLossCode::ContainerInstanceDefinitionDegraded)
             .note(&message)
             .with_provenance(
-                cadmpeg_ir::SourceProvenance::root("rhino", self.source_range.start as u64)
-                    .with_tag("INSTANCE_DEFINITION_TABLE"),
+                cadmpeg_ir::SourceProvenance::root(
+                    "rhino",
+                    cadmpeg_core::decode::u64_from_index(self.source_range.start),
+                )
+                .with_tag("INSTANCE_DEFINITION_TABLE"),
             ))
     }
 }
