@@ -2571,7 +2571,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     }
                 }
                 for lane in lanes {
-                    let Some((_, start, end)) = feature_object_byte_ranges(histories, lane)
+                    let Some((_, start, end)) = feature_object_byte_ranges(ctx, histories, lane)?
                         .get(native_feature.id.as_str()).copied()
                     else {
                         continue;

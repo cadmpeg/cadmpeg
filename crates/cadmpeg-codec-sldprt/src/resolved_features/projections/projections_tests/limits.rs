@@ -292,7 +292,7 @@ fn unbound_cosmetic_thread_token_index_refuses_collection_limit() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
+    policy.limits.max_collection_items = 7;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     let error = project_unbound_cosmetic_thread_faces(
         &ctx,

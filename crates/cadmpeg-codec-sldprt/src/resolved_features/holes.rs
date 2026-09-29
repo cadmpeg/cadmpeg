@@ -2979,15 +2979,17 @@ pub(crate) fn project_hole_axes(
         .values()
         .map(|feature| feature.id.as_str())
         .collect::<HashSet<_>>();
-    let feature_ranges = lanes
-        .iter()
-        .map(|lane| {
-            (
-                lane.id.as_str(),
-                feature_object_byte_ranges(histories, lane),
-            )
-        })
-        .collect::<HashMap<_, _>>();
+    let mut feature_ranges = HashMap::new();
+    for lane in lanes {
+        const OPERATION: &str = "group SLDPRT feature object byte ranges by lane";
+        if !feature_ranges.contains_key(lane.id.as_str()) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            feature_ranges.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        feature_ranges.insert(lane.id.as_str(), feature_object_byte_ranges(ctx, histories, lane)?);
+    }
     let mut feature_frames = HashMap::new();
     for lane in lanes {
         let Some(ranges) = feature_ranges.get(lane.id.as_str()) else {
@@ -4094,20 +4096,32 @@ fn has_unique_marker_loci_subset(marker_loci: &[Point2], candidate_loci: &[Point
 }
 
 pub(super) fn feature_object_byte_ranges<'a>(
+    ctx: &DecodeContext<'_>,
     histories: &'a [crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> HashMap<&'a str, (usize, usize, usize)> {
-    let mut objects = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, feature)))
-        .collect::<Vec<_>>();
+) -> Result<HashMap<&'a str, (usize, usize, usize)>, CodecError> {
+    const OPERATION: &str = "index SLDPRT feature object byte ranges";
+    let mut objects = Vec::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, OPERATION)?;
+        let Some(name) = feature_object_name(feature, lane) else {
+            continue;
+        };
+        ctx.reserve_collection_vec(&mut objects, 1, OPERATION)?;
+        objects.push((name.offset, feature));
+    }
+    let count = u64::try_from(objects.len())
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    let levels = if objects.len() > 1 { objects.len().ilog2() + 1 } else { 1 };
+    ctx.charge_work(count.checked_mul(u64::from(levels))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
     objects.sort_by_key(|(offset, _)| *offset);
-    objects
-        .iter()
-        .enumerate()
-        .filter_map(|(index, (offset, feature))| {
-            let start = usize::try_from(*offset).ok()?;
+    let mut ranges = HashMap::new();
+    for (index, (offset, feature)) in objects.iter().enumerate() {
+            ctx.charge_work(1, OPERATION)?;
+            let Some(start) = usize::try_from(*offset).ok() else {
+                continue;
+            };
             let context_start = index
                 .checked_sub(1)
                 .and_then(|index| objects.get(index))
@@ -4117,9 +4131,15 @@ pub(super) fn feature_object_byte_ranges<'a>(
                 .get(index + 1)
                 .and_then(|(offset, _)| usize::try_from(*offset).ok())
                 .unwrap_or(lane.native_payload.len());
-            Some((feature.id.as_str(), (context_start, start, end)))
-        })
-        .collect()
+            if !ranges.contains_key(feature.id.as_str()) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                ranges.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                })?;
+            }
+            ranges.insert(feature.id.as_str(), (context_start, start, end));
+    }
+    Ok(ranges)
 }
 
 fn hole_temporary_axis(payload: &[u8], start: usize, end: usize) -> Option<(Point3, Vector3)> {
@@ -4276,7 +4296,7 @@ pub(super) fn sketch_feature_frames(
 ) -> Result<HashMap<String, (Point3, Vector3, Vector3)>, CodecError> {
     let mut candidates = HashMap::<String, Option<(Point3, Vector3, Vector3)>>::new();
     for lane in lanes {
-        let ranges = feature_object_byte_ranges(histories, lane);
+        let ranges = feature_object_byte_ranges(ctx, histories, lane)?;
         let plane_frames = lane_sketch_plane_frames(ctx, features, histories, lane)?;
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         for feature in histories
