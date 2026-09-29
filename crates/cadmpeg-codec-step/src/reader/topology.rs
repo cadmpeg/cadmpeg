@@ -147,18 +147,11 @@ fn copy_topology_id<T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<T, CodecError> {
-    let bytes = ctx.copy_retained(identity.as_bytes(), operation)?;
-    let text = String::from_utf8(bytes).map_err(CodecError::malformed)?;
+    let text = ctx.copy_retained_text(identity, operation)?;
     T::try_from(text).map_err(CodecError::malformed)
 }
 
-fn copy_topology_body_id(
-    body: &BodyId,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<BodyId, CodecError> {
-    copy_topology_id(body.as_str(), ctx, operation)
-}
+
 
 fn copy_topology_body_ids(
     bodies: &[BodyId],
@@ -171,7 +164,7 @@ fn copy_topology_body_ids(
         copies
             .try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-        copies.push(copy_topology_body_id(body, ctx, operation)?);
+        copies.push(body.try_clone_for_decode(ctx, operation)?);
     }
     Ok(copies)
 }
@@ -187,7 +180,7 @@ fn push_topology_body_group(
     if !groups.contains_key(&key) {
         ctx.charge_collection_items(1, group_operation)?;
     }
-    let copy = copy_topology_body_id(body, ctx, member_operation)?;
+    let copy = body.try_clone_for_decode(ctx, member_operation)?;
     push_topology_vec(groups.entry(key).or_default(), copy, ctx, member_operation)
 }
 
@@ -206,7 +199,7 @@ fn insert_topology_body_group(
         ctx.charge_collection_items(1, group_operation)?;
     }
     ctx.charge_collection_items(1, member_operation)?;
-    let copy = copy_topology_body_id(body, ctx, member_operation)?;
+    let copy = body.try_clone_for_decode(ctx, member_operation)?;
     groups.entry(key).or_default().insert(copy);
     Ok(())
 }
@@ -1003,7 +996,7 @@ pub(super) fn decode(
                 }
                 push_topology_vec(
                     &mut body_ids,
-                    copy_topology_body_id(&built.body_id, ctx, "step_topology_built_bodies")?,
+                    built.body_id.try_clone_for_decode(ctx, "step_topology_built_bodies")?,
                     ctx,
                     "step_topology_built_bodies",
                 )?;
@@ -1697,11 +1690,11 @@ fn build_wire_set(
         one_topology_vec(shell_value, ctx, "step_wire_shells")?,
         Region {
             id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
-            body: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
+            body: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
             shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
         },
         Body {
-            id: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
+            id: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
             kind: BodyKind::Wire,
             regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
             transform: None,
@@ -2021,11 +2014,11 @@ fn build_shell_wire_set(
         one_topology_vec(shell_value, ctx, "step_wire_shells")?,
         Region {
             id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
-            body: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
+            body: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
             shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
         },
         Body {
-            id: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
+            id: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
             kind: BodyKind::Wire,
             regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
             transform: None,

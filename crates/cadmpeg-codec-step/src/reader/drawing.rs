@@ -152,18 +152,7 @@ fn ensure_drawing_relationship_group(
     Ok(())
 }
 
-fn clone_drawing_text(
-    value: &str,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    ctx.charge_retained(u64_from_index(value.len()), operation)?;
-    let mut copy = String::new();
-    copy.try_reserve_exact(value.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    copy.push_str(value);
-    Ok(copy)
-}
+
 
 fn clone_drawing_identities(
     source: &BTreeSet<String>,
@@ -172,11 +161,7 @@ fn clone_drawing_identities(
     let mut copy = BTreeSet::new();
     for identity in source {
         ctx.charge_collection_items(1, "step_drawing_ambiguous_identity_copy")?;
-        copy.insert(clone_drawing_text(
-            identity,
-            ctx,
-            "step_drawing_ambiguous_identity_text",
-        )?);
+        copy.insert(ctx.copy_retained_text(identity, "step_drawing_ambiguous_identity_text")?);
     }
     Ok(copy)
 }
@@ -563,11 +548,7 @@ fn add_source_typed_targets(
             continue;
         }
         let identity = opaque_record_id(id, record, ctx)?;
-        let copied_identity = clone_drawing_text(
-            identity.as_str(),
-            ctx,
-            "step_drawing_native_target_identity_copy",
-        )?;
+        let copied_identity = ctx.copy_retained_text(identity.as_str(), "step_drawing_native_target_identity_copy")?;
         let source_type = crate::decode_alloc::charged_join(
             ctx,
             "step_drawing_source_type_text",
@@ -1104,18 +1085,14 @@ fn target_resolution(
         .and_then(|identities| identities.first())
     {
         return Ok(TargetResolution::Resolved(ReferenceSelection::new(
-            ReferenceTarget::Local(clone_drawing_text(
-                identity,
-                ctx,
-                "step_drawing_local_target_text",
-            )?),
+            ReferenceTarget::Local(ctx.copy_retained_text(identity, "step_drawing_local_target_text")?),
             Vec::new(),
         )));
     }
     if let Some(uri) = external_documents.get(&id) {
         return Ok(TargetResolution::Resolved(ReferenceSelection::new(
             ReferenceTarget::External {
-                document: clone_drawing_text(uri, ctx, "step_drawing_external_target_text")?,
+                document: ctx.copy_retained_text(uri, "step_drawing_external_target_text")?,
                 object: format!("#{id}"),
             },
             Vec::new(),
@@ -1185,11 +1162,7 @@ fn wrapper_target_resolution(
             for target in targets {
                 if !identities.contains(target) {
                     ctx.charge_collection_items(1, "step_drawing_wrapper_identities")?;
-                    identities.insert(clone_drawing_text(
-                        target,
-                        ctx,
-                        "step_drawing_wrapper_identity_text",
-                    )?);
+                    identities.insert(ctx.copy_retained_text(target, "step_drawing_wrapper_identity_text")?);
                 }
             }
             continue;
