@@ -1783,7 +1783,7 @@ fn prototype_pcurves(
     collect_section_records_result(
         ctx,
         sections.iter(),
-        |bytes| Ok(curve::prototype_pcurve_endpoints(bytes)),
+        |bytes| curve::prototype_pcurve_endpoints(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
     )

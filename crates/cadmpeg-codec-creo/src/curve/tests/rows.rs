@@ -12,6 +12,7 @@ use crate::curve::parameter_records;
 use crate::curve::parameter_records_with_face_ids;
 use crate::curve::pcurve_endpoints;
 use crate::curve::prototype_topology_rows;
+use crate::curve::prototype_pcurve_endpoints;
 use crate::curve::prototypes;
 use crate::curve::row_terminator;
 use crate::curve::topology_rows;
@@ -43,6 +44,39 @@ fn two_chart_samples_service(
 ) -> Vec<crate::curve::TwoChartPcurveSamples> {
     crate::decode::with_test_decode_ctx(|ctx| two_chart_pcurve_samples(ctx, payload, face_ids))
         .expect("service two-chart samples admitted")
+}
+
+fn one_prototype_pcurve_input() -> Vec<u8> {
+    let mut payload = b"crv_array\0crv_id\0\x07crv_pnt_arr\0\xf9\x02\x04".to_vec();
+    payload.extend_from_slice(&[0x12; 8]);
+    payload
+}
+
+#[test]
+fn prototype_pcurve_endpoint_record_refuses_collection_limit() {
+    let payload = one_prototype_pcurve_input();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = prototype_pcurve_endpoints(&ctx, &payload)
+        .expect_err("prototype endpoint exceeds collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo prototype pcurve endpoints"));
+}
+
+#[test]
+fn prototype_pcurve_endpoint_record_preserves_eight_slots() {
+    let payload = one_prototype_pcurve_input();
+    let records = crate::decode::with_test_decode_ctx(|ctx| {
+        prototype_pcurve_endpoints(ctx, &payload)
+    }).expect("service prototype endpoint admitted");
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].curve_id, 7);
+    assert_eq!(records[0].face_0_endpoints, [[0.0; 2]; 2]);
+    assert_eq!(records[0].face_1_endpoints, [[0.0; 2]; 2]);
 }
 
 fn fc05_caps_service(

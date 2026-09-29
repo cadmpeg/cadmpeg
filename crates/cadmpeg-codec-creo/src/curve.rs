@@ -7056,8 +7056,11 @@ pub(crate) fn fc05_cylinder_cap_pairs(
 }
 
 /// Decode labeled `crv_pnt_arr f9 02 04` prototype pcurve endpoints.
-pub(crate) fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoints> {
-    let cache = scalar::ScalarCache::from_section(payload);
+pub(crate) fn prototype_pcurve_endpoints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<PrototypePcurveEndpoints>, cadmpeg_core::CodecError> {
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(namespace) = find(payload, b"crv_array\0", search) {
@@ -7082,24 +7085,28 @@ pub(crate) fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveE
             continue;
         }
         let mut cursor = header + 3;
-        let mut values = Vec::with_capacity(8);
-        while cursor < prototype_end && values.len() < 8 {
+        let mut values = [0.0; 8];
+        let mut value_count = 0;
+        while cursor < prototype_end && value_count < values.len() {
             if payload[cursor] == 0x12
                 || (payload[cursor] == 0x18
-                    && values.len() == 7
+                    && value_count == 7
                     && (cursor + 1 == prototype_end || payload.get(cursor + 1) == Some(&0xe0)))
             {
-                values.push(0.0);
+                values[value_count] = 0.0;
+                value_count += 1;
                 cursor += 1;
             } else if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, &cache) {
-                values.push(value);
+                values[value_count] = value;
+                value_count += 1;
                 cursor = next;
             } else {
                 break;
             }
         }
         let array_is_bounded = cursor == prototype_end || payload.get(cursor) == Some(&0xe0);
-        if values.len() == 8 && values.iter().all(|value| value.is_finite()) && array_is_bounded {
+        if value_count == values.len() && values.iter().all(|value| value.is_finite()) && array_is_bounded {
+            ctx.try_reserve_items(&mut result, 1, "creo prototype pcurve endpoints")?;
             result.push(PrototypePcurveEndpoints {
                 curve_id,
                 face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],
@@ -7109,7 +7116,7 @@ pub(crate) fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveE
         }
     }
     result.sort_by_key(|record| record.offset);
-    result
+    Ok(result)
 }
 
 /// Decode the four labeled topology pointers of each curve prototype.
