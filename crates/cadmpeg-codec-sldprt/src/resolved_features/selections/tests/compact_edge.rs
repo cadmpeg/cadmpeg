@@ -589,6 +589,10 @@ fn compact_edge_selection_preserves_an_idless_path_entry() {
 
 #[test]
 fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
+    let history_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (history_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &history_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let native_feature =
         |id: &str, name: &str, source_id: Option<u32>, ordinal: u32, input_class: &str| Feature {
             id: id.into(),
@@ -663,7 +667,7 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
         sketch_entities: Vec::new(),
     };
 
-    let selections = compact_edge_selections(&[history], &lane);
+    let selections = compact_edge_selections(&history_ctx, &[history], &lane).unwrap();
 
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].feature_ref, "consumer");
@@ -900,6 +904,10 @@ fn compact_reference_list_accepts_unframed_surface_cut_targets() {
 
 #[test]
 fn varfillet_roster_accepts_unframed_reference_lists() {
+    let history_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (history_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &history_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 12;
     let class_offset = 146;
     let class_name = "moVertDim_c";
@@ -992,7 +1000,7 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
         sketch_entities: Vec::new(),
     };
 
-    let selections = compact_edge_selections(&[history], &lane);
+    let selections = compact_edge_selections(&history_ctx, &[history], &lane).unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].references.len(), 4);
     assert_eq!(selections[0].references[3][0].instance, Some(0x8083));

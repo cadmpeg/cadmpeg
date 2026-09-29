@@ -1768,6 +1768,10 @@ fn generated_surface_identities_are_producer_outputs() {
 
 #[test]
 fn idless_history_features_use_unique_feature_input_object_sources() {
+    let history_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (history_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &history_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let feature = Feature {
         id: "producer".into(),
         parent: "history".into(),
@@ -1818,7 +1822,7 @@ fn idless_history_features_use_unique_feature_input_object_sources() {
     };
 
     let ambiguous_history = history.clone();
-    let resolved = history_features_with_object_sources(&[history], &lane);
+    let resolved = history_features_with_object_sources(&history_ctx, &[history], &lane).unwrap();
 
     assert_eq!(resolved[0].source_id, FeatureSource::from_value(233));
 
@@ -1830,6 +1834,6 @@ fn idless_history_features_use_unique_feature_input_object_sources() {
         object_id: ObjectId::from_value(234),
         value: "Producer".into(),
     });
-    let ambiguous = history_features_with_object_sources(&[ambiguous_history], &lane);
+    let ambiguous = history_features_with_object_sources(&history_ctx, &[ambiguous_history], &lane).unwrap();
     assert_eq!(ambiguous[0].source_id, None);
 }

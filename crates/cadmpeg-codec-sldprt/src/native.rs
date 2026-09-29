@@ -882,9 +882,9 @@ impl SldprtNative {
                 "validate SLDPRT edge feature context",
             )?;
             crate::resolved_features::selections::enrich_feature_object_sources(
-                &mut edge_features,
+                ctx, &mut edge_features,
                 std::slice::from_ref(lane),
-            );
+            )?;
             for record in &lane.edge_selections {
                 if edge_selection_disagrees_with_payload(ctx, lane, record, &edge_features)? {
                     return Err(invalid_owner(
@@ -932,9 +932,9 @@ impl SldprtNative {
                 "validate SLDPRT surface feature context",
             )?;
             crate::resolved_features::selections::enrich_feature_object_sources(
-                &mut surface_features,
+                ctx, &mut surface_features,
                 std::slice::from_ref(lane),
-            );
+            )?;
             lane.surface_selections = collect_retained_clones(
                 ctx,
                 surface_selections
@@ -1117,9 +1117,9 @@ impl SldprtNative {
                 "validate SLDPRT store edge features",
             )?;
             crate::resolved_features::selections::enrich_feature_object_sources(
-                &mut edge_features,
+                ctx, &mut edge_features,
                 std::slice::from_ref(lane),
-            );
+            )?;
             for record in &lane.edge_selections {
                 let invalid = record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())
@@ -1148,9 +1148,9 @@ impl SldprtNative {
                 "validate SLDPRT store surface features",
             )?;
             crate::resolved_features::selections::enrich_feature_object_sources(
-                &mut surface_features,
+                ctx, &mut surface_features,
                 std::slice::from_ref(lane),
-            );
+            )?;
             for record in &lane.surface_selections {
                 let invalid = record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())
