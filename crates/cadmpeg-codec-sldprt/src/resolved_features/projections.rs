@@ -1009,7 +1009,7 @@ fn variable_fillet_radius_groups<'a>(
             .get(index + 1)
             .and_then(|(offset, _)| usize::try_from(*offset).ok())
             .unwrap_or(lane.native_payload.len());
-        let Some(controls) = variable_fillet_control_references(feature, lane, object_end) else {
+        let Some(controls) = variable_fillet_control_references(ctx, feature, lane, object_end)? else {
             continue;
         };
         for (name, references) in controls {

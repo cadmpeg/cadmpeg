@@ -2267,35 +2267,56 @@ fn compact_component_reference_list(
 }
 
 pub(super) fn variable_fillet_control_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
     object_end: usize,
-) -> Option<Vec<(String, Vec<Vec<FeatureInputComponentPathEntry>>)>> {
+) -> Result<Option<Vec<(String, Vec<Vec<FeatureInputComponentPathEntry>>)>>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "collect SLDPRT variable fillet controls";
     if !feature.kind.eq_ignore_ascii_case("VarFillet") {
-        return None;
+        return Ok(None);
     }
-    let object_start = feature_object_name(feature, lane)?.offset.try_into().ok()?;
-    let control_start = fillet_edge_roster_end(lane, object_start, object_end)?;
-    let mut controls = (control_start.saturating_add(12)
-        ..object_end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
-        .filter(|marker| {
-            lane.native_payload
-                .get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
-                == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        })
-        .filter_map(|marker| {
-            let references = compact_component_reference_list(&lane.native_payload, marker, false)?;
-            (references.len() == 3).then_some((marker, references))
-        })
-        .collect::<Vec<_>>();
+    ctx.charge_work(lane.names.len() as u64, OPERATION)?;
+    ctx.charge_work(lane.names.len() as u64, OPERATION)?;
+    let Some(object_start) = feature_object_name(feature, lane)
+        .and_then(|name| usize::try_from(name.offset).ok()) else {
+        return Ok(None);
+    };
+    let Some(control_start) = fillet_edge_roster_end(lane, object_start, object_end) else {
+        return Ok(None);
+    };
+    let (Some(marker_start), Some(marker_end)) = (
+        control_start.checked_add(12),
+        object_end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()),
+    ) else {
+        return Ok(None);
+    };
+    let mut controls = Vec::new();
+    for marker in marker_start..marker_end {
+        ctx.charge_work(1, OPERATION)?;
+        if lane.native_payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())
+            != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice()) {
+            continue;
+        }
+        let Some(references) = compact_component_reference_list(&lane.native_payload, marker, false) else {
+            continue;
+        };
+        if references.len() == 3 {
+            ctx.reserve_collection_vec(&mut controls, 1, OPERATION)?;
+            controls.push((marker, references));
+        }
+    }
+    let levels = if controls.len() > 1 { controls.len().ilog2() + 1 } else { 1 };
+    let count = u64::try_from(controls.len())
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    let units = count.checked_mul(u64::from(levels))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(units, OPERATION)?;
     controls.sort_unstable_by_key(|(marker, _)| *marker);
-    let mut result = Vec::with_capacity(controls.len());
-    for (index, &(marker, _)) in controls.iter().enumerate() {
-        let start = index
-            .checked_sub(1)
-            .and_then(|previous| controls.get(previous))
-            .map_or(control_start, |(previous, _)| *previous);
-        let names = lane
+    let mut result = Vec::new();
+    let mut start = control_start;
+    for (marker, references) in controls {
+        let mut names = lane
             .names
             .iter()
             .filter(|name| {
@@ -2303,14 +2324,22 @@ pub(super) fn variable_fillet_control_references(
             })
             .filter(|name| {
                 variable_fillet_dimension_index_for_feature(feature, &name.value).is_some()
-            })
-            .collect::<Vec<_>>();
-        let [name] = names.as_slice() else {
-            return None;
+            });
+        ctx.charge_work(lane.names.len() as u64, OPERATION)?;
+        let Some(name) = names.next() else {
+            return Ok(None);
         };
-        result.push((name.value.clone(), controls[index].1.clone()));
+        if names.next().is_some() {
+            return Ok(None);
+        }
+        let mut name_text = String::new();
+        ctx.reserve_retained_string(&mut name_text, name.value.len(), OPERATION)?;
+        name_text.push_str(&name.value);
+        ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+        result.push((name_text, references));
+        start = marker;
     }
-    (!result.is_empty()).then_some(result)
+    Ok((!result.is_empty()).then_some(result))
 }
 
 fn variable_fillet_dimension_index(name: &str) -> Option<usize> {
