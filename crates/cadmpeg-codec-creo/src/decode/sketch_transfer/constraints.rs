@@ -7,8 +7,7 @@ use crate::decode::sketch::equations_scalar::SectionScalarVariable;
 use crate::feature::definitions::SolverSubtable;
 
 use super::super::feature_history::dimensions::{
-    feature_relation_table_complete, resolved_feature_dimension_parameter,
-    resolved_feature_dimension_parameter_admitted,
+    feature_relation_table_complete, resolved_feature_dimension_parameter_admitted,
 };
 use super::super::sketch::coordinates::{
     resolved_section_coordinates, saved_section_coordinate_witnesses,
@@ -30,8 +29,7 @@ use super::super::sketch::equations_scalar::{
 use super::super::sketch::radii::section_radius_relation_arc;
 use super::super::sketch::skamp::{section_segment_rows, unique_decoded_section_segment};
 use super::super::sketch_ids::{
-    sketch_constraint_id, sketch_constraint_id_admitted, sketch_entity_id,
-    sketch_entity_id_admitted, sketch_native_ref, sketch_native_ref_admitted,
+    sketch_constraint_id_admitted, sketch_entity_id_admitted, sketch_native_ref_admitted,
 };
 use crate::decode::sketch_transfer::identity::{
     opaque_section_segment_identity_suffix_admitted, section_entity_external_ids,
@@ -533,16 +531,17 @@ fn relation_incidence_loci(
 }
 
 fn section_angular_entities(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     segments: &[&crate::feature::definitions::FeatureSegment],
     vectors: [[Option<u32>; 4]; 3],
     known_entities: &BTreeSet<u32>,
-) -> Option<[SketchEntityId; 2]> {
+) -> Result<Option<[SketchEntityId; 2]>, cadmpeg_core::CodecError> {
     let [Some(first_internal), Some(second_internal), None, Some(1)] = vectors[0] else {
-        return None;
+        return Ok(None);
     };
-    let order_table = definition.order_table.as_ref()?;
+    let Some(order_table) = definition.order_table.as_ref() else { return Ok(None) };
     let external_id = |internal_id| {
         let external_id = order_table.external_id(internal_id)?;
         let matching_segments = segments
@@ -560,13 +559,12 @@ fn section_angular_entities(
     };
     let [first, second] = [first_internal, second_internal].map(external_id);
     let [Some(first), Some(second)] = [first, second] else {
-        return None;
+        return Ok(None);
     };
-    (first != second).then_some(())?;
-    Some([
-        sketch_entity_id(sketch, first)?,
-        sketch_entity_id(sketch, second)?,
-    ])
+    if first == second { return Ok(None) }
+    let Some(first) = sketch_entity_id_admitted(ctx, sketch, first)? else { return Ok(None) };
+    let Some(second) = sketch_entity_id_admitted(ctx, sketch, second)? else { return Ok(None) };
+    Ok(Some([first, second]))
 }
 
 fn segment_radius_operand(
@@ -907,76 +905,44 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
         entities.push(segment.external_id);
     }
 
-    crate::decode::collect_items(ctx, section_equation_radius_dimensions(ctx, definition)?
-        .into_iter()
-        .filter_map(|equation| {
-            let Some((dimension, parameter)) =
-                usize::try_from(equation.scalar.1).ok().and_then(|ordinal| {
-                    resolved_feature_dimension_parameter(sketch, dimensions, ordinal)
-                })
-            else {
-                return None;
-            };
-            let Some(dimension_value) = dimension
-                .value
-                .resolved()
-                .filter(|value| value.is_finite() && *value > 0.0)
-            else {
-                return None;
-            };
-            if dimension.dimension_type != 3
-                || !(FiniteReal::new(dimension_value))
-                    .zip(FiniteReal::new(equation.value.get()))
-                    .is_some_and(|(first, second)| approximately_equal(first, second))
-            {
-                return None;
-            }
-            Some((equation, parameter))
-        })
-        .flat_map(|(equation, parameter)| {
-            entities_by_radius
-                .get(&equation.radius)
-                .into_iter()
-                .flatten()
-                .copied()
-                .filter_map(move |external_id| {
-                    Some({
-                        let entity = sketch_entity_id(sketch, external_id)?;
-                        (
-                            SketchConstraint {
-                                id: sketch_constraint_id(
-                                    sketch,
-                                    format_args!(
-                                        "equation:{}:radius:{}",
-                                        equation.equation_id, external_id
-                                    ),
-                                )?,
-                                sketch: sketch.clone(),
-                                definition:
-                                    cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                                        SketchConstraintDefinitionInput::Radius {
-                                            entity,
-                                            parameter: parameter.clone(),
-                                        },
-                                    )
-                                    .ok()?,
-                                name: None,
-                                driving: None,
-                                active: Some(equation.active),
-                                virtual_space: None,
-                                visible: None,
-                                orientation: None,
-                                label_distance: None,
-                                label_position: None,
-                                metadata: None,
-                                native_ref: Some(sketch_native_ref(sketch)),
-                            },
-                            equation.offset,
-                        )
-                    })
-                })
-        })
-        , "creo equation radius dimension constraints")
+    let mut constraints = Vec::new();
+    for equation in section_equation_radius_dimensions(ctx, definition)? {
+        let Ok(ordinal) = usize::try_from(equation.scalar.1) else { continue };
+        let Some((dimension, parameter)) = resolved_feature_dimension_parameter_admitted(ctx, sketch, dimensions, ordinal)? else { continue };
+        let Some(dimension_value) = dimension.value.resolved()
+            .filter(|value| value.is_finite() && *value > 0.0) else { continue };
+        if dimension.dimension_type != 3
+            || !(FiniteReal::new(dimension_value))
+                .zip(FiniteReal::new(equation.value.get()))
+                .is_some_and(|(first, second)| approximately_equal(first, second))
+        { continue; }
+        let Some(entities) = entities_by_radius.get(&equation.radius) else { continue };
+        for &external_id in entities {
+            let Some(entity) = sketch_entity_id_admitted(ctx, sketch, external_id)? else { continue };
+            let Some(id) = sketch_constraint_id_admitted(ctx, sketch,
+                format_args!("equation:{}:radius:{}", equation.equation_id, external_id))? else { continue };
+            let parameter = parameter.copy_admitted(ctx, "creo equation radius parameter copy")?;
+            let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                SketchConstraintDefinitionInput::Radius { entity, parameter }) else { continue };
+            ctx.try_reserve_items(&mut constraints, 1, "creo equation radius dimension constraints")?;
+            constraints.push((SketchConstraint {
+                id,
+                sketch: sketch.copy_admitted(ctx, "creo equation sketch identity")?,
+                definition,
+                name: None,
+                driving: None,
+                active: Some(equation.active),
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
+                native_ref: Some(sketch_native_ref_admitted(ctx, sketch)?),
+            }, equation.offset));
+        }
+    }
+    Ok(constraints)
 }
 
 pub(in super::super) fn section_equation_equal_distance_constraints(
@@ -1032,7 +998,7 @@ fn section_equation_radius_dimension_parameters(
             continue;
         };
         let Some((dimension, parameter)) =
-            resolved_feature_dimension_parameter(sketch, dimensions, ordinal)
+            resolved_feature_dimension_parameter_admitted(ctx, sketch, dimensions, ordinal)?
         else {
             continue;
         };
@@ -1050,14 +1016,14 @@ fn section_equation_radius_dimension_parameters(
         }
         let candidate = (parameter, dimension_value);
         for variable in [equation.radius_variable, equation.scalar] {
-            if !dimension_parameters.contains_key(&variable) {
+            if let Some(slot) = dimension_parameters.get_mut(&variable) {
+                if slot.as_ref() != Some(&candidate) {
+                    *slot = None;
+                }
+            } else {
                 ctx.charge_collection_items(1, "creo equation dimension parameter nodes")?;
-            }
-            let slot = dimension_parameters
-                .entry(variable)
-                .or_insert_with(|| Some(candidate.clone()));
-            if slot.as_ref() != Some(&candidate) {
-                *slot = None;
+                let copied_parameter = candidate.0.copy_admitted(ctx, "creo equation dimension parameter copy")?;
+                dimension_parameters.insert(variable, Some((copied_parameter, candidate.1)));
             }
         }
     }
@@ -1065,17 +1031,22 @@ fn section_equation_radius_dimension_parameters(
 }
 
 fn section_equation_dimension_parameter(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &BTreeMap<SectionScalarVariable, Option<(ParameterId, f64)>>,
     variable: SectionScalarVariable,
     value: f64,
-) -> Option<ParameterId> {
+) -> Result<Option<ParameterId>, cadmpeg_core::CodecError> {
     let Some(Some((parameter, dimension_value))) = parameters.get(&variable) else {
-        return None;
+        return Ok(None);
     };
-    (FiniteReal::new(*dimension_value))
+    if (FiniteReal::new(*dimension_value))
         .zip(FiniteReal::new(value))
         .is_some_and(|(first, second)| approximately_equal(first, second))
-        .then(|| parameter.clone())
+    {
+        Ok(Some(parameter.copy_admitted(ctx, "creo equation distance parameter copy")?))
+    } else {
+        Ok(None)
+    }
 }
 
 pub(in super::super) fn section_equation_function_six_distance_constraints(
@@ -1100,8 +1071,8 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
                 let Some(first) = section_point_locus(ctx, definition, sketch, equation.first)? else { return Ok(None) };
                 let Some(second) = section_point_locus(ctx, definition, sketch, equation.second)? else { return Ok(None) };
                 let parameter = section_equation_dimension_parameter(
-                    &dimension_parameters, equation.radius, distance.get(),
-                );
+                    ctx, &dimension_parameters, equation.radius, distance.get(),
+                )?;
                 equation_constraint(ctx, sketch, equation.equation_id,
                     SketchConstraintDefinitionInput::DistanceLociValue {
                         first, second, distance: Length::from(distance), parameter,
@@ -1190,40 +1161,17 @@ pub(super) fn section_equation_function_sixteen_angle_difference_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
-    crate::decode::collect_items(ctx, section_equation_function_sixteen_angle_difference_rows(ctx, definition)?
+    collect_constraint_candidates(ctx, section_equation_function_sixteen_angle_difference_rows(ctx, definition)?
         .into_iter()
-        .filter_map(|equation| {
-            Some({
-                (
-                    SketchConstraint {
-                        id: sketch_constraint_id(
-                            sketch,
-                            format_args!("equation:{}", equation.equation_id),
-                        )?,
-                        sketch: sketch.clone(),
-                        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                            SketchConstraintDefinitionInput::AngleDifference {
-                                first: equation.first.1,
-                                second: equation.second.1,
-                                difference: equation.difference.1,
-                                value: Angle::new(equation.value)?,
-                            },
-                        )
-                        .ok()?,
-                        name: None,
-                        driving: None,
-                        active: Some(equation.active),
-                        virtual_space: None,
-                        visible: None,
-                        orientation: None,
-                        label_distance: None,
-                        label_position: None,
-                        metadata: None,
-                        native_ref: Some(sketch_native_ref(sketch)),
-                    },
-                    equation.offset,
-                )
-            })
+        .map(|equation| {
+            let Some(value) = Angle::new(equation.value) else { return Ok(None) };
+            equation_constraint(ctx, sketch, equation.equation_id,
+                SketchConstraintDefinitionInput::AngleDifference {
+                    first: equation.first.1,
+                    second: equation.second.1,
+                    difference: equation.difference.1,
+                    value,
+                }, equation.active, equation.offset)
         })
         , "creo section equation function sixteen angle difference constraints")
 }
@@ -1233,38 +1181,14 @@ pub(super) fn section_equation_function_five_scalar_equality_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
-    crate::decode::collect_items(ctx, section_equation_function_five_scalar_equality_rows(ctx, definition)?
+    collect_constraint_candidates(ctx, section_equation_function_five_scalar_equality_rows(ctx, definition)?
         .into_iter()
-        .filter_map(|equation| {
-            Some({
-                (
-                    SketchConstraint {
-                        id: sketch_constraint_id(
-                            sketch,
-                            format_args!("equation:{}", equation.equation_id),
-                        )?,
-                        sketch: sketch.clone(),
-                        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                            SketchConstraintDefinitionInput::ScalarEquality {
-                                first: equation.first.1,
-                                second: equation.second.1,
-                            },
-                        )
-                        .ok()?,
-                        name: None,
-                        driving: None,
-                        active: Some(true),
-                        virtual_space: None,
-                        visible: None,
-                        orientation: None,
-                        label_distance: None,
-                        label_position: None,
-                        metadata: None,
-                        native_ref: Some(sketch_native_ref(sketch)),
-                    },
-                    equation.offset,
-                )
-            })
+        .map(|equation| {
+            equation_constraint(ctx, sketch, equation.equation_id,
+                SketchConstraintDefinitionInput::ScalarEquality {
+                    first: equation.first.1,
+                    second: equation.second.1,
+                }, true, equation.offset)
         })
         , "creo section equation function five scalar equality constraints")
 }
@@ -1297,10 +1221,10 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
                 let Some(first) = section_point_locus(ctx, definition, sketch, equation.first)? else { return Ok(None) };
                 let Some(second) = section_point_locus(ctx, definition, sketch, equation.second)? else { return Ok(None) };
                 let distance_parameter = section_equation_dimension_parameter(
-                    &dimension_parameters,
+                    ctx, &dimension_parameters,
                     equation.radius,
                     distance.get(),
-                );
+                )?;
                 equation_constraint(ctx, sketch, equation.equation_id,
                     SketchConstraintDefinitionInput::PolarDistance {
                         first, second, distance: distance.into(), angle, distance_parameter,
@@ -1917,13 +1841,14 @@ pub(in super::super) fn section_dimension_constraints(
                     if relation.relation_type == 1
                         && dimension.unit() == crate::feature::definitions::DimensionUnit::Radians
                     {
-                        let [first, second] = section_angular_entities(
+                        let [first, second] = capture_constraint_refusal(&mut coordinate_refusal, section_angular_entities(
+                            ctx,
                             definition,
                             sketch,
                             &segments,
                             relation.operand_vectors?,
                             &known_entities,
-                        )?;
+                        ))??;
                         return Some(SketchConstraintDefinitionInput::Angle {
                             first,
                             second,
@@ -2209,6 +2134,57 @@ mod tests {
     use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntityId, SketchId};
     use std::collections::BTreeSet;
+
+    #[test]
+    fn equation_constraint_refuses_each_retained_identity_and_output_row() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
+        let definition = || SketchConstraintDefinitionInput::ScalarEquality {
+            first: 10,
+            second: 11,
+        };
+        let id = "creo:featdefs:sketch_constraint#5:equation:1";
+        let native_ref = "creo:featdefs:sketch#5";
+        let mut total = 0u64;
+        for (text, operation) in [
+            (id, "creo sketch constraint identity"),
+            (sketch.as_str(), "creo equation sketch identity"),
+            (native_ref, "creo sketch native reference"),
+        ] {
+            total += text.len() as u64;
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = total - 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let error = super::equation_constraint(&ctx, &sketch, 1, definition(), true, 7)
+                .expect_err("one retained identity exceeds cap");
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.dimension == ResourceDimension::RetainedBytes
+                    && resource.operation == operation), "{error}");
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = super::collect_constraint_candidates(&ctx,
+            [super::equation_constraint(&ctx, &sketch, 1, definition(), true, 7)],
+            "creo scalar equality constraints")
+            .expect_err("one output row exceeds zero items");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo scalar equality constraints"));
+        policy.limits.max_collection_items = 1;
+        policy.limits.max_retained_bytes = total;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let rows = super::collect_constraint_candidates(&ctx,
+            [super::equation_constraint(&ctx, &sketch, 1, definition(), true, 7)],
+            "creo scalar equality constraints")
+            .expect("exact caps admit one equation");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0.id.as_str(), id);
+        assert_eq!(rows[0].1, 7);
+    }
 
     #[test]
     fn native_verhor_refuses_each_nested_text_and_collection() {
