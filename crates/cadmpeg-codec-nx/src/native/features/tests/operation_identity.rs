@@ -4,6 +4,7 @@ use crate::native::features::assign_operation_header_identities;
 use crate::native::features::body_history_partition_stream;
 use crate::native::features::feature_body_write_group_partition_uses;
 use crate::native::features::feature_input_blocks;
+use crate::native::features::feature_input_block_identity_groups;
 use crate::native::features::feature_body_reference_occurrences;
 use crate::native::features::feature_body_references;
 use crate::native::features::feature_operation_body_identity_segment_uses;
@@ -829,6 +830,62 @@ fn input_block_refusal(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty test root");
     route(&ctx).expect_err("input block resource limit")
+}
+
+fn input_block_group_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let input = |id: &str, operation: &str, offset| crate::native::features::FeatureInputBlock {
+        id: id.to_string(),
+        operation_label: operation.to_string(),
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7])
+            .expect("input object token"),
+        data_block: "block#7".to_string(),
+        source_offset: offset,
+    };
+    let inputs = [input("input#0", "operation#0", 20), input("input#1", "operation#1", 30)];
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_input_block_identity_groups(ctx, &inputs)
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted input block identity group");
+    assert_eq!(admitted.len(), 1);
+    assert_eq!(admitted[0].members.len(), 2);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("input block identity group resource limit")
+}
+
+#[test]
+fn input_block_group_refuses_collection_limit() {
+    let error = input_block_group_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn input_block_group_refuses_retained_limit() {
+    let error = input_block_group_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn input_block_group_refuses_scoped_limit() {
+    let error = input_block_group_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn input_block_group_refuses_work_limit() {
+    let error = input_block_group_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]

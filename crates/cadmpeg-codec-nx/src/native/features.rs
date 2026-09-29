@@ -5376,48 +5376,103 @@ pub(super) fn feature_input_blocks(
 
 /// Group bindings from distinct operations by exact resolved data-block identity.
 pub(super) fn feature_input_block_identity_groups(
+    ctx: &DecodeContext<'_>,
     inputs: &[FeatureInputBlock],
-) -> Vec<FeatureInputBlockIdentityGroup> {
+) -> Result<Vec<FeatureInputBlockIdentityGroup>, CodecError> {
+    let work = inputs.len().checked_mul(inputs.len())
+        .and_then(|count| count.checked_mul(3))
+        .ok_or_else(|| ctx.refuse_codec_limit("group NX feature input blocks", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work),
+        "group NX feature input blocks")?;
+    let mut map_reservation = ctx.reserve_scoped(0, "NX input block group index")?;
+    let mut member_reservation = ctx.reserve_scoped(0, "NX input block group members")?;
     let mut by_block = BTreeMap::<&str, Vec<&FeatureInputBlock>>::new();
     for input in inputs {
-        by_block.entry(&input.data_block).or_default().push(input);
+        if !by_block.contains_key(input.data_block.as_str()) {
+            ctx.charge_collection_items(1, "NX input block group index")?;
+            map_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(&str, Vec<&FeatureInputBlock>)>() * 4))?;
+        }
+        let members = by_block.entry(input.data_block.as_str()).or_default();
+        ctx.charge_collection_items(1, "NX input block group members")?;
+        member_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&FeatureInputBlock>()))?;
+        members.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX input block group members", 0, 1))?;
+        members.push(input);
     }
-    let mut groups = by_block
-        .into_iter()
-        .filter_map(|(data_block, mut members)| {
-            if members
-                .iter()
-                .map(|member| member.operation_label.as_str())
-                .collect::<BTreeSet<_>>()
-                .len()
-                < 2
-            {
-                return None;
-            }
-            members.sort_by_key(|member| member.source_offset);
-            Some((data_block, members))
-        })
-        .collect::<Vec<_>>();
+    let mut group_reservation = ctx.reserve_scoped(0, "NX input block group order")?;
+    let mut groups = Vec::new();
+    for (data_block, mut members) in by_block {
+        let Some(first) = members.first() else { continue; };
+        if !members.iter().any(|member| member.operation_label != first.operation_label) {
+            continue;
+        }
+        let sort_bytes = members.len().checked_mul(std::mem::size_of::<&FeatureInputBlock>())
+            .ok_or_else(|| ctx.refuse_codec_limit("sort NX input block group members", 0, 1))?;
+        let _sorting = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(sort_bytes),
+            "sort NX input block group members")?;
+        members.sort_by_key(|member| member.source_offset);
+        ctx.charge_collection_items(1, "NX input block group order")?;
+        group_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, Vec<&FeatureInputBlock>)>()))?;
+        groups.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX input block group order", 0, 1))?;
+        groups.push((data_block, members));
+    }
+    drop(map_reservation);
+    let group_sort_bytes = groups.len()
+        .checked_mul(std::mem::size_of::<(&str, Vec<&FeatureInputBlock>)>())
+        .ok_or_else(|| ctx.refuse_codec_limit("sort NX input block groups", 0, 1))?;
+    let _sorting = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(group_sort_bytes),
+        "sort NX input block groups")?;
     groups.sort_by_key(|(_, members)| members[0].source_offset);
-    groups
-        .into_iter()
-        .enumerate()
-        .map(
-            |(ordinal, (data_block, members))| FeatureInputBlockIdentityGroup {
-                id: format!("nx:feature-history:input-block-identity-group#{ordinal:010}"),
-                data_block: data_block.to_string(),
-                members: members
-                    .into_iter()
-                    .map(|member| FeatureInputBlockIdentityMember {
-                        input_block: member.id.clone(),
-                        operation_label: member.operation_label.clone(),
-                        input_slot: member.input_slot,
-                        source_offset: member.source_offset,
-                    })
-                    .collect(),
-            },
-        )
-        .collect()
+    drop(_sorting);
+    let mut output = Vec::new();
+    for (ordinal, (data_block, members)) in groups.into_iter().enumerate() {
+        let mut retained_members = Vec::new();
+        for member in members {
+            ctx.charge_collection_items(1, "NX input block identity members")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureInputBlockIdentityMember>()),
+                "NX input block identity members")?;
+            retained_members.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX input block identity members", 0, 1))?;
+            retained_members.push(FeatureInputBlockIdentityMember {
+                input_block: copy_operation_text(ctx, &member.id,
+                    "NX input block identity member")?,
+                operation_label: copy_operation_text(ctx, &member.operation_label,
+                    "NX input block member operation label")?,
+                input_slot: member.input_slot,
+                source_offset: member.source_offset,
+            });
+        }
+        let prefix = "nx:feature-history:input-block-identity-group#";
+        let mut value = ordinal;
+        let mut digits = 1usize;
+        while value >= 10 { value /= 10; digits += 1; }
+        let id_len = prefix.len().checked_add(digits.max(10))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX input block identity group id", 0, 1))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_len),
+            "NX input block identity group id")?;
+        let mut id = String::new();
+        id.try_reserve_exact(id_len).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX input block identity group id", 0, 1))?;
+        write!(&mut id, "{prefix}{ordinal:010}")
+            .map_err(|_| ctx.refuse_codec_limit("format NX input block identity group id", 0, 1))?;
+        ctx.charge_collection_items(1, "NX input block identity groups")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureInputBlockIdentityGroup>()),
+            "NX input block identity groups")?;
+        output.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX input block identity groups", 0, 1))?;
+        output.push(FeatureInputBlockIdentityGroup {
+            id,
+            data_block: copy_operation_text(ctx, data_block, "NX grouped input data block")?,
+            members: retained_members,
+        });
+    }
+    Ok(output)
 }
 
 type ColumnTableByRow<'a> = BTreeMap<&'a str, Option<&'a str>>;
