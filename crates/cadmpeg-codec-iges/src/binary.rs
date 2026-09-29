@@ -273,19 +273,8 @@ impl<'a> BitReader<'a> {
             if count > remaining {
                 return Err(malformed("a Binary string payload is truncated"));
             }
-            ctx.charge_retained(u64_from_index(count), "iges binary string payload")?;
-            output.try_reserve(count).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec(
-                            "iges binary string payload",
-                        ),
-                        u64_from_index(count),
-                        u64_from_index(count),
-                        "iges binary string payload",
-                    ),
-                )
-            })?;
+
+            ctx.reserve_retained_admitted_vec(&mut output, count, "iges binary string payload")?;
             for _ in 0..count {
                 let byte = self.read_bits(8)?;
                 let byte =
@@ -366,32 +355,15 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
         if physically_present {
             for _ in 1..repeat {
                 let value = self.one(format)?;
-                self.reserve_pending()?;
-                self.pending.push_back(value);
+                self.ctx.push_back(&mut self.pending, value, "iges binary repeated values")?;
             }
         } else {
             for _ in 1..repeat {
-                self.reserve_pending()?;
                 let cloned = self.clone_value(&first)?;
-                self.pending.push_back(cloned);
+                self.ctx.push_back(&mut self.pending, cloned, "iges binary repeated values")?;
             }
         }
         Ok(Some(first))
-    }
-
-    fn reserve_pending(&mut self) -> Result<(), CodecError> {
-        self.ctx
-            .charge_collection_items(1, "iges binary repeated values")?;
-        self.pending.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("iges binary repeated values"),
-                    1,
-                    1,
-                    "iges binary repeated values",
-                ),
-            )
-        })
     }
 
     fn clone_value(&self, value: &BinaryValue) -> Result<BinaryValue, CodecError> {
@@ -750,28 +722,6 @@ fn stack_text(args: std::fmt::Arguments<'_>) -> Result<StackText, CodecError> {
     Ok(text)
 }
 
-fn append_retained(
-    output: &mut Vec<u8>,
-    bytes: &[u8],
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let count = u64_from_index(bytes.len());
-    ctx.charge_retained(count, operation)?;
-    output.try_reserve(bytes.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                count,
-                count,
-                operation,
-            ),
-        )
-    })?;
-    output.extend_from_slice(bytes);
-    Ok(())
-}
-
 fn render_real(value: FiniteReal, ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
     let value = value.get();
     if value == 0.0 {
@@ -803,13 +753,8 @@ fn render_parameter_value(
             }
             let header = stack_text(format_args!("{}H", value.len()))?;
             let mut output = Vec::new();
-            append_retained(
-                &mut output,
-                header.as_bytes(),
-                ctx,
-                "iges binary rendered string",
-            )?;
-            append_retained(&mut output, value, ctx, "iges binary rendered string")?;
+            ctx.extend_retained_bytes(&mut output, header.as_bytes(), "iges binary rendered string")?;
+            ctx.extend_retained_bytes(&mut output, value, "iges binary rendered string")?;
             Ok(output)
         }
     }
@@ -829,29 +774,24 @@ fn parameter_text(
         }
         for (index, value) in values.iter().enumerate() {
             if index > 0 {
-                append_retained(&mut output, b";", ctx, "iges binary parameter text")?;
+                ctx.extend_retained_bytes(&mut output, b";", "iges binary parameter text")?;
             }
             let rendered = render_parameter_value(value, true, ctx)?;
             if rendered.is_empty() {
                 return Err(malformed("Binary Macro Definition has an empty statement"));
             }
-            append_retained(&mut output, &rendered, ctx, "iges binary parameter text")?;
+            ctx.extend_retained_bytes(&mut output, &rendered, "iges binary parameter text")?;
         }
-        append_retained(&mut output, b";", ctx, "iges binary parameter text")?;
+        ctx.extend_retained_bytes(&mut output, b";", "iges binary parameter text")?;
         return Ok(output);
     }
     let entity_text = stack_text(format_args!("{entity_type}"))?;
     let mut output = ctx.copy_retained(entity_text.as_bytes(), "iges binary parameter text")?;
     for value in values {
-        append_retained(&mut output, b",", ctx, "iges binary parameter text")?;
-        append_retained(
-            &mut output,
-            &render_parameter_value(value, false, ctx)?,
-            ctx,
-            "iges binary parameter text",
-        )?;
+        ctx.extend_retained_bytes(&mut output, b",", "iges binary parameter text")?;
+        ctx.extend_retained_bytes(&mut output, &render_parameter_value(value, false, ctx)?, "iges binary parameter text")?;
     }
-    append_retained(&mut output, b";", ctx, "iges binary parameter text")?;
+    ctx.extend_retained_bytes(&mut output, b";", "iges binary parameter text")?;
     Ok(output)
 }
 
@@ -980,7 +920,7 @@ fn normalize_start(
                 "Binary Start section contains a non-text primitive",
             ));
         };
-        append_retained(&mut text, &value, ctx, "iges binary start text")?;
+        ctx.extend_retained_bytes(&mut text, &value, "iges binary start text")?;
     }
     stream.finish()?;
     if text.is_empty() {
@@ -1041,16 +981,11 @@ fn normalize_global(
     let mut output = ctx.copy_retained(b"1H,,1H;,", "iges binary global text")?;
     for (index, value) in values.iter().enumerate().skip(2) {
         if index > 2 {
-            append_retained(&mut output, b",", ctx, "iges binary global text")?;
+            ctx.extend_retained_bytes(&mut output, b",", "iges binary global text")?;
         }
-        append_retained(
-            &mut output,
-            &render_parameter_value(value, false, ctx)?,
-            ctx,
-            "iges binary global text",
-        )?;
+        ctx.extend_retained_bytes(&mut output, &render_parameter_value(value, false, ctx)?, "iges binary global text")?;
     }
-    append_retained(&mut output, b";", ctx, "iges binary global text")?;
+    ctx.extend_retained_bytes(&mut output, b";", "iges binary global text")?;
     Ok(output)
 }
 
@@ -1399,17 +1334,8 @@ fn append_output_card(
     card: &[u8; CARD_WIDTH],
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    ctx.charge_retained(81, "iges binary normalized card")?;
-    output.try_reserve(81).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("iges binary normalized card"),
-                81,
-                81,
-                "iges binary normalized card",
-            ),
-        )
-    })?;
+
+    ctx.reserve_retained_admitted_vec(output, 81, "iges binary normalized card")?;
     output.extend_from_slice(card);
     output.push(b'\n');
     Ok(())

@@ -5,7 +5,7 @@ use crate::card::{CardScan, Section};
 use crate::decode_resource::lossy_retained;
 use crate::loss::IgesLossCode;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
@@ -507,7 +507,7 @@ pub(crate) fn layout_global_cards(
     }
 
     let mut cards = Vec::new();
-    let mut card = layout_global_card(ctx)?;
+    let mut card = ctx.retained_admitted_vec(72, "iges global layout card bytes")?;
     for field in fields.iter().map(|range| &bytes[range.clone()]) {
         let leading = field
             .iter()
@@ -526,13 +526,13 @@ pub(crate) fn layout_global_cards(
             card.extend(std::iter::repeat_with(|| b' ').take(72 - card.len()));
             ctx.reserve_vec(&mut cards, 1, "iges global layout cards")?;
             cards.push(std::mem::take(&mut card));
-            card = layout_global_card(ctx)?;
+            card = ctx.retained_admitted_vec(72, "iges global layout card bytes")?;
         }
         for byte in field.iter().copied() {
             if card.len() == 72 {
                 ctx.reserve_vec(&mut cards, 1, "iges global layout cards")?;
                 cards.push(std::mem::take(&mut card));
-                card = layout_global_card(ctx)?;
+                card = ctx.retained_admitted_vec(72, "iges global layout card bytes")?;
             }
             card.push(byte);
         }
@@ -542,22 +542,6 @@ pub(crate) fn layout_global_cards(
         cards.push(card);
     }
     Ok(cards)
-}
-
-fn layout_global_card(ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
-    ctx.charge_retained(72, "iges global layout card bytes")?;
-    let mut card = Vec::new();
-    card.try_reserve_exact(72).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("iges global layout card bytes"),
-                72,
-                72,
-                "iges global layout card bytes",
-            ),
-        )
-    })?;
-    Ok(card)
 }
 
 fn field_name(index: usize) -> &'static str {
@@ -714,16 +698,9 @@ fn global_bytes(scan: &CardScan<'_>, ctx: &DecodeContext<'_>) -> Result<Vec<u8>,
     let length = card_count
         .checked_mul(72)
         .ok_or_else(|| CodecError::NotImplemented("IGES Global stream exceeds usize".into()))?;
-    ctx.charge_retained(u64_from_index(length), "iges_global_stream")?;
-    let mut bytes = Vec::new();
-    bytes.try_reserve_exact(length).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::RetainedBytes,
-            ctx.policy().limits.max_retained_bytes,
-            u64_from_index(length),
-            "iges_global_stream",
-        ))
-    })?;
+    let mut bytes = ctx.retained_admitted_vec(length, "iges_global_stream")?;
+
+
     for (_, line) in scan.section(Section::Global) {
         bytes.extend_from_slice(&line.payload[..72]);
     }
@@ -916,19 +893,7 @@ fn parse_real_text(text: &str, ctx: &DecodeContext<'_>) -> Result<Option<FiniteR
     if !text.bytes().any(|byte| matches!(byte, b'D' | b'd')) {
         return Ok(text.parse::<f64>().ok().and_then(FiniteReal::new));
     }
-    let count = u64_from_index(text.len());
-    let _reservation = ctx.reserve_scoped(count, "iges global numeric text")?;
-    let mut normalized = Vec::new();
-    normalized.try_reserve_exact(text.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("iges global numeric text"),
-                count,
-                count,
-                "iges global numeric text",
-            ),
-        )
-    })?;
+    let (mut normalized, _reservation) = ctx.scoped_admitted_vec(text.len(), "iges global numeric text")?;
     normalized.extend_from_slice(text.as_bytes());
     for byte in &mut normalized {
         if matches!(byte, b'D' | b'd') {
