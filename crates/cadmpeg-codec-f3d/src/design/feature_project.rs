@@ -8810,18 +8810,19 @@ fn project_split_face(
         return Ok(None);
     }
     let stream = or_none!(native_stream(&scope.id));
-    let mut groups = Vec::new();
-    for group in construction_groups
+    let mut groups = construction_groups
         .iter()
         .filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
-        }) {
-        push_feature_item(ctx, &mut groups, group, "f3d SplitFace group")?;
-    }
-    groups.sort_by_key(|group| group.scope_reference_ordinal);
-    let [tool, targets] = groups.as_slice() else {
+        });
+    let (Some(first), Some(second), None) = (groups.next(), groups.next(), groups.next()) else {
         return Ok(None);
+    };
+    let (tool, targets) = if first.scope_reference_ordinal <= second.scope_reference_ordinal {
+        (first, second)
+    } else {
+        (second, first)
     };
     let target_ordinal = or_none!(tool.members().len().checked_add(1));
     if tool.scope_reference_ordinal != 0
@@ -8857,21 +8858,23 @@ fn project_split_face(
             let id = neutral_feature_id(plane);
             push_feature_item(ctx, &mut selected, id, "f3d SplitFace tool plane")?;
         }
-        let planes = selected;
-        match planes.as_slice() {
-            [plane] => SplitFaceTool::Plane {
-                plane: plane.clone(),
-            },
-            _ => SplitFaceTool::Planes {
-                planes: or_none!(planes.try_into().ok()),
-            },
+        if selected.len() == 1 {
+            SplitFaceTool::Plane {
+                plane: or_none!(selected.pop()),
+            }
+        } else {
+            SplitFaceTool::Planes {
+                planes: or_none!(selected.try_into().ok()),
+            }
         }
     } else {
-        SplitFaceTool::Path(PathRef::Native(tool.id.clone()))
+        SplitFaceTool::Path(PathRef::Native(copy_feature_text(
+            ctx, &tool.id, "f3d SplitFace path tool group id")?))
     };
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::SplitFace {
         targets: if matches!(target_selection, FaceSelection::Native(_)) {
-            FaceSelection::Native(targets.id.clone())
+            FaceSelection::Native(copy_feature_text(
+                ctx, &targets.id, "f3d SplitFace target group id")?)
         } else {
             target_selection
         },
