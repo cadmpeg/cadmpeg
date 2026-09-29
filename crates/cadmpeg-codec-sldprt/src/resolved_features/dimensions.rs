@@ -935,7 +935,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             ) {
                 continue;
             }
-            let centers = entities
+            let mut centers = entities
                 .iter()
                 .filter(|entity| {
                     entity.sketch == **sketch
@@ -944,9 +944,8 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                             *entity.geometry.definition(),
                             SketchGeometryDefinition::Point { .. }
                         )
-                })
-                .collect::<Vec<_>>();
-            let [center_entity] = centers.as_slice() else {
+                });
+            let (Some(center_entity), None) = (centers.next(), centers.next()) else {
                 continue;
             };
             let SketchGeometryDefinition::Point { position: center } =
