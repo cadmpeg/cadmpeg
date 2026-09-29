@@ -20,6 +20,8 @@ pub(crate) fn constraint_hash(ir: &cadmpeg_ir::CadIr) -> Result<String, CodecErr
 }
 
 /// Stable hash of retained native feature-input lanes.
-pub(crate) fn lane_hash(native: &crate::native::SldprtNative) -> Result<String, CodecError> {
-    hash_records(&native.feature_input_lanes)
+pub(crate) fn lane_hash(
+    lanes: &[crate::records::FeatureInputLane],
+) -> Result<String, CodecError> {
+    hash_records(lanes)
 }

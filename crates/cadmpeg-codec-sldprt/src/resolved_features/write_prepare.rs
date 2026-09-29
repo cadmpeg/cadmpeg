@@ -50,7 +50,10 @@ pub(crate) fn prepare_sketches_for_write(
             .get("sldprt_neutral_sketch_constraint_local_sha256")
     });
     let current_neutral = sketch_hash(ir)?;
-    let current_native = native.as_ref().map(lane_hash).transpose()?;
+    let current_native = native
+        .as_ref()
+        .map(|native| lane_hash(&native.feature_input_lanes))
+        .transpose()?;
     if baseline_neutral.is_none() && baseline_native.is_none() {
         if ir.model.sketches.is_empty()
             && ir.model.sketch_entities.is_empty()
