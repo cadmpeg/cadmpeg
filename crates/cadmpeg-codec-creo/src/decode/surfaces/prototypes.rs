@@ -134,8 +134,11 @@ fn prototype_local_frame(
         return None;
     };
     (array.dimensions() == 4 && array.count() == 3).then_some(())?;
-    let slots = array.values().iter().copied().collect::<Option<Vec<_>>>()?;
-    let slots: [f64; 12] = slots.try_into().ok()?;
+    let values: &[Option<f64>; 12] = array.values().try_into().ok()?;
+    let mut slots = [0.0; 12];
+    for (slot, value) in slots.iter_mut().zip(values) {
+        *slot = (*value)?;
+    }
     slots.iter().all(|value| value.is_finite()).then_some(())?;
     let [first, middle, third, origin] = local_system_lanes(slots);
     let first_norm = dot(first, first).sqrt();
