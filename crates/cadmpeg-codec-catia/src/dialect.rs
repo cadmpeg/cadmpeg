@@ -233,11 +233,7 @@ pub(crate) fn copy_match(
     }
     copied = copied.with_declared(declared);
     if let Some(instance) = original.instance() {
-        copied = copied.with_instance(resource::copy_retained_str(
-            ctx,
-            instance,
-            "catia_dialect_instance",
-        )?);
+        copied = copied.with_instance(ctx.copy_retained_text(instance, "catia_dialect_instance")?);
     }
     Ok(copied)
 }

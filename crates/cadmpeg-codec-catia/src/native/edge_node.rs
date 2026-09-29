@@ -290,11 +290,7 @@ fn identity_index_charged<'a>(
                     .allocation_owner
                     .as_deref()
                     .map(|owner| {
-                        crate::resource::copy_retained_str(
-                            ctx,
-                            owner,
-                            "catia_native_edge_wire_index_owner",
-                        )
+                        ctx.copy_retained_text(owner, "catia_native_edge_wire_index_owner")
                     })
                     .transpose()?,
                 identity.identity,
@@ -328,11 +324,7 @@ fn joined_vertex_charged<'a>(
             node.allocation
                 .as_ref()
                 .map(|(owner, _)| {
-                    crate::resource::copy_retained_str(
-                        ctx,
-                        owner,
-                        "catia_native_edge_wire_lookup_owner",
-                    )
+                    ctx.copy_retained_text(owner, "catia_native_edge_wire_lookup_owner")
                 })
                 .transpose()?,
             node.vertex_refs[endpoint],
@@ -350,16 +342,8 @@ pub(super) fn edge_node_wires_charged(
     let mut wires = Vec::new();
     for node in nodes {
         let vertices = [
-            crate::resource::copy_retained_str(
-                ctx,
-                joined_vertex_charged(ctx, &node, 0, &index)?,
-                "catia_native_edge_wire_vertex_id",
-            )?,
-            crate::resource::copy_retained_str(
-                ctx,
-                joined_vertex_charged(ctx, &node, 1, &index)?,
-                "catia_native_edge_wire_vertex_id",
-            )?,
+            ctx.copy_retained_text(joined_vertex_charged(ctx, &node, 0, &index)?, "catia_native_edge_wire_vertex_id")?,
+            ctx.copy_retained_text(joined_vertex_charged(ctx, &node, 1, &index)?, "catia_native_edge_wire_vertex_id")?,
         ];
         crate::resource::push(
             ctx,
@@ -416,11 +400,7 @@ pub(super) fn consolidated_vertex_identities(
                     node.allocation
                         .as_ref()
                         .map(|(owner, _)| {
-                            crate::resource::copy_retained_str(
-                                ctx,
-                                owner,
-                                "catia_native_vertex_identity_lookup_key",
-                            )
+                            ctx.copy_retained_text(owner, "catia_native_vertex_identity_lookup_key")
                         })
                         .transpose()
                         .map(|owner| IdentityKey::Unresolved(node.source_index, owner, identity))
@@ -449,11 +429,7 @@ pub(super) fn consolidated_vertex_identities(
                     .allocation
                     .as_ref()
                     .map(|(owner, _)| {
-                        crate::resource::copy_retained_str(
-                            ctx,
-                            owner,
-                            "catia_native_vertex_identity_owner",
-                        )
+                        ctx.copy_retained_text(owner, "catia_native_vertex_identity_owner")
                     })
                     .transpose()?;
                 crate::resource::push(
@@ -489,11 +465,7 @@ pub(super) fn consolidated_vertex_identities(
                 )?;
             }
             if vertex.incident_edge_nodes.last() != Some(&node.id) {
-                let edge_id = crate::resource::copy_retained_str(
-                    ctx,
-                    &node.id,
-                    "catia_native_vertex_incident_edge_id",
-                )?;
+                let edge_id = ctx.copy_retained_text(&node.id, "catia_native_vertex_incident_edge_id")?;
                 crate::resource::push(
                     ctx,
                     &mut vertex.incident_edge_nodes,
