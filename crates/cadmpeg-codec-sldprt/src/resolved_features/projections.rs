@@ -791,6 +791,9 @@ pub(crate) fn project_compact_edge_selections(
                 {
                     let unresolved_edges = matches!(existing_edges, EdgeSelection::Unresolved);
                     if unresolved_edges || radius_groups.len() == 1 {
+                        const GROUP_OPERATION: &str = "collect SLDPRT variable fillet groups";
+                        let mut replacement_groups = Vec::new();
+                        ctx.reserve_collection_vec(&mut replacement_groups, radius_groups.len(), GROUP_OPERATION)?;
                         let mut carried_edges = match &mut *definition {
                             FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
                                 if !unresolved_edges => groups
@@ -799,50 +802,57 @@ pub(crate) fn project_compact_edge_selections(
                                     .map(|group| std::mem::replace(&mut group.edges, EdgeSelection::Unresolved)),
                             _ => None,
                         };
+                        for (radius, selections) in radius_groups {
+                            let edges = if unresolved_edges {
+                                projected_edges(&selections)?
+                            } else {
+                                carried_edges.take().ok_or_else(|| {
+                                    cadmpeg_core::CodecError::malformed(
+                                        "SLDPRT fillet replacement has no carried edges",
+                                    )
+                                })?
+                            };
+                            replacement_groups.push(FilletGroup { edges, radius, tangency_weight });
+                        }
                         *definition = FeatureDefinition::Operation(FeatureOperation::Fillet {
-                            groups: radius_groups
-                                .into_iter()
-                                .map(|(radius, selections)| {
-                                    let edges = if unresolved_edges {
-                                        projected_edges(&selections)?
-                                    } else {
-                                        carried_edges.take().ok_or_else(|| {
-                                            cadmpeg_core::CodecError::malformed(
-                                                "SLDPRT fillet replacement has no carried edges",
-                                            )
-                                        })?
-                                    };
-                                    Ok(FilletGroup { edges, radius, tangency_weight })
-                                })
-                                .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?
+                            groups: replacement_groups
                                 .try_into()
                                 .map_err(cadmpeg_core::CodecError::malformed)?,
                         });
                     }
                 }
             }
-            let groups = match &mut *definition {
-                FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => groups
-                    .iter_mut()
-                    .filter(|group| matches!(group.edges, EdgeSelection::Unresolved))
-                    .map(|group| &mut group.edges)
-                    .collect::<Vec<_>>(),
-                FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) => groups
-                    .iter_mut()
-                    .map(|group| &mut group.edges)
-                    .collect::<Vec<_>>(),
+            match &mut *definition {
+                FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => {
+                    for group in groups.iter_mut().filter(|group| matches!(group.edges, EdgeSelection::Unresolved)) {
+                        group.edges = projected_edges(edge_selections)?;
+                    }
+                }
+                FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) => {
+                    for group in groups.iter_mut() {
+                        group.edges = projected_edges(edge_selections)?;
+                    }
+                }
                 _ => return Ok(()),
-            };
-            for edges in groups {
-                *edges = projected_edges(edge_selections)?;
             }
             for dependency in edge_selections
                 .iter()
                 .flat_map(|selection| &selection.producer_feature_refs)
                 .filter_map(|native| feature_ids_by_native.get(native))
             {
-                if dependency != feature_id && !dependencies.contains(dependency) {
-                    dependencies.insert(dependency.clone());
+                if dependency != feature_id {
+                    const DEPENDENCY_OPERATION: &str = "add SLDPRT compact edge dependency";
+                    ctx.charge_work(dependencies.len() as u64, DEPENDENCY_OPERATION)?;
+                    if dependencies.contains(dependency) {
+                        continue;
+                    }
+                    let mut id_text = String::new();
+                    ctx.reserve_retained_string(&mut id_text, dependency.as_str().len(), DEPENDENCY_OPERATION)?;
+                    id_text.push_str(dependency.as_str());
+                    let id = cadmpeg_ir::features::FeatureId::mint(id_text)
+                        .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT edge dependency id"))?;
+                    ctx.charge_work(dependencies.len() as u64, DEPENDENCY_OPERATION)?;
+                    dependencies.try_insert_charged(id, ctx, DEPENDENCY_OPERATION)?;
                 }
             }
             Ok(())
