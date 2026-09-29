@@ -9600,18 +9600,20 @@ pub(crate) fn bind_edge_identity_history(
         let Some(stream) = crate::ids::native_stream(&operand.id) else {
             continue;
         };
+        let stream = history_copy_string(decode, stream, "copy F3D compact edge group stream")?;
+        let key = (stream, operand.scope_record_index, operand.group_record_index);
+        if !compact_group_counts.contains_key(&key) {
+            charge_history_item(decode, "index F3D compact edge groups")?;
+            compact_group_counts.try_reserve(1).map_err(|_| history_reserve_error(decode, "index F3D compact edge groups"))?;
+        }
         compact_group_counts
-            .entry((
-                stream.to_owned(),
-                operand.scope_record_index,
-                operand.group_record_index,
-            ))
+            .entry(key)
             .and_modify(|count| {
                 *count = count.and_then(|count| operand.layout().is_compact().then_some(count + 1));
             })
             .or_insert(operand.layout().is_compact().then_some(1));
     }
-    let local_ids = operands
+    let local_ids = history_collect(decode, operands
         .iter()
         .map(|operand| operand.local_id)
         .chain(identities.iter().filter_map(|identity| {
@@ -9619,7 +9621,7 @@ pub(crate) fn bind_edge_identity_history(
                 .persistent_identity()
                 .map(|persistent| persistent.local_id)
         }))
-        .collect::<Vec<_>>();
+        , "collect F3D edge identity local ids")?;
     let history_identities =
         HistoricalIdentityIndex::build(decode, histories, local_ids.iter().copied())?;
     let mut identities_by_history = HashMap::new();
@@ -9699,24 +9701,27 @@ pub(crate) fn bind_edge_identity_history(
                 && current_state
                     .is_some_and(|state| history_state_reaches(history, state, previous_state_id))
             {
-                let key = (history.id.clone(), current_state_id, previous_state_id);
+                let key = (history_copy_string(decode, &history.id, "copy F3D treatment transition history id")?, current_state_id, previous_state_id);
                 if !treatment_candidates_by_transition.contains_key(&key) {
                     if let Some(result) = current_state.and_then(|state| state.topology()) {
-                        let preceding_faces =
-                            topology.faces.iter().copied().collect::<HashSet<_>>();
-                        let inserted_faces = result
+                        let mut preceding_faces = HashSet::new();
+                        for face in &topology.faces {
+                            history_hash_set_insert(decode, &mut preceding_faces, *face, "index F3D treatment preceding faces")?;
+                        }
+                        let inserted_faces = history_collect(decode, result
                             .faces
                             .iter()
                             .copied()
-                            .filter(|face| !preceding_faces.contains(face))
-                            .collect::<Vec<_>>();
-                        let result_edges = result.edges.iter().copied().collect::<HashSet<_>>();
-                        let deleted_edges = topology
+                            .filter(|face| !preceding_faces.contains(face)), "collect F3D treatment inserted faces")?;
+                        let mut result_edges = HashSet::new();
+                        for edge in &result.edges {
+                            history_hash_set_insert(decode, &mut result_edges, *edge, "index F3D treatment result edges")?;
+                        }
+                        let deleted_edges = history_collect(decode, topology
                             .edges
                             .iter()
                             .copied()
-                            .filter(|edge| !result_edges.contains(edge))
-                            .collect::<Vec<_>>();
+                            .filter(|edge| !result_edges.contains(edge)), "collect F3D treatment deleted edges")?;
                         let (radii, treatment_edges) = treatment_edge_candidates(
                             decode,
                             None,
@@ -9725,8 +9730,10 @@ pub(crate) fn bind_edge_identity_history(
                             topology,
                             &deleted_edges,
                         )?;
+                        charge_history_item(decode, "index F3D treatment transitions")?;
+                        treatment_candidates_by_transition.try_reserve(1).map_err(|_| history_reserve_error(decode, "index F3D treatment transitions"))?;
                         treatment_candidates_by_transition.insert(
-                            key.clone(),
+                            (history_copy_string(decode, &history.id, "copy F3D treatment transition key")?, current_state_id, previous_state_id),
                             EdgeTreatmentTransitionCandidates {
                                 radii,
                                 treatment_edges,
@@ -9736,10 +9743,8 @@ pub(crate) fn bind_edge_identity_history(
                     }
                 }
                 if let Some(candidates) = treatment_candidates_by_transition.get(&key) {
-                    operand
-                        .treatment_radius_candidates
-                        .clone_from(&candidates.radii);
-                    let mut treatment_edges = candidates.treatment_edges.clone();
+                    operand.treatment_radius_candidates = history_collect(decode, candidates.radii.iter().cloned(), "copy F3D treatment radius candidates")?;
+                    let mut treatment_edges = history_collect(decode, candidates.treatment_edges.iter().copied(), "copy F3D treatment edges")?;
                     // The geometric chain is transition-scoped. The deleted-
                     // set fallback is group-scoped because its proof depends
                     // on this operand group's compact member count.
@@ -9753,21 +9758,20 @@ pub(crate) fn bind_edge_identity_history(
                         );
                         let compact_member_count = compact_group_counts
                             .get(&(
-                                stream.to_owned(),
+                                history_copy_string(decode, stream, "copy F3D compact group lookup stream")?,
                                 operand.scope_record_index,
                                 operand.group_record_index,
                             ))
                             .copied()
                             .flatten();
                         treatment_edges = complete_compact_edge_treatment_deletions(
+                            decode,
                             is_edge_treatment,
                             compact_member_count,
                             &candidates.deleted_edges,
-                        );
+                        )?;
                     }
-                    operand
-                        .transition_edge_candidates
-                        .clone_from(&treatment_edges);
+                    operand.transition_edge_candidates = history_collect(decode, treatment_edges, "copy F3D transition edge candidates")?;
                 }
             }
         }
@@ -9781,7 +9785,7 @@ pub(crate) fn bind_edge_identity_history(
         };
         if let Some(edge) = direct {
             operand.resolved_edge_slot = Some(edge);
-            operand.resolution_identity_id = Some(operand.id.clone());
+            operand.resolution_identity_id = Some(history_copy_string(decode, &operand.id, "copy F3D edge resolution identity")?);
             continue;
         }
         let mut resolved = Vec::new();
@@ -9806,23 +9810,24 @@ pub(crate) fn bind_edge_identity_history(
             continue;
         }
         operand.resolved_edge_slot = Some(edge);
-        operand.resolution_identity_id = Some(identity_id.to_owned());
+        operand.resolution_identity_id = Some(history_copy_string(decode, identity_id, "copy F3D edge resolution identity")?);
     }
     Ok(())
 }
 
 fn complete_compact_edge_treatment_deletions(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     is_edge_treatment: bool,
     compact_member_count: Option<usize>,
     deleted_edges: &[i64],
-) -> Vec<i64> {
+) -> Result<Vec<i64>, cadmpeg_core::CodecError> {
     if is_edge_treatment
         && !deleted_edges.is_empty()
         && compact_member_count == Some(deleted_edges.len())
     {
-        deleted_edges.to_vec()
+        history_collect(decode, deleted_edges.iter().copied(), "copy F3D compact treatment deletions")
     } else {
-        Vec::new()
+        Ok(Vec::new())
     }
 }
 
@@ -9830,9 +9835,10 @@ fn complete_compact_edge_treatment_deletions(
 /// names the member's embedded bounded-face recipe. The rule selects every
 /// deleted treatment edge on the recipe's exact preceding support face.
 pub(crate) fn bind_edge_identity_bounded_face_rules(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     operands: &mut [DesignEdgeIdentityOperand],
     face_operands: &[crate::records::topology::face::DesignFaceOperand],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use crate::records::recipes::ConstructionRecipeKind;
 
     for operand in operands {
@@ -9840,7 +9846,7 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
         if operand.resolved_edge_slot.is_some() {
             continue;
         }
-        let matches = face_operands
+        let mut matches = face_operands
             .iter()
             .filter(|face| {
                 crate::ids::native_stream(&face.id) == crate::ids::native_stream(&operand.id)
@@ -9851,21 +9857,20 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
                     && face.class_tag == operand.class_tag
                     && face.recipe_kind == ConstructionRecipeKind::BoundedFace
                     && u64::from(face.recipe_record_index()) == operand.local_id
-            })
-            .collect::<Vec<_>>();
-        let [face] = matches.as_slice() else { continue };
+            });
+        let Some(face) = matches.next() else { continue };
+        if matches.next().is_some() { continue; }
         let [support] = face.historical_support_contexts.as_slice() else {
             continue;
         };
+        let mut unique_faces = HashSet::new();
+        for face in &support.preceding_face_slots {
+            history_hash_set_insert(decode, &mut unique_faces, *face, "index F3D bounded treatment faces")?;
+        }
         if support.preceding_face_slots.is_empty()
             || support.changed_preceding_face_slots != support.preceding_face_slots
             || support.preceding_face_boundaries.len() != support.preceding_face_slots.len()
-            || support
-                .preceding_face_slots
-                .iter()
-                .collect::<HashSet<_>>()
-                .len()
-                != support.preceding_face_slots.len()
+            || unique_faces.len() != support.preceding_face_slots.len()
             || support.preceding_face_boundaries.iter().any(|boundary| {
                 support
                     .preceding_face_boundaries
@@ -9882,26 +9887,33 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
         {
             continue;
         }
-        let transition = operand
-            .transition_edge_candidates
-            .iter()
-            .copied()
-            .collect::<HashSet<_>>();
+        let mut transition = HashSet::new();
+        for edge in &operand.transition_edge_candidates {
+            history_hash_set_insert(decode, &mut transition, *edge, "index F3D bounded treatment edges")?;
+        }
         if transition.is_empty() {
             continue;
         }
         let mut seen = HashSet::new();
-        operand.resolved_edge_slots = support
+        let mut resolved = Vec::new();
+        for edge in support
             .preceding_face_boundaries
             .iter()
             .flat_map(|boundary| &boundary.loops)
             .flat_map(|loop_| loop_.boundary.coedges().map(|row| row.edge_slot))
-            .filter(|edge| transition.contains(edge) && seen.insert(*edge))
-            .collect();
+        {
+            if transition.contains(&edge) && history_hash_set_insert(decode, &mut seen, edge, "index F3D bounded resolved edges")? {
+                charge_history_item(decode, "collect F3D bounded resolved edges")?;
+                resolved.try_reserve(1).map_err(|_| history_reserve_error(decode, "collect F3D bounded resolved edges"))?;
+                resolved.push(edge);
+            }
+        }
+        operand.resolved_edge_slots = resolved;
         if !operand.resolved_edge_slots.is_empty() {
-            operand.resolution_identity_id = Some(face.id.clone());
+            operand.resolution_identity_id = Some(history_copy_string(decode, &face.id, "copy F3D bounded edge identity")?);
         }
     }
+    Ok(())
 }
 
 fn historical_identity_edge(
@@ -10108,6 +10120,17 @@ fn history_reserve_error(
         || cadmpeg_core::CodecError::malformed("F3D historical topology allocation failed"),
         |ctx| ctx.refuse_codec_limit(operation, 0, 1),
     )
+}
+
+fn history_copy_string(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    source: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    match decode {
+        Some(ctx) => copy_history_string(ctx, source, operation),
+        None => Ok(source.to_owned()),
+    }
 }
 
 fn history_index<K: std::hash::Hash + Eq, V>(

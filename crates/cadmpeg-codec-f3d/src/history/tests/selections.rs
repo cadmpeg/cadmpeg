@@ -240,12 +240,23 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
 #[test]
 fn compact_edge_treatment_deletions_require_exact_cardinality() {
     assert_eq!(
-        complete_compact_edge_treatment_deletions(true, Some(2), &[17, 19]),
+        complete_compact_edge_treatment_deletions(None, true, Some(2), &[17, 19]).unwrap(),
         [17, 19]
     );
-    assert!(complete_compact_edge_treatment_deletions(true, Some(2), &[17, 18, 19]).is_empty());
-    assert!(complete_compact_edge_treatment_deletions(false, Some(2), &[17, 19]).is_empty());
-    assert!(complete_compact_edge_treatment_deletions(true, None, &[17, 19]).is_empty());
+    assert!(complete_compact_edge_treatment_deletions(None, true, Some(2), &[17, 18, 19]).unwrap().is_empty());
+    assert!(complete_compact_edge_treatment_deletions(None, false, Some(2), &[17, 19]).unwrap().is_empty());
+    assert!(complete_compact_edge_treatment_deletions(None, true, None, &[17, 19]).unwrap().is_empty());
+}
+
+#[test]
+fn compact_edge_treatment_deletions_refuse_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = complete_compact_edge_treatment_deletions(Some(&ctx), true, Some(2), &[17, 19]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D compact treatment deletions"));
 }
 
 #[test]
