@@ -2763,12 +2763,14 @@ impl<'a> F3dDecodeSession<'a> {
         };
         let dimension_constraints = if self.native.design_dimension_presentation_frames.is_empty() {
             crate::design::dimensions::project_dimension_constraints(
+                Some(self.ctx),
                 &constraint_inputs,
                 &self.ir.model.spatial_sketches,
                 self.ir.tolerances.linear.get(),
             )
         } else {
             crate::design::dimensions::project_dimension_constraints_with_presentations(
+                Some(self.ctx),
                 &constraint_inputs,
                 &self.native.design_dimension_presentation_frames,
                 &self.ir.model.spatial_sketches,
@@ -2781,6 +2783,7 @@ impl<'a> F3dDecodeSession<'a> {
             .extend(dimension_constraints);
         self.ir.model.spatial_sketch_constraints.extend(
             crate::design::dimensions::project_spatial_dimension_constraints(
+                Some(self.ctx),
                 &constraint_inputs,
                 &self.ir.model.spatial_sketches,
                 &self.ir.model.spatial_sketch_entities,
