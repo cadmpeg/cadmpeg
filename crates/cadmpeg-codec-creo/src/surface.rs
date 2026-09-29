@@ -595,11 +595,13 @@ fn parse_positional_spline_replay(
     prototype: &SurfacePrototypeRecord,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<(crate::interpolation_grid::InterpolationGrid, usize)>, CodecError> {
-    let Some((shape, mut cursor)) = (|| {
-        let shape = spline_replay_shape(prototype)?;
-        let envelope_close = surface_body_compound_close(SurfaceKind::Spline, body, cache)?;
-        Some((shape, envelope_close.checked_add(1)?))
-    })() else {
+    let Some(shape) = spline_replay_shape(prototype) else {
+        return Ok(None);
+    };
+    let Some(envelope_close) = surface_body_compound_close(ctx, SurfaceKind::Spline, body, cache)? else {
+        return Ok(None);
+    };
+    let Some(mut cursor) = envelope_close.checked_add(1) else {
         return Ok(None);
     };
 
@@ -5133,7 +5135,7 @@ fn parameter_records_for_rows(
             boundary = SurfaceBodyBoundary::CompoundClose;
         } else {
             if let Some(relative) =
-                surface_body_compound_close(row.kind, &payload[*body_start..body_end], &cache)
+                surface_body_compound_close(ctx, row.kind, &payload[*body_start..body_end], &cache)?
             {
                 body_end = body_start + relative;
                 boundary = SurfaceBodyBoundary::CompoundClose;
@@ -5276,7 +5278,7 @@ fn contour_records_for_rows(
             Some(contour_start)
         } else {
             let Some(envelope_close) =
-                surface_body_compound_close(row.kind, &payload[body_start..row_end], &cache)
+                surface_body_compound_close(ctx, row.kind, &payload[body_start..row_end], &cache)?
                     .map(|relative| body_start + relative)
             else {
                 continue;
@@ -5885,18 +5887,19 @@ pub(crate) fn tabulated_cylinder_curve_replays(
 }
 
 fn surface_body_compound_close(
+    ctx: &DecodeContext<'_>,
     kind: SurfaceKind,
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Option<usize> {
+) -> Result<Option<usize>, CodecError> {
     if kind == SurfaceKind::Plane {
-        if let Some(close) = plane_envelope_compound_close(body, cache) {
-            return Some(close);
+        if let Some(close) = plane_envelope_compound_close(ctx, body, cache)? {
+            return Ok(Some(close));
         }
     }
     if kind == SurfaceKind::Cone {
         if let Some(layout) = cone_half_angle_before_close(body) {
-            return Some(layout.end);
+            return Ok(Some(layout.end));
         }
     }
     if matches!(kind, SurfaceKind::Extrusion(_)) {
@@ -5907,14 +5910,14 @@ fn surface_body_compound_close(
                 }
             }
             if body.get(cursor) == Some(&psb::token::COMPOUND_CLOSE) {
-                return Some(cursor);
+                return Ok(Some(cursor));
             }
         }
     }
     let mut cursor = 0;
     while cursor < body.len() {
         if body[cursor] == psb::token::COMPOUND_CLOSE {
-            return Some(cursor);
+            return Ok(Some(cursor));
         }
         if let Some((_, next)) = decode_row_scalar(kind, body, cursor, cache) {
             cursor = next;
@@ -5922,7 +5925,7 @@ fn surface_body_compound_close(
             cursor += 1;
         }
     }
-    None
+    Ok(None)
 }
 
 fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usize> {
@@ -6457,30 +6460,34 @@ type ScalarTokenSlot = (Option<f64>, Vec<u8>);
 /// The offset is returned because a caller that owns the field's end decides
 /// whether the table is allowed to stop short of it; that is the caller's
 /// question, not this one's.
-fn scalar_slots_with_tokens_and_end(
-    body: &[u8],
+fn scalar_slots_with_tokens_and_end<'a>(
+    ctx: &DecodeContext<'_>,
+    body: &'a [u8],
     count: usize,
     cache: &scalar::ScalarCache,
-) -> Option<(Vec<ScalarTokenSlot>, usize)> {
-    let mut slots = Vec::with_capacity(count);
+) -> Result<Option<(Vec<(Option<f64>, &'a [u8])>, usize)>, CodecError> {
+    let mut slots = Vec::new();
+    ctx.try_reserve_items(&mut slots, count, "creo surface scalar token slots")?;
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
         if body[cursor] == 0x18 && cursor + 1 == body.len() {
-            slots.push((Some(0.0), vec![0x18]));
+            slots.push((Some(0.0), &body[cursor..cursor + 1]));
             cursor += 1;
         } else if let Some((value, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache)
         {
             // Every arm of `decode_in_surface_row_lane` reads the bytes it
             // reports, so `cursor < next <= body.len()`. The `get` is the
             // bounded access, not a second test of that range.
-            let token = body.get(cursor..next)?;
-            slots.push((Some(value), token.to_vec()));
+            let Some(token) = body.get(cursor..next) else {
+                return Ok(None);
+            };
+            slots.push((Some(value), token));
             cursor = next;
         } else {
-            return None;
+            return Ok(None);
         }
     }
-    (slots.len() == count).then_some((slots, cursor))
+    Ok((slots.len() == count).then_some((slots, cursor)))
 }
 
 /// The `count` plane-envelope scalar slots `body` states, each with the bytes
@@ -6489,98 +6496,124 @@ fn scalar_slots_with_tokens_and_end(
 /// The envelope lane adds the compact positive half `0e` to the surface-row
 /// lane. Everything [`scalar_slots_with_tokens_and_end`] states about an
 /// undefined byte, a short body and the returned offset holds here too.
-fn plane_envelope_scalar_slots_with_tokens_and_end(
-    body: &[u8],
+fn plane_envelope_scalar_slots_with_tokens_and_end<'a>(
+    ctx: &DecodeContext<'_>,
+    body: &'a [u8],
     count: usize,
     cache: &scalar::ScalarCache,
-) -> Option<(Vec<ScalarTokenSlot>, usize)> {
-    let mut slots = Vec::with_capacity(count);
+) -> Result<Option<(Vec<(Option<f64>, &'a [u8])>, usize)>, CodecError> {
+    let mut slots = Vec::new();
+    ctx.try_reserve_items(&mut slots, count, "creo plane envelope token slots")?;
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
         if body[cursor] == 0x0e {
-            slots.push((Some(0.5), vec![0x0e]));
+            slots.push((Some(0.5), &body[cursor..cursor + 1]));
             cursor += 1;
         } else if body[cursor] == 0x18 && cursor + 1 == body.len() {
-            slots.push((Some(0.0), vec![0x18]));
+            slots.push((Some(0.0), &body[cursor..cursor + 1]));
             cursor += 1;
         } else if let Some((value, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache)
         {
             // Every arm of `decode_in_surface_row_lane` reads the bytes it
             // reports, so `cursor < next <= body.len()`. The `get` is the
             // bounded access, not a second test of that range.
-            let token = body.get(cursor..next)?;
-            slots.push((Some(value), token.to_vec()));
+            let Some(token) = body.get(cursor..next) else {
+                return Ok(None);
+            };
+            slots.push((Some(value), token));
             cursor = next;
         } else {
-            return None;
+            return Ok(None);
         }
     }
-    (slots.len() == count).then_some((slots, cursor))
+    Ok((slots.len() == count).then_some((slots, cursor)))
 }
 
-fn complete_plane_envelope_slots(
-    body: &[u8],
+fn complete_plane_envelope_slots<'a>(
+    ctx: &DecodeContext<'_>,
+    body: &'a [u8],
     count: usize,
     cache: &scalar::ScalarCache,
-) -> Option<Vec<ScalarTokenSlot>> {
-    let (slots, consumed) = plane_envelope_scalar_slots_with_tokens_and_end(body, count, cache)?;
+) -> Result<Option<Vec<(Option<f64>, &'a [u8])>>, CodecError> {
+    let Some((slots, consumed)) = plane_envelope_scalar_slots_with_tokens_and_end(ctx, body, count, cache)? else {
+        return Ok(None);
+    };
     // The helper states every other condition. This is the caller's own: the
     // envelope owns the whole body, so a table that stops short of its end
     // leaves bytes no slot accounts for.
-    (consumed == body.len()).then_some(slots)
+    Ok((consumed == body.len()).then_some(slots))
 }
 
-fn complete_plane_envelope_slots_with_final_positive_dict(
-    body: &[u8],
+fn complete_plane_envelope_slots_with_final_positive_dict<'a>(
+    ctx: &DecodeContext<'_>,
+    body: &'a [u8],
     preceding_count: usize,
     cache: &scalar::ScalarCache,
-) -> Option<Vec<ScalarTokenSlot>> {
-    let positive_start = body.len().checked_sub(7)?;
-    let (value, end) = scalar::decode_positive_dict(body, positive_start)?;
-    (end == body.len()).then_some(())?;
-    let mut slots = complete_plane_envelope_slots(&body[..positive_start], preceding_count, cache)?;
-    slots.push((Some(value), body[positive_start..end].to_vec()));
-    Some(slots)
+) -> Result<Option<Vec<(Option<f64>, &'a [u8])>>, CodecError> {
+    let Some(positive_start) = body.len().checked_sub(7) else {
+        return Ok(None);
+    };
+    let Some((value, end)) = scalar::decode_positive_dict(body, positive_start) else {
+        return Ok(None);
+    };
+    if end != body.len() {
+        return Ok(None);
+    }
+    let Some(mut slots) = complete_plane_envelope_slots(ctx, &body[..positive_start], preceding_count, cache)? else {
+        return Ok(None);
+    };
+    ctx.try_reserve_items(&mut slots, 1, "creo plane envelope final token slot")?;
+    slots.push((Some(value), &body[positive_start..end]));
+    Ok(Some(slots))
 }
 
-fn plane_envelope_compound_close(body: &[u8], cache: &scalar::ScalarCache) -> Option<usize> {
-    body.iter()
-        .enumerate()
-        .filter_map(|(offset, byte)| (*byte == psb::token::COMPOUND_CLOSE).then_some(offset))
-        .find(|offset| {
+fn plane_envelope_compound_close(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Result<Option<usize>, CodecError> {
+    for (offset, byte) in body.iter().enumerate() {
+        if *byte != psb::token::COMPOUND_CLOSE {
+            continue;
+        }
             let Some(positive_start) = offset.checked_sub(7) else {
-                return false;
+                continue;
             };
             let Some((positive_value, positive_end)) =
                 scalar::decode_positive_dict(body, positive_start)
             else {
-                return false;
+                continue;
             };
-            if positive_end != *offset {
-                return false;
+            if positive_end != offset {
+                continue;
             }
             let prefix = &body[..positive_start];
-            let (mut slots, pairs) = if prefix.first() == Some(&0x0e) {
-                let Some(slots) = complete_plane_envelope_slots(&prefix[1..], 8, cache) else {
-                    return false;
+            let (slots, pairs) = if prefix.first() == Some(&0x0e) {
+                let Some(slots) = complete_plane_envelope_slots(ctx, &prefix[1..], 8, cache)? else {
+                    continue;
                 };
                 (slots, [[3, 6], [4, 7], [5, 8]])
-            } else if let Some(slots) = complete_plane_envelope_slots(prefix, 9, cache) {
+            } else if let Some(slots) = complete_plane_envelope_slots(ctx, prefix, 9, cache)? {
                 (slots, [[4, 7], [5, 8], [6, 9]])
             } else {
-                return false;
+                continue;
             };
+            let mut slots = slots;
+            ctx.try_reserve_items(&mut slots, 1, "creo plane envelope close token slot")?;
             slots.push((
                 Some(positive_value),
-                body[positive_start..positive_end].to_vec(),
+                &body[positive_start..positive_end],
             ));
             let axis_aligned = plane_envelope_has_one_held_coordinate(&slots, pairs);
-            axis_aligned || plane_envelope_boundary_has_local_system(body, *offset, cache)
-        })
+            if axis_aligned || plane_envelope_boundary_has_local_system(body, offset, cache) {
+                return Ok(Some(offset));
+            }
+    }
+    Ok(None)
 }
 
 fn plane_envelope_has_one_held_coordinate(
-    slots: &[ScalarTokenSlot],
+    slots: &[(Option<f64>, &[u8])],
     pairs: [[usize; 2]; 3],
 ) -> bool {
     pairs
@@ -6609,7 +6642,7 @@ fn plane_envelope_boundary_has_local_system(
     complete_plane_local_system(&body[local_system_start..local_system_close], cache).is_some()
 }
 
-fn slot_equality(first: &(Option<f64>, Vec<u8>), second: &(Option<f64>, Vec<u8>)) -> Option<bool> {
+fn slot_equality(first: &(Option<f64>, &[u8]), second: &(Option<f64>, &[u8])) -> Option<bool> {
     match (first.0, second.0) {
         (Some(first), Some(second)) => {
             let scale = first.abs().max(second.abs()).max(1.0);
@@ -7098,7 +7131,7 @@ pub(crate) fn cross_section_plane_envelopes(
 
 fn copied_plane_envelope_tokens(
     ctx: &DecodeContext<'_>,
-    slots: &[(Option<f64>, Vec<u8>)],
+    slots: &[(Option<f64>, &[u8])],
 ) -> Result<Vec<Vec<u8>>, CodecError> {
     let mut tokens = Vec::new();
     ctx.try_reserve_items(
@@ -7136,16 +7169,18 @@ fn plane_envelopes_for_rows(
         let Some(body) = payload.get(body_start..row_end) else {
             continue;
         };
-        let Some(body_end) = surface_body_compound_close(SurfaceKind::Plane, body, &cache)
+        let Some(body_end) = surface_body_compound_close(ctx, SurfaceKind::Plane, body, &cache)?
             .map(|relative| body_start + relative)
         else {
             continue;
         };
         let body = &payload[body_start..body_end];
         let (envelope, corner_coordinate_equal, slots) = if body.first() == Some(&0x0e) {
-            let Some(slots) = complete_plane_envelope_slots(&body[1..], 9, &cache).or_else(|| {
-                complete_plane_envelope_slots_with_final_positive_dict(&body[1..], 8, &cache)
-            }) else {
+            let slots = match complete_plane_envelope_slots(ctx, &body[1..], 9, &cache)? {
+                Some(slots) => Some(slots),
+                None => complete_plane_envelope_slots_with_final_positive_dict(ctx, &body[1..], 8, &cache)?,
+            };
+            let Some(slots) = slots else {
                 continue;
             };
             (
@@ -7180,9 +7215,11 @@ fn plane_envelopes_for_rows(
                 slots,
             )
         } else {
-            let Some(slots) = complete_plane_envelope_slots(&body, 10, &cache).or_else(|| {
-                complete_plane_envelope_slots_with_final_positive_dict(&body, 9, &cache)
-            }) else {
+            let slots = match complete_plane_envelope_slots(ctx, &body, 10, &cache)? {
+                Some(slots) => Some(slots),
+                None => complete_plane_envelope_slots_with_final_positive_dict(ctx, &body, 9, &cache)?,
+            };
+            let Some(slots) = slots else {
                 continue;
             };
             (
@@ -7249,7 +7286,7 @@ fn plane_envelopes_for_rows(
         )
         .map_or(named_end, |relative| scalar_start + relative);
         let Some((slots, consumed)) =
-            scalar_slots_with_tokens_and_end(&payload[scalar_start..field_end], 6, &cache)
+            scalar_slots_with_tokens_and_end(ctx, &payload[scalar_start..field_end], 6, &cache)?
         else {
             continue;
         };
@@ -7288,12 +7325,12 @@ fn plane_envelopes_for_rows(
     Ok(envelopes)
 }
 
-fn complete_plane_compact_scalar_suffix(
+fn complete_plane_compact_scalar_suffix<'a>(
     ctx: &DecodeContext<'_>,
-    body: &[u8],
+    body: &'a [u8],
     cache: &scalar::ScalarCache,
-) -> Result<Option<Vec<(Option<f64>, Vec<u8>)>>, CodecError> {
-    if complete_plane_envelope_slots(body, 10, cache).is_some() {
+) -> Result<Option<Vec<(Option<f64>, &'a [u8])>>, CodecError> {
+    if complete_plane_envelope_slots(ctx, body, 10, cache)?.is_some() {
         return Ok(None);
     }
     let tokens = scalar_tokens(ctx, SurfaceKind::Plane, body, cache)?;
@@ -7304,7 +7341,7 @@ fn complete_plane_compact_scalar_suffix(
     if frame.offset == 0 || frame.slots.len() != 9 {
         return Ok(None);
     }
-    let Some(slots) = complete_plane_envelope_slots(&body[frame.offset..], 9, cache) else {
+    let Some(slots) = complete_plane_envelope_slots(ctx, &body[frame.offset..], 9, cache)? else {
         return Ok(None);
     };
     Ok(slots.iter().all(|(value, _)| value.is_some()).then_some(slots))

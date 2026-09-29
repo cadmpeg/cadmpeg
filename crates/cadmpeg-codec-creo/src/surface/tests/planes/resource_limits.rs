@@ -137,6 +137,90 @@ fn surface_scalar_refuses_token_bytes() {
 }
 
 #[test]
+fn surface_token_slot_table_refuses_before_counted_reservation() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let body = [0xe4, 0x18];
+    let run = |limit| with_surface_limits(&body, limit, u64::MAX, |ctx| {
+        crate::surface::scalar_slots_with_tokens_and_end(
+            ctx, &body, 2, &scalar::ScalarCache::default(),
+        )
+    });
+    assert_eq!(run(2).expect("two slots are admitted").expect("complete table").0.len(), 2);
+    let error = run(1).expect_err("two slots exceed one collection item");
+    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo surface scalar token slots");
+}
+
+#[test]
+fn plane_envelope_slot_table_refuses_before_counted_reservation() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let body = [0x0e, 0x0e, 0x18];
+    let run = |limit| with_surface_limits(&body, limit, u64::MAX, |ctx| {
+        crate::surface::plane_envelope_scalar_slots_with_tokens_and_end(
+            ctx, &body, 3, &scalar::ScalarCache::default(),
+        )
+    });
+    assert_eq!(run(3).expect("three slots are admitted").expect("complete table").0.len(), 3);
+    let error = run(2).expect_err("three slots exceed two collection items");
+    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo plane envelope token slots");
+}
+
+#[test]
+fn plane_envelope_final_positive_slot_refuses_before_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let body = [
+        0x0f, 0xe4, 0x0d, 0x0f, 0x0f, 0x0f, 0xe4, 0x0d, 0x0f,
+        0x99, 1, 2, 3, 4, 5, 6,
+    ];
+    let run = |limit| with_surface_limits(&body, limit, u64::MAX, |ctx| {
+        crate::surface::complete_plane_envelope_slots_with_final_positive_dict(
+            ctx, &body, 9, &scalar::ScalarCache::default(),
+        )
+    });
+    assert_eq!(run(10).expect("ten slots are admitted").expect("complete table").len(), 10);
+    let error = run(9).expect_err("the final slot exceeds nine collection items");
+    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo plane envelope final token slot");
+}
+
+#[test]
+fn plane_envelope_close_slot_refuses_before_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let body = [
+        0x0f, 0xe4, 0x0d, 0x0f, 0x0f, 0x0f, 0xe4, 0x0d, 0x0f,
+        0x99, 1, 2, 3, 4, 5, 6, 0xe3,
+    ];
+    let run = |limit| with_surface_limits(&body, limit, u64::MAX, |ctx| {
+        crate::surface::plane_envelope_compound_close(ctx, &body, &scalar::ScalarCache::default())
+    });
+    assert_eq!(run(10).expect("ten slots are admitted"), Some(body.len() - 1));
+    let error = run(9).expect_err("the close slot exceeds nine collection items");
+    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo plane envelope close token slot");
+}
+
+#[test]
+fn plane_envelope_reader_propagates_slot_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = [
+        7, 0x22, 4, 0x01, 0, 0, 0x0f, 0xe4, 0x0d, 0x0f, 0x0f, 0x0f, 0xe4,
+        0x0d, 0x0f, 0x99, 1, 2, 3, 4, 5, 6, 0xe3,
+    ];
+    let rows = [crate::surface::SurfaceRow {
+        id: 7,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 4,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    }];
+    let run = |limit| with_surface_limits(&payload, limit, u64::MAX, |ctx| {
+        crate::surface::plane_envelopes_for_rows(ctx, &payload, &rows)
+    });
+    assert_eq!(run(100).expect("service admits the envelope").len(), 1);
+    let error = run(0).expect_err("the first table needs nine slots");
+    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo plane envelope token slots");
+}
+
+#[test]
 fn torus_scalar_refuses_outline_marker_vector() {
     use cadmpeg_core::decode::ResourceDimension;
     let body = [0x01, 0x12, 0x50, 0x50];
