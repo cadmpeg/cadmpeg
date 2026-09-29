@@ -2870,9 +2870,13 @@ fn build_geometry_ir(
     );
     stamp_feature_baseline(&mut ir)?;
     let mut attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
-    attributes.extend(crate::history::project::custom_property_attributes(
-        &histories,
-    ));
+    let custom_properties = crate::history::project::custom_property_attributes(ctx, &histories)?;
+    ctx.reserve_precharged_vec(
+        &mut attributes,
+        custom_properties.len(),
+        "append SLDPRT custom properties",
+    )?;
+    attributes.extend(custom_properties);
     ir.model.attributes = attributes;
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;
@@ -3921,9 +3925,13 @@ fn build_metadata_ir(
         constraints: sketch_constraints,
     } = crate::resolved_features::sketch_projection::sketches(ctx, scan, &mut annotations)?;
     let mut model_attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
-    model_attributes.extend(crate::history::project::custom_property_attributes(
-        &histories,
-    ));
+    let custom_properties = crate::history::project::custom_property_attributes(ctx, &histories)?;
+    ctx.reserve_precharged_vec(
+        &mut model_attributes,
+        custom_properties.len(),
+        "append SLDPRT custom properties",
+    )?;
+    model_attributes.extend(custom_properties);
     ir.model.attributes = model_attributes;
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;
