@@ -57,6 +57,41 @@ fn copy_projection_feature_id(
         .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))
 }
 
+fn scoped_reference_name<'a>(
+    ctx: &'a DecodeContext<'_>,
+    source_name: &str,
+    offset: Option<u64>,
+    suffix: Option<u32>,
+    operation: &'static str,
+) -> Result<(String, cadmpeg_core::decode::ScopedReservation<'a>), cadmpeg_core::CodecError> {
+    let mut len = source_name.len().checked_add("@reference".len())
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    if let Some(offset) = offset {
+        let digits = offset.checked_ilog10().map_or(1, |digits| digits as usize + 1);
+        len = len.checked_add(1 + digits)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    }
+    if let Some(suffix) = suffix {
+        let digits = suffix.checked_ilog10().map_or(1, |digits| digits as usize + 1);
+        len = len.checked_add(1 + digits)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    }
+    let (mut name, reservation) = ctx.reserve_scoped_string(len, operation)?;
+    name.push_str(source_name);
+    name.push_str("@reference");
+    if let Some(offset) = offset {
+        write!(&mut name, ":{offset}").map_err(|_| {
+            cadmpeg_core::CodecError::malformed("cannot format SLDPRT reference name")
+        })?;
+    }
+    if let Some(suffix) = suffix {
+        write!(&mut name, ":{suffix}").map_err(|_| {
+            cadmpeg_core::CodecError::malformed("cannot format SLDPRT reference name")
+        })?;
+    }
+    Ok((name, reservation))
+}
+
 pub(super) fn bind_circular_profile_by_dimension(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
@@ -448,50 +483,87 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
     features: &[cadmpeg_ir::features::Feature],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "synthesize SLDPRT display relation parameter";
     let mut lane_refs = Vec::new();
     for lane in lanes {
         ctx.reserve_collection_vec(&mut lane_refs, 1, "collect SLDPRT display relation lanes")?;
         lane_refs.push(lane);
     }
     let owned = owned_relation_parameters(ctx, features, parameters, lane_refs.iter().copied())?;
-    let features_by_native_ref = features
-        .iter()
-        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature)))
-        .collect::<HashMap<_, _>>();
-    let mut relation_ids = parameters
-        .iter()
-        .filter_map(|parameter| {
-            parameter
-                .properties
-                .get(RELATION_PARAMETER_ID_PROPERTY)
-                .cloned()
-        })
-        .collect::<HashSet<_>>();
-    let mut parameter_ids = parameters
-        .iter()
-        .map(|parameter| parameter.id.clone())
-        .collect::<HashSet<_>>();
-    let mut names_by_owner = parameters
-        .iter()
-        .filter_map(|parameter| Some((parameter.owner.clone()?, parameter.name.clone())))
-        .collect::<HashSet<_>>();
-    let mut next_ordinals = parameters.iter().fold(
-        HashMap::<cadmpeg_ir::features::FeatureId, u32>::new(),
-        |mut ordinals, parameter| {
-            let Some(owner) = parameter.owner.clone() else {
-                return ordinals;
-            };
-            let next = parameter.ordinal.saturating_add(1);
-            ordinals
-                .entry(owner)
-                .and_modify(|current| *current = (*current).max(next))
-                .or_insert(next);
-            ordinals
-        },
-    );
+    let mut features_by_native_ref = HashMap::new();
+    for feature in features {
+        ctx.charge_work(1, OPERATION)?;
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        if !features_by_native_ref.contains_key(native_ref) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            features_by_native_ref.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        features_by_native_ref.insert(native_ref, feature);
+    }
+    let mut relation_ids = HashSet::new();
+    let mut parameter_ids = HashSet::new();
+    let mut names_by_owner = HashSet::new();
+    let mut next_ordinals = HashMap::<cadmpeg_ir::features::FeatureId, u32>::new();
+    for parameter in parameters.iter() {
+        ctx.charge_work(1, OPERATION)?;
+        if let Some(relation_id) = parameter.properties.get(RELATION_PARAMETER_ID_PROPERTY) {
+            if !relation_ids.contains(relation_id.as_str()) {
+                let id = ctx.format_retained(format_args!("{relation_id}"), OPERATION)?;
+                ctx.charge_collection_items(1, OPERATION)?;
+                relation_ids.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                })?;
+                relation_ids.insert(id);
+            }
+        }
+        if !parameter_ids.contains(&parameter.id) {
+            let id_text = ctx.format_retained(
+                format_args!("{}", parameter.id.as_str()), OPERATION,
+            )?;
+            let id = ParameterId::mint(id_text).map_err(|_| {
+                cadmpeg_core::CodecError::malformed("invalid SLDPRT parameter ID")
+            })?;
+            ctx.charge_collection_items(1, OPERATION)?;
+            parameter_ids.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+            parameter_ids.insert(id);
+        }
+        let Some(owner) = parameter.owner.as_ref() else {
+            continue;
+        };
+        ctx.charge_work(names_by_owner.len() as u64, OPERATION)?;
+        if !names_by_owner.iter().any(|(known_owner, known_name)| {
+            known_owner == owner && known_name == &parameter.name
+        }) {
+            let owner_copy = copy_projection_feature_id(ctx, owner, OPERATION)?;
+            let name_copy = ctx.format_retained(format_args!("{}", parameter.name), OPERATION)?;
+            ctx.charge_collection_items(1, OPERATION)?;
+            names_by_owner.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+            names_by_owner.insert((owner_copy, name_copy));
+        }
+        let next = parameter.ordinal.checked_add(1).unwrap_or(u32::MAX);
+        if let Some(current) = next_ordinals.get_mut(owner) {
+            *current = (*current).max(next);
+        } else {
+            let owner_copy = copy_projection_feature_id(ctx, owner, OPERATION)?;
+            ctx.charge_collection_items(1, OPERATION)?;
+            next_ordinals.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+            next_ordinals.insert(owner_copy, next);
+        }
+    }
 
     for lane in lane_refs {
         for relation in &lane.relation_instances {
+            ctx.charge_work(1, OPERATION)?;
             if relation.parameter_scalar_ref().is_some()
                 || owned.get(&relation.id).is_some_and(Option::is_some)
                 || relation_ids.contains(&relation.id)
@@ -518,59 +590,103 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             else {
                 continue;
             };
-            let owner = feature.id.clone();
-            let ordinal = next_ordinals.entry(owner.clone()).or_insert(0);
-            let current_ordinal = *ordinal;
-            *ordinal = match current_ordinal.checked_add(1) {
+            let owner = &feature.id;
+            let current_ordinal = next_ordinals.get(owner).copied().unwrap_or(0);
+            let next_ordinal = match current_ordinal.checked_add(1) {
                 Some(next) => next,
                 None => continue,
             };
-            let base_name = format!("{source_name}@reference");
-            let mut name = base_name.clone();
-            if names_by_owner.contains(&(owner.clone(), name.clone())) {
-                name = format!("{base_name}:{}", relation.offset);
+            if let Some(ordinal) = next_ordinals.get_mut(owner) {
+                *ordinal = next_ordinal;
+            } else {
+                let owner_copy = copy_projection_feature_id(ctx, owner, OPERATION)?;
+                ctx.charge_collection_items(1, OPERATION)?;
+                next_ordinals.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                })?;
+                next_ordinals.insert(owner_copy, next_ordinal);
+            }
+            let mut candidate = scoped_reference_name(ctx, source_name, None, None, OPERATION)?;
+            ctx.charge_work(names_by_owner.len() as u64, OPERATION)?;
+            if names_by_owner.iter().any(|(known_owner, known_name)| {
+                known_owner == owner && known_name == &candidate.0
+            }) {
+                candidate = scoped_reference_name(
+                    ctx, source_name, Some(relation.offset), None, OPERATION,
+                )?;
                 let mut suffix = 0u32;
-                while names_by_owner.contains(&(owner.clone(), name.clone())) {
-                    suffix = suffix.saturating_add(1);
-                    name = format!("{base_name}:{}:{suffix}", relation.offset);
+                loop {
+                    ctx.charge_work(names_by_owner.len() as u64, OPERATION)?;
+                    if !names_by_owner.iter().any(|(known_owner, known_name)| {
+                        known_owner == owner && known_name == &candidate.0
+                    }) {
+                        break;
+                    }
+                    suffix = suffix.checked_add(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                    })?;
+                    candidate = scoped_reference_name(
+                        ctx, source_name, Some(relation.offset), Some(suffix), OPERATION,
+                    )?;
                 }
             }
             let relation_key = relation
                 .id
                 .rsplit_once('#')
                 .map_or(relation.id.as_str(), |(_, key)| key);
-            let Ok(relation_key) = cadmpeg_ir::ids::IdentityKey::try_new(relation_key) else {
+            let (mut key_text, _key_reservation) =
+                ctx.reserve_scoped_string(relation_key.len(), OPERATION)?;
+            key_text.push_str(relation_key);
+            let Ok(relation_key) = cadmpeg_ir::ids::IdentityKey::try_new(key_text) else {
                 continue;
             };
-            let id = ParameterId::compose(
-                &cadmpeg_ir::identity_namespace!("sldprt", "model", "parameter"),
-                cadmpeg_ir::identity_key!("reference:").then(relation_key),
-            );
-            if !parameter_ids.insert(id.clone()) {
+            let id_text = ctx.format_retained(
+                format_args!("sldprt:model:parameter#reference:{relation_key}"), OPERATION,
+            )?;
+            let Ok(id) = ParameterId::mint(id_text) else {
+                continue;
+            };
+            if parameter_ids.contains(&id) {
                 continue;
             }
+            let id_copy = ParameterId::mint(ctx.format_retained(
+                format_args!("{}", id.as_str()), OPERATION,
+            )?).map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT parameter ID"))?;
+            ctx.charge_collection_items(1, OPERATION)?;
+            parameter_ids.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+            parameter_ids.insert(id_copy);
             let mut properties = BTreeMap::new();
+            ctx.charge_collection_items(1, OPERATION)?;
             properties.insert(
                 cadmpeg_core::nonblank_const!(RELATION_PARAMETER_ID_PROPERTY),
-                relation.id.clone(),
+                ctx.format_retained(format_args!("{}", relation.id), OPERATION)?,
             );
+            ctx.charge_collection_items(1, OPERATION)?;
             properties.insert(
                 cadmpeg_core::nonblank_const!(RELATION_DISPLAY_SCALAR_ID_PROPERTY),
-                scalar.id.clone(),
+                ctx.format_retained(format_args!("{}", scalar.id), OPERATION)?,
             );
+            ctx.charge_collection_items(1, OPERATION)?;
             properties.insert(
                 cadmpeg_core::nonblank_const!(RELATION_PARAMETER_ROLE_PROPERTY),
                 RELATION_PARAMETER_ROLE_REFERENCE.into(),
             );
+            ctx.charge_collection_items(1, OPERATION)?;
             properties.insert(
                 cadmpeg_core::nonblank_literal!("source_name"),
-                source_name.into(),
+                ctx.format_retained(format_args!("{source_name}"), OPERATION)?,
             );
+            let name = candidate.0;
+            let parameter_name = ctx.format_retained(format_args!("{name}"), OPERATION)?;
+            let owner_for_parameter = copy_projection_feature_id(ctx, owner, OPERATION)?;
+            ctx.reserve_collection_vec(parameters, 1, OPERATION)?;
             parameters.push(DesignParameter {
                 id,
-                owner: Some(owner.clone()),
+                owner: Some(owner_for_parameter),
                 ordinal: current_ordinal,
-                name: name.clone(),
+                name: parameter_name,
                 expression,
                 display,
                 value: Some(value),
@@ -579,8 +695,21 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 pmi: None,
                 native_ref: None,
             });
-            names_by_owner.insert((owner, name));
-            relation_ids.insert(relation.id.clone());
+            let owner_for_index = copy_projection_feature_id(ctx, owner, OPERATION)?;
+            let name_for_index = ctx.format_retained(format_args!("{name}"), OPERATION)?;
+            ctx.charge_collection_items(1, OPERATION)?;
+            names_by_owner.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+            names_by_owner.insert((owner_for_index, name_for_index));
+            if !relation_ids.contains(relation.id.as_str()) {
+                let relation_id = ctx.format_retained(format_args!("{}", relation.id), OPERATION)?;
+                ctx.charge_collection_items(1, OPERATION)?;
+                relation_ids.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                })?;
+                relation_ids.insert(relation_id);
+            }
         }
     }
     Ok(())
