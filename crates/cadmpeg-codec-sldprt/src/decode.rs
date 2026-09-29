@@ -935,9 +935,16 @@ fn append_design_losses(
             )))?;
     }
 
-    let incomplete_history_references = native.as_ref().map_or(0, |native| {
-        crate::history::project::incomplete_history_reference_features(&native.feature_histories)
-    });
+    let incomplete_history_references = native
+        .as_ref()
+        .map(|native| {
+            crate::history::project::incomplete_history_reference_features(
+                ctx,
+                &native.feature_histories,
+            )
+        })
+        .transpose()?
+        .unwrap_or(0);
     if incomplete_history_references > 0 {
         push_report_loss(ctx, report, SldprtLossCode::HistoryIncompleteReferences.note(format!(
             "{incomplete_history_references} feature history record(s) contain duplicate identities or unresolved parent, dependency, dimension, or child references."
