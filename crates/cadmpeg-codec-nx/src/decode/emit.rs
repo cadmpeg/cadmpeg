@@ -60,29 +60,42 @@ struct PendingFace {
     tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
 }
 
-#[allow(clippy::too_many_arguments)]
+
+pub(super) struct TopologyStream<'inputs> {
+    pub(super) stream_index: usize,
+    pub(super) graph: &'inputs Graph,
+    pub(super) points: &'inputs BTreeMap<u32, PointId>,
+    pub(super) surfaces: &'inputs BTreeMap<u32, SurfaceId>,
+    pub(super) curves: &'inputs BTreeMap<u32, CurveId>,
+    pub(super) pcurves: &'inputs BTreeMap<u32, PcurveId>,
+    pub(super) pcurve_supports: &'inputs BTreeMap<u32, SurfaceId>,
+    pub(super) trim_ranges: &'inputs BTreeMap<u32, [f64; 2]>,
+    pub(super) source_stream: &'inputs cadmpeg_ir::annotations::StreamHandle,
+    pub(super) intersection_starts: IntersectionEntityStarts,
+    pub(super) procedural_start: usize,
+}
+
+
+pub(super) struct TopologyBudgets<'inputs> {
+    pub(super) exact_transfer_budget: &'inputs TransferBudget<'inputs>,
+    pub(super) completion_transfer_budget: &'inputs TransferBudget<'inputs>,
+    pub(super) adaptive_geometry_budget: &'inputs GeometryWorkBudget<'inputs>,
+    pub(super) completion_geometry_budget: &'inputs GeometryWorkBudget<'inputs>,
+}
+
 pub(super) fn emit_topology(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    stream_index: usize,
-    graph: &Graph,
-    points: &BTreeMap<u32, PointId>,
-    surfaces: &BTreeMap<u32, SurfaceId>,
-    curves: &BTreeMap<u32, CurveId>,
-    pcurves: &BTreeMap<u32, PcurveId>,
-    pcurve_supports: &BTreeMap<u32, SurfaceId>,
-    trim_ranges: &BTreeMap<u32, [f64; 2]>,
-    source_stream: &cadmpeg_ir::annotations::StreamHandle,
-    annotations: &mut AnnotationBuilder,
-    intersection_index: &mut IntersectionIncidenceIndex,
-    intersection_starts: IntersectionEntityStarts,
-    procedural_start: usize,
-    exact_transfer_budget: &TransferBudget<'_>,
-    completion_transfer_budget: &TransferBudget<'_>,
-    adaptive_geometry_budget: &GeometryWorkBudget<'_>,
-    completion_geometry_budget: &GeometryWorkBudget<'_>,
-    topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+ctx: &DecodeContext<'_>,
+ir: &mut CadIr,
+topology_stream: TopologyStream<'_>,
+annotations: &mut AnnotationBuilder,
+intersection_index: &mut IntersectionIncidenceIndex,
+topology_budgets: TopologyBudgets<'_>,
+topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<EndpointWitnesses, CodecError> {
+    let TopologyBudgets { exact_transfer_budget, completion_transfer_budget, adaptive_geometry_budget, completion_geometry_budget } = topology_budgets;
+
+    let TopologyStream { stream_index, graph, points, surfaces, curves, pcurves, pcurve_supports, trim_ranges, source_stream, intersection_starts, procedural_start } = topology_stream;
+
     let scope = IdScope::stream_charged(ctx, stream_index)?;
     let mut valid_face_xmts = BTreeSet::new();
     for shell in graph.body_shape_shells() {
@@ -575,19 +588,13 @@ pub(super) fn emit_topology(
                 .map(|index| (curve, index))
         }) {
             synthesize_closed_edge_vertex_with_curve_index_and_budget(
-                ctx,
-                ir,
-                annotations,
-                &scope,
-                node,
-                curve,
-                curve_index,
-                param_range,
-                source_stream,
-                decoded_tolerance(fields.tolerance),
-                &mut curve_point_cache,
-                adaptive_geometry_budget,
-            )?
+ctx,
+ir,
+annotations,
+ClosedEdge { scope: &scope, edge: node, curve, curve_index, range: param_range, source_stream, tolerance: decoded_tolerance(fields.tolerance) },
+&mut curve_point_cache,
+adaptive_geometry_budget,
+)?
         } else {
             None
         };
@@ -645,19 +652,11 @@ pub(super) fn emit_topology(
                 .map(|((curve_index, start), end)| (curve_index, start, end))
             {
                 orient_edge_range_for_geometry_with_budget(
-                    ctx,
-                    &ir.model.curves[curve_index].geometry,
-                    carrier,
-                    range,
-                    start_position,
-                    start_tolerance,
-                    end_position,
-                    end_tolerance,
-                    decoded_tolerance(fields.tolerance).map(cadmpeg_ir::scalar::PositiveReal::get),
-                    procedural_curve_ids.contains(carrier),
-                    &mut curve_point_cache,
-                    adaptive_geometry_budget,
-                )?
+ctx,
+EdgeGeometryRange { geometry: &ir.model.curves[curve_index].geometry, curve: carrier, range, start_position, start_tolerance, end_position, end_tolerance, edge_tolerance: decoded_tolerance(fields.tolerance).map(cadmpeg_ir::scalar::PositiveReal::get), procedural_curve: procedural_curve_ids.contains(carrier) },
+&mut curve_point_cache,
+adaptive_geometry_budget,
+)?
             } else {
                 None
             };
@@ -1299,18 +1298,24 @@ pub(super) fn emit_topology(
     Ok(endpoint_witnesses)
 }
 
-#[allow(clippy::too_many_arguments)]
+
+pub(super) struct UnresolvedTopologyStream<'inputs> {
+    pub(super) stream_index: usize,
+    pub(super) graph: &'inputs Graph,
+    pub(super) surfaces: &'inputs mut BTreeMap<u32, SurfaceId>,
+    pub(super) curves: &'inputs mut BTreeMap<u32, CurveId>,
+    pub(super) pcurves: &'inputs BTreeMap<u32, PcurveId>,
+    pub(super) source_stream: &'inputs cadmpeg_ir::annotations::StreamHandle,
+}
+
 pub(super) fn retain_unresolved_topology_carriers(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    stream_index: usize,
-    graph: &Graph,
-    surfaces: &mut BTreeMap<u32, SurfaceId>,
-    curves: &mut BTreeMap<u32, CurveId>,
-    pcurves: &BTreeMap<u32, PcurveId>,
-    source_stream: &cadmpeg_ir::annotations::StreamHandle,
-    annotations: &mut AnnotationBuilder,
+ctx: &DecodeContext<'_>,
+ir: &mut CadIr,
+unresolved_topology_stream: UnresolvedTopologyStream<'_>,
+annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
+    let UnresolvedTopologyStream { stream_index, graph, surfaces, curves, pcurves, source_stream } = unresolved_topology_stream;
+
     let scope = IdScope::stream_charged(ctx, stream_index)?;
     let unknown: UnknownId = IdScope::container().id_charged(
         ctx,
@@ -1446,21 +1451,27 @@ pub(crate) fn decoded_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::Positi
     cadmpeg_ir::scalar::PositiveReal::new(value * 1000.0)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-    scope: &IdScope,
-    edge: &Node,
-    curve: &CurveId,
+
+struct ClosedEdge<'inputs> {
+    scope: &'inputs IdScope,
+    edge: &'inputs Node,
+    curve: &'inputs CurveId,
     curve_index: usize,
     range: Option<[f64; 2]>,
-    source_stream: &cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &'inputs cadmpeg_ir::annotations::StreamHandle,
     tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
-    curve_point_cache: &mut CurvePointCache,
-    geometry_budget: &GeometryWorkBudget<'_>,
+}
+
+fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
+ctx: &DecodeContext<'_>,
+ir: &mut CadIr,
+annotations: &mut AnnotationBuilder,
+closed_edge: ClosedEdge<'_>,
+curve_point_cache: &mut CurvePointCache,
+geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<VertexId>, CodecError> {
+    let ClosedEdge { scope, edge, curve, curve_index, range, source_stream, tolerance } = closed_edge;
+
     let parameter = {
         let geometry = &ir.model.curves[curve_index].geometry;
         range.map_or_else(
@@ -1615,19 +1626,11 @@ fn orient_edge_range_with_budget(
         .any(|procedural| ir.model.procedural_curve_owner(&procedural.id) == Some(curve));
     let mut curve_point_cache = CurvePointCache::default();
     orient_edge_range_for_geometry_with_budget(
-        ctx,
-        geometry,
-        curve,
-        range,
-        start_position,
-        start_tolerance,
-        end_position,
-        end_tolerance,
-        edge_tolerance,
-        procedural_curve,
-        &mut curve_point_cache,
-        geometry_budget,
-    )
+ctx,
+EdgeGeometryRange { geometry, curve, range, start_position, start_tolerance, end_position, end_tolerance, edge_tolerance, procedural_curve },
+&mut curve_point_cache,
+geometry_budget,
+)
     .expect("evaluator allocation succeeds")
 }
 
@@ -1675,11 +1678,10 @@ impl CurvePointCache {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn orient_edge_range_for_geometry_with_budget(
-    ctx: &DecodeContext<'_>,
-    geometry: &CurveGeometry,
-    curve: &CurveId,
+
+struct EdgeGeometryRange<'inputs> {
+    geometry: &'inputs CurveGeometry,
+    curve: &'inputs CurveId,
     range: [f64; 2],
     start_position: Point3,
     start_tolerance: Option<f64>,
@@ -1687,9 +1689,16 @@ fn orient_edge_range_for_geometry_with_budget(
     end_tolerance: Option<f64>,
     edge_tolerance: Option<f64>,
     procedural_curve: bool,
-    curve_point_cache: &mut CurvePointCache,
-    geometry_budget: &GeometryWorkBudget<'_>,
+}
+
+fn orient_edge_range_for_geometry_with_budget(
+ctx: &DecodeContext<'_>,
+edge_geometry_range: EdgeGeometryRange<'_>,
+curve_point_cache: &mut CurvePointCache,
+geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<([f64; 2], bool)>, CodecError> {
+    let EdgeGeometryRange { geometry, curve, range, start_position, start_tolerance, end_position, end_tolerance, edge_tolerance, procedural_curve } = edge_geometry_range;
+
     let range = if range[0] <= range[1] {
         range
     } else {

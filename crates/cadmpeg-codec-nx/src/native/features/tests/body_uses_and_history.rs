@@ -325,14 +325,8 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
         };
     let statuses = crate::test_support::with_decode_context(|ctx| {
         segment_body_lineage_statuses(
-            ctx,
-            &labels,
-            &references,
-            &[],
-            &[],
-            &booleans,
-            &[],
-            &[
+ctx,
+crate::native::segments::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &booleans, operands: &[], bindings: &[
                 binding(
                     "binding#0",
                     0,
@@ -341,9 +335,8 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
                     11,
                 ),
                 binding("binding#1", 1, crate::parasolid::StreamKind::Plain, 20, 21),
-            ],
-            &[],
-        )
+            ], inputs: &[] },
+)
     })
     .expect("admitted segment lineage statuses")
     .expect("required invariant");
@@ -972,16 +965,9 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
 
     let statuses = crate::test_support::with_decode_context(|ctx| {
         segment_body_lineage_statuses(
-            ctx,
-            &labels,
-            &references,
-            &[],
-            &[],
-            &booleans,
-            &[],
-            &bindings,
-            &[],
-        )
+ctx,
+crate::native::segments::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &booleans, operands: &[], bindings: &bindings, inputs: &[] },
+)
     })
     .expect("admitted segment lineage statuses")
     .expect("required invariant");

@@ -831,25 +831,17 @@ pub(super) fn try_decode_geometry(
                             return Ok(None);
                         };
                         let mut support_uv = validate_serialized_support_uv_with_index(
-                            ctx,
-                            &model_index,
-                            &surfaces_by_xmt,
-                            [Some(charted.primary_support), charted.secondary_support],
-                            &charted.samples.points_charged(ctx)?,
-                            charted.fit_tolerance.get(),
-                            &charted.support_uv,
-                            &serialized_support_uv_geometry_budget,
-                        )?;
+ctx,
+&model_index,
+crate::decode::support_uv::SerializedSupportUvFit { surfaces_by_xmt: &surfaces_by_xmt, supports: [Some(charted.primary_support), charted.secondary_support], points: &charted.samples.points_charged(ctx)?, fit_tolerance: charted.fit_tolerance.get(), lanes: &charted.support_uv },
+&serialized_support_uv_geometry_budget,
+)?;
                         if let Some(ext_support_uv) = assign_ext11_support_uv_with_index(
-                            ctx,
-                            &model_index,
-                            &surfaces_by_xmt,
-                            [Some(charted.primary_support), charted.secondary_support],
-                            &charted.samples.points_charged(ctx)?,
-                            charted.fit_tolerance.get(),
-                            &charted.ext_support_uv,
-                            &serialized_support_uv_geometry_budget,
-                        )? {
+ctx,
+&model_index,
+crate::decode::support_uv::SerializedSupportUvFit { surfaces_by_xmt: &surfaces_by_xmt, supports: [Some(charted.primary_support), charted.secondary_support], points: &charted.samples.points_charged(ctx)?, fit_tolerance: charted.fit_tolerance.get(), lanes: &charted.ext_support_uv },
+&serialized_support_uv_geometry_budget,
+)? {
                             for side in 0..2 {
                                 if support_uv[side].is_none() {
                                     support_uv[side] = ext_support_uv[side]
@@ -1335,16 +1327,11 @@ pub(super) fn try_decode_geometry(
             intersection_index.reindex_pcurves_after_prune(ctx, &ir)?;
         }
         retain_unresolved_topology_carriers(
-            ctx,
-            &mut ir,
-            si,
-            graph,
-            &mut surfaces_by_xmt,
-            &mut curves_by_xmt,
-            &pcurves_by_xmt,
-            &source_stream,
-            &mut annotations,
-        )?;
+ctx,
+&mut ir,
+crate::decode::emit::UnresolvedTopologyStream { stream_index: si, graph, surfaces: &mut surfaces_by_xmt, curves: &mut curves_by_xmt, pcurves: &pcurves_by_xmt, source_stream: &source_stream },
+&mut annotations,
+)?;
         let intersection_starts = IntersectionEntityStarts {
             loops: ir.model.loops.len(),
             faces: ir.model.faces.len(),
@@ -1356,27 +1343,14 @@ pub(super) fn try_decode_geometry(
         adaptive_geometry_budget.clear_blend_frame_cache();
         completion_geometry_budget.clear_blend_frame_cache();
         let initial_endpoint_witnesses = emit_topology(
-            ctx,
-            &mut ir,
-            si,
-            graph,
-            &points_by_xmt,
-            &surfaces_by_xmt,
-            &curves_by_xmt,
-            &pcurves_by_xmt,
-            &pcurve_supports_by_xmt,
-            &trim_ranges,
-            &source_stream,
-            &mut annotations,
-            &mut intersection_index,
-            intersection_starts,
-            procedural_start,
-            &exact_transfer_budget,
-            &transfer_budget,
-            &adaptive_geometry_budget,
-            &completion_geometry_budget,
-            &mut topology_losses,
-        )?;
+ctx,
+&mut ir,
+crate::decode::emit::TopologyStream { stream_index: si, graph, points: &points_by_xmt, surfaces: &surfaces_by_xmt, curves: &curves_by_xmt, pcurves: &pcurves_by_xmt, pcurve_supports: &pcurve_supports_by_xmt, trim_ranges: &trim_ranges, source_stream: &source_stream, intersection_starts, procedural_start },
+&mut annotations,
+&mut intersection_index,
+crate::decode::emit::TopologyBudgets { exact_transfer_budget: &exact_transfer_budget, completion_transfer_budget: &transfer_budget, adaptive_geometry_budget: &adaptive_geometry_budget, completion_geometry_budget: &completion_geometry_budget },
+&mut topology_losses,
+)?;
         // Topology completion adds incidence and pcurve carriers, but does
         // not change surface or model-curve geometry. Keep its successful
         // blend-geometry certificates for support validation and attachment.
@@ -1445,17 +1419,12 @@ pub(super) fn try_decode_geometry(
             &validated_endpoint_witnesses,
         )?;
         attach_completed_intersection_pcurves_for_stream_with_budget(
-            ctx,
-            &mut ir,
-            graph,
-            &IdScope::stream_charged(ctx, si)?,
-            intersection_starts.coedges,
-            intersection_starts.procedural_curves,
-            source_stream.clone(),
-            &mut annotations,
-            &validated_endpoint_witnesses,
-            &completion_geometry_budget,
-        )?;
+ctx,
+&mut ir,
+crate::decode::support_uv::IntersectionStream { graph, scope: &IdScope::stream_charged(ctx, si)?, coedge_start: intersection_starts.coedges, procedural_start: intersection_starts.procedural_curves, source_stream: source_stream.clone(), validated_endpoint_witnesses: &validated_endpoint_witnesses },
+&mut annotations,
+&completion_geometry_budget,
+)?;
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
         {
@@ -1594,15 +1563,23 @@ pub(super) fn try_decode_geometry(
     let mut annotations = annotations.build();
     retain_live_annotations(ctx, &ir, &unknowns, &mut annotations)?;
     let completion_budget = CompletionBudgetStatus {
-        exact_boundary_exhausted: transfer_budget_exhausted(&exact_transfer_budget),
-        transfer_exhausted: transfer_budget_exhausted(&transfer_budget),
-        support_uv_validation_exhausted: support_uv_budget_exhausted(&support_uv_validation_budget),
-        support_uv_exhausted: support_uv_budget_exhausted(&support_budget),
-        coupled_support_uv_exhausted: support_uv_budget_exhausted(&coupled_support_budget),
-        completion_geometry_exhausted: completion_geometry_budget.exhausted(),
-        serialized_support_uv_geometry_exhausted: serialized_support_uv_geometry_budget.exhausted(),
-        support_uv_geometry_exhausted: support_uv_geometry_budget.exhausted(),
-        coupled_support_uv_geometry_exhausted: coupled_support_uv_geometry_budget.exhausted(),
+        pcurves: crate::decode::report::PcurveCompletionStatus {
+            exact_boundary_exhausted: transfer_budget_exhausted(&exact_transfer_budget),
+            transfer_exhausted: transfer_budget_exhausted(&transfer_budget),
+            geometry_exhausted: completion_geometry_budget.exhausted(),
+        },
+        serialized: crate::decode::report::SupportUvPhaseStatus {
+            samples_exhausted: support_uv_budget_exhausted(&support_uv_validation_budget),
+            geometry_exhausted: serialized_support_uv_geometry_budget.exhausted(),
+        },
+        direct: crate::decode::report::SupportUvPhaseStatus {
+            samples_exhausted: support_uv_budget_exhausted(&support_budget),
+            geometry_exhausted: support_uv_geometry_budget.exhausted(),
+        },
+        coupled: crate::decode::report::SupportUvPhaseStatus {
+            samples_exhausted: support_uv_budget_exhausted(&coupled_support_budget),
+            geometry_exhausted: coupled_support_uv_geometry_budget.exhausted(),
+        },
         support_uv_lane_geometry_exhausted,
         transfer_limit,
         support_uv_limit,
@@ -1610,20 +1587,12 @@ pub(super) fn try_decode_geometry(
     let adaptive_geometry_exhausted = adaptive_geometry_budget.exhausted();
     ctx.charge_work(0, "nx geometry work completion")?;
     let mut report = build_geometry_report(
-        ctx,
-        scan,
-        parsed.unmatched_tombstone_counts(),
-        &ir,
-        &counts,
-        !ir.model.faces.is_empty(),
-        ir.model.bodies.len() > 1 && !active_body_selection,
-        ir.model.tessellations.len(),
-        &model,
-        completion_budget,
-        adaptive_geometry_exhausted,
-        dialect_losses,
-        notes,
-    )?;
+ctx,
+scan,
+crate::decode::report::GeometryReportFacts { unmatched_delta_tombstone_counts: parsed.unmatched_tombstone_counts(), counts: &counts, has_topology: !ir.model.faces.is_empty(), has_unresolved_sub_bodies: ir.model.bodies.len() > 1 && !active_body_selection, tessellation_count: ir.model.tessellations.len(), completion_budget, adaptive_geometry_exhausted, dialect_losses, notes },
+&ir,
+&model,
+)?;
     for losses in [carrier_refusals, topology_losses, native_losses] {
         ctx.reserve_vec(
             &mut report.losses,

@@ -892,17 +892,12 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
 
     crate::test_support::with_decode_context(|ctx| {
         crate::decode::support_uv::attach_completed_intersection_pcurves_for_stream_with_budget(
-            ctx,
-            &mut ir,
-            &graph,
-            &crate::decode::ids::IdScope::stream(0),
-            target_index + 1,
-            0,
-            source_stream.clone(),
-            &mut annotations,
-            &std::collections::BTreeMap::new(),
-            &geometry_budget,
-        )
+ctx,
+&mut ir,
+crate::decode::support_uv::IntersectionStream { graph: &graph, scope: &crate::decode::ids::IdScope::stream(0), coedge_start: target_index + 1, procedural_start: 0, source_stream: source_stream.clone(), validated_endpoint_witnesses: &std::collections::BTreeMap::new() },
+&mut annotations,
+&geometry_budget,
+)
     })
     .expect("valid exactness fields");
     assert!(!ir

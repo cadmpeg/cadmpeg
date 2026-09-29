@@ -1767,17 +1767,23 @@ pub(super) fn parameter_derivative_step(parameter: f64, domain: Option<[f64; 2]>
 
 // Keep the parameter-space and finite-difference policy explicit while passing
 // the caller-owned budget through every surface evaluation.
-#[allow(clippy::too_many_arguments)]
-fn model_surface_derivative(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surface: &SurfaceId,
+
+struct SurfaceDerivative {
     parameters: Point2,
     step: f64,
     along_u: bool,
     domain: Option<([f64; 2], [f64; 2])>,
     periods: [Option<f64>; 2],
-    geometry_budget: &GeometryWorkBudget<'_>,
+}
+
+fn model_surface_derivative(
+index: &cadmpeg_ir::index::ModelIndex<'_>,
+surface: &SurfaceId,
+surface_derivative: SurfaceDerivative,
+geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
+    let SurfaceDerivative { parameters, step, along_u, domain, periods } = surface_derivative;
+
     if let Some(partials) = finite_or_refusal(model_surface_partials_by_id_with_budget(
         index,
         surface,
@@ -1864,28 +1870,20 @@ fn model_surface_point_and_derivatives(
     let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
     let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
     let Some(du) = model_surface_derivative(
-        index,
-        surface,
-        parameters,
-        u_step,
-        true,
-        domain,
-        [None, None],
-        geometry_budget,
-    )?
+index,
+surface,
+SurfaceDerivative { parameters, step: u_step, along_u: true, domain, periods: [None, None] },
+geometry_budget,
+)?
     else {
         return Ok(None);
     };
     let Some(dv) = model_surface_derivative(
-        index,
-        surface,
-        parameters,
-        v_step,
-        false,
-        domain,
-        [None, None],
-        geometry_budget,
-    )?
+index,
+surface,
+SurfaceDerivative { parameters, step: v_step, along_u: false, domain, periods: [None, None] },
+geometry_budget,
+)?
     else {
         return Ok(None);
     };
@@ -2063,15 +2061,10 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         return Ok(None);
     };
     let Some(mut current) = correct_intersection_parameters(
-        index,
-        surfaces,
-        seed,
-        seed_tangent,
-        space,
-        fit_tolerance,
-        1.0,
-        geometry_budget,
-    )?
+index,
+IntersectionCorrection { surfaces, predictor: seed, tangent: seed_tangent, space, fit_tolerance, scale: 1.0 },
+geometry_budget,
+)?
     else {
         return Ok(None);
     };
@@ -2153,15 +2146,10 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
             return Ok(None);
         }
         let Some(corrected) = correct_intersection_parameters(
-            index,
-            surfaces,
-            predictor,
-            tangent,
-            space,
-            fit_tolerance,
-            scale,
-            geometry_budget,
-        )?
+index,
+IntersectionCorrection { surfaces, predictor, tangent, space, fit_tolerance, scale },
+geometry_budget,
+)?
         else {
             return Ok(None);
         };
@@ -2271,17 +2259,23 @@ pub(super) fn surface_parameter_periods_with_index(
 
 // Newton correction carries its chart, scale, and shared work slice together
 // so no nested solve can silently create an independent budget.
-#[allow(clippy::too_many_arguments)]
-fn correct_intersection_parameters(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surfaces: [&SurfaceId; 2],
+
+struct IntersectionCorrection<'inputs> {
+    surfaces: [&'inputs SurfaceId; 2],
     predictor: [f64; 4],
     tangent: [f64; 4],
     space: IntersectionParameterSpace,
     fit_tolerance: f64,
     scale: f64,
-    geometry_budget: &GeometryWorkBudget<'_>,
+}
+
+fn correct_intersection_parameters(
+index: &cadmpeg_ir::index::ModelIndex<'_>,
+intersection_correction: IntersectionCorrection<'_>,
+geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<[f64; 4]>, cadmpeg_core::decode::ResourceLimit> {
+    let IntersectionCorrection { surfaces, predictor, tangent, space, fit_tolerance, scale } = intersection_correction;
+
     let mut corrected = predictor;
     clamp_intersection_parameters(&mut corrected, space);
     for _ in 0..32 {
@@ -2426,28 +2420,20 @@ fn intersection_parameter_jacobian(
         let v_step =
             parameter_derivative_step(pairs[side].v, space.domains[side].map(|value| value.1));
         let Some(du) = model_surface_derivative(
-            index,
-            surfaces[side],
-            pairs[side],
-            u_step,
-            true,
-            space.domains[side],
-            space.periods[side],
-            geometry_budget,
-        )?
+index,
+surfaces[side],
+SurfaceDerivative { parameters: pairs[side], step: u_step, along_u: true, domain: space.domains[side], periods: space.periods[side] },
+geometry_budget,
+)?
         else {
             return Ok(None);
         };
         let Some(dv) = model_surface_derivative(
-            index,
-            surfaces[side],
-            pairs[side],
-            v_step,
-            false,
-            space.domains[side],
-            space.periods[side],
-            geometry_budget,
-        )?
+index,
+surfaces[side],
+SurfaceDerivative { parameters: pairs[side], step: v_step, along_u: false, domain: space.domains[side], periods: space.periods[side] },
+geometry_budget,
+)?
         else {
             return Ok(None);
         };

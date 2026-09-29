@@ -611,16 +611,9 @@ pub(crate) fn extract_segment_lineage(
     )?;
     let booleans = feature_boolean_operations(ctx, container)?;
     let statuses = segment_body_lineage_statuses(
-        ctx,
-        &labels,
-        &references,
-        &body_data_block_uses,
-        &blocks,
-        &booleans,
-        &operands,
-        &bindings,
-        &inputs,
-    )?
+ctx,
+crate::native::segments::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &body_data_block_uses, data_blocks: &blocks, booleans: &booleans, operands: &operands, bindings: &bindings, inputs: &inputs },
+)?
     .unwrap_or_default();
     Ok(SegmentLineage {
         bindings,
