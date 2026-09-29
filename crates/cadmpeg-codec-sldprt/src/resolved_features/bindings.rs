@@ -1196,7 +1196,7 @@ pub(crate) fn finalize_lane_bindings(
     }
     let intervals = feature_intervals(ctx, histories, lane)?;
     lane.relation_bindings =
-        relation_bindings_scoped(&lane.id, &lane.classes, &lane.scalars, &intervals);
+        relation_bindings_scoped(ctx, &lane.id, &lane.classes, &lane.scalars, &intervals)?;
     lane.relation_instances = relation_instances(ctx, histories, lane)?;
     lane.body_selections = compact_body_selections(histories, lane);
     lane.edge_selections = compact_edge_selections(histories, lane);

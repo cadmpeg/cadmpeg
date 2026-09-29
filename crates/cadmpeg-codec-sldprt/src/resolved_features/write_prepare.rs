@@ -4,7 +4,7 @@ use super::bindings::bind_scalar_operands;
 use super::hashes::{constraint_hash, lane_hash, sketch_hash};
 use super::markers::{
     admit_sketch_input_entities, marker_spatial_coordinate_offset, reference_cells,
-    relation_bindings, spatial_relation_marker_coordinates, spatial_sketches,
+    relation_bindings_charged, spatial_relation_marker_coordinates, spatial_sketches,
     spatial_vertex_offsets,
 };
 use super::names::{class_declarations, object_names};
@@ -1461,7 +1461,7 @@ fn source_less_lanes(
         lane.classes = class_declarations(&ctx, &lane.native_payload, &lane.id)?;
         lane.names = object_names(&ctx, &lane.native_payload, &lane.id)?;
         lane.scalars = named_scalars(&lane.native_payload, &lane.id, &lane.names);
-        lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars);
+        lane.relation_bindings = relation_bindings_charged(&ctx, &lane.id, &lane.classes, &lane.scalars)?;
         lane.references = reference_cells(&lane.scalars, &lane.classes);
         lane.sketch_entities = admit_sketch_input_entities(&ctx, &lane.native_payload, &lane.id)?;
     }

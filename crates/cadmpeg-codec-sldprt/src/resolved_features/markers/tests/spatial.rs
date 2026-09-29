@@ -26,7 +26,6 @@ use crate::resolved_features::markers::marker_object_index;
 use crate::resolved_features::markers::marker_spatial_coordinates;
 use crate::resolved_features::markers::reference_cells;
 use crate::resolved_features::markers::reference_cells_charged;
-use crate::resolved_features::markers::relation_bindings;
 use crate::resolved_features::markers::relation_bindings_charged;
 use crate::resolved_features::markers::relation_bindings_scoped;
 use crate::resolved_features::markers::sketch_input_entities;
@@ -849,21 +848,21 @@ fn relation_binding_requires_family_operand_signature() {
     };
 
     assert_eq!(
-        relation_bindings(
+        relation_bindings_charged(&cadmpeg_test_support::service_decode_context(),
             "lane",
             std::slice::from_ref(&class),
             &[scalar(FeatureInputOperandKind::E1)],
-        )
+        ).unwrap()
         .len(),
         1
     );
-    assert!(relation_bindings(
+    assert!(relation_bindings_charged(&cadmpeg_test_support::service_decode_context(),
         "lane",
         &[class],
         &[scalar(FeatureInputOperandKind::Native(
             NativeOperandTag::TAG_8DDA
         ))],
-    )
+    ).unwrap()
     .is_empty());
 }
 
@@ -938,11 +937,11 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         operands: vec![operand(0), operand(1)],
     };
 
-    assert!(relation_bindings(
+    assert!(relation_bindings_charged(&cadmpeg_test_support::service_decode_context(),
         "lane",
         &[class(10, "sgPntPntDist"), class(20, "sgPntPntVertDist")],
         &[scalar],
-    )
+    ).unwrap()
     .is_empty());
 }
 
@@ -976,12 +975,12 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         operands: vec![operand(0), operand(1)],
     };
 
-    assert!(relation_bindings_scoped(
+    assert!(relation_bindings_scoped(&cadmpeg_test_support::service_decode_context(),
         "lane",
         &[class],
         &[scalar],
         &[(0, Some(100), "first".into()), (100, None, "second".into())],
-    )
+    ).unwrap()
     .is_empty());
 }
 

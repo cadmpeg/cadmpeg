@@ -1305,19 +1305,20 @@ fn resolved_feature_payload(
         &lane.id,
         &lane.names,
     );
-    expected_lane.relation_bindings = crate::resolved_features::markers::relation_bindings(
-        &lane.id,
-        &lane.classes,
-        &expected_lane.scalars,
-    );
-    expected_lane.references = crate::resolved_features::markers::reference_cells(
-        &expected_lane.scalars,
-        &expected_lane.classes,
-    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &lane.native_payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
+    expected_lane.relation_bindings = crate::resolved_features::markers::relation_bindings_charged(
+        &ctx,
+        &lane.id,
+        &lane.classes,
+        &expected_lane.scalars,
+    )?;
+    expected_lane.references = crate::resolved_features::markers::reference_cells(
+        &expected_lane.scalars,
+        &expected_lane.classes,
+    );
     crate::resolved_features::bindings::bind_scalar_operands(
         &ctx,
         histories,
