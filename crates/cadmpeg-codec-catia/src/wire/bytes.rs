@@ -19,7 +19,8 @@ pub(crate) fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<FiniteReal>> {
         return None;
     }
     let mut view = View::over_retained(bytes);
-    let mut values = Vec::with_capacity(bytes.len() / 8);
+    let mut values = Vec::new();
+    values.try_reserve_exact(bytes.len() / 8).ok()?;
     while !view.is_empty() {
         values.push(FiniteReal::new(view.f64_le()?)?);
     }
@@ -39,7 +40,7 @@ pub(crate) fn finite_f64_lane_charged(
     let retained = cadmpeg_core::decode::u64_from_index(bytes.len());
     ctx.charge_retained(retained, operation)?;
     let mut values = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut values, bytes.len() / 8, operation)?;
+    ctx.reserve_vec(&mut values, bytes.len() / 8, operation)?;
     let mut view = View::over_retained(bytes);
     while !view.is_empty() {
         let Some(value) = view.f64_le().and_then(FiniteReal::new) else {

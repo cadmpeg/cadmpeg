@@ -243,11 +243,7 @@ pub(in crate::families) fn copy_rolling_ball_definition(
             "B5 rolling-ball carrier requires a jet definition",
         ));
     };
-    let stations = crate::resource::copy_retained_slice(
-        ctx,
-        jet.stations(),
-        "catia_b5_rolling_ball_jet_stations",
-    )?;
+    let stations = ctx.copy_retained_slice(jet.stations(), "catia_b5_rolling_ball_jet_stations")?;
     Ok(ProceduralSurfaceDefinition::RollingBallJet(
         cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(jet.degree(), stations)
             .map_err(CodecError::malformed)?,
@@ -354,18 +350,10 @@ fn profile_nurbs(
             ctx,
             NurbsCurve::from_lanes(
                 1,
-                crate::resource::collect_vec(
-                    ctx,
-                    [interval[0], interval[0], interval[1], interval[1]],
-                    "catia_b5_revolution_line_profile_knots",
-                )?,
-                crate::resource::collect_vec(
-                    ctx,
-                    interval.into_iter().map(|parameter| {
+                ctx.collect_vec([interval[0], interval[0], interval[1], interval[1]], "catia_b5_revolution_line_profile_knots")?,
+                ctx.collect_vec(interval.into_iter().map(|parameter| {
                         point3(add(coordinates(*point), scale(direction.get(), parameter)))
-                    }),
-                    "catia_b5_revolution_line_profile_points",
-                )?,
+                    }), "catia_b5_revolution_line_profile_points")?,
                 None,
                 false,
             ),
@@ -421,21 +409,11 @@ pub(super) fn rational_arc(
         return Ok(None);
     };
     let mut control_points = Vec::new();
-    crate::resource::reserve_vec(
-        ctx,
-        &mut control_points,
-        control_count,
-        "catia_b5_revolution_arc_points",
-    )?;
+    ctx.reserve_vec(&mut control_points, control_count, "catia_b5_revolution_arc_points")?;
     let mut weights = Vec::new();
-    crate::resource::reserve_vec(
-        ctx,
-        &mut weights,
-        control_count,
-        "catia_b5_revolution_arc_weights",
-    )?;
+    ctx.reserve_vec(&mut weights, control_count, "catia_b5_revolution_arc_weights")?;
     let mut knots = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut knots, knot_count, "catia_b5_revolution_arc_knots")?;
+    ctx.reserve_vec(&mut knots, knot_count, "catia_b5_revolution_arc_knots")?;
     for span in 0..span_count {
         let fraction0 = span as f64 / span_count as f64;
         let fraction1 = (span + 1) as f64 / span_count as f64;
@@ -516,33 +494,21 @@ pub(super) fn revolve_nurbs(
             return Some(Err(error));
         }
         let mut angles = Vec::new();
-        if let Err(error) = crate::resource::reserve_admitted_vec(
-            &mut angles,
-            angular_count,
-            "catia b5 revolution angles",
-        ) {
+        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut angles, angular_count, "catia b5 revolution angles") {
             return Some(Err(error));
         }
         if let Err(error) = admit_items(angular_count, "catia b5 revolution angular weights") {
             return Some(Err(error));
         }
         let mut angular_weights = Vec::new();
-        if let Err(error) = crate::resource::reserve_admitted_vec(
-            &mut angular_weights,
-            angular_count,
-            "catia b5 revolution angular weights",
-        ) {
+        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut angular_weights, angular_count, "catia b5 revolution angular weights") {
             return Some(Err(error));
         }
         if let Err(error) = admit_items(angular_count + 3, "catia b5 revolution angular knots") {
             return Some(Err(error));
         }
         let mut v_knots = Vec::new();
-        if let Err(error) = crate::resource::reserve_admitted_vec(
-            &mut v_knots,
-            angular_count + 3,
-            "catia b5 revolution angular knots",
-        ) {
+        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut v_knots, angular_count + 3, "catia b5 revolution angular knots") {
             return Some(Err(error));
         }
         for span in 0..span_count {
@@ -569,11 +535,7 @@ pub(super) fn revolve_nurbs(
         }
         let profile_weights = match profile.pole_rows() {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-                match crate::resource::collect_vec(
-                    ctx,
-                    points.iter().map(|point| point.weight.get()),
-                    "catia b5 revolution profile weights",
-                ) {
+                match ctx.collect_vec(points.iter().map(|point| point.weight.get()), "catia b5 revolution profile weights") {
                     Ok(weights) => weights,
                     Err(error) => return Some(Err(error)),
                 }
@@ -591,22 +553,14 @@ pub(super) fn revolve_nurbs(
             return Some(Err(error));
         }
         let mut control_points = Vec::new();
-        if let Err(error) = crate::resource::reserve_admitted_vec(
-            &mut control_points,
-            control_count,
-            "catia b5 revolution control net",
-        ) {
+        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut control_points, control_count, "catia b5 revolution control net") {
             return Some(Err(error));
         }
         if let Err(error) = admit_items(control_count, "catia b5 revolution net weights") {
             return Some(Err(error));
         }
         let mut weights = Vec::new();
-        if let Err(error) = crate::resource::reserve_admitted_vec(
-            &mut weights,
-            control_count,
-            "catia b5 revolution net weights",
-        ) {
+        if let Err(error) = cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut weights, control_count, "catia b5 revolution net weights") {
             return Some(Err(error));
         }
         for (profile_point, profile_weight) in profile.control_points().iter().zip(profile_weights)
@@ -647,26 +601,15 @@ pub(super) fn revolve_nurbs(
         if let Err(error) = admit_items(control_count, "catia b5 revolution weight row values") {
             return Some(Err(error));
         }
-        let profile_knots = match crate::resource::copy_admitted_slice(
-            profile.knots().as_slice(),
-            "catia b5 revolution profile knots",
-        ) {
+        let profile_knots = match cadmpeg_core::decode::DecodeContext::copy_admitted_slice(profile.knots().as_slice(), "catia b5 revolution profile knots") {
             Ok(knots) => knots,
             Err(error) => return Some(Err(error)),
         };
-        let point_rows = match crate::resource::copy_admitted_rows(
-            &control_points,
-            row_len,
-            "catia b5 revolution point rows",
-        ) {
+        let point_rows = match cadmpeg_core::decode::DecodeContext::copy_admitted_rows(&control_points, row_len, "catia b5 revolution point rows") {
             Ok(rows) => rows,
             Err(error) => return Some(Err(error)),
         };
-        let weight_rows = match crate::resource::copy_admitted_rows(
-            &weights,
-            row_len,
-            "catia b5 revolution weight rows",
-        ) {
+        let weight_rows = match cadmpeg_core::decode::DecodeContext::copy_admitted_rows(&weights, row_len, "catia b5 revolution weight rows") {
             Ok(rows) => rows,
             Err(error) => return Some(Err(error)),
         };
@@ -780,22 +723,11 @@ pub(super) fn emit_surfaces(
             SurfaceId::mint,
             "catia_b5_emitted_surface_id",
         )?;
-        crate::resource::insert_map(
-            admission.context(),
-            &mut surface_ids,
-            object_id,
-            id,
-            "catia_b5_emitted_surface_ids",
-        )?;
+        admission.context().insert_hash_map(&mut surface_ids, object_id, id, "catia_b5_emitted_surface_ids")?;
     }
     let mut face_surfaces = HashSet::new();
     for face in &graph.faces {
-        crate::resource::insert_set(
-            admission.context(),
-            &mut face_surfaces,
-            face.surface,
-            "catia_b5_face_surface_ids",
-        )?;
+        admission.context().insert_hash_set(&mut face_surfaces, face.surface, "catia_b5_face_surface_ids")?;
     }
     for (object_id, plan) in surface_plan {
         let id = crate::resource::copy_id(
@@ -963,11 +895,7 @@ pub(super) fn emit_surfaces(
                     ProceduralSurfaceId::mint,
                     "catia_b5_rolling_ball_id",
                 )?;
-                let carrier_tag = crate::resource::format_retained(
-                    admission.context(),
-                    format_args!("result_carrier:{carrier_object_id:08x}"),
-                    "catia_b5_rolling_ball_carrier_tag",
-                )?;
+                let carrier_tag = admission.context().format_retained(format_args!("result_carrier:{carrier_object_id:08x}"), "catia_b5_rolling_ball_carrier_tag")?;
                 annotate(
                     admission.context(),
                     annotations,

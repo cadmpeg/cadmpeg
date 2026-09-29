@@ -369,22 +369,14 @@ fn b2_owner_packet_collection_refuses_before_first_packet_storage() {
     let bytes = b2_all_compact_owner_packet_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        crate::resource::collect_vec(
-            ctx,
-            crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records),
-            "catia_a5_owner_packets",
-        )
+        ctx.collect_vec(crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records), "catia_a5_owner_packets")
     });
     assert!(matches!(
         limited,
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
     let packets = crate::test_support::with_service_context(|ctx| {
-        crate::resource::collect_vec(
-            ctx,
-            crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records),
-            "catia_a5_owner_packets",
-        )
+        ctx.collect_vec(crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records), "catia_a5_owner_packets")
     })
     .expect("service context admits the fixed owner packet");
     assert_eq!(packets.len(), 1);

@@ -76,17 +76,12 @@ fn closed_wire_loop_members<'a>(
         return Ok(None);
     }
     let mut supports_by_ordinal = HashMap::new();
-    crate::resource::reserve_map(
-        ctx,
-        &mut supports_by_ordinal,
-        run.supports.len(),
-        "catia_zero_wire_support_ordinals",
-    )?;
+    ctx.reserve_map(&mut supports_by_ordinal, run.supports.len(), "catia_zero_wire_support_ordinals")?;
     for support in &run.supports {
         supports_by_ordinal.insert(support.record_ordinal, support);
     }
     let mut members = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut members, member_count, "catia_zero_wire_members")?;
+    ctx.reserve_vec(&mut members, member_count, "catia_zero_wire_members")?;
     for ((record_ordinal, endpoints), forward) in loop_record
         .support_record_ordinals
         .iter()
@@ -142,11 +137,7 @@ fn append_oriented_wire_curve(
     )>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let geometry = if let Some((definition, cache_fit_tolerance)) = procedural {
-        let construction_id = ProceduralCurveId::mint(crate::resource::format_retained(
-            admission.context(),
-            format_args!("{}-construction", curve_id.as_str()),
-            "catia_zero_wire_construction_id",
-        )?)
+        let construction_id = ProceduralCurveId::mint(admission.context().format_retained(format_args!("{}-construction", curve_id.as_str()), "catia_zero_wire_construction_id")?)
         .map_err(cadmpeg_core::CodecError::malformed)?;
         annotate(
             admission.context(),
@@ -368,29 +359,17 @@ fn transfer_closed_wire_loops(
             let carrier_ordinal = run.carrier_record_ordinal;
             let face_ordinal = face.record_ordinal;
             let loop_ordinal = loop_record.record_ordinal;
-            let body_id = BodyId::mint(crate::resource::format_retained(
-                admission.context(),
-                format_args!(
+            let body_id = BodyId::mint(admission.context().format_retained(format_args!(
                     "catia:zero-entity:wire-body#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}"
-                ),
-                "catia_zero_wire_body_id",
-            )?)
+                ), "catia_zero_wire_body_id")?)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-            let region_id = RegionId::mint(crate::resource::format_retained(
-                admission.context(),
-                format_args!(
+            let region_id = RegionId::mint(admission.context().format_retained(format_args!(
                     "catia:zero-entity:wire-region#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}"
-                ),
-                "catia_zero_wire_region_id",
-            )?)
+                ), "catia_zero_wire_region_id")?)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-            let shell_id = ShellId::mint(crate::resource::format_retained(
-                admission.context(),
-                format_args!(
+            let shell_id = ShellId::mint(admission.context().format_retained(format_args!(
                     "catia:zero-entity:wire-shell#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}"
-                ),
-                "catia_zero_wire_shell_id",
-            )?)
+                ), "catia_zero_wire_shell_id")?)
             .map_err(cadmpeg_core::CodecError::malformed)?;
             if !root_owns_support_runs {
                 annotate(
@@ -423,20 +402,11 @@ fn transfer_closed_wire_loops(
             }
 
             let mut vertex_ids = Vec::new();
-            crate::resource::reserve_vec(
-                admission.context(),
-                &mut vertex_ids,
-                member_count,
-                "catia_zero_wire_vertex_ids",
-            )?;
+            admission.context().reserve_vec(&mut vertex_ids, member_count, "catia_zero_wire_vertex_ids")?;
             for (index, member) in members.iter().enumerate() {
                 let start = member.endpoints[0];
-                let point_id = PointId::mint(crate::resource::format_retained(
-                    admission.context(), format_args!("catia:zero-entity:wire-point#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}"),
-                    "catia_zero_wire_point_id")?).map_err(cadmpeg_core::CodecError::malformed)?;
-                let vertex_id = VertexId::mint(crate::resource::format_retained(
-                    admission.context(), format_args!("catia:zero-entity:wire-vertex#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}"),
-                    "catia_zero_wire_vertex_id")?).map_err(cadmpeg_core::CodecError::malformed)?;
+                let point_id = PointId::mint(admission.context().format_retained(format_args!("catia:zero-entity:wire-point#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}"), "catia_zero_wire_point_id")?).map_err(cadmpeg_core::CodecError::malformed)?;
+                let vertex_id = VertexId::mint(admission.context().format_retained(format_args!("catia:zero-entity:wire-vertex#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}"), "catia_zero_wire_vertex_id")?).map_err(cadmpeg_core::CodecError::malformed)?;
                 annotate(
                     admission.context(),
                     annotations,
@@ -497,12 +467,7 @@ fn transfer_closed_wire_loops(
             }
 
             let mut edge_ids = Vec::new();
-            crate::resource::reserve_vec(
-                admission.context(),
-                &mut edge_ids,
-                member_count,
-                "catia_zero_wire_edge_ids",
-            )?;
+            admission.context().reserve_vec(&mut edge_ids, member_count, "catia_zero_wire_edge_ids")?;
             for (index, member) in members.iter().enumerate() {
                 let ClosedWireMember {
                     support,
@@ -511,9 +476,7 @@ fn transfer_closed_wire_loops(
                     parameter_range,
                     ..
                 } = member;
-                let edge_id = EdgeId::mint(crate::resource::format_retained(
-                    admission.context(), format_args!("catia:zero-entity:wire-edge#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}"),
-                    "catia_zero_wire_edge_id")?).map_err(cadmpeg_core::CodecError::malformed)?;
+                let edge_id = EdgeId::mint(admission.context().format_retained(format_args!("catia:zero-entity:wire-edge#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}"), "catia_zero_wire_edge_id")?).map_err(cadmpeg_core::CodecError::malformed)?;
                 let (curve_id, param_range) = if let Some(parameters) = *parameter_range {
                     let oriented_range = if *forward {
                         parameters
@@ -536,18 +499,12 @@ fn transfer_closed_wire_loops(
                                 copy_zero_curve(admission.context(), &candidate.geometry)
                             })
                             .transpose()?;
-                        crate::resource::insert_map(
-                            admission.context(),
-                            &mut source_curve_geometries,
-                            crate::resource::copy_id(
+                        admission.context().insert_hash_map(&mut source_curve_geometries, crate::resource::copy_id(
                                 admission.context(),
                                 curve.as_str(),
                                 CurveId::mint,
                                 "catia_zero_wire_geometry_key",
-                            )?,
-                            geometry,
-                            "catia_zero_wire_source_geometries",
-                        )?;
+                            )?, geometry, "catia_zero_wire_source_geometries")?;
                     }
                     let source_geometry = source_curve_geometries
                         .get(curve)
@@ -614,18 +571,12 @@ fn transfer_closed_wire_loops(
                                         })
                                         .transpose()?
                                         .flatten();
-                                    crate::resource::insert_map(
-                                        admission.context(),
-                                        &mut source_curve_procedurals,
-                                        crate::resource::copy_id(
+                                    admission.context().insert_hash_map(&mut source_curve_procedurals, crate::resource::copy_id(
                                             admission.context(),
                                             curve.as_str(),
                                             CurveId::mint,
                                             "catia_zero_wire_procedural_key",
-                                        )?,
-                                        procedural,
-                                        "catia_zero_wire_source_procedurals",
-                                    )?;
+                                        )?, procedural, "catia_zero_wire_source_procedurals")?;
                                 }
                                 source_curve_procedurals
                                     .get(curve)
@@ -650,18 +601,12 @@ fn transfer_closed_wire_loops(
                                 source_range,
                                 edge_range: source_range,
                             };
-                            crate::resource::insert_map(
-                                admission.context(),
-                                &mut source_curve_orientations,
-                                crate::resource::copy_id(
+                            admission.context().insert_hash_map(&mut source_curve_orientations, crate::resource::copy_id(
                                     admission.context(),
                                     curve.as_str(),
                                     CurveId::mint,
                                     "catia_zero_wire_curve_id",
-                                )?,
-                                orientation,
-                                "catia_zero_wire_source_orientations",
-                            )?;
+                                )?, orientation, "catia_zero_wire_source_orientations")?;
                             (
                                 crate::resource::copy_id(
                                     admission.context(),
@@ -676,18 +621,12 @@ fn transfer_closed_wire_loops(
                         if !source_curve_procedurals.contains_key(curve) {
                             let procedural =
                                 source_wire_procedural(admission.context(), ir, &geometry)?;
-                            crate::resource::insert_map(
-                                admission.context(),
-                                &mut source_curve_procedurals,
-                                crate::resource::copy_id(
+                            admission.context().insert_hash_map(&mut source_curve_procedurals, crate::resource::copy_id(
                                     admission.context(),
                                     curve.as_str(),
                                     CurveId::mint,
                                     "catia_zero_wire_procedural_key",
-                                )?,
-                                procedural,
-                                "catia_zero_wire_source_procedurals",
-                            )?;
+                                )?, procedural, "catia_zero_wire_source_procedurals")?;
                         }
                         let source_procedural =
                             source_curve_procedurals.get(curve).and_then(Option::as_ref);
@@ -776,22 +715,16 @@ fn transfer_closed_wire_loops(
                                     true
                                 };
                                 if carrier_updated {
-                                    crate::resource::insert_map(
-                                        admission.context(),
-                                        &mut source_curve_orientations,
-                                        crate::resource::copy_id(
+                                    admission.context().insert_hash_map(&mut source_curve_orientations, crate::resource::copy_id(
                                             admission.context(),
                                             curve.as_str(),
                                             CurveId::mint,
                                             "catia_zero_wire_curve_id",
-                                        )?,
-                                        WireCurveOrientation {
+                                        )?, WireCurveOrientation {
                                             reversed,
                                             source_range,
                                             edge_range,
-                                        },
-                                        "catia_zero_wire_source_orientations",
-                                    )?;
+                                        }, "catia_zero_wire_source_orientations")?;
                                     (
                                         crate::resource::copy_id(
                                             admission.context(),
@@ -813,10 +746,7 @@ fn transfer_closed_wire_loops(
                                     )
                                 }
                             } else {
-                                let oriented_curve_id = CurveId::mint(crate::resource::format_retained(
-                                    admission.context(),
-                                    format_args!("catia:zero-entity:wire-curve#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}"),
-                                    "catia_zero_wire_oriented_curve_id")?)
+                                let oriented_curve_id = CurveId::mint(admission.context().format_retained(format_args!("catia:zero-entity:wire-curve#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}"), "catia_zero_wire_oriented_curve_id")?)
                                     .map_err(cadmpeg_core::CodecError::malformed)?;
                                 append_oriented_wire_curve(
                                     admission,
@@ -952,21 +882,11 @@ fn transfer_closed_wire_loops(
             }
 
             if root_owns_support_runs {
-                crate::resource::reserve_vec(
-                    admission.context(),
-                    &mut owned_edge_ids,
-                    edge_ids.len(),
-                    "catia_zero_owned_wire_edge_ids",
-                )?;
+                admission.context().reserve_vec(&mut owned_edge_ids, edge_ids.len(), "catia_zero_owned_wire_edge_ids")?;
                 owned_edge_ids.extend(edge_ids);
             } else {
                 let mut regions = Vec::new();
-                crate::resource::reserve_vec(
-                    admission.context(),
-                    &mut regions,
-                    1,
-                    "catia_zero_wire_body_regions",
-                )?;
+                admission.context().reserve_vec(&mut regions, 1, "catia_zero_wire_body_regions")?;
                 regions.push(crate::resource::copy_id(
                     admission.context(),
                     region_id.as_str(),
@@ -989,12 +909,7 @@ fn transfer_closed_wire_loops(
                     visible: None,
                 });
                 let mut shells = Vec::new();
-                crate::resource::reserve_vec(
-                    admission.context(),
-                    &mut shells,
-                    1,
-                    "catia_zero_wire_region_shells",
-                )?;
+                admission.context().reserve_vec(&mut shells, 1, "catia_zero_wire_region_shells")?;
                 shells.push(crate::resource::copy_id(
                     admission.context(),
                     shell_id.as_str(),
@@ -1081,12 +996,7 @@ fn transfer_closed_wire_loops(
             Exactness::Derived,
         )?;
         let mut regions = Vec::new();
-        crate::resource::reserve_vec(
-            admission.context(),
-            &mut regions,
-            1,
-            "catia_zero_owned_wire_body_regions",
-        )?;
+        admission.context().reserve_vec(&mut regions, 1, "catia_zero_owned_wire_body_regions")?;
         regions.push(crate::resource::copy_id(
             admission.context(),
             region_id.as_str(),
@@ -1109,12 +1019,7 @@ fn transfer_closed_wire_loops(
             visible: None,
         });
         let mut shells = Vec::new();
-        crate::resource::reserve_vec(
-            admission.context(),
-            &mut shells,
-            1,
-            "catia_zero_owned_wire_region_shells",
-        )?;
+        admission.context().reserve_vec(&mut shells, 1, "catia_zero_owned_wire_region_shells")?;
         shells.push(crate::resource::copy_id(
             admission.context(),
             shell_id.as_str(),
@@ -1322,9 +1227,7 @@ pub(in crate::families) fn try_decode_zero_entity(
             geometry: surface.geometry,
             source_object: None,
         });
-        if let Err(error) = crate::resource::insert_map(
-            ctx, &mut surface_ids_by_position, surface.pos, id, "catia_zero_surface_positions",
-        ) {
+        if let Err(error) = ctx.insert_hash_map(&mut surface_ids_by_position, surface.pos, id, "catia_zero_surface_positions") {
             return Some(Err(error));
         }
     }
@@ -1362,9 +1265,7 @@ pub(in crate::families) fn try_decode_zero_entity(
                     geometry,
                     source_object: None,
                 });
-                if let Err(error) = crate::resource::insert_map(
-                    ctx, &mut support_curve_ids, support.record_ordinal, curve_id, "catia_zero_support_curve_ids",
-                ) {
+                if let Err(error) = ctx.insert_hash_map(&mut support_curve_ids, support.record_ordinal, curve_id, "catia_zero_support_curve_ids") {
                     return Some(Err(error));
                 }
                 transferred_support_curves += 1;
@@ -1479,9 +1380,7 @@ pub(in crate::families) fn try_decode_zero_entity(
             ir.model
                 .procedural_curves
                 .push(ProceduralCurve::new(construction_id, definition));
-            if let Err(error) = crate::resource::insert_map(
-                ctx, &mut support_curve_ids, support.record_ordinal, curve_id, "catia_zero_support_curve_ids",
-            ) {
+            if let Err(error) = ctx.insert_hash_map(&mut support_curve_ids, support.record_ordinal, curve_id, "catia_zero_support_curve_ids") {
                 return Some(Err(error));
             }
             transferred_support_curves += 1;

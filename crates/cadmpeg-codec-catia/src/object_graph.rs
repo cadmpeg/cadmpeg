@@ -236,11 +236,7 @@ impl ObjectPayload {
         for field in &self.fields {
             let copy = match field {
                 PayloadField::Blob { bytes, offset } => PayloadField::Blob {
-                    bytes: crate::resource::copy_retained_slice(
-                        ctx,
-                        bytes,
-                        "catia_native_payload_blob",
-                    )?,
+                    bytes: ctx.copy_retained_slice(bytes, "catia_native_payload_blob")?,
                     offset: *offset,
                 },
                 PayloadField::BulkTable {
@@ -249,11 +245,7 @@ impl ObjectPayload {
                     offset,
                 } => PayloadField::BulkTable {
                     count: *count,
-                    rows: crate::resource::copy_retained_slice(
-                        ctx,
-                        rows,
-                        "catia_native_payload_bulk_rows",
-                    )?,
+                    rows: ctx.copy_retained_slice(rows, "catia_native_payload_bulk_rows")?,
                     offset: *offset,
                 },
                 PayloadField::List {
@@ -262,16 +254,12 @@ impl ObjectPayload {
                     offset,
                 } => PayloadField::List {
                     declared_count: *declared_count,
-                    items: crate::resource::copy_retained_slice(
-                        ctx,
-                        items,
-                        "catia_native_payload_list_items",
-                    )?,
+                    items: ctx.copy_retained_slice(items, "catia_native_payload_list_items")?,
                     offset: *offset,
                 },
                 other => other.clone(),
             };
-            crate::resource::push(ctx, &mut fields, copy, "catia_native_payload_fields")?;
+            ctx.push_vec(&mut fields, copy, "catia_native_payload_fields")?;
         }
         Ok(Self {
             size: self.size,
@@ -762,10 +750,7 @@ pub(crate) fn surface_aliases(
         ) else {
             continue;
         };
-        crate::resource::push(
-            ctx,
-            &mut aliases,
-            SurfaceAlias {
+        ctx.push_vec(&mut aliases, SurfaceAlias {
                 pos,
                 row_pos: row,
                 lead_raw,
@@ -775,9 +760,7 @@ pub(crate) fn surface_aliases(
                 f2,
                 f3,
                 group,
-            },
-            "catia_surface_aliases",
-        )?;
+            }, "catia_surface_aliases")?;
     }
     Ok(aliases)
 }
@@ -804,17 +787,13 @@ pub(crate) fn surface_alias_tag_map(
             .iter()
             .any(|block| extent_contains(block.pos, block.total_len(), graph.pos, graph.total_len))
     });
-    let catalogs = crate::resource::collect_vec(
-        ctx,
-        catalog::parse(ctx, data)?.into_iter().filter(|catalog| {
+    let catalogs = ctx.collect_vec(catalog::parse(ctx, data)?.into_iter().filter(|catalog| {
             !object_graphs.iter().any(|graph| {
                 extent_contains(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
             }) && !value_blocks.iter().any(|block| {
                 extent_contains(block.pos, block.total_len(), catalog.pos, catalog.total_len)
             })
-        }),
-        "catia_alias_filtered_catalogs",
-    )?;
+        }), "catia_alias_filtered_catalogs")?;
 
     let mut rows = surface_aliases(ctx, data)?;
     rows.retain(|row| {
@@ -838,12 +817,7 @@ pub(crate) fn surface_alias_tag_map(
         if row.lead() != AliasLead::SurfaceSupportStorage {
             continue;
         }
-        crate::resource::admit_map_entry(
-            ctx,
-            &mut stored_by_group,
-            &(group.prototype, group.group_id),
-            "catia_alias_stored_groups",
-        )?;
+        ctx.admit_hash_map_entry(&mut stored_by_group, &(group.prototype, group.group_id), "catia_alias_stored_groups")?;
         stored_by_group
             .entry((group.prototype, group.group_id))
             .and_modify(|stored| *stored = None)
@@ -862,7 +836,7 @@ pub(crate) fn surface_alias_tag_map(
             }),
             _ => None,
         };
-        crate::resource::admit_map_entry(ctx, &mut tags, &row.tag(), "catia_alias_tags")?;
+        ctx.admit_hash_map_entry(&mut tags, &row.tag(), "catia_alias_tags")?;
         tags.entry(row.tag())
             .and_modify(|stored| *stored = None)
             .or_insert(canonical);
@@ -922,11 +896,7 @@ fn alias_group_membership(
         prototype,
         group_id,
         target_slot,
-        storage_prefix: crate::resource::copy_retained_slice(
-            ctx,
-            storage,
-            "catia_alias_group_storage",
-        )?,
+        storage_prefix: ctx.copy_retained_slice(storage, "catia_alias_group_storage")?,
     }))
 }
 
@@ -999,7 +969,7 @@ pub(crate) fn parse_all_with_paired_roots(
         if let Some(graph_end) = graph.pos.checked_add(graph.total_len) {
             enclosing_end = enclosing_end.max(graph_end);
         }
-        crate::resource::push(ctx, &mut roots, graph, "catia_object_graph_roots")?;
+        ctx.push_vec(&mut roots, graph, "catia_object_graph_roots")?;
     }
     for graph in &mut roots {
         bind_catalog(graph, &catalogs, &value_blocks);
@@ -1089,37 +1059,24 @@ fn parse_candidate(
                     let lead = body[0];
                     (
                         lead,
-                        ObjectRecordBody::Inline(admitted!(crate::resource::copy_retained_slice(
-                            ctx,
-                            body,
-                            "catia_object_inline_body"
-                        ))),
+                        ObjectRecordBody::Inline(admitted!(ctx.copy_retained_slice(body, "catia_object_inline_body"))),
                     )
                 }
                 None if allow_opaque_childless_records && !body.is_empty() => {
                     let lead = body[0];
                     (
                         lead,
-                        ObjectRecordBody::Inline(admitted!(crate::resource::copy_retained_slice(
-                            ctx,
-                            body,
-                            "catia_object_inline_body"
-                        ))),
+                        ObjectRecordBody::Inline(admitted!(ctx.copy_retained_slice(body, "catia_object_inline_body"))),
                     )
                 }
                 None => return None,
             };
-            admitted!(crate::resource::push(
-                ctx,
-                &mut records,
-                ObjectRecord {
+            admitted!(ctx.push_vec(&mut records, ObjectRecord {
                     pos: at,
                     total_len: record_len,
                     lead,
                     body: body_form,
-                },
-                "catia_object_records"
-            ));
+                }, "catia_object_records"));
             at = record_end;
         }
         (!records.is_empty() && at == end).then_some(Ok(ObjectGraph {
@@ -1606,14 +1563,10 @@ pub(crate) fn repeated_reference_suffix_charged(
     let Some(view) = repeated_reference_suffix_view(payload) else {
         return Ok(None);
     };
-    let repeated_references = crate::resource::collect_vec(
-        ctx,
-        view.repeated.iter().filter_map(|field| match field {
+    let repeated_references = ctx.collect_vec(view.repeated.iter().filter_map(|field| match field {
             PayloadField::Reference { value, .. } => Some(*value),
             _ => None,
-        }),
-        "catia_native_repeated_reference_suffix",
-    )?;
+        }), "catia_native_repeated_reference_suffix")?;
     Ok(Some(RepeatedReferenceSuffix {
         schema_preamble: view.schema_preamble,
         repeated_references,
@@ -1660,54 +1613,24 @@ fn decode_head(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<HeadToken>, 
         return Ok(Vec::new());
     };
     let mut tokens = Vec::new();
-    crate::resource::push(
-        ctx,
-        &mut tokens,
-        HeadToken::Lead(lead),
-        "catia_object_head_tokens",
-    )?;
+    ctx.push_vec(&mut tokens, HeadToken::Lead(lead), "catia_object_head_tokens")?;
     let mut at = 1;
     while at < bytes.len() {
         let byte = bytes[at];
         if byte == 0x01 {
-            crate::resource::push(
-                ctx,
-                &mut tokens,
-                HeadToken::Separator,
-                "catia_object_head_tokens",
-            )?;
+            ctx.push_vec(&mut tokens, HeadToken::Separator, "catia_object_head_tokens")?;
             at += 1;
         } else if bytes.get(at..at + 4) == Some(&[0xff; 4]) {
-            crate::resource::push(
-                ctx,
-                &mut tokens,
-                HeadToken::NullHandle,
-                "catia_object_head_tokens",
-            )?;
+            ctx.push_vec(&mut tokens, HeadToken::NullHandle, "catia_object_head_tokens")?;
             at += 4;
         } else if (0xd1..=0xe4).contains(&byte) && at + 1 < bytes.len() {
-            crate::resource::push(
-                ctx,
-                &mut tokens,
-                HeadToken::Reference(u32::from(byte - 0xd1) * 256 + u32::from(bytes[at + 1]) + 1),
-                "catia_object_head_tokens",
-            )?;
+            ctx.push_vec(&mut tokens, HeadToken::Reference(u32::from(byte - 0xd1) * 256 + u32::from(bytes[at + 1]) + 1), "catia_object_head_tokens")?;
             at += 2;
         } else if (0x80..=0xd0).contains(&byte) {
-            crate::resource::push(
-                ctx,
-                &mut tokens,
-                HeadToken::Reference(u32::from(byte - 0x80)),
-                "catia_object_head_tokens",
-            )?;
+            ctx.push_vec(&mut tokens, HeadToken::Reference(u32::from(byte - 0x80)), "catia_object_head_tokens")?;
             at += 1;
         } else {
-            crate::resource::push(
-                ctx,
-                &mut tokens,
-                HeadToken::Literal(byte),
-                "catia_object_head_tokens",
-            )?;
+            ctx.push_vec(&mut tokens, HeadToken::Literal(byte), "catia_object_head_tokens")?;
             at += 1;
         }
     }
@@ -1759,19 +1682,10 @@ fn decode_payload(
             let offset = at;
             if bytes[at] == 0xe5 {
                 if let Some(end) = blob_end(bytes, at) {
-                    admitted!(crate::resource::push(
-                        ctx,
-                        &mut fields,
-                        PayloadField::Blob {
-                            bytes: admitted!(crate::resource::copy_retained_slice(
-                                ctx,
-                                &bytes[at + 5..end],
-                                "catia_object_payload_blob"
-                            )),
+                    admitted!(ctx.push_vec(&mut fields, PayloadField::Blob {
+                            bytes: admitted!(ctx.copy_retained_slice(&bytes[at + 5..end], "catia_object_payload_blob")),
                             offset,
-                        },
-                        "catia_object_payload_fields"
-                    ));
+                        }, "catia_object_payload_fields"));
                     at = end;
                     continue;
                 }
@@ -1784,16 +1698,11 @@ fn decode_payload(
                     .get(at + 5)
                     .and_then(|_| View::u32_le_at(bytes, at + 1))
                 {
-                    admitted!(crate::resource::push(
-                        ctx,
-                        &mut fields,
-                        if bytes[at] == 0x80 {
+                    admitted!(ctx.push_vec(&mut fields, if bytes[at] == 0x80 {
                             PayloadField::Atom { value, offset }
                         } else {
                             PayloadField::Reference { value, offset }
-                        },
-                        "catia_object_payload_fields"
-                    ));
+                        }, "catia_object_payload_fields"));
                     at += 5;
                     continue;
                 }
@@ -1801,41 +1710,26 @@ fn decode_payload(
             match bytes[at] {
                 0xfe if is_final_terminator_run(bytes, at) => {
                     while bytes.get(at) == Some(&0xfe) {
-                        admitted!(crate::resource::push(
-                            ctx,
-                            &mut fields,
-                            PayloadField::Terminator,
-                            "catia_object_payload_fields"
-                        ));
+                        admitted!(ctx.push_vec(&mut fields, PayloadField::Terminator, "catia_object_payload_fields"));
                         at += 1;
                     }
                     break;
                 }
                 0x3c => {
                     let Some((count, advance)) = atom(bytes, at + 1) else {
-                        admitted!(crate::resource::push(
-                            ctx,
-                            &mut fields,
-                            PayloadField::Atom {
+                        admitted!(ctx.push_vec(&mut fields, PayloadField::Atom {
                                 value: 0x3c,
                                 offset,
-                            },
-                            "catia_object_payload_fields"
-                        ));
+                            }, "catia_object_payload_fields"));
                         at += 1;
                         continue;
                     };
                     let table_at = at + 1 + advance;
                     let Some(table_count) = View::u32_le_at(bytes, table_at) else {
-                        admitted!(crate::resource::push(
-                            ctx,
-                            &mut fields,
-                            PayloadField::Atom {
+                        admitted!(ctx.push_vec(&mut fields, PayloadField::Atom {
                                 value: 0x3c,
                                 offset,
-                            },
-                            "catia_object_payload_fields"
-                        ));
+                            }, "catia_object_payload_fields"));
                         at += 1;
                         continue;
                     };
@@ -1846,54 +1740,34 @@ fn decode_payload(
                     {
                         let (rows, end) =
                             admitted!(parse_bulk_table_rows(ctx, bytes, table_end, table_count))?;
-                        admitted!(crate::resource::push(
-                            ctx,
-                            &mut fields,
-                            PayloadField::BulkTable {
+                        admitted!(ctx.push_vec(&mut fields, PayloadField::BulkTable {
                                 count,
                                 rows,
                                 offset,
-                            },
-                            "catia_object_payload_fields"
-                        ));
+                            }, "catia_object_payload_fields"));
                         at = end;
                         continue;
                     }
-                    admitted!(crate::resource::push(
-                        ctx,
-                        &mut fields,
-                        PayloadField::Atom {
+                    admitted!(ctx.push_vec(&mut fields, PayloadField::Atom {
                             value: 0x3c,
                             offset,
-                        },
-                        "catia_object_payload_fields"
-                    ));
+                        }, "catia_object_payload_fields"));
                     at += 1;
                 }
                 0x3b => {
                     if is_final_terminator_run(bytes, at + 1) {
-                        admitted!(crate::resource::push(
-                            ctx,
-                            &mut fields,
-                            PayloadField::Atom {
+                        admitted!(ctx.push_vec(&mut fields, PayloadField::Atom {
                                 value: 0x3b,
                                 offset,
-                            },
-                            "catia_object_payload_fields"
-                        ));
+                            }, "catia_object_payload_fields"));
                         at += 1;
                         continue;
                     }
                     let Some((declared_count, advance)) = atom(bytes, at + 1) else {
-                        admitted!(crate::resource::push(
-                            ctx,
-                            &mut fields,
-                            PayloadField::Atom {
+                        admitted!(ctx.push_vec(&mut fields, PayloadField::Atom {
                                 value: 0x3b,
                                 offset,
-                            },
-                            "catia_object_payload_fields"
-                        ));
+                            }, "catia_object_payload_fields"));
                         at += 1;
                         continue;
                     };
@@ -1922,10 +1796,7 @@ fn decode_payload(
                         let Some((value, consumed)) = tagged_value(bytes, value_at) else {
                             break;
                         };
-                        admitted!(crate::resource::push(
-                            ctx,
-                            &mut items,
-                            if tagged_reference || fixed_reference {
+                        admitted!(ctx.push_vec(&mut items, if tagged_reference || fixed_reference {
                                 ListItem::Reference {
                                     value,
                                     offset: item_offset,
@@ -1935,78 +1806,46 @@ fn decode_payload(
                                     value,
                                     offset: item_offset,
                                 }
-                            },
-                            "catia_object_list_items"
-                        ));
+                            }, "catia_object_list_items"));
                         at = value_at + consumed;
                     }
-                    admitted!(crate::resource::push(
-                        ctx,
-                        &mut fields,
-                        PayloadField::List {
+                    admitted!(ctx.push_vec(&mut fields, PayloadField::List {
                             declared_count,
                             items,
                             offset,
-                        },
-                        "catia_object_payload_fields"
-                    ));
+                        }, "catia_object_payload_fields"));
                 }
                 0x81 | 0x3a | 0x39 | 0x7a => {
                     let tag = bytes[at];
                     if is_final_terminator_run(bytes, at + 1) {
-                        admitted!(crate::resource::push(
-                            ctx,
-                            &mut fields,
-                            PayloadField::Atom {
+                        admitted!(ctx.push_vec(&mut fields, PayloadField::Atom {
                                 value: u32::from(tag),
                                 offset,
-                            },
-                            "catia_object_payload_fields"
-                        ));
+                            }, "catia_object_payload_fields"));
                         at += 1;
                         continue;
                     }
                     let Some((value, consumed)) = tagged_value(bytes, at + 1) else {
-                        admitted!(crate::resource::push(
-                            ctx,
-                            &mut fields,
-                            PayloadField::Atom {
+                        admitted!(ctx.push_vec(&mut fields, PayloadField::Atom {
                                 value: u32::from(tag),
                                 offset,
-                            },
-                            "catia_object_payload_fields"
-                        ));
+                            }, "catia_object_payload_fields"));
                         at += 1;
                         continue;
                     };
-                    admitted!(crate::resource::push(
-                        ctx,
-                        &mut fields,
-                        match tag {
+                    admitted!(ctx.push_vec(&mut fields, match tag {
                             0x81 => PayloadField::Reference { value, offset },
                             _ => PayloadField::Scalar { tag, value, offset },
-                        },
-                        "catia_object_payload_fields"
-                    ));
+                        }, "catia_object_payload_fields"));
                     at += 1 + consumed;
                 }
                 0x0d => {
-                    admitted!(crate::resource::push(
-                        ctx,
-                        &mut fields,
-                        PayloadField::Sentinel { offset },
-                        "catia_object_payload_fields"
-                    ));
+                    admitted!(ctx.push_vec(&mut fields, PayloadField::Sentinel { offset }, "catia_object_payload_fields"));
                     at += 1;
                 }
                 _ => {
                     let (value, consumed) = atom(bytes, at).unwrap_or((u32::from(bytes[at]), 1));
-                    admitted!(crate::resource::push(
-                        ctx,
-                        &mut fields,
-                        PayloadField::Atom { value, offset },
-                        "catia_object_payload_fields"
-                    ));
+                    admitted!(ctx.push_vec(&mut fields, PayloadField::Atom { value, offset }, "catia_object_payload_fields"));
                     at += consumed;
                 }
             }
@@ -2031,7 +1870,7 @@ fn parse_bulk_table_rows(
         let count = usize::try_from(table_count).ok()?;
         let mut rows = Vec::new();
         if let Err(error) =
-            crate::resource::reserve_vec(ctx, &mut rows, count, "catia_object_bulk_table_rows")
+            ctx.reserve_vec(&mut rows, count, "catia_object_bulk_table_rows")
         {
             return Some(Err(error));
         }

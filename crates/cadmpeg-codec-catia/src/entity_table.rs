@@ -459,12 +459,7 @@ impl ReferenceSignatureWire {
                     ReferenceSignatureInstruction::Difference { offset }
                 }
             };
-            crate::resource::push(
-                ctx,
-                &mut signature_program,
-                instruction,
-                "catia_reference_signature_wire_instructions",
-            )?;
+            ctx.push_vec(&mut signature_program, instruction, "catia_reference_signature_wire_instructions")?;
             offset = offset.checked_add(token_len).ok_or_else(|| {
                 ctx.refuse_codec_limit("catia_reference_signature_wire_offset", u64::MAX, u64::MAX)
             })?;
@@ -539,12 +534,7 @@ fn reference_signature_program_charged(
         signature,
         signature_offset,
         |program, instruction| {
-            crate::resource::push(
-                ctx,
-                program,
-                instruction,
-                "catia_reference_signature_instructions",
-            )
+            ctx.push_vec(program, instruction, "catia_reference_signature_instructions")
         },
         |digits| ctx.copy_retained_text(digits, "catia_reference_signature_digits"),
     )
@@ -776,11 +766,7 @@ impl EntityValuePacket {
                 type_selector: *type_selector,
                 layout_atom: *layout_atom,
                 value_atom: *value_atom,
-                items: crate::resource::copy_retained_slice(
-                    ctx,
-                    items,
-                    "catia_native_numeric_packet_items",
-                )?,
+                items: ctx.copy_retained_slice(items, "catia_native_numeric_packet_items")?,
                 terminator_count: *terminator_count,
             }),
             other => Ok(other.clone()),
@@ -869,7 +855,7 @@ impl PacketGrowth for ChargedPacketGrowth<'_, '_> {
         value: T,
         operation: &'static str,
     ) -> Result<(), Self::Error> {
-        crate::resource::push(self.0, values, value, operation)
+        self.0.push_vec(values, value, operation)
     }
 
     fn insert<T: Eq + Hash>(
@@ -878,7 +864,7 @@ impl PacketGrowth for ChargedPacketGrowth<'_, '_> {
         value: T,
         operation: &'static str,
     ) -> Result<(), Self::Error> {
-        crate::resource::insert_set(self.0, values, value, operation).map(|_| ())
+        self.0.insert_hash_set(values, value, operation).map(|_| ())
     }
 
     fn work(&self, units: usize, operation: &'static str) -> Result<(), Self::Error> {
@@ -1214,12 +1200,7 @@ pub(crate) fn parse_runs(
         let mut complete = true;
         for (candidate, identity) in candidates.iter().zip(identities) {
             ctx.charge_entities(1, "admit CATIA 7C05 native entity")?;
-            crate::resource::reserve_vec(
-                ctx,
-                &mut records,
-                1,
-                "collect CATIA 7C05 materialized records",
-            )?;
+            ctx.reserve_vec(&mut records, 1, "collect CATIA 7C05 materialized records")?;
             let Some(record) = materialize_record(ctx, data, candidate, identity)? else {
                 complete = false;
                 break;
@@ -1227,12 +1208,7 @@ pub(crate) fn parse_runs(
             records.push(record);
         }
         if complete {
-            crate::resource::push(
-                ctx,
-                &mut runs,
-                records,
-                "collect CATIA 7C05 materialized runs",
-            )?;
+            ctx.push_vec(&mut runs, records, "collect CATIA 7C05 materialized runs")?;
         }
     }
     Ok(runs)
@@ -1255,13 +1231,7 @@ pub(crate) fn paired_object_graph_roots(
             continue;
         };
         if data.get(end) == Some(&0xde) {
-            crate::resource::insert_map(
-                ctx,
-                &mut roots,
-                end + 1,
-                candidates.len(),
-                "collect CATIA paired object roots",
-            )?;
+            ctx.insert_hash_map(&mut roots, end + 1, candidates.len(), "collect CATIA paired object roots")?;
         }
     }
     Ok(roots)
@@ -1295,12 +1265,7 @@ fn parse_candidate_runs(
         }
         if let Some(candidate) = parse_candidate_variants(ctx, data, pos)? {
             enclosing_end = enclosing_end.max(end);
-            crate::resource::push(
-                ctx,
-                &mut roots,
-                candidate,
-                "collect CATIA 7C05 candidate roots",
-            )?;
+            ctx.push_vec(&mut roots, candidate, "collect CATIA 7C05 candidate roots")?;
         }
     }
     let mut candidate_runs = Vec::<Vec<EntityRecordCandidates>>::new();
@@ -1309,16 +1274,11 @@ fn parse_candidate_runs(
             run.last()
                 .is_some_and(|last| last.pos.checked_add(last.total_len) == Some(candidate.pos))
         }) {
-            crate::resource::push(ctx, run, candidate, "collect CATIA 7C05 run candidates")?;
+            ctx.push_vec(run, candidate, "collect CATIA 7C05 run candidates")?;
         } else {
             let mut run = Vec::new();
-            crate::resource::push(
-                ctx,
-                &mut run,
-                candidate,
-                "collect CATIA 7C05 run candidates",
-            )?;
-            crate::resource::push(ctx, &mut candidate_runs, run, "collect CATIA 7C05 runs")?;
+            ctx.push_vec(&mut run, candidate, "collect CATIA 7C05 run candidates")?;
+            ctx.push_vec(&mut candidate_runs, run, "collect CATIA 7C05 runs")?;
         }
     }
     Ok(candidate_runs)
@@ -1390,11 +1350,7 @@ fn unique_monotone_run(
         "collect CATIA 7C05 path states",
     )?;
     let mut previous = Vec::new();
-    crate::resource::reserve_admitted_vec(
-        &mut previous,
-        first.len(),
-        "collect CATIA 7C05 path states",
-    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut previous, first.len(), "collect CATIA 7C05 path states")?;
     previous.extend(first.iter().copied().map(|identity| MonotonePathState {
         identity,
         path_count: PathCount::One,
@@ -1405,11 +1361,7 @@ fn unique_monotone_run(
         let previous_count = cadmpeg_core::decode::u64_from_index(previous.len());
         ctx.charge_collection_items(previous_count, "collect CATIA 7C05 ordered predecessors")?;
         let mut ordered_predecessors = Vec::new();
-        crate::resource::reserve_admitted_vec(
-            &mut ordered_predecessors,
-            previous.len(),
-            "collect CATIA 7C05 ordered predecessors",
-        )?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ordered_predecessors, previous.len(), "collect CATIA 7C05 ordered predecessors")?;
         ordered_predecessors.extend(previous.iter().enumerate());
         let sort_units = previous_count
             .checked_mul(u64::from(previous_count.ilog2()) + 1)
@@ -1423,11 +1375,7 @@ fn unique_monotone_run(
             "collect CATIA 7C05 cumulative paths",
         )?;
         let mut cumulative = Vec::new();
-        crate::resource::reserve_admitted_vec(
-            &mut cumulative,
-            ordered_predecessors.len(),
-            "collect CATIA 7C05 cumulative paths",
-        )?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut cumulative, ordered_predecessors.len(), "collect CATIA 7C05 cumulative paths")?;
         let mut cumulative_count = PathCount::None;
         for (index, state) in &ordered_predecessors {
             cumulative_count = cumulative_count.join(state.path_count);
@@ -1451,11 +1399,7 @@ fn unique_monotone_run(
                 .map_or((PathCount::None, None), |index| cumulative[index]);
             if path_count != PathCount::None {
                 ctx.charge_collection_items(1, "collect CATIA 7C05 path states")?;
-                crate::resource::reserve_admitted_vec(
-                    &mut layer,
-                    1,
-                    "collect CATIA 7C05 path states",
-                )?;
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut layer, 1, "collect CATIA 7C05 path states")?;
                 layer.push(MonotonePathState {
                     identity: *identity,
                     path_count,
@@ -1467,7 +1411,7 @@ fn unique_monotone_run(
             return Ok(None);
         }
         ctx.charge_collection_items(1, "collect CATIA 7C05 path layers")?;
-        crate::resource::reserve_admitted_vec(&mut layers, 1, "collect CATIA 7C05 path layers")?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut layers, 1, "collect CATIA 7C05 path layers")?;
         layers.push(std::mem::replace(&mut previous, layer));
     }
     let final_layer = &previous;
@@ -1489,11 +1433,7 @@ fn unique_monotone_run(
         "collect CATIA 7C05 resolved identities",
     )?;
     let mut result = Vec::new();
-    crate::resource::reserve_admitted_vec(
-        &mut result,
-        records.len(),
-        "collect CATIA 7C05 resolved identities",
-    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut result, records.len(), "collect CATIA 7C05 resolved identities")?;
     for layer in std::iter::once(final_layer).chain(layers.iter().rev()) {
         let state = &layer[state_index];
         result.push(state.identity);
@@ -1609,15 +1549,10 @@ fn identity_candidates(
                         break;
                     };
                     if entity_id != 0 {
-                        crate::resource::push(
-                            ctx,
-                            &mut identities,
-                            EntityIdentityCandidate {
+                        ctx.push_vec(&mut identities, EntityIdentityCandidate {
                                 delimiter: at,
                                 entity_id,
-                            },
-                            "admit CATIA 7C05 identity candidate",
-                        )?;
+                            }, "admit CATIA 7C05 identity candidate")?;
                     }
                 }
                 at += 1;
@@ -1709,12 +1644,7 @@ pub(crate) fn parse_definition_schema_selectors(
             _ => None,
         };
         if let Some(value) = selector {
-            crate::resource::push(
-                ctx,
-                &mut selectors,
-                DefinitionSchemaSelector { value, offset: at },
-                "catia_definition_schema_selectors",
-            )?;
+            ctx.push_vec(&mut selectors, DefinitionSchemaSelector { value, offset: at }, "catia_definition_schema_selectors")?;
             at += 5;
         } else {
             at += 1;
@@ -1879,13 +1809,9 @@ pub(crate) fn parse_reference_signature(
         if at + 5 != payload.len() {
             return None;
         }
-        let tokens = admitted!(crate::resource::collect_vec(
-            ctx,
-            signature_program
+        let tokens = admitted!(ctx.collect_vec(signature_program
                 .into_iter()
-                .map(ReferenceSignatureToken::from),
-            "catia_reference_signature_tokens",
-        ));
+                .map(ReferenceSignatureToken::from), "catia_reference_signature_tokens"));
         Some(Ok(ReferenceSignature {
             references,
             prefix,

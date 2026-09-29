@@ -5,7 +5,6 @@ use std::hash::Hash;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use crate::resource;
 
 pub(super) struct UniqueIndex<K, V> {
     entries: HashMap<K, Option<V>>,
@@ -32,7 +31,7 @@ impl<K: Eq + Hash, V> UniqueIndex<K, V> {
         if let Some(entry) = self.entries.get_mut(&key) {
             *entry = None;
         } else {
-            resource::insert_map(ctx, &mut self.entries, key, Some(value), operation)?;
+            ctx.insert_hash_map(&mut self.entries, key, Some(value), operation)?;
         }
         Ok(())
     }

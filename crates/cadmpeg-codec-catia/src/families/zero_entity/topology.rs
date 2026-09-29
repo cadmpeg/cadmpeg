@@ -109,13 +109,7 @@ fn zero_entity_oriented_occurrences(
         let mut midpoints = HashMap::new();
         for support in &run.supports {
             if let Some(midpoint) = support.model_midpoint {
-                crate::resource::insert_map(
-                    ctx,
-                    &mut midpoints,
-                    support.record_ordinal,
-                    midpoint,
-                    "catia_zero_midpoints",
-                )?;
+                ctx.insert_hash_map(&mut midpoints, support.record_ordinal, midpoint, "catia_zero_midpoints")?;
             }
         }
         for loop_record in face.loops.iter().flatten() {
@@ -128,17 +122,12 @@ fn zero_entity_oriented_occurrences(
                 let Some(model_midpoint) = midpoints.get(&support_record_ordinal).copied() else {
                     continue;
                 };
-                crate::resource::push(
-                    ctx,
-                    &mut occurrences,
-                    ZeroEntityOrientedOccurrence {
+                ctx.push_vec(&mut occurrences, ZeroEntityOrientedOccurrence {
                         face_record_ordinal: face.record_ordinal,
                         support_record_ordinal,
                         model_endpoints,
                         model_midpoint,
-                    },
-                    "catia_zero_occurrences",
-                )?;
+                    }, "catia_zero_occurrences")?;
             }
         }
     }
@@ -171,22 +160,11 @@ fn endpoint_pair_candidates_inner(
     let radial_matches = selected_radial_matches(ctx, occurrences, &endpoint_matches)?;
     let mut face_ordinals = HashSet::new();
     for occurrence in occurrences {
-        crate::resource::insert_set(
-            ctx,
-            &mut face_ordinals,
-            occurrence.face_record_ordinal,
-            "catia_zero_face_ordinals",
-        )?;
+        ctx.insert_hash_set(&mut face_ordinals, occurrence.face_record_ordinal, "catia_zero_face_ordinals")?;
     }
     let mut face_indices = HashMap::new();
     for (index, ordinal) in face_ordinals.into_iter().enumerate() {
-        crate::resource::insert_map(
-            ctx,
-            &mut face_indices,
-            ordinal,
-            index,
-            "catia_zero_face_indices",
-        )?;
+        ctx.insert_hash_map(&mut face_indices, ordinal, index, "catia_zero_face_indices")?;
     }
     let mut face_components = UnionFind::charged(ctx, face_indices.len(), "catia_zero_face_union")?;
     for (index, neighbors) in radial_matches.iter().enumerate() {
@@ -214,10 +192,7 @@ fn endpoint_pair_candidates_inner(
             continue;
         }
         let [first, second] = [occurrences[index], occurrences[*neighbor]];
-        crate::resource::push(
-            ctx,
-            &mut candidates,
-            ZeroEntityEndpointPairCandidate {
+        ctx.push_vec(&mut candidates, ZeroEntityEndpointPairCandidate {
                 face_record_ordinals: [first.face_record_ordinal, second.face_record_ordinal],
                 support_record_ordinals: [
                     first.support_record_ordinal,
@@ -225,9 +200,7 @@ fn endpoint_pair_candidates_inner(
                 ],
                 model_endpoints: first.model_endpoints,
                 model_midpoint: first.model_midpoint,
-            },
-            "catia_zero_endpoint_pairs",
-        )?;
+            }, "catia_zero_endpoint_pairs")?;
     }
 
     let mut visited = ctx.alloc_filled(occurrences.len(), false, "catia_zero_pair_visited")?;
@@ -236,15 +209,15 @@ fn endpoint_pair_candidates_inner(
             continue;
         }
         let mut stack = Vec::new();
-        crate::resource::push(ctx, &mut stack, start, "catia_zero_pair_stack")?;
+        ctx.push_vec(&mut stack, start, "catia_zero_pair_stack")?;
         visited[start] = true;
         let mut group = Vec::new();
         while let Some(index) = stack.pop() {
-            crate::resource::push(ctx, &mut group, index, "catia_zero_pair_group")?;
+            ctx.push_vec(&mut group, index, "catia_zero_pair_group")?;
             for neighbor in &endpoint_matches[index] {
                 if !visited[*neighbor] {
                     visited[*neighbor] = true;
-                    crate::resource::push(ctx, &mut stack, *neighbor, "catia_zero_pair_stack")?;
+                    ctx.push_vec(&mut stack, *neighbor, "catia_zero_pair_stack")?;
                 }
             }
         }
@@ -253,17 +226,11 @@ fn endpoint_pair_candidates_inner(
             let component =
                 face_components.find(face_indices[&occurrences[index].face_record_ordinal]);
             if let Some(group) = by_face_component.get_mut(&component) {
-                crate::resource::push(ctx, group, index, "catia_zero_pair_face_members")?;
+                ctx.push_vec(group, index, "catia_zero_pair_face_members")?;
             } else {
                 let mut group = Vec::new();
-                crate::resource::push(ctx, &mut group, index, "catia_zero_pair_face_members")?;
-                crate::resource::insert_map(
-                    ctx,
-                    &mut by_face_component,
-                    component,
-                    group,
-                    "catia_zero_pair_face_components",
-                )?;
+                ctx.push_vec(&mut group, index, "catia_zero_pair_face_members")?;
+                ctx.insert_hash_map(&mut by_face_component, component, group, "catia_zero_pair_face_components")?;
             }
         }
         for mut pair in by_face_component.into_values() {
@@ -275,10 +242,7 @@ fn endpoint_pair_candidates_inner(
             }
             pair.sort_by_key(|index| occurrences[*index].support_record_ordinal);
             let [first, second] = [occurrences[pair[0]], occurrences[pair[1]]];
-            crate::resource::push(
-                ctx,
-                &mut candidates,
-                ZeroEntityEndpointPairCandidate {
+            ctx.push_vec(&mut candidates, ZeroEntityEndpointPairCandidate {
                     face_record_ordinals: [first.face_record_ordinal, second.face_record_ordinal],
                     support_record_ordinals: [
                         first.support_record_ordinal,
@@ -286,9 +250,7 @@ fn endpoint_pair_candidates_inner(
                     ],
                     model_endpoints: first.model_endpoints,
                     model_midpoint: first.model_midpoint,
-                },
-                "catia_zero_endpoint_pairs",
-            )?;
+                }, "catia_zero_endpoint_pairs")?;
         }
     }
     candidates.sort_by_key(|candidate| candidate.support_record_ordinals);
@@ -321,23 +283,18 @@ fn endpoint_locus_candidates_inner(
             .into_iter()
             .zip(candidate.model_endpoints)
         {
-            crate::resource::push(
-                ctx,
-                &mut endpoints,
-                (EndpointPairIndex(endpoint_pair), endpoint, point),
-                "catia_zero_locus_endpoints",
-            )?;
+            ctx.push_vec(&mut endpoints, (EndpointPairIndex(endpoint_pair), endpoint, point), "catia_zero_locus_endpoints")?;
         }
     }
     let mut cells = HashMap::<[i64; 3], Vec<usize>>::new();
     for (index, (_, _, point)) in endpoints.iter().enumerate() {
         let cell = endpoint_cell(*point);
         if let Some(indices) = cells.get_mut(&cell) {
-            crate::resource::push(ctx, indices, index, "catia_zero_locus_cell_members")?;
+            ctx.push_vec(indices, index, "catia_zero_locus_cell_members")?;
         } else {
             let mut indices = Vec::new();
-            crate::resource::push(ctx, &mut indices, index, "catia_zero_locus_cell_members")?;
-            crate::resource::insert_map(ctx, &mut cells, cell, indices, "catia_zero_locus_cells")?;
+            ctx.push_vec(&mut indices, index, "catia_zero_locus_cell_members")?;
+            ctx.insert_hash_map(&mut cells, cell, indices, "catia_zero_locus_cells")?;
         }
     }
     let mut neighbors =
@@ -362,18 +319,8 @@ fn endpoint_locus_candidates_inner(
                             }
                         }
                         if point.distance(endpoints[*other].2.get()) <= MODEL_POINT_TOLERANCE {
-                            crate::resource::push(
-                                ctx,
-                                &mut neighbors[index],
-                                *other,
-                                "catia_zero_locus_neighbor_edges",
-                            )?;
-                            crate::resource::push(
-                                ctx,
-                                &mut neighbors[*other],
-                                index,
-                                "catia_zero_locus_neighbor_edges",
-                            )?;
+                            ctx.push_vec(&mut neighbors[index], *other, "catia_zero_locus_neighbor_edges")?;
+                            ctx.push_vec(&mut neighbors[*other], index, "catia_zero_locus_neighbor_edges")?;
                         }
                     }
                 }
@@ -389,14 +336,14 @@ fn endpoint_locus_candidates_inner(
         }
         let mut component = Vec::new();
         let mut stack = Vec::new();
-        crate::resource::push(ctx, &mut stack, start, "catia_zero_locus_stack")?;
+        ctx.push_vec(&mut stack, start, "catia_zero_locus_stack")?;
         visited[start] = true;
         while let Some(index) = stack.pop() {
-            crate::resource::push(ctx, &mut component, index, "catia_zero_locus_component")?;
+            ctx.push_vec(&mut component, index, "catia_zero_locus_component")?;
             for neighbor in &neighbors[index] {
                 if !visited[*neighbor] {
                     visited[*neighbor] = true;
-                    crate::resource::push(ctx, &mut stack, *neighbor, "catia_zero_locus_stack")?;
+                    ctx.push_vec(&mut stack, *neighbor, "catia_zero_locus_stack")?;
                 }
             }
         }
@@ -421,23 +368,13 @@ fn endpoint_locus_candidates_inner(
         }
         let mut incident = Vec::new();
         for index in component {
-            crate::resource::push(
-                ctx,
-                &mut incident,
-                (endpoints[index].0, endpoints[index].1),
-                "catia_zero_locus_incident_endpoints",
-            )?;
+            ctx.push_vec(&mut incident, (endpoints[index].0, endpoints[index].1), "catia_zero_locus_incident_endpoints")?;
         }
-        crate::resource::push(
-            ctx,
-            &mut candidates,
-            ZeroEntityEndpointLocusCandidate {
+        ctx.push_vec(&mut candidates, ZeroEntityEndpointLocusCandidate {
                 incident_endpoint_pair_endpoints: incident,
                 representative_point,
                 maximum_deviation,
-            },
-            "catia_zero_endpoint_loci",
-        )?;
+            }, "catia_zero_endpoint_loci")?;
     }
     Ok(Some(candidates))
 }
@@ -452,17 +389,11 @@ fn endpoint_match_graph(
         for endpoint in occurrence.model_endpoints {
             let cell = endpoint_cell(endpoint);
             if let Some(indices) = cells.get_mut(&cell) {
-                crate::resource::push(ctx, indices, index, "catia_zero_match_cell_members")?;
+                ctx.push_vec(indices, index, "catia_zero_match_cell_members")?;
             } else {
                 let mut indices = Vec::new();
-                crate::resource::push(ctx, &mut indices, index, "catia_zero_match_cell_members")?;
-                crate::resource::insert_map(
-                    ctx,
-                    &mut cells,
-                    cell,
-                    indices,
-                    "catia_zero_match_cells",
-                )?;
+                ctx.push_vec(&mut indices, index, "catia_zero_match_cell_members")?;
+                ctx.insert_hash_map(&mut cells, cell, indices, "catia_zero_match_cells")?;
             }
         }
     }
@@ -481,12 +412,7 @@ fn endpoint_match_graph(
                         ];
                         if let Some(indices) = cells.get(&neighbor) {
                             for other in indices.iter().copied().filter(|other| *other > index) {
-                                if crate::resource::insert_set(
-                                    ctx,
-                                    &mut possible,
-                                    other,
-                                    "catia_zero_match_possible",
-                                )? {
+                                if ctx.insert_hash_set(&mut possible, other, "catia_zero_match_possible")? {
                                     if let Some(budget) = budget {
                                         if !budget.charge() {
                                             return Ok(None);
@@ -504,8 +430,8 @@ fn endpoint_match_graph(
                 occurrence.model_endpoints,
                 occurrences[other].model_endpoints,
             ) {
-                crate::resource::push(ctx, &mut matches[index], other, "catia_zero_match_edges")?;
-                crate::resource::push(ctx, &mut matches[other], index, "catia_zero_match_edges")?;
+                ctx.push_vec(&mut matches[index], other, "catia_zero_match_edges")?;
+                ctx.push_vec(&mut matches[other], index, "catia_zero_match_edges")?;
             }
         }
     }
@@ -529,10 +455,10 @@ fn selected_radial_matches(
                 .distance(occurrences[other].model_midpoint.get())
                 <= MODEL_POINT_TOLERANCE
             {
-                crate::resource::push(ctx, &mut row, other, "catia_zero_radial_edges")?;
+                ctx.push_vec(&mut row, other, "catia_zero_radial_edges")?;
             }
         }
-        crate::resource::push(ctx, &mut radial, row, "catia_zero_radial_rows")?;
+        ctx.push_vec(&mut radial, row, "catia_zero_radial_rows")?;
     }
     Ok(radial)
 }

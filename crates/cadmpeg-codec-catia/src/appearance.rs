@@ -100,17 +100,8 @@ pub(crate) fn transfer(
             let ValueField::Inline { offset, .. } = field else {
                 continue;
             };
-            let source_id = resource::format_retained(
-                ctx,
-                format_args!("{}:field#{offset:010}:{ordinal:06}", block.id),
-                "catia_appearance_source_id",
-            )?;
-            resource::push(
-                ctx,
-                &mut packets,
-                SourcedPacket { packet, source_id },
-                "catia_appearance_packets",
-            )?;
+            let source_id = ctx.format_retained(format_args!("{}:field#{offset:010}:{ordinal:06}", block.id), "catia_appearance_source_id")?;
+            ctx.push_vec(&mut packets, SourcedPacket { packet, source_id }, "catia_appearance_packets")?;
         }
     }
     let mut result = TransferResult::default();
@@ -119,13 +110,8 @@ pub(crate) fn transfer(
     let mut body = Vec::new();
     for packet in &packets {
         match packet.packet {
-            Packet::AllFaces(_) => resource::push(
-                ctx,
-                &mut all_faces,
-                packet.rgba(),
-                "catia_appearance_all_faces",
-            )?,
-            Packet::Body(rgba) => resource::push(ctx, &mut body, rgba, "catia_appearance_body")?,
+            Packet::AllFaces(_) => ctx.push_vec(&mut all_faces, packet.rgba(), "catia_appearance_all_faces")?,
+            Packet::Body(rgba) => ctx.push_vec(&mut body, rgba, "catia_appearance_body")?,
         }
     }
 
@@ -146,7 +132,7 @@ pub(crate) fn transfer(
                 [base] => {
                     let mut overrides = Vec::new();
                     for rgba in colors.iter().copied().filter(|rgba| rgba != base) {
-                        resource::push(ctx, &mut overrides, rgba, "catia_appearance_overrides")?;
+                        ctx.push_vec(&mut overrides, rgba, "catia_appearance_overrides")?;
                     }
                     same_color_multiset(ctx, &overrides, &body)?
                 }
@@ -218,7 +204,7 @@ fn copy_face_ids(
             FaceId::mint,
             "catia_appearance_face_id",
         )?;
-        resource::push(ctx, &mut faces, id, "catia_appearance_face_ids")?;
+        ctx.push_vec(&mut faces, id, "catia_appearance_face_ids")?;
     }
     Ok(faces)
 }
@@ -234,7 +220,7 @@ fn same_color_multiset(
     ) -> Result<BTreeMap<[u8; 4], usize>, cadmpeg_core::CodecError> {
         let mut counts = BTreeMap::new();
         for value in values {
-            resource::admit_btree_entry(ctx, &counts, value, "catia_appearance_color_counts")?;
+            ctx.admit_btree_entry(&counts, value, "catia_appearance_color_counts")?;
             *counts.entry(*value).or_default() += 1;
         }
         Ok(counts)
@@ -258,11 +244,7 @@ fn insert_appearance(
     ir: &mut CadIr,
     rgba: [u8; 4],
 ) -> Result<AppearanceId, cadmpeg_core::CodecError> {
-    let id = resource::format_retained(
-        ctx,
-        format_args!("catia:appearance:rgba#{}", HexBytes(&rgba)),
-        "catia_appearance_id",
-    )?;
+    let id = ctx.format_retained(format_args!("catia:appearance:rgba#{}", HexBytes(&rgba)), "catia_appearance_id")?;
     let id = AppearanceId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
     if !ir
         .model
@@ -278,10 +260,7 @@ fn insert_appearance(
             "catia_appearance_asset_id",
         )?;
         let schema = ctx.copy_retained_text("CATIA V5 display color", "catia_appearance_schema")?;
-        resource::push(
-            ctx,
-            &mut ir.model.appearances,
-            Appearance {
+        ctx.push_vec(&mut ir.model.appearances, Appearance {
                 id: retained_id,
                 name: None,
                 library_id: None,
@@ -293,9 +272,7 @@ fn insert_appearance(
                 base_color: Some(Color::from_rgba8(rgba[0], rgba[1], rgba[2], rgba[3])),
                 properties: BTreeMap::new(),
                 textures: Vec::new(),
-            },
-            "catia_appearance_assets",
-        )?;
+            }, "catia_appearance_assets")?;
     }
     Ok(id)
 }
@@ -311,11 +288,7 @@ fn insert_binding(
         .as_str()
         .split_once('#')
         .map_or("", |(_, key)| key);
-    let id = resource::format_retained(
-        ctx,
-        format_args!("catia:appearance:binding#{index}:{key}"),
-        "catia_appearance_binding_id",
-    )?;
+    let id = ctx.format_retained(format_args!("catia:appearance:binding#{index}:{key}"), "catia_appearance_binding_id")?;
     let id = AppearanceBindingId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
     insert_binding_record(ctx, ir, appearance, target, id)
 }
@@ -331,14 +304,10 @@ fn insert_source_binding(
         .as_str()
         .split_once('#')
         .map_or("", |(_, key)| key);
-    let id = resource::format_retained(
-        ctx,
-        format_args!(
+    let id = ctx.format_retained(format_args!(
             "catia:appearance:source-binding#source-{}:{key}",
             HexBytes(packet.source_id.as_bytes())
-        ),
-        "catia_appearance_source_binding_id",
-    )?;
+        ), "catia_appearance_source_binding_id")?;
     let id = AppearanceBindingId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
     insert_binding_record(
         ctx,
@@ -368,10 +337,7 @@ fn insert_binding_record(
     )?;
     let object_type =
         ctx.copy_retained_text("CATIA V5 display property", "catia_appearance_object_type")?;
-    resource::push(
-        ctx,
-        &mut ir.model.appearance_bindings,
-        AppearanceBinding {
+    ctx.push_vec(&mut ir.model.appearance_bindings, AppearanceBinding {
             id,
             target,
             appearance: retained_appearance,
@@ -379,9 +345,7 @@ fn insert_binding_record(
             object_type: Some(object_type),
             visible: None,
             channels: BTreeMap::new(),
-        },
-        "catia_appearance_bindings",
-    )?;
+        }, "catia_appearance_bindings")?;
     Ok(())
 }
 

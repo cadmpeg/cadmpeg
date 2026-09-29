@@ -259,12 +259,7 @@ fn standard_surface_record_table(
     let mut analytic_ranges = Vec::new();
     for record in records.values() {
         if let StandardSurfaceRecord::Analytic(prefix) = record {
-            crate::resource::push(
-                ctx,
-                &mut analytic_ranges,
-                (prefix.pos - analytic_plane::MARKER, record.end()),
-                "catia_surface_analytic_ranges",
-            )?;
+            ctx.push_vec(&mut analytic_ranges, (prefix.pos - analytic_plane::MARKER, record.end()), "catia_surface_analytic_ranges")?;
         }
     }
     let mut next_analytic = analytic_ranges.iter().copied().peekable();
@@ -312,30 +307,14 @@ fn standard_surface_record_table(
     }
 
     let mut ordered_records = Vec::new();
-    crate::resource::reserve_vec(
-        ctx,
-        &mut ordered_records,
-        records.len(),
-        "catia_surface_ordered_records",
-    )?;
+    ctx.reserve_vec(&mut ordered_records, records.len(), "catia_surface_ordered_records")?;
     ordered_records.extend(records.into_values());
     let mut record_indices = HashMap::new();
     for (index, record) in ordered_records.iter().enumerate() {
-        crate::resource::insert_map(
-            ctx,
-            &mut record_indices,
-            record.pos(),
-            index,
-            "catia_surface_record_indices",
-        )?;
+        ctx.insert_hash_map(&mut record_indices, record.pos(), index, "catia_surface_record_indices")?;
     }
     let mut successors = Vec::new();
-    crate::resource::reserve_vec(
-        ctx,
-        &mut successors,
-        ordered_records.len(),
-        "catia_surface_successors",
-    )?;
+    ctx.reserve_vec(&mut successors, ordered_records.len(), "catia_surface_successors")?;
     for record in &ordered_records {
         successors.push(record_indices.get(&record.end()).copied());
     }
@@ -366,19 +345,14 @@ pub(super) fn standard_surface_record_groups(
         let mut current = Some(start);
         let mut group = Vec::new();
         while let Some(index) = current {
-            crate::resource::push(
-                ctx,
-                &mut group,
-                table.records[index].clone(),
-                "catia_surface_group_records",
-            )?;
+            ctx.push_vec(&mut group, table.records[index].clone(), "catia_surface_group_records")?;
             current = table.successors[index];
         }
         if group
             .last()
             .is_some_and(|last| brep.get(last.end()) == Some(&0x60))
         {
-            crate::resource::push(ctx, &mut groups, group, "catia_surface_record_groups")?;
+            ctx.push_vec(&mut groups, group, "catia_surface_record_groups")?;
         }
     }
     Ok(groups)
@@ -418,12 +392,7 @@ pub(super) fn standard_surface_populations(
         else {
             continue;
         };
-        crate::resource::push(
-            ctx,
-            &mut populations,
-            StandardSurfacePopulation { records, supports },
-            "catia_surface_populations",
-        )?;
+        ctx.push_vec(&mut populations, StandardSurfacePopulation { records, supports }, "catia_surface_populations")?;
     }
     Ok(populations)
 }
@@ -458,16 +427,8 @@ pub(super) fn pair_standard_populations(
         Ok(Some((
             layout,
             StandardSurfacePopulation {
-                records: crate::resource::copy_retained_slice(
-                    ctx,
-                    &population.records,
-                    "catia_population_pair_records",
-                )?,
-                supports: crate::resource::copy_retained_slice(
-                    ctx,
-                    &population.supports,
-                    "catia_population_pair_supports",
-                )?,
+                records: ctx.copy_retained_slice(&population.records, "catia_population_pair_records")?,
+                supports: ctx.copy_retained_slice(&population.supports, "catia_population_pair_supports")?,
             },
         )))
     };
@@ -479,7 +440,7 @@ pub(super) fn pair_standard_populations(
         let Some(next) = pair(layout, population)? else {
             return Ok(None);
         };
-        crate::resource::push(ctx, &mut rest, next, "catia_population_pairs")?;
+        ctx.push_vec(&mut rest, next, "catia_population_pairs")?;
     }
     Ok(Some(StandardPopulationPairs { first, rest }))
 }
@@ -502,17 +463,12 @@ pub(super) fn standard_surface_records(
     let remaining_steps = face_count - 1;
     let level_count = usize::BITS as usize - remaining_steps.leading_zeros() as usize;
     let mut jumps = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut jumps, level_count, "catia_surface_jump_levels")?;
+    ctx.reserve_vec(&mut jumps, level_count, "catia_surface_jump_levels")?;
     if level_count > 0 {
-        let mut previous = crate::resource::copy_slice(ctx, successors, "catia_surface_jump_rows")?;
+        let mut previous = ctx.copy_slice(successors, "catia_surface_jump_rows")?;
         for _ in 1..level_count {
             let mut next = Vec::new();
-            crate::resource::reserve_vec(
-                ctx,
-                &mut next,
-                previous.len(),
-                "catia_surface_jump_rows",
-            )?;
+            ctx.reserve_vec(&mut next, previous.len(), "catia_surface_jump_rows")?;
             for successor in &previous {
                 next.push(successor.and_then(|middle| previous[middle]));
             }
@@ -548,7 +504,7 @@ pub(super) fn standard_surface_records(
         return Ok(None);
     };
     let mut chain = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut chain, face_count, "catia_surface_record_chain")?;
+    ctx.reserve_vec(&mut chain, face_count, "catia_surface_record_chain")?;
     for ordinal in 0..face_count {
         chain.push(ordered_records[current].clone());
         if ordinal + 1 < face_count {
@@ -614,21 +570,11 @@ pub(super) fn standard_vertex_roster(
             {
                 break;
             }
-            crate::resource::push(
-                ctx,
-                &mut identities,
-                identity,
-                "catia_vertex_roster_identities",
-            )?;
+            ctx.push_vec(&mut identities, identity, "catia_vertex_roster_identities")?;
             position += vertex_roster::LEN;
         }
         if identities.len() == vertex_count {
-            crate::resource::push(
-                ctx,
-                &mut solutions,
-                identities,
-                "catia_vertex_roster_solutions",
-            )?;
+            ctx.push_vec(&mut solutions, identities, "catia_vertex_roster_solutions")?;
         }
         if position == start {
             position += 1;
@@ -661,16 +607,11 @@ pub(crate) fn surface_prefixes(
         if brep[i - 2] != 0x00 || brep[i - 1] != kind.prebyte() {
             continue;
         }
-        crate::resource::push(
-            ctx,
-            &mut out,
-            SurfacePrefix {
+        ctx.push_vec(&mut out, SurfacePrefix {
                 pos: i,
                 target: u24_le(brep, i - analytic_plane::MARKER),
                 kind,
-            },
-            "catia_surface_prefixes",
-        )?;
+            }, "catia_surface_prefixes")?;
     }
     Ok(out)
 }
@@ -704,29 +645,19 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
             continue;
         };
         let target = u24_le(brep, pos - 3);
-        if !crate::resource::insert_set(ctx, &mut seen_targets, target, "catia_plane_seen_targets")?
+        if !ctx.insert_hash_set(&mut seen_targets, target, "catia_plane_seen_targets")?
         {
-            crate::resource::insert_set(
-                ctx,
-                &mut duplicate_targets,
-                target,
-                "catia_plane_duplicate_targets",
-            )?;
+            ctx.insert_hash_set(&mut duplicate_targets, target, "catia_plane_duplicate_targets")?;
         }
         let Some(normal) = normals.get(&target).copied() else {
             continue;
         };
         let [x, y, z] = bounds.sphere_center;
-        crate::resource::push(
-            ctx,
-            &mut out,
-            PlaneParams {
+        ctx.push_vec(&mut out, PlaneParams {
                 target,
                 origin: FinitePoint3::from_coordinates(x, y, z),
                 normal,
-            },
-            "catia_plane_params",
-        )?;
+            }, "catia_plane_params")?;
     }
     out.retain(|plane| !duplicate_targets.contains(&plane.target));
     Ok(out)
@@ -800,12 +731,7 @@ pub(super) fn standard_curve_supports(
         if population.records.len() == face_count
             && edge_count.is_none_or(|count| population.supports.len() == count)
         {
-            crate::resource::push(
-                ctx,
-                &mut matching_populations,
-                population,
-                "catia_matching_surface_populations",
-            )?;
+            ctx.push_vec(&mut matching_populations, population, "catia_matching_surface_populations")?;
         }
     }
     if populations
@@ -816,11 +742,7 @@ pub(super) fn standard_curve_supports(
         else {
             return Ok(Vec::new());
         };
-        return crate::resource::copy_retained_slice(
-            ctx,
-            &population.supports,
-            "catia_curve_support_copy",
-        );
+        return ctx.copy_retained_slice(&population.supports, "catia_curve_support_copy");
     }
     if let Some(first) = standard_surface_records(ctx, brep, face_count)?
         .and_then(|records| records.last().map(StandardSurfaceRecord::end))
@@ -846,7 +768,7 @@ pub(super) fn standard_curve_supports(
             continue;
         };
         if edge_count.is_none_or(|count| rows.len() == count) {
-            crate::resource::push(ctx, &mut candidates, rows, "catia_curve_support_candidates")?;
+            ctx.push_vec(&mut candidates, rows, "catia_curve_support_candidates")?;
         }
     }
     Ok(<[Vec<StandardCurveSupport>; 1]>::try_from(candidates)
@@ -866,7 +788,7 @@ fn standard_curve_supports_at(
         let Some((row, end)) = standard_curve_support_row_at(brep, face_count, position) else {
             return Ok(None);
         };
-        crate::resource::push(ctx, &mut rows, row, "catia_curve_support_rows")?;
+        ctx.push_vec(&mut rows, row, "catia_curve_support_rows")?;
         position = end;
     }
     Ok((!rows.is_empty()).then_some(rows))

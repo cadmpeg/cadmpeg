@@ -38,7 +38,7 @@ impl UnionFind {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         Ok(Self {
-            parents: crate::resource::copy_retained_slice(ctx, &self.parents, operation)?,
+            parents: ctx.copy_retained_slice(&self.parents, operation)?,
         })
     }
 
@@ -61,7 +61,7 @@ impl UnionFind {
         operation: &'static str,
     ) -> Result<usize, CodecError> {
         let index = self.parents.len();
-        crate::resource::push(ctx, &mut self.parents, index, operation)?;
+        ctx.push_vec(&mut self.parents, index, operation)?;
         Ok(index)
     }
 

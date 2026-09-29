@@ -464,7 +464,7 @@ fn parse_runs_with_directory_offset(
     let mut runs = Vec::new();
     for catalog_offset in memchr::memmem::find_iter(data, CATALOG_OPEN) {
         if let Some(run) = parse_run_before(ctx, data, catalog_offset, directory_offset)? {
-            crate::resource::push(ctx, &mut runs, run, "catia_legacy_runs")?;
+            ctx.push_vec(&mut runs, run, "catia_legacy_runs")?;
         }
     }
     Ok(runs)
@@ -477,9 +477,7 @@ fn parse_run_before(
     directory_offset: Option<usize>,
 ) -> Result<Option<LegacyEntityRun>, CodecError> {
     charge_scan(ctx, catalog_offset, "catia_legacy_identity_scan")?;
-    let mut identities = crate::resource::collect_vec(
-        ctx,
-        data[..catalog_offset]
+    let mut identities = ctx.collect_vec(data[..catalog_offset]
             .windows(6)
             .enumerate()
             .filter_map(|(offset, bytes)| {
@@ -499,9 +497,7 @@ fn parse_run_before(
                     entity_id,
                     lead,
                 })
-            }),
-        "catia_legacy_candidate_identities",
-    )?;
+            }), "catia_legacy_candidate_identities")?;
     let suffix_start = identities
         .windows(2)
         .rposition(|pair| pair[0].entity_id >= pair[1].entity_id)
@@ -523,19 +519,9 @@ fn parse_run_before(
         let mut interval_roles = parse_role_selectors(ctx, data, start, end, identity.entity_id)?;
         let mut interval_fields =
             parse_text_fields(ctx, data, start, end, identity.entity_id, &interval_roles)?;
-        crate::resource::reserve_vec(
-            ctx,
-            &mut text_fields,
-            interval_fields.len(),
-            "catia_legacy_run_text_fields",
-        )?;
+        ctx.reserve_vec(&mut text_fields, interval_fields.len(), "catia_legacy_run_text_fields")?;
         text_fields.append(&mut interval_fields);
-        crate::resource::reserve_vec(
-            ctx,
-            &mut role_selectors,
-            interval_roles.len(),
-            "catia_legacy_run_roles",
-        )?;
+        ctx.reserve_vec(&mut role_selectors, interval_roles.len(), "catia_legacy_run_roles")?;
         role_selectors.append(&mut interval_roles);
     }
     let relations = parse_relations(ctx, &text_fields, &identities)?;
@@ -552,37 +538,17 @@ fn parse_run_before(
             .get(index + 1)
             .map_or(catalog_offset, |next| next.offset);
         let mut interval_types = parse_type_descriptors(ctx, data, start, end, identity.entity_id)?;
-        crate::resource::reserve_vec(
-            ctx,
-            &mut type_descriptors,
-            interval_types.len(),
-            "catia_legacy_run_types",
-        )?;
+        ctx.reserve_vec(&mut type_descriptors, interval_types.len(), "catia_legacy_run_types")?;
         type_descriptors.append(&mut interval_types);
         let mut interval_scalars = parse_scalar_values(ctx, data, start, end, identity.entity_id)?;
-        crate::resource::reserve_vec(
-            ctx,
-            &mut scalar_values,
-            interval_scalars.len(),
-            "catia_legacy_run_scalars",
-        )?;
+        ctx.reserve_vec(&mut scalar_values, interval_scalars.len(), "catia_legacy_run_scalars")?;
         scalar_values.append(&mut interval_scalars);
         let mut interval_strings = parse_string_values(ctx, data, start, end, identity.entity_id)?;
-        crate::resource::reserve_vec(
-            ctx,
-            &mut string_values,
-            interval_strings.len(),
-            "catia_legacy_run_strings",
-        )?;
+        ctx.reserve_vec(&mut string_values, interval_strings.len(), "catia_legacy_run_strings")?;
         string_values.append(&mut interval_strings);
         let mut interval_integers =
             parse_integer_values(ctx, data, start, end, identity.entity_id)?;
-        crate::resource::reserve_vec(
-            ctx,
-            &mut integer_values,
-            interval_integers.len(),
-            "catia_legacy_run_integers",
-        )?;
+        ctx.reserve_vec(&mut integer_values, interval_integers.len(), "catia_legacy_run_integers")?;
         integer_values.append(&mut interval_integers);
     }
     bind_value_names(ctx, data, &role_selectors, &text_fields, &mut scalar_values)?;
@@ -599,11 +565,7 @@ fn parse_run_before(
         catalog_offset,
         schema_program,
         first_identity,
-        following_identities: crate::resource::collect_vec(
-            ctx,
-            identities.into_iter().skip(1),
-            "catia_legacy_following_identities",
-        )?,
+        following_identities: ctx.collect_vec(identities.into_iter().skip(1), "catia_legacy_following_identities")?,
         role_selectors,
         text_fields,
         schema_fields,
@@ -669,7 +631,7 @@ fn parse_schema_program(
         return Ok(None);
     };
     let bytes =
-        crate::resource::copy_retained_slice(ctx, source, "catia_legacy_schema_program_bytes")?;
+        ctx.copy_retained_slice(source, "catia_legacy_schema_program_bytes")?;
     Ok(Some(LegacySchemaProgram {
         offset,
         boundary_offset,
@@ -707,12 +669,7 @@ pub(crate) fn parse_schema_identifiers(
             offset,
             value: ctx.copy_retained_text(value, "catia_legacy_schema_identifier_value")?,
         };
-        crate::resource::push(
-            ctx,
-            &mut identifiers,
-            identifier,
-            "catia_legacy_schema_identifiers",
-        )?;
+        ctx.push_vec(&mut identifiers, identifier, "catia_legacy_schema_identifiers")?;
     }
     Ok(identifiers)
 }
@@ -724,9 +681,7 @@ fn parse_synchronous_states(
     identities: &[LegacyEntityIdentity],
     catalog_offset: usize,
 ) -> Result<Vec<LegacyRelationSynchronousState>, CodecError> {
-    crate::resource::collect_vec(
-        ctx,
-        roles.iter().filter_map(|role| {
+    ctx.collect_vec(roles.iter().filter_map(|role| {
             let at = role.end_offset()?;
             let interval_end = identities
                 .iter()
@@ -769,9 +724,7 @@ fn parse_synchronous_states(
                 selector: role.selector,
                 synchronous,
             })
-        }),
-        "catia_legacy_synchronous_states",
-    )
+        }), "catia_legacy_synchronous_states")
 }
 
 fn parse_type_descriptors(
@@ -812,16 +765,11 @@ fn parse_type_descriptors(
             }
             None => LegacyTypeValue::Selector(selector),
         };
-        crate::resource::push(
-            ctx,
-            &mut descriptors,
-            LegacyTypeDescriptor {
+        ctx.push_vec(&mut descriptors, LegacyTypeDescriptor {
                 offset,
                 entity_id,
                 value,
-            },
-            "catia_legacy_type_descriptors",
-        )?;
+            }, "catia_legacy_type_descriptors")?;
     }
     Ok(descriptors)
 }
@@ -840,9 +788,7 @@ fn parse_scalar_values(
         })?,
         "catia_legacy_scalar_scan",
     )?;
-    let mut values = crate::resource::collect_vec(
-        ctx,
-        [
+    let mut values = ctx.collect_vec([
             (NAMED_SCALAR_OPEN, LegacyScalarEncoding::Named84),
             (SCALAR_OPEN, LegacyScalarEncoding::Standalone85),
         ]
@@ -876,9 +822,7 @@ fn parse_scalar_values(
                     evaluation,
                 })
             })
-        }),
-        "catia_legacy_scalar_values",
-    )?;
+        }), "catia_legacy_scalar_values")?;
     for index in 1..values.len() {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(index),
@@ -964,13 +908,7 @@ fn bind_value_names<Value: LegacyNamedValue>(
                 ctx.refuse_codec_limit("catia_legacy_name_counts", u64::MAX, u64::MAX)
             })?;
         } else {
-            crate::resource::insert_map(
-                ctx,
-                &mut counts,
-                value.entity_id(),
-                1usize,
-                "catia_legacy_name_counts",
-            )?;
+            ctx.insert_hash_map(&mut counts, value.entity_id(), 1usize, "catia_legacy_name_counts")?;
         }
     }
     for value in values {
@@ -1015,18 +953,13 @@ fn parse_string_values(
         })() else {
             continue;
         };
-        crate::resource::push(
-            ctx,
-            &mut values,
-            LegacyStringValue {
+        ctx.push_vec(&mut values, LegacyStringValue {
                 offset,
                 entity_id,
                 name_offset: None,
                 name: None,
                 value: ctx.copy_retained_text(value, "catia_legacy_string_value")?,
-            },
-            "catia_legacy_string_values",
-        )?;
+            }, "catia_legacy_string_values")?;
     }
     Ok(values)
 }
@@ -1039,9 +972,7 @@ fn parse_integer_values(
     entity_id: u32,
 ) -> Result<Vec<LegacyIntegerValue>, CodecError> {
     charge_scan(ctx, end - start, "catia_legacy_integer_scan")?;
-    crate::resource::collect_vec(
-        ctx,
-        memchr::memmem::find_iter(&data[start..end], INTEGER_OPEN).filter_map(|relative| {
+    ctx.collect_vec(memchr::memmem::find_iter(&data[start..end], INTEGER_OPEN).filter_map(|relative| {
             let offset = start + relative;
             let payload = offset.checked_add(INTEGER_OPEN.len())?;
             let lead = *data.get(payload)?;
@@ -1070,9 +1001,7 @@ fn parse_integer_values(
                 name: None,
                 value,
             })
-        }),
-        "catia_legacy_integer_values",
-    )
+        }), "catia_legacy_integer_values")
 }
 
 fn unique_value_name<'a>(
@@ -1231,7 +1160,7 @@ fn parse_relations(
                     )?,
                     signature,
                 };
-                crate::resource::push(ctx, &mut relations, relation, "catia_legacy_relations")?;
+                ctx.push_vec(&mut relations, relation, "catia_legacy_relations")?;
             }
         }
         start = end;
@@ -1299,7 +1228,7 @@ pub(crate) fn parse_relation_signature(
             if parameter.is_empty() || value_type.is_empty() || names.contains(parameter) {
                 return Ok(None);
             }
-            crate::resource::insert_set(ctx, &mut names, parameter, "catia_legacy_relation_names")?;
+            ctx.insert_hash_set(&mut names, parameter, "catia_legacy_relation_names")?;
             let parameter = LegacyRelationParameter {
                 parameter: ctx.copy_retained_text(parameter, "catia_legacy_relation_parameter")?,
                 value_type: ctx
@@ -1310,7 +1239,7 @@ pub(crate) fn parse_relation_signature(
                     return Ok(None);
                 }
             } else {
-                crate::resource::push(ctx, &mut inputs, parameter, "catia_legacy_relation_inputs")?;
+                ctx.push_vec(&mut inputs, parameter, "catia_legacy_relation_inputs")?;
             }
         }
     }
@@ -1360,7 +1289,7 @@ fn parse_text_fields(
             role,
             value: ctx.copy_retained_text(value, "catia_legacy_text_value")?,
         };
-        crate::resource::push(ctx, &mut fields, field, "catia_legacy_text_fields")?;
+        ctx.push_vec(&mut fields, field, "catia_legacy_text_fields")?;
     }
     Ok(fields)
 }
@@ -1449,13 +1378,9 @@ fn parse_schema_fields(
             role_offset: role.offset,
             boundary_role_offset: boundary.offset,
             field_code,
-            payload: crate::resource::copy_retained_slice(
-                ctx,
-                payload,
-                "catia_legacy_schema_field_payload",
-            )?,
+            payload: ctx.copy_retained_slice(payload, "catia_legacy_schema_field_payload")?,
         };
-        crate::resource::push(ctx, &mut fields, field, "catia_legacy_schema_fields")?;
+        ctx.push_vec(&mut fields, field, "catia_legacy_schema_fields")?;
     }
     Ok(fields)
 }
@@ -1525,7 +1450,7 @@ fn parse_role_selectors(
             selector,
             field_code: None,
         };
-        crate::resource::push(ctx, &mut roles, role, "catia_legacy_roles")?;
+        ctx.push_vec(&mut roles, role, "catia_legacy_roles")?;
     }
     for relative in memchr::memmem::find_iter(&data[start..end], TEXT_OPEN) {
         let Some(role) = (|| {
@@ -1564,11 +1489,9 @@ fn parse_role_selectors(
         })() else {
             continue;
         };
-        crate::resource::push(ctx, &mut roles, role, "catia_legacy_roles")?;
+        ctx.push_vec(&mut roles, role, "catia_legacy_roles")?;
     }
-    let field_bound_roles = crate::resource::collect_vec(
-        ctx,
-        memchr::memchr_iter(0xe8, &data[start..end]).filter_map(|relative| {
+    let field_bound_roles = ctx.collect_vec(memchr::memchr_iter(0xe8, &data[start..end]).filter_map(|relative| {
             let field_offset = start.checked_add(relative)?;
             let field_header_end = field_offset.checked_add(4)?;
             if field_header_end > end || data.get(field_offset + 3) != Some(&0x01) {
@@ -1626,15 +1549,8 @@ fn parse_role_selectors(
                 (Some(role), None) | (None, Some(role)) => Some(role),
                 (None, None) => None,
             }
-        }),
-        "catia_legacy_bound_roles",
-    )?;
-    crate::resource::reserve_vec(
-        ctx,
-        &mut roles,
-        field_bound_roles.len(),
-        "catia_legacy_roles",
-    )?;
+        }), "catia_legacy_bound_roles")?;
+    ctx.reserve_vec(&mut roles, field_bound_roles.len(), "catia_legacy_roles")?;
     roles.extend(field_bound_roles);
     for index in 1..roles.len() {
         ctx.charge_work(

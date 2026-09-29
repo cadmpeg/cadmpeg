@@ -82,13 +82,9 @@ fn decode_over_routes(
         return decode_result(ctx, &scan, &matched, ir, report, annotations, unknowns);
     }
 
-    let applicable = resource::collect_vec(
-        ctx,
-        routes
+    let applicable = ctx.collect_vec(routes
             .iter()
-            .filter(|route| (route.applicable)(scan.variant)),
-        "catia_applicable_routes",
-    )?;
+            .filter(|route| (route.applicable)(scan.variant)), "catia_applicable_routes")?;
     let mut fell_through = Vec::new();
     for (index, route) in applicable.iter().enumerate() {
         let stated = refusal.note_count();
@@ -113,16 +109,12 @@ fn decode_over_routes(
             let next = applicable
                 .get(index + 1)
                 .map_or("the metadata fallback", |next| next.name);
-            let note = resource::format_retained(
-                ctx,
-                format_args!(
+            let note = ctx.format_retained(format_args!(
                     "{} refused {refused} CATIA record(s) and then transferred no model; \
                      the decode continued to {next}",
                     route.name
-                ),
-                "catia_route_fallthrough_note",
-            )?;
-            resource::push(ctx, &mut fell_through, note, "catia_route_fallthroughs")?;
+                ), "catia_route_fallthrough_note")?;
+            ctx.push_vec(&mut fell_through, note, "catia_route_fallthroughs")?;
         }
     }
 
@@ -214,19 +206,14 @@ fn finish_decode(
     // went next.
     for statement in fell_through {
         let message = ctx.copy_retained_text(statement, "catia_route_fallthrough_loss")?;
-        resource::push(
-            ctx,
-            &mut report.losses,
-            CatiaLossCode::SourceRouteFellThrough.note_charged(
+        ctx.push_vec(&mut report.losses, CatiaLossCode::SourceRouteFellThrough.note_charged(
                 ctx,
                 message,
                 "catia_route_fallthrough_loss",
-            )?,
-            "catia_route_fallthrough_loss",
-        )?;
+            )?, "catia_route_fallthrough_loss")?;
     }
     for note in refusal.take_notes() {
-        resource::push(ctx, &mut report.losses, note, "catia_lane_refusal_loss")?;
+        ctx.push_vec(&mut report.losses, note, "catia_lane_refusal_loss")?;
     }
     ctx.admit_entities(
         cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
@@ -242,22 +229,18 @@ fn finish_decode(
     )?;
     // Drain lane refusals from a successful native decode before transfers run.
     for note in refusal.take_notes() {
-        resource::push(ctx, &mut report.losses, note, "catia_lane_refusal_loss")?;
+        ctx.push_vec(&mut report.losses, note, "catia_lane_refusal_loss")?;
     }
     let modeling_graph_scope = modeling_graph_scope(
         ctx,
         !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,
     )?;
-    let modeling_object_records = resource::collect_string_set(
-        ctx,
-        native
+    let modeling_object_records = ctx.collect_string_set(native
             .object_graphs
             .iter()
             .filter(|graph| modeling_graph_scope.contains(graph.id.as_str()))
-            .flat_map(|graph| graph.records.iter().map(|record| record.id.as_str())),
-        "catia_modeling_object_records",
-    )?;
+            .flat_map(|graph| graph.records.iter().map(|record| record.id.as_str())), "catia_modeling_object_records")?;
     let design_feature_transfer =
         design_feature::transfer_design_features(ctx, &mut ir, &native, &modeling_graph_scope)?;
     let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
@@ -1028,14 +1011,10 @@ fn finish_decode(
         .iter()
         .map(|object| object.definition_values.len())
         .sum::<usize>();
-    let owned_definition_value_ids = resource::collect_set(
-        ctx,
-        native
+    let owned_definition_value_ids = ctx.collect_hash_set(native
             .design_objects
             .iter()
-            .flat_map(|object| object.definition_values.iter().map(String::as_str)),
-        "catia_owned_definition_value_ids",
-    )?;
+            .flat_map(|object| object.definition_values.iter().map(String::as_str)), "catia_owned_definition_value_ids")?;
     let unowned_definition_value_count = native
         .entity_records
         .iter()
@@ -1324,12 +1303,7 @@ fn finish_decode(
             continue;
         };
         if expression.signature_charged(ctx)?.is_some() {
-            resource::insert_set(
-                ctx,
-                &mut typed_relation_expression_entities,
-                entity.id.as_str(),
-                "catia_typed_relation_expressions",
-            )?;
+            ctx.insert_hash_set(&mut typed_relation_expression_entities, entity.id.as_str(), "catia_typed_relation_expressions")?;
         }
     }
     let typed_relation_program_instance_count = native
@@ -1354,27 +1328,19 @@ fn finish_decode(
         .filter_map(|instance| instance.inputs.as_ref())
         .map(Vec::len)
         .sum::<usize>();
-    let distinct_relation_program_input_entity_count = resource::collect_set(
-        ctx,
-        native
+    let distinct_relation_program_input_entity_count = ctx.collect_hash_set(native
             .entity_records
             .iter()
             .filter_map(|record| record.relation_program_instance())
             .filter_map(|instance| instance.inputs.as_ref())
             .flatten()
-            .filter_map(|input| input.entity.entity()),
-        "catia_distinct_program_inputs",
-    )?
+            .filter_map(|input| input.entity.entity()), "catia_distinct_program_inputs")?
     .len();
-    let instanced_relation_expression_count = resource::collect_set(
-        ctx,
-        native
+    let instanced_relation_expression_count = ctx.collect_hash_set(native
             .entity_records
             .iter()
             .filter_map(|record| record.relation_program_instance())
-            .filter_map(|instance| instance.relation_expression.as_deref()),
-        "catia_instanced_relation_expressions",
-    )?
+            .filter_map(|instance| instance.relation_expression.as_deref()), "catia_instanced_relation_expressions")?
     .len();
     let relation_program_parameter_dependency_count = native
         .entity_records
@@ -1498,15 +1464,11 @@ fn finish_decode(
                 .all(|link| link.intervening_entities.is_some())
         })
         .count();
-    let schema_configuration_entities = resource::collect_set(
-        ctx,
-        native
+    let schema_configuration_entities = ctx.collect_hash_set(native
             .entity_records
             .iter()
             .filter(|entity| entity.schema_configuration_record().is_some())
-            .map(|entity| entity.id.as_str()),
-        "catia_schema_configuration_entities",
-    )?;
+            .map(|entity| entity.id.as_str()), "catia_schema_configuration_entities")?;
     let schema_configuration_row_intervening_schema_configuration_count = native
         .schema_configuration_row_chains
         .iter()
@@ -1516,31 +1478,19 @@ fn finish_decode(
         .filter_map(|reference| reference.entity())
         .filter(|entity| schema_configuration_entities.contains(entity))
         .count();
-    let formula_referenced_relation_expressions = resource::collect_set(
-        ctx,
-        native
+    let formula_referenced_relation_expressions = ctx.collect_hash_set(native
             .entity_records
             .iter()
             .filter_map(|record| record.formula_relation())
-            .filter_map(|formula| formula.expression_entity.reference.entity()),
-        "catia_formula_relation_expressions",
-    )?;
-    let program_referenced_relation_expressions = resource::collect_set(
-        ctx,
-        native
+            .filter_map(|formula| formula.expression_entity.reference.entity()), "catia_formula_relation_expressions")?;
+    let program_referenced_relation_expressions = ctx.collect_hash_set(native
             .entity_records
             .iter()
             .filter_map(|record| record.relation_program_instance())
-            .filter_map(|instance| instance.relation_expression.as_deref()),
-        "catia_program_relation_expressions",
-    )?;
-    let referenced_relation_expressions = resource::collect_set(
-        ctx,
-        formula_referenced_relation_expressions
+            .filter_map(|instance| instance.relation_expression.as_deref()), "catia_program_relation_expressions")?;
+    let referenced_relation_expressions = ctx.collect_hash_set(formula_referenced_relation_expressions
             .union(&program_referenced_relation_expressions)
-            .copied(),
-        "catia_referenced_relation_expressions",
-    )?;
+            .copied(), "catia_referenced_relation_expressions")?;
     let formula_referenced_relation_expression_count =
         formula_referenced_relation_expressions.len();
     let program_referenced_relation_expression_count =
@@ -1760,43 +1710,31 @@ fn finish_decode(
         .iter()
         .filter(|object| object.owner_record.is_none())
         .count();
-    let object_records_by_id = resource::collect_map(
-        ctx,
-        native
+    let object_records_by_id = ctx.collect_hash_map(native
             .object_graphs
             .iter()
             .flat_map(|graph| &graph.records)
-            .map(|record| (record.id.as_str(), record)),
-        "catia_object_records_by_id",
-    )?;
+            .map(|record| (record.id.as_str(), record)), "catia_object_records_by_id")?;
     let unassigned_owner_slot_count = object_records_by_id
         .values()
         .filter(|record| record.has_unassigned_owner())
         .count();
-    let structurally_owned_records = resource::collect_string_set(
-        ctx,
-        native
+    let structurally_owned_records = ctx.collect_string_set(native
             .design_objects
             .iter()
             .filter(|object| object.owner_record.is_some())
-            .flat_map(|object| object.fields.iter().map(String::as_str)),
-        "catia_structurally_owned_records",
-    )?;
+            .flat_map(|object| object.fields.iter().map(String::as_str)), "catia_structurally_owned_records")?;
     let structurally_owned_definition_chain_value_count = native
         .design_objects
         .iter()
         .filter(|object| object.owner_record.is_some())
         .map(|object| object.definition_chain_values.len())
         .sum::<usize>();
-    let structurally_owned_definition_chain_value_ids = resource::collect_set(
-        ctx,
-        native
+    let structurally_owned_definition_chain_value_ids = ctx.collect_hash_set(native
             .design_objects
             .iter()
             .filter(|object| object.owner_record.is_some())
-            .flat_map(|object| object.definition_chain_values.iter().map(String::as_str)),
-        "catia_owned_definition_chain_values",
-    )?;
+            .flat_map(|object| object.definition_chain_values.iter().map(String::as_str)), "catia_owned_definition_chain_values")?;
     let unowned_definition_chain_value_count = native
         .entity_records
         .iter()
@@ -1853,33 +1791,19 @@ fn finish_decode(
                 .is_some_and(|record| record.has_unassigned_owner())
         })
         .count();
-    let transferred_formula_design_records = resource::collect_string_set(
-        ctx,
-        formula_transfer
+    let transferred_formula_design_records = ctx.collect_string_set(formula_transfer
             .consumed_object_records
             .intersection(&structurally_owned_records)
-            .map(String::as_str),
-        "catia_transferred_formula_records",
-    )?;
-    let transferred_principal_plane_records = resource::collect_string_set(
-        ctx,
-        design_feature_transfer
+            .map(String::as_str), "catia_transferred_formula_records")?;
+    let transferred_principal_plane_records = ctx.collect_string_set(design_feature_transfer
             .principal_plane_records
             .intersection(&structurally_owned_records)
-            .map(String::as_str),
-        "catia_transferred_principal_planes",
-    )?;
-    let transferred_design_feature_records = resource::collect_string_set(
-        ctx,
-        design_feature_transfer
+            .map(String::as_str), "catia_transferred_principal_planes")?;
+    let transferred_design_feature_records = ctx.collect_string_set(design_feature_transfer
             .consumed_records()
             .filter(|record| structurally_owned_records.contains(*record))
-            .map(String::as_str),
-        "catia_transferred_design_features",
-    )?;
-    let transferred_design_records = resource::collect_string_set(
-        ctx,
-        transferred_formula_design_records
+            .map(String::as_str), "catia_transferred_design_features")?;
+    let transferred_design_records = ctx.collect_string_set(transferred_formula_design_records
             .union(&transferred_design_feature_records)
             .chain(
                 transferred_native_sketch_entity_records.intersection(&structurally_owned_records),
@@ -1889,9 +1813,7 @@ fn finish_decode(
                     .intersection(&structurally_owned_records),
             )
             .chain(transferred_constraint_range_records.intersection(&structurally_owned_records))
-            .map(String::as_str),
-        "catia_transferred_design_records",
-    )?;
+            .map(String::as_str), "catia_transferred_design_records")?;
     let unresolved_object_record_count = modeling_object_records
         .difference(&transferred_design_records)
         .count();
@@ -1953,12 +1875,7 @@ fn finish_decode(
                 cadmpeg_ir::features::FeatureId::mint,
                 "catia_native_operation_feature_id",
             )?;
-            resource::insert_set(
-                ctx,
-                &mut native_operation_feature_ids,
-                id,
-                "catia_native_operation_feature_ids",
-            )?;
+            ctx.insert_hash_set(&mut native_operation_feature_ids, id, "catia_native_operation_feature_ids")?;
         }
     }
     let transferred_native_operation_parameter_count = ir
@@ -3772,7 +3689,7 @@ fn decode_result(
     ir.source = Some(crate::assemble::source_meta(ctx, scan, matched)?);
     body.notes = crate::container::notes(ctx, scan)?;
     if let Some(loss) = crate::dialect::dialect_loss(ctx, matched)? {
-        resource::push(ctx, &mut body.losses, loss, "catia_decode_dialect_loss")?;
+        ctx.push_vec(&mut body.losses, loss, "catia_decode_dialect_loss")?;
     }
     let mut source_fidelity = SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns, ctx)?;

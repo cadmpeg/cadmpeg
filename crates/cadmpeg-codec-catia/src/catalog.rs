@@ -56,7 +56,7 @@ pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Catalog
         if let Some(catalog_end) = catalog.pos.checked_add(catalog.total_len) {
             enclosing_end = enclosing_end.max(catalog_end);
         }
-        crate::resource::push(ctx, &mut catalogs, catalog, "catia_catalogs")?;
+        ctx.push_vec(&mut catalogs, catalog, "catia_catalogs")?;
     }
     Ok(catalogs)
 }
@@ -86,12 +86,7 @@ fn parse_candidate(
             return None;
         }
         let mut entries = Vec::new();
-        admitted!(crate::resource::reserve_vec(
-            ctx,
-            &mut entries,
-            entry_count,
-            "catia_catalog_entries"
-        ));
+        admitted!(ctx.reserve_vec(&mut entries, entry_count, "catia_catalog_entries"));
         for ordinal in 0..entry_count {
             let (value_len, header_len) = match *bytes.get(at)? {
                 0 => (
