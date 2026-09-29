@@ -113,7 +113,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             "append SLDPRT PMI losses",
         )?;
         report.losses.append(&mut pmi_losses);
-        return decode_result(ir, report, annotations, unknowns);
+        return decode_result(ctx, ir, report, annotations, unknowns);
     }
 
     let streams = active_body_streams(ctx, &scan)?;
@@ -137,7 +137,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(ctx, &ir, &mut report)?;
             append_design_losses(ctx, &ir, &mut report)?;
-            return decode_result(ir, report, annotations, unknowns);
+            return decode_result(ctx, ir, report, annotations, unknowns);
         }
     }
 
@@ -161,7 +161,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     )?;
     report.losses.append(&mut pmi_losses);
     append_design_losses(ctx, &ir, &mut report)?;
-    decode_result(ir, report, annotations, unknowns)
+    decode_result(ctx, ir, report, annotations, unknowns)
 }
 
 fn push_report_loss(
@@ -198,6 +198,7 @@ fn append_tessellation_losses(
 }
 
 fn decode_result(
+    ctx: &DecodeContext<'_>,
     mut ir: CadIr,
     body: DecodeBody,
     annotations: Annotations,
@@ -212,7 +213,7 @@ fn decode_result(
     if let Some(source_image) = source_image {
         source_fidelity.retain_unknown_records("source", [source_image])?;
     }
-    stamp_local_digests(&mut ir)?;
+    stamp_local_digests(ctx, &mut ir)?;
     Ok(Decoded {
         ir,
         body,
@@ -5130,9 +5131,9 @@ fn stamp_sketch_baseline(
 ///
 /// Both are machine-local content digests and carry the `_local_sha256` suffix
 /// that says so; see [`document_local_sha256`] and [`brep_local_sha256`].
-fn stamp_local_digests(ir: &mut CadIr) -> Result<(), CodecError> {
+fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
     ir.finalize();
-    let brep_hash = brep_local_sha256_in_place(ir)?;
+    let brep_hash = brep_local_sha256_in_place(ctx, ir)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("brep_local_sha256"),
@@ -5238,18 +5239,21 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
 /// Moves the structurally untouched B-rep arenas out of `ir`, hashes the same
 /// normalized partition [`brep_local_sha256`] builds, and moves them back in
 /// their original order. The two arenas the normalization filters —
-/// `appearances` and `appearance_bindings` — and the body display fields it
-/// strips are copied, so `ir` is bit-identical afterwards and both entry
+/// `appearances` and `appearance_bindings` — are copied. Body display fields
+/// move into a charged vector and back, so `ir` is bit-identical afterwards and both entry
 /// points produce the same digest for the same document.
-fn brep_local_sha256_in_place(ir: &mut CadIr) -> Result<String, CodecError> {
+fn brep_local_sha256_in_place(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<String, CodecError> {
     use std::mem::take;
 
-    let saved_body_display = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| (body.name.clone(), body.color))
-        .collect::<Vec<_>>();
+    let mut saved_body_display = Vec::new();
+    ctx.reserve_collection_vec(
+        &mut saved_body_display,
+        ir.model.bodies.len(),
+        "save SLDPRT body display fields for digest",
+    )?;
+    for body in &mut ir.model.bodies {
+        saved_body_display.push((take(&mut body.name), body.color));
+    }
     let mut partition = cadmpeg_ir::document::Model::default();
     partition.bodies = take(&mut ir.model.bodies);
     partition.regions = take(&mut ir.model.regions);
@@ -5289,6 +5293,54 @@ fn brep_local_sha256_in_place(ir: &mut CadIr) -> Result<String, CodecError> {
     ir.model.procedural_surfaces = take(&mut partition.procedural_surfaces);
     ir.model.procedural_curves = take(&mut partition.procedural_curves);
     Ok(hash)
+}
+
+#[cfg(test)]
+mod digest_tests {
+    use super::brep_local_sha256_in_place;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::{Body, BodyKind};
+
+    fn named_body_document() -> CadIr {
+        let mut ir = CadIr::empty();
+        ir.model.bodies.push(Body {
+            id: BodyId::mint("synthetic:test:id#digest-body").unwrap(),
+            kind: BodyKind::default(),
+            regions: Vec::new(),
+            transform: None,
+            name: Some("digest body".to_owned()),
+            color: None,
+            visible: None,
+        });
+        ir
+    }
+
+    #[test]
+    fn digest_body_display_reserve_refuses_collection_limit() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(b"digest", &arena, &policy).unwrap();
+        let error = brep_local_sha256_in_place(&ctx, &mut named_body_document()).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn digest_restores_body_display_fields() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            b"digest",
+            &arena,
+            &DecodePolicy::service(),
+        ).unwrap();
+        let mut ir = named_body_document();
+        let original = ir.model.bodies[0].clone();
+        brep_local_sha256_in_place(&ctx, &mut ir).unwrap();
+        assert_eq!(ir.model.bodies[0], original);
+    }
 }
 
 /// Normalize and hash one B-rep partition; both digest entry points share it.
