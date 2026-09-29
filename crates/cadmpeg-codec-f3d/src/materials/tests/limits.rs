@@ -24,8 +24,10 @@ fn material_utf16_string_refuses_retained_limit() {
     let error = material_context_with_limits(u64::MAX, 4, |ctx| {
         super::super::lp_utf16_strings(ctx, &bytes).unwrap_err()
     });
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D UTF-16 string"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D UTF-16 string")
+    );
 }
 
 #[test]
@@ -35,8 +37,10 @@ fn material_utf16_string_index_refuses_collection_limit() {
     let error = material_context_with_limits(0, u64::MAX, |ctx| {
         super::super::lp_utf16_strings(ctx, &bytes).unwrap_err()
     });
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D UTF-16 strings"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D UTF-16 strings")
+    );
 }
 
 #[test]
@@ -46,8 +50,10 @@ fn material_printable_ascii_refuses_retained_limit() {
     let error = material_context_with_limits(u64::MAX, 3, |ctx| {
         super::super::lp_ascii_printable_charged(ctx, &bytes, 0).unwrap_err()
     });
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D printable ASCII string"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D printable ASCII string")
+    );
 }
 
 fn definition_catalog_merge_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
@@ -69,22 +75,28 @@ fn definition_catalog_merge_error(max_items: u64, max_retained: u64) -> cadmpeg_
 #[test]
 fn material_definition_asset_key_refuses_retained_limit() {
     let error = definition_catalog_merge_error(u64::MAX, 4);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D definition asset ID"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D definition asset ID")
+    );
 }
 
 #[test]
 fn material_definition_schema_key_refuses_retained_limit() {
     let error = definition_catalog_merge_error(u64::MAX, 10);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D definition schema"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D definition schema")
+    );
 }
 
 #[test]
 fn material_definition_index_refuses_collection_limit() {
     let error = definition_catalog_merge_error(0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D definition catalog"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D definition catalog")
+    );
 }
 
 #[test]
@@ -93,8 +105,10 @@ fn material_body_id_copy_refuses_retained_limit() {
     let error = material_context_with_limits(u64::MAX, 0, |ctx| {
         super::super::copy_body_id(ctx, &id).unwrap_err()
     });
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D material body ID"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D material body ID")
+    );
 }
 
 #[test]
@@ -103,8 +117,10 @@ fn material_appearance_id_copy_refuses_retained_limit() {
     let error = material_context_with_limits(u64::MAX, 0, |ctx| {
         super::super::copy_appearance_id(ctx, &id).unwrap_err()
     });
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D material appearance ID"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D material appearance ID")
+    );
 }
 
 fn named_channel_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
@@ -117,45 +133,50 @@ fn named_channel_error(max_items: u64, max_retained: u64) -> cadmpeg_core::Codec
 #[test]
 fn material_act_channel_name_refuses_retained_limit() {
     let error = named_channel_error(u64::MAX, 3);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D ACT channel name"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D ACT channel name")
+    );
 }
 
 #[test]
 fn material_act_channel_guid_refuses_retained_limit() {
     let error = named_channel_error(u64::MAX, 7);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D ACT channel GUID"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D ACT channel GUID")
+    );
 }
 
 #[test]
 fn material_act_channel_copy_refuses_collection_limit() {
     let error = named_channel_error(0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D ACT channel map"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D ACT channel map")
+    );
 }
 
 #[test]
 fn material_named_act_channel_refuses_collection_limit() {
     let error = named_channel_error(1, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D named ACT channels"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D named ACT channels")
+    );
 }
 
 #[test]
 fn material_fixed_appearance_vector_refuses_collection_limit() {
     let error = material_context_with_limits(0, u64::MAX, |ctx| {
         let mut appearances = Vec::new();
-        super::super::push_material_item(
-            ctx,
-            &mut appearances,
-            (),
-            "collect F3D fixed appearances",
-        )
-        .unwrap_err()
+        super::super::push_material_item(ctx, &mut appearances, (), "collect F3D fixed appearances")
+            .unwrap_err()
     });
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D fixed appearances"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D fixed appearances")
+    );
 }
 
 fn schema_appearance_error(
@@ -186,8 +207,10 @@ fn schema_appearance_property_map_refuses_collection_limit() {
         std::collections::BTreeMap::from([("generic_reflectivity".into(), property)]),
     );
     let error = schema_appearance_error(&[record], 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D appearance properties"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D appearance properties")
+    );
 }
 
 #[test]
@@ -204,24 +227,30 @@ fn schema_appearance_property_name_refuses_retained_limit() {
         std::collections::BTreeMap::from([("generic_reflectivity".into(), property)]),
     );
     let error = schema_appearance_error(&[record], u64::MAX, 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D appearance property name"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D appearance property name")
+    );
 }
 
 #[test]
 fn schema_appearance_vector_refuses_collection_limit() {
     let record = appearance_record("GenericSchema", Default::default());
     let error = schema_appearance_error(&[record], 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D appearances"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D appearances")
+    );
 }
 
 #[test]
 fn schema_texture_index_refuses_collection_limit() {
     let record = texture_record("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb", "textures/a.png");
     let error = schema_appearance_error(&[record], 1, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D texture assets"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D texture assets")
+    );
 }
 
 #[test]
@@ -230,9 +259,15 @@ fn schema_texture_key_refuses_retained_limit() {
     let path = "textures/a.png";
     let record = texture_record(guid, path);
     let already_retained = path.len() + guid.len() + "UnifiedBitmapSchema".len();
-    let error = schema_appearance_error(&[record], u64::MAX, u64::try_from(already_retained).unwrap());
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D texture asset key"));
+    let error = schema_appearance_error(
+        &[record],
+        u64::MAX,
+        u64::try_from(already_retained).unwrap(),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D texture asset key")
+    );
 }
 
 #[test]
@@ -243,8 +278,25 @@ fn material_library_id_refuses_retained_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
     let error = super::super::library_id(&ctx, "L").unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D appearance library ID")
+    );
+}
+
+#[test]
+fn browser_node_candidate_fold_refuses_materialized_limit() {
+    let marker = "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C";
+    let strings = vec![(0, marker.to_owned()), (1, "node-a".to_owned()), (2, "visual".to_owned())];
+    let nodes = std::collections::HashMap::from([("node-a".to_owned(), 7)]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    let error = super::super::body_node_candidate(&ctx, &strings, 2, &nodes).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D appearance library ID"));
+        if limit.operation == "fold F3D browser node candidate"));
 }
 
 fn fixed_appearance_error(asset_lib_id: &str, max_retained: u64) -> cadmpeg_core::CodecError {
@@ -262,27 +314,34 @@ fn fixed_appearance_error(asset_lib_id: &str, max_retained: u64) -> cadmpeg_core
 
 #[test]
 fn fixed_appearance_guid_copy_refuses_retained_limit() {
-    let retained_fields = "PhysMatSchema".len() + "g".len() + "b".len();
-    let error = fixed_appearance_error("", u64::try_from(retained_fields).unwrap());
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D fixed appearance GUID"));
+    let error = fixed_appearance_error("", 38);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D fixed appearance GUID")
+    );
 }
 
 #[test]
 fn fixed_appearance_library_copy_refuses_retained_limit() {
-    let retained_fields = "PhysMatSchema".len() + "g".len() + "b".len() + "L".len() + "g".len();
-    let error = fixed_appearance_error("L", u64::try_from(retained_fields).unwrap());
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D appearance library ID"));
+    let error = fixed_appearance_error("L", 40);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D appearance library ID")
+    );
 }
 
 #[test]
 fn schema_connected_texture_vector_refuses_collection_limit() {
     let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
-    let records = [texture_record(guid, "textures/a.png"), appearance_connected_to(guid)];
+    let records = [
+        texture_record(guid, "textures/a.png"),
+        appearance_connected_to(guid),
+    ];
     let error = schema_appearance_error(&records, 4, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D connected textures"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D connected textures")
+    );
 }
 
 macro_rules! schema_appearance_text_limit_test {
@@ -297,10 +356,26 @@ macro_rules! schema_appearance_text_limit_test {
     };
 }
 
-schema_appearance_text_limit_test!(schema_appearance_name_refuses_retained_limit, 0, "copy F3D appearance name");
-schema_appearance_text_limit_test!(schema_appearance_guid_refuses_retained_limit, 9, "copy F3D appearance GUID");
-schema_appearance_text_limit_test!(schema_appearance_visual_guid_refuses_retained_limit, 45, "copy F3D appearance visual GUID");
-schema_appearance_text_limit_test!(schema_appearance_schema_refuses_retained_limit, 81, "copy F3D appearance schema");
+schema_appearance_text_limit_test!(
+    schema_appearance_name_refuses_retained_limit,
+    58,
+    "copy F3D appearance name"
+);
+schema_appearance_text_limit_test!(
+    schema_appearance_guid_refuses_retained_limit,
+    67,
+    "copy F3D appearance GUID"
+);
+schema_appearance_text_limit_test!(
+    schema_appearance_visual_guid_refuses_retained_limit,
+    103,
+    "copy F3D appearance visual GUID"
+);
+schema_appearance_text_limit_test!(
+    schema_appearance_schema_refuses_retained_limit,
+    139,
+    "copy F3D appearance schema"
+);
 
 #[test]
 fn material_note_format_refuses_retained_limit() {
@@ -316,8 +391,10 @@ fn material_note_format_refuses_retained_limit() {
         "retain F3D protein rejection note",
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D protein rejection note"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D protein rejection note")
+    );
 }
 
 #[test]
@@ -335,8 +412,10 @@ fn material_note_vector_refuses_collection_limit() {
         "collect F3D protein rejection notes",
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D protein rejection notes"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D protein rejection notes")
+    );
 }
 
 #[test]
@@ -354,8 +433,10 @@ fn material_appearance_merge_refuses_collection_limit() {
         "merge F3D fixed appearances",
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "merge F3D fixed appearances"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "merge F3D fixed appearances")
+    );
 }
 
 #[test]
@@ -373,24 +454,27 @@ fn material_asset_appearance_vector_refuses_collection_limit() {
         "collect F3D asset appearances",
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D asset appearances"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D asset appearances")
+    );
 }
 
 #[test]
 fn material_schema_id_index_refuses_collection_limit() {
-    let (appearances, _) = super::schema_appearances(&[
-        appearance_record("GenericSchema", Default::default()),
-    ])
-    .expect("schema appearance");
+    let (appearances, _) =
+        super::schema_appearances(&[appearance_record("GenericSchema", Default::default())])
+            .expect("schema appearance");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
     let error = super::super::index_schema_appearance_ids(&ctx, &appearances).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D schema appearance IDs"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D schema appearance IDs")
+    );
 }
 
 macro_rules! material_item_limit_test {
@@ -411,11 +495,26 @@ macro_rules! material_item_limit_test {
     };
 }
 
-material_item_limit_test!(material_assignment_vector_refuses_collection_limit, "collect F3D material assignments");
-material_item_limit_test!(material_browser_appearance_vector_refuses_collection_limit, "collect F3D browser body appearances");
-material_item_limit_test!(material_body_override_vector_refuses_collection_limit, "collect F3D body appearance overrides");
-material_item_limit_test!(material_assignment_appearance_vector_refuses_collection_limit, "collect F3D assignment appearances");
-material_item_limit_test!(material_override_binding_vector_refuses_collection_limit, "collect F3D override appearance bindings");
+material_item_limit_test!(
+    material_assignment_vector_refuses_collection_limit,
+    "collect F3D material assignments"
+);
+material_item_limit_test!(
+    material_browser_appearance_vector_refuses_collection_limit,
+    "collect F3D browser body appearances"
+);
+material_item_limit_test!(
+    material_body_override_vector_refuses_collection_limit,
+    "collect F3D body appearance overrides"
+);
+material_item_limit_test!(
+    material_assignment_appearance_vector_refuses_collection_limit,
+    "collect F3D assignment appearances"
+);
+material_item_limit_test!(
+    material_override_binding_vector_refuses_collection_limit,
+    "collect F3D override appearance bindings"
+);
 
 #[test]
 fn material_assignment_id_refuses_retained_limit() {
@@ -426,8 +525,10 @@ fn material_assignment_id_refuses_retained_limit() {
         .expect("test decode context");
     let error = crate::ids::native_scoped_id_charged(&ctx, "BulkStream", "material-assignment", 1)
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D native record ID"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D native record ID")
+    );
 }
 
 fn browser_node_bytes(members: &[u64]) -> Vec<u8> {
@@ -450,30 +551,33 @@ fn browser_node_error(members: &[u64], max_items: u64) -> cadmpeg_core::CodecErr
     policy.limits.max_collection_items = max_items;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
-    crate::design::decode::body::scanned_browser_node_entities(
-        &ctx,
-        &browser_node_bytes(members),
-    )
-    .unwrap_err()
+    crate::design::decode::body::scanned_browser_node_entities(&ctx, &browser_node_bytes(members))
+        .unwrap_err()
 }
 
 #[test]
 fn browser_node_scan_refuses_collection_limit() {
     let error = browser_node_error(&[1], 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D browser node identities"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D browser node identities")
+    );
 }
 
 #[test]
 fn browser_node_entity_index_refuses_collection_limit() {
     let error = browser_node_error(&[1], 1);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D browser node entities"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D browser node entities")
+    );
 }
 
 #[test]
 fn browser_node_ambiguity_index_refuses_collection_limit() {
     let error = browser_node_error(&[1, 2], 3);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D ambiguous browser nodes"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D ambiguous browser nodes")
+    );
 }

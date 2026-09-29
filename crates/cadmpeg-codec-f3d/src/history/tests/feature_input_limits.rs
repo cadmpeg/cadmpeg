@@ -9,16 +9,20 @@ fn input_fixture() -> (
     crate::records::feature::scope::DesignParameterScope,
     crate::history_records::AsmHistory,
 ) {
-    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory, AsmTopologyCache};
+    use crate::history_records::{
+        AsmDeltaState, AsmHistoricalTopology, AsmHistory, AsmTopologyCache,
+    };
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:design:scope#input",
         crate::records::feature::scope::DesignFeatureKind::WorkPoint,
         7,
     );
-    scope.try_edit(|draft| {
-        draft.previous_history_state_id = Some(4);
-        draft.layout_fixture_tail();
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(4);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let feature = Feature {
         id: "f3d:model:feature#input".to_owned().try_into().unwrap(),
         ordinal: 0,
@@ -69,7 +73,10 @@ fn input_fixture() -> (
     (feature, scope, history)
 }
 
-fn project(max_items: u64, max_retained_bytes: u64) -> Result<Vec<cadmpeg_ir::features::FeatureInputTopology>, cadmpeg_core::CodecError> {
+fn project(
+    max_items: u64,
+    max_retained_bytes: u64,
+) -> Result<Vec<cadmpeg_ir::features::FeatureInputTopology>, cadmpeg_core::CodecError> {
     let (feature, scope, history) = input_fixture();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
@@ -88,48 +95,63 @@ fn project(max_items: u64, max_retained_bytes: u64) -> Result<Vec<cadmpeg_ir::fe
 #[test]
 fn input_body_members_refuse_collection_limit() {
     let error = project(0, u64::MAX).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D input bodies"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D input bodies")
+    );
 }
 
 #[test]
 fn input_face_members_refuse_collection_limit() {
     let error = project(2, u64::MAX).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D input faces"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D input faces")
+    );
 }
 
 #[test]
 fn input_edge_members_refuse_collection_limit() {
     let error = project(4, u64::MAX).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D input edges"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D input edges")
+    );
 }
 
 #[test]
 fn input_vertex_members_refuse_collection_limit() {
     let error = project(6, u64::MAX).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D input vertices"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D input vertices")
+    );
 }
 
 #[test]
 fn input_topologies_refuse_collection_limit() {
     let error = project(8, u64::MAX).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D input topologies"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D input topologies")
+    );
 }
 
 #[test]
 fn input_identity_refuses_retained_limit() {
     let error = project(u64::MAX, 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D history input identity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D history input identity")
+    );
 }
 
 #[test]
 fn input_projection_preserves_member_order() {
     let projected = project(9, u64::MAX).unwrap();
     assert_eq!(projected.len(), 1);
-    assert_eq!(projected[0].vertices.as_slice()[0].as_str(), "f3d:history-input:vertex#5:input:4:4");
+    assert_eq!(
+        projected[0].vertices.as_slice()[0].as_str(),
+        "f3d:history-input:vertex#5:input:4:4"
+    );
 }

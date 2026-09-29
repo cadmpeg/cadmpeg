@@ -20,8 +20,8 @@ use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference};
 
 use crate::bytes::{
-    is_guid_prefix, is_guid_relaxed, lp_ascii_filtered, lp_ascii_strict, lp_utf16_bounded,
-    take_reference, take_reference_charged, lp_ascii_strict_charged, lp_utf16_bounded_charged,
+    is_guid_prefix, is_guid_relaxed, lp_ascii_filtered, lp_ascii_strict, lp_ascii_strict_charged,
+    lp_utf16_bounded, lp_utf16_bounded_charged, take_reference, take_reference_charged,
 };
 use crate::container::ContainerScan;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
@@ -132,7 +132,11 @@ enum StringProperty {
 }
 
 impl ReferenceJson {
-    fn into_record(self, ctx: &DecodeContext<'_>, ordinal: usize) -> Result<XrefReference, CodecError> {
+    fn into_record(
+        self,
+        ctx: &DecodeContext<'_>,
+        ordinal: usize,
+    ) -> Result<XrefReference, CodecError> {
         let Self::Xref {
             from,
             relative_path,
@@ -200,10 +204,10 @@ fn xref_id_charged(
         }
     }
     let mut length = Length(0);
-    std::fmt::write(&mut length, args.clone())
+    std::fmt::write(&mut length, args)
         .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
-    let bytes = u64::try_from(length.0)
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
+    let bytes =
+        u64::try_from(length.0).map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
     ctx.charge_retained(bytes, OPERATION)?;
     let mut id = String::new();
     id.try_reserve(length.0)
@@ -251,10 +255,10 @@ fn parse_component_reference_data(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<serde_json::Value, CodecError> {
-    let length = u64::try_from(bytes.len())
-        .map_err(|_| ctx.refuse_codec_limit("preflight F3D component reference JSON", 0, u64::MAX))?;
-    let _reservation =
-        ctx.reserve_scoped(length, "preflight F3D component reference JSON")?;
+    let length = u64::try_from(bytes.len()).map_err(|_| {
+        ctx.refuse_codec_limit("preflight F3D component reference JSON", 0, u64::MAX)
+    })?;
+    let _reservation = ctx.reserve_scoped(length, "preflight F3D component reference JSON")?;
     crate::json_budget::preflight(
         ctx,
         bytes,
@@ -276,7 +280,10 @@ fn parse_component_reference_data(
 }
 
 /// Parse the top-level `RedirectionsStream.dat` table, if present.
-pub(crate) fn decode(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<Option<XrefTable>, CodecError> {
+pub(crate) fn decode(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Option<XrefTable>, CodecError> {
     decode_with_scopes(ctx, scan, &[])
 }
 
@@ -338,22 +345,23 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
     }
     let mut designs = Vec::new();
     for (ordinal, design) in parsed.designs.into_iter().enumerate() {
-            ctx.charge_collection_items(1, "admit F3D xref designs")?;
-            designs.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("admit F3D xref designs", 0, 1))?;
-            require_text(
-                &design.target_file_name,
-                format_args!("designs[{ordinal}].targetFileName"),
-            )?;
-            designs.push(XrefDesign {
-                id: xref_id_charged(ctx, format_args!("f3d:xref:design#{ordinal}"))?,
-                ordinal: ordinal_at(ordinal)?,
-                file_version: design.file_version,
-                target_file_name: design.target_file_name,
-                display_name: design.display_name,
-                lineage_urn: design.lineage_urn,
-                version_urn: design.version_urn,
-            });
+        ctx.charge_collection_items(1, "admit F3D xref designs")?;
+        designs
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("admit F3D xref designs", 0, 1))?;
+        require_text(
+            &design.target_file_name,
+            format_args!("designs[{ordinal}].targetFileName"),
+        )?;
+        designs.push(XrefDesign {
+            id: xref_id_charged(ctx, format_args!("f3d:xref:design#{ordinal}"))?,
+            ordinal: ordinal_at(ordinal)?,
+            file_version: design.file_version,
+            target_file_name: design.target_file_name,
+            display_name: design.display_name,
+            lineage_urn: design.lineage_urn,
+            version_urn: design.version_urn,
+        });
     }
     let references = match parsed.references {
         ReferencesJson::List(references) if !references.is_empty() => references,
@@ -367,7 +375,8 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
     let mut admitted_references = Vec::new();
     for (ordinal, reference) in references.into_iter().enumerate() {
         ctx.charge_collection_items(1, "admit F3D xref references")?;
-        admitted_references.try_reserve(1)
+        admitted_references
+            .try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit("admit F3D xref references", 0, 1))?;
         admitted_references.push(reference.into_record(ctx, ordinal)?);
     }
@@ -421,10 +430,10 @@ pub(crate) fn docstruct(
     };
     let doc_type = copy_string_charged(ctx, doc_type, "copy F3D docstruct type")?;
     let subtype = docstruct
-            .get("subtype")
-            .and_then(serde_json::Value::as_str)
-            .map(|subtype| copy_string_charged(ctx, subtype, "copy F3D docstruct subtype"))
-            .transpose()?;
+        .get("subtype")
+        .and_then(serde_json::Value::as_str)
+        .map(|subtype| copy_string_charged(ctx, subtype, "copy F3D docstruct subtype"))
+        .transpose()?;
     Ok(Some(Docstruct { doc_type, subtype }))
 }
 
@@ -437,7 +446,7 @@ pub(crate) fn is_assembly(
     table: Option<&XrefTable>,
 ) -> Result<bool, CodecError> {
     if crate::container::design_breps(scan).next().is_some()
-        || !table.is_some_and(|table| !table.references.is_empty())
+        || table.is_none_or(|table| table.references.is_empty())
     {
         return Ok(false);
     }
@@ -463,43 +472,43 @@ pub(crate) fn project_occurrences(
 ) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
     let mut occurrences = Vec::new();
     for (ordinal, reference) in table.references.iter().enumerate() {
-            ctx.charge_collection_items(1, "project F3D xref occurrence")?;
-            occurrences.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("project F3D xref occurrence", 0, 1)
-            })?;
-            let path = copy_string_charged(ctx, &reference.relative_path, "copy F3D xref path")?;
-            let transform = reference.transform.map_or(
-                [
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ],
-                crate::records::xref::XrefPlacementTransform::rows,
-            );
-            occurrences.push(Occurrence {
-                id: crate::ids::neutral_xref_occurrence_id(
-                    reference.ordinal,
-                    reference.occurrence_ordinal,
-                ),
-                prototype: PrototypeReference::External {
-                    document: ExternalDocument::path(path),
-                    object: None,
-                },
-                parent: OccurrenceParent::Root {},
-                ordinal: ordinal_at(ordinal)?,
-                transform: crate::design::components::neutral_transform(transform)?,
-                linked_prototype: None,
-                scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-                name: None,
-                visible: None,
-                link: None,
-                native_ref: Some(copy_string_charged(
-                    ctx,
-                    &reference.id,
-                    "copy F3D xref native reference",
-                )?),
-            });
+        ctx.charge_collection_items(1, "project F3D xref occurrence")?;
+        occurrences
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("project F3D xref occurrence", 0, 1))?;
+        let path = copy_string_charged(ctx, &reference.relative_path, "copy F3D xref path")?;
+        let transform = reference.transform.map_or(
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            crate::records::xref::XrefPlacementTransform::rows,
+        );
+        occurrences.push(Occurrence {
+            id: crate::ids::neutral_xref_occurrence_id(
+                reference.ordinal,
+                reference.occurrence_ordinal,
+            ),
+            prototype: PrototypeReference::External {
+                document: ExternalDocument::path(path),
+                object: None,
+            },
+            parent: OccurrenceParent::Root {},
+            ordinal: ordinal_at(ordinal)?,
+            transform: crate::design::components::neutral_transform(transform)?,
+            linked_prototype: None,
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: Some(copy_string_charged(
+                ctx,
+                &reference.id,
+                "copy F3D xref native reference",
+            )?),
+        });
     }
     Ok(occurrences)
 }
@@ -566,16 +575,23 @@ fn bind_occurrences(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let meta_entry = entry.name.strip_suffix("BulkStream.dat").and_then(|prefix| {
-            scan.entries.iter().find(|candidate| {
-                candidate.name.strip_prefix(prefix) == Some("MetaStream.dat")
-            })
-        });
+        let meta_entry = entry
+            .name
+            .strip_suffix("BulkStream.dat")
+            .and_then(|prefix| {
+                scan.entries
+                    .iter()
+                    .find(|candidate| candidate.name.strip_prefix(prefix) == Some("MetaStream.dat"))
+            });
         let (serializer_magic, placement_offsets) = if let Some(meta_entry) = meta_entry {
             let meta = scan.parsed_metastream(ctx, &meta_entry.name)?;
             let meta_bytes = scan.entry_bytes(&meta_entry.name)?;
             (
-                Some(crate::metastream::serializer_magic(ctx, meta_bytes, &meta_entry.name)?),
+                Some(crate::metastream::serializer_magic(
+                    ctx,
+                    meta_bytes,
+                    &meta_entry.name,
+                )?),
                 Some(typed_occurrence_placement_offsets(ctx, &meta)?),
             )
         } else {
@@ -590,8 +606,14 @@ fn bind_occurrences(
             placement_offsets.as_ref(),
         )?;
         ctx.charge_collection_items(1, "collect F3D xref streams")?;
-        streams.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect F3D xref streams", 0, 1))?;
-        streams.push((placements, failures, crate::ids::native_scope_charged(ctx, &entry.name)?));
+        streams
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("collect F3D xref streams", 0, 1))?;
+        streams.push((
+            placements,
+            failures,
+            crate::ids::native_scope_charged(ctx, &entry.name)?,
+        ));
     }
     let mut expanded = Vec::new();
     let mut placement_failures = Vec::new();
@@ -627,22 +649,32 @@ fn bind_occurrences(
                 placements,
                 &reference.neutron_role,
             )?;
-            ctx.charge_collection_items(selected.len() as u64, "collect F3D xref occurrence transforms")?;
+            ctx.charge_collection_items(
+                selected.len() as u64,
+                "collect F3D xref occurrence transforms",
+            )?;
             occurrences.try_reserve(selected.len()).map_err(|_| {
-                ctx.refuse_codec_limit("collect F3D xref occurrence transforms", 0, selected.len() as u64)
+                ctx.refuse_codec_limit(
+                    "collect F3D xref occurrence transforms",
+                    0,
+                    selected.len() as u64,
+                )
             })?;
             occurrences.extend(selected);
         }
         if occurrences.is_empty() {
             if streams.iter().any(|(_, failures, stream)| {
-                !scopes.iter().filter_map(|scope| {
-                    let construction_stream = crate::ids::native_stream(&scope.id)?;
-                    let construction = scope.component_insert_construction()?;
-                    Some((construction_stream, construction))
-                }).any(|(construction_stream, construction)| {
-                    construction_stream == stream
-                        && construction.neutron_role == reference.neutron_role
-                })
+                !scopes
+                    .iter()
+                    .filter_map(|scope| {
+                        let construction_stream = crate::ids::native_stream(&scope.id)?;
+                        let construction = scope.component_insert_construction()?;
+                        Some((construction_stream, construction))
+                    })
+                    .any(|(construction_stream, construction)| {
+                        construction_stream == stream
+                            && construction.neutron_role == reference.neutron_role
+                    })
                     && failures.iter().any(|failure| {
                         failure
                             .link_names
@@ -657,17 +689,17 @@ fn bind_occurrences(
                 placement_failures.push(reference.ordinal);
             }
             ctx.charge_collection_items(1, "expand F3D xref references")?;
-            expanded.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("expand F3D xref references", 0, 1)
-            })?;
+            expanded
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("expand F3D xref references", 0, 1))?;
             expanded.push(copy_reference_charged(ctx, reference, None)?);
             continue;
         }
         for (occurrence_ordinal, transform) in occurrences.into_iter().enumerate() {
             ctx.charge_collection_items(1, "expand F3D xref references")?;
-            expanded.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("expand F3D xref references", 0, 1)
-            })?;
+            expanded
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("expand F3D xref references", 0, 1))?;
             let occurrence_id = xref_id_charged(
                 ctx,
                 format_args!(
@@ -695,8 +727,8 @@ fn copy_string_charged(
     source: &str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let length = u64::try_from(source.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let length =
+        u64::try_from(source.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_retained(length, operation)?;
     let mut copy = String::new();
     copy.try_reserve(source.len())
@@ -739,13 +771,16 @@ fn select_component_insert_transforms<'a, I>(
 where
     I: IntoIterator<Item = (&'a str, &'a DesignComponentInsertConstruction)>,
 {
-    collect_charged(ctx, constructions
-        .into_iter()
-        .filter(|(construction_stream, construction)| {
-            *construction_stream == stream && construction.neutron_role == role
-        })
-        .map(|(_, construction)| construction.transform().rows()),
-        "select F3D component insert transforms")
+    collect_charged(
+        ctx,
+        constructions
+            .into_iter()
+            .filter(|(construction_stream, construction)| {
+                *construction_stream == stream && construction.neutron_role == role
+            })
+            .map(|(_, construction)| construction.transform().rows()),
+        "select F3D component insert transforms",
+    )
 }
 
 fn collect_charged<T>(
@@ -756,7 +791,9 @@ fn collect_charged<T>(
     let mut collected = Vec::new();
     for value in values {
         ctx.charge_collection_items(1, operation)?;
-        collected.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        collected
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
         collected.push(value);
     }
     Ok(collected)
@@ -773,7 +810,11 @@ fn occurrence_transforms_with_precedence(
     if direct.is_empty() {
         occurrence_transforms(ctx, placements, role)
     } else {
-        collect_charged(ctx, direct.into_iter().map(Some), "select F3D direct xref transforms")
+        collect_charged(
+            ctx,
+            direct.into_iter().map(Some),
+            "select F3D direct xref transforms",
+        )
     }
 }
 
@@ -815,9 +856,9 @@ fn typed_occurrence_placement_offsets(
     {
         if !placement_entities.contains(&entity) {
             ctx.charge_collection_items(1, "index F3D xref placement entities")?;
-            placement_entities.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index F3D xref placement entities", 0, 1)
-            })?;
+            placement_entities
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("index F3D xref placement entities", 0, 1))?;
             placement_entities.insert(entity);
         }
     }
@@ -827,15 +868,13 @@ fn typed_occurrence_placement_offsets(
             continue;
         }
         let offset = usize::try_from(record.bulk_offset).map_err(|_| {
-            CodecError::Malformed(
-                "F3D occurrence-placement BulkStream offset exceeds usize".into(),
-            )
+            CodecError::Malformed("F3D occurrence-placement BulkStream offset exceeds usize".into())
         })?;
         if !offsets.contains(&offset) {
             ctx.charge_collection_items(1, "index F3D xref placement offsets")?;
-            offsets.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index F3D xref placement offsets", 0, 1)
-            })?;
+            offsets
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("index F3D xref placement offsets", 0, 1))?;
             offsets.insert(offset);
         }
     }
@@ -855,14 +894,20 @@ fn occurrence_transforms(
     placements: &[OccurrencePlacement],
     role: &str,
 ) -> Result<Vec<Option<[[f64; 4]; 4]>>, CodecError> {
-    collect_charged(ctx, placements
-        .iter()
-        .filter(|placement| placement.link_names.iter().any(|name| name == role))
-        .map(|placement| placement.transform),
-        "select F3D structured xref transforms")
+    collect_charged(
+        ctx,
+        placements
+            .iter()
+            .filter(|placement| placement.link_names.iter().any(|name| name == role))
+            .map(|placement| placement.transform),
+        "select F3D structured xref transforms",
+    )
 }
 
-fn indexed_records(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<IndexedRecord>, CodecError> {
+fn indexed_records(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<IndexedRecord>, CodecError> {
     ctx.charge_work(bytes.len() as u64, "scan F3D xref record headers")?;
     let mut records: Vec<IndexedRecord> = Vec::new();
     for at in 0..bytes.len().saturating_sub(11) {
@@ -879,9 +924,9 @@ fn indexed_records(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<IndexedR
             previous.end = at;
         }
         ctx.charge_collection_items(1, "index F3D xref record frame")?;
-        records.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("index F3D xref record frame", 0, 1)
-        })?;
+        records
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("index F3D xref record frame", 0, 1))?;
         records.push(IndexedRecord {
             offset: at,
             end: bytes.len(),
@@ -929,7 +974,15 @@ fn occurrence_placements_filtered(
     serializer_magic: Option<u32>,
     typed_offsets: Option<&HashSet<usize>>,
 ) -> Vec<OccurrencePlacement> {
-    occurrence_placements_with_failures(&cadmpeg_test_support::service_decode_context(), bytes, records, serializer_magic, typed_offsets).expect("test placement parse").0
+    occurrence_placements_with_failures(
+        &cadmpeg_test_support::service_decode_context(),
+        bytes,
+        records,
+        serializer_magic,
+        typed_offsets,
+    )
+    .expect("test placement parse")
+    .0
 }
 
 /// Parse admitted placement records and retain role names from records whose
@@ -947,31 +1000,29 @@ fn occurrence_placements_with_failures(
         .iter()
         .filter(|record| typed_offsets.is_none_or(|offsets| offsets.contains(&record.offset)))
     {
-            let Some(body) = bytes.get(record.offset..record.end) else {
-                continue;
-            };
-            if let Some(placement) = occurrence_placement(Some(ctx), body, serializer_magic)? {
-                ctx.charge_collection_items(1, "collect F3D xref placements")?;
-                placements.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("collect F3D xref placements", 0, 1)
-                })?;
-                placements.push(placement);
-            } else if let Some((link_names, _)) = occurrence_path(Some(ctx), body)? {
-                ctx.charge_collection_items(1, "collect F3D xref placement failures")?;
-                failures.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("collect F3D xref placement failures", 0, 1)
-                })?;
-                failures.push(OccurrencePlacementFailure { link_names });
-            } else if let Some(link_name) = legacy_occurrence_role(body) {
-                let link_names = collect_charged(ctx, [link_name], "collect F3D legacy xref role")?;
-                ctx.charge_collection_items(1, "collect F3D xref placement failures")?;
-                failures.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("collect F3D xref placement failures", 0, 1)
-                })?;
-                failures.push(OccurrencePlacementFailure {
-                    link_names,
-                });
-            }
+        let Some(body) = bytes.get(record.offset..record.end) else {
+            continue;
+        };
+        if let Some(placement) = occurrence_placement(Some(ctx), body, serializer_magic)? {
+            ctx.charge_collection_items(1, "collect F3D xref placements")?;
+            placements
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("collect F3D xref placements", 0, 1))?;
+            placements.push(placement);
+        } else if let Some((link_names, _)) = occurrence_path(Some(ctx), body)? {
+            ctx.charge_collection_items(1, "collect F3D xref placement failures")?;
+            failures
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("collect F3D xref placement failures", 0, 1))?;
+            failures.push(OccurrencePlacementFailure { link_names });
+        } else if let Some(link_name) = legacy_occurrence_role(body) {
+            let link_names = collect_charged(ctx, [link_name], "collect F3D legacy xref role")?;
+            ctx.charge_collection_items(1, "collect F3D xref placement failures")?;
+            failures
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("collect F3D xref placement failures", 0, 1))?;
+            failures.push(OccurrencePlacementFailure { link_names });
+        }
     }
     Ok((placements, failures))
 }
@@ -992,12 +1043,20 @@ fn occurrence_placement(
     if let Some(placement) = modern_occurrence_placement(decode, body, serializer_magic)? {
         return Ok(Some(placement));
     }
-    let Some(record_index) = View::u32_le_at(body, 7) else { return Ok(None) };
-    let Some((link_name, _)) = grouped_component_insert_identity(body, 0, body.len(), record_index) else { return Ok(None) };
+    let Some(record_index) = View::u32_le_at(body, 7) else {
+        return Ok(None);
+    };
+    let Some((link_name, _)) = grouped_component_insert_identity(body, 0, body.len(), record_index)
+    else {
+        return Ok(None);
+    };
     if let Some(ctx) = decode {
         ctx.charge_collection_items(1, "collect F3D grouped placement link name")?;
     }
-    Ok(Some(OccurrencePlacement { link_names: vec![link_name], transform: None }))
+    Ok(Some(OccurrencePlacement {
+        link_names: vec![link_name],
+        transform: None,
+    }))
 }
 
 /// Parse the placement generation that repeats the target identity after the
@@ -1006,10 +1065,14 @@ fn repeated_target_occurrence_placement(
     decode: Option<&DecodeContext<'_>>,
     body: &[u8],
 ) -> Result<Option<OccurrencePlacement>, CodecError> {
-    Ok(repeated_target_occurrence_placement_details(decode, body)?.map(|details| OccurrencePlacement {
-        link_names: details.link_names,
-        transform: details.transform.map(|(_, matrix)| matrix),
-    }))
+    Ok(
+        repeated_target_occurrence_placement_details(decode, body)?.map(|details| {
+            OccurrencePlacement {
+                link_names: details.link_names,
+                transform: details.transform.map(|(_, matrix)| matrix),
+            }
+        }),
+    )
 }
 
 struct RepeatedTargetPlacementDetails {
@@ -1130,12 +1193,14 @@ fn repeated_target_occurrence_placement_details(
         None => take_reference(body, &mut at),
     };
     xref_some!(reference);
-    Ok((at == body.len()).then_some(RepeatedTargetPlacementDetails {
-        link_names,
-        transform,
-        role,
-        role_offset: role_offset + 4,
-    }))
+    Ok(
+        (at == body.len()).then_some(RepeatedTargetPlacementDetails {
+            link_names,
+            transform,
+            role,
+            role_offset: role_offset + 4,
+        }),
+    )
 }
 
 /// Bind a repeated-target occurrence carrier to a Component Insert scope
@@ -1151,9 +1216,8 @@ pub(crate) fn repeated_target_component_insert(
     if View::u64_le_at(body, 7)? != u64::from(carrier_record_index) {
         return None;
     }
-    let details = match repeated_target_occurrence_placement_details(None, body) {
-        Ok(Some(details)) => details,
-        Ok(None) | Err(_) => return None,
+    let Ok(Some(details)) = repeated_target_occurrence_placement_details(None, body) else {
+        return None;
     };
     let transform = details.transform.map_or(
         [
@@ -1403,7 +1467,9 @@ fn modern_occurrence_placement(
     body: &[u8],
     serializer_magic: Option<u32>,
 ) -> Result<Option<OccurrencePlacement>, CodecError> {
-    let Some((link_names, at)) = occurrence_path(decode, body)? else { return Ok(None) };
+    let Some((link_names, at)) = occurrence_path(decode, body)? else {
+        return Ok(None);
+    };
     // The identity marker is absent in the oldest container generation, which
     // always stores the matrix. Both readings start with a zero byte when the
     // marker is present and the matrix follows, so the record end decides.
@@ -1583,19 +1649,28 @@ fn occurrence_path(
         Some(ctx) => lp_ascii_strict_charged(ctx, body, 0, 3..=3)?,
         None => lp_ascii_strict(body, 0, 3..=3),
     };
-    let Some((_, after_tag)) = class_tag else { return Ok(None) };
-    let Some(mut at) = after_tag.checked_add(8) else { return Ok(None) };
+    let Some((_, after_tag)) = class_tag else {
+        return Ok(None);
+    };
+    let Some(mut at) = after_tag.checked_add(8) else {
+        return Ok(None);
+    };
     let name = match decode {
         Some(ctx) => lp_ascii_strict_charged(ctx, body, at, 0..=256)?,
         None => lp_ascii_strict(body, at, 0..=256),
     };
-    let Some((_, after_name)) = name else { return Ok(None) };
+    let Some((_, after_name)) = name else {
+        return Ok(None);
+    };
     at = after_name;
     if body.get(at) != Some(&1) {
         return Ok(None);
     }
     at += 1;
-    let Some(count) = View::u32_le_at(body, at).and_then(|count| usize::try_from(count).ok()) else { return Ok(None) };
+    let Some(count) = View::u32_le_at(body, at).and_then(|count| usize::try_from(count).ok())
+    else {
+        return Ok(None);
+    };
     if count == 0 || count > 4096 {
         return Ok(None);
     }
@@ -1606,19 +1681,27 @@ fn occurrence_path(
             Some(ctx) => take_reference_charged(ctx, body, &mut at)?,
             None => take_reference(body, &mut at),
         };
-        let Some(element) = element else { return Ok(None) };
+        let Some(element) = element else {
+            return Ok(None);
+        };
         if let Some(link_name) = element.link_name() {
             let name = match decode {
-                Some(ctx) => copy_string_charged(ctx, link_name, "copy F3D xref placement link name")?,
+                Some(ctx) => {
+                    copy_string_charged(ctx, link_name, "copy F3D xref placement link name")?
+                }
                 None => link_name.to_owned(),
             };
             if let Some(ctx) = decode {
                 ctx.charge_collection_items(1, "collect F3D xref placement link names")?;
-                link_names.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect F3D xref placement link names", 0, 1))?;
+                link_names.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("collect F3D xref placement link names", 0, 1)
+                })?;
             }
             link_names.push(name);
         }
-        if View::u32_le_at(body, at).is_none() { return Ok(None) };
+        if View::u32_le_at(body, at).is_none() {
+            return Ok(None);
+        }
         at += 4;
     }
     if body.get(at) != Some(&0) {

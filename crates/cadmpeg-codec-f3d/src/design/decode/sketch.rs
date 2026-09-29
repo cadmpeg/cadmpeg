@@ -124,7 +124,9 @@ pub(crate) fn decode_sketch_placements(
         let Some(metadata) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
-        for (entity_suffix, visibility) in decode_sketch_visibilities_in_stream(ctx, bytes, &metadata)? {
+        for (entity_suffix, visibility) in
+            decode_sketch_visibilities_in_stream(ctx, bytes, &metadata)?
+        {
             if visibilities
                 .insert((ids::native_scope(&entry.name), entity_suffix), visibility)
                 .is_some()
@@ -1479,8 +1481,9 @@ fn decode_sketch_points_from_stream(
                     "F3D sketch point {record_index} has no valid inverse companion"
                 ))
             })?;
-        out.push(
-            SketchPoint::try_from_charged(ctx, crate::records::sketch_geometry::SketchPointDraft {
+        out.push(SketchPoint::try_from_charged(
+            ctx,
+            crate::records::sketch_geometry::SketchPointDraft {
                 id: ids::native_sketch_point_id(stream, frame.start),
                 record_index,
                 owner_reference: decoded.owner_reference,
@@ -1491,8 +1494,8 @@ fn decode_sketch_points_from_stream(
                 companion,
                 paired_reference: decoded.paired_reference,
                 coordinates: Point2::new(u, v),
-            })?,
-        );
+            },
+        )?);
     }
     Ok(out)
 }
@@ -4163,7 +4166,12 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
 fn decode_sketch_streams<T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-    decode: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>, &[u8], &crate::metastream::MetaStream, &str) -> Result<Vec<T>, CodecError>,
+    decode: impl Fn(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &[u8],
+        &crate::metastream::MetaStream,
+        &str,
+    ) -> Result<Vec<T>, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
     let mut out = Vec::new();
     for entry in scan

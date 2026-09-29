@@ -47,8 +47,8 @@ fn copy_string_charged(
     value: &str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let length = u64::try_from(value.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let length =
+        u64::try_from(value.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_retained(length, operation)?;
     let mut copy = String::new();
     copy.try_reserve(value.len())
@@ -74,15 +74,14 @@ pub(crate) fn format_retained(
     let mut length = Length(0);
     std::fmt::write(&mut length, args)
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    let bytes = u64::try_from(length.0)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let bytes =
+        u64::try_from(length.0).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_retained(bytes, operation)?;
     let mut output = String::new();
     output
         .try_reserve(length.0)
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
-    std::fmt::write(&mut output, args)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    std::fmt::write(&mut output, args).map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
     Ok(output)
 }
 
@@ -543,7 +542,12 @@ pub(crate) fn scan<'a>(
             if let Some(h) = kernel.as_ref().and_then(KernelFraming::asm_header) {
                 insert_attribute(ctx, &mut attributes, "asm_width", h.width.to_string())?;
                 if let Some(v) = h.metadata.save_format_version {
-                    insert_attribute(ctx, &mut attributes, "acis_save_format_version", v.to_string())?;
+                    insert_attribute(
+                        ctx,
+                        &mut attributes,
+                        "acis_save_format_version",
+                        v.to_string(),
+                    )?;
                 }
                 if let Some(v) = asm_header::record_count(buf) {
                     insert_attribute(ctx, &mut attributes, "asm_record_count", v.to_string())?;
@@ -555,13 +559,28 @@ pub(crate) fn scan<'a>(
                     insert_attribute(ctx, &mut attributes, "asm_flags", v.to_string())?;
                 }
                 if let Some(pf) = &h.metadata.product_family {
-                    insert_attribute(ctx, &mut attributes, "product_family", copy_string_charged(ctx, pf, "retain F3D container attribute")?)?;
+                    insert_attribute(
+                        ctx,
+                        &mut attributes,
+                        "product_family",
+                        copy_string_charged(ctx, pf, "retain F3D container attribute")?,
+                    )?;
                 }
                 if let Some(pv) = &h.metadata.product_version {
-                    insert_attribute(ctx, &mut attributes, "product_version", copy_string_charged(ctx, pv, "retain F3D container attribute")?)?;
+                    insert_attribute(
+                        ctx,
+                        &mut attributes,
+                        "product_version",
+                        copy_string_charged(ctx, pv, "retain F3D container attribute")?,
+                    )?;
                 }
                 if let Some(sd) = &h.metadata.save_date {
-                    insert_attribute(ctx, &mut attributes, "save_date", copy_string_charged(ctx, sd, "retain F3D container attribute")?)?;
+                    insert_attribute(
+                        ctx,
+                        &mut attributes,
+                        "save_date",
+                        copy_string_charged(ctx, sd, "retain F3D container attribute")?,
+                    )?;
                 }
                 if let Some(s) = h.metadata.scale {
                     insert_attribute(ctx, &mut attributes, "scale", format!("{s}"))?;
@@ -575,21 +594,41 @@ pub(crate) fn scan<'a>(
             }
             match solved_record_limit {
                 Some(offset) => {
-                    insert_attribute(ctx, &mut attributes, "history_partition_offset", offset.to_string())?;
-                    insert_attribute(ctx, &mut attributes, "solved_record_len", offset.to_string())?;
+                    insert_attribute(
+                        ctx,
+                        &mut attributes,
+                        "history_partition_offset",
+                        offset.to_string(),
+                    )?;
+                    insert_attribute(
+                        ctx,
+                        &mut attributes,
+                        "solved_record_len",
+                        offset.to_string(),
+                    )?;
                 }
                 None => {
-                    insert_attribute(ctx, &mut attributes, "history_partition_offset", "none".to_string())?;
+                    insert_attribute(
+                        ctx,
+                        &mut attributes,
+                        "history_partition_offset",
+                        "none".to_string(),
+                    )?;
                 }
             }
             insert_attribute(ctx, &mut attributes, "sha256", sha.as_str().to_owned())?;
 
-            push_charged(ctx, &mut breps, BrepFacts {
-                name: copy_string_charged(ctx, &name, "retain F3D BREP name")?,
-                uncompressed_len: uncompressed_size,
-                kernel,
-                sha256: sha,
-            }, "collect F3D BREP facts")?;
+            push_charged(
+                ctx,
+                &mut breps,
+                BrepFacts {
+                    name: copy_string_charged(ctx, &name, "retain F3D BREP name")?,
+                    uncompressed_len: uncompressed_size,
+                    kernel,
+                    sha256: sha,
+                },
+                "collect F3D BREP facts",
+            )?;
         }
 
         let storage = match compression.storage(compressed_size, uncompressed_size) {
@@ -604,12 +643,17 @@ pub(crate) fn scan<'a>(
                 EntryStorage::payload_only(VerbatimLabel::Stored, uncompressed_size)
             }
         };
-        push_charged(ctx, &mut entries, ContainerEntry {
-            name: copy_string_charged(ctx, &name, "retain F3D summary entry name")?,
-            role,
-            storage,
-            attributes,
-        }, "collect F3D container entries")?;
+        push_charged(
+            ctx,
+            &mut entries,
+            ContainerEntry {
+                name: copy_string_charged(ctx, &name, "retain F3D summary entry name")?,
+                role,
+                storage,
+                attributes,
+            },
+            "collect F3D container entries",
+        )?;
         ctx.charge_collection_items(1, "index F3D inflated entries")?;
         inflated_entries.insert(name, view);
     }
@@ -729,39 +773,66 @@ pub(crate) fn summary_notes(
 ) -> Result<Vec<String>, CodecError> {
     let mut notes = Vec::new();
     if let Some(folder) = scan.design_asset_folder() {
-        push_summary_note(ctx, &mut notes, format_args!("Design asset folder (from manifests): {folder}"))?;
+        push_summary_note(
+            ctx,
+            &mut notes,
+            format_args!("Design asset folder (from manifests): {folder}"),
+        )?;
     } else {
-        push_summary_note(ctx, &mut notes, format_args!("outer F3Z archive; each F3D member selects its own Design asset"))?;
+        push_summary_note(
+            ctx,
+            &mut notes,
+            format_args!("outer F3Z archive; each F3D member selects its own Design asset"),
+        )?;
     }
     let design_brep_count = design_breps(scan).count();
-    push_summary_note(ctx, &mut notes, format_args!(
+    push_summary_note(
+        ctx,
+        &mut notes,
+        format_args!(
         "{design_brep_count} ASM BREP stream(s); Design body-to-blob bindings select model geometry"
-    ))?;
+    ),
+    )?;
     if design_brep_count != scan.breps.len() {
-        push_summary_note(ctx, &mut notes, format_args!(
-            "{} ASM BREP stream(s) belong to non-Design assets",
-            scan.breps.len() - design_brep_count
-        ))?;
+        push_summary_note(
+            ctx,
+            &mut notes,
+            format_args!(
+                "{} ASM BREP stream(s) belong to non-Design assets",
+                scan.breps.len() - design_brep_count
+            ),
+        )?;
     }
     let history_brep_count = history_breps(scan).count();
     match history_brep_count {
         0 => {
             if design_brep_count != 0 {
-                push_summary_note(ctx, &mut notes, format_args!("no BREP header declares a history partition"))?;
+                push_summary_note(
+                    ctx,
+                    &mut notes,
+                    format_args!("no BREP header declares a history partition"),
+                )?;
             }
         }
         1 => {
             if let Some(history) = history_breps(scan).next() {
-                push_summary_note(ctx, &mut notes, format_args!(
-                    "history-bearing BREP: {} ({} bytes uncompressed)",
-                    history.name, history.uncompressed_len
-                ))?;
+                push_summary_note(
+                    ctx,
+                    &mut notes,
+                    format_args!(
+                        "history-bearing BREP: {} ({} bytes uncompressed)",
+                        history.name, history.uncompressed_len
+                    ),
+                )?;
             }
         }
-        count => push_summary_note(ctx, &mut notes, format_args!(
-            "{} history-bearing BREPs; each history graph is decoded independently",
-            count
-        ))?,
+        count => push_summary_note(
+            ctx,
+            &mut notes,
+            format_args!(
+                "{count} history-bearing BREPs; each history graph is decoded independently"
+            ),
+        )?,
     }
     if scope == SummaryScope::ContainerOnly {
         push_summary_note(ctx, &mut notes, format_args!(
@@ -940,12 +1011,13 @@ mod tests {
         policy.limits.max_retained_bytes = name_bytes * 4;
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = match super::scan(&ctx, root) {
-            Ok(_) => panic!("entry name must refuse"),
-            Err(error) => error,
+        let Err(error) = super::scan(&ctx, root) else {
+            panic!("entry name must refuse");
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D entry name"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D entry name")
+        );
     }
 
     #[test]
@@ -956,8 +1028,10 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let entries = BTreeMap::from([("document.f3d".to_owned(), View::over_retained(&[]))]);
         let error = super::root_f3d_members(&ctx, &entries).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "collect F3Z document members"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect F3Z document members")
+        );
     }
 
     #[test]
@@ -992,7 +1066,8 @@ mod tests {
         crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
         let name = "FusionAssetName[Active]/Design1/MetaStream.dat";
         zip.start_file(name, stored).unwrap();
-        zip.write_all(&crate::test_support::streams_test::design_metastream(&[])).unwrap();
+        zip.write_all(&crate::test_support::streams_test::design_metastream(&[]))
+            .unwrap();
         let bytes = zip.finish().unwrap().into_inner();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::default();
@@ -1001,12 +1076,13 @@ mod tests {
         let mut limited_policy = DecodePolicy::service();
         limited_policy.limits.max_collection_items = 0;
         let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
-        let error = match scan.parsed_metastream(&limited, name) {
-            Ok(_) => panic!("MetaStream cache entry must refuse"),
-            Err(error) => error,
+        let Err(error) = scan.parsed_metastream(&limited, name) else {
+            panic!("MetaStream cache entry must refuse");
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "cache F3D MetaStream"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "cache F3D MetaStream")
+        );
     }
 
     #[test]
@@ -1016,26 +1092,26 @@ mod tests {
         crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
         let name = "FusionAssetName[Active]/Design1/MetaStream.dat";
         zip.start_file(name, stored).unwrap();
-        zip.write_all(&crate::test_support::streams_test::design_metastream(&[])).unwrap();
+        zip.write_all(&crate::test_support::streams_test::design_metastream(&[]))
+            .unwrap();
         let bytes = zip.finish().unwrap().into_inner();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::default();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let scan = super::scan(&ctx, root).unwrap();
         let mut limited_policy = DecodePolicy::service();
-        limited_policy.limits.max_retained_bytes = (
-            "Design".len()
-                + "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".len()
-                + "FusionDesignSegmentType".len()
-                + "Fusion".len()
-        ) as u64;
+        limited_policy.limits.max_retained_bytes = ("Design".len()
+            + "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".len()
+            + "FusionDesignSegmentType".len()
+            + "Fusion".len()) as u64;
         let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
-        let error = match scan.parsed_metastream(&limited, name) {
-            Ok(_) => panic!("MetaStream cache name must refuse"),
-            Err(error) => error,
+        let Err(error) = scan.parsed_metastream(&limited, name) else {
+            panic!("MetaStream cache name must refuse");
         };
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "cache F3D MetaStream name"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "cache F3D MetaStream name")
+        );
     }
 
     #[test]

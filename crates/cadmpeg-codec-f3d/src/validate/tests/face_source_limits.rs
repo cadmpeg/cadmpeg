@@ -1,33 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn source_member(record_index: u32, byte_offset: u64)
-    -> crate::records::topology::face::DesignFaceSourceMember
-{
+fn source_member(
+    record_index: u32,
+    byte_offset: u64,
+) -> crate::records::topology::face::DesignFaceSourceMember {
     use crate::records::{
         mesh::DesignRelaxedGuidText,
-        topology::{construction::{
-            DesignConstructionPersistentIdentity,
-            DesignConstructionPersistentIdentityDraft,
-        }, face::DesignFaceSourceMember},
+        topology::{
+            construction::{
+                DesignConstructionPersistentIdentity, DesignConstructionPersistentIdentityDraft,
+            },
+            face::DesignFaceSourceMember,
+        },
     };
-    let identity = DesignConstructionPersistentIdentity::try_new(
-        DesignConstructionPersistentIdentityDraft {
+    let identity =
+        DesignConstructionPersistentIdentity::try_new(DesignConstructionPersistentIdentityDraft {
             local_id: 1,
             local_id_offset: byte_offset + 21,
             asset_id: DesignRelaxedGuidText::try_from(
                 "11111111-2222-4333-8444-555555555555".to_owned(),
-            ).unwrap(),
+            )
+            .unwrap(),
             asset_id_offset: byte_offset + 33,
             context_id: DesignRelaxedGuidText::try_from(
                 "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".to_owned(),
-            ).unwrap(),
+            )
+            .unwrap(),
             context_id_offset: byte_offset + 80,
             tail_slot_present: false,
             tail_slot_offset: byte_offset + 185,
             next_record_index: record_index + 1,
             next_byte_offset: byte_offset + 190,
-        },
-    ).unwrap();
+        })
+        .unwrap();
     DesignFaceSourceMember {
         record_index,
         byte_offset,
@@ -51,8 +56,14 @@ fn native() -> crate::native::F3dNative {
         paired_record_index: 91,
         paired_class_tag: "311".to_owned().try_into().unwrap(),
         source_members: vec![
-            Located { value: source_member(100, 1_000), offset: 936 },
-            Located { value: source_member(200, 1_200), offset: 947 },
+            Located {
+                value: source_member(100, 1_000),
+                offset: 936,
+            },
+            Located {
+                value: source_member(200, 1_200),
+                offset: 947,
+            },
         ],
     };
     let mut native = crate::native::F3dNative::default();
@@ -77,27 +88,35 @@ fn source_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
 #[test]
 fn face_source_member_index_refuses_collection_limit() {
     let error = source_error(0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D Face source member records"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D Face source member records")
+    );
 }
 
 #[test]
 fn face_source_carrier_index_refuses_collection_limit() {
     let error = source_error(2, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D Face source carriers"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D Face source carriers")
+    );
 }
 
 #[test]
 fn face_source_invalid_finding_refuses_collection_limit() {
     let error = source_error(3, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings")
+    );
 }
 
 #[test]
 fn face_source_invalid_entity_refuses_retained_limit() {
     let error = source_error(u64::MAX, 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity")
+    );
 }

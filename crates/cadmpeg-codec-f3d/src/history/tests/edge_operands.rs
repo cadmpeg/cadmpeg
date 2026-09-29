@@ -109,7 +109,8 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
         &[],
         std::slice::from_ref(&history),
         &scope_histories,
-    ).unwrap();
+    )
+    .unwrap();
 
     assert_eq!(operand.recipe_state_id, Some(1));
     assert_eq!(operand.resolved_edge_slot, None);

@@ -28,12 +28,14 @@ use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
-fn with_docstruct_scan(f: impl FnOnce(&cadmpeg_core::decode::DecodeArena, &crate::container::ContainerScan<'_>)) {
+fn with_docstruct_scan(
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeArena, &crate::container::ContainerScan<'_>),
+) {
     let bytes = f3d_without_brep("part-design", "part.f3d", &[]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .unwrap();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let scan = crate::container::scan(&ctx, root).unwrap();
     f(&arena, &scan);
 }
@@ -44,11 +46,14 @@ fn docstruct_type_attribute_refuses_collection_limit() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 11;
         let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
-            .unwrap().0;
+            .unwrap()
+            .0;
         let mut attributes = std::collections::BTreeMap::new();
         let error = super::super::annotate_docstruct(&ctx, &mut attributes, scan).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "record F3D docstruct type"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "record F3D docstruct type")
+        );
     });
 }
 
@@ -58,11 +63,14 @@ fn docstruct_subtype_attribute_refuses_collection_limit() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 12;
         let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
-            .unwrap().0;
+            .unwrap()
+            .0;
         let mut attributes = std::collections::BTreeMap::new();
         let error = super::super::annotate_docstruct(&ctx, &mut attributes, scan).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "record F3D docstruct subtype"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "record F3D docstruct subtype")
+        );
     });
 }
 
@@ -514,8 +522,10 @@ fn text_brep_parts_refuse_the_last_collection_item() {
     let Err(error) = decode_with_limit(refused) else {
         panic!("the item below the admission boundary must be refused");
     };
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D text B-rep parts"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D text B-rep parts")
+    );
 }
 
 #[test]
@@ -525,8 +535,8 @@ fn text_brep_framing_propagates_sat_collection_limit() {
     let entry = "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat";
     let archive = f3d_with_text_brep(&[entry]);
     let mut options = DecodeOptions::default();
-    // Six ZIP entries charge five archive collections each; text framing charges one.
-    options.policy.limits.max_collection_items = 31;
+    // Archive admission and indexes consume 74 collection items before SAT framing.
+    options.policy.limits.max_collection_items = 74;
     let error = F3dCodec
         .decode(&mut Cursor::new(archive), &options)
         .expect_err("text B-rep framing must admit primitives");

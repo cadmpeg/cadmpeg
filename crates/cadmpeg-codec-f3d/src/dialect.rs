@@ -175,15 +175,17 @@ impl F3dDialect {
         } else {
             root_document_members.len() - 1
         };
-        let length = root_document_members.iter().try_fold(separators, |total, member| {
-            total.checked_add(member.len())
-        }).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
-        let length_u64 = u64::try_from(length)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
+        let length = root_document_members
+            .iter()
+            .try_fold(separators, |total, member| total.checked_add(member.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
+        let length_u64 =
+            u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
         ctx.charge_collection_items(1, OPERATION)?;
         ctx.charge_retained(length_u64, OPERATION)?;
         let mut joined = String::new();
-        joined.try_reserve(length)
+        joined
+            .try_reserve(length)
             .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, length_u64))?;
         for (index, member) in root_document_members.iter().enumerate() {
             if index > 0 {
@@ -316,7 +318,8 @@ fn push_recovery_loss(
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "collect F3D dialect recovery losses";
     ctx.charge_collection_items(1, OPERATION)?;
-    losses.try_reserve(1)
+    losses
+        .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
     losses.push(loss);
     Ok(())
@@ -330,7 +333,9 @@ fn archive_loss_text(
     let operation = "retain F3D dialect recovery loss";
     match matched.declared().get(DECLARED_ARCHIVE_MEMBER) {
         Some(member) => crate::container::format_retained(
-            ctx, operation, format_args!("archive member {member}: {body}"),
+            ctx,
+            operation,
+            format_args!("archive member {member}: {body}"),
         ),
         None => crate::container::format_retained(ctx, operation, format_args!("{body}")),
     }
@@ -354,14 +359,14 @@ impl fmt::Display for ManifestRecovery<'_> {
             Admission::Unverified { using } => {
                 write!(formatter, "{}:{}", matched.format(), using.as_str())?;
             }
-            Admission::Residual => formatter.write_str(
-                "the residual parser path, which names no declared grammar"
-            )?,
+            Admission::Residual => {
+                formatter.write_str("the residual parser path, which names no declared grammar")?;
+            }
             Admission::Admitted | Admission::Refused => return Err(fmt::Error),
         }
         formatter.write_str(
             ": every field after the version was parsed with that layout. The layout \
-             fitting is consistency, not a declaration."
+             fitting is consistency, not a declaration.",
         )
     }
 }
@@ -375,7 +380,10 @@ fn dialect_loss(
     ctx: &DecodeContext<'_>,
     matched: &DialectMatch,
 ) -> Result<Option<LossNote>, CodecError> {
-    if matches!(matched.admission(), Admission::Admitted | Admission::Refused) {
+    if matches!(
+        matched.admission(),
+        Admission::Admitted | Admission::Refused
+    ) {
         return Ok(None);
     }
     let message = archive_loss_text(ctx, matched, ManifestRecovery(matched))?;
@@ -392,8 +400,12 @@ impl fmt::Display for KernelRecovery<'_> {
         let matched = self.matched;
         write!(formatter, "the kernel carrier {} declares ", self.carrier)?;
         match (
-            matched.declared().get(cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR),
-            matched.declared().get(cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MINOR),
+            matched
+                .declared()
+                .get(cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR),
+            matched
+                .declared()
+                .get(cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MINOR),
         ) {
             (Some(major), Some(minor)) => write!(formatter, "save format {major}.{minor}")?,
             (Some(major), None) => write!(formatter, "save format major {major}")?,

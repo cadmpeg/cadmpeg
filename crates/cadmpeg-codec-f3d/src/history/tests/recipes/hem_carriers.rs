@@ -92,10 +92,11 @@ fn hem_carrier_offsets_prove_fold_direction() {
         super::super::super::hem_direction_from_transition(
             None,
             7,
-            [&forward_first, &forward_second].into_iter(),
+            &[&forward_first, &forward_second].into_iter(),
             &previous,
             &transition,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SheetMetalHemDirection::Forward)
     );
 
@@ -105,10 +106,11 @@ fn hem_carrier_offsets_prove_fold_direction() {
         super::super::super::hem_direction_from_transition(
             None,
             7,
-            [&reverse_first, &reverse_second].into_iter(),
+            &[&reverse_first, &reverse_second].into_iter(),
             &previous,
             &transition,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SheetMetalHemDirection::Reverse)
     );
 
@@ -117,10 +119,11 @@ fn hem_carrier_offsets_prove_fold_direction() {
         super::super::super::hem_direction_from_transition(
             None,
             7,
-            [&zero_offset, &forward_second].into_iter(),
+            &[&zero_offset, &forward_second].into_iter(),
             &previous,
             &transition,
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }

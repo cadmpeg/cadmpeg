@@ -1296,9 +1296,16 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
     let (planar, planar_entities) =
         project_sketch_design(None, &placements, &[], &[], &[], &[], EPS_POINT_PROJECTION)
             .expect("sketch lanes pair");
-    let (spatial, spatial_entities) =
-        project_spatial_sketch_design(None, &placements, &[], &[], &[surface], &[], EPS_POINT_PROJECTION)
-            .expect("valid spatial surface fixture");
+    let (spatial, spatial_entities) = project_spatial_sketch_design(
+        None,
+        &placements,
+        &[],
+        &[],
+        &[surface],
+        &[],
+        EPS_POINT_PROJECTION,
+    )
+    .expect("valid spatial surface fixture");
     assert_eq!(planar.len(), 1);
     assert!(planar_entities.is_empty());
     assert_eq!(spatial.len(), 1);

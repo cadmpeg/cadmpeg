@@ -33,10 +33,10 @@ use super::OccurrencePlacement;
 
 const EPS_PLACEMENT_TRANSLATION: f64 = 1.0e-12;
 
-fn redirections_limit_context<'a>(
-    arena: &'a cadmpeg_core::decode::DecodeArena,
+fn redirections_limit_context(
+    arena: &cadmpeg_core::decode::DecodeArena,
     max_collection_items: u64,
-) -> cadmpeg_core::decode::DecodeContext<'a> {
+) -> cadmpeg_core::decode::DecodeContext<'_> {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = max_collection_items;
     cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
@@ -44,12 +44,14 @@ fn redirections_limit_context<'a>(
         .0
 }
 
-fn with_docstruct_scan(f: impl FnOnce(&cadmpeg_core::decode::DecodeArena, &crate::container::ContainerScan<'_>)) {
+fn with_docstruct_scan(
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeArena, &crate::container::ContainerScan<'_>),
+) {
     let bytes = f3d_without_brep("assembly-design", "root.f3d", &[]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .unwrap();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let scan = crate::container::scan(&ctx, root).unwrap();
     f(&arena, &scan);
 }
@@ -60,10 +62,13 @@ fn docstruct_json_refuses_materialized_limit() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_materialized_bytes = 0;
         let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
-            .unwrap().0;
+            .unwrap()
+            .0;
         let error = super::docstruct(&ctx, scan).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "preflight F3D properties JSON"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "preflight F3D properties JSON")
+        );
     });
 }
 
@@ -73,10 +78,13 @@ fn docstruct_json_refuses_collection_limit() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
-            .unwrap().0;
+            .unwrap()
+            .0;
         let error = super::docstruct(&ctx, scan).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "parse F3D properties JSON"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "parse F3D properties JSON")
+        );
     });
 }
 
@@ -86,10 +94,13 @@ fn docstruct_json_refuses_recursion_limit() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_recursion_depth = 0;
         let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
-            .unwrap().0;
+            .unwrap()
+            .0;
         let error = super::docstruct(&ctx, scan).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "scan F3D properties JSON"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "scan F3D properties JSON")
+        );
     });
 }
 
@@ -99,10 +110,13 @@ fn docstruct_type_refuses_retained_limit() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
-            .unwrap().0;
+            .unwrap()
+            .0;
         let error = super::docstruct(&ctx, scan).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "copy F3D docstruct type"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "copy F3D docstruct type")
+        );
     });
 }
 
@@ -112,10 +126,13 @@ fn docstruct_subtype_refuses_retained_limit() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = "assembly-design".len() as u64;
         let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
-            .unwrap().0;
+            .unwrap()
+            .0;
         let error = super::docstruct(&ctx, scan).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "copy F3D docstruct subtype"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "copy F3D docstruct subtype")
+        );
     });
 }
 
@@ -125,8 +142,10 @@ fn redirections_design_collection_refuses_limit() {
     let ctx = redirections_limit_context(&arena, 0);
     let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
     let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "admit F3D xref designs"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "admit F3D xref designs")
+    );
 }
 
 #[test]
@@ -135,11 +154,14 @@ fn redirections_json_refuses_materialized_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap().0;
+        .unwrap()
+        .0;
     let bytes = redirections_json("root.f3d", &[]);
     let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "parse F3D redirections JSON"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "parse F3D redirections JSON")
+    );
 }
 
 #[test]
@@ -148,8 +170,10 @@ fn redirections_reference_collection_refuses_limit() {
     let ctx = redirections_limit_context(&arena, 2);
     let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
     let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "admit F3D xref references"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "admit F3D xref references")
+    );
 }
 
 #[test]
@@ -158,11 +182,14 @@ fn redirections_design_id_refuses_retained_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap().0;
+        .unwrap()
+        .0;
     let bytes = redirections_json("root.f3d", &[]);
     let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D xref record ID"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D xref record ID")
+    );
 }
 
 #[test]
@@ -171,11 +198,14 @@ fn redirections_reference_id_refuses_retained_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 2 * "f3d:xref:design#0".len() as u64;
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap().0;
+        .unwrap()
+        .0;
     let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
     let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D xref record ID"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D xref record ID")
+    );
 }
 
 #[test]
@@ -184,55 +214,76 @@ fn xref_occurrence_id_refuses_retained_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap().0;
+        .unwrap()
+        .0;
     let error = super::xref_id_charged(
         &ctx,
         format_args!("f3d:xref:reference#{}-occurrence-{}", 0, 0),
-    ).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D xref record ID"));
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D xref record ID")
+    );
 }
 
 #[test]
 fn xref_occurrence_projection_refuses_collection_limit() {
     let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
-    let table = super::parse(&cadmpeg_test_support::service_decode_context(), bytes.as_bytes())
-        .unwrap();
+    let table = super::parse(
+        &cadmpeg_test_support::service_decode_context(),
+        bytes.as_bytes(),
+    )
+    .unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let ctx = redirections_limit_context(&arena, 0);
     let error = super::project_occurrences(&ctx, &table).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "project F3D xref occurrence"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "project F3D xref occurrence")
+    );
 }
 
 #[test]
 fn xref_occurrence_path_refuses_retained_limit() {
     let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
-    let table = super::parse(&cadmpeg_test_support::service_decode_context(), bytes.as_bytes())
-        .unwrap();
+    let table = super::parse(
+        &cadmpeg_test_support::service_decode_context(),
+        bytes.as_bytes(),
+    )
+    .unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap().0;
+        .unwrap()
+        .0;
     let error = super::project_occurrences(&ctx, &table).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D xref path"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D xref path")
+    );
 }
 
 #[test]
 fn xref_occurrence_native_reference_refuses_retained_limit() {
     let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
-    let table = super::parse(&cadmpeg_test_support::service_decode_context(), bytes.as_bytes())
-        .unwrap();
+    let table = super::parse(
+        &cadmpeg_test_support::service_decode_context(),
+        bytes.as_bytes(),
+    )
+    .unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = "part.f3d".len() as u64;
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap().0;
+        .unwrap()
+        .0;
     let error = super::project_occurrences(&ctx, &table).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D xref native reference"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D xref native reference")
+    );
 }
 
 #[test]
@@ -243,8 +294,10 @@ fn xref_record_frame_index_refuses_collection_limit() {
     bytes[..4].copy_from_slice(&3_u32.to_le_bytes());
     bytes[4..7].copy_from_slice(b"123");
     let error = super::indexed_records(&ctx, &bytes).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D xref record frame"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D xref record frame")
+    );
 }
 
 #[test]
@@ -254,8 +307,8 @@ fn xref_record_frame_scan_preserves_boundaries() {
     bytes[4..7].copy_from_slice(b"123");
     bytes[16..20].copy_from_slice(&3_u32.to_le_bytes());
     bytes[20..23].copy_from_slice(b"456");
-    let frames = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes)
-        .unwrap();
+    let frames =
+        super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
     assert_eq!(frames.len(), 2);
     assert_eq!((frames[0].offset, frames[0].end), (0, 16));
     assert_eq!((frames[1].offset, frames[1].end), (16, 35));
@@ -263,12 +316,19 @@ fn xref_record_frame_scan_preserves_boundaries() {
 
 fn one_typed_placement_metastream() -> crate::metastream::MetaStream {
     let bytes = design_metastream_with_records(
-        &[(super::OCCURRENCE_PLACEMENT_TYPE_GUID, "", 2, "Component", &[10])],
+        &[(
+            super::OCCURRENCE_PLACEMENT_TYPE_GUID,
+            "",
+            2,
+            "Component",
+            &[10],
+        )],
         &[(10, 0)],
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     crate::metastream::parse(&ctx, &bytes, "typed-placement-test").unwrap()
 }
 
@@ -278,8 +338,10 @@ fn xref_placement_entity_index_refuses_collection_limit() {
     let ctx = redirections_limit_context(&arena, 0);
     let error = super::typed_occurrence_placement_offsets(&ctx, &one_typed_placement_metastream())
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D xref placement entities"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D xref placement entities")
+    );
 }
 
 #[test]
@@ -288,8 +350,10 @@ fn xref_placement_offset_index_refuses_collection_limit() {
     let ctx = redirections_limit_context(&arena, 1);
     let error = super::typed_occurrence_placement_offsets(&ctx, &one_typed_placement_metastream())
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D xref placement offsets"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D xref placement offsets")
+    );
 }
 
 #[test]
@@ -301,112 +365,152 @@ fn xref_structured_transform_selection_refuses_collection_limit() {
         transform: None,
     };
     let error = super::occurrence_transforms(&ctx, &[placement], "role").unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "select F3D structured xref transforms"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "select F3D structured xref transforms")
+    );
 }
 
 #[test]
 fn xref_direct_transform_conversion_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let ctx = redirections_limit_context(&arena, 0);
-    let direct = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
-    let error = super::occurrence_transforms_with_precedence(&ctx, vec![direct], &[], "role")
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "select F3D direct xref transforms"));
+    let direct = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let error =
+        super::occurrence_transforms_with_precedence(&ctx, vec![direct], &[], "role").unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "select F3D direct xref transforms")
+    );
 }
 
 #[test]
 fn xref_component_insert_selection_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let ctx = redirections_limit_context(&arena, 0);
-    let construction = crate::records::feature::assembly_features::DesignComponentInsertConstruction {
-        relation_record_index: 1,
-        carrier_record_index: 2,
-        occurrence_identity: None,
-        neutron_role: "role".into(),
-        neutron_role_offset: 0,
-        placement: None,
-    };
+    let construction =
+        crate::records::feature::assembly_features::DesignComponentInsertConstruction {
+            relation_record_index: 1,
+            carrier_record_index: 2,
+            occurrence_identity: None,
+            neutron_role: "role".into(),
+            neutron_role_offset: 0,
+            placement: None,
+        };
     let error = super::select_component_insert_transforms(
         &ctx,
         [("stream", &construction)],
         "stream",
         "role",
-    ).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "select F3D component insert transforms"));
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "select F3D component insert transforms")
+    );
 }
 
 #[test]
 fn xref_occurrence_transform_aggregation_refuses_collection_limit() {
-    let identity = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
+    let identity = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
     let archive = crate::test_support::assembly_test::f3d_without_brep_with_xref_placement(
-        "assembly-design", "root.f3d", "part.f3d", XREF_ROLE, identity,
+        "assembly-design",
+        "root.f3d",
+        "part.f3d",
+        XREF_ROLE,
+        identity,
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &archive, &arena, &policy,
-    ).unwrap();
+    let (scan_ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
     let table_bytes = redirections_json("root.f3d", &[("part.f3d", XREF_ROLE)]);
     let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
     let limit_arena = cadmpeg_core::decode::DecodeArena::new();
-    let limit_ctx = redirections_limit_context(&limit_arena, 5);
+    let limit_ctx = redirections_limit_context(&limit_arena, 12);
     let error = super::bind_occurrences(&limit_ctx, &scan, &mut table, &[]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D xref occurrence transforms"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D xref occurrence transforms")
+    );
 }
 
 #[test]
 fn xref_stream_collection_refuses_collection_limit() {
-    let identity = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
+    let identity = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
     let archive = crate::test_support::assembly_test::f3d_without_brep_with_xref_placement(
-        "assembly-design", "root.f3d", "part.f3d", XREF_ROLE, identity,
+        "assembly-design",
+        "root.f3d",
+        "part.f3d",
+        XREF_ROLE,
+        identity,
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &archive, &arena, &policy,
-    ).unwrap();
+    let (scan_ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
     let table_bytes = redirections_json("root.f3d", &[("part.f3d", XREF_ROLE)]);
     let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
     let limit_arena = cadmpeg_core::decode::DecodeArena::new();
-    let limit_ctx = redirections_limit_context(&limit_arena, 3);
+    let limit_ctx = redirections_limit_context(&limit_arena, 10);
     let error = super::bind_occurrences(&limit_ctx, &scan, &mut table, &[]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D xref streams"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D xref streams")
+    );
 }
 
 #[test]
 fn xref_stream_scope_refuses_retained_limit() {
-    let identity = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
+    let identity = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
     let archive = crate::test_support::assembly_test::f3d_without_brep_with_xref_placement(
-        "assembly-design", "root.f3d", "part.f3d", XREF_ROLE, identity,
+        "assembly-design",
+        "root.f3d",
+        "part.f3d",
+        XREF_ROLE,
+        identity,
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &archive, &arena, &policy,
-    ).unwrap();
+    let (scan_ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
     let table_bytes = redirections_json("root.f3d", &[("part.f3d", XREF_ROLE)]);
     let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
     let limit_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut limit_policy = cadmpeg_core::decode::DecodePolicy::service();
-    limit_policy.limits.max_retained_bytes = 0;
-    let limit_ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &limit_arena, &limit_policy,
-    ).unwrap().0;
+    limit_policy.limits.max_retained_bytes = 498;
+    let limit_ctx =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limit_arena, &limit_policy)
+            .unwrap()
+            .0;
     let error = super::bind_occurrences(&limit_ctx, &scan, &mut table, &[]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D native scope"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D native scope")
+    );
 }
 
 #[test]
@@ -414,17 +518,18 @@ fn xref_expanded_reference_refuses_collection_limit() {
     let archive = f3d_without_brep("assembly-design", "root.f3d", &[("part.f3d", XREF_ROLE)]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &archive, &arena, &policy,
-    ).unwrap();
+    let (scan_ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
     let table_bytes = redirections_json("root.f3d", &[("part.f3d", XREF_ROLE)]);
     let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
     let limit_arena = cadmpeg_core::decode::DecodeArena::new();
     let limit_ctx = redirections_limit_context(&limit_arena, 0);
     let error = super::bind_occurrences(&limit_ctx, &scan, &mut table, &[]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "expand F3D xref references"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "expand F3D xref references")
+    );
 }
 
 #[test]
@@ -432,62 +537,70 @@ fn xref_reference_copy_refuses_retained_limit() {
     let archive = f3d_without_brep("assembly-design", "root.f3d", &[("part.f3d", XREF_ROLE)]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &archive, &arena, &policy,
-    ).unwrap();
+    let (scan_ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
     let table_bytes = redirections_json("root.f3d", &[("part.f3d", XREF_ROLE)]);
     let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
     let limit_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut limit_policy = cadmpeg_core::decode::DecodePolicy::service();
     limit_policy.limits.max_retained_bytes = 0;
-    let limit_ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &limit_arena, &limit_policy,
-    ).unwrap().0;
+    let limit_ctx =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limit_arena, &limit_policy)
+            .unwrap()
+            .0;
     let error = super::bind_occurrences(&limit_ctx, &scan, &mut table, &[]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D xref reference"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D xref reference")
+    );
 }
 
 #[test]
 fn xref_placement_collection_refuses_collection_limit() {
     let bytes = occurrence_record("role", 10, &[1], None);
-    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes)
-        .unwrap();
+    let records =
+        super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let ctx = redirections_limit_context(&arena, 0);
-    let error = super::occurrence_placements_with_failures(&ctx, &bytes, &records, None, None)
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D xref placements"));
+    let ctx = redirections_limit_context(&arena, 2);
+    let error =
+        super::occurrence_placements_with_failures(&ctx, &bytes, &records, None, None).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D xref placements")
+    );
 }
 
 #[test]
 fn xref_placement_failure_collection_refuses_collection_limit() {
     let mut bytes = occurrence_record("role", 10, &[1], None);
     bytes.pop();
-    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes)
-        .unwrap();
+    let records =
+        super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let ctx = redirections_limit_context(&arena, 0);
-    let error = super::occurrence_placements_with_failures(&ctx, &bytes, &records, None, None)
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D xref placement failures"));
+    let ctx = redirections_limit_context(&arena, 3);
+    let error =
+        super::occurrence_placements_with_failures(&ctx, &bytes, &records, None, None).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D xref placement failures")
+    );
 }
 
 #[test]
 fn xref_legacy_failure_role_refuses_collection_limit() {
     let mut bytes = legacy_occurrence_record("aaaabbbb-cccc-dddd-eeee-ffff00001111", 10, None);
     bytes.pop();
-    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes)
-        .unwrap();
+    let records =
+        super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let ctx = redirections_limit_context(&arena, 0);
-    let error = super::occurrence_placements_with_failures(&ctx, &bytes, &records, None, None)
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D legacy xref role"));
+    let error =
+        super::occurrence_placements_with_failures(&ctx, &bytes, &records, None, None).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D legacy xref role")
+    );
 }
 
 #[test]
@@ -621,7 +734,9 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
         placement_overrides: Vec::new(),
     };
 
-    let occurrences = super::project_occurrences(&cadmpeg_test_support::service_decode_context(), &table).unwrap();
+    let occurrences =
+        super::project_occurrences(&cadmpeg_test_support::service_decode_context(), &table)
+            .unwrap();
 
     assert_eq!(occurrences.len(), 1);
     assert_eq!(occurrences[0].id.as_str(), "f3d:model:occurrence#xref-0-0");
@@ -697,7 +812,11 @@ fn reflected_matrix_is_not_a_placement() {
         [0.0, 0.0, 0.0, 1.0],
     ];
     let bytes = occurrence_record("reflection-role", 10, &[1], Some(reflection));
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
+    let placements = super::occurrence_placements(
+        &bytes,
+        &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(),
+        None,
+    );
     assert!(placements.is_empty(), "reflected placement admitted");
 }
 
@@ -747,11 +866,13 @@ fn component_reference_data_json_refuses_collection_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap().0;
-    let error = super::parse_component_reference_data(&ctx, br#"{"items":[1,2]}"#)
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "parse F3D component reference JSON"));
+        .unwrap()
+        .0;
+    let error = super::parse_component_reference_data(&ctx, br#"{"items":[1,2]}"#).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "parse F3D component reference JSON")
+    );
 }
 
 /// One occurrence-placement record: a target path whose last element
@@ -772,10 +893,13 @@ fn charged_reference_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let error = crate::bytes::take_reference_charged(&ctx, &bytes, &mut 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D UTF-16 string"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D UTF-16 string")
+    );
 }
 
 #[test]
@@ -784,10 +908,13 @@ fn occurrence_path_refuses_link_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let error = super::occurrence_path(Some(&ctx), &bytes).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D xref placement link names"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D xref placement link names")
+    );
 }
 
 fn occurrence_record_with_serializer_magic(
@@ -903,7 +1030,10 @@ fn repeated_target_occurrence_record_with_path_role(
     let metadata_guid_a = "66666666-7777-8888-9999-aaaaaaaaaaaa";
     let metadata_guid_b = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
     let mut bytes = occurrence_record(path_role, entity_id, &[1], None);
-    let path_end = super::occurrence_path(None, &bytes).unwrap().expect("synthetic path").1;
+    let path_end = super::occurrence_path(None, &bytes)
+        .unwrap()
+        .expect("synthetic path")
+        .1;
     bytes.truncate(path_end);
     bytes.extend_from_slice(&envelope_discriminator.to_le_bytes());
     bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_a));
@@ -964,11 +1094,20 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     bytes.extend(matrix_5);
     bytes.extend(matrix_6);
 
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
+    let placements = super::occurrence_placements(
+        &bytes,
+        &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(),
+        None,
+    );
 
     assert_eq!(placements.len(), 6);
     assert_eq!(
-        super::occurrence_transforms(&cadmpeg_test_support::service_decode_context(), &placements, role).unwrap(),
+        super::occurrence_transforms(
+            &cadmpeg_test_support::service_decode_context(),
+            &placements,
+            role
+        )
+        .unwrap(),
         vec![None, None, None, Some(matrix), Some(matrix), Some(matrix)]
     );
 
@@ -1039,7 +1178,11 @@ fn grouped_identity_carrier(role: &str, record_index: u32) -> Vec<u8> {
 fn grouped_identity_carriers_decode_as_identity_placements() {
     let role = "cccccccc-dddd-eeee-ffff-000000000000";
     let bytes = grouped_identity_carrier(role, 10);
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
+    let placements = super::occurrence_placements(
+        &bytes,
+        &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(),
+        None,
+    );
 
     assert_eq!(
         placements,
@@ -1120,11 +1263,20 @@ fn legacy_typed_placements_decode_identity_and_matrix_forms() {
     assert_eq!(matrix_record.len(), 531);
     let mut bytes = identity;
     bytes.extend(matrix_record);
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
+    let placements = super::occurrence_placements(
+        &bytes,
+        &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(),
+        None,
+    );
 
     assert_eq!(placements.len(), 2);
     assert_eq!(
-        super::occurrence_transforms(&cadmpeg_test_support::service_decode_context(), &placements, role).unwrap(),
+        super::occurrence_transforms(
+            &cadmpeg_test_support::service_decode_context(),
+            &placements,
+            role
+        )
+        .unwrap(),
         vec![None, Some(matrix)]
     );
 }
@@ -1140,7 +1292,8 @@ fn malformed_legacy_typed_placement_reports_its_role() {
         &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(),
         None,
         None,
-    ).unwrap();
+    )
+    .unwrap();
 
     assert!(placements.is_empty());
     assert_eq!(failures.len(), 1);
@@ -1163,10 +1316,19 @@ fn occurrence_records_expand_shared_roles_and_decode_rigid_matrices() {
     ];
     let mut bytes = occurrence_record("role", 10, &[1], Some(first));
     bytes.extend_from_slice(&occurrence_record("role", 11, &[1, 2], Some(second)));
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
+    let placements = super::occurrence_placements(
+        &bytes,
+        &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(),
+        None,
+    );
 
     assert_eq!(
-        super::occurrence_transforms(&cadmpeg_test_support::service_decode_context(), &placements, "role").unwrap(),
+        super::occurrence_transforms(
+            &cadmpeg_test_support::service_decode_context(),
+            &placements,
+            "role"
+        )
+        .unwrap(),
         vec![Some(first), Some(second)]
     );
 }
@@ -1175,11 +1337,20 @@ fn occurrence_records_expand_shared_roles_and_decode_rigid_matrices() {
 fn identity_marked_placement_stores_no_matrix() {
     let mut bytes = occurrence_record("role", 10, &[1], None);
     bytes.extend_from_slice(&occurrence_record("role", 11, &[3], None));
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
+    let placements = super::occurrence_placements(
+        &bytes,
+        &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(),
+        None,
+    );
 
     assert_eq!(placements.len(), 2);
     assert_eq!(
-        super::occurrence_transforms(&cadmpeg_test_support::service_decode_context(), &placements, "role").unwrap(),
+        super::occurrence_transforms(
+            &cadmpeg_test_support::service_decode_context(),
+            &placements,
+            "role"
+        )
+        .unwrap(),
         vec![None, None]
     );
 }
@@ -1188,10 +1359,17 @@ fn identity_marked_placement_stores_no_matrix() {
 fn malformed_role_placement_is_retained_as_a_decode_failure() {
     let mut bytes = occurrence_record("role", 10, &[1], None);
     bytes.pop();
-    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    let records =
+        super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
 
-    let (placements, failures) =
-        super::occurrence_placements_with_failures(&cadmpeg_test_support::service_decode_context(), &bytes, &records, None, None).unwrap();
+    let (placements, failures) = super::occurrence_placements_with_failures(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &records,
+        None,
+        None,
+    )
+    .unwrap();
 
     assert!(placements.is_empty());
     assert_eq!(failures.len(), 1);
@@ -1207,7 +1385,8 @@ fn tagged_placement_tail_requires_the_modern_serializer_magic() {
         None,
         Some(crate::metastream::MODERN_SERIALIZER_MAGIC),
     );
-    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &modern).unwrap();
+    let records =
+        super::indexed_records(&cadmpeg_test_support::service_decode_context(), &modern).unwrap();
     assert_eq!(
         super::occurrence_placements(
             &modern,
@@ -1223,7 +1402,8 @@ fn tagged_placement_tail_requires_the_modern_serializer_magic() {
     );
 
     let legacy = occurrence_record("role", 11, &[2], None);
-    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &legacy).unwrap();
+    let records =
+        super::indexed_records(&cadmpeg_test_support::service_decode_context(), &legacy).unwrap();
     assert_eq!(
         super::occurrence_placements(&legacy, &records, Some(999)).len(),
         1
@@ -1422,7 +1602,11 @@ fn malformed_typed_role_placement_reports_a_loss() {
 #[test]
 fn placement_keeps_the_link_name_of_a_multi_element_path() {
     let bytes = occurrence_record("role", 10, &[7, 4, 2], None);
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
+    let placements = super::occurrence_placements(
+        &bytes,
+        &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(),
+        None,
+    );
 
     assert_eq!(placements[0].link_names, vec!["role".to_owned()]);
 }
@@ -1431,7 +1615,8 @@ fn placement_keeps_the_link_name_of_a_multi_element_path() {
 fn a_placement_that_does_not_close_on_the_record_end_is_not_a_placement() {
     let mut bytes = occurrence_record("role", 10, &[1], None);
     bytes.push(0);
-    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    let records =
+        super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
 
     assert_eq!(
         super::occurrence_placements(&bytes, &records, None),
@@ -1447,7 +1632,8 @@ fn a_nonrigid_matrix_is_not_a_placement() {
     nonrigid[2][2] = 1.0;
     nonrigid[3][3] = 1.0;
     let bytes = occurrence_record("role", 10, &[1], Some(nonrigid));
-    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    let records =
+        super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
 
     assert_eq!(
         super::occurrence_placements(&bytes, &records, None),
@@ -1458,10 +1644,19 @@ fn a_nonrigid_matrix_is_not_a_placement() {
 #[test]
 fn a_role_that_no_path_element_names_places_nothing() {
     let bytes = occurrence_record("role", 10, &[1], None);
-    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
+    let placements = super::occurrence_placements(
+        &bytes,
+        &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(),
+        None,
+    );
 
     assert_eq!(
-        super::occurrence_transforms(&cadmpeg_test_support::service_decode_context(), &placements, "other").unwrap(),
+        super::occurrence_transforms(
+            &cadmpeg_test_support::service_decode_context(),
+            &placements,
+            "other"
+        )
+        .unwrap(),
         Vec::new()
     );
 }
@@ -1485,7 +1680,13 @@ fn exact_component_insert_carriers_precede_structured_placements() {
     };
 
     assert_eq!(
-        super::occurrence_transforms_with_precedence(&cadmpeg_test_support::service_decode_context(), vec![direct], &[structured.clone()], "role").unwrap(),
+        super::occurrence_transforms_with_precedence(
+            &cadmpeg_test_support::service_decode_context(),
+            vec![direct],
+            &[structured.clone()],
+            "role"
+        )
+        .unwrap(),
         vec![Some(direct)]
     );
     assert_eq!(
@@ -1554,7 +1755,8 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
             ],
             "stream",
             "role"
-        ).unwrap(),
+        )
+        .unwrap(),
         vec![selected]
     );
 }
@@ -1562,7 +1764,8 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
 #[test]
 fn typed_placement_admission_rejects_shape_collision() {
     let bytes = occurrence_record("role", 10, &[2, 3], None);
-    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    let records =
+        super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
     let no_registered_placements = HashSet::new();
     assert!(super::occurrence_placements_filtered(
         &bytes,

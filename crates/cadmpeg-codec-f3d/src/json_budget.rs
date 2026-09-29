@@ -35,18 +35,40 @@ impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
         formatter.write_str("a JSON value")
     }
 
-    fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<(), E> { Ok(()) }
-    fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<(), E> { Ok(()) }
-    fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<(), E> { Ok(()) }
-    fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<(), E> { Ok(()) }
-    fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<(), E> { Ok(()) }
-    fn visit_string<E: serde::de::Error>(self, _: String) -> Result<(), E> { Ok(()) }
-    fn visit_unit<E: serde::de::Error>(self) -> Result<(), E> { Ok(()) }
-    fn visit_none<E: serde::de::Error>(self) -> Result<(), E> { Ok(()) }
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_string<E: serde::de::Error>(self, _: String) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_unit<E: serde::de::Error>(self) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_none<E: serde::de::Error>(self) -> Result<(), E> {
+        Ok(())
+    }
 
     fn visit_some<D: serde::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        CountJsonNodes { ctx: self.ctx, operation: self.operation, count: self.count, overflowed: self.overflowed, refusal: self.refusal }
-            .deserialize(deserializer)
+        CountJsonNodes {
+            ctx: self.ctx,
+            operation: self.operation,
+            count: self.count,
+            overflowed: self.overflowed,
+            refusal: self.refusal,
+        }
+        .deserialize(deserializer)
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, mut sequence: A) -> Result<(), A::Error> {
@@ -57,9 +79,16 @@ impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
                 return Err(A::Error::custom("JSON nesting limit exceeded"));
             }
         };
-        while sequence.next_element_seed(CountJsonNodes {
-            ctx: self.ctx, operation: self.operation, count: self.count, overflowed: self.overflowed, refusal: self.refusal,
-        })?.is_some() {}
+        while sequence
+            .next_element_seed(CountJsonNodes {
+                ctx: self.ctx,
+                operation: self.operation,
+                count: self.count,
+                overflowed: self.overflowed,
+                refusal: self.refusal,
+            })?
+            .is_some()
+        {}
         Ok(())
     }
 
@@ -71,11 +100,22 @@ impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
                 return Err(A::Error::custom("JSON nesting limit exceeded"));
             }
         };
-        while map.next_key_seed(CountJsonNodes {
-            ctx: self.ctx, operation: self.operation, count: self.count, overflowed: self.overflowed, refusal: self.refusal,
-        })?.is_some() {
+        while map
+            .next_key_seed(CountJsonNodes {
+                ctx: self.ctx,
+                operation: self.operation,
+                count: self.count,
+                overflowed: self.overflowed,
+                refusal: self.refusal,
+            })?
+            .is_some()
+        {
             map.next_value_seed(CountJsonNodes {
-                ctx: self.ctx, operation: self.operation, count: self.count, overflowed: self.overflowed, refusal: self.refusal,
+                ctx: self.ctx,
+                operation: self.operation,
+                count: self.count,
+                overflowed: self.overflowed,
+                refusal: self.refusal,
             })?;
         }
         Ok(())
@@ -99,11 +139,15 @@ pub(crate) fn preflight(
     let refusal = RefCell::new(None);
     let mut parser = serde_json::Deserializer::from_slice(payload);
     if (CountJsonNodes {
-        ctx, operation: scan_operation, count: &item_count, overflowed: &overflowed, refusal: &refusal,
+        ctx,
+        operation: scan_operation,
+        count: &item_count,
+        overflowed: &overflowed,
+        refusal: &refusal,
     })
-        .deserialize(&mut parser)
-        .and_then(|()| parser.end())
-        .is_err()
+    .deserialize(&mut parser)
+    .and_then(|()| parser.end())
+    .is_err()
     {
         if let Some(error) = refusal.into_inner() {
             return Err(error);

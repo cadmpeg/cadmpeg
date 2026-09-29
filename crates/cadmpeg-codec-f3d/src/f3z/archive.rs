@@ -119,8 +119,8 @@ fn copy_member_name(
     value: &str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let length = u64::try_from(value.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let length =
+        u64::try_from(value.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_retained(length, operation)?;
     let mut copy = String::new();
     copy.try_reserve(value.len())
@@ -178,7 +178,8 @@ pub(super) fn classify_members<'a>(
                 continue;
             }
         };
-        let (member_layers, mut member_losses) = crate::dialect::classify_layers(ctx, &member_scan)?;
+        let (member_layers, mut member_losses) =
+            crate::dialect::classify_layers(ctx, &member_scan)?;
         for loss in &mut member_losses {
             loss.message = crate::container::format_retained(
                 ctx,
@@ -187,12 +188,11 @@ pub(super) fn classify_members<'a>(
             )?;
         }
         super::append_losses(ctx, &mut losses, member_losses)?;
-        super::append_losses(ctx, &mut losses, merge_member_layers(
+        super::append_losses(
             ctx,
-            &mut layers,
-            &member_layers,
-            member_path,
-        )?)?;
+            &mut losses,
+            merge_member_layers(ctx, &mut layers, &member_layers, member_path)?,
+        )?;
         ctx.charge_collection_items(1, "retain F3Z member scan")?;
         insert_member_charged(
             ctx,
@@ -263,12 +263,16 @@ fn model_root_member(
     archive_root: &str,
 ) -> Result<(String, Option<String>), CodecError> {
     if crate::container::is_f3d_name(archive_root) {
-        return Ok((copy_member_name(ctx, archive_root, "retain F3Z model root")?, None));
+        return Ok((
+            copy_member_name(ctx, archive_root, "retain F3Z model root")?,
+            None,
+        ));
     }
 
     let description_bytes = scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?;
-    let description_len = u64::try_from(description_bytes.len())
-        .map_err(|_| ctx.refuse_codec_limit("preflight F3Z design description JSON", 0, u64::MAX))?;
+    let description_len = u64::try_from(description_bytes.len()).map_err(|_| {
+        ctx.refuse_codec_limit("preflight F3Z design description JSON", 0, u64::MAX)
+    })?;
     let _reservation =
         ctx.reserve_scoped(description_len, "preflight F3Z design description JSON")?;
     crate::json_budget::preflight(
@@ -317,9 +321,9 @@ fn model_root_member(
             }
             if derived {
                 ctx.charge_collection_items(1, "collect F3Z model candidates")?;
-                candidates.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("collect F3Z model candidates", 0, 1)
-                })?;
+                candidates
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("collect F3Z model candidates", 0, 1))?;
                 candidates.push(copy_member_name(
                     ctx,
                     &object.relative_path,
@@ -349,17 +353,19 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &policy,
-        ).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::insert_member_charged(
             &ctx,
             &mut std::collections::BTreeMap::new(),
             "part.f3d",
             super::ClassifiedMember::Unreadable("bad member".to_owned()),
-        ).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "index F3Z archive members"));
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3Z archive members")
+        );
     }
 
     #[test]
@@ -367,16 +373,18 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &policy,
-        ).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::insert_member_charged(
             &ctx,
             &mut std::collections::BTreeMap::new(),
             "part.f3d",
             super::ClassifiedMember::Unreadable("bad member".to_owned()),
-        ).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3Z member index path"));
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3Z member index path")
+        );
     }
 }

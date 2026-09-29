@@ -16,8 +16,9 @@ fn recipe_fixture() -> (
         token_offset: 0,
         design_reference: 200,
         design_reference_offset: 0,
-        candidate_faces: vec![cadmpeg_ir::ids::FaceId::mint(
-            crate::ids::brep_entity_id(10)).unwrap()],
+        candidate_faces: vec![
+            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(10)).unwrap(),
+        ],
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
@@ -39,7 +40,8 @@ fn recipe_fixture() -> (
         resolution: None,
         next_record_index: 207,
         next_byte_offset: 200,
-    }).unwrap();
+    })
+    .unwrap();
     let topology = crate::history_records::AsmHistoricalTopology {
         faces: vec![10],
         ..Default::default()
@@ -47,7 +49,9 @@ fn recipe_fixture() -> (
     (recipe, topology)
 }
 
-fn select(max_items: u64) -> Result<Option<(i64, cadmpeg_ir::math::Point3)>, cadmpeg_core::CodecError> {
+fn select(
+    max_items: u64,
+) -> Result<Option<(i64, cadmpeg_ir::math::Point3)>, cadmpeg_core::CodecError> {
     let (recipe, topology) = recipe_fixture();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
@@ -56,7 +60,10 @@ fn select(max_items: u64) -> Result<Option<(i64, cadmpeg_ir::math::Point3)>, cad
     super::super::vertex_recipe_candidate(&ctx, &recipe, &topology)
 }
 
-fn bind_input_states(max_items: u64, max_retained_bytes: u64) -> Result<(), cadmpeg_core::CodecError> {
+fn bind_input_states(
+    max_items: u64,
+    max_retained_bytes: u64,
+) -> Result<(), cadmpeg_core::CodecError> {
     use crate::records::entity_header::{DesignFeatureTimeline, DesignTimelineFrame};
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     let stream = "f3d:Design/BulkStream.dat";
@@ -65,7 +72,11 @@ fn bind_input_states(max_items: u64, max_retained_bytes: u64) -> Result<(), cadm
         DesignFeatureKind::Extrude,
         100,
     );
-    source.try_edit(|draft| { draft.history_state_id = Some(4); }).unwrap();
+    source
+        .try_edit(|draft| {
+            draft.history_state_id = Some(4);
+        })
+        .unwrap();
     let target = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
         DesignFeatureKind::WorkPoint,
@@ -73,50 +84,66 @@ fn bind_input_states(max_items: u64, max_retained_bytes: u64) -> Result<(), cadm
     );
     let timeline = DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-        DesignTimelineFrame::test_items(0, vec![
-            crate::records::identity::Located { value: 100, offset: 0 },
-            crate::records::identity::Located { value: 200, offset: 0 },
-        ]),
+        DesignTimelineFrame::test_items(
+            0,
+            vec![
+                crate::records::identity::Located {
+                    value: 100,
+                    offset: 0,
+                },
+                crate::records::identity::Located {
+                    value: 200,
+                    offset: 0,
+                },
+            ],
+        ),
         "256".to_owned().try_into().unwrap(),
         std::num::NonZeroU64::new(1).unwrap(),
         0,
         std::num::NonZeroU64::new(1).unwrap(),
-    ).unwrap();
+    )
+    .unwrap();
     let mut scopes = vec![source, target];
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained_bytes;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bind_vertex_recipe_history(
-        &ctx, &mut scopes, &[timeline], &[],
-    )
+    super::super::bind_vertex_recipe_history(&ctx, &mut scopes, &[timeline], &[])
 }
 
 #[test]
 fn vertex_recipe_candidate_faces_refuse_collection_limit() {
     let error = select(0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D vertex recipe candidate faces"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D vertex recipe candidate faces")
+    );
 }
 
 #[test]
 fn vertex_recipe_face_slots_refuse_collection_limit() {
     let error = select(1).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D vertex recipe face slots"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D vertex recipe face slots")
+    );
 }
 
 #[test]
 fn vertex_recipe_scope_id_refuses_retained_limit() {
     let error = bind_input_states(u64::MAX, 0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D vertex recipe scope identity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D vertex recipe scope identity")
+    );
 }
 
 #[test]
 fn vertex_recipe_input_states_refuse_collection_limit() {
     let error = bind_input_states(0, u64::MAX).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D vertex recipe input states"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D vertex recipe input states")
+    );
 }

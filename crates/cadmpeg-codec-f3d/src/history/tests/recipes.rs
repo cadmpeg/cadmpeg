@@ -399,7 +399,8 @@ fn feature_input_topology_projects_historical_vertices() {
         std::slice::from_ref(&scope),
         std::slice::from_ref(&history),
         &[],
-    ).unwrap();
+    )
+    .unwrap();
     let prefix = super::super::feature_input_prefix(&feature.id, 4);
     assert_eq!(projected.len(), 1);
     assert_eq!(
@@ -485,7 +486,13 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         ..Default::default()
     };
     assert_eq!(
-        super::super::surface_patch_edge_operand_slot(None, Some(&structure), &references, &topology,).unwrap(),
+        super::super::surface_patch_edge_operand_slot(
+            None,
+            Some(&structure),
+            &references,
+            &topology,
+        )
+        .unwrap(),
         Some(22)
     );
 
@@ -500,7 +507,13 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         radial_next: 13,
     });
     assert_eq!(
-        super::super::surface_patch_edge_operand_slot(None, Some(&structure), &references, &ambiguous,).unwrap(),
+        super::super::surface_patch_edge_operand_slot(
+            None,
+            Some(&structure),
+            &references,
+            &ambiguous,
+        )
+        .unwrap(),
         None
     );
 }
@@ -641,7 +654,8 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
             &bodies,
             &regions,
             &shells,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(bodies[1].id.clone())
     );
 
@@ -668,12 +682,18 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
             &bodies,
             &regions,
             &shells,
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
 
-fn body_recipe_history_fixture() -> (crate::records::feature::scope::DesignParameterScope, AsmHistory, Vec<crate::records::topology::body_recipe::DesignBodyRecipeOperand>, cadmpeg_ir::ids::FaceId) {
+fn body_recipe_history_fixture() -> (
+    crate::records::feature::scope::DesignParameterScope,
+    AsmHistory,
+    Vec<crate::records::topology::body_recipe::DesignBodyRecipeOperand>,
+    cadmpeg_ir::ids::FaceId,
+) {
     use cadmpeg_ir::ids::FaceId;
 
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
@@ -825,7 +845,8 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
         &[],
         std::slice::from_ref(&scope),
         std::slice::from_ref(&history),
-    ).unwrap();
+    )
+    .unwrap();
 
     assert_eq!(
         operands[0].references()[0].preceding_candidate_faces,
@@ -844,10 +865,16 @@ fn body_recipe_history_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = bind_body_recipe_operand_history_candidates(
-        Some(&ctx), &mut operands, &[], &[scope], &[history],
-    ).unwrap_err();
+        Some(&ctx),
+        &mut operands,
+        &[],
+        &[scope],
+        &[history],
+    )
+    .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
@@ -867,11 +894,17 @@ fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
         shell_faces: vec![relation(3, vec![10, 11])],
         ..AsmHistoricalTopology::default()
     };
-    assert_eq!(complete_body_face_slots(None, &topology, 1).unwrap(), Some(vec![10, 11]));
+    assert_eq!(
+        complete_body_face_slots(None, &topology, 1).unwrap(),
+        Some(vec![10, 11])
+    );
 
     let mut incomplete = topology.clone();
     incomplete.shell_faces[0].member_refs.clear();
-    assert_eq!(complete_body_face_slots(None, &incomplete, 1).unwrap(), None);
+    assert_eq!(
+        complete_body_face_slots(None, &incomplete, 1).unwrap(),
+        None
+    );
 
     let mut ambiguous = topology;
     ambiguous.shell_faces.push(relation(4, vec![10]));
@@ -1018,7 +1051,12 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     };
     let mut selection = BodySelection::Native(group_id.into());
     super::super::bind_direct_body_recipe_body_selection(
-        &cadmpeg_test_support::service_decode_context(), &mut selection, &scope, &inputs).unwrap();
+        &cadmpeg_test_support::service_decode_context(),
+        &mut selection,
+        &scope,
+        &inputs,
+    )
+    .unwrap();
     assert_eq!(
         selection,
         BodySelection::Resolved {
@@ -1064,7 +1102,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             std::slice::from_ref(&recipe),
             std::slice::from_ref(&link),
             std::slice::from_ref(&body),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(body.id.clone())
     );
 
@@ -1090,7 +1129,12 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     );
     let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
     super::super::bind_direct_body_recipe_body_selection(
-        &cadmpeg_test_support::service_decode_context(), &mut selection, &scope, &direct_inputs).unwrap();
+        &cadmpeg_test_support::service_decode_context(),
+        &mut selection,
+        &scope,
+        &direct_inputs,
+    )
+    .unwrap();
     assert_eq!(
         selection,
         BodySelection::ResolvedSet {
@@ -1153,9 +1197,12 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         native_ref: None,
     };
     feature.native_ref = Some(scale_scope.id.clone());
-    super::super::bind_feature_body_selections(&cadmpeg_test_support::service_decode_context(),
-        std::slice::from_mut(&mut feature), &scale_inputs)
-        .unwrap();
+    super::super::bind_feature_body_selections(
+        &cadmpeg_test_support::service_decode_context(),
+        std::slice::from_mut(&mut feature),
+        &scale_inputs,
+    )
+    .unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Scale {
@@ -1266,7 +1313,8 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
     super::super::bind_base_feature_output_selection(
         &cadmpeg_test_support::service_decode_context(),
         &mut feature,
-    ).unwrap();
+    )
+    .unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {

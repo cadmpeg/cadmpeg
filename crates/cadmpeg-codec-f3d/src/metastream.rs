@@ -49,11 +49,13 @@ pub(crate) fn primary_record_frames(
         .map_err(|_| ctx.refuse_codec_limit("frame F3D primary records", 0, u64::MAX))?;
     ctx.charge_collection_items(primary_count, "frame F3D primary records")?;
     let mut frames = Vec::new();
-    frames.try_reserve(meta.records.len())
+    frames
+        .try_reserve(meta.records.len())
         .map_err(|_| ctx.refuse_codec_limit("frame F3D primary records", 0, primary_count))?;
     ctx.charge_collection_items(primary_count, "index F3D primary entities")?;
     let mut primary_by_entity = std::collections::HashMap::new();
-    primary_by_entity.try_reserve(meta.records.len())
+    primary_by_entity
+        .try_reserve(meta.records.len())
         .map_err(|_| ctx.refuse_codec_limit("index F3D primary entities", 0, primary_count))?;
     for (ordinal, record) in meta.records.iter().enumerate() {
         if primary_by_entity
@@ -93,7 +95,8 @@ pub(crate) fn primary_record_frames(
         .map_err(|_| ctx.refuse_codec_limit("index F3D secondary entities", 0, u64::MAX))?;
     ctx.charge_collection_items(secondary_count, "index F3D secondary entities")?;
     let mut secondary_entities = std::collections::HashSet::new();
-    secondary_entities.try_reserve(meta.secondary_records.len())
+    secondary_entities
+        .try_reserve(meta.secondary_records.len())
         .map_err(|_| ctx.refuse_codec_limit("index F3D secondary entities", 0, secondary_count))?;
     for record in &meta.secondary_records {
         let secondary = usize::try_from(record.bulk_offset).map_err(|_| {
@@ -160,9 +163,9 @@ fn take_record_index(
     }
     ctx.charge_collection_items(u64::from(count), "parse F3D MetaStream record index")?;
     let mut records = Vec::new();
-    records
-        .try_reserve_exact(count_usize)
-        .map_err(|_| ctx.refuse_codec_limit("parse F3D MetaStream record index", 0, u64::from(count)))?;
+    records.try_reserve_exact(count_usize).map_err(|_| {
+        ctx.refuse_codec_limit("parse F3D MetaStream record index", 0, u64::from(count))
+    })?;
     let mut view = View::over_retained(bytes);
     if view.seek(records_at).is_none() {
         return Ok(None);
@@ -174,7 +177,10 @@ fn take_record_index(
         let Some(bulk_offset) = view.u64_le() else {
             return Ok(None);
         };
-        records.push(RecordIndexEntry { entity_id, bulk_offset });
+        records.push(RecordIndexEntry {
+            entity_id,
+            bulk_offset,
+        });
     }
     *at = view.position();
     Ok(Some(records))
@@ -243,10 +249,15 @@ fn take_version_guid(
     Err(ParseFailure {
         field,
         offset: initial,
-    }.into())
+    }
+    .into())
 }
 
-fn take_version_urn(ctx: &DecodeContext<'_>, bytes: &[u8], at: &mut usize) -> Result<(), ParseIssue> {
+fn take_version_urn(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<(), ParseIssue> {
     let initial = *at;
     for prefix_len in [0, 4] {
         if prefix_len != 0 && View::u32_le_at(bytes, initial) != Some(0) {
@@ -270,10 +281,15 @@ fn take_version_urn(ctx: &DecodeContext<'_>, bytes: &[u8], at: &mut usize) -> Re
     Err(ParseFailure {
         field: "version-context version URN",
         offset: initial,
-    }.into())
+    }
+    .into())
 }
 
-fn take_version_context(ctx: &DecodeContext<'_>, bytes: &[u8], at: &mut usize) -> Result<(), ParseIssue> {
+fn take_version_context(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<(), ParseIssue> {
     let count_at = *at;
     let count = require(View::u32_le_at(bytes, *at), "version-context count", *at)?;
     *at = require(at.checked_add(4), "version-context count", *at)?;
@@ -281,7 +297,8 @@ fn take_version_context(ctx: &DecodeContext<'_>, bytes: &[u8], at: &mut usize) -
         return Err(ParseFailure {
             field: "version-context count",
             offset: count_at,
-        }.into());
+        }
+        .into());
     }
     for _ in 0..count {
         let token_end = require(at.checked_add(8), "version-context token", *at)?;
@@ -333,7 +350,11 @@ fn parse_segment_header(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(u32, u
         0,
     )?;
     let at = require(at.checked_add(4), "segment id", at)?;
-    let (_, at) = require(lp_utf16_bounded_charged(ctx, bytes, at, 0..=256)?, "asset GUID", at)?;
+    let (_, at) = require(
+        lp_utf16_bounded_charged(ctx, bytes, at, 0..=256)?,
+        "asset GUID",
+        at,
+    )?;
     let magic = require(View::u32_le_at(bytes, at), "serializer magic", at)?;
     let at = require(
         at.checked_add(if magic == MODERN_SERIALIZER_MAGIC {
@@ -352,15 +373,7 @@ fn parse_segment_header(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(u32, u
     Ok((magic, at))
 }
 
-fn parse_error(
-    ctx: &DecodeContext<'_>,
-    issue: ParseIssue,
-    stream: &str,
-) -> CodecError {
-    let failure = match issue {
-        ParseIssue::Malformed(failure) => failure,
-        ParseIssue::Resource(error) => return error,
-    };
+fn parse_error(ctx: &DecodeContext<'_>, issue: ParseIssue, stream: &str) -> CodecError {
     struct Length(usize);
     impl std::fmt::Write for Length {
         fn write_str(&mut self, value: &str) -> std::fmt::Result {
@@ -368,6 +381,10 @@ fn parse_error(
             Ok(())
         }
     }
+    let failure = match issue {
+        ParseIssue::Malformed(failure) => failure,
+        ParseIssue::Resource(error) => return error,
+    };
     let args = format_args!(
         "invalid F3D MetaStream {} at byte {}: {stream}",
         failure.field, failure.offset
@@ -425,12 +442,11 @@ fn parse_inner(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<MetaStream, Pars
     at = require(at.checked_add(4), "type count", at)?;
     ctx.charge_collection_items(u64::from(count), "parse F3D MetaStream types")?;
     let mut types = Vec::new();
-    let count_usize = usize::try_from(count).map_err(|_| {
-        ctx.refuse_codec_limit("parse F3D MetaStream types", 0, u64::from(count))
-    })?;
-    types.try_reserve_exact(count_usize).map_err(|_| {
-        ctx.refuse_codec_limit("parse F3D MetaStream types", 0, u64::from(count))
-    })?;
+    let count_usize = usize::try_from(count)
+        .map_err(|_| ctx.refuse_codec_limit("parse F3D MetaStream types", 0, u64::from(count)))?;
+    types
+        .try_reserve_exact(count_usize)
+        .map_err(|_| ctx.refuse_codec_limit("parse F3D MetaStream types", 0, u64::from(count)))?;
     for _ in 0..count {
         let entry_at = at;
         let type_guid_offset = require(at.checked_add(4), "type GUID", at)?;
@@ -487,12 +503,9 @@ fn parse_inner(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<MetaStream, Pars
         )?;
         require(bytes.get(ids_at..ids_end), "type entity ids", ids_at)?;
         let id_count_u64 = u64::try_from(id_count).map_err(|_| {
-                ctx.refuse_codec_limit("parse F3D MetaStream type entity ids", 0, u64::MAX)
-            })?;
-        ctx.charge_collection_items(
-            id_count_u64,
-            "parse F3D MetaStream type entity ids",
-        )?;
+            ctx.refuse_codec_limit("parse F3D MetaStream type entity ids", 0, u64::MAX)
+        })?;
+        ctx.charge_collection_items(id_count_u64, "parse F3D MetaStream type entity ids")?;
         let mut entity_rows = Vec::new();
         entity_rows.try_reserve_exact(id_count).map_err(|_| {
             ctx.refuse_codec_limit("parse F3D MetaStream type entity ids", 0, id_count_u64)
@@ -585,7 +598,8 @@ fn parse_inner(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<MetaStream, Pars
         return Err(ParseFailure {
             field: "trailing bytes",
             offset: at,
-        }.into());
+        }
+        .into());
     }
     Ok(MetaStream {
         types,
@@ -627,8 +641,7 @@ mod tests {
         policy.limits.max_collection_items = collection_items;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("test decode context");
-        super::primary_record_frames(&ctx, meta, 14)
-            .expect_err("primary frame limit must refuse")
+        super::primary_record_frames(&ctx, meta, 14).expect_err("primary frame limit must refuse")
     }
 
     fn one_primary_frame(with_secondary: bool) -> MetaStream {
@@ -652,28 +665,35 @@ mod tests {
     #[test]
     fn metastream_primary_frames_refuse_collection_limit() {
         let error = limited_primary_frames(&one_primary_frame(false), 0);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "frame F3D primary records"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "frame F3D primary records")
+        );
     }
 
     #[test]
     fn metastream_primary_entity_index_refuses_collection_limit() {
         let error = limited_primary_frames(&one_primary_frame(false), 1);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "index F3D primary entities"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D primary entities")
+        );
     }
 
     #[test]
     fn metastream_secondary_entity_index_refuses_collection_limit() {
         let error = limited_primary_frames(&one_primary_frame(true), 2);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "index F3D secondary entities"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D secondary entities")
+        );
     }
 
     fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, cadmpeg_core::CodecError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
         super::parse(&ctx, bytes, stream)
     }
 
@@ -686,11 +706,16 @@ mod tests {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = collection_items;
         policy.limits.max_retained_bytes = retained_bytes;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
         super::parse(&ctx, bytes, "limited MetaStream")
     }
 
-    fn refused(bytes: &[u8], collection_items: u64, retained_bytes: u64) -> cadmpeg_core::CodecError {
+    fn refused(
+        bytes: &[u8],
+        collection_items: u64,
+        retained_bytes: u64,
+    ) -> cadmpeg_core::CodecError {
         match parse_with_limits(bytes, collection_items, retained_bytes) {
             Err(error) => error,
             Ok(_) => panic!("MetaStream limit must refuse this input"),
@@ -699,16 +724,13 @@ mod tests {
 
     #[test]
     fn metastream_type_rows_refuse_collection_limit() {
-        let bytes = design_metastream(&[(
-            "11111111-2222-3333-4444-555555555555",
-            "",
-            1,
-            "Fusion",
-            &[],
-        )]);
+        let bytes =
+            design_metastream(&[("11111111-2222-3333-4444-555555555555", "", 1, "Fusion", &[])]);
         let error = refused(&bytes, 0, u64::MAX);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "parse F3D MetaStream types"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "parse F3D MetaStream types")
+        );
     }
 
     #[test]
@@ -721,54 +743,65 @@ mod tests {
             &[7],
         )]);
         let error = refused(&bytes, 1, u64::MAX);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "parse F3D MetaStream type entity ids"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "parse F3D MetaStream type entity ids")
+        );
     }
 
     #[test]
     fn metastream_record_index_refuses_collection_limit() {
         let bytes = design_metastream_with_records(&[], &[(7, 0)]);
         let error = refused(&bytes, 0, u64::MAX);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "parse F3D MetaStream record index"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "parse F3D MetaStream record index")
+        );
     }
 
     #[test]
     fn metastream_secondary_index_refuses_collection_limit() {
         let mut bytes = design_metastream(&[]);
         let secondary_count_at = bytes.len() - 20;
-        bytes[secondary_count_at..secondary_count_at + 4]
-            .copy_from_slice(&1u32.to_le_bytes());
+        bytes[secondary_count_at..secondary_count_at + 4].copy_from_slice(&1u32.to_le_bytes());
         let mut secondary = Vec::new();
         secondary.extend_from_slice(&7u64.to_le_bytes());
         secondary.extend_from_slice(&4u64.to_le_bytes());
         bytes.splice(secondary_count_at + 4..secondary_count_at + 4, secondary);
         let error = refused(&bytes, 0, u64::MAX);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "parse F3D MetaStream record index"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "parse F3D MetaStream record index")
+        );
     }
 
     #[test]
     fn metastream_header_text_refuses_retained_limit() {
         let bytes = design_metastream(&[]);
         let error = refused(&bytes, u64::MAX, 0);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D ASCII string"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D ASCII string")
+        );
     }
 
     #[test]
     fn metastream_header_guid_refuses_retained_limit() {
         let bytes = design_metastream(&[]);
         let error = refused(&bytes, u64::MAX, "Design".len() as u64);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D UTF-16 string"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D UTF-16 string")
+        );
     }
 
     #[test]
     fn metastream_malformed_text_refuses_retained_limit() {
         let error = refused(&[], u64::MAX, 0);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "report F3D MetaStream parse error"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "report F3D MetaStream parse error")
+        );
     }
 
     #[test]
@@ -782,16 +815,17 @@ mod tests {
         lp_utf16(&mut bytes, "bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
         bytes.extend_from_slice(&2u32.to_le_bytes());
         bytes.extend_from_slice(&0u32.to_le_bytes());
-        let retained_before_urn = (
-            "ACT".len()
-                + "00000000-0000-0000-0000-000000000000".len()
-                + "FusionACTSegmentType".len()
-                + "Fusion".len()
-                + "11111111-2222-3333-4444-555555555555".len()
-        ) as u64;
+        let retained_before_urn = ("ACT".len()
+            + "00000000-0000-0000-0000-000000000000".len()
+            + "FusionACTSegmentType".len()
+            + "Fusion".len()
+            + "11111111-2222-3333-4444-555555555555".len())
+            as u64;
         let error = refused(&bytes, u64::MAX, retained_before_urn);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D UTF-16 string"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D UTF-16 string")
+        );
     }
 
     fn stream_prefix() -> Vec<u8> {

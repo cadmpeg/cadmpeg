@@ -31,7 +31,9 @@ fn decode_sketch_curve_identities_from_stream(
     stream: &str,
 ) -> Result<Vec<crate::records::sketch_geometry::SketchCurveIdentity>, cadmpeg_core::CodecError> {
     crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(ctx, bytes, meta, stream)
+        crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+            ctx, bytes, meta, stream,
+        )
     })
 }
 
@@ -333,12 +335,8 @@ fn sketch_records_use_the_primary_index_live_copy() {
         }],
     };
 
-    let points = decode_sketch_points_from_stream(
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-    )
-    .expect("indexed sketch points");
+    let points = decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
+        .expect("indexed sketch points");
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].byte_offset, live_point_at as u64);
     assert_eq!(points[0].coordinates(), Point2::new(70.0, -30.0));
@@ -347,13 +345,9 @@ fn sketch_records_use_the_primary_index_live_copy() {
         .try_into()
         .expect("type GUID");
     assert!(
-        decode_sketch_points_from_stream(
-            &bytes,
-            &meta,
-            "Design/BulkStream.dat",
-        )
-        .expect("structurally point-shaped foreign type")
-        .is_empty()
+        decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat",)
+            .expect("structurally point-shaped foreign type")
+            .is_empty()
     );
     meta.types[1].type_guid = crate::design::decode::sketch::CURRENT_SKETCH_POINT_TYPE
         .0
@@ -363,20 +357,12 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let mut malformed_point = bytes.clone();
     malformed_point[live_point_at + 70] = 0;
     assert!(matches!(
-        decode_sketch_points_from_stream(
-            &malformed_point,
-            &meta,
-            "Design/BulkStream.dat",
-        ),
+        decode_sketch_points_from_stream(&malformed_point, &meta, "Design/BulkStream.dat",),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
-    let curves = decode_sketch_curve_identities_from_stream(
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-    )
-    .expect("indexed sketch curves");
+    let curves = decode_sketch_curve_identities_from_stream(&bytes, &meta, "Design/BulkStream.dat")
+        .expect("indexed sketch curves");
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].byte_offset, live_curve_at as u64);
     assert!(matches!(
@@ -384,12 +370,8 @@ fn sketch_records_use_the_primary_index_live_copy() {
         Some(SketchCurveGeometry::Line { start, .. }) if start.get() == Point3::new(50.0, 0.0, 0.0)
     ));
 
-    let texts = decode_sketch_texts_from_stream(
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-    )
-    .expect("indexed sketch texts");
+    let texts = decode_sketch_texts_from_stream(&bytes, &meta, "Design/BulkStream.dat")
+        .expect("indexed sketch texts");
     assert_eq!(texts.len(), 1);
     assert_eq!(texts[0].byte_offset, live_text_at as u64);
     assert_eq!(texts[0].text, "live text");
@@ -398,22 +380,14 @@ fn sketch_records_use_the_primary_index_live_copy() {
     mismatched_primary[live_point_at + 7..live_point_at + 11]
         .copy_from_slice(&999u32.to_le_bytes());
     assert!(matches!(
-        decode_sketch_points_from_stream(
-            &mismatched_primary,
-            &meta,
-            "Design/BulkStream.dat",
-        ),
+        decode_sketch_points_from_stream(&mismatched_primary, &meta, "Design/BulkStream.dat",),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
     let mut mismatched_secondary = bytes;
     mismatched_secondary[nested_at + 7..nested_at + 11].copy_from_slice(&999u32.to_le_bytes());
     assert!(matches!(
-        decode_sketch_points_from_stream(
-            &mismatched_secondary,
-            &meta,
-            "Design/BulkStream.dat",
-        ),
+        decode_sketch_points_from_stream(&mismatched_secondary, &meta, "Design/BulkStream.dat",),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }

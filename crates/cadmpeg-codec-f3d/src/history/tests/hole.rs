@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::default_trait_access)]
 
-use crate::history::bind_hole_selection_history;
+use crate::history::selection::bind_hole_selection_history;
 use crate::history_records::AsmHistoricalPlane;
 use crate::history_records::{
     AsmDeltaState, AsmEntityVersion, AsmHistoricalCarrierBinding, AsmHistoricalCylinder,

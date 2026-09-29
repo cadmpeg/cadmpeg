@@ -96,6 +96,7 @@ pub(crate) fn brep_edge_id(
 }
 
 /// Build an appearance identity from its source visual token.
+#[cfg(test)]
 pub(crate) fn appearance_id(key: cadmpeg_ir::ids::IdentityKey) -> cadmpeg_ir::ids::AppearanceId {
     cadmpeg_ir::ids::AppearanceId::compose(
         &cadmpeg_ir::identity_namespace!("f3d", "design", "appearance"),
@@ -116,6 +117,7 @@ pub(crate) fn appearance_id_charged(
 }
 
 /// Build a body appearance binding identity.
+#[cfg(test)]
 pub(crate) fn body_appearance_binding_id(
     entity_suffix: u64,
     visual_guid: cadmpeg_ir::ids::IdentityKey,
@@ -138,11 +140,11 @@ pub(crate) fn body_appearance_binding_id_charged(
         "body",
         format_args!("{entity_suffix}:{visual_guid}"),
     )?;
-    cadmpeg_ir::ids::AppearanceBindingId::mint(id)
-        .map_err(cadmpeg_core::CodecError::malformed)
+    cadmpeg_ir::ids::AppearanceBindingId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
 }
 
 /// Build a body assignment appearance binding identity.
+#[cfg(test)]
 pub(crate) fn assignment_appearance_binding_id(
     entity_id: &str,
     visual_guid: cadmpeg_ir::ids::IdentityKey,
@@ -176,6 +178,7 @@ pub(crate) fn assignment_appearance_binding_id_charged(
 }
 
 /// Build a face appearance binding identity.
+#[cfg(test)]
 pub(crate) fn face_appearance_binding_id(
     face_guid: &str,
     visual_guid: cadmpeg_ir::ids::IdentityKey,
@@ -221,7 +224,11 @@ struct FaceBindingKey<'a> {
 
 impl std::fmt::Display for FaceBindingKey<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{}:{}:{}:", self.face_guid, self.visual_guid, self.escaped_face_len)?;
+        write!(
+            formatter,
+            "{}:{}:{}:",
+            self.face_guid, self.visual_guid, self.escaped_face_len
+        )?;
         write_escaped_identity_component(formatter, self.face)
     }
 }
@@ -233,13 +240,19 @@ pub(crate) fn face_appearance_binding_id_charged(
     visual_guid: &crate::records::references::DesignVisualToken,
     face: &cadmpeg_ir::ids::FaceId,
 ) -> Result<cadmpeg_ir::ids::AppearanceBindingId, cadmpeg_core::CodecError> {
-    let escaped_face_len = escaped_scope_len(ctx, face.as_str(), "retain F3D face appearance binding ID")?;
-    let id = native_scoped_id_charged(ctx, "appearance", "face", FaceBindingKey {
-        face_guid,
-        visual_guid,
-        face: face.as_str(),
-        escaped_face_len,
-    })?;
+    let escaped_face_len =
+        escaped_scope_len(ctx, face.as_str(), "retain F3D face appearance binding ID")?;
+    let id = native_scoped_id_charged(
+        ctx,
+        "appearance",
+        "face",
+        FaceBindingKey {
+            face_guid,
+            visual_guid,
+            face: face.as_str(),
+            escaped_face_len,
+        },
+    )?;
     cadmpeg_ir::ids::AppearanceBindingId::mint(id).map_err(|error| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "F3D face appearance binding identity is invalid: {error}"
@@ -248,6 +261,7 @@ pub(crate) fn face_appearance_binding_id_charged(
 }
 
 /// Build a T-spline identity from its source entry key.
+#[cfg(test)]
 pub(crate) fn subd_id(
     source_key: &str,
 ) -> Result<cadmpeg_ir::ids::SubdId, cadmpeg_ir::ids::IdentityError> {
@@ -277,15 +291,17 @@ fn identity_key_component_charged(
         } else {
             Some(character.len_utf8())
         };
-        length = length.checked_add(width.ok_or_else(||
-            ctx.refuse_codec_limit(operation, 0, u64::MAX))?)
+        length = length
+            .checked_add(width.ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     }
-    let bytes = u64::try_from(length)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let bytes =
+        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_retained(bytes, operation)?;
     let mut encoded = String::new();
-    encoded.try_reserve(length).map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    encoded
+        .try_reserve(length)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
     for character in value.chars() {
         if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
             let mut scalar = [0; 4];
@@ -410,13 +426,21 @@ pub(crate) fn neutral_assembly_joint_id(
             .with_tail(&cadmpeg_ir::ids::IdentityKeyTail::percent_encode(stream))
             .then(scope.record_index);
         return Ok(cadmpeg_ir::products::JointId::compose(
-            &cadmpeg_ir::identity_namespace!("f3d", "model", "joint"), key,
+            &cadmpeg_ir::identity_namespace!("f3d", "model", "joint"),
+            key,
         ));
     };
     let encoded_len = escaped_scope_len(ctx, stream, "retain F3D neutral joint ID")?;
-    let id = native_scoped_id_charged(ctx, "model", "joint", JointKey {
-        stream, encoded_len, record_index: scope.record_index,
-    })?;
+    let id = native_scoped_id_charged(
+        ctx,
+        "model",
+        "joint",
+        JointKey {
+            stream,
+            encoded_len,
+            record_index: scope.record_index,
+        },
+    )?;
     cadmpeg_ir::products::JointId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -509,16 +533,23 @@ pub(crate) fn neutral_combine_external_body_id_charged(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     identity: &DesignCombineExternalBodyIdentity,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    let selector_asset = identity_key_component_charged(ctx, identity.selector_asset_id().as_str())?;
-    let selector_context = identity_key_component_charged(ctx, identity.selector_context_id().as_str())?;
-    let external_asset = identity_key_component_charged(ctx, identity.external_asset_id().as_str())?;
+    let selector_asset =
+        identity_key_component_charged(ctx, identity.selector_asset_id().as_str())?;
+    let selector_context =
+        identity_key_component_charged(ctx, identity.selector_context_id().as_str())?;
+    let external_asset =
+        identity_key_component_charged(ctx, identity.external_asset_id().as_str())?;
     let link_name = identity_key_component_charged(ctx, identity.external_link_name())?;
-    let property_key = identity.external_version()
+    let property_key = identity
+        .external_version()
         .map(|version| identity_key_component_charged(ctx, version.property_key.value.as_str()))
-        .transpose()?.unwrap_or_default();
-    let version_urn = identity.external_version()
+        .transpose()?
+        .unwrap_or_default();
+    let version_urn = identity
+        .external_version()
         .map(|version| identity_key_component_charged(ctx, version.version_urn.value.as_str()))
-        .transpose()?.unwrap_or_default();
+        .transpose()?
+        .unwrap_or_default();
     crate::container::format_retained(
         ctx,
         "retain F3D Combine external body identity",
@@ -646,7 +677,11 @@ pub(crate) fn neutral_parameter_id_charged(
         ctx,
         "model",
         "parameter",
-        EncodedParameterKey { stream, encoded_len, record_index: parameter.record_index },
+        EncodedParameterKey {
+            stream,
+            encoded_len,
+            record_index: parameter.record_index,
+        },
     )?;
     cadmpeg_ir::features::ParameterId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
 }
@@ -726,7 +761,8 @@ pub(crate) fn neutral_spatial_sketch_id_charged(
     placement: &DesignSketchPlacement,
 ) -> Result<cadmpeg_ir::sketches::SpatialSketchId, cadmpeg_core::CodecError> {
     let stream = native_stream(&placement.id).unwrap_or(DEFAULT_STREAM);
-    let id = neutral_sketch_key_charged(ctx, stream, placement.entity_id.suffix(), "spatial-sketch")?;
+    let id =
+        neutral_sketch_key_charged(ctx, stream, placement.entity_id.suffix(), "spatial-sketch")?;
     cadmpeg_ir::sketches::SpatialSketchId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -995,6 +1031,7 @@ pub(crate) fn history_input_face_id(
 }
 
 /// The history-input body key for `slot` under a `prefix`.
+#[cfg(test)]
 pub(crate) fn history_input_body_id(
     prefix: &cadmpeg_ir::ids::IdentityKey,
     slot: impl Into<cadmpeg_ir::ids::IdentityKey>,
@@ -1013,8 +1050,11 @@ fn history_input_entity_id_charged(
     kind: &'static str,
     slot: impl std::fmt::Display,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    let feature_key = feature.as_str().split_once('#').ok_or_else(||
-        cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?.1;
+    let feature_key = feature
+        .as_str()
+        .split_once('#')
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?
+        .1;
     crate::container::format_retained(
         ctx,
         "retain F3D history input identity",
@@ -1034,20 +1074,37 @@ macro_rules! charged_history_input_entity_id {
             slot: impl std::fmt::Display,
         ) -> Result<$type, cadmpeg_core::CodecError> {
             <$type>::mint(history_input_entity_id_charged(
-                ctx, feature, previous_state_id, $kind, slot,
-            )?).map_err(cadmpeg_core::CodecError::malformed)
+                ctx,
+                feature,
+                previous_state_id,
+                $kind,
+                slot,
+            )?)
+            .map_err(cadmpeg_core::CodecError::malformed)
         }
     };
 }
 
-charged_history_input_entity_id!(history_input_body_id_charged,
-    cadmpeg_ir::ids::HistoricalBodyId, "body");
-charged_history_input_entity_id!(history_input_face_id_charged,
-    cadmpeg_ir::ids::HistoricalFaceId, "face");
-charged_history_input_entity_id!(history_input_edge_id_charged,
-    cadmpeg_ir::ids::HistoricalEdgeId, "edge");
-charged_history_input_entity_id!(history_input_vertex_id_charged,
-    cadmpeg_ir::ids::HistoricalVertexId, "vertex");
+charged_history_input_entity_id!(
+    history_input_body_id_charged,
+    cadmpeg_ir::ids::HistoricalBodyId,
+    "body"
+);
+charged_history_input_entity_id!(
+    history_input_face_id_charged,
+    cadmpeg_ir::ids::HistoricalFaceId,
+    "face"
+);
+charged_history_input_entity_id!(
+    history_input_edge_id_charged,
+    cadmpeg_ir::ids::HistoricalEdgeId,
+    "edge"
+);
+charged_history_input_entity_id!(
+    history_input_vertex_id_charged,
+    cadmpeg_ir::ids::HistoricalVertexId,
+    "vertex"
+);
 
 /// Compose the history-input state identity with one retained allocation.
 pub(crate) fn history_input_state_id_charged(
@@ -1055,13 +1112,18 @@ pub(crate) fn history_input_state_id_charged(
     feature: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
 ) -> Result<cadmpeg_ir::ids::FeatureInputTopologyId, cadmpeg_core::CodecError> {
-    let feature_key = feature.as_str().split_once('#').ok_or_else(||
-        cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?.1;
+    let feature_key = feature
+        .as_str()
+        .split_once('#')
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?
+        .1;
     let value = crate::container::format_retained(
         ctx,
         "retain F3D history input identity",
-        format_args!("f3d:history-input:state#{}:{feature_key}:{previous_state_id}",
-            feature_key.len()),
+        format_args!(
+            "f3d:history-input:state#{}:{feature_key}:{previous_state_id}",
+            feature_key.len()
+        ),
     )?;
     cadmpeg_ir::ids::FeatureInputTopologyId::mint(value)
         .map_err(cadmpeg_core::CodecError::malformed)
@@ -1080,28 +1142,32 @@ pub(crate) fn native_scope(name: &str) -> String {
 
 /// Compare an encoded identity component with source text without allocating.
 pub(crate) fn encoded_identity_key_component_matches(encoded: &str, source: &str) -> bool {
-        const HEX: &[u8; 16] = b"0123456789ABCDEF";
-        let mut actual = encoded.as_bytes().iter();
-        for character in source.chars() {
-            let mut buffer = [0; 4];
-            let bytes = character.encode_utf8(&mut buffer).as_bytes();
-            if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-                for &byte in bytes {
-                    for expected in [b'%', HEX[usize::from(byte >> 4)], HEX[usize::from(byte & 0x0f)]] {
-                        if actual.next() != Some(&expected) {
-                            return false;
-                        }
-                    }
-                }
-            } else {
-                for byte in bytes {
-                    if actual.next() != Some(byte) {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut actual = encoded.as_bytes().iter();
+    for character in source.chars() {
+        let mut buffer = [0; 4];
+        let bytes = character.encode_utf8(&mut buffer).as_bytes();
+        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            for &byte in bytes {
+                for expected in [
+                    b'%',
+                    HEX[usize::from(byte >> 4)],
+                    HEX[usize::from(byte & 0x0f)],
+                ] {
+                    if actual.next() != Some(&expected) {
                         return false;
                     }
                 }
             }
+        } else {
+            for byte in bytes {
+                if actual.next() != Some(byte) {
+                    return false;
+                }
+            }
         }
-        actual.next().is_none()
+    }
+    actual.next().is_none()
 }
 
 /// Compare an escaped native scope without materializing the encoded entry name.
@@ -1142,8 +1208,8 @@ pub(crate) fn native_scope_charged(
         .len()
         .checked_add(escaped_len)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    let length_u64 = u64::try_from(length)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let length_u64 =
+        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_retained(length_u64, operation)?;
     let mut id = String::new();
     id.try_reserve(length)
@@ -1183,15 +1249,16 @@ pub(crate) fn native_scoped_id_charged(
     let mut key_len = Count(0);
     std::fmt::Write::write_fmt(&mut key_len, format_args!("{key}"))
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    let length = "f3d:".len()
+    let length = "f3d:"
+        .len()
         .checked_add(escaped_len)
         .and_then(|length| length.checked_add(1))
         .and_then(|length| length.checked_add(kind.len()))
         .and_then(|length| length.checked_add(1))
         .and_then(|length| length.checked_add(key_len.0))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    let length_u64 = u64::try_from(length)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let length_u64 =
+        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_retained(length_u64, operation)?;
     let mut id = String::new();
     id.try_reserve(length)
@@ -1201,8 +1268,9 @@ pub(crate) fn native_scoped_id_charged(
     id.push(':');
     id.push_str(kind);
     id.push('#');
-    std::fmt::Write::write_fmt(&mut id, format_args!("{key}"))
-        .map_err(|_| cadmpeg_core::CodecError::malformed("F3D native record ID key formatting failed"))?;
+    std::fmt::Write::write_fmt(&mut id, format_args!("{key}")).map_err(|_| {
+        cadmpeg_core::CodecError::malformed("F3D native record ID key formatting failed")
+    })?;
     Ok(id)
 }
 
@@ -1211,8 +1279,8 @@ fn escaped_scope_len(
     scope: &str,
     operation: &'static str,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let scope_len = u64::try_from(scope.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let scope_len =
+        u64::try_from(scope.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_work(
         scope_len
             .checked_mul(2)
@@ -1510,7 +1578,10 @@ mod tests {
     fn charged_native_scope_matches_escaped_identity_bytes() {
         let ctx = cadmpeg_test_support::service_decode_context();
         let scope = "A B:#%\u{2003}é";
-        assert_eq!(super::native_scope_charged(&ctx, scope).unwrap(), native_scope(scope));
+        assert_eq!(
+            super::native_scope_charged(&ctx, scope).unwrap(),
+            native_scope(scope)
+        );
     }
 
     #[test]
@@ -1534,8 +1605,10 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::native_scope_charged(&ctx, "Design/BulkStream.dat").unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D native scope"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D native scope")
+        );
     }
 
     #[test]
@@ -1546,8 +1619,8 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::native_scoped_id_charged(&ctx, "ACT/BulkStream.dat", "act-guid", 1)
-            .unwrap_err();
+        let error =
+            super::native_scoped_id_charged(&ctx, "ACT/BulkStream.dat", "act-guid", 1).unwrap_err();
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1582,8 +1655,10 @@ mod tests {
             7,
         );
         let error = super::neutral_assembly_joint_id(Some(&ctx), &scope).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D native record ID"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D native record ID")
+        );
     }
 
     #[test]
@@ -1602,16 +1677,26 @@ mod tests {
         let ctx = cadmpeg_test_support::service_decode_context();
         let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#a:b%20c").unwrap();
         let prefix = super::history_input_prefix(&feature.key(), -3);
-        assert_eq!(super::history_input_body_id_charged(&ctx, &feature, -3, 9).unwrap(),
-            super::history_input_body_id(&prefix, 9));
-        assert_eq!(super::history_input_face_id_charged(&ctx, &feature, -3, 9).unwrap(),
-            super::history_input_face_id(&prefix, 9));
-        assert_eq!(super::history_input_edge_id_charged(&ctx, &feature, -3, 9).unwrap(),
-            super::history_input_edge_id(&prefix, 9));
-        assert_eq!(super::history_input_vertex_id_charged(&ctx, &feature, -3, 9).unwrap(),
-            super::history_input_vertex_id(&prefix, 9));
-        assert_eq!(super::history_input_state_id_charged(&ctx, &feature, -3).unwrap(),
-            super::history_input_state_id(&prefix));
+        assert_eq!(
+            super::history_input_body_id_charged(&ctx, &feature, -3, 9).unwrap(),
+            super::history_input_body_id(&prefix, 9)
+        );
+        assert_eq!(
+            super::history_input_face_id_charged(&ctx, &feature, -3, 9).unwrap(),
+            super::history_input_face_id(&prefix, 9)
+        );
+        assert_eq!(
+            super::history_input_edge_id_charged(&ctx, &feature, -3, 9).unwrap(),
+            super::history_input_edge_id(&prefix, 9)
+        );
+        assert_eq!(
+            super::history_input_vertex_id_charged(&ctx, &feature, -3, 9).unwrap(),
+            super::history_input_vertex_id(&prefix, 9)
+        );
+        assert_eq!(
+            super::history_input_state_id_charged(&ctx, &feature, -3).unwrap(),
+            super::history_input_state_id(&prefix)
+        );
     }
 
     #[test]
@@ -1623,8 +1708,10 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#a:b%20c").unwrap();
         let error = super::history_input_edge_id_charged(&ctx, &feature, -3, 9).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D history input identity"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D history input identity")
+        );
     }
 
     #[test]
@@ -1730,8 +1817,10 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::appearance_id_charged(&ctx, "visual").unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D native record ID"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D native record ID")
+        );
     }
 
     #[test]
@@ -1742,8 +1831,10 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::body_appearance_binding_id_charged(&ctx, 42, "visual").unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D native record ID"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D native record ID")
+        );
     }
 
     #[test]
@@ -1753,14 +1844,13 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::assignment_appearance_binding_id_charged(
-            &ctx,
-            "part:one%20_7",
-            "visual",
-        )
-        .unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D native record ID"));
+        let error =
+            super::assignment_appearance_binding_id_charged(&ctx, "part:one%20_7", "visual")
+                .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D native record ID")
+        );
     }
 
     #[test]

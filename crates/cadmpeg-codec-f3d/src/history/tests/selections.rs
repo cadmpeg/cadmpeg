@@ -11,10 +11,10 @@
 )]
 
 use crate::history::{
-    active_brep_face_matches_source, bind_edge_identity_history, bind_historical_entity_versions,
-    bind_hole_selection_history, bind_profile_face_group_cardinality, bind_snapshot_revision_ids,
+    active_brep_face_matches_source, selection::bind_edge_identity_history, bind_historical_entity_versions,
+    selection::bind_hole_selection_history, bind_profile_face_group_cardinality, bind_snapshot_revision_ids,
     body_revision_without_topology_change, combine_recipe_family_tool_slots,
-    complete_compact_edge_treatment_deletions, entity_selection_face_candidates,
+    selection::complete_compact_edge_treatment_deletions, selection::entity_selection_face_candidates,
     grouped_reference_face_candidate, historical_body_slot, historical_record_archive,
     historical_transition, insert_only_active_record_count, materialize_record_table,
     pattern_combine_tool_slots, profile_face_group_cardinality_candidates,
@@ -31,10 +31,13 @@ use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
 use std::collections::{HashMap, HashSet};
 
-fn with_history_decode_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+fn with_history_decode_context<T>(
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     f(&ctx)
 }
 
@@ -243,9 +246,21 @@ fn compact_edge_treatment_deletions_require_exact_cardinality() {
         complete_compact_edge_treatment_deletions(None, true, Some(2), &[17, 19]).unwrap(),
         [17, 19]
     );
-    assert!(complete_compact_edge_treatment_deletions(None, true, Some(2), &[17, 18, 19]).unwrap().is_empty());
-    assert!(complete_compact_edge_treatment_deletions(None, false, Some(2), &[17, 19]).unwrap().is_empty());
-    assert!(complete_compact_edge_treatment_deletions(None, true, None, &[17, 19]).unwrap().is_empty());
+    assert!(
+        complete_compact_edge_treatment_deletions(None, true, Some(2), &[17, 18, 19])
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        complete_compact_edge_treatment_deletions(None, false, Some(2), &[17, 19])
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        complete_compact_edge_treatment_deletions(None, true, None, &[17, 19])
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -253,10 +268,14 @@ fn compact_edge_treatment_deletions_refuse_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = complete_compact_edge_treatment_deletions(Some(&ctx), true, Some(2), &[17, 19]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D compact treatment deletions"));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = complete_compact_edge_treatment_deletions(Some(&ctx), true, Some(2), &[17, 19])
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D compact treatment deletions")
+    );
 }
 
 #[test]
@@ -353,7 +372,8 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         std::slice::from_ref(&scope),
         std::slice::from_ref(&history),
         &HashMap::from([(scope.id.clone(), history.id.clone())]),
-    ).unwrap();
+    )
+    .unwrap();
 
     assert_eq!(operands[0].transition_edge_candidates, [17, 19]);
     assert_eq!(operands[1].transition_edge_candidates, [17, 19]);
@@ -422,7 +442,12 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
     ]);
     assert_eq!(
         singleton_body_revision_across_state_chain(
-            &cadmpeg_test_support::service_decode_context(), &result, 10, &states).unwrap(),
+            &cadmpeg_test_support::service_decode_context(),
+            &result,
+            10,
+            &states
+        )
+        .unwrap(),
         Some(7)
     );
 
@@ -446,7 +471,12 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
     let split_states = HashMap::from([(20, Some(&split_previous)), (21, Some(&split_result))]);
     assert_eq!(
         singleton_revised_input_body_across_state_chain(
-            &cadmpeg_test_support::service_decode_context(), &split_result, 20, &split_states).unwrap(),
+            &cadmpeg_test_support::service_decode_context(),
+            &split_result,
+            20,
+            &split_states
+        )
+        .unwrap(),
         Some(7)
     );
 
@@ -458,7 +488,12 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
         HashMap::from([(20, Some(&split_previous)), (21, Some(&ambiguous_split))]);
     assert_eq!(
         singleton_revised_input_body_across_state_chain(
-            &cadmpeg_test_support::service_decode_context(), &ambiguous_split, 20, &ambiguous_states).unwrap(),
+            &cadmpeg_test_support::service_decode_context(),
+            &ambiguous_split,
+            20,
+            &ambiguous_states
+        )
+        .unwrap(),
         None
     );
 
@@ -476,10 +511,22 @@ fn pattern_combine_tool_set_requires_target_membership_and_exact_cardinality() {
     let bodies = [2, 4, 5, 6, 7].into_iter().collect();
 
     with_history_decode_context(|ctx| {
-        assert_eq!(pattern_combine_tool_slots(ctx, &bodies, 4, 4).unwrap(), Some(vec![2, 5, 6, 7]));
-        assert_eq!(pattern_combine_tool_slots(ctx, &bodies, 3, 5).unwrap(), None);
-        assert_eq!(pattern_combine_tool_slots(ctx, &bodies, 4, 3).unwrap(), None);
-        assert_eq!(pattern_combine_tool_slots(ctx, &bodies, 4, 5).unwrap(), None);
+        assert_eq!(
+            pattern_combine_tool_slots(ctx, &bodies, 4, 4).unwrap(),
+            Some(vec![2, 5, 6, 7])
+        );
+        assert_eq!(
+            pattern_combine_tool_slots(ctx, &bodies, 3, 5).unwrap(),
+            None
+        );
+        assert_eq!(
+            pattern_combine_tool_slots(ctx, &bodies, 4, 3).unwrap(),
+            None
+        );
+        assert_eq!(
+            pattern_combine_tool_slots(ctx, &bodies, 4, 5).unwrap(),
+            None
+        );
     });
     assert_eq!(
         historical_body_slot("f3d:history-input:body#80:escaped-feature:35:2"),
@@ -495,38 +542,53 @@ fn with_combine_collection_limit<T>(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     f(&ctx)
 }
 
 #[test]
 fn pattern_combine_tool_slots_refuse_collection_limit() {
     let bodies = [2, 4, 5].into_iter().collect();
-    let result = with_combine_collection_limit(1, |ctx|
-        pattern_combine_tool_slots(ctx, &bodies, 4, 2));
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+    let result =
+        with_combine_collection_limit(1, |ctx| pattern_combine_tool_slots(ctx, &bodies, 4, 2));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
+    ));
 }
 
 #[test]
 fn combine_recipe_tool_index_refuses_collection_limit() {
-    let result = with_combine_collection_limit(0, |ctx|
-        combine_recipe_family_tool_slots(ctx, "f3d:design", 1, &[1], 1, 0, &[], &[]));
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+    let result = with_combine_collection_limit(0, |ctx| {
+        combine_recipe_family_tool_slots(ctx, ("f3d:design", 1), &[1], 1, 0, &[], &[])
+    });
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
+    ));
 }
 
 #[test]
 fn combine_historical_rows_refuse_collection_limit() {
     let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#combine").unwrap();
-    let result = with_combine_collection_limit(0, |ctx|
-        super::super::combine_historical_rows(ctx, &feature, 1, vec![2], vec!["native".into()]));
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+    let result = with_combine_collection_limit(0, |ctx| {
+        super::super::combine_historical_rows(ctx, &feature, 1, vec![2], vec!["native".into()])
+    });
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
+    ));
 }
 
 #[test]
 fn combine_member_validation_refuses_collection_limit() {
-    let result = with_combine_collection_limit(1, |ctx|
-        super::super::charge_combine_body_members(ctx, 1));
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+    let result =
+        with_combine_collection_limit(1, |ctx| super::super::charge_combine_body_members(ctx, 1));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
+    ));
 }
 
 #[test]
@@ -632,27 +694,40 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
         operand(4, &recipes[3], None, &[]),
     ];
 
-    with_history_decode_context(|ctx| assert_eq!(
-        combine_recipe_family_tool_slots(ctx, stream, 10, &[1, 2, 3, 4], 317, 1, &operands, &recipes).unwrap(),
-        Some(vec![5, 6, 7, 8])
-    ));
+    with_history_decode_context(|ctx| {
+        assert_eq!(
+            combine_recipe_family_tool_slots(
+                ctx,
+                (stream, 10),
+                &[1, 2, 3, 4],
+                317,
+                1,
+                &operands,
+                &recipes
+            )
+            .unwrap(),
+            Some(vec![5, 6, 7, 8])
+        )
+    });
 
     *operands[1]
         .reference_bindings_mut()
         .next()
         .unwrap()
         .preceding_body_slots = vec![6, 7, 9];
-    assert!(with_history_decode_context(|ctx| combine_recipe_family_tool_slots(
-        ctx,
-        stream,
-        10,
-        &[1, 2, 3, 4],
-        317,
-        1,
-        &operands,
-        &recipes,
-    ).unwrap())
-    .is_none());
+    assert!(
+        with_history_decode_context(|ctx| combine_recipe_family_tool_slots(
+            ctx,
+            (stream, 10),
+            &[1, 2, 3, 4],
+            317,
+            1,
+            &operands,
+            &recipes,
+        )
+        .unwrap())
+        .is_none()
+    );
 
     operands[1]
         .reference_bindings_mut()
@@ -663,51 +738,54 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
     let mut duplicate_selector = recipes.clone();
     duplicate_selector[1].design.as_mut().unwrap().selector =
         duplicate_selector[2].design.as_ref().unwrap().selector;
-    assert!(with_history_decode_context(|ctx| combine_recipe_family_tool_slots(
-        ctx,
-        stream,
-        10,
-        &[1, 2, 3, 4],
-        317,
-        1,
-        &operands,
-        &duplicate_selector,
-    ).unwrap())
-    .is_none());
+    assert!(
+        with_history_decode_context(|ctx| combine_recipe_family_tool_slots(
+            ctx,
+            (stream, 10),
+            &[1, 2, 3, 4],
+            317,
+            1,
+            &operands,
+            &duplicate_selector,
+        )
+        .unwrap())
+        .is_none()
+    );
 }
 
-fn combine_external_identity(occurrence_reference: u64) ->
-    crate::records::feature::combine::DesignCombineExternalBodyIdentity {
+fn combine_external_identity(
+    occurrence_reference: u64,
+) -> crate::records::feature::combine::DesignCombineExternalBodyIdentity {
     crate::records::feature::combine::DesignCombineExternalBodyIdentityWire {
-            selector_asset_id: "11111111-1111-4111-8111-111111111111"
-                .to_owned()
-                .try_into()
-                .expect("GUID"),
-            selector_asset_id_offset: 44,
-            selector_context_id: "22222222-2222-4222-8222-222222222222"
-                .to_owned()
-                .try_into()
-                .expect("GUID"),
-            selector_context_id_offset: 120,
-            occurrence_reference,
-            occurrence_reference_offset: 205,
-            external_body_reference: 700,
-            external_body_reference_offset: 220,
-            external_segment: 2,
-            external_segment_offset: 229,
-            external_asset_id: "11111111-1111-4111-8111-111111111111"
-                .to_owned()
-                .try_into()
-                .expect("GUID"),
-            external_asset_id_offset: 237,
-            external_link_name: "component-body-link".into(),
-            external_link_name_offset: 314,
-            external_property_key: None,
-            external_property_key_offset: None,
-            external_version_urn: None,
-            external_version_urn_offset: None,
-            tail_values: [0, 0],
-            tail_value_offsets: [359, 371],
+        selector_asset_id: "11111111-1111-4111-8111-111111111111"
+            .to_owned()
+            .try_into()
+            .expect("GUID"),
+        selector_asset_id_offset: 44,
+        selector_context_id: "22222222-2222-4222-8222-222222222222"
+            .to_owned()
+            .try_into()
+            .expect("GUID"),
+        selector_context_id_offset: 120,
+        occurrence_reference,
+        occurrence_reference_offset: 205,
+        external_body_reference: 700,
+        external_body_reference_offset: 220,
+        external_segment: 2,
+        external_segment_offset: 229,
+        external_asset_id: "11111111-1111-4111-8111-111111111111"
+            .to_owned()
+            .try_into()
+            .expect("GUID"),
+        external_asset_id_offset: 237,
+        external_link_name: "component-body-link".into(),
+        external_link_name_offset: 314,
+        external_property_key: None,
+        external_property_key_offset: None,
+        external_version_urn: None,
+        external_version_urn_offset: None,
+        tail_values: [0, 0],
+        tail_value_offsets: [359, 371],
     }
     .try_into()
     .unwrap()
@@ -719,9 +797,13 @@ fn combine_external_identity_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = crate::ids::neutral_combine_external_body_id_charged(&ctx, &identity);
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
+    ));
 }
 
 fn combine_external_scope() -> crate::records::feature::scope::DesignParameterScope {
@@ -759,9 +841,13 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
 #[test]
 fn combine_external_tools_refuse_collection_limit() {
     let scope = combine_external_scope();
-    let result = with_combine_collection_limit(0, |ctx|
-        super::super::combine_external_local_tools(ctx, &scope));
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+    let result = with_combine_collection_limit(0, |ctx| {
+        super::super::combine_external_local_tools(ctx, &scope)
+    });
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
+    ));
 }
 
 #[test]
@@ -777,7 +863,8 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
     let mut scope = combine_external_scope();
     let BodySelection::Local { bodies, native } =
         with_history_decode_context(|ctx| super::super::combine_external_local_tools(ctx, &scope))
-            .unwrap().expect("complete local tool identity")
+            .unwrap()
+            .expect("complete local tool identity")
     else {
         panic!("local body selection");
     };
@@ -790,8 +877,11 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         .expect("Combine operation")
         .tools
         .additional[0] = tool(13, 500);
-    assert!(with_history_decode_context(|ctx| super::super::combine_external_local_tools(ctx, &scope))
-        .unwrap().is_none());
+    assert!(
+        with_history_decode_context(|ctx| super::super::combine_external_local_tools(ctx, &scope))
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -860,7 +950,9 @@ fn historical_transition_separates_membership_and_revision_changes() {
     );
 
     let transition = with_history_decode_context(|ctx| {
-        historical_transition(ctx, &current, Some(&previous)).unwrap().unwrap()
+        historical_transition(ctx, &current, Some(&previous))
+            .unwrap()
+            .unwrap()
     });
     assert_eq!(transition.previous_state_id, Some(10));
     assert_eq!(transition.topology.bodies.inserted, [2]);
@@ -927,7 +1019,9 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
         transition: None,
     };
 
-    with_history_decode_context(|ctx| bind_snapshot_revision_ids(ctx, std::slice::from_mut(&mut state)).unwrap());
+    with_history_decode_context(|ctx| {
+        bind_snapshot_revision_ids(ctx, std::slice::from_mut(&mut state)).unwrap()
+    });
 
     assert_eq!(
         state
@@ -997,7 +1091,10 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
     ];
 
     with_history_decode_context(|ctx| {
-        assert_eq!(insert_only_active_record_count(ctx, &states).unwrap(), Some(4));
+        assert_eq!(
+            insert_only_active_record_count(ctx, &states).unwrap(),
+            Some(4)
+        );
         bind_historical_entity_versions(ctx, &mut states).unwrap();
     });
 
@@ -1080,9 +1177,19 @@ fn insert_only_history_rejects_gaps_and_updates() {
         ],
     };
     state.bulletin_boards.push(board);
-    with_history_decode_context(|ctx| assert_eq!(insert_only_active_record_count(ctx, &[state.clone()]).unwrap(), None));
+    with_history_decode_context(|ctx| {
+        assert_eq!(
+            insert_only_active_record_count(ctx, &[state.clone()]).unwrap(),
+            None
+        )
+    });
     state.bulletin_boards[0].changes[1].kind = AsmEntityChangeKind::Update { old: 2, new: 3 };
-    with_history_decode_context(|ctx| assert_eq!(insert_only_active_record_count(ctx, &[state]).unwrap(), None));
+    with_history_decode_context(|ctx| {
+        assert_eq!(
+            insert_only_active_record_count(ctx, &[state]).unwrap(),
+            None
+        )
+    });
 }
 
 #[test]
@@ -1409,11 +1516,18 @@ fn profile_face_group_cardinality_requires_one_changed_surface_family() {
         Some(vec![10, 11, 12])
     );
     assert_eq!(
-        profile_face_group_cardinality_candidates(None, &topology, &[20].into_iter().collect(), 1,).unwrap(),
+        profile_face_group_cardinality_candidates(None, &topology, &[20].into_iter().collect(), 1,)
+            .unwrap(),
         Some(vec![20])
     );
     assert_eq!(
-        profile_face_group_cardinality_candidates(None, &topology, &[10, 20].into_iter().collect(), 1,).unwrap(),
+        profile_face_group_cardinality_candidates(
+            None,
+            &topology,
+            &[10, 20].into_iter().collect(),
+            1,
+        )
+        .unwrap(),
         None
     );
 
@@ -1432,7 +1546,9 @@ fn profile_face_group_cardinality_requires_one_changed_surface_family() {
     );
 }
 
-fn profile_candidate_limit_case(max_items: u64) -> Result<Option<Vec<i64>>, cadmpeg_core::CodecError> {
+fn profile_candidate_limit_case(
+    max_items: u64,
+) -> Result<Option<Vec<i64>>, cadmpeg_core::CodecError> {
     let topology = AsmHistoricalTopology {
         faces: vec![10],
         face_surfaces: vec![AsmHistoricalCarrierBinding {
@@ -1444,35 +1560,36 @@ fn profile_candidate_limit_case(max_items: u64) -> Result<Option<Vec<i64>>, cadm
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
-    profile_face_group_cardinality_candidates(
-        Some(&ctx),
-        &topology,
-        &[10].into_iter().collect(),
-        1,
-    )
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    profile_face_group_cardinality_candidates(Some(&ctx), &topology, &[10].into_iter().collect(), 1)
 }
 
 #[test]
 fn profile_preceding_faces_refuse_collection_limit() {
     let error = profile_candidate_limit_case(0).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D profile candidate faces"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D profile candidate faces")
+    );
 }
 
 #[test]
 fn profile_face_carriers_refuse_collection_limit() {
     let error = profile_candidate_limit_case(1).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D profile face carriers"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D profile face carriers")
+    );
 }
 
 #[test]
 fn profile_carrier_faces_refuse_collection_limit() {
     let error = profile_candidate_limit_case(2).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D profile carrier faces"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D profile carrier faces")
+    );
 }
 
 #[test]
@@ -1803,7 +1920,8 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         &groups,
         &histories,
         &scope_histories,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(operands[0].resolved_face_slots, [10]);
     assert_eq!(operands[1].resolved_face_slots, [11]);
     let profile = crate::design::face_resolve::resolved_extrude_profile_face_group(

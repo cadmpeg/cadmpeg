@@ -36,8 +36,10 @@ fn manifest_dialect_classification_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty test input");
     let error = F3dDialect::classify_document(&ctx, "3-2-0-0").unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "classify F3D manifest dialect"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "classify F3D manifest dialect")
+    );
 }
 
 #[test]
@@ -48,8 +50,10 @@ fn f3z_dialect_classification_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty test input");
     let error = F3dDialect::classify_f3z(&ctx, &["Part.f3d"]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "classify F3Z root document members"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "classify F3Z root document members")
+    );
 }
 
 #[test]
@@ -85,16 +89,21 @@ fn primary_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).unwrap();
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (limited, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = classify_layers(&limited, &scan).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "clone F3D primary dialect layer"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "clone F3D primary dialect layer")
+    );
 }
 
 #[test]
@@ -102,16 +111,21 @@ fn primary_dialect_clone_refuses_retained_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).unwrap();
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (limited, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = classify_layers(&limited, &scan).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "clone F3D primary dialect layer"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "clone F3D primary dialect layer")
+    );
 }
 
 #[test]
@@ -119,16 +133,22 @@ fn extra_dialect_collection_refuses_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).unwrap();
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 1;
     let (limited, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = classify_layers(&limited, &scan).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D dialect layers"), "{error:?}");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D dialect layers"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -136,8 +156,11 @@ fn dialect_collision_loss_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).unwrap();
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .unwrap();
     let mut scan = crate::container::scan(&scan_ctx, root).unwrap();
     scan.breps.push(scan.breps[0].clone());
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -145,8 +168,11 @@ fn dialect_collision_loss_refuses_collection_limit() {
     let (limited, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = classify_layers(&limited, &scan).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D dialect collision losses"), "{error:?}");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D dialect collision losses"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -180,8 +206,8 @@ fn a_version_only_drift_lands_on_the_recovery_row_and_charges_the_loss() {
         Some(cadmpeg_core::dialect_id!("f3d:manifest-3-2-0-0"))
     );
 
-    let loss = with_context(|ctx| dialect_loss(ctx, &matched).unwrap())
-        .expect("the recovery is charged");
+    let loss =
+        with_context(|ctx| dialect_loss(ctx, &matched).unwrap()).expect("the recovery is charged");
     assert_eq!(loss.code, F3dLossCode::SourceDialectUnverified.kind());
     assert!(loss.message.contains("3-3-0-0"));
     assert!(loss.message.contains("f3d:manifest-3-2-0-0"));
@@ -225,10 +251,7 @@ fn an_f3z_match_names_its_row_and_records_the_root_members() {
 fn the_identity_rows_are_admitted_and_charge_nothing() {
     // A row parsed with the strategy it declares carries no recovery. The loss
     // and the admission are read from one value, so this pins both halves.
-    for matched in [
-        classify_document("3-2-0-0"),
-        classify_f3z(&["Part.f3d"]),
-    ] {
+    for matched in [classify_document("3-2-0-0"), classify_f3z(&["Part.f3d"])] {
         assert_eq!(matched.admission(), &Admission::Admitted);
         with_context(|ctx| assert!(dialect_loss(ctx, &matched).unwrap().is_none()));
     }
@@ -237,10 +260,7 @@ fn the_identity_rows_are_admitted_and_charge_nothing() {
 #[test]
 fn the_totality_row_is_the_only_row_a_foreign_version_reaches() {
     assert_eq!(F3dDialect::Unknown.id().as_str(), "f3d:unknown");
-    for matched in [
-        classify_document("3-2-0-0"),
-        classify_f3z(&["Part.f3d"]),
-    ] {
+    for matched in [classify_document("3-2-0-0"), classify_f3z(&["Part.f3d"])] {
         assert_ne!(
             matched.dialect().as_str(),
             F3dDialect::Unknown.id().as_str()
@@ -279,8 +299,10 @@ fn dialect_recovery_loss_refuses_collection_limit() {
     let (limited, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::dialect_losses(&limited, &layers).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D dialect recovery losses"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D dialect recovery losses")
+    );
 }
 
 #[test]
@@ -295,8 +317,10 @@ fn kernel_recovery_text_refuses_retained_limit() {
     let (limited, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = kernel_dialect_loss(&limited, &matched).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D dialect recovery loss"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D dialect recovery loss")
+    );
 }
 
 #[test]
@@ -321,8 +345,8 @@ fn kernel_recovery_text_matches_shared_dialect_message() {
     ]));
     let loss = with_context(|ctx| kernel_dialect_loss(ctx, &matched).unwrap())
         .expect("unverified kernel loss");
-    let expected = cadmpeg_asm::dialect::unverified_message(
-        "the kernel carrier Body.sat", &matched,
-    ).expect("shared kernel message");
+    let expected =
+        cadmpeg_asm::dialect::unverified_message("the kernel carrier Body.sat", &matched)
+            .expect("shared kernel message");
     assert_eq!(loss.message, expected);
 }

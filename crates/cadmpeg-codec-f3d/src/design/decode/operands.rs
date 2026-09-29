@@ -1425,7 +1425,9 @@ pub(crate) fn decode_extrude_selection_groups(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            if let Some(mut group) = parse_extrude_selection_group(ctx, bytes, scope, ordinal, header)? {
+            if let Some(mut group) =
+                parse_extrude_selection_group(ctx, bytes, scope, ordinal, header)?
+            {
                 group.id =
                     ids::native_design_extrude_selection_group_id(&entry.name, header.byte_offset);
                 out.push(group);
@@ -3052,9 +3054,12 @@ fn parse_extrude_selection_group(
     if member_count == 0 || member_count > bytes.len().saturating_sub(position) / 11 {
         return None;
     }
-    let count = match u64::try_from(member_count) {
-        Ok(count) => count,
-        Err(_) => return Some(Err(ctx.refuse_codec_limit("parse F3D extrude selection members", 0, u64::MAX))),
+    let Ok(count) = u64::try_from(member_count) else {
+        return Some(Err(ctx.refuse_codec_limit(
+            "parse F3D extrude selection members",
+            0,
+            u64::MAX,
+        )));
     };
     let mut members = Vec::new();
     let mut member_offsets = Vec::new();

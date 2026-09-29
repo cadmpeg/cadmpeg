@@ -167,7 +167,10 @@ pub(crate) fn lp_utf16_bounded_charged(
     let Some(start) = at.checked_add(4) else {
         return Ok(None);
     };
-    let Some(end) = count.checked_mul(2).and_then(|length| start.checked_add(length)) else {
+    let Some(end) = count
+        .checked_mul(2)
+        .and_then(|length| start.checked_add(length))
+    else {
         return Ok(None);
     };
     let Some(raw) = bytes.get(start..end) else {
@@ -183,9 +186,9 @@ pub(crate) fn lp_utf16_bounded_charged(
         let Ok(character) = decoded else {
             return Ok(None);
         };
-        utf8_len = utf8_len.checked_add(character.len_utf8()).ok_or_else(|| {
-            ctx.refuse_codec_limit("decode F3D UTF-16 string", 0, u64::MAX)
-        })?;
+        utf8_len = utf8_len
+            .checked_add(character.len_utf8())
+            .ok_or_else(|| ctx.refuse_codec_limit("decode F3D UTF-16 string", 0, u64::MAX))?;
     }
     let utf8_len_u64 = u64::try_from(utf8_len)
         .map_err(|_| ctx.refuse_codec_limit("decode F3D UTF-16 string", 0, u64::MAX))?;
@@ -222,7 +225,6 @@ mod charged_string_tests {
                 if limit.operation == "retain F3D UTF-16 string"
         ));
     }
-
 
     #[test]
     fn bounded_ascii_string_refuses_retained_limit() {
@@ -499,12 +501,19 @@ pub(crate) fn take_reference_charged(
             match *some!(bytes.get(cursor)) {
                 0 => {
                     cursor += 1;
-                    Reference::Local { target, inline_type_guid }
+                    Reference::Local {
+                        target,
+                        inline_type_guid,
+                    }
                 }
                 1 => {
                     let segment = some!(View::u32_le_at(bytes, cursor + 1));
                     cursor += 5;
-                    Reference::CrossSegment { target, inline_type_guid, segment }
+                    Reference::CrossSegment {
+                        target,
+                        inline_type_guid,
+                        segment,
+                    }
                 }
                 _ => return Ok(None),
             }
@@ -518,7 +527,11 @@ pub(crate) fn take_reference_charged(
             match *some!(bytes.get(cursor)) {
                 1 => {
                     cursor += 1;
-                    Reference::CrossSegment { target, inline_type_guid, segment }
+                    Reference::CrossSegment {
+                        target,
+                        inline_type_guid,
+                        segment,
+                    }
                 }
                 0 => {
                     cursor += 1;
@@ -526,18 +539,26 @@ pub(crate) fn take_reference_charged(
                     if !is_guid_hyphenated(&guid) {
                         return Ok(None);
                     }
-                    let (link_name, end) = some!(lp_utf16_bounded_charged(ctx, bytes, end, 0..=256)?);
+                    let (link_name, end) =
+                        some!(lp_utf16_bounded_charged(ctx, bytes, end, 0..=256)?);
                     cursor = end;
                     match *some!(bytes.get(cursor)) {
                         0 => cursor += 1,
                         1 => {
-                            let (_, end) = some!(lp_utf16_bounded_charged(ctx, bytes, cursor + 1, 36..=36)?);
-                            let (_, end) = some!(lp_utf16_bounded_charged(ctx, bytes, end, 0..=256)?);
+                            let (_, end) =
+                                some!(lp_utf16_bounded_charged(ctx, bytes, cursor + 1, 36..=36)?);
+                            let (_, end) =
+                                some!(lp_utf16_bounded_charged(ctx, bytes, end, 0..=256)?);
                             cursor = end;
                         }
                         _ => return Ok(None),
                     }
-                    Reference::CrossDocument { target, inline_type_guid, segment, link_name }
+                    Reference::CrossDocument {
+                        target,
+                        inline_type_guid,
+                        segment,
+                        link_name,
+                    }
                 }
                 _ => return Ok(None),
             }
@@ -604,7 +625,9 @@ mod tests {
             .expect("test decode context");
         let error = super::take_lp_utf8_charged(&ctx, &bytes, &mut 0)
             .expect_err("encoded string must exceed retained budget");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D UTF-8 string"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D UTF-8 string")
+        );
     }
 }

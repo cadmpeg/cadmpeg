@@ -24,8 +24,8 @@ fn design_projection_gaps(
 ) -> DesignProjectionGaps {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
     super::super::design_projection_gaps(&ctx, ir, native).unwrap()
 }
 
@@ -34,16 +34,15 @@ fn projection_set_index_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
-    let error = super::super::collect_decode_set(
-        &ctx,
-        ["native:one"],
-        "index projected F3D constraints",
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index projected F3D constraints"));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        super::super::collect_decode_set(&ctx, ["native:one"], "index projected F3D constraints")
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index projected F3D constraints")
+    );
 }
 
 #[test]
@@ -51,16 +50,18 @@ fn projection_map_index_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::super::collect_decode_map(
         &ctx,
         [("native:one", 1)],
         "index projected F3D feature records",
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index projected F3D feature records"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index projected F3D feature records")
+    );
 }
 
 #[test]
@@ -80,16 +81,15 @@ fn lost_edge_reference_index_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
-    let error = super::super::design_projection_gaps(
-        &ctx,
-        &cadmpeg_ir::document::CadIr::empty(),
-        &native,
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D lost edge references"));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        super::super::design_projection_gaps(&ctx, &cadmpeg_ir::document::CadIr::empty(), &native)
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D lost edge references")
+    );
 }
 
 #[test]
@@ -882,7 +882,15 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             Vec::new(),
         )),
     );
-    assert_eq!(unresolved_dimension_companion_count(&cadmpeg_test_support::service_decode_context(), &native, &ir).unwrap(), 1);
+    assert_eq!(
+        unresolved_dimension_companion_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &ir
+        )
+        .unwrap(),
+        1
+    );
     ir.model.sketch_constraints.push(
         serde_json::from_value(serde_json::json!({
             "id": "f3d:model:sketch-constraint#dimension",
@@ -896,7 +904,15 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         }))
         .expect("neutral dimension constraint"),
     );
-    assert_eq!(unresolved_dimension_companion_count(&cadmpeg_test_support::service_decode_context(), &native, &ir).unwrap(), 0);
+    assert_eq!(
+        unresolved_dimension_companion_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &ir
+        )
+        .unwrap(),
+        0
+    );
     ir.model.sketch_constraints.clear();
 
     let mut recipe_backed = native.clone();
@@ -920,7 +936,15 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             program: vec![-1],
             matching_edge_operand_ids: Vec::new(),
         });
-    assert_eq!(unresolved_dimension_companion_count(&cadmpeg_test_support::service_decode_context(), &recipe_backed, &ir).unwrap(), 0);
+    assert_eq!(
+        unresolved_dimension_companion_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &recipe_backed,
+            &ir
+        )
+        .unwrap(),
+        0
+    );
 
     native.design_dimension_locus_pairs = vec![DesignDimensionLocusPair::try_new(
         crate::records::dimensions::DesignDimensionLocusPairDraft {
@@ -960,14 +984,43 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     .unwrap()]
     .try_into()
     .expect("pair arena");
-    assert_eq!(unresolved_dimension_companion_count(&cadmpeg_test_support::service_decode_context(), &native, &ir).unwrap(), 0);
-    assert!(container_only_dimension_parameters(&cadmpeg_test_support::service_decode_context(), &native).unwrap().is_empty());
+    assert_eq!(
+        unresolved_dimension_companion_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &ir
+        )
+        .unwrap(),
+        0
+    );
+    assert!(container_only_dimension_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &native
+    )
+    .unwrap()
+    .is_empty());
     let mut pairs = native.design_dimension_locus_pairs.to_vec();
     pairs[0].companion_record_index = 30;
     pairs[0].governing_companion_record_index = 99;
     native.design_dimension_locus_pairs = pairs.try_into().expect("pair arena");
-    assert_eq!(unresolved_dimension_companion_count(&cadmpeg_test_support::service_decode_context(), &native, &ir).unwrap(), 0);
-    assert_eq!(container_only_dimension_parameters(&cadmpeg_test_support::service_decode_context(), &native).unwrap().len(), 1);
+    assert_eq!(
+        unresolved_dimension_companion_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &ir
+        )
+        .unwrap(),
+        0
+    );
+    assert_eq!(
+        container_only_dimension_parameters(
+            &cadmpeg_test_support::service_decode_context(),
+            &native
+        )
+        .unwrap()
+        .len(),
+        1
+    );
 
     native.design_dimension_locus_pairs = Default::default();
     native.design_dimension_null_locus_pairs = vec![DesignDimensionLocusPair::try_new(
@@ -1005,12 +1058,28 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     .unwrap()]
     .try_into()
     .expect("pair arena");
-    assert_eq!(unresolved_dimension_companion_count(&cadmpeg_test_support::service_decode_context(), &native, &ir).unwrap(), 0);
+    assert_eq!(
+        unresolved_dimension_companion_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &ir
+        )
+        .unwrap(),
+        0
+    );
     let mut pairs = native.design_dimension_null_locus_pairs.to_vec();
     pairs[0].companion_record_index = 30;
     pairs[0].governing_companion_record_index = 99;
     native.design_dimension_null_locus_pairs = pairs.try_into().expect("pair arena");
-    assert_eq!(unresolved_dimension_companion_count(&cadmpeg_test_support::service_decode_context(), &native, &ir).unwrap(), 0);
+    assert_eq!(
+        unresolved_dimension_companion_count(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &ir
+        )
+        .unwrap(),
+        0
+    );
 }
 
 #[test]

@@ -277,8 +277,8 @@ fn copy_annotation_text(
     source: &str,
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    let bytes = u64::try_from(source.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let bytes =
+        u64::try_from(source.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_retained(bytes, operation)?;
     let mut text = String::new();
     text.try_reserve(source.len())
@@ -346,12 +346,7 @@ impl AnnotationBuilder {
         Ok(())
     }
 
-    fn note_owned(
-        &mut self,
-        id: String,
-        stream: &StreamHandle,
-        offset: u64,
-    ) -> ProvenanceNote<'_> {
+    fn note_owned(&mut self, id: String, stream: &StreamHandle, offset: u64) -> ProvenanceNote<'_> {
         let provenance = match self.annotations.provenance.entry(id) {
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert(
                 AnnotationProvenance::annotation(stream.0.clone(), offset, None),
@@ -426,15 +421,12 @@ impl AnnotationBuilder {
         }
         let id = copy_annotation_text(ctx, id, "retain source exactness identity")?;
         let field = copy_annotation_text(ctx, field, "retain source exactness field")?;
-        self.derived_owned(id, field).map_err(cadmpeg_core::CodecError::malformed)?;
+        self.derived_owned(id, field)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         Ok(())
     }
 
-    fn derived_owned(
-        &mut self,
-        id: String,
-        field: String,
-    ) -> Result<&mut Self, &'static str> {
+    fn derived_owned(&mut self, id: String, field: String) -> Result<&mut Self, &'static str> {
         self.field_exactness_owned(id, field, Exactness::Derived)
     }
 
@@ -457,8 +449,8 @@ impl AnnotationBuilder {
         field: String,
         exactness: Exactness,
     ) -> Result<&mut Self, &'static str> {
-        let field = FieldName::try_from(field)
-            .map_err(|_| "an exactness field name cannot be empty")?;
+        let field =
+            FieldName::try_from(field).map_err(|_| "an exactness field name cannot be empty")?;
         if exactness == Exactness::ByteExact {
             let Some(note) = self.annotations.exactness.remove(&id) else {
                 return Ok(self);
@@ -544,9 +536,9 @@ impl Annotations {
                 "copy remapped annotation target",
             )?);
             ctx.charge_collection_items(1, "collect annotation remapping")?;
-            remapping.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("collect annotation remapping", 0, 1)
-            })?;
+            remapping
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("collect annotation remapping", 0, 1))?;
             remapping.push((
                 copy_annotation_text(ctx, id, "copy source annotation identity")?,
                 target,

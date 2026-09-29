@@ -17,20 +17,25 @@ fn native(trailing_only: bool) -> crate::native::F3dNative {
         member.scope_reference_ordinal = 1;
         native.design_construction_operand_groups.push(member);
         native.design_construction_operand_groups[0].frame =
-            DesignConstructionOperandGroupFrame::try_from(DesignConstructionOperandGroupFrameDraft {
-                member_count_offset: 1_021,
-                auxiliary_records: Vec::new(),
-                auxiliary_paths: Vec::new(),
-                trailing_records: vec![Located { value: 102, offset: 1_038 }],
-                trailing_transforms: Vec::new(),
-                trailing_dual_transforms: Vec::new(),
-                trailing_flags: Vec::new(),
-                opaque_index: 1,
-                opaque_index_offset: 1_058,
-                opaque_scalar: 0.0,
-                opaque_scalar_offset: 1_062,
-                variant: false,
-            })
+            DesignConstructionOperandGroupFrame::try_from(
+                DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 1_021,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: vec![Located {
+                        value: 102,
+                        offset: 1_038,
+                    }],
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 1,
+                    opaque_index_offset: 1_058,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 1_062,
+                    variant: false,
+                },
+            )
             .unwrap();
     }
     native
@@ -99,13 +104,17 @@ fn operand_group_identity_members_refuse_collection_limit() {
         &HashSet::new(),
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D operand group identity members"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D operand group identity members")
+    );
 }
 
-fn carrier_error(trailing_only: bool, max_items: u64, max_retained: u64)
-    -> cadmpeg_core::CodecError
-{
+fn carrier_error(
+    trailing_only: bool,
+    max_items: u64,
+    max_retained: u64,
+) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = native(trailing_only);
@@ -131,29 +140,37 @@ fn carrier_error(trailing_only: bool, max_items: u64, max_retained: u64)
 #[test]
 fn operand_group_missing_member_refuses_finding_limit() {
     let error = carrier_error(false, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings")
+    );
 }
 
 #[test]
 fn operand_group_missing_member_refuses_entity_limit() {
     let error = carrier_error(false, u64::MAX, 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity")
+    );
 }
 
 #[test]
 fn operand_group_missing_trailing_carrier_refuses_finding_limit() {
     let error = carrier_error(true, 0, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings")
+    );
 }
 
 #[test]
 fn operand_group_missing_trailing_carrier_refuses_entity_limit() {
     let error = carrier_error(true, u64::MAX, 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity")
+    );
 }
 
 #[test]
@@ -173,7 +190,10 @@ fn operand_group_missing_member_preserves_finding_text() {
     )
     .unwrap();
     assert_eq!(findings.len(), 1);
-    assert_eq!(findings[0].message, "Fusion Design construction operand group has no exact typed member");
+    assert_eq!(
+        findings[0].message,
+        "Fusion Design construction operand group has no exact typed member"
+    );
 }
 
 #[test]

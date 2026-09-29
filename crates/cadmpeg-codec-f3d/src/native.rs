@@ -78,9 +78,11 @@ fn native_count(
     operation: &'static str,
 ) -> Result<u64, cadmpeg_ir::NativeConvertError> {
     u64::try_from(count).map_err(|_| {
-        cadmpeg_ir::NativeConvertError::Resource(
-            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX),
-        )
+        cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
+            operation,
+            u64::MAX - 1,
+            u64::MAX,
+        ))
     })
 }
 
@@ -134,12 +136,6 @@ fn group_by_owner<T>(
         child: &str,
         parent: &str,
     ) -> cadmpeg_ir::NativeConvertError {
-        let args = format_args!(
-            "orphaned or ambiguously parented records: child {child} refers to missing parent {parent}"
-        );
-        let Some(ctx) = ctx else {
-            return cadmpeg_ir::NativeConvertError::InvalidOwner(args.to_string());
-        };
         struct Length(usize);
         impl std::fmt::Write for Length {
             fn write_str(&mut self, value: &str) -> std::fmt::Result {
@@ -147,17 +143,27 @@ fn group_by_owner<T>(
                 Ok(())
             }
         }
+        let args = format_args!(
+            "orphaned or ambiguously parented records: child {child} refers to missing parent {parent}"
+        );
+        let Some(ctx) = ctx else {
+            return cadmpeg_ir::NativeConvertError::InvalidOwner(args.to_string());
+        };
         let operation = "report F3D native missing owner";
         let mut length = Length(0);
         if std::fmt::write(&mut length, args).is_err() {
-            return cadmpeg_ir::NativeConvertError::Resource(
-                ctx.refuse_codec_limit(operation, 0, u64::MAX),
-            );
+            return cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
+                operation,
+                0,
+                u64::MAX,
+            ));
         }
         let Ok(bytes) = u64::try_from(length.0) else {
-            return cadmpeg_ir::NativeConvertError::Resource(
-                ctx.refuse_codec_limit(operation, 0, u64::MAX),
-            );
+            return cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
+                operation,
+                0,
+                u64::MAX,
+            ));
         };
         if let Err(error) = ctx.charge_retained(bytes, operation) {
             return cadmpeg_ir::NativeConvertError::Resource(error);
@@ -1549,7 +1555,9 @@ impl F3dNative {
                             cadmpeg_core::CodecError::ResourceLimit(_) => {
                                 cadmpeg_ir::NativeConvertError::Resource(error)
                             }
-                            _ => cadmpeg_ir::NativeConvertError::InvalidCollection(error.to_string()),
+                            _ => {
+                                cadmpeg_ir::NativeConvertError::InvalidCollection(error.to_string())
+                            }
                         },
                     )?);
                 }
@@ -1578,30 +1586,35 @@ impl F3dNative {
             design_body_recipe_operands: read_arena!("design_body_recipe_operands"),
             design_loft_legacy_body_carriers: read_arena!("design_loft_legacy_body_carriers"),
             design_dimension_annotation_frames: read_arena!("design_dimension_annotation_frames"),
-            design_dimension_presentation_frames: read_arena!("design_dimension_presentation_frames"),
+            design_dimension_presentation_frames: read_arena!(
+                "design_dimension_presentation_frames"
+            ),
             design_dimension_locus_groups: read_arena!("design_dimension_locus_groups"),
-            design_dimension_locus_pairs: DesignDimensionLocusPairs::try_from(
-                read_arena!("design_dimension_locus_pairs"),
-            )
+            design_dimension_locus_pairs: DesignDimensionLocusPairs::try_from(read_arena!(
+                "design_dimension_locus_pairs"
+            ))
             .map_err(<serde_json::Error as serde::de::Error>::custom)?,
             design_dimension_null_locus_pairs: match ctx {
-                Some(ctx) => DesignDimensionNullLocusPairs::from_entries_charged(
-                    ctx,
-                    null_locus_entries,
-                )?,
+                Some(ctx) => {
+                    DesignDimensionNullLocusPairs::from_entries_charged(ctx, null_locus_entries)?
+                }
                 None => DesignDimensionNullLocusPairs::try_from(null_locus_entries)
                     .map_err(<serde_json::Error as serde::de::Error>::custom)?,
             },
             design_dimension_recipe_records: read_arena!("design_dimension_recipe_records"),
             design_edge_operands: read_arena!("design_edge_operands"),
-            design_edge_treatment_vertex_operands: read_arena!("design_edge_treatment_vertex_operands"),
+            design_edge_treatment_vertex_operands: read_arena!(
+                "design_edge_treatment_vertex_operands"
+            ),
             design_edge_identity_operands: read_arena!("design_edge_identity_operands"),
             design_entity_selection_operands: read_arena!("design_entity_selection_operands"),
             design_face_operands: read_arena!("design_face_operands"),
             design_face_source_groups: read_arena!("design_face_source_groups"),
             design_feature_timelines: read_arena!("design_feature_timelines"),
             design_construction_operand_groups: read_arena!("design_construction_operand_groups"),
-            design_construction_operand_identities: read_arena!("design_construction_operand_identities"),
+            design_construction_operand_identities: read_arena!(
+                "design_construction_operand_identities"
+            ),
             design_extrude_selection_groups: read_arena!("design_extrude_selection_groups"),
             design_extrude_selection_members: read_arena!("design_extrude_selection_members"),
             design_fillet_radius_groups: read_arena!("design_fillet_radius_groups"),
@@ -1645,8 +1658,7 @@ impl F3dNative {
             xref_references: read_arena!("xref_references"),
             asm_histories: read_arena!("asm_histories"),
         };
-        let states: Vec<crate::history_records::AsmDeltaState> =
-            read_arena!("asm_delta_states");
+        let states: Vec<crate::history_records::AsmDeltaState> = read_arena!("asm_delta_states");
         let boards: Vec<crate::history_records::AsmBulletinBoard> =
             read_arena!("asm_bulletin_boards");
         let changes: Vec<crate::history_records::AsmEntityChange> =

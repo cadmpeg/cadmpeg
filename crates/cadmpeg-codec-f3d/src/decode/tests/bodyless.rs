@@ -35,7 +35,16 @@ fn brep_less_geometry_report() -> cadmpeg_ir::codec::DecodeBody {
 #[test]
 fn sketch_only_design_is_not_a_geometry_loss() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_bodyless_design_classification(&cadmpeg_test_support::service_decode_context(), &mut report, 0, 0, 0, 13, 0).unwrap();
+    crate::decode::apply_bodyless_design_classification(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut report,
+        0,
+        0,
+        0,
+        13,
+        0,
+    )
+    .unwrap();
     assert!(report.transfer.geometry_transferred());
     assert!(
         report
@@ -56,7 +65,16 @@ fn sketch_only_design_is_not_a_geometry_loss() {
 #[test]
 fn presentation_only_design_is_not_a_geometry_loss() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_bodyless_design_classification(&cadmpeg_test_support::service_decode_context(), &mut report, 0, 0, 0, 0, 1).unwrap();
+    crate::decode::apply_bodyless_design_classification(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut report,
+        0,
+        0,
+        0,
+        0,
+        1,
+    )
+    .unwrap();
     assert!(report.transfer.geometry_transferred());
     assert!(
         report
@@ -76,7 +94,16 @@ fn presentation_only_design_is_not_a_geometry_loss() {
 #[test]
 fn a_declared_body_without_a_brep_stream_keeps_its_geometry_losses() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_bodyless_design_classification(&cadmpeg_test_support::service_decode_context(), &mut report, 0, 0, 1, 13, 0).unwrap();
+    crate::decode::apply_bodyless_design_classification(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut report,
+        0,
+        0,
+        1,
+        13,
+        0,
+    )
+    .unwrap();
     assert!(!report.transfer.geometry_transferred());
     assert_eq!(report.losses.len(), 3);
 }
@@ -87,7 +114,16 @@ fn a_declared_body_without_a_brep_stream_keeps_its_geometry_losses() {
 #[test]
 fn a_document_without_sketch_entities_keeps_its_geometry_losses() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_bodyless_design_classification(&cadmpeg_test_support::service_decode_context(), &mut report, 0, 0, 0, 0, 0).unwrap();
+    crate::decode::apply_bodyless_design_classification(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut report,
+        0,
+        0,
+        0,
+        0,
+        0,
+    )
+    .unwrap();
     assert!(!report.transfer.geometry_transferred());
     assert_eq!(report.losses.len(), 3);
 }
@@ -97,7 +133,16 @@ fn a_document_without_sketch_entities_keeps_its_geometry_losses() {
 #[test]
 fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_bodyless_design_classification(&cadmpeg_test_support::service_decode_context(), &mut report, 1, 0, 0, 13, 0).unwrap();
+    crate::decode::apply_bodyless_design_classification(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut report,
+        1,
+        0,
+        0,
+        13,
+        0,
+    )
+    .unwrap();
     assert!(!report.transfer.geometry_transferred());
     assert_eq!(report.losses.len(), 3);
 }
@@ -106,7 +151,16 @@ fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
 #[test]
 fn a_text_brep_carrier_is_never_reclassified_as_sketch_only() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_bodyless_design_classification(&cadmpeg_test_support::service_decode_context(), &mut report, 0, 2, 0, 13, 0).unwrap();
+    crate::decode::apply_bodyless_design_classification(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut report,
+        0,
+        2,
+        0,
+        13,
+        0,
+    )
+    .unwrap();
     assert!(!report.transfer.geometry_transferred());
     assert_eq!(report.losses.len(), 3);
 }
@@ -116,21 +170,16 @@ fn bodyless_classification_loss_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut report = brep_less_geometry_report();
-    let error = crate::decode::apply_bodyless_design_classification(
-        &ctx,
-        &mut report,
-        0,
-        0,
-        0,
-        1,
-        0,
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D bodyless classification losses"));
+    let error =
+        crate::decode::apply_bodyless_design_classification(&ctx, &mut report, 0, 0, 0, 1, 0)
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D bodyless classification losses")
+    );
 }
 
 #[test]
@@ -138,46 +187,37 @@ fn bodyless_classification_loss_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut report = brep_less_geometry_report();
-    let error = crate::decode::apply_bodyless_design_classification(
-        &ctx,
-        &mut report,
-        0,
-        0,
-        0,
-        1,
-        0,
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D bodyless classification loss"));
+    let error =
+        crate::decode::apply_bodyless_design_classification(&ctx, &mut report, 0, 0, 0, 1, 0)
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D bodyless classification loss")
+    );
 }
 
 #[test]
 fn mesh_classification_loss_refuses_collection_limit() {
-    let bytes = crate::test_support::assembly_test::f3d_without_brep(
-        "part-design",
-        "part.f3d",
-        &[],
-    );
+    let bytes =
+        crate::test_support::assembly_test::f3d_without_brep("part-design", "part.f3d", &[]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let normal_policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (normal, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes,
-        &arena,
-        &normal_policy,
-    )
-    .unwrap();
+    let (normal, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &normal_policy)
+            .unwrap();
     let scan = crate::container::scan(&normal, root).unwrap();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut report = brep_less_geometry_report();
-    let error = crate::decode::apply_mesh_body_classification(&ctx, &mut report, &scan, 1)
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D mesh classification losses"));
+    let error =
+        crate::decode::apply_mesh_body_classification(&ctx, &mut report, &scan, 1).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D mesh classification losses")
+    );
 }

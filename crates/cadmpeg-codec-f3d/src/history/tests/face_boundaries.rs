@@ -11,7 +11,7 @@
 )]
 
 use crate::history::{
-    bind_edge_identity_bounded_face_rules, cyclic_point_subsequence,
+    selection::bind_edge_identity_bounded_face_rules, cyclic_point_subsequence,
     resolve_direct_face_recipe_clauses,
 };
 use crate::history_records::AsmHistoricalTopology;
@@ -51,13 +51,23 @@ fn direct_face_recipe_clauses_resolve_ordered_changed_intersections() {
     };
 
     assert_eq!(
-        resolve_direct_face_recipe_clauses(None, &references, &topology, &[2, 4].into_iter().collect()).unwrap(),
+        resolve_direct_face_recipe_clauses(
+            None,
+            &references,
+            &topology,
+            &[2, 4].into_iter().collect()
+        )
+        .unwrap(),
         [2, 4]
     );
-    assert!(
-        resolve_direct_face_recipe_clauses(None, &references, &topology, &[2].into_iter().collect()).unwrap()
-            .is_empty()
-    );
+    assert!(resolve_direct_face_recipe_clauses(
+        None,
+        &references,
+        &topology,
+        &[2].into_iter().collect()
+    )
+    .unwrap()
+    .is_empty());
 }
 
 fn direct_clause_limit_case(
@@ -87,8 +97,8 @@ fn direct_clause_limit_case(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     resolve_direct_face_recipe_clauses(
         Some(&ctx),
         &references,
@@ -100,43 +110,55 @@ fn direct_clause_limit_case(
 #[test]
 fn direct_face_clause_index_refuses_collection_limit() {
     let error = direct_clause_limit_case(0, false).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D direct face clauses"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D direct face clauses")
+    );
 }
 
 #[test]
 fn direct_face_clause_member_refuses_collection_limit() {
     let error = direct_clause_limit_case(1, false).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "group F3D direct face references"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "group F3D direct face references")
+    );
 }
 
 #[test]
 fn direct_face_clause_append_refuses_collection_limit() {
     let error = direct_clause_limit_case(2, true).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "group F3D direct face references"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "group F3D direct face references")
+    );
 }
 
 #[test]
 fn direct_face_topology_index_refuses_collection_limit() {
     let error = direct_clause_limit_case(2, false).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D direct topology faces"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D direct topology faces")
+    );
 }
 
 #[test]
 fn direct_face_clause_candidates_refuse_collection_limit() {
     let error = direct_clause_limit_case(3, false).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D direct face clause candidates"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D direct face clause candidates")
+    );
 }
 
 #[test]
 fn direct_face_clause_resolution_refuses_collection_limit() {
     let error = direct_clause_limit_case(4, false).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D resolved direct faces"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D resolved direct faces")
+    );
 }
 
 #[test]
@@ -172,7 +194,10 @@ fn bounded_face_copy_matches_cyclic_boundary_with_split_vertices() {
     assert!(!cyclic_point_subsequence(&source, &split_copy[..3]));
 }
 
-fn bounded_face_rule_fixture() -> (Vec<crate::records::topology::edge_identity::DesignEdgeIdentityOperand>, crate::records::topology::face::DesignFaceOperand) {
+fn bounded_face_rule_fixture() -> (
+    Vec<crate::records::topology::edge_identity::DesignEdgeIdentityOperand>,
+    crate::records::topology::face::DesignFaceOperand,
+) {
     use crate::records::{
         recipes::ConstructionRecipeKind,
         topology::{
@@ -287,11 +312,14 @@ fn bounded_face_rules_refuse_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = bind_edge_identity_bounded_face_rules(Some(&ctx), &mut identities, &[face.clone()]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D bounded treatment faces"));
-
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = bind_edge_identity_bounded_face_rules(Some(&ctx), &mut identities, &[face.clone()])
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D bounded treatment faces")
+    );
 }
 
 #[test]

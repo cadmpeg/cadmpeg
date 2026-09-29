@@ -24,11 +24,15 @@ fn f3z_report_note_refuses_collection_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap().0;
-    let error = super::super::push_note(&ctx, &mut Vec::new(), format_args!("root {}", "model.f3d"))
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3Z report notes"));
+        .unwrap()
+        .0;
+    let error =
+        super::super::push_note(&ctx, &mut Vec::new(), format_args!("root {}", "model.f3d"))
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3Z report notes")
+    );
 }
 
 #[test]
@@ -37,11 +41,15 @@ fn f3z_report_note_refuses_retained_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap().0;
-    let error = super::super::push_note(&ctx, &mut Vec::new(), format_args!("root {}", "model.f3d"))
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3Z report note"));
+        .unwrap()
+        .0;
+    let error =
+        super::super::push_note(&ctx, &mut Vec::new(), format_args!("root {}", "model.f3d"))
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3Z report note")
+    );
 }
 
 #[test]
@@ -50,15 +58,19 @@ fn f3z_report_loss_refuses_collection_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap().0;
+        .unwrap()
+        .0;
     let error = super::super::push_loss(
         &ctx,
         &mut Vec::new(),
         F3dLossCode::DrawingDocumentOmitted,
         format_args!("drawing {}", "drawing.f2d"),
-    ).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3Z report losses"));
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3Z report losses")
+    );
 }
 
 #[test]
@@ -67,20 +79,23 @@ fn f3z_report_loss_append_refuses_collection_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap().0;
+        .unwrap()
+        .0;
     let incoming = vec![F3dLossCode::DrawingDocumentOmitted.note("drawing")];
     let error = super::super::append_losses(&ctx, &mut Vec::new(), incoming).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "append F3Z report losses"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "append F3Z report losses")
+    );
 }
 
 #[test]
 fn f3z_document_digest_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let normal_policy = cadmpeg_core::decode::DecodePolicy::default();
-    let normal = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &normal_policy,
-    ).unwrap().0;
+    let normal = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &normal_policy)
+        .unwrap()
+        .0;
     let dialect = crate::dialect::F3dDialect::classify_f3z(&normal, &["part.f3d"]).unwrap();
     let source = cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(dialect),
@@ -89,18 +104,20 @@ fn f3z_document_digest_refuses_collection_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let limited = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap().0;
+        .unwrap()
+        .0;
     let error = super::super::finalize_result(
         &limited,
         cadmpeg_ir::CadIr::empty(),
         source,
-        cadmpeg_ir::codec::DecodeBody::new(
-            cadmpeg_ir::report::decode::DecodeTransfer::full(false),
-        ),
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(false)),
         cadmpeg_ir::SourceFidelity::default(),
-    ).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "record F3Z document digest"));
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "record F3Z document digest")
+    );
 }
 
 fn drawing_archive_for_root_limit_tests() -> Vec<u8> {
@@ -125,8 +142,10 @@ fn f3z_manifest_json_refuses_materialized_limit() {
     policy.limits.max_materialized_bytes = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "parse F3Z manifest JSON"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "parse F3Z manifest JSON")
+    );
 }
 
 #[test]
@@ -142,8 +161,10 @@ fn f3z_description_json_refuses_recursion_limit() {
     policy.limits.max_recursion_depth = 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "match F3Z derived model reference"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "match F3Z derived model reference")
+    );
 }
 
 #[test]
@@ -159,8 +180,10 @@ fn f3z_model_root_name_refuses_retained_limit() {
     policy.limits.max_retained_bytes = ("model.f3d".len() - 1) as u64;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3Z model root"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3Z model root")
+    );
 }
 
 #[test]
@@ -176,8 +199,10 @@ fn f3z_model_candidate_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3Z model candidates"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3Z model candidates")
+    );
 }
 
 #[test]
@@ -193,8 +218,10 @@ fn f3z_derived_model_match_refuses_work_limit() {
     policy.limits.max_work_units = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "match F3Z derived model reference"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "match F3Z derived model reference")
+    );
 }
 
 #[test]
@@ -210,8 +237,10 @@ fn f3z_drawing_root_copy_refuses_retained_limit() {
     policy.limits.max_retained_bytes = ("model.f3d".len() * 2 + "drawing.f2d".len() - 1) as u64;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3Z drawing root"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3Z drawing root")
+    );
 }
 
 #[test]
@@ -477,7 +506,8 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
     assert!(merged_unknowns
         .iter()
         .all(|record| record.id.as_str().starts_with(&prefix)));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(
         !validation.findings.iter().any(|finding| {
             finding.check == cadmpeg_ir::report::check::Check::ReferentialIntegrity
@@ -619,15 +649,15 @@ fn f3z_nested_member_reference_obeys_session_depth_limit() {
         ],
     );
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_recursion_depth = 1;
+    options.policy.limits.max_recursion_depth = 3;
     let error = F3dCodec
         .decode(&mut Cursor::new(archive), &options)
-        .expect_err("second member reference exceeds the selected depth");
+        .expect_err("nested member properties exceed the selected depth");
     assert!(matches!(
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RecursionDepth
-                && limit.operation == "f3z member reference"
+                && limit.operation == "scan F3D properties JSON"
     ));
 }
 
@@ -859,17 +889,16 @@ fn f3z_member_scan_propagates_collection_limit() {
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &archive, &arena, &policy,
-    ).unwrap();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
     let scan = crate::container::scan(&ctx, root).unwrap();
     let mut limited_policy = cadmpeg_core::decode::DecodePolicy::service();
     limited_policy.limits.max_collection_items = 0;
-    let (limited, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &limited_policy,
-    ).unwrap();
+    let (limited, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
     let error = crate::f3z::archive::classify_members(&limited, &scan)
-        .err().expect("member scan must refuse");
+        .err()
+        .expect("member scan must refuse");
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
@@ -882,16 +911,21 @@ fn f3z_primary_dialect_clone_refuses_retained_limit() {
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &archive, &arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).unwrap();
+        &archive,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (limited, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &policy,
-    ).unwrap();
+    let (limited, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::f3z::archive::classify_members(&limited, &scan)
-        .err().expect("dialect copy must refuse");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "clone F3Z primary dialect layer"));
+        .err()
+        .expect("dialect copy must refuse");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "clone F3Z primary dialect layer")
+    );
 }
