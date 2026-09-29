@@ -244,7 +244,7 @@ pub(crate) fn expected_lanes_charged<'a>(
         native,
         expected_primary_lanes,
         expected_supplemental_lanes,
-        |feature| copy_feature_ref(ctx, feature),
+        ctx,
     )?);
     Ok(expected)
 }
@@ -264,20 +264,22 @@ fn copy_feature_ref(
         .transpose()
 }
 
-fn expected_lane_pairs_impl<'a, E>(
+fn expected_lane_pairs_impl<'a>(
     native: &'a SldprtNative,
     mut expected_primary_lanes: Vec<FeatureInputLane>,
     mut expected_supplemental_lanes: Vec<FeatureInputLane>,
-    mut copy_owner: impl FnMut(&Option<String>) -> Result<Option<String>, E>,
-) -> Result<impl Iterator<Item = (&'a FeatureInputLane, FeatureInputLane)> + 'a, E> {
+    ctx: &DecodeContext<'_>,
+) -> Result<impl Iterator<Item = (&'a FeatureInputLane, FeatureInputLane)> + 'a, cadmpeg_ir::NativeConvertError> {
     crate::resolved_features::bindings::bind_scalar_operands(
+        ctx,
         &native.feature_histories,
         &mut expected_primary_lanes,
-    );
+    )?;
     crate::resolved_features::bindings::bind_scalar_operands(
+        ctx,
         &native.feature_histories,
         &mut expected_supplemental_lanes,
-    );
+    )?;
     for (expected_lane, actual_lane) in expected_supplemental_lanes.iter_mut().zip(
         native
             .feature_input_lanes
@@ -293,7 +295,7 @@ fn expected_lane_pairs_impl<'a, E>(
             .iter_mut()
             .zip(&actual_lane.sketch_entities)
         {
-            expected.feature_ref = copy_owner(&actual.feature_ref)?;
+            expected.feature_ref = copy_feature_ref(ctx, &actual.feature_ref)?;
             expected.links = None;
         }
         for (expected, actual) in expected_lane
@@ -301,12 +303,12 @@ fn expected_lane_pairs_impl<'a, E>(
             .iter_mut()
             .zip(&actual_lane.references)
         {
-            expected.feature_ref = copy_owner(&actual.feature_ref)?;
+            expected.feature_ref = copy_feature_ref(ctx, &actual.feature_ref)?;
         }
         for (expected, actual) in expected_lane.scalars.iter_mut().zip(&actual_lane.scalars) {
-            expected.feature_ref = copy_owner(&actual.feature_ref)?;
+            expected.feature_ref = copy_feature_ref(ctx, &actual.feature_ref)?;
         }
-        finalize_lane_bindings(&native.feature_histories, expected_lane);
+        finalize_lane_bindings(ctx, &native.feature_histories, expected_lane)?;
     }
     Ok(native
         .feature_input_lanes

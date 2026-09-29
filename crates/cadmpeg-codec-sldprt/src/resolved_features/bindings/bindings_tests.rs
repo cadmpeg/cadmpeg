@@ -160,10 +160,10 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         }],
     };
 
-    bind_scalar_operands(
+    bind_scalar_operands(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
-    );
+    ).unwrap();
 
     assert!(lane.scalars[..3]
         .iter()
@@ -174,7 +174,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         Some("profile-child")
     );
     assert_eq!(
-        represented_sketch_features(std::slice::from_ref(&history), std::slice::from_ref(&lane)),
+        represented_sketch_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history), std::slice::from_ref(&lane)).unwrap(),
         HashSet::from([String::from("profile-child")])
     );
 }
@@ -906,11 +906,11 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         features: vec![feature.clone()],
     };
 
-    bind_detached_legacy_sketch_objects(
+    bind_detached_legacy_sketch_objects(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&history),
         &HashSet::default(),
         &mut lane,
-    );
+    ).unwrap();
     assert_eq!(
         lane.sketch_entities[0].feature_ref.as_deref(),
         Some("spatial")
@@ -932,11 +932,11 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
     second.id = "other-spatial".into();
     let mut ambiguous_history = history;
     ambiguous_history.features.push(second);
-    bind_detached_legacy_sketch_objects(
+    bind_detached_legacy_sketch_objects(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_history),
         &HashSet::default(),
         &mut ambiguous,
-    );
+    ).unwrap();
     assert!(ambiguous
         .sketch_entities
         .iter()

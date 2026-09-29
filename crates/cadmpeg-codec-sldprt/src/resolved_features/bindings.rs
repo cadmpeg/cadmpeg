@@ -47,19 +47,21 @@ use std::collections::{HashMap, HashSet};
 const EPS_BINDINGS_BIND_PATTERN_INPUTS_E12: f64 = 1e-12;
 const EPS_BINDINGS_BIND_DETACHED_SPATIAL_RELATION_OBJECTS_E9: f64 = 1e-9;
 
-pub(super) fn history_metadata_ids(
-    histories: &[crate::records::FeatureHistory],
-) -> HashSet<String> {
-    histories
-        .iter()
-        .flat_map(|history| {
-            history
-                .features
-                .iter()
-                .filter(|feature| is_history_metadata_record(feature, &history.features))
-                .map(|feature| feature.id.clone())
-        })
-        .collect()
+pub(super) fn history_metadata_ids<'a>(
+    ctx: &DecodeContext<'_>,
+    histories: &'a [crate::records::FeatureHistory],
+) -> Result<HashSet<&'a str>, cadmpeg_core::CodecError> {
+    let mut ids = HashSet::new();
+    for history in histories {
+        for feature in &history.features {
+            ctx.charge_work(1, "scan SLDPRT history metadata identities")?;
+            if is_history_metadata_record(feature, &history.features) && !ids.contains(feature.id.as_str()) {
+                reserve_binding_set(ctx, &mut ids)?;
+                ids.insert(feature.id.as_str());
+            }
+        }
+    }
+    Ok(ids)
 }
 
 /// Bind pattern operands carried by adjacent feature-input objects.
@@ -69,7 +71,7 @@ pub(crate) fn bind_pattern_inputs(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let metadata_ids = history_metadata_ids(histories);
+    let metadata_ids = history_metadata_ids(ctx, histories)?;
     let history_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -111,7 +113,7 @@ pub(crate) fn bind_pattern_inputs(
         // that proof holds, and the objects below carry `usize` offsets.
         let mut starts = history_features
             .iter()
-            .filter(|feature| !metadata_ids.contains(&feature.id))
+            .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
             .filter_map(|feature| {
                 let offset = usize::try_from(feature_object_name(feature, lane)?.offset).ok()?;
                 Some((offset, *feature))
@@ -890,11 +892,12 @@ pub(crate) fn bind_mirror_surface_planes(
 }
 
 pub(crate) fn bind_sweep_adjacent_profiles(
+    ctx: &DecodeContext<'_>,
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
-    let metadata_ids = history_metadata_ids(histories);
+) -> Result<(), cadmpeg_core::CodecError> {
+    let metadata_ids = history_metadata_ids(ctx, histories)?;
     let history_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -915,7 +918,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
     for lane in lanes {
         let mut starts = history_features
             .iter()
-            .filter(|feature| !metadata_ids.contains(&feature.id))
+            .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
             .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
             .collect::<Vec<_>>();
         starts.sort_unstable_by_key(|(offset, _)| *offset);
@@ -1018,30 +1021,32 @@ pub(crate) fn bind_sweep_adjacent_profiles(
             }
         }
     }
+    Ok(())
 }
 
 pub(crate) fn bind_scalar_operands(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
-) {
-    let represented_sketches = represented_sketch_features(histories, lanes);
-    let metadata_ids = history_metadata_ids(histories);
+) -> Result<(), cadmpeg_core::CodecError> {
+    let represented_sketches = represented_sketch_features(ctx, histories, lanes)?;
+    let metadata_ids = history_metadata_ids(ctx, histories)?;
     for lane in lanes {
         for entity in &mut lane.sketch_entities {
             entity.feature_ref = None;
             entity.links = None;
         }
-        let mut starts = histories
+        let mut starts = collect_binding_vec(ctx, histories
             .iter()
             .flat_map(|history| &history.features)
-            .filter(|feature| !metadata_ids.contains(&feature.id))
+            .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
             .filter_map(|feature| {
                 Some((
                     feature_object_name(feature, lane)?.offset,
                     feature.id.as_str(),
                 ))
             })
-            .collect::<Vec<_>>();
+            )?;
         starts.sort_unstable_by_key(|start| start.0);
         for (index, &(start, feature_id)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
@@ -1050,29 +1055,29 @@ pub(crate) fn bind_scalar_operands(
                 .iter_mut()
                 .filter(|entity| entity.offset() > start && entity.offset() < end)
             {
-                entity.feature_ref = Some(feature_id.to_string());
+                entity.feature_ref = Some(copy_binding_text(ctx, feature_id)?);
             }
             for reference in lane
                 .references
                 .iter_mut()
                 .filter(|reference| reference.offset > start && reference.offset < end)
             {
-                reference.feature_ref = Some(feature_id.to_string());
+                reference.feature_ref = Some(copy_binding_text(ctx, feature_id)?);
             }
             for scalar in lane
                 .scalars
                 .iter_mut()
                 .filter(|scalar| scalar.offset > start && scalar.offset < end)
             {
-                scalar.feature_ref = Some(feature_id.to_string());
+                scalar.feature_ref = Some(copy_binding_text(ctx, feature_id)?);
             }
         }
-        bind_detached_legacy_sketch_objects(histories, &represented_sketches, lane);
-        let features_by_id = histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .map(|feature| (feature.id.as_str(), feature))
-            .collect::<HashMap<_, _>>();
+        bind_detached_legacy_sketch_objects(ctx, histories, &represented_sketches, lane)?;
+        let mut features_by_id = HashMap::new();
+        for feature in histories.iter().flat_map(|history| &history.features) {
+            reserve_binding_map(ctx, &mut features_by_id)?;
+            features_by_id.insert(feature.id.as_str(), feature);
+        }
         for pair in starts.windows(2) {
             let [(_, parent_id), (child_start, child_id)] = pair else {
                 continue;
@@ -1101,25 +1106,33 @@ pub(crate) fn bind_scalar_operands(
                     && scalar.offset < child_end
                     && scalar.feature_ref.as_deref() == Some(*child_id)
             }) {
-                scalar.feature_ref = Some((*parent_id).to_string());
+                scalar.feature_ref = Some(copy_binding_text(ctx, parent_id)?);
             }
         }
-        finalize_lane_bindings(histories, lane);
+        finalize_lane_bindings(ctx, histories, lane)?;
     }
+    Ok(())
 }
 
 pub(crate) fn finalize_lane_bindings(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &mut FeatureInputLane,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     normalize_indexed_curve_entities(lane);
-    let mut marker_ids = HashMap::<(String, u32), Vec<(String, bool)>>::new();
+    let mut marker_ids = HashMap::<String, HashMap<u32, Vec<(String, bool)>>>::new();
     for entity in &lane.sketch_entities {
         if let (Some(feature), Some(local_id)) = (&entity.feature_ref, entity.local_id()) {
-            marker_ids
-                .entry((feature.clone(), local_id))
-                .or_default()
-                .push((entity.id().to_string(), entity.coordinates_m.is_some()));
+            if !marker_ids.contains_key(feature.as_str()) {
+                reserve_binding_map(ctx, &mut marker_ids)?;
+                marker_ids.insert(copy_binding_text(ctx, feature)?, HashMap::new());
+            }
+            if let Some(by_local) = marker_ids.get_mut(feature.as_str()) {
+                reserve_binding_map(ctx, by_local)?;
+                let candidates = by_local.entry(local_id).or_default();
+                ctx.reserve_collection_vec(candidates, 1, "collect SLDPRT scalar marker candidates")?;
+                candidates.push((copy_binding_text(ctx, entity.id())?, entity.coordinates_m.is_some()));
+            }
         }
     }
     for entity in &mut lane.sketch_entities {
@@ -1135,32 +1148,30 @@ pub(crate) fn finalize_lane_bindings(
         let Some(owner) = &entity.feature_ref else {
             continue;
         };
-        let links = local_ids
-            .into_iter()
-            .filter_map(|local_id| {
-                let entity_ref = unique_marker_candidate(
-                    marker_ids.get(&(owner.clone(), u32::from(local_id)))?,
-                )?;
-                Some(SketchInputLink {
-                    local_id,
-                    entity_ref: entity_ref.to_string(),
-                })
-            })
-            .collect::<Vec<_>>();
+        let mut links = Vec::new();
+        for local_id in local_ids {
+            let Some(entity_ref) = marker_ids.get(owner.as_str())
+                .and_then(|by_local| by_local.get(&u32::from(local_id)))
+                .and_then(|candidates| unique_marker_candidate(candidates)) else {
+                continue;
+            };
+            ctx.reserve_collection_vec(&mut links, 1, "collect SLDPRT scalar local links")?;
+            links.push(SketchInputLink { local_id, entity_ref: copy_binding_text(ctx, entity_ref)? });
+        }
         if let Some(links) = crate::records::SketchInputLinks::new(selector, links) {
             entity.links = Some(links);
         }
     }
     bind_resolved_curve_vertices(lane);
-    let entities_by_feature = lane.sketch_entities.iter().fold(
-        HashMap::<&str, Vec<&SketchInputEntity>>::new(),
-        |mut by_feature, entity| {
-            if let Some(feature) = entity.feature_ref.as_deref() {
-                by_feature.entry(feature).or_default().push(entity);
-            }
-            by_feature
-        },
-    );
+    let mut entities_by_feature = HashMap::<&str, Vec<&SketchInputEntity>>::new();
+    for entity in &lane.sketch_entities {
+        if let Some(feature) = entity.feature_ref.as_deref() {
+            reserve_binding_map(ctx, &mut entities_by_feature)?;
+            let entities = entities_by_feature.entry(feature).or_default();
+            ctx.reserve_collection_vec(entities, 1, "collect SLDPRT scalar owner entities")?;
+            entities.push(entity);
+        }
+    }
     for scalar in &mut lane.scalars {
         let Some(entities) = scalar
             .feature_ref
@@ -1171,49 +1182,49 @@ pub(crate) fn finalize_lane_bindings(
         };
         let resolved = resolve_scalar_operand_markers(entities.iter().copied(), &scalar.operands);
         for (operand, resolved) in scalar.operands.iter_mut().zip(resolved) {
-            operand.entity_ref = resolved.map(|entity| entity.id().to_string());
+            operand.entity_ref = resolved.map(|entity| copy_binding_text(ctx, entity.id())).transpose()?;
         }
     }
-    let scalar_owners = lane
-        .scalars
-        .iter()
-        .map(|scalar| (scalar.id.as_str(), scalar.feature_ref.clone()))
-        .collect::<HashMap<_, _>>();
-    for binding in &mut lane.relation_bindings {
-        binding.feature_ref = scalar_owners
-            .get(binding.scalar_ref.as_str())
-            .cloned()
-            .flatten();
+    let mut scalar_owners = HashMap::new();
+    for scalar in &lane.scalars {
+        reserve_binding_map(ctx, &mut scalar_owners)?;
+        scalar_owners.insert(scalar.id.as_str(), scalar.feature_ref.as_deref());
     }
-    let intervals = feature_intervals(histories, lane);
+    for binding in &mut lane.relation_bindings {
+        binding.feature_ref = scalar_owners.get(binding.scalar_ref.as_str()).copied().flatten()
+            .map(|owner| copy_binding_text(ctx, owner)).transpose()?;
+    }
+    let intervals = feature_intervals(ctx, histories, lane)?;
     lane.relation_bindings =
         relation_bindings_scoped(&lane.id, &lane.classes, &lane.scalars, &intervals);
-    lane.relation_instances = relation_instances(histories, lane);
+    lane.relation_instances = relation_instances(ctx, histories, lane)?;
     lane.body_selections = compact_body_selections(histories, lane);
     lane.edge_selections = compact_edge_selections(histories, lane);
     lane.surface_selections = compact_surface_selections(histories, lane);
     lane.generated_surface_identities = generated_surface_identities(lane);
+    Ok(())
 }
 
 fn represented_sketch_features(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> HashSet<String> {
-    let metadata_ids = history_metadata_ids(histories);
-    let features = histories
+) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
+    let metadata_ids = history_metadata_ids(ctx, histories)?;
+    let features = collect_binding_vec(ctx, histories
         .iter()
         .flat_map(|history| &history.features)
-        .collect::<Vec<_>>();
+        )?;
     let mut represented = HashSet::new();
     for lane in lanes {
         if is_supplemental_config_lane(lane) {
             continue;
         }
-        let mut objects = features
+        let mut objects = collect_binding_vec(ctx, features
             .iter()
-            .filter(|feature| !metadata_ids.contains(&feature.id))
+            .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
             .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
-            .collect::<Vec<_>>();
+            )?;
         objects.sort_unstable_by_key(|(offset, _)| *offset);
         for (index, &(start, feature)) in objects.iter().enumerate() {
             if feature.xml_tag != "Sketch" {
@@ -1223,54 +1234,57 @@ fn represented_sketch_features(
             if lane.sketch_entities.iter().any(|entity| {
                 entity.offset() > start && entity.offset() < end && entity.coordinates_m.is_some()
             }) {
-                represented.insert(feature.id.clone());
+                reserve_binding_set(ctx, &mut represented)?;
+                represented.insert(copy_binding_text(ctx, &feature.id)?);
             }
         }
     }
-    represented
+    Ok(represented)
 }
 
 pub(crate) fn bind_unresolved_detached_sketch_objects(
+    ctx: &DecodeContext<'_>,
     model_features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
-) {
-    let unresolved = model_features
-        .iter()
-        .filter_map(|feature| match feature.evaluation.definition() {
-            FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch:
-                    cadmpeg_ir::features::SketchFeatureBinding::Unresolved
-                    | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-                ..
-            }) => feature.native_ref.clone(),
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
-    let represented = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter(|feature| feature.xml_tag == "Sketch" && !unresolved.contains(&feature.id))
-        .map(|feature| feature.id.clone())
-        .collect::<HashSet<_>>();
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut unresolved = HashSet::new();
+    for feature in model_features {
+        if matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved | cadmpeg_ir::features::SketchFeatureBinding::Planar(None), ..
+        })) {
+            if let Some(native) = feature.native_ref.as_deref() {
+                reserve_binding_set(ctx, &mut unresolved)?;
+                unresolved.insert(native);
+            }
+        }
+    }
+    let mut represented = HashSet::new();
+    for feature in histories.iter().flat_map(|history| &history.features)
+        .filter(|feature| feature.xml_tag == "Sketch" && !unresolved.contains(feature.id.as_str())) {
+        reserve_binding_set(ctx, &mut represented)?;
+        represented.insert(copy_binding_text(ctx, &feature.id)?);
+    }
     for lane in lanes
         .iter_mut()
         .filter(|lane| is_supplemental_config_lane(lane))
     {
-        bind_detached_legacy_sketch_objects(histories, &represented, lane);
-        finalize_lane_bindings(histories, lane);
+        bind_detached_legacy_sketch_objects(ctx, histories, &represented, lane)?;
+        finalize_lane_bindings(ctx, histories, lane)?;
     }
+    Ok(())
 }
 
 pub(super) fn bind_detached_legacy_sketch_objects(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     represented: &HashSet<String>,
     lane: &mut FeatureInputLane,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     const OBJECT_GAP: u64 = 4096;
 
     if !is_supplemental_config_lane(lane) {
-        return;
+        return Ok(());
     }
     let limit = lane
         .classes
@@ -1281,7 +1295,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
             |class| class.offset,
         );
     let relation_bindings = bind_detached_spatial_relation_objects(histories, represented, lane);
-    let markers = lane
+    let markers = collect_binding_vec(ctx, lane
         .sketch_entities
         .iter()
         .filter(|entity| entity.offset() < limit)
@@ -1291,18 +1305,19 @@ pub(super) fn bind_detached_legacy_sketch_objects(
                 .all(|(start, end, _)| entity.offset() < *start || entity.offset() >= *end)
         })
         .map(crate::records::SketchInputEntity::offset)
-        .collect::<Vec<_>>();
+        )?;
     let Some(&first) = markers.first() else {
-        return;
+        return Ok(());
     };
-    let mut starts = vec![first];
-    starts.extend(
-        markers
-            .windows(2)
-            .filter_map(|pair| (pair[1].saturating_sub(pair[0]) >= OBJECT_GAP).then_some(pair[1])),
-    );
+    let mut starts = ctx.alloc_filled(1, first, "collect SLDPRT detached sketch starts")?;
+    for pair in markers.windows(2) {
+        if pair[1] >= pair[0] && pair[1] - pair[0] >= OBJECT_GAP {
+            ctx.reserve_collection_vec(&mut starts, 1, "collect SLDPRT detached sketch starts")?;
+            starts.push(pair[1]);
+        }
+    }
 
-    let mut owners = histories
+    let mut owners = collect_binding_vec(ctx, histories
         .iter()
         .flat_map(|history| &history.features)
         .filter(|feature| feature.xml_tag == "Sketch")
@@ -1317,10 +1332,10 @@ pub(super) fn bind_detached_legacy_sketch_objects(
                 .all(|(_, _, owner)| owner != &feature.id)
         })
         .filter_map(|feature| Some((feature.source_value()?, feature)))
-        .collect::<Vec<_>>();
+        )?;
     owners.sort_unstable_by_key(|(source, _)| *source);
     if starts.len() != owners.len() {
-        return;
+        return Ok(());
     }
 
     for (index, (&start, (_, owner))) in starts.iter().zip(owners).enumerate() {
@@ -1330,23 +1345,24 @@ pub(super) fn bind_detached_legacy_sketch_objects(
             .iter_mut()
             .filter(|entity| entity.offset() >= start && entity.offset() < end)
         {
-            entity.feature_ref = Some(owner.id.clone());
+            entity.feature_ref = Some(copy_binding_text(ctx, &owner.id)?);
         }
         for reference in lane
             .references
             .iter_mut()
             .filter(|reference| reference.offset >= start && reference.offset < end)
         {
-            reference.feature_ref = Some(owner.id.clone());
+            reference.feature_ref = Some(copy_binding_text(ctx, &owner.id)?);
         }
         for scalar in lane
             .scalars
             .iter_mut()
             .filter(|scalar| scalar.offset >= start && scalar.offset < end)
         {
-            scalar.feature_ref = Some(owner.id.clone());
+            scalar.feature_ref = Some(copy_binding_text(ctx, &owner.id)?);
         }
     }
+    Ok(())
 }
 
 pub(super) fn spatial_relation_manager_ranges(lane: &FeatureInputLane) -> Vec<(u64, u64)> {
@@ -1665,6 +1681,30 @@ fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
             break;
         }
     }
+}
+
+fn copy_binding_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, cadmpeg_core::CodecError> {
+    ctx.format_retained(format_args!("{text}"), "retain SLDPRT scalar binding identity")
+}
+
+fn reserve_binding_map<K: Eq + std::hash::Hash, V>(ctx: &DecodeContext<'_>, values: &mut HashMap<K, V>) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_collection_items(1, "index SLDPRT scalar bindings")?;
+    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT scalar bindings", u64::MAX - 1, u64::MAX))
+}
+
+fn reserve_binding_set<T: Eq + std::hash::Hash>(ctx: &DecodeContext<'_>, values: &mut HashSet<T>) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_collection_items(1, "index SLDPRT scalar bindings")?;
+    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT scalar bindings", u64::MAX - 1, u64::MAX))
+}
+
+fn collect_binding_vec<T>(ctx: &DecodeContext<'_>, items: impl Iterator<Item = T>) -> Result<Vec<T>, cadmpeg_core::CodecError> {
+    let mut values = Vec::new();
+    for item in items {
+        ctx.charge_work(1, "scan SLDPRT scalar binding candidates")?;
+        ctx.reserve_collection_vec(&mut values, 1, "collect SLDPRT scalar binding candidates")?;
+        values.push(item);
+    }
+    Ok(values)
 }
 
 #[cfg(test)]

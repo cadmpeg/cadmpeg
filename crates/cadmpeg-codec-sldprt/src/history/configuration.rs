@@ -287,10 +287,11 @@ pub(crate) fn project_configuration_design_states(
         )?;
         inherit_configuration_reference_plane_semantics(&mut features, &resolved_base_features);
         crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
+            ctx,
             &mut features,
             histories,
             scoped_lanes,
-        );
+        )?;
         restore_configuration_tree_node_definitions(&mut features, &ir.model.features);
         ir.model.configurations[configuration_index].feature_states = features
             .into_iter()
@@ -649,10 +650,11 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
         );
         crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
+            ctx,
             &mut features,
             histories,
             scoped_lanes,
-        );
+        )?;
         crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
             ctx,
             &mut ir.model.sketch_entities,

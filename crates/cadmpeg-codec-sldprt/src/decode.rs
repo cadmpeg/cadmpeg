@@ -2680,11 +2680,12 @@ fn build_geometry_ir(
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(ctx, &mut histories, &lanes)?;
-    crate::resolved_features::bindings::bind_scalar_operands(&histories, &mut lanes);
+    crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
     crate::resolved_features::bindings::bind_scalar_operands(
+        ctx,
         &histories,
         &mut supplemental_config_lanes,
-    );
+    )?;
     let pmi_dimensions = crate::pmi::dimensions(ctx, scan, &mut annotations, &mut pmi_losses)?;
     project_design_history(
         ctx,
@@ -2750,10 +2751,11 @@ fn build_geometry_ir(
         &mut annotations,
     )?;
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
+        ctx,
         &ir.model.features,
         &histories,
         &mut supplemental_config_lanes,
-    );
+    )?;
     crate::resolved_features::projections::project_compact_edge_selections(
         ctx,
         &mut ir.model.features,
@@ -2832,10 +2834,11 @@ fn build_geometry_ir(
         &lanes,
     )?;
     crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
+            ctx,
         &mut ir.model.features,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
         ctx,
         &mut sketch_entities,
@@ -3960,11 +3963,12 @@ fn build_metadata_ir(
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(ctx, &mut histories, &lanes)?;
-    crate::resolved_features::bindings::bind_scalar_operands(&histories, &mut lanes);
+    crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
     crate::resolved_features::bindings::bind_scalar_operands(
+        ctx,
         &histories,
         &mut supplemental_config_lanes,
-    );
+    )?;
     let pmi_dimensions = crate::pmi::dimensions(ctx, scan, &mut annotations, &mut pmi_losses)?;
     ir.model.pmi = crate::swift::annotations(ctx, scan, &mut annotations, None, None)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
@@ -4098,10 +4102,11 @@ fn build_metadata_ir(
         &mut annotations,
     )?;
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
+        ctx,
         &ir.model.features,
         &histories,
         &mut supplemental_config_lanes,
-    );
+    )?;
     crate::resolved_features::projections::project_compact_edge_selections(
         ctx,
         &mut ir.model.features,
@@ -4185,10 +4190,11 @@ fn build_metadata_ir(
         &lanes,
     )?;
     crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
+            ctx,
         &mut ir.model.features,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
         ctx,
         &mut ir.model.sketch_entities,
