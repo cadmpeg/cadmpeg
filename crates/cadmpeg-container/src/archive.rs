@@ -137,7 +137,7 @@ impl<'a> ArchiveSnapshot<'a> {
         let mut names = BTreeSet::new();
         ctx.charge_collection_items(archive.len() as u64, "ZIP entry records")?;
         ctx.charge_collection_items(archive.len() as u64, "ZIP decoded name set")?;
-        let mut entries = Vec::with_capacity(archive.len());
+        let mut entries = DecodeContext::admitted_vec(archive.len(), "ZIP entry records")?;
         for index in 0..archive.len() {
             let file = archive.by_index(index).map_err(|error| {
                 CodecError::malformed(format_args!("bad ZIP entry {index}: {error}"))

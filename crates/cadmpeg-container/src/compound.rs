@@ -414,7 +414,10 @@ impl<'a> CompoundSnapshot<'a> {
             CompoundAllocation::Mini => self.mini_sector_view(sector),
         };
         let first = sector_view(chain.first)?;
-        let mut views = Vec::with_capacity(chain.rest.len() + 1);
+        let mut views = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            chain.rest.len() + 1,
+            "CFB stream sector views",
+        )?;
         views.push(first);
         let mut end = first.end();
         let mut contiguous = true;
@@ -600,7 +603,10 @@ impl CompoundState {
             "retain CFB allocation sector ids",
         )?;
         let sector = |id| sector_slice(bytes, sector_size, sector_count, id);
-        let mut fat_sectors = Vec::with_capacity(fat_count);
+        let mut fat_sectors = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            fat_count,
+            "CFB FAT sectors",
+        )?;
         let mut header_free_seen = false;
         for index in 0..109 {
             let id = field(76 + index * 4, "header DIFAT entry")?;
@@ -664,7 +670,10 @@ impl CompoundState {
                 as u64,
             "retain CFB FAT",
         )?;
-        let mut fat = Vec::with_capacity(fat_word_count);
+        let mut fat = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            fat_word_count,
+            "parse CFB FAT words",
+        )?;
         for &id in &fat_sectors {
             let data = sector(id)
                 .ok_or_else(|| CodecError::Malformed("CFB FAT sector is absent".into()))?;
@@ -1304,7 +1313,11 @@ pub fn read_detection_prefix(
         // is already an index, so `prefix_len` is the smaller of the two.
         Err(_) => prefix_len,
     };
-    let mut bytes = Vec::with_capacity(phase_one_len);
+    let mut bytes = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        phase_one_len,
+        "compound detection prefix bytes",
+    )
+    .map_err(io::Error::other)?;
     let mut chunk =
         cadmpeg_core::decode::alloc_filled(64 * 1024, 0_u8, "compound detection prefix chunk")
             .map_err(io::Error::other)?
@@ -1380,7 +1393,10 @@ fn parse_directory(
             .ok_or_else(|| CodecError::Malformed("CFB directory storage size overflow".into()))?;
         ctx.charge_retained(retained as u64, "retain CFB directory")?;
     }
-    let mut entries = Vec::with_capacity(entry_count);
+    let mut entries = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        entry_count,
+        "parse CFB directory entries",
+    )?;
     for raw in records {
         let object_type = raw[66];
         if object_type == 0 {
@@ -1623,7 +1639,10 @@ fn chain(
     }
     let mut output = SectorChain {
         first: start,
-        rest: Vec::with_capacity(expected.map_or(0, NonZeroUsize::get)),
+        rest: cadmpeg_core::decode::DecodeContext::admitted_vec(
+            expected.map_or(0, NonZeroUsize::get),
+            "retain CFB sector chain",
+        )?,
     };
     let mut seen = BTreeSet::new();
     let mut current = start;
@@ -1671,7 +1690,10 @@ fn join_sectors<'a>(
         .count()
         .checked_mul(sector_size)
         .ok_or_else(|| CodecError::Malformed("CFB chain byte length overflow".into()))?;
-    let mut output = Vec::with_capacity(length);
+    let mut output = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        length,
+        "join CFB sectors",
+    )?;
     for &sector in sectors {
         let data = sector_slice(bytes, sector_size, sector_count, sector)
             .ok_or_else(|| CodecError::Malformed("CFB sector is absent".into()))?;
