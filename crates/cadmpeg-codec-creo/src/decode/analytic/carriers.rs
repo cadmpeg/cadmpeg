@@ -205,13 +205,14 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                    object_id: crate::identity::source_object_id_checked(
+                        ctx,
+                        format_args!(
                         "VisibGeom:{}",
                         row.id
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
+                    ),
+                        "creo source object identity",
+                    )?,
                     name: None,
                     color: None,
                     visible: None,
@@ -294,16 +295,15 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                     }),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        object_id: crate::identity::source_object_id_checked(
+                        ctx,
+                        format_args!(
                             "{}{}",
                             namespace.source_prefix(),
                             row.id
-                        ))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
+                        ),
+                        "creo source object identity",
+                    )?,
                         name: None,
                         color: None,
                         visible: if namespace.is_visible() {
@@ -342,13 +342,14 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 }),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                    object_id: crate::identity::source_object_id_checked(
+                        ctx,
+                        format_args!(
                         "VisibGeom:{}",
                         row.id
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
+                    ),
+                        "creo source object identity",
+                    )?,
                     name: None,
                     color: None,
                     visible: None,

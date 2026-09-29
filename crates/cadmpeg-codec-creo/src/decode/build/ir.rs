@@ -26,6 +26,7 @@ use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
+use crate::identity::source_object_id_checked;
 
 use super::super::expanded::attach_expanded_sections;
 use super::super::native::annotate;
@@ -183,15 +184,6 @@ pub(super) fn angular_termination_has_unresolved_operands(
     }
 }
 
-fn source_object_id(
-    ctx: &DecodeContext<'_>,
-    value: impl std::fmt::Display,
-    operation: &'static str,
-) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
-    cadmpeg_core::text::NonBlankString::new(ctx.format_retained(value, operation)?)
-        .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))
-}
-
 fn transfer_reference_lines(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -221,7 +213,7 @@ fn transfer_reference_lines(
                     ctx, &crate::identity::MDL_REF_INFO_LINE, line.offset,
                     "creo reference line identity",
                 )?,
-                source_object_id(ctx, format_args!("MdlRefInfo:line:{}", line.offset),
+                source_object_id_checked(ctx, format_args!("MdlRefInfo:line:{}", line.offset),
                     "creo reference line object identity")?,
             ),
             crate::reference::ReferenceLineKind::Line3d { entity_id, .. } => {
@@ -229,14 +221,14 @@ fn transfer_reference_lines(
                     (
                         crate::identity::compose_checked::<CurveId>(ctx, &crate::identity::MDL_REF_INFO_LINE3D,
                             entity_id, "creo reference line3d identity")?,
-                        source_object_id(ctx, format_args!("MdlRefInfo:line3d:{entity_id}"),
+                        source_object_id_checked(ctx, format_args!("MdlRefInfo:line3d:{entity_id}"),
                             "creo reference line3d object identity")?,
                     )
                 } else {
                     (
                         crate::identity::compose_checked::<CurveId>(ctx, &crate::identity::MDL_REF_INFO_LINE3D,
                             format_args!("{entity_id}@{}", line.offset), "creo reference line3d identity")?,
-                        source_object_id(ctx, format_args!("MdlRefInfo:line3d:{entity_id}@{}", line.offset),
+                        source_object_id_checked(ctx, format_args!("MdlRefInfo:line3d:{entity_id}@{}", line.offset),
                             "creo reference line3d object identity")?,
                     )
                 }
@@ -299,14 +291,14 @@ fn transfer_reference_circles(
             (
                 crate::identity::compose_checked::<CurveId>(ctx, &crate::identity::MDL_REF_INFO_ARC_Z,
                     circle.entity_id, "creo reference circle identity")?,
-                source_object_id(ctx, format_args!("MdlRefInfo:arc_z:{}", circle.entity_id),
+                source_object_id_checked(ctx, format_args!("MdlRefInfo:arc_z:{}", circle.entity_id),
                     "creo reference circle object identity")?,
             )
         } else {
             (
                 crate::identity::compose_checked::<CurveId>(ctx, &crate::identity::MDL_REF_INFO_ARC_Z,
                     format_args!("{}@{}", circle.entity_id, circle.offset), "creo reference circle identity")?,
-                source_object_id(ctx, format_args!("MdlRefInfo:arc_z:{}@{}", circle.entity_id, circle.offset),
+                source_object_id_checked(ctx, format_args!("MdlRefInfo:arc_z:{}@{}", circle.entity_id, circle.offset),
                     "creo reference circle object identity")?,
             )
         };
@@ -371,14 +363,14 @@ fn transfer_reference_ellipses(
             (
                 crate::identity::compose_checked::<CurveId>(ctx, &crate::identity::MDL_REF_INFO_CONIC,
                     ellipse.source_entity_id, "creo reference ellipse identity")?,
-                source_object_id(ctx, format_args!("MdlRefInfo:conic:{}", ellipse.source_entity_id),
+                source_object_id_checked(ctx, format_args!("MdlRefInfo:conic:{}", ellipse.source_entity_id),
                     "creo reference ellipse object identity")?,
             )
         } else {
             (
                 crate::identity::compose_checked::<CurveId>(ctx, &crate::identity::MDL_REF_INFO_CONIC,
                     format_args!("{}@{}", ellipse.source_entity_id, ellipse.offset), "creo reference ellipse identity")?,
-                source_object_id(ctx, format_args!("MdlRefInfo:conic:{}@{}", ellipse.source_entity_id, ellipse.offset),
+                source_object_id_checked(ctx, format_args!("MdlRefInfo:conic:{}@{}", ellipse.source_entity_id, ellipse.offset),
                     "creo reference ellipse object identity")?,
             )
         };
@@ -601,7 +593,7 @@ fn transfer_datum_plane_surfaces(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: source_object_id(ctx, format_args!("ActDatums:{}", plane.id),
+                    object_id: source_object_id_checked(ctx, format_args!("ActDatums:{}", plane.id),
                         "creo datum plane object identity")?,
                     name: None,
                     color: None,
@@ -679,7 +671,7 @@ fn transfer_placed_plane_surfaces_into_ir(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: source_object_id(ctx, format_args!("VisibGeom:{surface_id}"),
+                    object_id: source_object_id_checked(ctx, format_args!("VisibGeom:{surface_id}"),
                         "creo placed plane object identity")?,
                     name: None,
                     color: None,

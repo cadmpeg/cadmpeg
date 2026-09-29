@@ -243,22 +243,22 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     geometry: surface,
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(
-                            native_surface.map_or_else(
-                                || {
-                                    format!(
-                                        "FeatDefs:revolution#{feature_id}:segment{}",
-                                        segment.external_id
-                                    )
-                                },
-                                |id| format!("VisibGeom:{id}"),
-                            ),
-                        )
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
+                        object_id: if let Some(id) = native_surface {
+                            crate::identity::source_object_id_checked(
+                                ctx,
+                                format_args!("VisibGeom:{id}"),
+                                "creo source object identity",
+                            )?
+                        } else {
+                            crate::identity::source_object_id_checked(
+                                ctx,
+                                format_args!(
+                                    "FeatDefs:revolution#{feature_id}:segment{}",
+                                    segment.external_id
+                                ),
+                                "creo source object identity",
+                            )?
+                        },
                         name: None,
                         color: None,
                         visible: None,
@@ -313,14 +313,13 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         geometry: surface,
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Creo,
-                            object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            object_id: crate::identity::source_object_id_checked(
+                        ctx,
+                        format_args!(
                                 "VisibGeom:{native_surface}"
-                            ))
-                            .ok_or_else(|| {
-                                cadmpeg_core::CodecError::malformed(
-                                    "source object_id must not be empty",
-                                )
-                            })?,
+                            ),
+                        "creo source object identity",
+                    )?,
                             name: None,
                             color: None,
                             visible: None,
@@ -423,14 +422,13 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        object_id: crate::identity::source_object_id_checked(
+                        ctx,
+                        format_args!(
                             "VisibGeom:{native_surface}"
-                        ))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
+                        ),
+                        "creo source object identity",
+                    )?,
                         name: None,
                         color: None,
                         visible: None,
