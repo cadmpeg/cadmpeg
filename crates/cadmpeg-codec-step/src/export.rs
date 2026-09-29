@@ -1599,7 +1599,7 @@ impl<'a> Builder<'a> {
                     );
                 }
             }
-            let mut shell_refs = Vec::with_capacity(1 + voids.len());
+            let mut shell_refs = Vec::new();
             shell_refs.push(outer);
             shell_refs.extend_from_slice(&voids);
             let item = if !closed {
@@ -2326,7 +2326,7 @@ impl<'a> Builder<'a> {
     }
 
     fn ordered_loop_coedges(&mut self, loop_id: &str, lp: &Loop) -> Option<Vec<String>> {
-        let mut segments = Vec::with_capacity(lp.coedges().len());
+        let mut segments = Vec::new();
         let mut seen = BTreeSet::new();
 
         for coedge_id in lp.coedges() {
@@ -2431,7 +2431,7 @@ impl<'a> Builder<'a> {
         let first_start = segments.first()?.start_vertex.clone();
         let mut vertex_stack = vec![first_start.clone()];
         let mut edge_stack = Vec::new();
-        let mut circuit = Vec::with_capacity(segments.len());
+        let mut circuit = Vec::new();
         while let Some(vertex) = vertex_stack.last().cloned() {
             let next_edge = outgoing.get_mut(&vertex).and_then(Vec::pop);
             if let Some(edge_index) = next_edge {
@@ -2857,7 +2857,7 @@ impl<'a> Builder<'a> {
                 self_intersect,
             }) = &geometry
             {
-                let mut segment_refs = Vec::with_capacity(segments.len());
+                let mut segment_refs = Vec::new();
                 for segment in segments {
                     let curve = self.emit_curve(segment.curve.as_str())?;
                     let transition = match segment.transition {
@@ -3607,7 +3607,7 @@ impl<'a> Builder<'a> {
                 }
             })
             .collect::<Option<Vec<_>>>()?;
-        let mut modifiers = Vec::with_capacity(source.len());
+        let mut modifiers = Vec::new();
         for modifier in parsed {
             match modifier {
                 Modifier::WithValue { kind, value } => {

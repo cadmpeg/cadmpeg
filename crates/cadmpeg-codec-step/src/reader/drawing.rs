@@ -572,12 +572,7 @@ fn add_source_typed_targets(
             identity.as_str(),
             "step_drawing_native_target_identity_copy",
         )?;
-        let source_type = crate::decode_alloc::charged_join(
-            ctx,
-            "step_drawing_source_type_text",
-            record.partials.iter().map(|partial| partial.name.as_str()),
-            "+",
-        )?;
+        let source_type = ctx.join_display_retained(record.partials.iter().map(|partial| partial.name.as_str()), "+", "step_drawing_source_type_text")?;
         reserve_drawing_items(
             &mut native_targets,
             1,
@@ -785,18 +780,9 @@ fn note_ambiguous_target(
     identities: &BTreeSet<String>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let identities = crate::decode_alloc::charged_join(
-        ctx,
-        "step_drawing_ambiguous_identities_text",
-        identities.iter().map(String::as_str),
-        ", ",
-    )?;
+    let identities = ctx.join_display_retained(identities.iter().map(String::as_str), ", ", "step_drawing_ambiguous_identities_text")?;
     reserve_drawing_items(losses, 1, ctx, "step_drawing_losses")?;
-    let message = crate::decode_alloc::charged_format(
-        ctx,
-        "step_drawing_ambiguous_loss_text",
-        format_args!("STEP {source} relationship {role} references source record #{target_id} with multiple neutral identities ({identities}); no target was selected and the raw source parameter is retained"),
-    )?;
+    let message = ctx.format_retained(format_args!("STEP {source} relationship {role} references source record #{target_id} with multiple neutral identities ({identities}); no target was selected and the raw source parameter is retained"), "step_drawing_ambiguous_loss_text")?;
     losses.push(StepLossCode::DrawingRelationshipTargetAmbiguous.note(message));
     Ok(())
 }
@@ -1344,7 +1330,7 @@ fn format_value_text(
     arguments: fmt::Arguments<'_>,
 ) -> Result<String, CodecError> {
     match ctx {
-        Some(ctx) => crate::decode_alloc::charged_format(ctx, "step_drawing_value_text", arguments),
+        Some(ctx) => ctx.format_retained(arguments, "step_drawing_value_text"),
         None => Ok(arguments.to_string()),
     }
 }

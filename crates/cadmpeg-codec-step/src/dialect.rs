@@ -276,7 +276,7 @@ impl StepDialect {
                 match ctx {
                     Some(ctx) => ctx.copy_retained_text(identifier, "step_dialect_declared_text"),
                     None => {
-                        crate::parse::copy_unmetered_text(identifier, "step_dialect_declared_text")
+                        Ok::<String, CodecError>(identifier.to_owned())
                     }
                 }?,
             );
@@ -287,7 +287,7 @@ impl StepDialect {
                     match ctx {
                         Some(ctx) => ctx.copy_retained_text(arcs, "step_dialect_declared_text"),
                         None => {
-                            crate::parse::copy_unmetered_text(arcs, "step_dialect_declared_text")
+                            Ok::<String, CodecError>(arcs.to_owned())
                         }
                     }?,
                 );
@@ -308,10 +308,7 @@ impl StepDialect {
                     exchange.implementation_level(),
                     "step_dialect_declared_text",
                 ),
-                None => crate::parse::copy_unmetered_text(
-                    exchange.implementation_level(),
-                    "step_dialect_declared_text",
-                ),
+                None => Ok::<String, CodecError>(exchange.implementation_level().to_owned()),
             }?,
         );
 
@@ -376,7 +373,7 @@ fn format_dialect_loss(
     arguments: std::fmt::Arguments<'_>,
 ) -> Result<String, CodecError> {
     match ctx {
-        Some(ctx) => crate::decode_alloc::charged_format(ctx, operation, arguments),
+        Some(ctx) => ctx.format_retained(arguments, operation),
         None => Ok(arguments.to_string()),
     }
 }

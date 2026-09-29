@@ -721,11 +721,7 @@ pub(super) fn decode(
         let Some(magnitude) = magnitude.and_then(cadmpeg_ir::pmi::PmiMagnitude::new) else {
             let display_name = record.display_name(ctx)?;
             let message = match ctx {
-                Some(ctx) => crate::decode_alloc::charged_format(
-                    ctx,
-                    "step_pmi_invalid_tolerance_text",
-                    format_args!("{display_name} #{id} has no numeric magnitude"),
-                )?,
+                Some(ctx) => ctx.format_retained(format_args!("{display_name} #{id} has no numeric magnitude"), "step_pmi_invalid_tolerance_text")?,
                 None => format!("{display_name} #{id} has no numeric magnitude"),
             };
             push_pmi_vec(
@@ -758,10 +754,7 @@ pub(super) fn decode(
                         Some(ctx) => {
                             ctx.copy_retained_text(name, "step_pmi_defined_area_unit_text")
                         }
-                        None => crate::parse::copy_unmetered_text(
-                            name,
-                            "step_pmi_defined_area_unit_text",
-                        ),
+                        None => Ok::<String, CodecError>(name.to_owned()),
                     }?;
                     name.make_ascii_lowercase();
                     Ok::<_, CodecError>(name)
@@ -1533,7 +1526,7 @@ fn clone_pmi_modifiers(
     for value in values {
         let text = match ctx {
             Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy"),
-            None => crate::parse::copy_unmetered_text(value, "step_pmi_datum_modifier_copy"),
+            None => Ok::<String, CodecError>(value.to_owned()),
         }?;
         push_pmi_vec(&mut copy, text, ctx, "step_pmi_datum_modifier_items")?;
     }
@@ -1624,7 +1617,7 @@ fn modifier_text(
         Value::Enumeration(value) => {
             let mut text = match ctx {
                 Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_modifier_text"),
-                None => crate::parse::copy_unmetered_text(value, "step_pmi_datum_modifier_text"),
+                None => Ok::<String, CodecError>(value.to_owned()),
             }?;
             text.make_ascii_lowercase();
             Ok(Some(text))
@@ -1656,11 +1649,7 @@ fn modifier_text(
             let value = value.value.get();
             claim_pmi_typed(typed, measure_id, ctx)?;
             let mut text = match ctx {
-                Some(ctx) => crate::decode_alloc::charged_format(
-                    ctx,
-                    "step_pmi_datum_modifier_value_text",
-                    format_args!("{kind}:{value}"),
-                )?,
+                Some(ctx) => ctx.format_retained(format_args!("{kind}:{value}"), "step_pmi_datum_modifier_value_text")?,
                 None => format!("{kind}:{value}"),
             };
             text.make_ascii_lowercase();
@@ -1941,7 +1930,7 @@ fn copy_pmi_identity<T: From<Identity>>(
 ) -> Result<T, CodecError> {
     let copy = match ctx {
         Some(ctx) => ctx.copy_retained_text(value, operation),
-        None => crate::parse::copy_unmetered_text(value, operation),
+        None => Ok::<String, CodecError>(value.to_owned()),
     }?;
     let identity = Identity::new(copy)
         .map_err(|_| CodecError::malformed("STEP PMI target has an invalid identity"))?;
@@ -1981,7 +1970,7 @@ fn copy_pmi_target(
         PmiTarget::ShapeAspect { source_id } => {
             let copy = match ctx {
                 Some(ctx) => ctx.copy_retained_text(source_id.as_str(), operation),
-                None => crate::parse::copy_unmetered_text(source_id.as_str(), operation),
+                None => Ok::<String, CodecError>(source_id.as_str().to_owned()),
             }?;
             let source_id = cadmpeg_core::text::NonBlankString::new(copy)
                 .ok_or_else(|| CodecError::malformed("STEP PMI target has a blank source ID"))?;
@@ -2008,7 +1997,7 @@ fn datum_target_form(
     } else {
         Ok(DatumTargetForm::Other(match ctx {
             Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_target_form_copy"),
-            None => crate::parse::copy_unmetered_text(value, "step_pmi_datum_target_form_copy"),
+            None => Ok::<String, CodecError>(value.to_owned()),
         }?))
     }
 }
@@ -2216,7 +2205,7 @@ fn dimension_kind(
         name if name.ends_with("_SIZE") || name.ends_with("_LOCATION") => {
             let mut name = match ctx {
                 Some(ctx) => ctx.copy_retained_text(name, "step_pmi_other_dimension_name"),
-                None => crate::parse::copy_unmetered_text(name, "step_pmi_other_dimension_name"),
+                None => Ok::<String, CodecError>(name.to_owned()),
             }?;
             name.make_ascii_lowercase();
             Some(DimensionKind::Other(name))
@@ -2288,7 +2277,7 @@ fn modifier_values(
         Value::Enumeration(value) => {
             let mut text = match ctx {
                 Some(ctx) => ctx.copy_retained_text(value, "step_pmi_modifier_text"),
-                None => crate::parse::copy_unmetered_text(value, "step_pmi_modifier_text"),
+                None => Ok::<String, CodecError>(value.to_owned()),
             }?;
             text.make_ascii_lowercase();
             push_pmi_vec(output, text, ctx, "step_pmi_modifier_items")?;

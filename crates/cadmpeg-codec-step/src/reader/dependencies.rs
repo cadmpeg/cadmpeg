@@ -244,7 +244,7 @@ fn document_note(
         (true, false) => &[name],
         (true, true) => &["unnamed"],
     };
-    let mut parts = Vec::with_capacity(identity.len() + 3);
+    let mut parts = Vec::new();
     parts.push("external document ");
     parts.extend_from_slice(identity);
     if !source.is_empty() {

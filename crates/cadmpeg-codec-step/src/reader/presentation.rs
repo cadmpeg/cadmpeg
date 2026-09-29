@@ -1234,7 +1234,7 @@ fn clone_presentation_identity<T: From<Identity>>(
 ) -> Result<T, CodecError> {
     let copy = match ctx {
         Some(ctx) => ctx.copy_retained_text(value, operation),
-        None => crate::parse::copy_unmetered_text(value, operation),
+        None => Ok::<String, CodecError>(value.to_owned()),
     }?;
     Identity::new(copy)
         .map(T::from)
@@ -1389,7 +1389,7 @@ fn collect_identity_indices<'a>(
         }
         let copy = match ctx {
             Some(ctx) => ctx.copy_retained_text(identity, operation),
-            None => crate::parse::copy_unmetered_text(identity, operation),
+            None => Ok::<String, CodecError>(identity.to_owned()),
         }?;
         result.insert(copy, index);
     }
@@ -1487,11 +1487,7 @@ fn context_style_message(
 ) -> Result<String, CodecError> {
     let details = ContextStyleDetails { ids, exchange };
     Ok(match ctx {
-        Some(ctx) => crate::decode_alloc::charged_format(
-            ctx,
-            "step_presentation_context_style_text",
-            format_args!("STYLED_ITEM #{style_id} has context-dependent style assignments {details}; no presentation context is selected by the neutral model; those source branches remain opaque"),
-        )?,
+        Some(ctx) => ctx.format_retained(format_args!("STYLED_ITEM #{style_id} has context-dependent style assignments {details}; no presentation context is selected by the neutral model; those source branches remain opaque"), "step_presentation_context_style_text")?,
         None => format!("STYLED_ITEM #{style_id} has context-dependent style assignments {details}; no presentation context is selected by the neutral model; those source branches remain opaque"),
     })
 }
@@ -1517,11 +1513,7 @@ fn scalar_conflict_message(
 ) -> Result<String, CodecError> {
     let style_ids = ScalarStyleIds(candidates);
     Ok(match ctx {
-        Some(ctx) => crate::decode_alloc::charged_format(
-            ctx,
-            "step_presentation_scalar_conflict_text",
-            format_args!("independent styled items {style_ids} assign conflicting scalar colors to {target:?}; scalar color omitted and appearance bindings retain every assignment"),
-        )?,
+        Some(ctx) => ctx.format_retained(format_args!("independent styled items {style_ids} assign conflicting scalar colors to {target:?}; scalar color omitted and appearance bindings retain every assignment"), "step_presentation_scalar_conflict_text")?,
         None => format!("independent styled items {style_ids} assign conflicting scalar colors to {target:?}; scalar color omitted and appearance bindings retain every assignment"),
     })
 }
@@ -1612,7 +1604,7 @@ fn clone_color_resolution(
                     .as_deref()
                     .map(|name| match ctx {
                         Some(ctx) => ctx.copy_retained_text(name, operation),
-                        None => crate::parse::copy_unmetered_text(name, operation),
+                        None => Ok::<String, CodecError>(name.to_owned()),
                     })
                     .transpose()?,
             }))
@@ -1983,11 +1975,7 @@ fn surface_transparency(
         _ => {
             let details = TransparencyDetails(&candidates);
             let message = match ctx {
-                Some(ctx) => crate::decode_alloc::charged_format(
-                    ctx,
-                    "step_presentation_transparency_conflict_text",
-                    format_args!("surface style rendering #{id} has conflicting transparency properties ({details}); transparency omitted"),
-                )?,
+                Some(ctx) => ctx.format_retained(format_args!("surface style rendering #{id} has conflicting transparency properties ({details}); transparency omitted"), "step_presentation_transparency_conflict_text")?,
                 None => format!("surface style rendering #{id} has conflicting transparency properties ({details}); transparency omitted"),
             };
             push_presentation_vec(
@@ -2044,11 +2032,7 @@ fn surface_side_rank(
                 "step_presentation_invalid_surface_sides",
             )?;
             let message = match ctx {
-                Some(ctx) => crate::decode_alloc::charged_format(
-                    ctx,
-                    "step_presentation_invalid_surface_side_text",
-                    format_args!("SURFACE_STYLE_USAGE #{id} has invalid surface_side .{side}.; style omitted"),
-                )?,
+                Some(ctx) => ctx.format_retained(format_args!("SURFACE_STYLE_USAGE #{id} has invalid surface_side .{side}.; style omitted"), "step_presentation_invalid_surface_side_text")?,
                 None => format!("SURFACE_STYLE_USAGE #{id} has invalid surface_side .{side}.; style omitted"),
             };
             push_presentation_vec(

@@ -831,6 +831,59 @@ impl DecodeContext<'_> {
         Ok(output)
     }
 
+    /// Joins displayed values while charging each retained text fragment.
+    pub fn join_display_retained<T: fmt::Display>(
+        &self,
+        values: impl IntoIterator<Item = T>,
+        separator: &str,
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
+        struct ChargedText<'a, 'arena> {
+            ctx: &'a DecodeContext<'arena>,
+            operation: &'static str,
+            text: String,
+            refusal: Option<CodecError>,
+        }
+        impl Write for ChargedText<'_, '_> {
+            fn write_str(&mut self, fragment: &str) -> fmt::Result {
+                if let Err(error) = self.ctx.charge_retained(u64_from_index(fragment.len()), self.operation) {
+                    self.refusal = Some(error);
+                    return Err(fmt::Error);
+                }
+                if self.text.try_reserve(fragment.len()).is_err() {
+                    self.refusal = Some(self.ctx.allocation_failed(
+                        ResourceDimension::RetainedBytes,
+                        fragment.len(),
+                        self.operation,
+                    ));
+                    return Err(fmt::Error);
+                }
+                self.text.push_str(fragment);
+                Ok(())
+            }
+        }
+        let mut output = ChargedText {
+            ctx: self,
+            operation,
+            text: String::new(),
+            refusal: None,
+        };
+        for (index, value) in values.into_iter().enumerate() {
+            let written = if index == 0 {
+                output.write_fmt(format_args!("{value}"))
+            } else {
+                output.write_str(separator).and_then(|()| output.write_fmt(format_args!("{value}")))
+            };
+            if written.is_err() {
+                return Err(match output.refusal {
+                    Some(error) => error,
+                    None => self.refuse_codec_limit(operation, 0, 1),
+                });
+            }
+        }
+        Ok(output.text)
+    }
+
     fn formatted_length(
         &self,
         args: fmt::Arguments<'_>,
@@ -1056,6 +1109,8 @@ mod tests {
         |ctx: &DecodeContext<'_>| ctx.retained_suffix("a", "b", "test suffix").map(|_| ()));
     retained_case!(join_retained_charges_before_allocation, 3,
         |ctx: &DecodeContext<'_>| ctx.join_retained(&["a", "b"], "-", "test join retained").map(|_| ()));
+    retained_case!(join_display_retained_charges_before_growth, 7,
+        |ctx: &DecodeContext<'_>| ctx.join_display_retained(["one", "two"], ",", "test display join").map(|_| ()));
     retained_case!(retained_string_charges_before_allocation, 3,
         |ctx: &DecodeContext<'_>| ctx.retained_string(3, "test retained string").map(|_| ()));
     retained_case!(copy_retained_optional_charges_before_allocation, 3,
