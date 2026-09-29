@@ -980,7 +980,7 @@ fn nonlinear_seed_error(limit: u64) -> cadmpeg_core::CodecError {
 #[test]
 fn nonlinear_zero_seed_refuses_collection_limit() {
     assert!(matches!(
-        nonlinear_seed_error(0),
+        nonlinear_seed_error(2),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "creo_solve_seed_zero"
                 && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -990,7 +990,7 @@ fn nonlinear_zero_seed_refuses_collection_limit() {
 #[test]
 fn nonlinear_magnitude_seed_refuses_collection_limit() {
     assert!(matches!(
-        nonlinear_seed_error(1),
+        nonlinear_seed_error(4),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "creo_solve_seed_magnitude"
                 && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -1000,9 +1000,29 @@ fn nonlinear_magnitude_seed_refuses_collection_limit() {
 #[test]
 fn nonlinear_axis_seed_refuses_collection_limit() {
     assert!(matches!(
-        nonlinear_seed_error(11),
+        nonlinear_seed_error(23),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "creo_solve_seed_axis"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn nonlinear_initial_seed_refuses_collection_limit() {
+    assert!(matches!(
+        nonlinear_seed_error(0),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo solve initial seed"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn nonlinear_seed_rows_refuse_collection_limit() {
+    assert!(matches!(
+        nonlinear_seed_error(1),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo solve seed rows"
                 && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
     ));
 }
