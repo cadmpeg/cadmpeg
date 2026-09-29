@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolve edge-selection operands to stable edge identities.
 
-use crate::ids::{self, native_stream, neutral_feature_id};
+use crate::ids::{self, native_stream};
 use crate::records::{
     feature::{scope::DesignParameterScope, work_geometry::DesignEdgeTreatmentVertexOperand},
     topology::{
@@ -97,7 +97,7 @@ fn native_edge_selection(
 fn historical_identity_slots(
     group: &DesignConstructionOperandGroup,
     state: cadmpeg_ir::ids::FeatureInputTopologyId,
-    feature_key: &cadmpeg_ir::ids::IdentityKey,
+    feature_key: &str,
     previous_state_id: i64,
     slots: &[i64],
     ctx: Option<&DecodeContext<'_>>,
@@ -106,8 +106,8 @@ fn historical_identity_slots(
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     let mut edges = Vec::new();
     for &slot in slots {
-        let edge = ids::history_input_edge_id(
-            &ids::history_input_prefix(feature_key, previous_state_id), slot);
+        let edge = crate::design::identity::history_input_edge_id(ctx, 
+            &crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?, slot, "f3d historical edge identifier")?;
         push_edge_item(ctx, &mut edges, edge, slot_operation)?;
     }
     let native = copy_edge_text(ctx, &group.id, native_operation)?;
@@ -217,19 +217,18 @@ pub(super) fn resolved_surface_patch_edge_group(
         push_edge_item(ctx, &mut edge_slots, slot,
             "f3d surface patch stable edge slot")?;
     }
-    let feature_key = feature_id.key();
+    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
     let mut historical_edges = Vec::new();
     for edge_slot in edge_slots {
-        let id = ids::history_input_edge_id(
-            &ids::history_input_prefix(&feature_key, state_id), edge_slot,
-        );
+        let id = crate::design::identity::history_input_edge_id(ctx, 
+            &crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?, edge_slot, "f3d historical edge identifier")?;
         push_edge_item(ctx, &mut historical_edges, id,
             "f3d surface patch historical edge")?;
     }
     let native = copy_edge_text(ctx, &group.id,
         "f3d surface patch historical group id")?;
     let resolved = cadmpeg_ir::features::EdgeSelection::historical(
-        feature_input_topology_id(feature_id, state_id),
+        crate::design::identity::feature_input_topology_id(ctx, feature_id, state_id)?,
         historical_edges, native,
     );
     Ok(match resolved {
@@ -358,13 +357,12 @@ pub(super) fn resolved_edge_flange_group(
     if edges.is_empty() {
         return Ok(selection);
     }
-    let feature_key = feature_id.key();
-    let state = feature_input_topology_id(feature_id, previous_state_id);
+    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
+    let state = crate::design::identity::feature_input_topology_id(ctx, feature_id, previous_state_id)?;
     let mut historical_edges = Vec::new();
     for edge_slot in edges {
-        let id = ids::history_input_edge_id(
-            &ids::history_input_prefix(&feature_key, previous_state_id), edge_slot,
-        );
+        let id = crate::design::identity::history_input_edge_id(ctx, 
+            &crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?, edge_slot, "f3d historical edge identifier")?;
         push_edge_item(ctx, &mut historical_edges, id,
             "f3d edge flange historical edge")?;
     }
@@ -600,7 +598,7 @@ fn resolved_edge_group_with_transition_chain(
         EdgeGroupProof::Treatment { radius } => (true, radius),
     };
 
-    let feature_key = feature_id.key();
+    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
     let unmatched_selection = |state_id: Option<i64>| -> Result<EdgeSelection, CodecError> {
         if group.lost_edge_references.is_empty() {
             native_edge_selection(group, ctx)
@@ -612,8 +610,8 @@ fn resolved_edge_group_with_transition_chain(
                             .iter()
                             .map(|identity| (identity.as_str(), None)),
                         state_id,
-                        &feature_key,
-                        feature_input_topology_id(feature_id, state_id),
+                        feature_key,
+                        crate::design::identity::feature_input_topology_id(ctx, feature_id, state_id)?,
                         &group.id,
                         ctx,
                     )?.unwrap_or(EdgeSelection::Unresolved))
@@ -689,15 +687,15 @@ fn resolved_edge_group_with_transition_chain(
         }
         let mut historical_edges = Vec::new();
         for edge_slot in resolved_edges {
-            let edge = ids::history_input_edge_id(
-                &ids::history_input_prefix(&feature_key, state_id), edge_slot);
+            let edge = crate::design::identity::history_input_edge_id(ctx, 
+                &crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?, edge_slot, "f3d historical edge identifier")?;
             push_edge_item(ctx, &mut historical_edges, edge,
                 "f3d generic surface patch historical edge")?;
         }
         let native = copy_edge_text(ctx, &group.id,
             "f3d generic surface patch historical group id")?;
         return match EdgeSelection::historical(
-            feature_input_topology_id(feature_id, state_id), historical_edges, native,
+            crate::design::identity::feature_input_topology_id(ctx, feature_id, state_id)?, historical_edges, native,
         ) {
             Ok(selection) => Ok(selection),
             Err(_) => native_edge_selection(group, ctx),
@@ -883,7 +881,7 @@ fn resolved_edge_group_with_transition_chain(
         let Some(previous_state_id) = previous_state_id else {
             return unmatched_selection(None);
         };
-        let state = feature_input_topology_id(feature_id, previous_state_id);
+        let state = crate::design::identity::feature_input_topology_id(ctx, feature_id, previous_state_id)?;
         if identity_matches.iter().all(|operand| {
             operand.resolved_edge_slot.is_some() || !operand.resolved_edge_slots.is_empty()
         }) {
@@ -901,10 +899,9 @@ fn resolved_edge_group_with_transition_chain(
             {
                 if insert_edge_set(ctx, &mut seen, edge_slot,
                     "f3d identity edge slot index")? {
-                    let edge = ids::history_input_edge_id(
-                        &ids::history_input_prefix(&feature_key, previous_state_id),
-                        edge_slot,
-                    );
+                    let edge = crate::design::identity::history_input_edge_id(ctx, 
+                        &crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?,
+                        edge_slot, "f3d historical edge identifier")?;
                     push_edge_item(ctx, &mut edges, edge,
                         "f3d identity historical edge")?;
                 }
@@ -917,18 +914,18 @@ fn resolved_edge_group_with_transition_chain(
             };
         }
         if let Some(edges) = identity_radius_slots.as_ref() {
-            return historical_identity_slots(group, state, &feature_key, previous_state_id,
+            return historical_identity_slots(group, state, feature_key, previous_state_id,
                 edges, ctx, "f3d radius identity historical edge",
                 "f3d radius identity historical group id");
         }
         if let Some(edges) = identity_group_transition_slots.as_ref() {
-            return historical_identity_slots(group, state, &feature_key, previous_state_id,
+            return historical_identity_slots(group, state, feature_key, previous_state_id,
                 edges, ctx, "f3d group identity historical edge",
                 "f3d group identity historical group id");
         }
         if identity_matches.len() == 1 && identity_matches[0].resolved_edge_slot.is_none() {
             if let Some(edges) = identity_transition_slots.as_ref() {
-                return historical_identity_slots(group, state, &feature_key, previous_state_id,
+                return historical_identity_slots(group, state, feature_key, previous_state_id,
                     edges, ctx, "f3d single identity historical edge",
                     "f3d single identity historical group id");
             }
@@ -938,7 +935,7 @@ fn resolved_edge_group_with_transition_chain(
                 .iter()
                 .map(|operand| (operand.id.as_str(), operand.resolved_edge_slot)),
             previous_state_id,
-            &feature_key,
+            feature_key,
             state,
             &group.id,
             ctx,
@@ -987,7 +984,7 @@ fn resolved_edge_group_with_transition_chain(
             Ok(EdgeSelection::Unresolved)
         };
     };
-    let state = feature_input_topology_id(feature_id, previous_state_id);
+    let state = crate::design::identity::feature_input_topology_id(ctx, feature_id, previous_state_id)?;
     let lost_selection = || unmatched_selection(Some(previous_state_id));
     let mut exact_slots = Some(Vec::new());
     for operand in &matched_operands {
@@ -1091,10 +1088,9 @@ fn resolved_edge_group_with_transition_chain(
         if combined_edges.iter().all(Option::is_some) {
             let mut edges = Vec::new();
             for edge_slot in combined_edges.into_iter().flatten() {
-                let edge = ids::history_input_edge_id(
-                    &ids::history_input_prefix(&feature_key, previous_state_id),
-                    edge_slot,
-                );
+                let edge = crate::design::identity::history_input_edge_id(ctx, 
+                    &crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?,
+                    edge_slot, "f3d historical edge identifier")?;
                 if !edges.contains(&edge) {
                     push_edge_item(ctx, &mut edges, edge,
                         "f3d combined historical edge")?;
@@ -1120,7 +1116,7 @@ fn resolved_edge_group_with_transition_chain(
         return match partial_historical_edge_selection(
             partial_members,
             previous_state_id,
-            &feature_key,
+            feature_key,
             state,
             &group.id,
             ctx,
@@ -1131,10 +1127,9 @@ fn resolved_edge_group_with_transition_chain(
     };
     let mut edges = Vec::new();
     for edge_slot in resolved_slots {
-        let edge = ids::history_input_edge_id(
-            &ids::history_input_prefix(&feature_key, previous_state_id),
-            edge_slot,
-        );
+        let edge = crate::design::identity::history_input_edge_id(ctx, 
+            &crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?,
+            edge_slot, "f3d historical edge identifier")?;
         if !edges.contains(&edge) {
             push_edge_item(ctx, &mut edges, edge,
                 "f3d resolved edge group historical edge")?;
@@ -1192,13 +1187,12 @@ pub(super) fn resolved_hem_edge_group(
     let Some(edge) = hem_transition_edge_slot(operand, ctx)? else {
         return Ok(selection);
     };
-    let feature_key = feature_id.key();
+    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
     Ok(EdgeSelection::historical(
-        feature_input_topology_id(feature_id, previous_state_id),
-        vec![ids::history_input_edge_id(
-            &ids::history_input_prefix(&feature_key, previous_state_id),
-            edge,
-        )],
+        crate::design::identity::feature_input_topology_id(ctx, feature_id, previous_state_id)?,
+        vec![crate::design::identity::history_input_edge_id(ctx, 
+            &crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?,
+            edge, "f3d historical edge identifier")?],
         copy_edge_text(ctx, &group.id, "f3d hem historical group id")?,
     )
     .unwrap_or_else(|_| selection))
@@ -1347,7 +1341,7 @@ fn unique_hem_transition_edge_candidate<'a>(
 fn partial_historical_edge_selection<'a>(
     members: impl IntoIterator<Item = (&'a str, Option<i64>)>,
     previous_state_id: i64,
-    feature_key: &cadmpeg_ir::ids::IdentityKey,
+    feature_key: &str,
     state: cadmpeg_ir::ids::FeatureInputTopologyId,
     native: &str,
     ctx: Option<&DecodeContext<'_>>,
@@ -1371,8 +1365,8 @@ fn partial_historical_edge_selection<'a>(
     }
     let mut historical_edges = Vec::new();
     for edge_slot in edges {
-        let edge = ids::history_input_edge_id(
-            &ids::history_input_prefix(feature_key, previous_state_id), edge_slot);
+        let edge = crate::design::identity::history_input_edge_id(ctx, 
+            &crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?, edge_slot, "f3d historical edge identifier")?;
         push_edge_item(ctx, &mut historical_edges, edge, "f3d partial historical edge")?;
     }
     let native_id = copy_edge_text(ctx, native, "f3d partial native id")?;
@@ -1410,13 +1404,6 @@ fn context_only_edge_group_candidates<'a>(
     Ok((!edges.is_empty()).then_some(edges))
 }
 
-pub(crate) fn feature_input_topology_id(
-    feature_id: &cadmpeg_ir::features::FeatureId,
-    previous_state_id: i64,
-) -> cadmpeg_ir::ids::FeatureInputTopologyId {
-    let feature_key = feature_id.key();
-    ids::history_input_state_id(&ids::history_input_prefix(&feature_key, previous_state_id))
-}
 
 fn unique_edge_group_assignment(
     operands: &[&DesignEdgeOperand],
@@ -2670,7 +2657,7 @@ pub(super) fn project_fixed_fillet_with_corners(
             vertex_operands,
             histories,
             scope.previous_history_state_id(),
-            &neutral_feature_id(scope),
+            &crate::design::identity::neutral_feature_id(ctx,scope)?,
             edge_radius,
             ctx,
         )?;

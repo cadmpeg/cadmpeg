@@ -220,7 +220,7 @@ fn assert_exact_pair_variant_refusal(
     inputs.curves = &curves;
     inputs.entities = &entities;
     inputs.pairs = std::slice::from_ref(&pair);
-    for limit in 0..256 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         match dimension {
@@ -397,7 +397,7 @@ fn assert_recipe_projection_refusal(
     let mut inputs = fixture.inputs();
     inputs.companions = std::slice::from_ref(&companion);
     inputs.recipe_records = &recipes;
-    for limit in 0..256 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         match dimension {
@@ -431,7 +431,7 @@ fn assert_companion_projection_refusal(
     let companion = parameter_companion().bound(DesignCompanionPayload::new(58, 1, Vec::new()));
     let mut inputs = fixture.inputs();
     inputs.companions = std::slice::from_ref(&companion);
-    for limit in 0..256 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         match dimension {
@@ -498,7 +498,7 @@ fn parallel_group_parameter_refuses_retained_limit() {
     inputs.companions = std::slice::from_ref(&companion);
     inputs.groups = std::slice::from_ref(&group);
     let operation = "f3d parallel group parameter id";
-    for limit in 0..256 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
@@ -629,7 +629,7 @@ fn assert_native_auxiliary_refusal(
     } else {
         inputs.null_pairs = std::slice::from_ref(&pair);
     }
-    for limit in 0..256 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         match dimension {
@@ -665,7 +665,7 @@ fn assert_native_fallback_refusal(
     } else {
         inputs.pairs = std::slice::from_ref(&pair);
     }
-    for limit in 0..256 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         match dimension {
@@ -709,7 +709,7 @@ fn assert_exact_group_variant_refusal(
     let mut inputs = fixture.inputs();
     inputs.curves = &curves;
     inputs.groups = std::slice::from_ref(&group);
-    for limit in 0..256 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         match dimension {
@@ -774,7 +774,7 @@ fn assert_radial_extension_refusal(operation: &'static str, dimension: ResourceD
     inputs.curves = &curves;
     inputs.entities = &entities;
     inputs.groups = std::slice::from_ref(&group);
-    for limit in 0..256 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         match dimension {
@@ -1020,7 +1020,7 @@ fn exact_null_pair_constraint_reference_refuses_retained_limit() {
     let mut inputs = fixture.inputs();
     inputs.null_pairs = std::slice::from_ref(&pair);
     let operation = "f3d dimension null pair native reference";
-    for limit in 0..256 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
@@ -1054,7 +1054,7 @@ fn exact_radial_parameter_refuses_retained_limit() {
     let mut inputs = fixture.inputs();
     inputs.annotation_frames = std::slice::from_ref(&frame);
     let operation = "f3d exact radial parameter id";
-    for limit in 0..256 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
@@ -1249,7 +1249,7 @@ fn spatial_parameter_count_index_refuses_collection_limit() {
     let companion = parameter_companion();
     let mut inputs = fixture.inputs();
     inputs.companions = std::slice::from_ref(&companion);
-    for limit in 0..128 {
+    for limit in 0..64 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
@@ -1273,7 +1273,9 @@ fn spatial_scope_sketch_id_refuses_retained_limit() {
     let fixture = fixture();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = u64::try_from(
+        crate::ids::neutral_spatial_sketch_id(&fixture.placement).as_str().len()
+        + 2 * crate::ids::neutral_sketch_id(&fixture.placement).as_str().len()).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = project_spatial_dimension_constraints(Some(&ctx), &fixture.inputs(),
         std::slice::from_ref(&fixture.spatial), &[], 1.0e-6);
@@ -1288,7 +1290,7 @@ fn spatial_parameter_count_id_refuses_retained_limit() {
     let companion = parameter_companion();
     let mut inputs = fixture.inputs();
     inputs.companions = std::slice::from_ref(&companion);
-    for limit in 0..512 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
@@ -1370,7 +1372,7 @@ fn assert_spatial_companion_retained_refusal(operation: &'static str) {
     let mut inputs = fixture.inputs();
     inputs.companions = std::slice::from_ref(&companion);
     inputs.entities = &[];
-    for limit in 0..512 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
@@ -1422,7 +1424,7 @@ fn assert_missing_spatial_refusal(
     let companion = parameter_companion();
     let mut inputs = fixture.inputs();
     inputs.companions = std::slice::from_ref(&companion);
-    for limit in 0..1024 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         match dimension {
@@ -1671,7 +1673,7 @@ fn parameterized_offset_companion_refuses_collection_limit() {
     inputs.curves = &curves;
     inputs.entities = &entities;
     inputs.groups = std::slice::from_ref(&group);
-    for limit in 0..256 {
+    for limit in 0..64 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;

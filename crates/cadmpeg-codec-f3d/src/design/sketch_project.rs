@@ -5,12 +5,7 @@ use crate::design::dimensions::{planar_point, sketch_normal_sign};
 use crate::design::face_resolve::{placement_origin_scale, sketch_curve_is_spatial};
 use crate::design::feature_project::closed_spatial_sketch_profiles;
 use crate::design::geometry::closed_sketch_profiles;
-use crate::ids::{
-    native_stream, neutral_sketch_constraint_id, neutral_sketch_curve_id, neutral_sketch_id,
-    neutral_sketch_point_id, neutral_sketch_record_id, neutral_sketch_text_id,
-    neutral_spatial_sketch_curve_id, neutral_spatial_sketch_id, neutral_spatial_sketch_point_id,
-    neutral_spatial_sketch_record_id, neutral_spatial_sketch_surface_id,
-};
+use crate::ids::native_stream;
 use crate::records::{
     sketch_geometry::{
         SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchSurface, SketchText,
@@ -354,7 +349,7 @@ pub(crate) fn project_sketch_design(
         let native_ref = copy_project_text(ctx, &placement.id, "f3d planar sketch native reference")?;
         push_project_item(ctx, &mut sketches,
             Sketch {
-                id: neutral_sketch_id(placement),
+                id: crate::design::identity::neutral_sketch_id(ctx,placement)?,
                 name: Some(name),
                 configuration: None,
                 visible: placement
@@ -376,7 +371,7 @@ pub(crate) fn project_sketch_design(
         let Some(scope) = native_stream(&point.id) else { continue; };
         if spatial_owners.contains(&(scope, owner)) { continue; }
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else { continue; };
-        let sketch = neutral_sketch_id(placement);
+        let sketch = crate::design::identity::neutral_sketch_id(ctx,placement)?;
         let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: point.coordinates(),
         }) else { continue; };
@@ -384,9 +379,9 @@ pub(crate) fn project_sketch_design(
         push_project_item(ctx, &mut entities,
             SketchEntity::new(
                     point.persistent_id().map_or_else(
-                        || neutral_sketch_record_id(&sketch, point.record_index),
-                        |persistent_id| neutral_sketch_point_id(&sketch, persistent_id),
-                    ),
+                        || crate::design::identity::neutral_sketch_record_id(ctx,&sketch, point.record_index),
+                        |persistent_id| crate::design::identity::neutral_sketch_point_id(ctx,&sketch, persistent_id),
+                    )?,
                     sketch,
                     geometry,
             ).with_native_ref(Some(native_ref)),
@@ -498,11 +493,11 @@ pub(crate) fn project_sketch_design(
             }
             _ => continue,
         };
-        let sketch = neutral_sketch_id(placement);
+        let sketch = crate::design::identity::neutral_sketch_id(ctx,placement)?;
         let native_ref = copy_project_text(ctx, &curve.id, "f3d planar sketch curve native reference")?;
         push_project_item(ctx, &mut entities,
             SketchEntity::new(
-                neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id),
+                crate::design::identity::neutral_sketch_curve_id(ctx,&sketch, curve.primary_id.get(), curve.secondary_id)?,
                 sketch,
                 geometry,
             )
@@ -514,7 +509,7 @@ pub(crate) fn project_sketch_design(
     for text in texts {
         let Some(scope) = native_stream(&text.id) else { continue; };
         let Some(placement) = placements_by_suffix.get(&(scope, text.owner_reference)) else { continue; };
-        let sketch = neutral_sketch_id(placement);
+        let sketch = crate::design::identity::neutral_sketch_id(ctx,placement)?;
         let Some(text_value) = cadmpeg_core::text::NonBlankString::new(
             copy_project_text(ctx, &text.text, "f3d planar sketch text")?,
         ) else { continue; };
@@ -542,9 +537,9 @@ pub(crate) fn project_sketch_design(
         push_project_item(ctx, &mut entities,
             SketchEntity::new(
                 text.persistent_id.map_or_else(
-                    || neutral_sketch_record_id(&sketch, text.record_index),
-                    |persistent_id| neutral_sketch_text_id(&sketch, persistent_id),
-                ),
+                    || crate::design::identity::neutral_sketch_record_id(ctx,&sketch, text.record_index),
+                    |persistent_id| crate::design::identity::neutral_sketch_text_id(ctx,&sketch, persistent_id),
+                )?,
                 sketch,
                 geometry,
             )
@@ -824,15 +819,15 @@ pub(crate) fn project_spatial_sketch_design(
                     }
                 }
             };
-        let sketch = neutral_spatial_sketch_id(placement);
+        let sketch = crate::design::identity::neutral_spatial_sketch_id(ctx,placement)?;
         let native_ref = copy_project_text(ctx, &curve.id, "f3d spatial sketch curve native reference")?;
         push_project_item(ctx, &mut entities,
             SpatialSketchEntity::new(
-                neutral_spatial_sketch_curve_id(
+                crate::design::identity::neutral_spatial_sketch_curve_id(ctx,
                     &sketch,
                     curve.primary_id.get(),
                     curve.secondary_id,
-                ),
+                )?,
                 sketch,
                 geometry,
             )
@@ -847,7 +842,7 @@ pub(crate) fn project_spatial_sketch_design(
             continue;
         }
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else { continue; };
-        let sketch = neutral_spatial_sketch_id(placement);
+        let sketch = crate::design::identity::neutral_spatial_sketch_id(ctx,placement)?;
         let depth = point.depth();
         let Ok(geometry) = SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
             position: transform_point(
@@ -859,9 +854,9 @@ pub(crate) fn project_spatial_sketch_design(
         push_project_item(ctx, &mut entities,
             SpatialSketchEntity::new(
                 point.persistent_id().map_or_else(
-                    || neutral_spatial_sketch_record_id(&sketch, point.record_index),
-                    |persistent_id| neutral_spatial_sketch_point_id(&sketch, persistent_id),
-                ),
+                    || crate::design::identity::neutral_spatial_sketch_record_id(ctx,&sketch, point.record_index),
+                    |persistent_id| crate::design::identity::neutral_spatial_sketch_point_id(ctx,&sketch, persistent_id),
+                )?,
                 sketch,
                 geometry,
             )
@@ -879,8 +874,8 @@ pub(crate) fn project_spatial_sketch_design(
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
             continue;
         };
-        let sketch = neutral_spatial_sketch_id(placement);
-        let entity_id = neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id.get());
+        let sketch = crate::design::identity::neutral_spatial_sketch_id(ctx,placement)?;
+        let entity_id = crate::design::identity::neutral_spatial_sketch_surface_id(ctx,&sketch, surface.persistent_id.get())?;
         let u_knots = collect_project_items(
             ctx,
             surface.geometry.u_knots.iter().copied().map(cadmpeg_ir::scalar::FiniteReal::get),
@@ -948,7 +943,7 @@ pub(crate) fn project_spatial_sketch_design(
     }
     let mut sketches = Vec::new();
     for placement in placements {
-        let id = neutral_spatial_sketch_id(placement);
+        let id = crate::design::identity::neutral_spatial_sketch_id(ctx,placement)?;
         if !spatial_ids.contains(&id) { continue; }
         let profiles = closed_spatial_sketch_profiles(ctx, &id, &entities, linear_tolerance)?;
         let name = copy_project_text(ctx, placement.entity_id.as_str(), "f3d spatial sketch name")?;
@@ -986,7 +981,7 @@ pub(crate) fn project_spatial_sketch_constraints(
 
     let mut sketches = HashMap::new();
     for placement in placements {
-        let id = neutral_spatial_sketch_id(placement);
+        let id = crate::design::identity::neutral_spatial_sketch_id(ctx,placement)?;
         if let Some(ctx) = ctx {
             let work = u64::try_from(entities.len()).map_err(|_| {
                 ctx.refuse_codec_limit("f3d spatial constraint sketch membership work", 0, 1)
@@ -1215,7 +1210,7 @@ pub(crate) fn project_spatial_sketch_constraints(
             let sketch = copy_project_id(ctx, sketch.as_str(), "f3d spatial constraint sketch id")?;
             let native_ref = copy_project_text(ctx, &relation.id, "f3d spatial constraint native reference")?;
             Ok(Some(SpatialSketchConstraint {
-                id: neutral_sketch_constraint_id(&relation.id, relation.record_index),
+                id: crate::design::identity::neutral_sketch_constraint_id(ctx,&relation.id, relation.record_index)?,
                 sketch,
                 definition,
                 native_ref: Some(native_ref),

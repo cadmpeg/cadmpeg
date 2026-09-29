@@ -268,6 +268,15 @@ pub(crate) fn neutral_assembly_joint_id(
     )
 }
 
+pub(crate) fn feature_input_topology_id(
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+) -> cadmpeg_ir::ids::FeatureInputTopologyId {
+    let feature_key = feature_id.key();
+    history_input_state_id(&history_input_prefix(&feature_key, previous_state_id))
+}
+
+
 /// The Design configuration record key for the archive entry `entry_name`.
 pub(crate) fn configuration_entry_id(
     entry_name: &str,

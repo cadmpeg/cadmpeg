@@ -211,7 +211,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     };
     feature.native_ref = Some(scope_id.clone());
     let mut input_topologies = vec![FeatureInputTopology {
-        id: crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1),
+        id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
         bodies: (Vec::new()).try_into().unwrap(),
         faces: (Vec::new()).try_into().unwrap(),
@@ -261,7 +261,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let prefix = crate::ids::history_input_prefix(&cadmpeg_ir::identity_key!("42"), 1);
     assert_eq!(
         state,
-        &crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1)
+        &crate::ids::feature_input_topology_id(&feature_id, 1)
     );
     assert_eq!(
         faces.as_slice(),

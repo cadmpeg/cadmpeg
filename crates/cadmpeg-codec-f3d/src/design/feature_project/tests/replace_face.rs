@@ -428,7 +428,7 @@ fn surface_trim_tool_group_id_refuses_retained_limit() {
     let (scope, target_group, tool_group, body) = surface_trim_fixture();
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    for limit in 0..128 {
+    for limit in 0..16_384 {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let arena = DecodeArena::new();

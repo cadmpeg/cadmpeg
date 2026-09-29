@@ -1165,7 +1165,7 @@ pub(crate) fn bind_feature_body_selections(
                             return;
                         };
                         let prefix = feature_input_prefix(&feature_id, previous_state_id);
-                        let input_state = crate::design::edge_resolve::feature_input_topology_id(
+                        let input_state = crate::ids::feature_input_topology_id(
                             &feature_id,
                             previous_state_id,
                         );
@@ -1479,7 +1479,7 @@ pub(crate) fn bind_feature_body_selections(
             };
             let prefix = feature_input_prefix(&feature.id, previous_state_id);
             *bodies = BodySelection::historical(
-                crate::design::edge_resolve::feature_input_topology_id(
+                crate::ids::feature_input_topology_id(
                     &feature.id,
                     previous_state_id,
                 ),
@@ -1838,7 +1838,7 @@ fn bind_body_recipe_body_selection(
     }
     let prefix = feature_input_prefix(feature_id, previous_state_id);
     *selection = BodySelection::historical(
-        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id),
+        crate::ids::feature_input_topology_id(feature_id, previous_state_id),
         body_slots
             .into_iter()
             .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
@@ -2565,7 +2565,7 @@ fn bind_entity_face_groups(
         }
     }
     let state_id =
-        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id);
+        crate::ids::feature_input_topology_id(feature_id, previous_state_id);
     let mut topologies = input_topologies
         .iter_mut()
         .filter(|topology| topology.id == state_id && topology.input_of == *feature_id);
@@ -2630,7 +2630,7 @@ fn bind_hole_face_selection(
         return;
     };
     let state_id =
-        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id);
+        crate::ids::feature_input_topology_id(feature_id, previous_state_id);
     let mut topologies = input_topologies
         .iter_mut()
         .filter(|topology| topology.id == state_id && topology.input_of == *feature_id);
@@ -2798,7 +2798,7 @@ fn bind_entity_selection_path(
     }
     let prefix = feature_input_prefix(feature_id, previous_state_id);
     *path = PathRef::historical_edges(
-        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id),
+        crate::ids::feature_input_topology_id(feature_id, previous_state_id),
         edge_slots
             .into_iter()
             .map(|slot| crate::ids::history_input_edge_id(&prefix, slot))
@@ -2844,7 +2844,7 @@ pub(crate) fn project_feature_input_topologies(
             let topology = state.topology()?;
             let prefix = feature_input_prefix(&feature.id, previous_state_id);
             Some(FeatureInputTopology {
-                id: crate::design::edge_resolve::feature_input_topology_id(
+                id: crate::ids::feature_input_topology_id(
                     &feature.id,
                     previous_state_id,
                 ),
@@ -6841,7 +6841,7 @@ fn bind_body_recipe_face_selection(
     }
     let prefix = feature_input_prefix(feature_id, previous_state_id);
     *selection = FaceSelection::historical(
-        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id),
+        crate::ids::feature_input_topology_id(feature_id, previous_state_id),
         slots
             .into_iter()
             .map(|slot| crate::ids::history_input_face_id(&prefix, slot))

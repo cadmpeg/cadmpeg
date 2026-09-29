@@ -1241,7 +1241,7 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
             ("operand-c", Some(17)),
         ],
         41,
-        &cadmpeg_ir::identity_key!("feature"),
+        cadmpeg_ir::identity_key!("feature").as_str(),
         state.clone(),
         "group",
         None,
@@ -1264,7 +1264,7 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
     assert!(partial_historical_edge_selection(
         [("operand-a", Some(17)), ("operand-b", Some(18))],
         41,
-        &cadmpeg_ir::identity_key!("feature"),
+        cadmpeg_ir::identity_key!("feature").as_str(),
         FeatureInputTopologyId::mint("test:model:feature-input#state").expect("identity grammar"),
         "group",
         None,
@@ -1275,7 +1275,7 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
         partial_historical_edge_selection(
             [("operand-a", None), ("operand-b", None)],
             41,
-            &cadmpeg_ir::identity_key!("feature"),
+            cadmpeg_ir::identity_key!("feature").as_str(),
             FeatureInputTopologyId::mint("test:model:feature-input#state")
                 .expect("identity grammar"),
             "group",

@@ -998,7 +998,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 },
             },
             ..
-        }) if state == &crate::design::edge_resolve::feature_input_topology_id(&feature, 7)
+        }) if state == &crate::ids::feature_input_topology_id(&feature, 7)
             && faces.as_slice() == [
                 crate::ids::history_input_face_id(&prefix, 12),
                 crate::ids::history_input_face_id(&prefix, 19),

@@ -523,7 +523,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     let prefix = crate::ids::history_input_prefix(&feature_key, 4);
     assert_eq!(
         state,
-        &crate::design::edge_resolve::feature_input_topology_id(&point.id, 4)
+        &crate::ids::feature_input_topology_id(&point.id, 4)
     );
     assert_eq!(vertex, &crate::ids::history_input_vertex_id(&prefix, 43));
     assert_eq!(native.as_str(), &recipe_id);

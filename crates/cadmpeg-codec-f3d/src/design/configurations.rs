@@ -388,7 +388,7 @@ pub(crate) fn project_configurations(
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
                 bodies: None,
-                native_ref: Some(table.id()),
+                native_ref: Some(super::identity::configuration_entry_id(ctx, table.entry_name())?),
             });
         }
     }

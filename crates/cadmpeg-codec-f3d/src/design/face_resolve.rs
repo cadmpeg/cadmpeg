@@ -2,9 +2,8 @@
 //! Resolve face-selection operands and extrude start planes.
 
 use crate::design::dimensions::{planar_point, sketch_normal_sign};
-use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::feature_project::design_angle_unit;
-use crate::ids::{self, native_stream, neutral_feature_id};
+use crate::ids::{self, native_stream};
 use crate::records::{
     feature::{
         extrude::{DesignExtrudeExtent, DesignExtrudePrologue},
@@ -1073,9 +1072,9 @@ fn historical_face_selection_with_native(
     if faces.is_empty() {
         return Ok(None);
     }
-    let feature = neutral_feature_id(scope);
-    let feature_key = feature.key();
-    let prefix = ids::history_input_prefix(&feature_key, previous_state_id);
+    let feature = crate::design::identity::neutral_feature_id(ctx,scope)?;
+    let feature_key = crate::design::identity::identity_key(feature.as_str())?;
+    let prefix = crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?;
     let mut historical_faces = Vec::new();
     for face in faces {
         let id = historical_face_id(ctx, &prefix, face)?;
@@ -1084,7 +1083,7 @@ fn historical_face_selection_with_native(
     let fallback_native = copy_face_text(ctx, &native, "f3d historical face fallback id")?;
     Ok(Some(
         FaceSelection::historical(
-            feature_input_topology_id(&feature, previous_state_id),
+            crate::design::identity::feature_input_topology_id(ctx, &feature, previous_state_id)?,
             historical_faces,
             native,
         )
@@ -2620,7 +2619,7 @@ mod tests {
         resolved_profile_face_group,
         retain_face_operand_resolution, stable_face_support_set, ExtrudeFaceResolution,
     };
-    use crate::design::edge_resolve::feature_input_topology_id;
+    use crate::ids::feature_input_topology_id;
     use crate::ids::neutral_feature_id;
     use crate::records::topology::extrude_selection::DesignOperandRole;
     use crate::records::topology::face::DesignFaceOperand;
@@ -3651,7 +3650,11 @@ mod tests {
         let scope = loft_scope();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
+        let feature = crate::ids::neutral_feature_id(&scope);
+        let prefix = crate::ids::history_input_prefix(&feature.key(), scope.previous_history_state_id().unwrap());
+        let identifiers = if operation == "f3d historical face group id" { 0 }
+            else { feature.as_str().len() + prefix.as_str().len() };
+        policy.limits.max_retained_bytes = limit + u64::try_from(identifiers).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = resolved_historical_face_group(Some(&ctx), &scope,
             scope.previous_history_state_id(), &group, std::slice::from_ref(&operand));
@@ -3896,7 +3899,7 @@ mod tests {
         let group = loft_group();
         let feature = crate::ids::neutral_feature_id(&scope);
         let feature_key = feature.key();
-        let expected_state = crate::design::edge_resolve::feature_input_topology_id(&feature, 6);
+        let expected_state = crate::ids::feature_input_topology_id(&feature, 6);
         let expected_face = crate::ids::history_input_face_id(
             &crate::ids::history_input_prefix(&feature_key, 6),
             100,
@@ -4083,7 +4086,13 @@ mod tests {
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
+        let feature = crate::ids::neutral_feature_id(&scope);
+        let prefix = crate::ids::history_input_prefix(&feature.key(), scope.previous_history_state_id().unwrap());
+        let historical_face = crate::ids::history_input_face_id(&prefix, 10);
+        let state = crate::ids::feature_input_topology_id(&feature, scope.previous_history_state_id().unwrap());
+        policy.limits.max_retained_bytes = u64::try_from(2 * group.id.len()
+            + feature.as_str().len() + prefix.as_str().len()
+            + historical_face.as_str().len() + state.as_str().len()).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = resolved_profile_face_group(Some(&ctx), &scope, &group,
             std::slice::from_ref(&operand)).unwrap_err();

@@ -475,7 +475,8 @@ fn assert_extrude_selection_refusal(operation: &'static str, matched: bool, reta
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         if retained {
-            policy.limits.max_retained_bytes = limit;
+            policy.limits.max_retained_bytes = limit + 2 * u64::try_from(
+                neutral_sketch_curve_id(&sketch.id, 100, 0).as_str().len()).unwrap();
         } else {
             policy.limits.max_collection_items = limit;
         }
@@ -831,7 +832,7 @@ fn assert_historical_face_profile_refusal(operation: &'static str, retained: boo
         }, None)],
     }];
     let feature = cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#1").unwrap();
-    for limit in 0..8 {
+    for limit in 0..16_384 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         if retained {

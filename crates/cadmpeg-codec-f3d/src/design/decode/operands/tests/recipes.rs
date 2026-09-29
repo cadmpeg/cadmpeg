@@ -3,7 +3,7 @@ use crate::design::decode::operands::bind_edge_operand_candidates;
 use crate::design::decode::operands::bind_face_operand_candidates;
 use crate::design::decode::operands::face_recipe_program_kind;
 use crate::design::decode::operands::FaceRecipeProgramKind;
-use crate::design::edge_resolve::feature_input_topology_id;
+use crate::ids::feature_input_topology_id;
 use crate::design::face_resolve::resolved_face_group;
 use crate::design::face_resolve::resolved_historical_split_face_target_group;
 use crate::records::decal::DesignRecordHeader;

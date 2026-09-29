@@ -56,9 +56,10 @@ pub(crate) fn project_canvas_images(
         }) else {
             continue;
         };
+        let feature_id = crate::design::identity::neutral_feature_id(Some(ctx), scope)?;
         let Some(feature) = features
             .iter_mut()
-            .find(|feature| feature.id == crate::ids::neutral_feature_id(scope))
+            .find(|feature| feature.id == feature_id)
         else {
             continue;
         };

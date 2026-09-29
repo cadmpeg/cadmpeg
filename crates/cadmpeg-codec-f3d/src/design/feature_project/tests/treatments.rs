@@ -858,7 +858,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     let prefix = crate::ids::history_input_prefix(&feature_key, 7);
     assert_eq!(
         state,
-        &crate::design::edge_resolve::feature_input_topology_id(&feature, 7)
+        &crate::ids::feature_input_topology_id(&feature, 7)
     );
     assert_eq!(
         faces.as_slice(),
