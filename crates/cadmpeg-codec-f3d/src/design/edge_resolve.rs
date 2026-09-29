@@ -1131,15 +1131,20 @@ fn resolved_edge_group_with_transition_chain(
             edge_slot,
         );
         if !edges.contains(&edge) {
-            edges.push(edge);
+            push_edge_item(ctx, &mut edges, edge,
+                "f3d resolved edge group historical edge")?;
         }
     }
-    Ok(if edges.is_empty() {
-        EdgeSelection::Native(group.id.clone())
+    if edges.is_empty() {
+        native_edge_selection(group, ctx)
     } else {
-        EdgeSelection::historical(state, edges, group.id.clone())
-            .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone()))
-    })
+        let native = copy_edge_text(ctx, &group.id,
+            "f3d resolved edge group historical group id")?;
+        match EdgeSelection::historical(state, edges, native) {
+            Ok(selection) => Ok(selection),
+            Err(_) => native_edge_selection(group, ctx),
+        }
+    }
 }
 
 pub(super) fn resolved_hem_edge_group(

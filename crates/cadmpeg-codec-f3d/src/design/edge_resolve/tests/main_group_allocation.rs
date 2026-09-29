@@ -106,6 +106,17 @@ fn exact_edge_group_slot_refuses_collection_limit() {
 }
 
 #[test]
+fn resolved_edge_group_historical_edge_refuses_collection_limit() {
+    assert_main_group_refusal("f3d resolved edge group historical edge", false);
+}
+
+#[test]
+fn resolved_edge_group_historical_group_id_refuses_retained_limit() {
+    assert_main_group_refusal_with_limit(
+        "f3d resolved edge group historical group id", false, true);
+}
+
+#[test]
 fn edge_group_matched_identity_refuses_collection_limit() {
     let group = group(2, 10);
     let operand = identity(10, &[]);
