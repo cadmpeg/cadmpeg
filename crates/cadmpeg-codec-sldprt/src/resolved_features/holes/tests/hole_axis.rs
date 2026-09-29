@@ -246,6 +246,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
 
     assert_eq!(
         plane_owned_bore_placements(
+            &ctx,
             Point3::new(0.0, 0.0, 10.0),
             Vector3::new(0.0, 0.0, 1.0),
             2.0,
@@ -258,7 +259,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
                 vertices: &[],
                 points: &[],
             },
-        ),
+        ).unwrap(),
         Some(vec![cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 10.0)).unwrap(),
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
