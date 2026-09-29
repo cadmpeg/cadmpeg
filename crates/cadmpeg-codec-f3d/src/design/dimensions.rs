@@ -748,12 +748,17 @@ fn project_all_dimension_constraints(
                         }
                     }
                 }
-                let CountedOffset { pairs, distance } = exact_counted_offset(
+                let counted = exact_counted_offset(
+                    ctx,
                     &group.loci,
                     &entities_by_record,
                     &secondary_ids,
                     linear_tolerance,
                 )?;
+                let CountedOffset { pairs, distance } = match counted {
+                    Ok(counted) => counted,
+                    Err(error) => return Some(Err(error)),
+                };
                 let parameter = offset_parameter_factor(
                     distance.get(),
                     parameter.evaluated_value().get() * 10.0,
@@ -5963,13 +5968,22 @@ struct CountedOffset {
 }
 
 fn exact_counted_offset(
+    ctx: Option<&DecodeContext<'_>>,
     loci: &[crate::records::dimensions::DesignDimensionLocus],
     entities: &HashMap<u32, &cadmpeg_ir::sketches::SketchEntity>,
     secondary_ids: &HashMap<u32, u64>,
     linear_tolerance: f64,
-) -> Option<CountedOffset> {
+) -> Option<Result<CountedOffset, CodecError>> {
     use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::SketchOffsetPair;
+    macro_rules! resource {
+        ($result:expr) => {
+            match $result {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
 
     if loci.len() != entities.len() || loci.len() < 2 || !loci.len().is_multiple_of(2) {
         return None;
@@ -5989,30 +6003,36 @@ fn exact_counted_offset(
     if !role_partition && !identity_partition {
         return None;
     }
-    let source_records = loci[..source_count]
-        .iter()
-        .map(|locus| locus.geometry_record_index)
-        .collect::<HashSet<_>>();
-    let result_records = loci[source_count..]
-        .iter()
-        .map(|locus| locus.geometry_record_index)
-        .collect::<HashSet<_>>();
+    let mut source_records = HashSet::new();
+    let mut result_records = HashSet::new();
+    for locus in &loci[..source_count] {
+        resource!(insert_dimension_set(ctx, &mut source_records, locus.geometry_record_index,
+            "f3d counted offset source record"));
+    }
+    for locus in &loci[source_count..] {
+        resource!(insert_dimension_set(ctx, &mut result_records, locus.geometry_record_index,
+            "f3d counted offset result record"));
+    }
     if source_records.len() != source_count || result_records.len() != source_count {
         return None;
     }
     let mut used_members = HashSet::new();
-    let mut pairs = Vec::with_capacity(source_count);
+    let mut pairs = Vec::new();
     let mut canonical_distance: Option<f64> = None;
     for [source_locus, result_locus] in loci.as_chunks::<2>().0 {
         let source_record_index = source_locus.returned.value;
         let result_record_index = result_locus.returned.value;
         if !source_records.contains(&source_record_index)
             || !result_records.contains(&result_record_index)
-            || !used_members.insert(source_record_index)
-            || !used_members.insert(result_record_index)
+            || used_members.contains(&source_record_index)
+            || used_members.contains(&result_record_index)
         {
             return None;
         }
+        resource!(insert_dimension_set(ctx, &mut used_members, source_record_index,
+            "f3d counted offset used source"));
+        resource!(insert_dimension_set(ctx, &mut used_members, result_record_index,
+            "f3d counted offset used result"));
         let source = entities.get(&source_record_index)?;
         let result = entities.get(&result_record_index)?;
         let distance = sketch_curve_offset(&source.geometry, &result.geometry).or_else(|| {
@@ -6027,16 +6047,18 @@ fn exact_counted_offset(
             return None;
         }
         let source_reversed = offset_source_reversed(distance, &mut canonical_distance)?;
-        pairs.push(SketchOffsetPair {
-            source: source.id().clone(),
-            result: result.id().clone(),
+        resource!(push_dimension_item(ctx, &mut pairs, SketchOffsetPair {
+            source: resource!(copy_dimension_entity_id(ctx, source.id(),
+                "f3d counted offset source id")),
+            result: resource!(copy_dimension_entity_id(ctx, result.id(),
+                "f3d counted offset result id")),
             source_reversed,
-        });
+        }, "f3d counted offset pair"));
     }
-    Some(CountedOffset {
+    Some(Ok(CountedOffset {
         pairs,
         distance: Length::new(canonical_distance?)?,
-    })
+    }))
 }
 
 fn offset_parameter_factor(distance: f64, parameter_value: f64) -> Option<f64> {
