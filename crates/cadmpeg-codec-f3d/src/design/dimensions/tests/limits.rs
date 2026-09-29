@@ -177,6 +177,122 @@ fn native_fallback_group() -> DesignDimensionLocusGroup {
     }
 }
 
+fn assert_exact_pair_variant_refusal(
+    variant: &str,
+    operation: &'static str,
+    dimension: ResourceDimension,
+) {
+    let mut fixture = fixture();
+    let curves = native_fallback_curves(&mut fixture);
+    if variant == "points" {
+        fixture.entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
+            position: Point2::new(0.0, 0.0),
+        }).unwrap();
+    }
+    if variant == "angle" {
+        let mut parameter = parse_design_parameter_record(&parameter_record(
+            Some(21), "0.1 rad", "Angular Dimension", Some("rad"), "a1", 0.1,
+        )).unwrap();
+        parameter.id = fixture.parameter.id.clone();
+        parameter.record_index = fixture.parameter.record_index;
+        fixture.parameter = parameter;
+    }
+    let second_geometry = match variant {
+        "points" => SketchGeometryDefinition::Point {
+            position: Point2::new(0.6, 0.8),
+        },
+        "angle" => SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(0.1_f64.cos(), 0.1_f64.sin()),
+        },
+        _ => SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 1.0), end: Point2::new(1.0, 1.0),
+        },
+    };
+    let second = SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#dimension-second-curve").unwrap(),
+        fixture.entity.sketch.clone(),
+        SketchGeometry::try_from(second_geometry).unwrap(),
+    ).with_native_ref(Some(curves[1].id.clone()));
+    let entities = [fixture.entity.clone(), second];
+    let pair = native_fallback_pair();
+    let mut inputs = fixture.inputs();
+    inputs.curves = &curves;
+    inputs.entities = &entities;
+    inputs.pairs = std::slice::from_ref(&pair);
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            _ => panic!("unsupported exact pair limit"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+fn assert_exact_pair_refusal(operation: &'static str, dimension: ResourceDimension) {
+    assert_exact_pair_variant_refusal("parallel", operation, dimension);
+}
+
+#[test]
+fn exact_dimension_entity_refuses_collection_limit() {
+    assert_exact_pair_refusal("f3d exact dimension entity", ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn exact_directional_parameter_refuses_retained_limit() {
+    assert_exact_pair_refusal("f3d exact directional parameter id", ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn exact_distance_entity_id_refuses_retained_limit() {
+    assert_exact_pair_refusal("f3d exact distance entity id", ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn exact_distance_entity_refuses_collection_limit() {
+    assert_exact_pair_refusal("f3d exact distance entity", ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn exact_pair_companion_refuses_collection_limit() {
+    assert_exact_pair_refusal("f3d exact pair companion", ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn exact_first_distance_locus_refuses_retained_limit() {
+    assert_exact_pair_variant_refusal("points", "f3d exact first distance locus id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn exact_second_distance_locus_refuses_retained_limit() {
+    assert_exact_pair_variant_refusal("points", "f3d exact second distance locus id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn exact_first_angle_entity_refuses_retained_limit() {
+    assert_exact_pair_variant_refusal("angle", "f3d exact first angle entity id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn exact_second_angle_entity_refuses_retained_limit() {
+    assert_exact_pair_variant_refusal("angle", "f3d exact second angle entity id",
+        ResourceDimension::RetainedBytes);
+}
+
 fn native_fallback_null_pair() -> DesignDimensionLocusPair {
     let mut draft = companion_pair().into_draft();
     draft.governing_companion_record_index = 22;
@@ -529,6 +645,40 @@ fn exact_null_pair_constraint_reference_refuses_retained_limit() {
     let mut inputs = fixture.inputs();
     inputs.null_pairs = std::slice::from_ref(&pair);
     let operation = "f3d dimension null pair native reference";
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn exact_radial_parameter_refuses_retained_limit() {
+    let mut fixture = fixture();
+    let mut parameter = parse_design_parameter_record(&parameter_record(
+        Some(21), "1 mm", "Radius Dimension", Some("mm"), "r1", 0.1,
+    )).unwrap();
+    parameter.id = fixture.parameter.id.clone();
+    parameter.record_index = fixture.parameter.record_index;
+    fixture.parameter = parameter;
+    fixture.entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+        center: Point2::new(0.0, 0.0),
+        radius: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+    }).unwrap();
+    let frame = native_fallback_annotation();
+    let mut inputs = fixture.inputs();
+    inputs.annotation_frames = std::slice::from_ref(&frame);
+    let operation = "f3d exact radial parameter id";
     for limit in 0..256 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
