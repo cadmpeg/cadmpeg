@@ -57,10 +57,15 @@ pub(crate) fn prepare_parameters_for_write(
             if feature_parameter_changes_authorized {
                 return sync_neutral_parameters(ir, native);
             }
-            let projected = native
-                .as_ref()
-                .map(|value| project_parameters(&value.feature_histories))
-                .unwrap_or_default();
+            let lane_bytes = native.as_ref().into_iter().flat_map(|native| &native.feature_input_lanes)
+                .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &lane_bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+            )?;
+            let projected = native.as_ref()
+                .map(|value| project_parameters(&ctx, &value.feature_histories))
+                .transpose()?.unwrap_or_default();
             if parameter_hash(&projected)? == neutral_hash {
                 Ok(())
             } else {
@@ -102,7 +107,13 @@ fn sync_neutral_parameters(
         .collect::<HashMap<_, _>>();
     let global_owners = global_parameter_owners(&ir.model.features);
     if let Some(native) = native.as_ref() {
-        let original = project_parameters(&native.feature_histories);
+        let lane_bytes = native.feature_input_lanes.iter()
+            .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane_bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        )?;
+        let original = project_parameters(&ctx, &native.feature_histories)?;
         let original_feature_names = native
             .feature_histories
             .iter()

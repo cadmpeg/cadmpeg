@@ -1239,3 +1239,35 @@ fn metadata_offset_plane_binding_refuses_work_limit() {
     assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
     assert_eq!(refusal.additional, 1);
 }
+
+#[test]
+fn metadata_parameter_projection_refuses_collection_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = collection_refusal_with_options(
+        &native_definition_source(), options, "collect SLDPRT projected parameters",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(refusal.additional, 1);
+}
+
+#[test]
+fn metadata_parameter_projection_refuses_retained_limit() {
+    let mut options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&native_definition_source(), &mut options, "retain SLDPRT parameter expression");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT parameter expression"
+    ));
+}
+
+#[test]
+fn metadata_parameter_projection_refuses_work_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = work_refusal_with_options(
+        &native_definition_source(), options, "classify SLDPRT parameter owners",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(refusal.additional, 1);
+}

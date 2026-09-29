@@ -105,7 +105,11 @@ pub(crate) fn validate(
         }
     }
     if neutral_parameters_changed {
-        let baseline = project_parameters(&native.feature_histories);
+        let lane_bytes = native.feature_input_lanes.iter()
+            .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&lane_bytes, &arena, &DecodePolicy::service())?;
+        let baseline = project_parameters(&ctx, &native.feature_histories)?;
         for parameter in &ir.model.parameters {
             let original = baseline.iter().find(|original| original.id == parameter.id);
             if original.is_none_or(|original| driving_parameter_changed(original, parameter))

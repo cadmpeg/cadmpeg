@@ -319,8 +319,8 @@ fn repeated_dimension_content_projects_one_owned_parameter() {
         FeatureContent::Dimension("D1".into()),
     ];
 
-    assert_eq!(parameter_names(&feature), vec!["D1", "D1"]);
-    assert_eq!(projected_parameter_names(&feature), vec!["D1"]);
+    assert_eq!(parameter_names(&cadmpeg_test_support::service_decode_context(), &feature).unwrap(), vec!["D1", "D1"]);
+    assert_eq!(projected_parameter_names(&cadmpeg_test_support::service_decode_context(), &feature).unwrap(), vec!["D1"]);
     assert_eq!(
         (&*project_feature_content(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new()).unwrap()),
         vec![FeatureSourceContent::Parameter(
@@ -1208,7 +1208,7 @@ fn native_attribute_records_are_metadata_not_model_features() {
     let projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
     assert_eq!(projected.len(), 1);
     assert_eq!(projected[0].native_ref.as_deref(), Some("model"));
-    assert!(project_parameters(&[history]).is_empty());
+    assert!(project_parameters(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap().is_empty());
 }
 
 #[test]
@@ -1232,7 +1232,7 @@ fn native_attribute_definition_type_is_metadata_without_an_instance_name_match()
     assert!(project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history))
         .unwrap()
         .is_empty());
-    assert!(project_parameters(&[history]).is_empty());
+    assert!(project_parameters(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap().is_empty());
 }
 
 #[test]
