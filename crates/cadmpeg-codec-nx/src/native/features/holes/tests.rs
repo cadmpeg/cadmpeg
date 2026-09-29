@@ -586,6 +586,85 @@ fn repeated_scalar_lane_container() -> crate::container::Container<'static> {
         .expect("repeated scalar lane container")
 }
 
+fn repeated_scalar_block_reference_container() -> crate::container::Container<'static> {
+    let shifted = |value: f64| {
+        let mut bytes = value.to_be_bytes();
+        bytes[0] -= 0x10;
+        bytes
+    };
+    let mut payload = Vec::new();
+    for _ in 0..2 {
+        payload.extend_from_slice(&shifted(508.0));
+        payload.extend_from_slice(&shifted(38.1));
+        payload.extend_from_slice(&[0xf0, 0x03, 0xf0, 0x04]);
+    }
+    let template = b"Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer";
+    payload.extend_from_slice(&[0x04, (template.len() + 2) as u8]);
+    payload.extend_from_slice(template);
+    payload.push(0);
+    let store = (0..600).map(|_| b"A".as_slice()).collect::<Vec<_>>();
+    let part = crate::test_support::test_om::composed_feature_history_payload(
+        &[(&[3, 0xff, 0xff, 0xff], "SIMPLE HOLE", payload)], &store,
+    );
+    let file = crate::test_support::test_prt::prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", part),
+    ]);
+    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
+        .expect("repeated scalar block reference container")
+}
+
+fn repeated_scalar_block_reference_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = repeated_scalar_block_reference_container();
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
+            ctx, &container,
+        )
+    }).expect("admitted repeated scalar block references");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
+        &ctx, &container,
+    ).expect_err("repeated scalar block reference resource limit")
+}
+
+#[test]
+fn repeated_scalar_block_reference_route_refuses_collection_limit() {
+    let error = repeated_scalar_block_reference_route_refusal(
+        |policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn repeated_scalar_block_reference_route_refuses_retained_limit() {
+    let error = repeated_scalar_block_reference_route_refusal(
+        |policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn repeated_scalar_block_reference_route_refuses_scoped_limit() {
+    let error = repeated_scalar_block_reference_route_refusal(
+        |policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn repeated_scalar_block_reference_route_refuses_work_limit() {
+    let error = repeated_scalar_block_reference_route_refusal(
+        |policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 fn repeated_scalar_lane_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
