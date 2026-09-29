@@ -1805,7 +1805,11 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     let mut lane = feature_input_lane("lane", Some("1"));
     lane.surface_selections.push(selection());
 
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+
     bind_configuration_topology_selections(
+        &ctx,
         &mut ir,
         &[],
         &[lane],
@@ -1921,7 +1925,9 @@ fn configuration_frame_alias_binds_without_body_membership() {
     );
 
     let lane = feature_input_lane("lane", Some("3"));
-    bind_configuration_topology_selections(&mut ir, &[], &[lane], &[]).unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    bind_configuration_topology_selections(&ctx, &mut ir, &[], &[lane], &[]).unwrap();
 
     assert!(matches!(
         &ir.model.configurations[0].feature_states.values().next().unwrap().definition,

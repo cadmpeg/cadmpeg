@@ -162,32 +162,35 @@ fn frame_only_plane_support_requires_one_coincident_face() {
     };
 
     assert_eq!(
-        unique_planar_face(
+        with_projection_context(|ctx| unique_planar_face(
+            ctx,
             Point3::new(4.0, -2.0, 5.0),
             Vector3::new(0.0, 0.0, 1.0),
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface),
-        ),
+        )).expect("planar face search"),
         Some(face.id.clone())
     );
     assert_eq!(
-        unique_planar_face(
+        with_projection_context(|ctx| unique_planar_face(
+            ctx,
             Point3::new(0.0, 0.0, 6.0),
             Vector3::new(0.0, 0.0, 1.0),
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface),
-        ),
+        )).expect("planar face search"),
         None
     );
     let mut duplicate = face.clone();
     duplicate.id = FaceId::mint("test:model:entity#other-face").expect("identity grammar");
     assert_eq!(
-        unique_planar_face(
+        with_projection_context(|ctx| unique_planar_face(
+            ctx,
             Point3::new(0.0, 0.0, 5.0),
             Vector3::new(0.0, 0.0, 1.0),
             &[face, duplicate],
             &[surface],
-        ),
+        )).expect("planar face search"),
         None
     );
 }
@@ -243,11 +246,12 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         native_ref: None,
     }];
 
-    project_unbound_offset_plane_faces(
+    with_projection_context(|ctx| project_unbound_offset_plane_faces(
+        ctx,
         &mut features,
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
-    );
+    )).expect("offset plane projection");
 
     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face { face }),
@@ -311,11 +315,12 @@ fn generic_native_offset_plane_support_stays_native() {
         native_ref: None,
     }];
 
-    project_unbound_offset_plane_faces(
+    with_projection_context(|ctx| project_unbound_offset_plane_faces(
+        ctx,
         &mut features,
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
-    );
+    )).expect("offset plane projection");
 
     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face { face }),

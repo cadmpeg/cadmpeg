@@ -2685,45 +2685,55 @@ fn unique_topological_cylindrical_face(faces: &[Face], surfaces: &[Surface]) -> 
 /// Resolve frame-only offset-plane supports when exactly one B-rep face lies
 /// on the serialized support plane.
 pub(crate) fn project_unbound_offset_plane_faces(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     faces: &[Face],
     surfaces: &[Surface],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                reference, ..
-            }) = &mut definition
-            else {
-                break 'feature_edit;
-            };
-            let (origin, normal) = match reference.as_ref() {
-                Some(cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { frame }) => {
-                    (frame.origin(), frame.normal().get())
-                }
-                _ => break 'feature_edit,
-            };
-            let Some(selected) = unique_planar_face(origin.get(), normal, faces, surfaces) else {
-                break 'feature_edit;
-            };
-            *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-                face: cadmpeg_ir::features::FaceSelection::Faces(vec![selected]),
-            });
-        }
-        feature.evaluation.set_definition(definition);
+        let mut edit_result: Result<(), cadmpeg_core::CodecError> = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            edit_result = (|| {
+                let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                    reference, ..
+                }) = definition
+                else {
+                    return Ok(());
+                };
+                let (origin, normal) = match reference.as_ref() {
+                    Some(cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { frame }) => {
+                        (frame.origin(), frame.normal().get())
+                    }
+                    _ => return Ok(()),
+                };
+                let Some(selected) = unique_planar_face(ctx, origin.get(), normal, faces, surfaces)? else {
+                    return Ok(());
+                };
+                let mut selected_faces = Vec::new();
+                ctx.reserve_collection_vec(&mut selected_faces, 1, "project SLDPRT unbound offset plane face")?;
+                selected_faces.push(selected);
+                *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+                    face: cadmpeg_ir::features::FaceSelection::Faces(selected_faces),
+                });
+                Ok(())
+            })();
+        });
+        edit_result?;
     }
+    Ok(())
 }
 
 fn unique_planar_face(
+    ctx: &DecodeContext<'_>,
     origin: Point3,
     normal: Vector3,
     faces: &[Face],
     surfaces: &[Surface],
-) -> Option<FaceId> {
+) -> Result<Option<FaceId>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "find unique SLDPRT planar face";
     let normal_length = normal.norm();
     if !normal_length.is_finite() || normal_length <= f64::EPSILON {
-        return None;
+        return Ok(None);
     }
     let normal = Vector3::new(
         normal.x / normal_length,
@@ -2737,15 +2747,20 @@ fn unique_planar_face(
             .max(origin.y.abs())
             .max(origin.z.abs())
             .max(1.0);
-    let planar = surfaces
-        .iter()
-        .filter_map(|surface| match surface.geometry {
+    let mut selected = None;
+    for face in faces {
+        for surface in surfaces {
+            ctx.charge_work(1, OPERATION)?;
+            if face.surface != surface.id {
+                continue;
+            }
+            let planar = match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let candidate_origin = plane_surface.origin().get();
                 let candidate_normal = *plane_surface.frame().axis().as_raw();
                 let candidate_length = candidate_normal.norm();
                 if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
-                    return None;
+                    continue;
                 }
                 let alignment = (normal.x * candidate_normal.x
                     + normal.y * candidate_normal.y
@@ -2759,19 +2774,24 @@ fn unique_planar_face(
                 let distance = displacement.x * normal.x
                     + displacement.y * normal.y
                     + displacement.z * normal.z;
-                ((alignment.abs() - 1.0).abs() <= EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E9
-                    && distance.abs() <= tolerance)
-                    .then_some(&surface.id)
+                (alignment.abs() - 1.0).abs() <= EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E9
+                    && distance.abs() <= tolerance
             }
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
-    let mut candidates = faces
-        .iter()
-        .filter(|face| planar.contains(&face.surface))
-        .map(|face| face.id.clone());
-    let selected = candidates.next()?;
-    candidates.next().is_none().then_some(selected)
+            _ => false,
+            };
+            if planar {
+                if selected.is_some() {
+                    return Ok(None);
+                }
+                selected = Some(&face.id);
+                break;
+            }
+        }
+    }
+    selected.map(|id| {
+        let text = ctx.format_retained(format_args!("{}", id.as_str()), OPERATION)?;
+        FaceId::mint(text).map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT face id"))
+    }).transpose()
 }
 
 #[cfg(test)]

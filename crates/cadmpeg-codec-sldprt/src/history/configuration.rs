@@ -386,6 +386,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
 
 /// Resolve topology operands in configuration-local feature snapshots.
 pub(crate) fn bind_configuration_topology_selections(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
@@ -431,10 +432,11 @@ pub(crate) fn bind_configuration_topology_selections(
         // frame can bind a unique planar face even when the configuration has
         // no independently established body membership.
         crate::resolved_features::projections::project_unbound_offset_plane_faces(
+            ctx,
             &mut features,
             &ir.model.faces,
             &ir.model.surfaces,
-        );
+        )?;
         let states = &mut ir.model.configurations[configuration_index].feature_states;
         for feature in features {
             let Some(state) = states.get_mut(&feature.id) else {
