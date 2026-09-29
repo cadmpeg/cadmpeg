@@ -13,4 +13,5 @@ mod operation_identity;
 mod reference_admission;
 mod record_wire;
 mod sketch_admission;
+mod sketch_record_limits;
 mod source_and_sketch;

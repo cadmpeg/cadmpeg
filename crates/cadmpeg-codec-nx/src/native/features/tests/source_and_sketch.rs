@@ -446,12 +446,12 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     };
     let references = [reference(1, 97), reference(0, 96)];
 
-    let sketches = feature_sketch_records(
+    let sketches = crate::test_support::with_decode_context(|ctx| feature_sketch_records(ctx,
         std::slice::from_ref(&label),
         std::slice::from_ref(&record),
         &inputs,
         &references,
-    );
+    )).unwrap();
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].ordinal, 7);
     assert_eq!(
@@ -474,14 +474,14 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     );
     let mut duplicate_record = record.clone();
     duplicate_record.id.push_str("-duplicate");
-    assert!(feature_sketch_records(
+    assert!(crate::test_support::with_decode_context(|ctx| feature_sketch_records(ctx,
         std::slice::from_ref(&label),
         &[record.clone(), duplicate_record],
         &inputs,
         &references,
-    )
+    )).unwrap()
     .is_empty());
-    let construction = feature_sketch_construction_inputs(&sketches, &references);
+    let construction = crate::test_support::with_decode_context(|ctx| feature_sketch_construction_inputs(ctx, &sketches, &references)).unwrap();
     assert_eq!(construction.len(), 1);
     assert_eq!(
         construction[0]
@@ -514,7 +514,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         2,
     )
     .unwrap();
-    assert!(feature_sketch_construction_inputs(&sketches, &malformed).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| feature_sketch_construction_inputs(ctx, &sketches, &malformed)).unwrap().is_empty());
 }
 
 #[test]
