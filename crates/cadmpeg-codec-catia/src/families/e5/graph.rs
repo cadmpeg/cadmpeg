@@ -53,14 +53,10 @@ impl E5Topology {
         representation: u32,
     ) -> Option<[FiniteReal; 2]> {
         let edge = self.edges.get(&edge_ref)?;
-        [edge.parameter_start, edge.parameter_end]
-            .map(|bound_ref| {
-                bound_representation_parameter(&self.bounds, bound_ref, representation)
-            })
-            .into_iter()
-            .collect::<Option<Vec<_>>>()?
-            .try_into()
-            .ok()
+        Some([
+            bound_representation_parameter(&self.bounds, edge.parameter_start, representation)?,
+            bound_representation_parameter(&self.bounds, edge.parameter_end, representation)?,
+        ])
     }
 }
 
@@ -1285,13 +1281,8 @@ fn plane_digon_orientation_hint(
             })
     };
     let signed_parameter_direction = |edge: &E5Edge, pcurve_id: u32, native_range: [f64; 2]| {
-        let parameters = [edge.parameter_start, edge.parameter_end]
-            .map(|bound_ref| bound_representation_parameter(bounds, bound_ref, pcurve_id));
-        let [start, end] = parameters
-            .into_iter()
-            .collect::<Option<Vec<_>>>()?
-            .try_into()
-            .ok()?;
+        let start = bound_representation_parameter(bounds, edge.parameter_start, pcurve_id)?;
+        let end = bound_representation_parameter(bounds, edge.parameter_end, pcurve_id)?;
         let bound_span = end.get() - start.get();
         let native_span = native_range[1] - native_range[0];
         if bound_span.abs() <= EPS_PLANE_DIGON || native_span.abs() <= EPS_PLANE_DIGON {
