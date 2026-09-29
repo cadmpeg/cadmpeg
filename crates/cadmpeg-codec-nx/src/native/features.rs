@@ -4610,44 +4610,40 @@ pub(super) fn feature_operation_object_references(
             if failure.is_some() {
                 return;
             }
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let operation_record = format!(
-                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
-            );
-            let fields = match crate::om::direct_reference::operation_reference_fields(
-                ctx,
-                record.payload_view(),
-                kind,
-            ) {
-                Ok(fields) => fields,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
+            let result = (|| -> Result<(), CodecError> {
+                let fields = crate::om::direct_reference::operation_reference_fields(
+                    ctx, record.payload_view(), kind,
+                )?;
+                for (ordinal, reference) in fields.into_iter().enumerate() {
+                    let Some(offset) = u64::try_from(reference.offset()).ok()
+                        .and_then(|offset| entry_offset.checked_add(offset)) else { continue; };
+                    let Some(frame) = crate::om::direct_reference::DirectReferenceFrame::<u64>::new(
+                        reference.kind(), reference.object(), offset,
+                    ) else { continue; };
+                    let Some(ordinal_u32) = u32::try_from(ordinal).ok() else { continue; };
+                    ctx.charge_work(1, "resolve NX operation object reference")?;
+                    ctx.charge_collection_items(1, "NX operation object references")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<FeatureOperationObjectReference>()),
+                        "NX operation object references")?;
+                    references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "allocate NX operation object references", 0, 1))?;
+                    references.push(FeatureOperationObjectReference {
+                        id: format_feature_history_id(ctx, stem, section_key, operation_ordinal,
+                            Some(ordinal))?,
+                        operation_label: format_feature_history_id(ctx, "operation-label", section_key,
+                            operation_ordinal, None)?,
+                        operation_record: format_feature_history_id(ctx, "operation-record", section_key,
+                            operation_ordinal, None)?,
+                        ordinal: ordinal_u32,
+                        data_block: charged_unique_offset_data_block(ctx, &indexed,
+                            frame.object().value())?,
+                        frame,
+                    });
                 }
-            };
-            for (ordinal, reference) in fields.into_iter().enumerate() {
-                let Some(offset) = entry_offset.checked_add(reference.offset() as u64) else {
-                    continue;
-                };
-                let Some(frame) = crate::om::direct_reference::DirectReferenceFrame::<u64>::new(
-                    reference.kind(),
-                    reference.object(),
-                    offset,
-                ) else {
-                    continue;
-                };
-                references.push(FeatureOperationObjectReference {
-                    id: format!(
-                        "nx:feature-history:{stem}#{section_key}-{operation_ordinal:010}-{ordinal:010}"
-                    ),
-                    operation_label: operation_label.clone(),
-                    operation_record: operation_record.clone(),
-                    ordinal: ordinal as u32,
-                    data_block: unique_offset_data_block(&indexed, frame.object().value()),
-                    frame,
-                });
-            }
+                Ok(())
+            })();
+            if let Err(error) = result { failure = Some(error); }
         },
     )?;
     if let Some(error) = failure {
