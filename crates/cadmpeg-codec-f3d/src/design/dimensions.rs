@@ -4566,7 +4566,7 @@ fn indirect_angular_lines(
     if !evaluated_value.is_finite() || !(0.0..=std::f64::consts::PI).contains(&evaluated_value) {
         return None;
     }
-    let mut candidates = projected
+    let candidates = projected
         .iter()
         .filter(|((candidate_scope, _), candidate)| {
             *candidate_scope == scope
@@ -4588,11 +4588,16 @@ fn indirect_angular_lines(
                 &candidate.geometry,
                 evaluated_value,
             )
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| left.id().cmp(right.id()));
-    candidates.dedup_by(|left, right| left.id() == right.id());
-    let candidate = (candidates.len() == 1).then(|| candidates.remove(0))?;
+        });
+    let mut candidate = None;
+    for next in candidates {
+        match candidate {
+            None => candidate = Some(next),
+            Some(first) if first.id() == next.id() => {},
+            Some(_) => return None,
+        }
+    }
+    let candidate = candidate?;
     Some(if point_ordinal == 0 {
         (candidate.id().clone(), explicit_line.id().clone())
     } else {
@@ -4789,19 +4794,10 @@ fn recipe_extension_point_dimension(
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
-    let sketch_entities = entities
-        .iter()
-        .filter(|entity| &entity.sketch == sketch)
-        .collect::<Vec<_>>();
-    let lines = sketch_entities
-        .iter()
-        .copied()
-        .filter_map(|entity| Some((entity, line_segment(entity)?)))
-        .collect::<Vec<_>>();
+    let sketch_entities = || entities.iter().filter(|entity| &entity.sketch == sketch);
+    let lines = || sketch_entities().filter_map(|entity| Some((entity, line_segment(entity)?)));
     let point = |id: &cadmpeg_ir::sketches::SketchEntityId| {
-        sketch_entities
-            .iter()
-            .copied()
+        sketch_entities()
             .find_map(|entity| match *entity.geometry.definition() {
                 SketchGeometryDefinition::Point { position } if entity.id() == id => {
                     Some(position.get())
@@ -4810,8 +4806,8 @@ fn recipe_extension_point_dimension(
             })
     };
     let is_any_line_endpoint = |position: Point2| {
-        lines.iter().any(|(_, [start, end])| {
-            sketch_points_close(position, *start) || sketch_points_close(position, *end)
+        lines().any(|(_, [start, end])| {
+            sketch_points_close(position, start) || sketch_points_close(position, end)
         })
     };
     let mut matched = None;
@@ -4834,8 +4830,7 @@ fn recipe_extension_point_dimension(
         .into_iter()
         .any(|(detached, endpoint)| {
             !is_any_line_endpoint(detached)
-                && lines.iter().any(|(_, [start, end])| {
-                    let (start, end) = (*start, *end);
+                && lines().any(|(_, [start, end])| {
                     let du = end.u - start.u;
                     let dv = end.v - start.v;
                     let length = du.hypot(dv);
