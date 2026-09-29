@@ -365,21 +365,43 @@ pub(super) fn feature_revolution_axis_for_transfer(
     }
 }
 
-pub(in super::super) fn section_profile_ref(ir: &CadIr, native_ref: String) -> ProfileRef {
-    let sketch_id = native_ref.replacen("creo:featdefs:sketch#", "creo:model:sketch#", 1);
+pub(in super::super) fn section_profile_ref(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    native_ref: String,
+) -> Result<ProfileRef, CodecError> {
+    let native_scope = native_ref.strip_prefix("creo:featdefs:sketch#");
+    let scan_count = u64::try_from(ir.model.sketches.len())
+        .map_err(|_| CodecError::malformed("Creo sketch count exceeds u64"))?;
+    ctx.charge_work(scan_count, "creo section profile sketch lookup")?;
     let Some(sketch) = exactly_one(
         ir.model
             .sketches
             .iter()
-            .filter(|sketch| sketch.id.as_str() == sketch_id),
+            .filter(|sketch| match native_scope {
+                Some(scope) => sketch.id.as_str().strip_prefix("creo:model:sketch#") == Some(scope),
+                None => sketch.id.as_str() == native_ref,
+            }),
     ) else {
-        return ProfileRef::Planar(PlanarProfileRef::Native(native_ref));
+        return Ok(ProfileRef::Planar(PlanarProfileRef::Native(native_ref)));
     };
     if sketch.profiles.is_empty() {
-        ProfileRef::Planar(PlanarProfileRef::Native(native_ref))
+        Ok(ProfileRef::Planar(PlanarProfileRef::Native(native_ref)))
     } else {
-        ProfileRef::Planar(PlanarProfileRef::Sketch(sketch.id.clone()))
+        Ok(ProfileRef::Planar(PlanarProfileRef::Sketch(
+            sketch.id.copy_admitted(ctx, "creo section profile sketch identity")?,
+        )))
     }
+}
+
+pub(in super::super) fn unresolved_feature_profile_ref(
+    ctx: &DecodeContext<'_>,
+    feature_id: u32,
+    operation: &'static str,
+) -> Result<ProfileRef, CodecError> {
+    Ok(ProfileRef::Planar(PlanarProfileRef::Unresolved(
+        ctx.format_retained(format_args!("creo:model:feature#{feature_id}"), operation)?,
+    )))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -518,7 +540,7 @@ pub(in super::super) fn model_feature_ids(
 
 #[cfg(test)]
 mod allocation_tests {
-    use super::{geometry_generator_features, insert_numeric_feature_id, model_feature_ids};
+    use super::{geometry_generator_features, insert_numeric_feature_id, model_feature_ids, unresolved_feature_profile_ref};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::BTreeSet;
 
@@ -635,5 +657,36 @@ mod allocation_tests {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
                 && resource.operation == "creo model feature identity text"), "{error:?}");
+    }
+
+    #[test]
+    fn unresolved_section_profile_identity_refuses_retained_bytes() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = "creo:model:feature#50".len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = unresolved_feature_profile_ref(&ctx, 50, "creo unresolved section profile identity")
+            .expect_err("feature identity exceeds cap");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo unresolved section profile identity"));
+        let profile = crate::decode::with_test_decode_ctx(|ctx| {
+            unresolved_feature_profile_ref(ctx, 50, "creo unresolved section profile identity")
+        }).expect("service profile admitted");
+        assert_eq!(profile, cadmpeg_ir::features::ProfileRef::Planar(
+            cadmpeg_ir::features::PlanarProfileRef::Unresolved("creo:model:feature#50".to_owned())));
+    }
+
+    #[test]
+    fn unresolved_named_profile_identity_refuses_retained_bytes() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = "creo:model:feature#50".len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = unresolved_feature_profile_ref(&ctx, 50, "creo unresolved named profile identity")
+            .expect_err("feature identity exceeds cap");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo unresolved named profile identity"));
     }
 }

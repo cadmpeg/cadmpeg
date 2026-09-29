@@ -404,7 +404,7 @@ pub(in super::super) fn transfer_feature_dimensions(
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 properties: cadmpeg_core::text::named_entries_checked(ctx, id.as_str(), properties)?,
                 pmi: None,
-                native_ref: Some(feature_sketch_record_id_in_scan(scan, definition)),
+                native_ref: Some(feature_sketch_record_id_in_scan(ctx, scan, definition)?),
             },
         )?;
         if let Some(feature) = exactly_one(

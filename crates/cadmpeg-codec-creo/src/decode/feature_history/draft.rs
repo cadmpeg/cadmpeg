@@ -28,7 +28,7 @@ use super::super::uniqueness::{
     exactly_one, unique_feature_datum_plane, unique_feature_definition_for_transform,
     unique_feature_profile_ref, unique_feature_section_transform, unique_owned_feature_definition,
 };
-use super::axes::{feature_revolution_axis_for_transfer, model_feature_ids, section_profile_ref};
+use super::axes::{feature_revolution_axis_for_transfer, model_feature_ids, section_profile_ref, unresolved_feature_profile_ref};
 use super::knit::{
     draft_neutral_plane_selection, feature_result_surface_ids_by_feature,
     feature_surface_transitions, filled_surface_feature_definition, generated_surface_face_refs,
@@ -69,7 +69,7 @@ use cadmpeg_ir::{
         holes::{HoleBottom, HoleForm, HoleKind, HolePlacement},
         BooleanOp, EdgeSelection, ExtrudeExtent, FaceSelection,
         FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
-        LinearTermination, PartialRevolveConstruction, PlanarProfileRef, ProfileRef,
+        LinearTermination, PartialRevolveConstruction,
         RevolveConstruction, UnresolvedFamily,
     },
     scalar::Length,
@@ -659,16 +659,14 @@ pub(in super::super) fn schema_feature_definition(
                             .is_none_or(|definition_id| definition_id == definition.identity.id())
                     },
                 );
-            let profile = definition.map_or_else(
-                || {
-                    ProfileRef::Planar(PlanarProfileRef::Unresolved(format!(
-                        "creo:model:feature#{feature_id}"
-                    )))
-                },
-                |definition| {
-                    section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
-                },
-            );
+            let profile = match definition {
+                Some(definition) => section_profile_ref(
+                    ctx,
+                    ir,
+                    feature_sketch_record_id_in_scan(ctx, scan, definition)?,
+                )?,
+                None => unresolved_feature_profile_ref(ctx, feature_id, "creo unresolved section profile identity")?,
+            };
             let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
             return Ok(circular_sweep_feature_definition(
                 profile,
@@ -687,7 +685,7 @@ pub(in super::super) fn schema_feature_definition(
         == Some(crate::feature::operations::FeatureRecipeKind::Revolve)
     {
         let extent = feature_revolution_extent(scan, feature_id);
-        let profile = unique_feature_profile_ref(scan, ir, feature_id);
+        let profile = unique_feature_profile_ref(ctx, scan, ir, feature_id)?;
         let axis = feature_revolution_axis_for_transfer(
             ctx,
             scan,
@@ -770,9 +768,14 @@ pub(in super::super) fn schema_feature_definition(
             Some(None) => unique_owned_feature_definition(&scan.features.definitions, feature_id),
             None => None,
         };
-        let profile = definition.map(|definition| {
-            section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
-        });
+        let profile = match definition {
+            Some(definition) => Some(section_profile_ref(
+                ctx,
+                ir,
+                feature_sketch_record_id_in_scan(ctx, scan, definition)?,
+            )?),
+            None => None,
+        };
         let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
         let op = section_sweep_boolean_operation(
             feature_recipe_effect(scan, feature_id),
@@ -785,11 +788,10 @@ pub(in super::super) fn schema_feature_definition(
         let construction = extent_and_direction
             .map(|(extent, direction)| (Some(Vector3::from(direction)), extent));
         let (direction, extent) = construction.unwrap_or((None, unresolved_extrude_extent()));
-        let profile = profile.unwrap_or_else(|| {
-            ProfileRef::Planar(PlanarProfileRef::Unresolved(format!(
-                "creo:model:feature#{feature_id}"
-            )))
-        });
+        let profile = match profile {
+            Some(profile) => profile,
+            None => unresolved_feature_profile_ref(ctx, feature_id, "creo unresolved section profile identity")?,
+        };
         return Ok(IrFeatureDefinition::Operation(
             IrFeatureOperation::Extrude {
                 profile,
