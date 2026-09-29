@@ -1903,7 +1903,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             let _ = parameter.dependencies.insert(dependency);
         }
     }
-    normalize_parameter_ordinals(&mut parameters, &parameter_owners);
+    normalize_parameter_ordinals(ctx, &mut parameters, &parameter_owners)?;
     for feature in &mut features {
         for parameter in parameters.iter().filter(|parameter| parameter.owner.as_ref() == Some(&feature.id)) {
             for dependency in &parameter.dependencies {
@@ -5673,9 +5673,10 @@ fn form_cage_serializers(
 }
 
 fn normalize_parameter_ordinals(
+    ctx: Option<&DecodeContext<'_>>,
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
-) {
+) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureId, ParameterId};
 
     let mut groups = HashMap::<Option<FeatureId>, Vec<usize>>::new();
@@ -5713,7 +5714,7 @@ fn normalize_parameter_ordinals(
                 // Every blocked parameter has an unresolved dependency, so the
                 // remaining graph contains a cycle. Break its lowest-ordinal
                 // member, then resume ordering before selecting another cycle.
-                let cycle = cyclic_parameter_components(parameters, &unresolved)
+                let cycle = cyclic_parameter_components(ctx, parameters, &unresolved)?
                     .into_iter()
                     .map(|(first, remaining)| {
                         let breaker = remaining.iter().copied().fold(first, |best, index| {
@@ -5753,39 +5754,52 @@ fn normalize_parameter_ordinals(
             parameters[index].ordinal = ordinal;
         }
     }
+    Ok(())
 }
 
 /// Strongly connected components of the unresolved parameter graph that contain a cycle.
 /// Each component retains one member separately from its remaining members.
 fn cyclic_parameter_components(
+    ctx: Option<&DecodeContext<'_>>,
     parameters: &[cadmpeg_ir::features::DesignParameter],
     unresolved: &HashSet<usize>,
-) -> Vec<(usize, Vec<usize>)> {
+) -> Result<Vec<(usize, Vec<usize>)>, CodecError> {
     enum Visit {
         Enter(usize),
         Leave(usize),
     }
 
-    let indices = unresolved.iter().copied().collect::<Vec<_>>();
-    let local_by_id = indices
-        .iter()
-        .enumerate()
-        .map(|(local, index)| (&parameters[*index].id, local))
-        .collect::<HashMap<_, _>>();
-    let edges = indices
-        .iter()
-        .map(|index| {
-            parameters[*index]
-                .dependencies
-                .iter()
-                .filter_map(|dependency| local_by_id.get(dependency).copied())
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let mut incoming = (0..indices.len()).map(|_| Vec::new()).collect::<Vec<_>>();
+    let mut indices = Vec::new();
+    for index in unresolved {
+        push_feature_item(ctx, &mut indices, *index, "f3d parameter cycle indices")?;
+    }
+    let mut local_by_id = HashMap::new();
+    for (local, index) in indices.iter().enumerate() {
+        // discarded-value: distinct parameter IDs retain one local index.
+        let _ = insert_feature_map(ctx, &mut local_by_id, &parameters[*index].id, local,
+            "f3d parameter cycle local index")?;
+    }
+    let mut edges = Vec::new();
+    for index in &indices {
+        let mut dependencies = Vec::new();
+        for dependency in &parameters[*index].dependencies {
+            if let Some(local) = local_by_id.get(dependency) {
+                push_feature_item(ctx, &mut dependencies, *local,
+                    "f3d parameter cycle dependency edge")?;
+            }
+        }
+        push_feature_item(ctx, &mut edges, dependencies,
+            "f3d parameter cycle edge list")?;
+    }
+    let mut incoming = Vec::new();
+    for _ in &indices {
+        push_feature_item(ctx, &mut incoming, Vec::new(),
+            "f3d parameter cycle incoming list")?;
+    }
     for (source, dependencies) in edges.iter().enumerate() {
         for &target in dependencies {
-            incoming[target].push(source);
+            push_feature_item(ctx, &mut incoming[target], source,
+                "f3d parameter cycle incoming edge")?;
         }
     }
 
@@ -5796,17 +5810,28 @@ fn cyclic_parameter_components(
         if visited.contains(&root) {
             continue;
         }
-        let mut pending = vec![Visit::Enter(root)];
+        let mut pending = Vec::new();
+        push_feature_item(ctx, &mut pending, Visit::Enter(root),
+            "f3d parameter cycle pending visit")?;
         while let Some(visit) = pending.pop() {
+            if let Some(ctx) = ctx {
+                ctx.charge_work(1, "f3d parameter cycle visit")?;
+            }
             match visit {
                 Visit::Enter(node) => {
-                    if !visited.insert(node) {
+                    if !insert_feature_set(ctx, &mut visited, node,
+                        "f3d parameter cycle visited node")? {
                         continue;
                     }
-                    pending.push(Visit::Leave(node));
-                    pending.extend(edges[node].iter().copied().map(Visit::Enter));
+                    push_feature_item(ctx, &mut pending, Visit::Leave(node),
+                        "f3d parameter cycle pending visit")?;
+                    for dependency in &edges[node] {
+                        push_feature_item(ctx, &mut pending, Visit::Enter(*dependency),
+                            "f3d parameter cycle pending visit")?;
+                    }
                 }
-                Visit::Leave(node) => finished.push(node),
+                Visit::Leave(node) => push_feature_item(ctx, &mut finished, node,
+                    "f3d parameter cycle finish order")?,
             }
         }
     }
@@ -5814,24 +5839,34 @@ fn cyclic_parameter_components(
     let mut assigned = HashSet::new();
     let mut cycles = Vec::new();
     for root in finished.into_iter().rev() {
-        if !assigned.insert(root) {
+        if !insert_feature_set(ctx, &mut assigned, root,
+            "f3d parameter cycle assigned node")? {
             continue;
         }
         let mut remaining_members = Vec::new();
-        let mut pending = vec![root];
+        let mut pending = Vec::new();
+        push_feature_item(ctx, &mut pending, root,
+            "f3d parameter cycle reverse pending")?;
         while let Some(node) = pending.pop() {
+            if let Some(ctx) = ctx {
+                ctx.charge_work(1, "f3d parameter cycle reverse visit")?;
+            }
             for &source in &incoming[node] {
-                if assigned.insert(source) {
-                    remaining_members.push(indices[source]);
-                    pending.push(source);
+                if insert_feature_set(ctx, &mut assigned, source,
+                    "f3d parameter cycle assigned node")? {
+                    push_feature_item(ctx, &mut remaining_members, indices[source],
+                        "f3d parameter cycle component member")?;
+                    push_feature_item(ctx, &mut pending, source,
+                        "f3d parameter cycle reverse pending")?;
                 }
             }
         }
         if !remaining_members.is_empty() || edges[root].contains(&root) {
-            cycles.push((indices[root], remaining_members));
+            push_feature_item(ctx, &mut cycles, (indices[root], remaining_members),
+                "f3d parameter cycle component")?;
         }
     }
-    cycles
+    Ok(cycles)
 }
 
 fn design_positive_length(

@@ -7,6 +7,7 @@ use crate::loss::F3dLossCode;
 use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::F3dCodec;
+use crate::design::feature_project::cyclic_parameter_components;
 
 fn decode_parameters(records: &[(u32, &str, &str)]) -> DecodeResult {
     let mut bulk = Vec::new();
@@ -70,6 +71,96 @@ fn dependencies(decoded: &DecodeResult) -> std::collections::BTreeMap<&str, Vec<
             )
         })
         .collect()
+}
+
+fn two_parameter_cycle() -> Vec<cadmpeg_ir::features::DesignParameter> {
+    let decoded = decode_parameters(&[(0, "A", "B"), (1, "B", "A")]);
+    let mut parameters = decoded.ir().model.parameters.clone();
+    let first = parameters[0].id.clone();
+    let second = parameters[1].id.clone();
+    parameters[0].dependencies.clear();
+    parameters[0].dependencies.insert(second);
+    parameters[1].dependencies.clear();
+    parameters[1].dependencies.insert(first);
+    parameters
+}
+
+fn assert_cycle_collection_refusal(limit: u64, operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let parameters = two_parameter_cycle();
+    let unresolved = std::collections::HashSet::from([0, 1]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(cyclic_parameter_components(Some(&ctx), &parameters, &unresolved),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == operation
+                && failure.dimension == ResourceDimension::CollectionItems));
+}
+
+macro_rules! cycle_collection_limit_test {
+    ($name:ident, $limit:literal, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert_cycle_collection_refusal($limit, $operation);
+        }
+    };
+}
+
+cycle_collection_limit_test!(cycle_indices_refuse_collection_limit, 0,
+    "f3d parameter cycle indices");
+cycle_collection_limit_test!(cycle_local_index_refuses_collection_limit, 2,
+    "f3d parameter cycle local index");
+cycle_collection_limit_test!(cycle_dependency_edge_refuses_collection_limit, 4,
+    "f3d parameter cycle dependency edge");
+cycle_collection_limit_test!(cycle_edge_list_refuses_collection_limit, 5,
+    "f3d parameter cycle edge list");
+cycle_collection_limit_test!(cycle_incoming_list_refuses_collection_limit, 8,
+    "f3d parameter cycle incoming list");
+cycle_collection_limit_test!(cycle_incoming_edge_refuses_collection_limit, 10,
+    "f3d parameter cycle incoming edge");
+cycle_collection_limit_test!(cycle_pending_visit_refuses_collection_limit, 12,
+    "f3d parameter cycle pending visit");
+cycle_collection_limit_test!(cycle_visited_node_refuses_collection_limit, 13,
+    "f3d parameter cycle visited node");
+cycle_collection_limit_test!(cycle_finish_order_refuses_collection_limit, 19,
+    "f3d parameter cycle finish order");
+cycle_collection_limit_test!(cycle_assigned_node_refuses_collection_limit, 21,
+    "f3d parameter cycle assigned node");
+cycle_collection_limit_test!(cycle_reverse_pending_refuses_collection_limit, 22,
+    "f3d parameter cycle reverse pending");
+cycle_collection_limit_test!(cycle_component_member_refuses_collection_limit, 24,
+    "f3d parameter cycle component member");
+cycle_collection_limit_test!(cycle_component_refuses_collection_limit, 26,
+    "f3d parameter cycle component");
+
+fn assert_cycle_work_refusal(limit: u64, operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let parameters = two_parameter_cycle();
+    let unresolved = std::collections::HashSet::from([0, 1]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(cyclic_parameter_components(Some(&ctx), &parameters, &unresolved),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == operation
+                && failure.dimension == ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn cycle_visit_refuses_work_limit() {
+    assert_cycle_work_refusal(0, "f3d parameter cycle visit");
+}
+
+#[test]
+fn cycle_reverse_visit_refuses_work_limit() {
+    assert_cycle_work_refusal(5, "f3d parameter cycle reverse visit");
 }
 
 #[test]
