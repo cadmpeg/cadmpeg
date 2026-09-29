@@ -2265,13 +2265,15 @@ pub(crate) fn resolved_edge_candidate_intersection<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<i64> {
-    let ordered_edge_sets = shared_edge_sets.into_iter().collect::<Vec<_>>();
-    let shared_edge_sets = ordered_edge_sets
-        .iter()
-        .copied()
+    let mut ordered = shared_edge_sets.into_iter();
+    let first = ordered.next();
+    let has_reference_sets = first.is_some();
+    let shared_edge_sets = first
+        .into_iter()
+        .chain(ordered)
         .filter(|edges| !edges.is_empty())
         .collect::<Vec<_>>();
-    let references_unavailable = !ordered_edge_sets.is_empty() && shared_edge_sets.is_empty();
+    let references_unavailable = has_reference_sets && shared_edge_sets.is_empty();
     let reference_candidates =
         (shared_edge_sets.len() >= 2).then(|| unique_edge_set_intersection(&shared_edge_sets));
     if reference_candidates == Some(EdgeSetIntersection::Disjoint) {
