@@ -52,6 +52,10 @@ fn component_vector_selector_accepts_lane_subtypes() {
 
 #[test]
 fn compact_body_states_require_a_duplicated_local_identity() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let token = 0x89a4u16;
     let mut payload = vec![0; 180];
     let header = &mut payload[12..95];
@@ -61,14 +65,18 @@ fn compact_body_states_require_a_duplicated_local_identity() {
     header[15..19].copy_from_slice(&205u32.to_le_bytes());
     header[47..63].fill(0xff);
 
-    assert_eq!(compact_body_state_ids(&payload, 0, 180, token), [205]);
+    assert_eq!(compact_body_state_ids(&ctx, &payload, 0, 180, token).unwrap(), [205]);
 
     payload[12 + 15..12 + 19].copy_from_slice(&206u32.to_le_bytes());
-    assert!(compact_body_state_ids(&payload, 0, 180, token).is_empty());
+    assert!(compact_body_state_ids(&ctx, &payload, 0, 180, token).unwrap().is_empty());
 }
 
 #[test]
 fn compact_body_retention_mode_follows_the_state_roster() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     use cadmpeg_ir::features::BodyRetentionMode::{DeleteSelected, KeepSelected};
 
     let token = 0x89a4u16;
@@ -82,17 +90,17 @@ fn compact_body_retention_mode_follows_the_state_roster() {
     payload[95..97].copy_from_slice(&[0x30, 0x80]);
 
     assert_eq!(
-        compact_body_retention_mode(&payload, 0, payload.len(), token),
+        compact_body_retention_mode(&ctx, &payload, 0, payload.len(), token).unwrap(),
         Some(KeepSelected)
     );
     payload[97..101].copy_from_slice(&1u32.to_le_bytes());
     assert_eq!(
-        compact_body_retention_mode(&payload, 0, payload.len(), token),
+        compact_body_retention_mode(&ctx, &payload, 0, payload.len(), token).unwrap(),
         Some(DeleteSelected)
     );
     payload[101] = 1;
     assert_eq!(
-        compact_body_retention_mode(&payload, 0, payload.len(), token),
+        compact_body_retention_mode(&ctx, &payload, 0, payload.len(), token).unwrap(),
         None
     );
 }
@@ -226,6 +234,10 @@ fn coordinate_namespace_disambiguates_reused_local_id() {
 
 #[test]
 fn compact_body_selection_requires_the_complete_trailer() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let mut payload = vec![0xaa; 9];
     payload.extend(11000u32.to_le_bytes());
     payload.extend([0; 8]);
@@ -236,10 +248,10 @@ fn compact_body_selection_requires_the_complete_trailer() {
     payload.extend([0; 12]);
     payload.extend([0x6a, 0xcb]);
     assert_eq!(
-        compact_body_selection_vector(&payload, 100, Some(0xcb6a)),
+        compact_body_selection_vector(&ctx, &payload, 100, Some(0xcb6a)).unwrap(),
         Some((109, vec![287, 115]))
     );
-    assert_eq!(compact_body_selection_at(&payload, 9), Some(vec![287, 115]));
+    assert_eq!(compact_body_selection_at(&ctx, &payload, 9).unwrap(), Some(vec![287, 115]));
     let mut embedded_false_header = vec![0xaa; 9];
     embedded_false_header.extend(11000u32.to_le_bytes());
     embedded_false_header.extend([0; 8]);
@@ -250,13 +262,13 @@ fn compact_body_selection_requires_the_complete_trailer() {
     embedded_false_header.extend(u32::MAX.to_le_bytes());
     embedded_false_header.extend([0; 12]);
     assert_eq!(
-        compact_body_selection_vector(&embedded_false_header, 100, None),
+        compact_body_selection_vector(&ctx, &embedded_false_header, 100, None).unwrap(),
         Some((109, vec![287, 11000, 0, 0, u32::MAX]))
     );
     let zero_trailer = payload.len() - 3;
     payload[zero_trailer] = 1;
     assert_eq!(
-        compact_body_selection_vector(&payload, 100, Some(0xcb6a)),
+        compact_body_selection_vector(&ctx, &payload, 100, Some(0xcb6a)).unwrap(),
         None
     );
 }

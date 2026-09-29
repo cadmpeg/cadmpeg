@@ -23,25 +23,30 @@ pub(super) struct MoveBodyTranslationRecord {
 }
 
 pub(super) fn move_body_translation_record(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     object_start: usize,
     object_end: usize,
     data_class_offset: u64,
-) -> Option<MoveBodyTranslationRecord> {
+) -> Result<Option<MoveBodyTranslationRecord>, CodecError> {
     const TRAILER_OFFSET: usize = 200;
     const NON_COPY_TRAILER: [u8; 8] = [1, 0, 0, 0, 0, 0, 1, 0];
-    let data_class_offset = usize::try_from(data_class_offset).ok()?;
-    let end = super::DeclaredEnd::of(object_end, payload.len())?.get();
+    const OPERATION: &str = "decode SLDPRT move-body translation record";
+    let (Ok(data_class_offset), Some(end)) = (usize::try_from(data_class_offset), super::DeclaredEnd::of(object_end, payload.len()))
+        else { return Ok(None); };
+    let end = end.get();
     if data_class_offset < object_start || data_class_offset >= end {
-        return None;
+        return Ok(None);
     }
     let scalar = |offset: usize| {
         let value = View::f64_le_at(payload, offset)?;
         FiniteReal::new(value)
     };
     let mut candidate = None;
-    for selection_offset in data_class_offset..end.saturating_sub(TRAILER_OFFSET + 20) {
-        let Some(count) = View::u32_le_at(payload, selection_offset).map(|value| value as usize)
+    let Some(scan_end) = end.checked_sub(TRAILER_OFFSET + 20) else { return Ok(None); };
+    for selection_offset in data_class_offset..scan_end {
+        ctx.charge_work(400, OPERATION)?;
+        let Some(count) = View::u32_le_at(payload, selection_offset).and_then(|value| usize::try_from(value).ok())
         else {
             continue;
         };
@@ -68,12 +73,14 @@ pub(super) fn move_body_translation_record(
         {
             continue;
         }
-        let Some(matrix) = (0..9)
-            .map(|index| scalar(matrix_offset + index * 8))
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
+        let matrix = (|| {
+            let mut values = [FiniteReal::ZERO; 9];
+            for (index, value) in values.iter_mut().enumerate() {
+                *value = scalar(matrix_offset + index * 8)?;
+            }
+            Some(values)
+        })();
+        let Some(matrix) = matrix else { continue; };
         if matrix
             .iter()
             .zip([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
@@ -108,16 +115,13 @@ pub(super) fn move_body_translation_record(
         let Some(ids) = payload.get(ids_start..ids_end) else {
             continue;
         };
-        let mut view = View::over_retained(ids);
-        let mut local_body_ids = Vec::new();
-        while let Some(id) = view.u32_le() {
-            local_body_ids.push(id);
-        }
+        let local_body_ids = super::selections::read_compact_body_ids(ctx, ids, OPERATION)?;
+        ctx.charge_work(u64_from_index(local_body_ids.len()), OPERATION)?;
         if local_body_ids.contains(&0) {
             continue;
         }
         if candidate.is_some() {
-            return None;
+            return Ok(None);
         }
         candidate = Some(MoveBodyTranslationRecord {
             selection_offset,
@@ -125,13 +129,15 @@ pub(super) fn move_body_translation_record(
             translation_m,
         });
     }
-    candidate
+    Ok(candidate)
 }
 
-pub(super) fn move_body_selection_at(payload: &[u8], offset: usize) -> Option<Vec<u32>> {
-    move_body_translation_record(payload, offset, payload.len(), offset as u64)
+pub(super) fn move_body_selection_at(
+    ctx: &DecodeContext<'_>, payload: &[u8], offset: usize,
+) -> Result<Option<Vec<u32>>, CodecError> {
+    Ok(move_body_translation_record(ctx, payload, offset, payload.len(), u64_from_index(offset))?
         .filter(|record| record.selection_offset == offset)
-        .map(|record| record.local_body_ids)
+        .map(|record| record.local_body_ids))
 }
 
 /// Charge each Move Face candidate and its per-feature slot before insertion.
@@ -331,7 +337,7 @@ pub(crate) fn enrich_history_move_body_translations(
                 });
             let candidate = match (data_classes.next(), data_classes.next()) {
                 (Some(class), None) => {
-                    move_body_translation_record(&lane.native_payload, start, end, class.offset)
+                    move_body_translation_record(ctx, &lane.native_payload, start, end, class.offset)?
                         .map(|record| record.translation_m)
                 }
                 _ => None,
@@ -702,8 +708,12 @@ mod tests {
         payload[matrix_offset + 200..matrix_offset + 208]
             .copy_from_slice(&[1, 0, 0, 0, 0, 0, 1, 0]);
 
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).unwrap();
         assert_eq!(
-            move_body_translation_record(&payload, 0, payload.len(), 0),
+            move_body_translation_record(&ctx, &payload, 0, payload.len(), 0).unwrap(),
             Some(MoveBodyTranslationRecord {
                 selection_offset,
                 local_body_ids: vec![17, 23],
@@ -717,12 +727,12 @@ mod tests {
         let mut rotated = payload.clone();
         rotated[matrix_offset..matrix_offset + 8].copy_from_slice(&0.0f64.to_le_bytes());
         assert_eq!(
-            move_body_translation_record(&rotated, 0, rotated.len(), 0),
+            move_body_translation_record(&ctx, &rotated, 0, rotated.len(), 0).unwrap(),
             None
         );
         payload[matrix_offset + 200] = 0;
         assert_eq!(
-            move_body_translation_record(&payload, 0, payload.len(), 0),
+            move_body_translation_record(&ctx, &payload, 0, payload.len(), 0).unwrap(),
             None
         );
     }
