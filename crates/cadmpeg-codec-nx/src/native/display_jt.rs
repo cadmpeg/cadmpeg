@@ -63,17 +63,7 @@ fn admit_display_jt_record<T>(
     text_bytes: u64,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.charge_entities(1, operation)?;
-    ctx.charge_collection_items(1, operation)?;
-    let slot_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>());
-    let bytes = slot_bytes
-        .checked_add(text_bytes)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, text_bytes))?;
-    ctx.charge_retained(bytes, operation)?;
-    records
-        .try_reserve_exact(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(())
+    ctx.reserve_record_vec(records, 1, text_bytes, operation)
 }
 
 fn admit_jt_record_slot<T>(
@@ -99,17 +89,7 @@ fn reserve_jt_scratch_vec<'a, T>(
     count: usize,
     operation: &'static str,
 ) -> Result<ScopedReservation<'a>, CodecError> {
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-    ctx.charge_collection_items(count_u64, operation)?;
-    let bytes = count
-        .checked_mul(std::mem::size_of::<T>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-    let reservation = ctx.reserve_scoped(bytes, operation)?;
-    values
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-    Ok(reservation)
+    ctx.reserve_temporary_vec(values, count, operation)
 }
 
 fn reserve_jt_retained_vec<T>(

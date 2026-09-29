@@ -1244,11 +1244,7 @@ fn reserve_cache_slot<T>(
     values: &mut Vec<T>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
+    ctx.reserve_retained_vec(values, 1, operation)
 }
 
 fn decimal_len(mut value: usize) -> usize {

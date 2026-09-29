@@ -99,20 +99,7 @@ pub(crate) struct DecodedVertexArray<T> {
 }
 
 fn try_vec<T>(ctx: &DecodeContext<'_>, capacity: usize) -> Result<Vec<T>, CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(capacity);
-    ctx.charge_collection_items(count, "nx JT decoded vector")?;
-    let bytes = capacity
-        .checked_mul(std::mem::size_of::<T>())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx JT decoded vector", 0, count))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "nx JT decoded vector",
-    )?;
-    let mut values = Vec::new();
-    values
-        .try_reserve_exact(capacity)
-        .map_err(|_| ctx.refuse_codec_limit("nx JT decoded vector", 0, count))?;
-    Ok(values)
+    ctx.retained_vec(capacity, "nx JT decoded vector")
 }
 
 fn try_scoped_vec<'a, T>(

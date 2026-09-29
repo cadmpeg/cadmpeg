@@ -378,14 +378,7 @@ fn reserve_registry_item<T>(
     reservation: &mut ScopedReservation<'_>,
     items: &mut Vec<T>,
 ) -> Result<(), CodecError> {
-    let operation = "nx complete type registry";
-    ctx.charge_collection_items(1, operation)?;
-    reservation.grow(cadmpeg_core::decode::u64_from_index(
-        std::mem::size_of::<T>(),
-    ))?;
-    items
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
+    ctx.reserve_scoped_vec(reservation, items, 1, "nx complete type registry")
 }
 
 fn reserve_retained_registry_item<T>(
