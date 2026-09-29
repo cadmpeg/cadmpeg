@@ -1282,14 +1282,14 @@ pub(crate) fn decode_plane_support_local_system(
     // the stored body.  Lane arbitration applies only to the raw generic
     // support-frame form; the compact forms remain governed by their primary
     // grammar above.
-    let variants = if matches!(body.first(), Some(0x0e | 0x0f | 0x10 | 0x18)) {
-        Vec::new()
-    } else {
-        decode_plane_support_lane_variants(body, cache)
-    };
-    match variants.as_slice() {
-        [variant] => Some(*variant),
-        [] => {
+    if matches!(body.first(), Some(0x0e | 0x0f | 0x10 | 0x18)) {
+        (cursor == body.len()).then_some(())?;
+        return Some((finite_local_system_slots(values)?, layout));
+    }
+    let mut variants = decode_plane_support_lane_variants(body, cache);
+    match (variants.next(), variants.next()) {
+        (Some(variant), None) => Some(variant),
+        (None, None) => {
             (cursor == body.len()).then_some(())?;
             Some((finite_local_system_slots(values)?, layout))
         }
@@ -1359,66 +1359,65 @@ fn plane_support_coordinate_variants(
 fn decode_plane_support_lane_variants(
     body: &[u8],
     cache: &ScalarCache,
-) -> Vec<(FiniteVector<12>, PlaneSupportFrameLayout)> {
+) -> impl Iterator<Item = (FiniteVector<12>, PlaneSupportFrameLayout)> {
     fn walk(
         body: &[u8],
         cache: &ScalarCache,
-        values: &mut Vec<f64>,
+        values: &mut [f64; 12],
+        slot: usize,
         cursor: usize,
         saw_zero_slot_prefix: bool,
-        results: &mut Vec<(FiniteVector<12>, PlaneSupportFrameLayout)>,
+        results: &mut [Option<(FiniteVector<12>, PlaneSupportFrameLayout)>; MAX_PLANE_SUPPORT_LANE_VARIANTS],
+        count: &mut usize,
     ) {
-        if results.len() >= MAX_PLANE_SUPPORT_LANE_VARIANTS {
+        if *count >= results.len() {
             return;
         }
-        if values.len() == 12 {
+        if slot == values.len() {
             if cursor != body.len() {
                 return;
             }
-            let Ok(values) = <[f64; 12]>::try_from(values.as_slice()) else {
+            let Some(frame) = finite_local_system_slots(*values) else {
                 return;
             };
-            let Some(frame) = finite_local_system_slots(values) else {
-                return;
-            };
-            let layout = plane_support_layout(&values, saw_zero_slot_prefix);
+            let layout = plane_support_layout(values, saw_zero_slot_prefix);
             if matches!(layout, PlaneSupportFrameLayout::DirectNormalTriples)
-                && plane_support_values_have_valid_frame(&values, layout)
-                && !results.iter().any(|(known, known_layout)| {
+                && plane_support_values_have_valid_frame(values, layout)
+                && !results[..*count].iter().flatten().any(|(known, known_layout)| {
                     *known_layout == layout
                         && known
                             .as_raw()
                             .iter()
-                            .zip(values)
+                            .zip(*values)
                             .all(|(known, value)| known.to_bits() == value.to_bits())
                 })
             {
-                results.push((frame, layout));
+                results[*count] = Some((frame, layout));
+                *count += 1;
             }
             return;
         }
 
-        let slot = values.len();
         if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) && slot + 3 <= 12 {
-            values.extend([0.0, 1.0, 0.0]);
+            values[slot..slot + 3].copy_from_slice(&[0.0, 1.0, 0.0]);
             walk(
                 body,
                 cache,
                 values,
+                slot + 3,
                 cursor + 2,
                 saw_zero_slot_prefix,
                 results,
+                count,
             );
-            values.truncate(slot);
         }
         if body.get(cursor) == Some(&0x18)
             && body
                 .get(cursor + 1)
                 .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6))
         {
-            values.push(0.0);
-            walk(body, cache, values, cursor + 1, true, results);
-            values.pop();
+            values[slot] = 0.0;
+            walk(body, cache, values, slot + 1, cursor + 1, true, results, count);
         }
         if body.get(cursor) == Some(&0x18)
             && slot < 11
@@ -1426,26 +1425,25 @@ fn decode_plane_support_lane_variants(
                 .iter()
                 .any(Option::is_some)
         {
-            values.push(0.0);
-            walk(body, cache, values, cursor + 1, true, results);
-            values.pop();
+            values[slot] = 0.0;
+            walk(body, cache, values, slot + 1, cursor + 1, true, results, count);
         }
         if body.get(cursor) == Some(&0x10) {
-            values.push(0.0);
+            values[slot] = 0.0;
             walk(
                 body,
                 cache,
                 values,
+                slot + 1,
                 cursor + 1,
                 saw_zero_slot_prefix,
                 results,
+                count,
             );
-            values.pop();
         }
         if body.get(cursor) == Some(&0x18) && cursor + 1 == body.len() {
-            values.push(0.0);
-            walk(body, cache, values, cursor + 1, true, results);
-            values.pop();
+            values[slot] = 0.0;
+            walk(body, cache, values, slot + 1, cursor + 1, true, results, count);
         }
 
         let candidates = if slot < 9 {
@@ -1462,16 +1460,16 @@ fn decode_plane_support_lane_variants(
                 .or_else(|| decode_tabulated_cylinder_second_coordinate(body, cursor, cache)), None]
         };
         for (value, next) in candidates.into_iter().flatten() {
-            values.push(value);
-            walk(body, cache, values, next, saw_zero_slot_prefix, results);
-            values.pop();
+            values[slot] = value;
+            walk(body, cache, values, slot + 1, next, saw_zero_slot_prefix, results, count);
         }
     }
 
-    let mut values = Vec::with_capacity(12);
-    let mut results = Vec::new();
-    walk(body, cache, &mut values, 0, false, &mut results);
-    results
+    let mut values = [0.0; 12];
+    let mut results = [None; MAX_PLANE_SUPPORT_LANE_VARIANTS];
+    let mut count = 0;
+    walk(body, cache, &mut values, 0, 0, false, &mut results, &mut count);
+    results.into_iter().flatten()
 }
 
 /// Decode a positional plane support frame whose origin uses the named
@@ -2987,7 +2985,7 @@ mod tests {
         body.extend_from_slice(&positive_subunit_coordinate(first));
         body.extend_from_slice(&[0x18, 0x18, 0x18]);
 
-        assert_eq!(decode_plane_support_lane_variants(&body, &cache).len(), 1);
+        assert_eq!(decode_plane_support_lane_variants(&body, &cache).count(), 1);
         assert!(decode_plane_support_local_system(&body, &cache).is_none());
     }
 
