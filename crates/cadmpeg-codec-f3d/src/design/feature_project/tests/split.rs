@@ -657,3 +657,34 @@ fn split_face_path_group_id_refuses_retained_limit() {
         "f3d SplitFace path group id", None, Some(u64::try_from(total).unwrap()),
     );
 }
+
+#[test]
+fn draft_historical_face_group_id_refuses_retained_limit() {
+    use crate::records::topology::fillet::HistoricalBinding;
+    use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
+    use crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (scope, group, mut selection) = historical_split_face_path_fixture();
+    selection.historical_face_candidates = vec![DesignEntitySelectionFaceCandidate {
+        history_id: "history".into(),
+        historical: HistoricalBinding {
+            kind: AsmHistoricalEntityKind::Coedge,
+            entity_ref: 225,
+            state_ids: vec![7],
+        },
+        face_slot: 158,
+    }];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = u64::try_from(group.id.len() - 1).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::super::selected_historical_face_selection(
+        Some(&ctx), &scope, &group, std::slice::from_ref(&selection), &[],
+    );
+    assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+        if failure.operation == "f3d Draft historical face group id"
+            && failure.dimension == ResourceDimension::RetainedBytes),
+        "expected Draft historical face group ID refusal, got {result:?}");
+}
