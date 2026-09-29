@@ -479,11 +479,16 @@ pub(crate) fn bind_configuration_parameter_overrides(
 /// Replace name-keyed suppression properties with stable feature references
 /// when exactly one neutral feature has the named source identity.
 pub(crate) fn bind_configuration_suppressed_features(
+    ctx: Option<&DecodeContext<'_>>,
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     features: &[cadmpeg_ir::features::Feature],
-) {
+) -> Result<(), CodecError> {
     for configuration in configurations {
+        let mut refusal = None;
         configuration.properties.retain(|key, _| {
+            if refusal.is_some() {
+                return true;
+            }
             let Some(name) = key.as_str().strip_prefix("suppressed:") else {
                 return true;
             };
@@ -496,17 +501,47 @@ pub(crate) fn bind_configuration_suppressed_features(
             if matches.next().is_some() {
                 return true;
             }
-            configuration.feature_states.insert(
-                feature.id.clone(),
-                cadmpeg_ir::features::ConfigurationFeatureState {
+            let projected = (|| -> Result<_, CodecError> {
+                let id = copy_configuration_text(ctx, feature.id.as_str(),
+                    "f3d configuration suppressed feature id")?;
+                let id = cadmpeg_ir::features::FeatureId::try_from(id)
+                    .map_err(CodecError::malformed)?;
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "f3d configuration suppressed feature state")?;
+                }
+                let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
+                for dependency in &feature.dependencies {
+                    let copied = copy_configuration_text(ctx, dependency.as_str(),
+                        "f3d configuration suppressed dependency id")?;
+                    let copied = cadmpeg_ir::features::FeatureId::try_from(copied)
+                        .map_err(CodecError::malformed)?;
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "f3d configuration suppressed dependency")?;
+                        dependencies.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("f3d configuration suppressed dependency allocation", 0, 1)
+                        })?;
+                    }
+                    dependencies.insert(copied);
+                }
+                Ok((id, cadmpeg_ir::features::ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
-                    dependencies: feature.dependencies.clone(),
+                    dependencies,
                     definition: feature.evaluation.definition().clone(),
-                },
+                }))
+            })();
+            let (id, state) = match projected {
+                Ok(projected) => projected,
+                Err(error) => { refusal = Some(error); return true; }
+            };
+            configuration.feature_states.insert(
+                id,
+                state,
             );
             false
         });
+        if let Some(error) = refusal { return Err(error); }
     }
+    Ok(())
 }
 
 pub(crate) fn unresolved_configuration_parameter_override_count(
@@ -816,7 +851,7 @@ mod tests {
             native_ref: None,
         };
         let mut projected = project_configurations(None, &[table]).expect("ordered configuration table");
-        bind_configuration_suppressed_features(&mut projected, std::slice::from_ref(&feature));
+        bind_configuration_suppressed_features(None, &mut projected, std::slice::from_ref(&feature)).unwrap();
         assert_eq!(
             projected[0].suppressed_features().collect::<Vec<_>>(),
             [&feature.id]
@@ -844,12 +879,120 @@ mod tests {
         )
         .unwrap()])
         .expect("ordered configuration table");
-        bind_configuration_suppressed_features(&mut ambiguous, &[feature, duplicate]);
+        bind_configuration_suppressed_features(None, &mut ambiguous, &[feature, duplicate]).unwrap();
         assert!(ambiguous[0].suppressed_features().next().is_none());
         assert_eq!(
             unresolved_configuration_suppressed_feature_count(&ambiguous),
             1
         );
+    }
+
+    fn suppression_limit_fixture() -> (Vec<cadmpeg_ir::features::DesignConfiguration>, Feature) {
+        let table = DesignConfiguration::try_new(
+            "table.dsgcfg".into(),
+            DesignConfigurationKind::Table,
+            vec!["alternate".into()],
+            serde_json::json!({"configurations": {"alternate": {"suppressed": ["Fillet 1"]}}})
+                .as_object().unwrap().clone(),
+        ).unwrap();
+        let feature = Feature {
+            id: FeatureId::mint("f3d:model:feature#fillet-1").unwrap(),
+            ordinal: 0,
+            name: Some("Fillet 1".into()),
+            suppressed: Some(false),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: "Fillet".into(),
+                    parameters: BTreeMap::new(),
+                }),
+            ),
+            native_ref: None,
+        };
+        (project_configurations(None, &[table]).unwrap(), feature)
+    }
+
+    #[test]
+    fn configuration_suppressed_feature_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (mut configurations, feature) = suppression_limit_fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            bind_configuration_suppressed_features(Some(&ctx), &mut configurations, &[feature]),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d configuration suppressed feature id"
+        ));
+        assert!(configurations[0].feature_states.is_empty());
+    }
+
+    #[test]
+    fn configuration_suppressed_feature_state_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (mut configurations, feature) = suppression_limit_fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            bind_configuration_suppressed_features(Some(&ctx), &mut configurations, &[feature]),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == "f3d configuration suppressed feature state"
+        ));
+        assert!(configurations[0].feature_states.is_empty());
+    }
+
+    #[test]
+    fn configuration_suppressed_dependency_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (mut configurations, mut feature) = suppression_limit_fixture();
+        feature.dependencies.insert(FeatureId::mint("f3d:model:feature#seed").unwrap());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            bind_configuration_suppressed_features(Some(&ctx), &mut configurations, &[feature]),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == "f3d configuration suppressed dependency"
+        ));
+        assert!(configurations[0].feature_states.is_empty());
+    }
+
+    #[test]
+    fn configuration_suppressed_dependency_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (mut configurations, mut feature) = suppression_limit_fixture();
+        let feature_id_bytes = feature.id.as_str().len();
+        feature.dependencies.insert(FeatureId::mint("f3d:model:feature#seed").unwrap());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(feature_id_bytes).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            bind_configuration_suppressed_features(Some(&ctx), &mut configurations, &[feature]),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d configuration suppressed dependency id"
+        ));
+        assert!(configurations[0].feature_states.is_empty());
     }
 
     #[test]
