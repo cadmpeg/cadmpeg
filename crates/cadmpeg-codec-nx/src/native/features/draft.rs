@@ -1025,12 +1025,23 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
+            let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
+            let operation_label = copy_operation_text(ctx, &payload.operation_label, "NX draft string operation")?;
+            let graph_payload = copy_operation_text(ctx, &payload.id, "NX draft string graph")?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX draft string ordinal", 0, 1))?;
+            let value = PrintableString::new(copy_operation_text(ctx, value.value.as_str(), "NX draft construction string")?)
+                .map_err(|reason| CodecError::Malformed(reason.into()))?;
+            ctx.charge_collection_items(1, "NX draft construction graph strings")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureDraftConstructionGraphString>()), "NX draft construction graph string")?;
+            strings.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX draft construction graph strings", 0, 1))?;
             strings.push(FeatureDraftConstructionGraphString {
-                id: format!("{}-string-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
-                graph_payload: payload.id.clone(),
-                ordinal: ordinal as u32,
-                value: value.value.into_owned(),
+                id,
+                operation_label,
+                graph_payload,
+                ordinal,
+                value,
                 payload_offset,
                 source_offset,
             });
