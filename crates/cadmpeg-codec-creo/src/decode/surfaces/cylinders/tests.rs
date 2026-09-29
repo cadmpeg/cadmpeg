@@ -351,6 +351,126 @@ fn split_outline_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
+fn split_outline_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::CodecError {
+    let scan = split_outline_scan();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    super::transfer_split_outline_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("split outline collection exceeds limit")
+}
+
+#[test]
+fn split_outline_surface_row_count_nodes_refuse_collection_limit() {
+    let error = split_outline_refusal_at_collection_limit(0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row count nodes"));
+}
+
+#[test]
+fn split_outline_surface_row_projection_refuses_collection_limit() {
+    let error = split_outline_refusal_at_collection_limit(3);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row projection"));
+}
+
+#[test]
+fn split_outline_row_nodes_refuse_collection_limit() {
+    let error = split_outline_refusal_at_collection_limit(6);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo split cylinder row nodes"));
+}
+
+#[test]
+fn split_outline_topology_row_count_nodes_refuse_collection_limit() {
+    let error = split_outline_refusal_at_collection_limit(9);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row count nodes"));
+}
+
+#[test]
+fn split_outline_topology_row_projection_refuses_collection_limit() {
+    let error = split_outline_refusal_at_collection_limit(11);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row projection"));
+}
+
+#[test]
+fn split_outline_plane_nodes_refuse_collection_limit() {
+    let error = split_outline_refusal_at_collection_limit(13);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo split cylinder plane nodes"));
+}
+
+#[test]
+fn split_outline_cylinder_id_nodes_refuse_collection_limit() {
+    let error = split_outline_refusal_at_collection_limit(14);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo split cylinder ID nodes"));
+}
+
+#[test]
+fn split_outline_identity_refuses_retained_limit() {
+    let scan = split_outline_scan();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::transfer_split_outline_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("split outline ID exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && resource.operation == "creo split cylinder identities"));
+}
+
+#[test]
+fn split_outline_source_object_id_refuses_retained_limit() {
+    let scan = split_outline_scan();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(
+        cadmpeg_ir::ids::SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 2)
+            .as_str()
+            .len(),
+    )
+    .expect("ID length fits");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::transfer_split_outline_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("split outline source ID exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && resource.operation == "creo split cylinder source object IDs"));
+}
+
 #[test]
 fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_absent() {
     let scan = slot_fillet_scan();
