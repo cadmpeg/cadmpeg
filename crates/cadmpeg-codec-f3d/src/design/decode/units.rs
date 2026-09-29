@@ -172,7 +172,10 @@ fn decode_modeling_length_unit(
                             continue;
                         };
                         if property == MODELING_LENGTH_PROPERTY {
-                            return Ok(Some(value.to_owned()));
+                            return String::from_utf8(ctx.copy_retained(value.as_bytes(),
+                                "f3d document length unit")?)
+                                .map(Some)
+                                .map_err(|_| CodecError::malformed("validated length unit is not UTF-8"));
                         }
                     }
                 }
@@ -370,4 +373,28 @@ pub(crate) mod tests {
         let truncated = &full[..full.len() / 2];
         assert_eq!(decode_modeling_length_unit(truncated), None);
     }
+    fn unit_text_refusal(unit: &str) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let bytes = stream(["centimeter", "millimeter", "meter", "inch", "foot", unit]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(unit.len() - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        assert!(matches!(super::decode_modeling_length_unit(&ctx, &bytes),
+            Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes
+                && failure.operation == "f3d document length unit"
+                && failure.additional == u64::try_from(unit.len()).unwrap()));
+    }
+    #[test]
+    fn millimeter_unit_refuses_retained_limit() { unit_text_refusal("millimeter"); }
+    #[test]
+    fn centimeter_unit_refuses_retained_limit() { unit_text_refusal("centimeter"); }
+    #[test]
+    fn meter_unit_refuses_retained_limit() { unit_text_refusal("meter"); }
+    #[test]
+    fn inch_unit_refuses_retained_limit() { unit_text_refusal("inch"); }
+    #[test]
+    fn foot_unit_refuses_retained_limit() { unit_text_refusal("foot"); }
+
 }
