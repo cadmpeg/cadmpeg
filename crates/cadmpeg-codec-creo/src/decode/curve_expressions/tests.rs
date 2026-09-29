@@ -704,7 +704,7 @@ fn curve_expression_seen_dependencies_refuse_before_tree_insert() {
 
     let dimensions = std::collections::BTreeMap::new();
     let mut limited = DecodePolicy::service();
-    limited.limits.max_collection_items = 24;
+    limited.limits.max_collection_items = 28;
     let error = transfer_with_limits(&["a=1", "b=a+1"], &dimensions, limited)
         .expect_err("the dependency index needs one tree item");
     assert!(
@@ -720,7 +720,7 @@ fn curve_expression_parameter_dependencies_refuse_before_vector_growth() {
 
     let dimensions = std::collections::BTreeMap::new();
     let mut limited = DecodePolicy::service();
-    limited.limits.max_collection_items = 25;
+    limited.limits.max_collection_items = 29;
     let error = transfer_with_limits(&["a=1", "b=a+1"], &dimensions, limited)
         .expect_err("the dependency parameter needs one vector item");
     assert!(
@@ -805,7 +805,7 @@ fn curve_expression_dimension_parameter_id_refuses_before_copy() {
             .expect("valid dimension ID"),
     )]);
     let mut limited = DecodePolicy::service();
-    limited.limits.max_retained_bytes = 5;
+    limited.limits.max_retained_bytes = 114;
     let error = transfer_with_limits(&["a=x+1"], &dimensions, limited)
         .expect_err("the dimension ID needs retained bytes");
     assert!(
@@ -1201,7 +1201,7 @@ fn curve_expression_native_parameters_refuse_before_tree_creation() {
         1
     );
     let mut limited = cadmpeg_core::decode::DecodePolicy::service();
-    limited.limits.max_collection_items = 19;
+    limited.limits.max_collection_items = 18;
     let error = transfer_with_limits(&["a=1"], &dimensions, limited)
         .expect_err("the native parameter tree needs two more items");
     assert!(matches!(

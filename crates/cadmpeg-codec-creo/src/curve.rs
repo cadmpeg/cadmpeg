@@ -7600,6 +7600,19 @@ pub(crate) fn expression_helix(
     {
         return Ok(None);
     }
+    for output in ["r", "theta", "z"] {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(record.assignments.len()),
+            "creo helix output scan work",
+        )?;
+        if !record.assignments.iter().any(|assignment| {
+            assignment.parameter_target().is_some_and(|(name, _)| {
+                name.eq_ignore_ascii_case(output)
+            })
+        }) {
+            return Ok(None);
+        }
+    }
     let values = evaluate_affine_program(ctx, record)?;
     Ok((|| {
     let radius = values.get("r")?;

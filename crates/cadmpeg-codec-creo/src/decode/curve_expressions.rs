@@ -894,14 +894,6 @@ pub(super) fn transfer_curve_expression_features(
             )?;
             parameter_index += 1;
         }
-        annotate(ctx,
-            annotations,
-            feature_id.as_str(),
-            &source_section,
-            record.expression_offset as u64,
-            "curve_expression_feature",
-            Exactness::Derived,
-        )?;
         let helix = crate::curve::expression_helix(ctx, record)?;
         let placed_helix = helix
             .as_ref()
@@ -985,6 +977,14 @@ pub(super) fn transfer_curve_expression_features(
         } else {
             native_curve_expression_definition(ctx, record.entity_id, record.assignments.len())?
         };
+        annotate(ctx,
+            annotations,
+            feature_id.as_str(),
+            &source_section,
+            record.expression_offset as u64,
+            "curve_expression_feature",
+            Exactness::Derived,
+        )?;
         ctx.charge_entities(1, "admit Creo model features")?;
         let (name, source_tag) = curve_expression_feature_labels(ctx, record.entity_id)?;
         source_carriers.admit_feature(

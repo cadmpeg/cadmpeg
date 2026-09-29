@@ -740,7 +740,7 @@ fn curve_expression_line_text_refuses_before_copy() {
 #[test]
 fn curve_expression_records_refuse_before_vector_growth() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
+    policy.limits.max_collection_items = 3;
     let error = parse(ONE_COMMENT, policy).expect_err("the record follows its label and line");
     assert!(matches!(
         error,
@@ -1100,4 +1100,14 @@ fn solve_synchronization_refuses_each_retained_value() {
         assert_eq!(blocks[0].assignments[0], evaluated);
         assert_eq!(blocks[0].unknowns[0].solution.as_ref(), solutions.get(&0).and_then(|values| values.first()));
     }
+}
+
+#[test]
+fn expression_helix_required_outputs_refuse_scan_work() {
+    let record = super::super::expression_records(b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\xe0\x0aexpression\0\xf8\x01a=1\0").pop().expect("record");
+    assert!(crate::decode::with_test_decode_ctx(|ctx| super::super::expression_helix(ctx, &record)).expect("service").is_none());
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let error = with_expression_policy(policy, |ctx| super::super::expression_helix(ctx, &record)).expect_err("output scan needs work");
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "creo helix output scan work"));
 }
