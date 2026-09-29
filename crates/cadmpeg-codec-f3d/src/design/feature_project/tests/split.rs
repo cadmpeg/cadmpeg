@@ -546,3 +546,114 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
     );
     assert_eq!(native.as_str(), groups[0].id);
 }
+
+fn historical_split_face_path_fixture() -> (
+    DesignParameterScope,
+    DesignConstructionOperandGroup,
+    crate::records::topology::entity_selection::DesignEntitySelectionOperand,
+) {
+    let scope_record_index = 77;
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#77",
+        crate::records::feature::scope::DesignFeatureKind::SplitFace,
+        scope_record_index,
+    );
+    scope.class_tag = "277".to_owned().try_into().unwrap();
+    scope.paired_class_tag = "258".to_owned().try_into().unwrap();
+    scope.try_edit(|draft| {
+        draft.frame_length = 407;
+        draft.previous_history_state_id = Some(7);
+        draft.reference_members =
+            crate::records::identity::ReferenceRun::unlocated((100..112).collect());
+        draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+        draft.layout_fixture_references();
+        draft.layout_fixture_tail();
+    }).unwrap();
+    let group = group(scope_record_index, 0, 100, vec![101], DesignOperandRole::ROLE_0X21);
+    let selection =
+        crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
+            crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
+                id: "f3d:Design/BulkStream.dat:entity-selection#101".into(),
+                scope_record_index,
+                group_record_index: 100,
+                group_member_ordinal: 0,
+                record_index: 101,
+                byte_offset: 0,
+                class_tag: "277".to_owned().try_into().unwrap(),
+                asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned().try_into().unwrap(),
+                asset_id_offset: 0,
+                context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned().try_into().unwrap(),
+                context_id_offset: 0,
+                identity_record_index: 104,
+                identity_record_offset: 0,
+                primary_identity: 225,
+                primary_identity_offset: 21,
+                secondary: None,
+                historical_edge_candidates: Vec::new(),
+                historical_face_candidates: Vec::new(),
+                resolved_edge_slot: Some(42),
+                next_record_index: 103,
+                next_byte_offset: 29,
+            },
+        ).unwrap();
+    (scope, group, selection)
+}
+
+fn assert_historical_split_face_path_refusal(
+    operation: &'static str,
+    collection_limit: Option<u64>,
+    retained_limit: Option<u64>,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (scope, group, selection) = historical_split_face_path_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    if let Some(limit) = collection_limit { policy.limits.max_collection_items = limit; }
+    if let Some(limit) = retained_limit { policy.limits.max_retained_bytes = limit; }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::super::resolved_split_face_path(
+        Some(&ctx), &scope, &group, std::slice::from_ref(&selection), &[],
+    );
+    let dimension = if collection_limit.is_some() {
+        ResourceDimension::CollectionItems
+    } else {
+        ResourceDimension::RetainedBytes
+    };
+    assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+        if failure.operation == operation && failure.dimension == dimension),
+        "expected {operation} refusal, got {result:?}");
+}
+
+#[test]
+fn split_face_path_edge_slot_refuses_collection_limit() {
+    assert_historical_split_face_path_refusal("f3d SplitFace path edge slot", Some(0), None);
+}
+
+#[test]
+fn split_face_historical_edge_refuses_collection_limit() {
+    assert_historical_split_face_path_refusal("f3d SplitFace historical edge", Some(1), None);
+}
+
+#[test]
+fn split_face_historical_edge_id_refuses_retained_limit() {
+    let (scope, _, _) = historical_split_face_path_fixture();
+    let feature = crate::ids::neutral_feature_id(&scope);
+    let prefix = crate::ids::history_input_prefix(&feature.key(), 7);
+    let edge = crate::ids::history_input_edge_id(&prefix, 42);
+    assert_historical_split_face_path_refusal(
+        "f3d SplitFace historical edge id", None, Some(u64::try_from(edge.as_str().len() - 1).unwrap()),
+    );
+}
+
+#[test]
+fn split_face_path_group_id_refuses_retained_limit() {
+    let (scope, group, _) = historical_split_face_path_fixture();
+    let feature = crate::ids::neutral_feature_id(&scope);
+    let prefix = crate::ids::history_input_prefix(&feature.key(), 7);
+    let edge = crate::ids::history_input_edge_id(&prefix, 42);
+    let total = edge.as_str().len() + group.id.len() - 1;
+    assert_historical_split_face_path_refusal(
+        "f3d SplitFace path group id", None, Some(u64::try_from(total).unwrap()),
+    );
+}
