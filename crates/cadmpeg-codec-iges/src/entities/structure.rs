@@ -6,7 +6,6 @@ use super::geometry::{
     curve_geometry_coplanar, linear_nurbs_parameters, planar_polyline_has_self_intersection,
     plane_coordinates, resolve_transform, ProjectionOutcome, TransformResolutionError,
 };
-use crate::decode_resource::copy_optional_identity;
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::parameter::{
@@ -1564,11 +1563,7 @@ fn bounded_plane_curve_is_simple(
                 if active.contains(&segment.curve) {
                     return Ok(false);
                 }
-                let active_id = copy_optional_identity(
-                    Some(context.ctx),
-                    segment.curve.as_str(),
-                    "iges plane boundary child curve ID",
-                )?;
+                let active_id = segment.curve.try_clone_for_decode(Some(context.ctx), "iges plane boundary child curve ID")?;
                 cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                     Some(context.ctx),
                     active,
@@ -1741,11 +1736,7 @@ fn plane_boundary_edge(
         .get(&boundary_sequence)
         .is_some_and(|entry| entry.entity_type == 106 && entry.form == 63);
     let mut active = BTreeSet::new();
-    let active_id = copy_optional_identity(
-        Some(ctx),
-        curve_id.as_str(),
-        "iges plane boundary active curve ID",
-    )?;
+    let active_id = curve_id.try_clone_for_decode(Some(ctx), "iges plane boundary active curve ID")?;
     if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
         Some(ctx),
         &mut active,
@@ -1814,11 +1805,7 @@ fn plane_face_draft(
     let mut candidate = ModelDraft::new();
     let mut loop_ids = ctx.collection_vec(boundary_edges.len(), "iges legacy plane loop IDs")?;
     for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
-        let edge_id = crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &edge.id,
-            "iges structure identity copy",
-        )?;
+        let edge_id = edge.id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
         ctx.reserve_vec(
             &mut candidate.model_mut().edges,
             1,
@@ -1835,22 +1822,10 @@ fn plane_face_draft(
         )?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
         candidate.model_mut().coedges.push(Coedge {
-            id: crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &coedge_id,
-                "iges structure identity copy",
-            )?,
-            owner_loop: crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &loop_id,
-                "iges structure identity copy",
-            )?,
+            id: coedge_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+            owner_loop: loop_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
             edge: edge_id,
-            radial_next: crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &coedge_id,
-                "iges structure identity copy",
-            )?,
+            radial_next: coedge_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
@@ -1871,16 +1846,8 @@ fn plane_face_draft(
         )?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
         candidate.model_mut().loops.push(Loop {
-            id: crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &loop_id,
-                "iges structure identity copy",
-            )?,
-            face: crate::decode_resource::clone_optional_identity(
-                Some(ctx),
-                &face_id,
-                "iges structure identity copy",
-            )?,
+            id: loop_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+            face: face_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
         });
         loop_ids.push(loop_id);
@@ -1898,16 +1865,8 @@ fn plane_face_draft(
     )?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
     candidate.model_mut().faces.push(Face {
-        id: crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &face_id,
-            "iges structure identity copy",
-        )?,
-        shell: crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &shell_id,
-            "iges structure identity copy",
-        )?,
+        id: face_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+        shell: shell_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
         surface: crate::ids::surface_admitted(&crate::ids::Stem::directory(surface_sequence), ctx)?,
         sense: Sense::Forward,
         loops: face_loops,
@@ -1918,16 +1877,8 @@ fn plane_face_draft(
     let mut shell_faces = ctx.collection_vec(1, "iges legacy plane shell faces")?;
     shell_faces.push(face_id);
     let shell = Shell::new(
-        crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &shell_id,
-            "iges structure identity copy",
-        )?,
-        crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &region_id,
-            "iges structure identity copy",
-        )?,
+        shell_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+        region_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
         shell_faces,
         Vec::new(),
         Vec::new(),
@@ -1949,16 +1900,8 @@ fn plane_face_draft(
     )?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
     candidate.model_mut().regions.push(Region {
-        id: crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &region_id,
-            "iges structure identity copy",
-        )?,
-        body: crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &body_id,
-            "iges structure identity copy",
-        )?,
+        id: region_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+        body: body_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
         shells: region_shells,
     });
     let mut body_regions = ctx.collection_vec(1, "iges legacy plane body regions")?;
@@ -2101,16 +2044,8 @@ fn legacy_single_parent_face(
                 .tail_index(boundary_index),
             ctx,
         )?;
-        edge.id = crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &edge_id,
-            "iges structure identity copy",
-        )?;
-        edge.end = crate::decode_resource::clone_optional_identity(
-            Some(ctx),
-            &edge.start,
-            "iges structure identity copy",
-        )?;
+        edge.id = edge_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
+        edge.end = edge.start.try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
         boundary_edges.push(edge);
     }
     let stem =
@@ -3210,11 +3145,7 @@ pub(super) fn project(
                         ),
                         ctx,
                     )?;
-                    edge.end = crate::decode_resource::clone_optional_identity(
-                        Some(ctx),
-                        &edge.start,
-                        "iges structure identity copy",
-                    )?;
+                    edge.end = edge.start.try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
                     let stem = crate::ids::Stem::word_directory(
                         crate::ids::Word::BoundedPlane,
                         entry.sequence,

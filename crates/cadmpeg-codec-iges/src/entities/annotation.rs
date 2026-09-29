@@ -82,11 +82,7 @@ fn sectioned_area_curves_coplanar(
         if active.contains(&curve_id) {
             return Ok(false);
         }
-        let active_id = crate::decode_resource::clone_optional_identity(
-            ctx,
-            &curve_id,
-            "iges section active curve id",
-        )?;
+        let active_id = curve_id.try_clone_for_decode(ctx, "iges section active curve id")?;
         cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
             ctx,
             &mut active,

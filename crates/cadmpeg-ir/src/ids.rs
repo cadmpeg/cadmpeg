@@ -77,12 +77,26 @@ impl schemars::JsonSchema for Identity {
 
 impl Identity {
     /// Copies an admitted identity under the decode retained-byte budget.
-    pub fn try_clone_for_decode(
+    pub fn try_clone_for_decode<'ctx, 'arena>(
         &self,
-        ctx: &DecodeContext<'_>,
+        ctx: impl Into<Option<&'ctx DecodeContext<'arena>>>,
         operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(Self(ctx.copy_retained_text(self.as_str(), operation)?))
+    ) -> Result<Self, CodecError>
+    where
+        'arena: 'ctx,
+    {
+        let text = match ctx.into() {
+            Some(ctx) => ctx.copy_retained_text(self.as_str(), operation)?,
+            None => {
+                let bytes = DecodeContext::copy_retained_optional(
+                    None,
+                    self.as_str().as_bytes(),
+                    operation,
+                )?;
+                String::from_utf8(bytes).map_err(CodecError::malformed)?
+            }
+        };
+        Ok(Self(text))
     }
 
     /// Admit a string matching the entity identity grammar.
@@ -928,11 +942,14 @@ macro_rules! id_type {
 
         impl $name {
             /// Copies an admitted identity under the decode retained-byte budget.
-            pub fn try_clone_for_decode(
+            pub fn try_clone_for_decode<'ctx, 'arena>(
                 &self,
-                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                ctx: impl Into<Option<&'ctx cadmpeg_core::decode::DecodeContext<'arena>>>,
                 operation: &'static str,
-            ) -> Result<Self, cadmpeg_core::CodecError> {
+            ) -> Result<Self, cadmpeg_core::CodecError>
+            where
+                'arena: 'ctx,
+            {
                 Ok(Self(self.0.try_clone_for_decode(ctx, operation)?))
             }
 
