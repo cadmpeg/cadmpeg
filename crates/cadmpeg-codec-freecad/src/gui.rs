@@ -1337,10 +1337,10 @@ fn transfer_primitive_appearance(
         )?),
         category: None,
         base_color: Some(Color::from_rgba8(
-            packed_color.to_be_bytes()[0],
-            packed_color.to_be_bytes()[1],
-            packed_color.to_be_bytes()[2],
-            packed_color.to_be_bytes()[3],
+            u8::try_from((packed_color >> 24) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
+            u8::try_from((packed_color >> 16) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
+            u8::try_from((packed_color >> 8) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
+            u8::try_from(packed_color & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
         )),
         textures: Vec::new(),
         properties: admitted_size
@@ -4942,10 +4942,10 @@ fn transfer_topology_colors(
                     schema: Some(kind.schema().into()),
                     category: None,
                     base_color: Some(Color::from_rgba8(
-                        packed.to_be_bytes()[0],
-                        packed.to_be_bytes()[1],
-                        packed.to_be_bytes()[2],
-                        packed.to_be_bytes()[3],
+                        u8::try_from((packed >> 24) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
+                        u8::try_from((packed >> 16) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
+                        u8::try_from((packed >> 8) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
+                        u8::try_from(packed & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?,
                     )),
                     textures: Vec::new(),
                     properties: BTreeMap::new(),
@@ -5023,10 +5023,10 @@ fn transfer_topology_colors(
 
 fn decode_color(value: u32, transparency: Option<f32>) -> Result<Color, CodecError> {
     Color::new(
-        f32::from(value.to_be_bytes()[0]) / 255.0,
-        f32::from(value.to_be_bytes()[1]) / 255.0,
-        f32::from(value.to_be_bytes()[2]) / 255.0,
-        transparency.map_or(f32::from(value.to_be_bytes()[3]) / 255.0, |value| 1.0 - value),
+        f32::from(u8::try_from((value >> 24) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?) / 255.0,
+        f32::from(u8::try_from((value >> 16) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?) / 255.0,
+        f32::from(u8::try_from((value >> 8) & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?) / 255.0,
+        transparency.map_or(f32::from(u8::try_from(value & 0xff).map_err(|_| CodecError::Malformed("GUI color channel exceeds byte range".into()))?) / 255.0, |value| 1.0 - value),
     )
     .ok_or_else(|| CodecError::Malformed("GUI color components must be in [0, 1]".into()))
 }
