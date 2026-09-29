@@ -98,11 +98,7 @@ pub(super) fn surface_carrier<'a>(
             ),
         ))),
         B5Surface::Nurbs(surface) => B5SurfaceCarrier::Analytic(SurfaceGeometry::Solved(
-            SolvedSurfaceGeometry::Nurbs(crate::resource::copy_nurbs_surface(
-                ctx,
-                surface,
-                "catia_b5_surface_carrier_nurbs",
-            )?),
+            SolvedSurfaceGeometry::Nurbs(surface.try_clone_for_decode(ctx, "catia_b5_surface_carrier_nurbs")?),
         )),
         B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => {
             B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved)

@@ -90,6 +90,23 @@ impl KnotVector {
         Ok(Self(knots))
     }
 
+    /// Copy admitted knots through the decode collection and retained-byte budgets.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        super::charge_decode_copy::<f64>(self.len(), ctx, operation)?;
+        self.try_clone().map_err(|_| {
+            CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                u64_from_index(self.len()),
+                operation,
+            ))
+        })
+    }
+
     /// Reverse the order and negate every value, the knots of the reversed
     /// parameterization. Negation turns a non-decreasing sequence into a
     /// non-increasing one, and the reversal restores the order, so the
@@ -1042,14 +1059,8 @@ impl NurbsSurface {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        super::charge_decode_copy::<f64>(self.u_knots.len(), ctx, operation)?;
-        let u_knots = self.u_knots.try_clone().map_err(|_| {
-            ctx.refuse_codec_limit(operation, 0, u64_from_index(self.u_knots.len()))
-        })?;
-        super::charge_decode_copy::<f64>(self.v_knots.len(), ctx, operation)?;
-        let v_knots = self.v_knots.try_clone().map_err(|_| {
-            ctx.refuse_codec_limit(operation, 0, u64_from_index(self.v_knots.len()))
-        })?;
+        let u_knots = self.u_knots.try_clone_for_decode(ctx, operation)?;
+        let v_knots = self.v_knots.try_clone_for_decode(ctx, operation)?;
         let poles = match &self.poles {
             NurbsPoleGrid::Polynomial { rows } => NurbsPoleGrid::Polynomial {
                 rows: copy_decode_grid(rows, ctx, operation)?,
@@ -1427,11 +1438,7 @@ impl NurbsCurve {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        super::charge_decode_copy::<f64>(self.knots.len(), ctx, operation)?;
-        let knots = self
-            .knots
-            .try_clone()
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.knots.len())))?;
+        let knots = self.knots.try_clone_for_decode(ctx, operation)?;
         let poles = match &self.poles {
             NurbsPoles3::Polynomial { points } => NurbsPoles3::Polynomial {
                 points: super::copy_decode_slice(points, ctx, operation)?,

@@ -267,7 +267,7 @@ pub(super) fn oriented_nurbs_range(
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = geometry else {
         return Ok(None);
     };
-    let mut curve = crate::resource::copy_nurbs_curve(ctx, curve, "catia_b5_oriented_nurbs_curve")?;
+    let mut curve = curve.try_clone_for_decode(ctx, "catia_b5_oriented_nurbs_curve")?;
     (|| -> Option<Result<CurvePlan, cadmpeg_core::CodecError>> {
         let degree = usize::try_from(curve.degree()).ok()?;
         let domain_start = *curve.knots().get(degree)?;
@@ -927,11 +927,7 @@ pub(super) fn emit_pcurves(
                     "catia_b5_pcurve_uses",
                 )?;
             }
-            let geometry = crate::resource::copy_pcurve_geometry(
-                admission.context(),
-                geometry,
-                "catia_b5_emitted_pcurve_geometry",
-            )?;
+            let geometry = geometry.try_clone_for_decode(admission.context(), "catia_b5_emitted_pcurve_geometry")?;
             admission.reserve_entity(&mut ir.model.pcurves, "catia_b5_emit_pcurves")?;
             ir.model.pcurves.push(Pcurve {
                 id,

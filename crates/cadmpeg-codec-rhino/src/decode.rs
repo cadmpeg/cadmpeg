@@ -8,7 +8,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{DraftAccounting, ModelCheckpoint, ModelDraft};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{KnotVector, NurbsCurve, NurbsError},
+    nurbs::{NurbsCurve, NurbsError},
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2},
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
@@ -5688,29 +5688,6 @@ struct DecodedPcurves {
     warnings: Diagnostics,
 }
 
-fn copy_brep_pcurve_knots(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    source: &KnotVector,
-) -> Result<KnotVector, crate::curves::GeometryError> {
-    const OPERATION: &str = "Rhino Brep pcurve knots";
-    let count = u64_from_index(source.len());
-    let bytes = count
-        .checked_mul(8)
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX, count))?;
-    ctx.charge_collection_items(count, OPERATION)?;
-    ctx.charge_retained(bytes, OPERATION)?;
-    source.try_clone().map_err(|_| {
-        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                u64::MAX,
-                bytes,
-                OPERATION,
-            ),
-        ))
-    })
-}
-
 fn decode_pcurves(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
@@ -5880,7 +5857,7 @@ fn decode_pcurves(
                 .then(cadmpeg_ir::identity_key!(".trim-"))
                 .then(index),
         );
-        let knots = copy_brep_pcurve_knots(ctx, nurbs.knots())?;
+        let knots = nurbs.knots().try_clone_for_decode(ctx, "Rhino Brep pcurve knots")?;
         let nurbs =
             match PcurveNurbs::from_admitted_rows(nurbs.degree(), knots, poles, nurbs.periodic()) {
                 Ok(nurbs) => nurbs,

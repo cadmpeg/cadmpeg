@@ -1804,11 +1804,7 @@ fn copy_e5_surface_geometry(
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
             Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                crate::resource::copy_nurbs_surface(
-                    ctx,
-                    surface,
-                    "catia_e5_surface_geometry_copy",
-                )?,
+                surface.try_clone_for_decode(ctx, "catia_e5_surface_geometry_copy")?,
             )))
         }
         _ => Ok(geometry.clone()),
@@ -1843,11 +1839,7 @@ fn copy_standard_procedure(
                     let geometry = match geometry {
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                                crate::resource::copy_nurbs_surface(
-                                    ctx,
-                                    nurbs,
-                                    "catia_standard_offset_support_copy",
-                                )?,
+                                nurbs.try_clone_for_decode(ctx, "catia_standard_offset_support_copy")?,
                             ))
                         }
                         SurfaceGeometry::Solved(
@@ -1902,11 +1894,7 @@ fn copy_standard_procedure(
             )?;
             StandardSurfaceProcedure::Revolution(Box::new(
                 crate::families::b5::transfer::ResolvedRevolutionSurface {
-                    directrix: crate::resource::copy_nurbs_curve(
-                        ctx,
-                        &revolution.directrix,
-                        "catia_standard_revolution_directrix_copy",
-                    )?,
+                    directrix: revolution.directrix.try_clone_for_decode(ctx, "catia_standard_revolution_directrix_copy")?,
                     axis_origin: revolution.axis_origin,
                     axis_direction: revolution.axis_direction,
                     angular_interval: revolution.angular_interval,
@@ -5362,11 +5350,7 @@ fn standard_limit_curve_bindings(
                 continue;
             };
             let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                crate::resource::copy_nurbs_curve(
-                    ctx,
-                    &curves[curve],
-                    "catia_limit_curve_geometry_copy",
-                )?,
+                curves[curve].try_clone_for_decode(ctx, "catia_limit_curve_geometry_copy")?,
             ));
             let midpoint = match cadmpeg_ir::eval::curve_point(
                 &geometry,
@@ -9708,11 +9692,7 @@ fn bind_standard_a5_owner_surfaces(
             continue;
         };
         ir.model.surfaces[surface].geometry = SurfaceGeometry::Solved(
-            SolvedSurfaceGeometry::Nurbs(crate::resource::copy_nurbs_surface(
-                ctx,
-                &carriers[carrier].geometry,
-                "catia_a5_bound_surface_copy",
-            )?),
+            SolvedSurfaceGeometry::Nurbs(carriers[carrier].geometry.try_clone_for_decode(ctx, "catia_a5_bound_surface_copy")?),
         );
         crate::resource::derived_annotation(
             ctx,

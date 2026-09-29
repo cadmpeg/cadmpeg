@@ -268,8 +268,7 @@ pub(in crate::families) fn try_decode_e5(
                 geometry: match &surface.geometry {
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) =>
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                            admitted!(crate::resource::copy_nurbs_surface(ctx, nurbs,
-                                "catia_e5_model_surface_geometry")))),
+                            admitted!(nurbs.try_clone_for_decode(ctx, "catia_e5_model_surface_geometry")))),
                     _ => surface.geometry.clone(),
                 },
                 source_object: None,
@@ -1595,11 +1594,7 @@ fn plan_e5_boundary<'a>(
                     };
                     reversed
                 } else {
-                    crate::resource::copy_pcurve_geometry(
-                        ctx,
-                        &geometry,
-                        "catia_e5_oriented_pcurve_copy",
-                    )?
+                    geometry.try_clone_for_decode(ctx, "catia_e5_oriented_pcurve_copy")?
                 };
                 let lifted_curve = if let Some((mut curve, mut curve_range)) = e5_boundary_curve(
                     ctx,
@@ -1642,11 +1637,7 @@ fn plan_e5_boundary<'a>(
                             SurfaceId::mint,
                             "catia_e5_occurrence_surface_id",
                         )?,
-                        pcurve: crate::resource::copy_pcurve_geometry(
-                            ctx,
-                            &oriented_pcurve,
-                            "catia_e5_occurrence_pcurve",
-                        )?,
+                        pcurve: oriented_pcurve.try_clone_for_decode(ctx, "catia_e5_occurrence_pcurve")?,
                         pcurve_range: range,
                         curve: lifted_curve
                             .as_ref()
@@ -1875,11 +1866,7 @@ fn plan_e5_boundary<'a>(
                     "catia_e5_intersection_context_surface_id",
                 )?),
                 pcurve: Some(SupportPcurve::new(
-                    crate::resource::copy_pcurve_geometry(
-                        ctx,
-                        &side.pcurve,
-                        "catia_e5_intersection_context_pcurve",
-                    )?,
+                    side.pcurve.try_clone_for_decode(ctx, "catia_e5_intersection_context_pcurve")?,
                     DirectedParameterRange::new(side.pcurve_range).ok(),
                 )),
             })
@@ -1923,11 +1910,7 @@ fn plan_e5_boundary<'a>(
                         SurfaceId::mint,
                         "catia_e5_surface_curve_surface_id",
                     )?;
-                    let pcurve = crate::resource::copy_pcurve_geometry(
-                        ctx,
-                        &side.pcurve,
-                        "catia_e5_surface_curve_pcurve",
-                    )?;
+                    let pcurve = side.pcurve.try_clone_for_decode(ctx, "catia_e5_surface_curve_pcurve")?;
                     ctx.insert_btree_map(
                         &mut surface_curve_plan,
                         edge_ref,
@@ -2247,11 +2230,7 @@ fn emit_e5_curves_and_edges(
                                         "catia_e5_surface_curve_support_id",
                                     )?),
                                     pcurve: Some(SupportPcurve::new(
-                                        crate::resource::copy_pcurve_geometry(
-                                            ctx,
-                                            pcurve,
-                                            "catia_e5_surface_curve_support_pcurve",
-                                        )?,
+                                        pcurve.try_clone_for_decode(ctx, "catia_e5_surface_curve_support_pcurve")?,
                                         None,
                                     )),
                                 },
@@ -2382,8 +2361,7 @@ fn emit_e5_pcurves(
         admission.reserve_entity(&mut ir.model.pcurves, "catia_e5_model_pcurves")?;
         ir.model.pcurves.push(Pcurve {
             id,
-            geometry: crate::resource::copy_pcurve_geometry(ctx, geometry,
-                "catia_e5_model_pcurve_geometry")?,
+            geometry: geometry.try_clone_for_decode(ctx, "catia_e5_model_pcurve_geometry")?,
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 None,
                 Some(
@@ -3271,7 +3249,7 @@ fn e5_lift_plane_nurbs(
         }
     };
     let knots =
-        crate::resource::copy_knot_vector(ctx, nurbs.knots(), "catia_e5_boundary_lifted_knots")?;
+        nurbs.knots().try_clone_for_decode(ctx, "catia_e5_boundary_lifted_knots")?;
     crate::nurbs::note_refusal(
         ctx,
         NurbsCurve::new(nurbs.degree(), knots, poles, nurbs.periodic()),
@@ -3504,11 +3482,7 @@ fn e5_support_occurrence_intersection_context(
                 "catia_e5_occurrence_context_surface_id",
             )?),
             pcurve: Some(SupportPcurve::new(
-                crate::resource::copy_pcurve_geometry(
-                    ctx,
-                    &side.pcurve,
-                    "catia_e5_occurrence_context_pcurve",
-                )?,
+                side.pcurve.try_clone_for_decode(ctx, "catia_e5_occurrence_context_pcurve")?,
                 DirectedParameterRange::new(side.pcurve_range).ok(),
             )),
         })
@@ -3566,7 +3540,7 @@ fn copy_e5_curve(
     Ok(match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                crate::resource::copy_nurbs_curve(ctx, nurbs, "catia_e5_boundary_curve_copy")?,
+                nurbs.try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?,
             ))
         }
         _ => curve.clone(),
