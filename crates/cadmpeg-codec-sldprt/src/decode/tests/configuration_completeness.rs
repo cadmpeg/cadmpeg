@@ -467,6 +467,55 @@ fn active_configuration_inherits_late_feature_resolutions() {
 }
 
 #[test]
+fn active_configuration_pattern_scan_refuses_work_limit() {
+    let feature_id = FeatureId::mint("synthetic:test:id#pattern").unwrap();
+    let mut ir = CadIr::empty();
+    ir.model.features.push(Feature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::new(PatternTransform::Mirror {
+                    plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                    plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+                }).unwrap(),
+            }),
+        ),
+        native_ref: None,
+    });
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#active").unwrap(),
+        ordinal: 0,
+        active: true,
+        source_index: Some(0),
+        name: Some("Active".to_owned()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    });
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"configuration", &arena, &policy,
+    ).unwrap();
+    let error = sync_active_configuration_resolutions(&ctx, &mut ir).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
 fn active_configuration_cosmetic_face_refuses_collection_limit() {
     let feature_id = FeatureId::mint("synthetic:test:id#cosmetic").unwrap();
     let source_face = FaceId::mint("synthetic:test:id#cosmetic-face").unwrap();
