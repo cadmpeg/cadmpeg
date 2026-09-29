@@ -57,9 +57,13 @@ pub(crate) fn eof(archive: ArchiveVersion, file_size: usize) -> Vec<u8> {
         archive,
         TCODE_ENDOFFILE,
         &if archive.uses_eight_byte_values() {
-            (cadmpeg_core::decode::u64_from_index(file_size)).to_le_bytes().to_vec()
+            (cadmpeg_core::decode::u64_from_index(file_size))
+                .to_le_bytes()
+                .to_vec()
         } else {
-            (u32::try_from(file_size).expect("fixture value fits u32")).to_le_bytes().to_vec()
+            (u32::try_from(file_size).expect("fixture value fits u32"))
+                .to_le_bytes()
+                .to_vec()
         },
     )
 }
@@ -71,7 +75,9 @@ pub(crate) fn uuid_bytes() -> Vec<u8> {
 pub(crate) fn utf16_bytes(value: &str) -> Vec<u8> {
     let mut units: Vec<u16> = value.encode_utf16().collect();
     units.push(0);
-    let mut bytes = (u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes().to_vec();
+    let mut bytes = (u32::try_from(units.len()).expect("fixture value fits u32"))
+        .to_le_bytes()
+        .to_vec();
     for unit in units {
         bytes.extend(unit.to_le_bytes());
     }

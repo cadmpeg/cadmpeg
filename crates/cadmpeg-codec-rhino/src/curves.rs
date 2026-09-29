@@ -2256,7 +2256,8 @@ mod tests {
                 let elevated =
                     with_test_context(|ctx| super::elevate_to_degree(ctx, &curve, degree, 0))
                         .unwrap();
-                let start = curve.knots()[usize::try_from(curve.degree()).expect("fixture value fits usize")];
+                let start = curve.knots()
+                    [usize::try_from(curve.degree()).expect("fixture value fits usize")];
                 let end = curve.knots()[curve.control_points().len()];
                 assert_eq!(elevated.knots()[degree], start);
                 assert_eq!(elevated.knots()[elevated.control_points().len()], end);
@@ -2900,7 +2901,9 @@ mod tests {
     #[test]
     fn stored_count_above_legacy_limit_is_bounded_by_payload() {
         let item_count = 65_537_usize;
-        let mut bytes = (i32::try_from(item_count).expect("fixture value fits i32")).to_le_bytes().to_vec();
+        let mut bytes = (i32::try_from(item_count).expect("fixture value fits i32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.resize(4 + item_count, 0);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         assert_eq!(

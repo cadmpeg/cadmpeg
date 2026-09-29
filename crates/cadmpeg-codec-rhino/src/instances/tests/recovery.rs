@@ -230,14 +230,15 @@ fn bounded_definition_members_do_not_become_ordinary_geometry_after_metadata_fai
             &[point(member, 3.0), point(ordinary, 9.0)],
         );
         let scan = crate::container::scan_owned(source.clone()).unwrap();
-        let offset = cadmpeg_core::decode::u64_from_index(scan
-            .tables
-            .iter()
-            .find(|table| table.typecode == 0x1000_0021)
-            .unwrap()
-            .records[0]
-            .range
-            .start);
+        let offset = cadmpeg_core::decode::u64_from_index(
+            scan.tables
+                .iter()
+                .find(|table| table.typecode == 0x1000_0021)
+                .unwrap()
+                .records[0]
+                .range
+                .start,
+        );
         let decoded = EditableDecodeResult::from(
             crate::RhinoCodec
                 .decode(&mut Cursor::new(&source), &DecodeOptions::default())
@@ -318,14 +319,15 @@ fn nil_definition_identity_is_not_admitted_and_keeps_source_membership() {
             ],
         );
         let scan = crate::container::scan_owned(source.clone()).unwrap();
-        let offset = cadmpeg_core::decode::u64_from_index(scan
-            .tables
-            .iter()
-            .find(|table| table.typecode == 0x1000_0021)
-            .unwrap()
-            .records[0]
-            .range
-            .start);
+        let offset = cadmpeg_core::decode::u64_from_index(
+            scan.tables
+                .iter()
+                .find(|table| table.typecode == 0x1000_0021)
+                .unwrap()
+                .records[0]
+                .range
+                .start,
+        );
         for container_only in [false, true] {
             let decoded = EditableDecodeResult::from(
                 crate::RhinoCodec

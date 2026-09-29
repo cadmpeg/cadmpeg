@@ -228,7 +228,9 @@ fn wallpaper_view(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
 }
 
 fn view_list_record(archive: ArchiveVersion, typecode: u32, views: &[Vec<u8>]) -> Vec<u8> {
-    let mut list_body = (i32::try_from(views.len()).expect("fixture value fits i32")).to_le_bytes().to_vec();
+    let mut list_body = (i32::try_from(views.len()).expect("fixture value fits i32"))
+        .to_le_bytes()
+        .to_vec();
     let mut view_ranges = Vec::with_capacity(views.len());
     for view in views {
         let start = list_body.len();
@@ -702,11 +704,14 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
     assert!(reference_losses[0].message.contains("file reference"));
     assert!(reference_losses[0].message.contains("CRC mismatch"));
     assert_eq!(
-        cadmpeg_core::decode::index_from_u64(reference_losses[0]
-            .provenance
-            .as_ref()
-            .expect("nested checksum loss is located")
-            .offset).expect("fixture offset fits usize"),
+        cadmpeg_core::decode::index_from_u64(
+            reference_losses[0]
+                .provenance
+                .as_ref()
+                .expect("nested checksum loss is located")
+                .offset
+        )
+        .expect("fixture offset fits usize"),
         source_offset(&document, &corrupt_reference)
     );
 
@@ -724,11 +729,14 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
         })
         .expect("direct child checksum loss is retained before the later child failure");
     assert_eq!(
-        cadmpeg_core::decode::index_from_u64(target_loss
-            .provenance
-            .as_ref()
-            .expect("direct child checksum loss is located")
-            .offset).expect("fixture offset fits usize"),
+        cadmpeg_core::decode::index_from_u64(
+            target_loss
+                .provenance
+                .as_ref()
+                .expect("direct child checksum loss is located")
+                .offset
+        )
+        .expect("fixture offset fits usize"),
         source_offset(&document, &malformed_target)
     );
 
@@ -750,11 +758,14 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
         dropped[0].message
     );
     assert_eq!(
-        cadmpeg_core::decode::index_from_u64(dropped[0]
-            .provenance
-            .as_ref()
-            .expect("dropped view loss is located")
-            .offset).expect("fixture offset fits usize"),
+        cadmpeg_core::decode::index_from_u64(
+            dropped[0]
+                .provenance
+                .as_ref()
+                .expect("dropped view loss is located")
+                .offset
+        )
+        .expect("fixture offset fits usize"),
         source_offset(&document, &malformed_view)
     );
     assert_eq!(
@@ -827,11 +838,14 @@ fn later_view_recovery_keeps_viewport_warning_before_bad_end_marker() {
             "invalid_end={has_invalid_end_marker}"
         );
         assert_eq!(
-            cadmpeg_core::decode::index_from_u64(viewport_losses[0]
-                .provenance
-                .as_ref()
-                .expect("viewport warning is located")
-                .offset).expect("fixture offset fits usize"),
+            cadmpeg_core::decode::index_from_u64(
+                viewport_losses[0]
+                    .provenance
+                    .as_ref()
+                    .expect("viewport warning is located")
+                    .offset
+            )
+            .expect("fixture offset fits usize"),
             source_offset(&document, &malformed_viewport),
             "invalid_end={has_invalid_end_marker}"
         );
@@ -867,11 +881,14 @@ fn later_view_recovery_keeps_viewport_warning_before_bad_end_marker() {
             dropped[0].message
         );
         assert_eq!(
-            cadmpeg_core::decode::index_from_u64(dropped[0]
-                .provenance
-                .as_ref()
-                .expect("end-marker loss is located")
-                .offset).expect("fixture offset fits usize"),
+            cadmpeg_core::decode::index_from_u64(
+                dropped[0]
+                    .provenance
+                    .as_ref()
+                    .expect("end-marker loss is located")
+                    .offset
+            )
+            .expect("fixture offset fits usize"),
             source_offset(&document, &malformed_view),
             "invalid_end={has_invalid_end_marker}"
         );
@@ -936,11 +953,14 @@ fn malformed_viewport_userdata_keeps_prior_checksum_loss_and_recovers_later_view
         8
     };
     assert_eq!(
-        cadmpeg_core::decode::index_from_u64(checksum_losses[0]
-            .provenance
-            .as_ref()
-            .expect("userdata checksum loss is located")
-            .offset).expect("fixture offset fits usize"),
+        cadmpeg_core::decode::index_from_u64(
+            checksum_losses[0]
+                .provenance
+                .as_ref()
+                .expect("userdata checksum loss is located")
+                .offset
+        )
+        .expect("fixture offset fits usize"),
         userdata_source + archive_header_len
     );
     assert!(checksum_losses[0].message.contains("viewport userdata"));
@@ -959,11 +979,14 @@ fn malformed_viewport_userdata_keeps_prior_checksum_loss_and_recovers_later_view
         .message
         .contains("class end must be a short zero chunk"));
     assert_eq!(
-        cadmpeg_core::decode::index_from_u64(malformed_losses[0]
-            .provenance
-            .as_ref()
-            .expect("malformed userdata loss is located")
-            .offset).expect("fixture offset fits usize"),
+        cadmpeg_core::decode::index_from_u64(
+            malformed_losses[0]
+                .provenance
+                .as_ref()
+                .expect("malformed userdata loss is located")
+                .offset
+        )
+        .expect("fixture offset fits usize"),
         userdata_source
     );
     assert_valid(&result);
@@ -1039,7 +1062,8 @@ fn active_view_recovery_preserves_earlier_losses_and_exact_source() {
                 .collect::<Vec<_>>();
             assert_eq!(losses.len(), 1, "{archive:?}/{tag}");
             assert_eq!(
-                cadmpeg_core::decode::index_from_u64(losses[0].provenance.as_ref().unwrap().offset).expect("fixture offset fits usize"),
+                cadmpeg_core::decode::index_from_u64(losses[0].provenance.as_ref().unwrap().offset)
+                    .expect("fixture offset fits usize"),
                 offset
             );
         }

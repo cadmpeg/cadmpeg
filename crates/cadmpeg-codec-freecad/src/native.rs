@@ -338,7 +338,8 @@ mod tests {
             );
         }
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(native_id("entry", "A B#%").len()) - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(native_id("entry", "A B#%").len()) - 1;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
         assert!(matches!(super::native_id_charged(&ctx, "entry", "A B#%"),
@@ -377,7 +378,8 @@ mod tests {
         for child in ["", "S # Å"] {
             let expected = model_id("body", &parent, child);
             let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+            policy.limits.max_retained_bytes =
+                cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("empty root is within policy");

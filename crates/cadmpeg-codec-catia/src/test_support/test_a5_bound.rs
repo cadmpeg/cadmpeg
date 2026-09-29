@@ -37,7 +37,10 @@ pub(crate) fn a5_cone_bound_edge_stream() -> Vec<u8> {
         ];
         bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
         for value in point {
-            bytes.extend_from_slice(&(cadmpeg_core::convert::f32_from_f64(value).expect("fixture value fits f32")).to_le_bytes());
+            bytes.extend_from_slice(
+                &(cadmpeg_core::convert::f32_from_f64(value).expect("fixture value fits f32"))
+                    .to_le_bytes(),
+            );
         }
     }
     bytes
@@ -169,7 +172,10 @@ pub(crate) fn a5_nurbs_bound_edge_stream(offset: f64) -> Vec<u8> {
     for point in [p0, p1] {
         bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
         for value in point {
-            bytes.extend_from_slice(&(cadmpeg_core::convert::f32_from_f64(value).expect("fixture value fits f32")).to_le_bytes());
+            bytes.extend_from_slice(
+                &(cadmpeg_core::convert::f32_from_f64(value).expect("fixture value fits f32"))
+                    .to_le_bytes(),
+            );
         }
     }
     bytes

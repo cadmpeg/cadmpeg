@@ -249,7 +249,8 @@ pub(super) fn validate_zero_entity_support_runs(
                                 && knots[expected_controls..]
                                     .iter()
                                     .all(|knot| *knot == knots[expected_controls])
-                                && knots[cadmpeg_core::decode::index_from_u32(expected_degree)] < knots[expected_controls]
+                                && knots[cadmpeg_core::decode::index_from_u32(expected_degree)]
+                                    < knots[expected_controls]
                                 && knots
                                     .chunk_by(|left, right| left == right)
                                     .map(<[f64]>::len)

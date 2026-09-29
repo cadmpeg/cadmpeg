@@ -205,7 +205,9 @@ fn append_crc_suffix(chunk: &mut Vec<u8>, suffix: &[u8]) {
     let crc_offset = chunk.len() - 4;
     chunk.splice(crc_offset..crc_offset, suffix.iter().copied());
     let length = i64::from_le_bytes(chunk[4..12].try_into().expect("chunk header"));
-    chunk[4..12].copy_from_slice(&(length + i64::try_from(suffix.len()).expect("fixture value fits i64")).to_le_bytes());
+    chunk[4..12].copy_from_slice(
+        &(length + i64::try_from(suffix.len()).expect("fixture value fits i64")).to_le_bytes(),
+    );
     let crc = crc32fast::hash(&chunk[12..chunk.len() - 4]);
     let crc_offset = chunk.len() - 4;
     chunk[crc_offset..].copy_from_slice(&crc.to_le_bytes());
@@ -586,7 +588,9 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .source_fidelity()
         .retained_records()
         .values()
-        .find(|source| source.offset() == cadmpeg_core::decode::u64_from_index(malformed_range.start))
+        .find(|source| {
+            source.offset() == cadmpeg_core::decode::u64_from_index(malformed_range.start)
+        })
         .expect("malformed definition fidelity");
     assert_eq!(
         malformed_retained.data(),

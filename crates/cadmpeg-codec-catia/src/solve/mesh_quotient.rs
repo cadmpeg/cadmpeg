@@ -3517,7 +3517,9 @@ fn quotient_clone_refuses_retained_domains_and_member_nodes() {
             "catia_quotient_clone_domains",
         ),
         (
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>() + std::mem::size_of::<Arc<HashSet<usize>>>()),
+            cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<usize>() + std::mem::size_of::<Arc<HashSet<usize>>>(),
+            ),
             "catia_quotient_clone_member_nodes",
         ),
     ] {
@@ -11162,7 +11164,12 @@ fn fixed_mesh_direction_overflow_charges_general_face_state() {
         .collect::<Vec<_>>();
     let candidates = vec![vec![[0, 1]]; edge_count];
     let identities = (0..edge_count)
-        .map(|edge| [u32::try_from(edge * 2).expect("fixture value fits u32"), u32::try_from(edge * 2 + 1).expect("fixture value fits u32")])
+        .map(|edge| {
+            [
+                u32::try_from(edge * 2).expect("fixture value fits u32"),
+                u32::try_from(edge * 2 + 1).expect("fixture value fits u32"),
+            ]
+        })
         .collect::<Vec<_>>();
     let selected = [MeshFaceBoundaryAssignment {
         boundaries: (0..BOUNDARY_COUNT)
@@ -13048,10 +13055,30 @@ fn singleton_mesh_path_handles_many_independent_face_cycles() {
         let edge = face * 4;
         let point = face * 4;
         vertex_points.extend([
-            [cadmpeg_core::convert::f64_from_index(point).expect("fixture index is exactly representable"), 0.0, 0.0],
-            [cadmpeg_core::convert::f64_from_index(point + 1).expect("fixture index is exactly representable"), 0.0, 0.0],
-            [cadmpeg_core::convert::f64_from_index(point + 2).expect("fixture index is exactly representable"), 0.0, 0.0],
-            [cadmpeg_core::convert::f64_from_index(point + 3).expect("fixture index is exactly representable"), 0.0, 0.0],
+            [
+                cadmpeg_core::convert::f64_from_index(point)
+                    .expect("fixture index is exactly representable"),
+                0.0,
+                0.0,
+            ],
+            [
+                cadmpeg_core::convert::f64_from_index(point + 1)
+                    .expect("fixture index is exactly representable"),
+                0.0,
+                0.0,
+            ],
+            [
+                cadmpeg_core::convert::f64_from_index(point + 2)
+                    .expect("fixture index is exactly representable"),
+                0.0,
+                0.0,
+            ],
+            [
+                cadmpeg_core::convert::f64_from_index(point + 3)
+                    .expect("fixture index is exactly representable"),
+                0.0,
+                0.0,
+            ],
         ]);
         edge_rows.extend((0..4).map(|_| EdgeRow {
             kind: 1,

@@ -2501,9 +2501,13 @@ mod tests {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&2u16.to_le_bytes());
         bytes.extend_from_slice(&0x3000u16.to_le_bytes());
-        bytes.extend_from_slice(&(u32::try_from(values.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(values.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         if !values.is_empty() {
-            bytes.extend_from_slice(&(u32::try_from(values.len()).expect("fixture value fits u32")).to_le_bytes());
+            bytes.extend_from_slice(
+                &(u32::try_from(values.len()).expect("fixture value fits u32")).to_le_bytes(),
+            );
             bytes.extend_from_slice(&0u32.to_le_bytes());
         }
         for value in values {
@@ -2514,7 +2518,9 @@ mod tests {
 
     fn utf16(value: &str) -> Vec<u8> {
         let units = value.encode_utf16().collect::<Vec<_>>();
-        let mut bytes = (u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(units.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         for unit in units {
             bytes.extend_from_slice(&unit.to_le_bytes());
         }
@@ -2531,8 +2537,10 @@ mod tests {
     fn reference_list(values: &[u32]) -> PmDcReferenceList {
         PmDcReferenceList::new(
             2,
-            (!values.is_empty())
-                .then_some(crate::pmdc::PmDcListMetadata::U32([u32::try_from(values.len()).expect("fixture value fits u32"), 0])),
+            (!values.is_empty()).then_some(crate::pmdc::PmDcListMetadata::U32([
+                u32::try_from(values.len()).expect("fixture value fits u32"),
+                0,
+            ])),
             values.iter().copied().map(reference).collect(),
         )
         .expect("test list metadata matches length")
@@ -2575,8 +2583,10 @@ mod tests {
                 outline_value: 0,
                 properties: PmDcReferenceList::new(
                     2,
-                    (!references.is_empty())
-                        .then_some(crate::pmdc::PmDcListMetadata::U32([u32::try_from(slot_count).expect("fixture value fits u32"), 0])),
+                    (!references.is_empty()).then_some(crate::pmdc::PmDcListMetadata::U32([
+                        u32::try_from(slot_count).expect("fixture value fits u32"),
+                        0,
+                    ])),
                     references,
                 )
                 .expect("test list metadata matches length"),

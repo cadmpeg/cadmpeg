@@ -2108,18 +2108,22 @@ mod tests {
     fn unbound_view_loss_message_refuses_retained_limit() {
         let record = Record::short(super::NAMED_VIEWS, 0..0, 0);
         let binding = crate::settings::UnitBinding::from_units(None);
-        let error = with_retained_limit(&[], cadmpeg_core::decode::u64_from_index("VIEW/named-view list".len()), |ctx| {
-            super::retain_unbound_view_record(
-                ctx,
-                &mut Vec::new(),
-                &mut Vec::new(),
-                super::SETTINGS,
-                &record,
-                binding,
-                "named-view list",
-            )
-            .expect_err("unbound view loss message exceeds the retained limit")
-        });
+        let error = with_retained_limit(
+            &[],
+            cadmpeg_core::decode::u64_from_index("VIEW/named-view list".len()),
+            |ctx| {
+                super::retain_unbound_view_record(
+                    ctx,
+                    &mut Vec::new(),
+                    &mut Vec::new(),
+                    super::SETTINGS,
+                    &record,
+                    binding,
+                    "named-view list",
+                )
+                .expect_err("unbound view loss message exceeds the retained limit")
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.operation == "Rhino unbound view loss message")
@@ -3408,7 +3412,8 @@ mod tests {
             .as_ref()
             .expect("nested checksum loss is located");
         assert_eq!(
-            cadmpeg_core::decode::index_from_u64(provenance.offset).expect("fixture offset fits usize"),
+            cadmpeg_core::decode::index_from_u64(provenance.offset)
+                .expect("fixture offset fits usize"),
             4 + trace_chunk_header_len * 2 + trace_reference_start
         );
         assert_eq!(

@@ -320,7 +320,9 @@ fn definition_url_tag_refuses_retained_limit() {
     assert_definition_retained_refusal(
         ArchiveVersion::V5,
         &data,
-        cadmpeg_core::decode::u64_from_index("v5 definition".len() + "description".len() + "https://example.test".len()),
+        cadmpeg_core::decode::u64_from_index(
+            "v5 definition".len() + "description".len() + "https://example.test".len(),
+        ),
         "Rhino instance URL tag",
     );
 }
@@ -331,7 +333,12 @@ fn v5_linked_path_refuses_retained_limit() {
     assert_definition_retained_refusal(
         ArchiveVersion::V5,
         &data,
-        cadmpeg_core::decode::u64_from_index("v5 definition".len() + "description".len() + "https://example.test".len() + "tag".len()),
+        cadmpeg_core::decode::u64_from_index(
+            "v5 definition".len()
+                + "description".len()
+                + "https://example.test".len()
+                + "tag".len(),
+        ),
         "Rhino instance linked path",
     );
 }
@@ -383,7 +390,9 @@ fn file_reference_full_path_refuses_retained_limit() {
 #[test]
 fn file_reference_relative_path_refuses_retained_limit() {
     assert_resource(
-        &file_reference_refusal(cadmpeg_core::decode::u64_from_index("/full/source.3dm".len())),
+        &file_reference_refusal(cadmpeg_core::decode::u64_from_index(
+            "/full/source.3dm".len(),
+        )),
         "Rhino file reference relative path",
     );
 }

@@ -134,14 +134,15 @@ fn definition_diagnostics_keep_codes_locations_and_prior_failures_in_both_decode
                 &[],
             );
             let scan = crate::container::scan_owned(document.clone()).expect("bounded definition");
-            let source_offset = cadmpeg_core::decode::u64_from_index(scan
-                .tables
-                .iter()
-                .find(|table| table.typecode == 0x1000_0021)
-                .unwrap()
-                .records[0]
-                .range
-                .start);
+            let source_offset = cadmpeg_core::decode::u64_from_index(
+                scan.tables
+                    .iter()
+                    .find(|table| table.typecode == 0x1000_0021)
+                    .unwrap()
+                    .records[0]
+                    .range
+                    .start,
+            );
             assert_eq!(
                 scan.definitions.definitions().len(),
                 usize::from(!malformed_tail)

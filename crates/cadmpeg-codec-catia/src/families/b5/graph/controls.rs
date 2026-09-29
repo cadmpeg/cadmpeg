@@ -21,7 +21,10 @@ impl B5FramingControl {
     #[cfg(test)]
     /// Native control byte.
     pub(in crate::families::b5) const fn as_byte(self) -> u8 {
-        match self { Self::Control03 => 0x03, Self::Control05 => 0x05 }
+        match self {
+            Self::Control03 => 0x03,
+            Self::Control05 => 0x05,
+        }
     }
 }
 
@@ -66,7 +69,16 @@ impl B5EdgeTerminalControl {
     #[cfg(test)]
     /// Native control byte.
     pub(super) const fn as_byte(self) -> u8 {
-        match self { Self::Control01 => 0x01, Self::Control02 => 0x02, Self::Control21 => 0x21, Self::Control22 => 0x22, Self::Control25 => 0x25, Self::Control26 => 0x26, Self::Control29 => 0x29, Self::Control2A => 0x2a }
+        match self {
+            Self::Control01 => 0x01,
+            Self::Control02 => 0x02,
+            Self::Control21 => 0x21,
+            Self::Control22 => 0x22,
+            Self::Control25 => 0x25,
+            Self::Control26 => 0x26,
+            Self::Control29 => 0x29,
+            Self::Control2A => 0x2a,
+        }
     }
 }
 
@@ -93,6 +105,9 @@ impl B5VertexIncidenceControl {
     #[cfg(test)]
     /// Native control byte.
     pub(super) const fn as_byte(self) -> u8 {
-        match self { Self::Control00 => 0x00, Self::Control04 => 0x04 }
+        match self {
+            Self::Control00 => 0x00,
+            Self::Control04 => 0x04,
+        }
     }
 }

@@ -4099,7 +4099,8 @@ mod route_tests {
                 0 => ([0.0, 0.0], [1.0, 0.0]),
                 1 => ([0.0, 0.0], [0.0, 1.0]),
                 _ => {
-                    let offset = cadmpeg_core::convert::f64_from_index(index).expect("fixture index is exactly representable");
+                    let offset = cadmpeg_core::convert::f64_from_index(index)
+                        .expect("fixture index is exactly representable");
                     ([offset, 0.0], [offset + 0.5, 0.0])
                 }
             };
