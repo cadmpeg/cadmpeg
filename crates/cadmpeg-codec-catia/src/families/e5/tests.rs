@@ -648,6 +648,32 @@ fn e5_topology_transfer_refuses_before_reference_maps() {
 }
 
 #[test]
+fn e5_topology_emission_refuses_retained_identity_copies() {
+    let file = object_main_catpart(&e5_torus_topology_stream());
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..32_768 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match CatiaCodec.decode(&mut Cursor::new(&file), &DecodeOptions {
+            policy, ..DecodeOptions::default()
+        }) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected E5 topology decode refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_e5_transfer_surface_id",
+        "catia_e5_transfer_vertex_id",
+        "catia_e5_face_id",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn e5_boundary_plan_refuses_before_face_and_relation_growth() {
     let file = object_main_catpart(&e5_torus_topology_stream());
     let mut refused = std::collections::HashSet::new();

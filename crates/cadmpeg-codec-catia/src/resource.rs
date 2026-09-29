@@ -812,6 +812,32 @@ pub(crate) fn copy_pcurve_geometry(
     })
 }
 
+pub(crate) fn copy_intcurve_support_context(
+    ctx: &DecodeContext<'_>,
+    context: &cadmpeg_ir::geometry::IntcurveSupportContext,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::geometry::IntcurveSupportContext, CodecError> {
+    use cadmpeg_ir::geometry::{IntcurveSupportContext, IntcurveSupportSide, SupportPcurve};
+    use cadmpeg_ir::ids::SurfaceId;
+
+    let [left, right] = context.sides().each_ref().map(|side| {
+        Ok::<_, CodecError>(IntcurveSupportSide {
+            surface: side.surface.as_ref().map(|id|
+                copy_id(ctx, id.as_str(), SurfaceId::mint, operation)).transpose()?,
+            pcurve: side.pcurve.as_ref().map(|pcurve|
+                Ok::<_, CodecError>(SupportPcurve::new(
+                    copy_pcurve_geometry(ctx, &pcurve.geometry, operation)?,
+                    pcurve.parameter_range,
+                ))).transpose()?,
+        })
+    });
+    let [first, second, third] = context.discontinuities().each_ref().map(|lane|
+        copy_retained_slice(ctx, lane, operation));
+    IntcurveSupportContext::from_parts(
+        [left?, right?], context.parameter_range(), [first?, second?, third?],
+    ).map_err(CodecError::malformed)
+}
+
 #[cfg(test)]
 mod pcurve_copy_tests {
     use super::copy_pcurve_geometry;
