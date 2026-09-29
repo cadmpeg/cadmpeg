@@ -1,7 +1,15 @@
 use crate::native::attach::attach_parasolid_topology_numeric_attributes;
+use crate::native::attach::attach_parasolid_topology_string_attributes;
 use crate::native::attach::attach_parasolid_topology_structured_attributes;
+use crate::native::attach::attribute_record_index;
+use crate::native::attach::attribute_uses_by_entity;
+use crate::native::attach::insert_sole;
+use crate::native::attach::parasolid_topology_attribute_class_names;
+use crate::native::attach::parasolid_topology_attribute_targets;
+use crate::native::attach::topology_attribute_name;
 use crate::native::attach::ParasolidAttributeNameIndex;
 use crate::native::attach::ParasolidNumericAttributeSources;
+use crate::native::attach::ParasolidStringAttributeSources;
 use crate::native::attach::ParasolidStructuredAttributeSources;
 use crate::native::attach::ParasolidTopologyAttributeIndex;
 use std::collections::BTreeMap;
@@ -17,9 +25,491 @@ fn attribute_field_name(
     field_uses: &[crate::native::parasolid::ParasolidAttributeFieldUse],
     field_names: &[crate::native::parasolid::ParasolidAttributeFieldNames],
 ) -> Option<String> {
-    ParasolidAttributeNameIndex::new(class_uses, definitions, field_uses, field_names)
-        .field_name(topology_reference, value_use)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut reservation = ctx
+        .reserve_scoped(0, "test Parasolid attribute names")
+        .unwrap();
+    ParasolidAttributeNameIndex::new(
+        &ctx,
+        &mut reservation,
+        class_uses,
+        definitions,
+        field_uses,
+        field_names,
+    )
+    .unwrap()
+    .field_name(&ctx, topology_reference, value_use)
+    .unwrap()
 }
+
+fn attribute_name_index_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut reservation = ctx.reserve_scoped(0, "NX attribute name index test")?;
+    let mut index = BTreeMap::<&str, Option<&u8>>::new();
+    let value = 7_u8;
+    insert_sole(&ctx, &mut reservation, &mut index, "first", &value)?;
+    insert_sole(&ctx, &mut reservation, &mut index, "second", &value)?;
+    assert_eq!(index.len(), 2);
+    Ok(())
+}
+
+#[test]
+fn attribute_name_index_refuses_collection_limit() {
+    let error = attribute_name_index_with_limit(|policy| policy.limits.max_collection_items = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn attribute_name_index_refuses_scoped_limit() {
+    let error = attribute_name_index_with_limit(|policy| policy.limits.max_materialized_bytes = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn attribute_name_index_refuses_work_limit() {
+    let error =
+        attribute_name_index_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+fn topology_target_index_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let mut reservation = ctx.reserve_scoped(0, "test Parasolid topology targets")?;
+    let targets = parasolid_topology_attribute_targets(&ctx, &mut reservation, &ir)?;
+    assert!(!targets.is_empty());
+    Ok(())
+}
+
+#[test]
+fn topology_target_index_refuses_collection_limit() {
+    let error = topology_target_index_with_limit(|policy| policy.limits.max_collection_items = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn topology_target_index_refuses_scoped_limit() {
+    let error = topology_target_index_with_limit(|policy| policy.limits.max_materialized_bytes = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn topology_target_index_refuses_work_limit() {
+    let error =
+        topology_target_index_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+fn topology_context_index_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    ir.model.faces[0].id = cadmpeg_ir::ids::FaceId::mint("nx:s3:face#60").unwrap();
+    let references = [
+        crate::native::parasolid::ParasolidTopologyAttributeListReference {
+            id: "reference".into(),
+            stream_ordinal: 3,
+            topology_type: TopologyAttributeKind::Face,
+            topology_xmt: 60,
+            attribute_list_xmt: 50,
+            attribute_list_record: Some("entity".into()),
+            inflated_offset: 300,
+        },
+    ];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let index = ParasolidTopologyAttributeIndex::new(&ctx, &ir, &references, &[], &[], &[], &[])?;
+    assert_eq!(index.contexts.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn topology_context_index_refuses_collection_limit() {
+    let error = topology_context_index_with_limit(|policy| policy.limits.max_collection_items = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn topology_context_index_refuses_scoped_limit() {
+    let error =
+        topology_context_index_with_limit(|policy| policy.limits.max_materialized_bytes = 0)
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn topology_context_index_refuses_work_limit() {
+    let error =
+        topology_context_index_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+fn attribute_lookup_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let records = [("first", 1_u8), ("second", 2_u8)];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let mut reservation = ctx.reserve_scoped(0, "test Parasolid attribute lookups")?;
+    let indexed = attribute_record_index(&ctx, &mut reservation, &records, |record| record.0)?;
+    let grouped = attribute_uses_by_entity(&ctx, &mut reservation, &records, |record| record.0)?;
+    assert_eq!(indexed.len(), 2);
+    assert_eq!(grouped.len(), 2);
+    Ok(())
+}
+
+#[test]
+fn attribute_lookup_refuses_collection_limit() {
+    let error =
+        attribute_lookup_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn attribute_lookup_refuses_scoped_limit() {
+    let error =
+        attribute_lookup_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn attribute_lookup_refuses_work_limit() {
+    let error = attribute_lookup_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+fn fallback_attribute_name_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<String, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    topology_attribute_name(&ctx, None, Some("CLASS"), "84", 7)
+}
+
+#[test]
+fn fallback_attribute_name_keeps_class_prefix() {
+    assert_eq!(
+        fallback_attribute_name_with_limit(|_| {}).unwrap(),
+        "CLASS.parasolid_type_84_reference_7"
+    );
+}
+
+#[test]
+fn fallback_attribute_name_refuses_retained_limit() {
+    let error = fallback_attribute_name_with_limit(|policy| policy.limits.max_retained_bytes = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn fallback_attribute_name_refuses_work_limit() {
+    let error =
+        fallback_attribute_name_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+#[derive(Clone, Copy)]
+enum AttributeRoute {
+    String,
+    Numeric,
+    Structured,
+}
+
+fn attribute_output_route(
+    route: AttributeRoute,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<usize, cadmpeg_core::CodecError> {
+    use crate::native::parasolid::structured_value_kind::StructuredValueKind;
+    use crate::native::parasolid::{
+        ParasolidEntity51NumericKind, ParasolidEntity51NumericUse, ParasolidEntity51StringUse,
+        ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord,
+        ParasolidEntity54StringRecord, ParasolidEntityVectorRecord,
+        ParasolidTopologyAttributeListReference, ParasolidVectorValueKind,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    ir.model.faces[0].id = cadmpeg_ir::ids::FaceId::mint("nx:s3:face#60").unwrap();
+    let reference = ParasolidTopologyAttributeListReference {
+        id: "reference".into(),
+        stream_ordinal: 3,
+        topology_type: TopologyAttributeKind::Face,
+        topology_xmt: 60,
+        attribute_list_xmt: 50,
+        attribute_list_record: Some("entity".into()),
+        inflated_offset: 300,
+    };
+    let index_arena = cadmpeg_core::decode::DecodeArena::new();
+    let index_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (index_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &index_arena, &index_policy)?;
+    let index = ParasolidTopologyAttributeIndex::new(
+        &index_ctx,
+        &ir,
+        std::slice::from_ref(&reference),
+        &[],
+        &[],
+        &[],
+        &[],
+    )?;
+    assert_eq!(index.contexts.len(), 1);
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    match route {
+        AttributeRoute::String => {
+            let value_use: ParasolidEntity51StringUse = serde_json::from_value(serde_json::json!({
+                "id": "string-use", "stream_ordinal": 3, "entity_51_record": "entity",
+                "reference_ordinal": 5, "referenced_xmt": 70, "string_record": "string-value",
+                "inflated_offset": 200
+            }))
+            .unwrap();
+            let value: ParasolidEntity54StringRecord = serde_json::from_value(serde_json::json!({
+                "id": "string-value", "stream_ordinal": 3, "xmt": 70,
+                "value": "TEXT", "byte_len": 18, "inflated_offset": 400
+            }))
+            .unwrap();
+            attach_parasolid_topology_string_attributes(
+                &ctx,
+                &mut ir,
+                &ParasolidStringAttributeSources {
+                    string_uses: &[value_use],
+                    strings: &[value],
+                },
+                &index,
+                &mut annotations,
+            )?;
+        }
+        AttributeRoute::Numeric => {
+            let value_use = ParasolidEntity51NumericUse {
+                id: "numeric-use".into(),
+                stream_ordinal: 3,
+                entity_51_record: "entity".into(),
+                position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
+                referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+                kind: ParasolidEntity51NumericKind::UnsignedIntegers,
+                value_record: "numeric-value".into(),
+                inflated_offset: 200,
+            };
+            let value = ParasolidEntity52IntegerRecord {
+                id: "numeric-value".into(),
+                stream_ordinal: 3,
+                xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+                values: crate::parasolid::counted_values::CountedValues::new(vec![7]).unwrap(),
+                byte_len: 14,
+                inflated_offset: 400,
+            };
+            attach_parasolid_topology_numeric_attributes(
+                &ctx,
+                &mut ir,
+                &ParasolidNumericAttributeSources {
+                    numeric_uses: &[value_use],
+                    integers: &[value],
+                    doubles: &[],
+                },
+                &index,
+                &mut annotations,
+            )?;
+        }
+        AttributeRoute::Structured => {
+            let value_use = ParasolidEntity51StructuredUse {
+                id: "structured-use".into(),
+                stream_ordinal: 3,
+                entity_51_record: "entity".into(),
+                position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
+                referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+                kind: StructuredValueKind::Points,
+                value_record: "structured-value".into(),
+                inflated_offset: 200,
+            };
+            let value = ParasolidEntityVectorRecord {
+                id: "structured-value".into(),
+                stream_ordinal: 3,
+                kind: ParasolidVectorValueKind::Points,
+                xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+                values: crate::parasolid::counted_values::CountedValues::new(vec![[1.0, 2.0, 3.0]])
+                    .unwrap(),
+                byte_len: 36,
+                inflated_offset: 400,
+            };
+            attach_parasolid_topology_structured_attributes(
+                &ctx,
+                &mut ir,
+                &ParasolidStructuredAttributeSources {
+                    structured_uses: &[value_use],
+                    vectors: &[value],
+                    axes: &[],
+                    tags: &[],
+                    unicode: &[],
+                },
+                &index,
+                &mut annotations,
+            )?;
+        }
+    }
+    Ok(ir.model.attributes.len())
+}
+
+#[test]
+fn string_attribute_output_preserves_value() {
+    assert_eq!(
+        attribute_output_route(AttributeRoute::String, |_| {}).unwrap(),
+        1
+    );
+}
+
+macro_rules! attribute_output_limit_test {
+    ($name:ident, $route:expr, $field:ident, $dimension:ident) => {
+        #[test]
+        fn $name() {
+            let error = attribute_output_route($route, |policy| policy.limits.$field = 0).unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::$dimension));
+        }
+    };
+}
+
+attribute_output_limit_test!(
+    string_attribute_route_refuses_collection_limit,
+    AttributeRoute::String,
+    max_collection_items,
+    CollectionItems
+);
+attribute_output_limit_test!(
+    string_attribute_route_refuses_retained_limit,
+    AttributeRoute::String,
+    max_retained_bytes,
+    RetainedBytes
+);
+attribute_output_limit_test!(
+    string_attribute_route_refuses_scoped_limit,
+    AttributeRoute::String,
+    max_materialized_bytes,
+    MaterializedBytes
+);
+attribute_output_limit_test!(
+    string_attribute_route_refuses_work_limit,
+    AttributeRoute::String,
+    max_work_units,
+    WorkUnits
+);
+attribute_output_limit_test!(
+    numeric_attribute_route_refuses_collection_limit,
+    AttributeRoute::Numeric,
+    max_collection_items,
+    CollectionItems
+);
+attribute_output_limit_test!(
+    numeric_attribute_route_refuses_retained_limit,
+    AttributeRoute::Numeric,
+    max_retained_bytes,
+    RetainedBytes
+);
+attribute_output_limit_test!(
+    numeric_attribute_route_refuses_scoped_limit,
+    AttributeRoute::Numeric,
+    max_materialized_bytes,
+    MaterializedBytes
+);
+attribute_output_limit_test!(
+    numeric_attribute_route_refuses_work_limit,
+    AttributeRoute::Numeric,
+    max_work_units,
+    WorkUnits
+);
+attribute_output_limit_test!(
+    structured_attribute_route_refuses_collection_limit,
+    AttributeRoute::Structured,
+    max_collection_items,
+    CollectionItems
+);
+attribute_output_limit_test!(
+    structured_attribute_route_refuses_retained_limit,
+    AttributeRoute::Structured,
+    max_retained_bytes,
+    RetainedBytes
+);
+attribute_output_limit_test!(
+    structured_attribute_route_refuses_scoped_limit,
+    AttributeRoute::Structured,
+    max_materialized_bytes,
+    MaterializedBytes
+);
+attribute_output_limit_test!(
+    structured_attribute_route_refuses_work_limit,
+    AttributeRoute::Structured,
+    max_work_units,
+    WorkUnits
+);
 
 #[test]
 fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
@@ -125,11 +615,24 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         integers: &[integer],
         doubles: &[double],
     };
-    let topology_attribute_index =
-        ParasolidTopologyAttributeIndex::new(&ir, &references, &class_uses, &definitions, &[], &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
+        &ctx,
+        &ir,
+        &references,
+        &class_uses,
+        &definitions,
+        &[],
+        &[],
+    )
+    .unwrap();
     let mut annotations = AnnotationBuilder::new();
 
     attach_parasolid_topology_numeric_attributes(
+        &ctx,
         &mut ir,
         &sources,
         &topology_attribute_index,
@@ -561,31 +1064,52 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             inflated_offset: 410,
         },
     ];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let index = ParasolidTopologyAttributeIndex::new(
+        &ctx,
         &ir,
         std::slice::from_ref(&reference),
         &class_uses,
         std::slice::from_ref(&definition),
         &field_uses,
         &[],
-    );
+    )
+    .unwrap();
 
     assert_eq!(index.contexts.len(), 2);
     assert_eq!(
         index.class_names.get(reference.id.as_str()).copied(),
-        Some("CLASS")
+        Some(Some("CLASS"))
     );
+    let mut conflicting_definition = definition.clone();
+    conflicting_definition.name =
+        crate::printable_string::PrintableString::new("OTHER".to_string()).unwrap();
+    let conflicting_definitions = [definition.clone(), conflicting_definition];
+    let mut class_reservation = ctx.reserve_scoped(0, "test Parasolid class names").unwrap();
+    let class_names = parasolid_topology_attribute_class_names(
+        &ctx,
+        &mut class_reservation,
+        &class_uses,
+        &conflicting_definitions,
+    )
+    .unwrap();
+    assert_eq!(class_names.get(reference.id.as_str()).copied(), Some(None));
     assert_eq!(
         index
             .attribute_names
-            .field_name(&reference, "head-use")
+            .field_name(&ctx, &reference, "head-use")
+            .unwrap()
             .as_deref(),
         Some("CLASS.field_0.parasolid_type_2")
     );
     assert_eq!(
         index
             .attribute_names
-            .field_name(&reference, "child-use")
+            .field_name(&ctx, &reference, "child-use")
+            .unwrap()
             .as_deref(),
         Some("CLASS.field_0.parasolid_type_2")
     );
@@ -596,7 +1120,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         doubles: &doubles,
     };
     let mut annotations = AnnotationBuilder::new();
-    attach_parasolid_topology_numeric_attributes(&mut ir, &sources, &index, &mut annotations)
+    attach_parasolid_topology_numeric_attributes(&ctx, &mut ir, &sources, &index, &mut annotations)
         .expect("valid exactness fields");
     let attributes = ir
         .model
@@ -724,15 +1248,22 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         tags: &[tag],
         unicode: &[unicode],
     };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
+        &ctx,
         &ir,
         std::slice::from_ref(&reference),
         &[],
         &[],
         &[],
         &[],
-    );
+    )
+    .unwrap();
     attach_parasolid_topology_structured_attributes(
+        &ctx,
         &mut ir,
         &sources,
         &topology_attribute_index,

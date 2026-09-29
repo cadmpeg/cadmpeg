@@ -112,7 +112,7 @@ impl ThruCurveGroup<()> {
         self,
         ctx: &DecodeContext<'_>,
         file_base: u64,
-        mut target: impl FnMut(PayloadIndexToken) -> B,
+        mut target: impl FnMut(PayloadIndexToken) -> Result<B, CodecError>,
     ) -> Result<Option<ThruCurveGroup<B>>, CodecError> {
         let Some(offset) = self.offset.checked_add(file_base) else {
             return Ok(None);
@@ -121,8 +121,8 @@ impl ThruCurveGroup<()> {
         for branch in self.branches.into_vec() {
             let members = branch
                 .members
-                .map_indexed_charged(ctx, |_, (token, ())| (token, target(token)))?;
-            let terminal = (branch.terminal.0, target(branch.terminal.0));
+                .try_map_indexed_charged(ctx, |_, (token, ())| Ok((token, target(token)?)))?;
+            let terminal = (branch.terminal.0, target(branch.terminal.0)?);
             reserve_thru_item(ctx, &mut branches, "NX resolved thru-curve branches")?;
             branches.push(ThruCurveBranch {
                 mode: branch.mode,

@@ -58,38 +58,43 @@ use super::display_jt::{
     DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates, DisplayJtVertexFlagInputs,
     DisplayJtVertexFlags, DisplayJtVertexNormals, DisplayJtVertexTextureCoordinates,
 };
-use super::features::operation_record::FeatureOperationRecord;
-use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
-use super::features::{
+use super::features::construction_records::{
     data_block_object_frames, feature_block_construction_payloads,
     feature_block_construction_references, feature_block_constructions, feature_block_dimensions,
     feature_block_payload_named_records, feature_block_payload_names,
     feature_block_payload_point_groups, feature_block_payload_points,
-    feature_block_payload_scalars, feature_body_data_block_uses,
-    feature_body_reference_occurrences, feature_body_references, feature_body_segment_uses,
-    feature_body_write_group_partition_uses, feature_boolean_operations,
+    feature_block_payload_scalars, feature_extrude_32_constructions,
+    feature_extrude_construction_profiles, feature_extrude_payload_32_branches,
+    feature_extrude_payload_headers, feature_extrude_profile_references,
+    feature_operation_body_11_continuations, feature_operation_body_members,
+    feature_operation_body_operands, feature_operation_body_reference_lanes,
+    feature_operation_body_scalar_triples, feature_operation_terminal_discriminators,
+    feature_point_construction_headers, feature_point_construction_scalar_lanes,
+    feature_projected_curve_construction_payloads, feature_projected_curve_construction_strings,
+    feature_projected_curve_references, feature_surface_construction_payloads,
+    feature_surface_construction_references, feature_surface_construction_scalar_pairs,
+    feature_surface_construction_strings, feature_swp104_leading_branches,
+    feature_thru_curve_construction_envelopes,
+};
+use super::features::operation_record::FeatureOperationRecord;
+use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
+use super::features::{
+    feature_body_data_block_uses, feature_body_reference_occurrences, feature_body_references,
+    feature_body_segment_uses, feature_body_write_group_partition_uses, feature_boolean_operations,
     feature_datum_csys_block_uses, feature_datum_csys_column_row_uses,
     feature_datum_csys_constructions, feature_datum_csys_descriptors,
     feature_datum_csys_payload_fixed_pairs, feature_datum_csys_payload_scalar_pairs,
     feature_datum_csys_payload_scalars, feature_datum_csys_payloads,
     feature_datum_plane_block_uses, feature_datum_plane_csys_identity_uses,
     feature_datum_plane_descriptors, feature_datum_plane_payload_scalar_pairs,
-    feature_datum_plane_payloads, feature_extrude_32_constructions,
-    feature_extrude_construction_profiles, feature_extrude_payload_32_branches,
-    feature_extrude_payload_headers, feature_extrude_profile_references,
-    feature_input_block_identity_groups, feature_input_blocks, feature_input_column_row_uses,
-    feature_input_column_targets, feature_operation_body_11_continuations,
+    feature_datum_plane_payloads, feature_input_block_identity_groups, feature_input_blocks,
+    feature_input_column_row_uses, feature_input_column_targets,
     feature_operation_body_identity_segment_uses, feature_operation_body_image_segment_uses,
-    feature_operation_body_members, feature_operation_body_operands,
-    feature_operation_body_partition_uses, feature_operation_body_reference_lanes,
-    feature_operation_body_scalar_triples, feature_operation_body_writes,
+    feature_operation_body_partition_uses, feature_operation_body_writes,
     feature_operation_common_frames, feature_operation_labels, feature_operation_object_references,
     feature_operation_records, feature_operation_state_journal_uses,
-    feature_operation_terminal_discriminators, feature_operation_terminal_frames,
-    feature_parameter_bindings, feature_parameter_uses, feature_payload_strings,
-    feature_point_construction_headers, feature_point_construction_scalar_lanes,
-    feature_projected_curve_construction_payloads, feature_projected_curve_construction_strings,
-    feature_projected_curve_references, feature_sketch_construction_inputs,
+    feature_operation_terminal_frames, feature_parameter_bindings, feature_parameter_uses,
+    feature_payload_strings, feature_sketch_construction_inputs,
     feature_sketch_construction_payloads, feature_sketch_datum_csys_dependencies,
     feature_sketch_fixed_points, feature_sketch_named_point_block_uses,
     feature_sketch_payload_coordinate_pairs, feature_sketch_payload_fixed_pairs,
@@ -97,10 +102,7 @@ use super::features::{
     feature_sketch_payload_names, feature_sketch_payload_scalar_lanes,
     feature_sketch_payload_scalars, feature_sketch_point_groups, feature_sketch_point_uses,
     feature_sketch_points, feature_sketch_preceding_named_point_uses, feature_sketch_records,
-    feature_sketch_references, feature_surface_construction_payloads,
-    feature_surface_construction_references, feature_surface_construction_scalar_pairs,
-    feature_surface_construction_strings, feature_swp104_leading_branches,
-    feature_thru_curve_construction_envelopes, feature_unlabeled_operation_body_writes,
+    feature_sketch_references, feature_unlabeled_operation_body_writes,
     feature_unlabeled_operation_records, offset_store_named_points, FeatureBlockConstruction,
     FeatureBlockDimensions, FeatureBlockPayloadNamedRecord, FeatureBlockPayloadPoint,
     FeatureBlockPayloadPointGroup, FeatureBodyDataBlockUse, FeatureBodyReference,
@@ -596,18 +598,20 @@ pub(crate) fn extract_segment_lineage(
     let references = feature_body_references(ctx, container)?;
     let blocks = data_blocks(ctx, container)?;
     let inputs = feature_input_blocks(ctx, container)?;
-    let body_data_block_uses = feature_body_data_block_uses(&references, &inputs, &blocks);
+    let body_data_block_uses = feature_body_data_block_uses(ctx, &references, &inputs, &blocks)?;
     let body_reference_occurrences = feature_body_reference_occurrences(ctx, container)?;
     let members = feature_operation_body_members(ctx, container)?;
     let operands = feature_operation_body_operands(
+        ctx,
         &members,
         &body_reference_occurrences,
         &inputs,
         &blocks,
         &bindings,
-    );
+    )?;
     let booleans = feature_boolean_operations(ctx, container)?;
     let statuses = segment_body_lineage_statuses(
+        ctx,
         &labels,
         &references,
         &body_data_block_uses,
@@ -616,7 +620,7 @@ pub(crate) fn extract_segment_lineage(
         &operands,
         &bindings,
         &inputs,
-    )
+    )?
     .unwrap_or_default();
     Ok(SegmentLineage {
         bindings,
@@ -707,8 +711,12 @@ pub(crate) fn terminal_feature_body_ids(
 }
 
 impl NativeModel {
-    pub(crate) fn has_untransferred_parasolid_attribute_fields(&self) -> bool {
+    pub(crate) fn has_untransferred_parasolid_attribute_fields(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
         parasolid_topology_attribute_fields_have_untransferred_values(
+            ctx,
             &self.parasolid.parasolid_attribute_definitions,
             &self.parasolid.parasolid_entity_51_records,
             &self.parasolid.parasolid_attribute_field_uses,
@@ -768,18 +776,18 @@ impl NativeModel {
         let parasolid_group_records =
             parasolid_group_records(ctx, streams, &delta_pairs, &deltas_events.records)?;
         let parasolid_group_members = parasolid_group_members(ctx, streams, &delta_pairs, parsed)?;
-        let parasolid_blend_surface_records = parasolid_blend_surface_records(parsed);
+        let parasolid_blend_surface_records = parasolid_blend_surface_records(ctx, parsed)?;
         let parasolid_blend_bound_records = parasolid_blend_bound_records(ctx, streams)?;
-        let parasolid_offset_surface_records = parasolid_offset_surface_records(parsed);
-        let parasolid_trimmed_curve_records = parasolid_trimmed_curve_records(parsed);
-        let parasolid_surface_curve_records = parasolid_surface_curve_records(parsed);
-        let parasolid_intersection_records = parasolid_intersection_records(parsed);
+        let parasolid_offset_surface_records = parasolid_offset_surface_records(ctx, parsed)?;
+        let parasolid_trimmed_curve_records = parasolid_trimmed_curve_records(ctx, parsed)?;
+        let parasolid_surface_curve_records = parasolid_surface_curve_records(ctx, parsed)?;
+        let parasolid_intersection_records = parasolid_intersection_records(ctx, parsed)?;
         let parasolid_term_use_records = parasolid_term_use_records(ctx, streams)?;
         let parasolid_support_uv_records = parasolid_support_uv_records(ctx, streams)?;
         let parasolid_chart_records = parasolid_chart_records(ctx, streams)?;
-        let parasolid_attribute_definitions = parasolid_attribute_definitions(streams);
-        let parasolid_entity_51_records = parasolid_entity_51_records(streams);
-        let value_records = parasolid_entity_value_records(streams, &deltas_events.records);
+        let parasolid_attribute_definitions = parasolid_attribute_definitions(ctx, streams)?;
+        let parasolid_entity_51_records = parasolid_entity_51_records(ctx, streams)?;
+        let value_records = parasolid_entity_value_records(ctx, streams, &deltas_events.records)?;
         // A value-record frame that passes its family validation and then does
         // not materialize is a disagreement inside the reader, not a record
         // the decoder may drop in silence.
@@ -793,47 +801,58 @@ impl NativeModel {
         let parasolid_entity_57_axis_records = value_records.axes;
         let parasolid_entity_58_tag_records = value_records.tags;
         let parasolid_entity_62_unicode_records = value_records.unicode;
-        let parasolid_field_names_records = parasolid_field_names_records(streams);
+        let parasolid_field_names_records = parasolid_field_names_records(ctx, streams)?;
         let parasolid_attribute_field_names = parasolid_attribute_field_names(
+            ctx,
             &parasolid_attribute_definitions,
             &parasolid_field_names_records,
             &parasolid_entity_54_string_records,
             &parasolid_entity_62_unicode_records,
-        );
+        )?;
         let parasolid_entity_51_numeric_uses = parasolid_entity_51_numeric_uses(
+            ctx,
             &parasolid_entity_51_records,
             &parasolid_entity_52_integer_records,
             &parasolid_entity_53_double_records,
-        );
+        )?;
         let parasolid_entity_51_string_uses = parasolid_entity_51_string_uses(
+            ctx,
             &parasolid_entity_51_records,
             &parasolid_entity_54_string_records,
-        );
+        )?;
         let parasolid_entity_51_structured_uses = parasolid_entity_51_structured_uses(
+            ctx,
             &parasolid_entity_51_records,
             &parasolid_entity_vector_records,
             &parasolid_entity_57_axis_records,
             &parasolid_entity_58_tag_records,
             &parasolid_entity_62_unicode_records,
-        );
+        )?;
         let parasolid_attribute_class_uses = parasolid_attribute_class_uses(
+            ctx,
             &parasolid_entity_51_records,
             &parasolid_attribute_definitions,
-        );
+        )?;
         let parasolid_attribute_field_uses = parasolid_attribute_field_uses(
+            ctx,
             &parasolid_attribute_class_uses,
             &parasolid_attribute_definitions,
             &parasolid_entity_51_numeric_uses,
             &parasolid_entity_51_string_uses,
             &parasolid_entity_51_structured_uses,
-        );
+        )?;
         let parasolid_topology_attribute_list_references =
-            parasolid_topology_attribute_list_references(parsed, &parasolid_entity_51_records);
+            parasolid_topology_attribute_list_references(
+                ctx,
+                parsed,
+                &parasolid_entity_51_records,
+            )?;
         let parasolid_topology_attribute_class_uses = parasolid_topology_attribute_class_uses(
+            ctx,
             &parasolid_topology_attribute_list_references,
             &parasolid_entity_51_records,
             &parasolid_attribute_class_uses,
-        );
+        )?;
         let om_record_areas = om_record_areas(ctx, container)?;
         let audit_trail_rows = audit_trail_rows(ctx, container)?;
         let operation_state_journal_groups = operation_state_journal_groups(ctx, container)?;
@@ -849,28 +868,32 @@ impl NativeModel {
             feature_unlabeled_operation_body_writes(ctx, container)?;
         let feature_operation_body_writes = feature_operation_body_writes(ctx, container)?;
         let feature_operation_body_image_segment_uses = feature_operation_body_image_segment_uses(
+            ctx,
             &feature_operation_body_writes,
             &segment_body_bindings,
-        );
+        )?;
         let feature_operation_body_identity_segment_uses =
             feature_operation_body_identity_segment_uses(
+                ctx,
                 &feature_operation_body_writes,
                 &segment_body_bindings,
-            );
+            )?;
         let feature_operation_body_partition_uses = feature_operation_body_partition_uses(
+            ctx,
             &feature_operation_body_writes,
             &feature_operation_body_image_segment_uses,
             &segment_body_bindings,
             streams,
             &parasolid_group_records,
             &parasolid_group_members,
-        );
+        )?;
         let feature_body_write_group_partition_uses = feature_body_write_group_partition_uses(
+            ctx,
             &feature_operation_body_writes,
             &feature_unlabeled_operation_body_writes,
             &parasolid_group_records,
             &parasolid_group_members,
-        );
+        )?;
         let feature_operation_tagged_references = feature_operation_object_references(
             ctx,
             container,
@@ -887,49 +910,55 @@ impl NativeModel {
         let feature_operation_terminal_frames =
             feature_operation_terminal_frames(ctx, container, &feature_operation_common_frames)?;
         let feature_operation_state_journal_uses = feature_operation_state_journal_uses(
+            ctx,
             &feature_operation_labels,
             &feature_operation_records,
             &feature_operation_terminal_frames,
             &operation_state_journal_groups,
-        );
+        )?;
         let feature_payload_strings = feature_payload_strings(ctx, container)?;
         let feature_symbolic_threads = feature_symbolic_threads(ctx, container)?;
         let feature_threaded_hole_templates = feature_threaded_hole_templates(
+            ctx,
             &feature_operation_labels,
             &feature_operation_records,
             &feature_payload_strings,
-        );
+        )?;
         let feature_simple_hole_templates = feature_simple_hole_templates(
+            ctx,
             &feature_operation_labels,
             &feature_operation_records,
             &feature_payload_strings,
-        );
+        )?;
         let feature_simple_hole_repeated_scalar_lanes =
             feature_simple_hole_repeated_scalar_lanes(ctx, container)?;
         let feature_simple_hole_repeated_scalar_lane_block_references =
             feature_simple_hole_repeated_scalar_lane_block_references(ctx, container)?;
         let feature_simple_hole_construction_groups = feature_simple_hole_construction_groups(
+            ctx,
             &feature_operation_labels,
             &feature_simple_hole_repeated_scalar_lanes,
             &feature_simple_hole_repeated_scalar_lane_block_references,
-        );
+        )?;
         let feature_hole_package_construction_group_lanes =
             feature_hole_package_construction_group_lanes(ctx, container)?;
         let feature_hole_package_construction_group_uses =
             feature_hole_package_construction_group_uses(
+                ctx,
                 &feature_hole_package_construction_group_lanes,
                 &feature_simple_hole_construction_groups,
-            );
+            )?;
         let feature_body_segment_uses = feature_body_segment_uses(
+            ctx,
             &feature_body_references,
             &feature_body_data_block_uses,
             &feature_input_blocks,
             &data_blocks,
             &segment_body_bindings,
             &data_block_object_frames,
-        );
+        )?;
         let feature_input_block_identity_groups =
-            feature_input_block_identity_groups(&feature_input_blocks);
+            feature_input_block_identity_groups(ctx, &feature_input_blocks)?;
         let display_jt_indices = display_jt_indices(ctx, container)?;
         let display_jt_documents = display_jt_documents(ctx, container, &display_jt_indices)?;
         let budget = (ctx, root);
@@ -1054,8 +1083,11 @@ impl NativeModel {
         let feature_datum_csys_descriptors =
             feature_datum_csys_descriptors(ctx, container, &feature_datum_csys_constructions)?;
         let feature_datum_plane_headers = feature_datum_plane_headers(ctx, container)?;
-        let feature_datum_plane_block_uses =
-            feature_datum_plane_block_uses(&feature_datum_plane_headers, &feature_input_blocks);
+        let feature_datum_plane_block_uses = feature_datum_plane_block_uses(
+            ctx,
+            &feature_datum_plane_headers,
+            &feature_input_blocks,
+        )?;
         let feature_datum_plane_payloads =
             feature_datum_plane_payloads(ctx, container, &feature_datum_plane_headers)?;
         let feature_datum_plane_payload_scalar_pairs = feature_datum_plane_payload_scalar_pairs(
@@ -1066,11 +1098,15 @@ impl NativeModel {
         let feature_datum_plane_descriptors =
             feature_datum_plane_descriptors(ctx, container, &feature_datum_plane_headers)?;
         let feature_datum_plane_csys_identity_uses = feature_datum_plane_csys_identity_uses(
+            ctx,
             &feature_datum_plane_descriptors,
             &feature_datum_csys_descriptors,
-        );
-        let feature_datum_csys_block_uses =
-            feature_datum_csys_block_uses(&feature_datum_csys_constructions, &feature_input_blocks);
+        )?;
+        let feature_datum_csys_block_uses = feature_datum_csys_block_uses(
+            ctx,
+            &feature_datum_csys_constructions,
+            &feature_input_blocks,
+        )?;
         let feature_sketch_references = feature_sketch_references(ctx, container)?;
         let feature_projected_curve_references =
             feature_projected_curve_references(ctx, container)?;
@@ -1196,7 +1232,7 @@ impl NativeModel {
         let feature_operation_body_reference_lanes =
             feature_operation_body_reference_lanes(ctx, container)?;
         let feature_extrude_construction_profiles =
-            feature_extrude_construction_profiles(&feature_extrude_profile_references);
+            feature_extrude_construction_profiles(ctx, &feature_extrude_profile_references)?;
         let feature_extrude_payload_32_branches =
             feature_extrude_payload_32_branches(ctx, container)?;
         let feature_extrude_32_constructions = feature_extrude_32_constructions(
@@ -1207,7 +1243,7 @@ impl NativeModel {
         let feature_block_construction_references =
             feature_block_construction_references(ctx, container)?;
         let feature_block_constructions =
-            feature_block_constructions(&feature_block_construction_references);
+            feature_block_constructions(ctx, &feature_block_construction_references)?;
         let feature_block_construction_payloads =
             feature_block_construction_payloads(ctx, container, &feature_block_constructions)?;
         let feature_block_payload_scalars =
@@ -1215,25 +1251,31 @@ impl NativeModel {
         let feature_block_payload_names =
             feature_block_payload_names(ctx, container, &feature_block_construction_payloads)?;
         let feature_block_payload_named_records = feature_block_payload_named_records(
+            ctx,
             &feature_block_construction_payloads,
             &feature_block_payload_names,
             &feature_block_payload_scalars,
-        );
+        )?;
         let feature_block_payload_points = feature_block_payload_points(
+            ctx,
             &feature_block_payload_named_records,
             &feature_block_payload_names,
             &feature_block_payload_scalars,
-        );
+        )?;
         let feature_block_payload_point_groups =
-            feature_block_payload_point_groups(&feature_block_payload_points);
+            feature_block_payload_point_groups(ctx, &feature_block_payload_points)?;
         let feature_sketch_records = feature_sketch_records(
+            ctx,
             &feature_operation_labels,
             &feature_operation_records,
             &feature_input_blocks,
             &feature_sketch_references,
-        );
-        let feature_sketch_construction_inputs =
-            feature_sketch_construction_inputs(&feature_sketch_records, &feature_sketch_references);
+        )?;
+        let feature_sketch_construction_inputs = feature_sketch_construction_inputs(
+            ctx,
+            &feature_sketch_records,
+            &feature_sketch_references,
+        )?;
         let feature_sketch_construction_payloads = feature_sketch_construction_payloads(
             ctx,
             container,
@@ -1264,46 +1306,53 @@ impl NativeModel {
         let feature_sketch_payload_names =
             feature_sketch_payload_names(ctx, container, &feature_sketch_construction_inputs)?;
         let feature_sketch_payload_named_records = feature_sketch_payload_named_records(
+            ctx,
             &feature_sketch_construction_payloads,
             &feature_sketch_payload_names,
             &feature_sketch_payload_scalars,
             &feature_sketch_payload_fixed_pairs,
             &feature_sketch_payload_mixed_pairs,
-        );
+        )?;
         let feature_sketch_fixed_points = feature_sketch_fixed_points(
+            ctx,
             &feature_sketch_payload_named_records,
             &feature_sketch_payload_names,
             &feature_sketch_payload_fixed_pairs,
-        );
+        )?;
         let feature_sketch_points = feature_sketch_points(
+            ctx,
             &feature_sketch_payload_named_records,
             &feature_sketch_payload_names,
             &feature_sketch_payload_scalars,
-        );
-        let feature_sketch_point_groups = feature_sketch_point_groups(&feature_sketch_points);
+        )?;
+        let feature_sketch_point_groups = feature_sketch_point_groups(ctx, &feature_sketch_points)?;
         let offset_store_named_points = offset_store_named_points(ctx, container)?;
         let feature_sketch_named_point_block_uses = feature_sketch_named_point_block_uses(
+            ctx,
             &feature_sketch_references,
             &offset_store_named_points,
-        );
+        )?;
         let feature_sketch_preceding_named_point_uses = feature_sketch_preceding_named_point_uses(
+            ctx,
             &feature_sketch_references,
             &offset_store_named_points,
-        );
+        )?;
         let feature_sketch_point_uses = feature_sketch_point_uses(
+            ctx,
             &feature_sketch_point_groups,
             &offset_store_named_points,
             &feature_sketch_named_point_block_uses,
-        );
+        )?;
         let feature_sketch_datum_csys_dependencies = feature_sketch_datum_csys_dependencies(
+            ctx,
             &feature_operation_labels,
             &offset_store_named_points,
             &feature_sketch_point_uses,
             &feature_datum_csys_constructions,
             &feature_datum_csys_payload_scalars,
-        );
+        )?;
         let expression_declarations = expression_declarations(ctx, container)?;
-        let expressions = expressions(ctx, container)?;
+        let expressions = expressions(ctx, container, &expression_declarations)?;
         let classes = class_definitions(ctx, container)?;
         let fields = field_definitions(ctx, container)?;
         let object_records = object_records(ctx, container)?;
@@ -1327,7 +1376,7 @@ impl NativeModel {
         let data_block_control_index_values = data_block_control_index_values(ctx, container)?;
         let data_block_control_references = data_block_control_references(ctx, container)?;
         let data_block_control_handle_pairs =
-            data_block_control_handle_pairs(&data_block_control_references);
+            data_block_control_handle_pairs(ctx, &data_block_control_references)?;
         let data_block_references =
             data_block_references(ctx, container, &object_records, &expression_declarations)?;
         let data_block_counted_index_lanes = data_block_counted_index_lanes(ctx, container)?;
@@ -1345,78 +1394,90 @@ impl NativeModel {
             &rmfastload_object_ids,
         )?;
         let data_block_column_index_tables = data_block_column_index_tables(
+            ctx,
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
-        );
+        )?;
         let feature_datum_csys_column_row_uses = feature_datum_csys_column_row_uses(
+            ctx,
             &feature_datum_csys_constructions,
             &data_block_index_rows,
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
             &data_block_column_index_tables,
-        );
+        )?;
         let feature_input_column_row_uses = feature_input_column_row_uses(
+            ctx,
             &feature_input_blocks,
             &data_block_index_rows,
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
             &data_block_column_index_tables,
-        );
+        )?;
         let feature_input_column_targets = feature_input_column_targets(
+            ctx,
             &feature_input_blocks,
             &feature_input_column_row_uses,
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
-        );
-        let feature_parameter_bindings =
-            feature_parameter_bindings(&feature_input_blocks, &data_block_references, &expressions);
-        let feature_parameter_uses = feature_parameter_uses(&feature_parameter_bindings);
+        )?;
+        let feature_parameter_bindings = feature_parameter_bindings(
+            ctx,
+            &feature_input_blocks,
+            &data_block_references,
+            &expressions,
+        )?;
+        let feature_parameter_uses = feature_parameter_uses(ctx, &feature_parameter_bindings)?;
         let feature_block_dimensions = feature_block_dimensions(
+            ctx,
             &feature_block_constructions,
             &feature_parameter_bindings,
             &expression_declarations,
             &expressions,
-        );
+        )?;
         let store_headers = store_headers(ctx, container)?;
         let string_values = string_values(ctx, container)?;
         let object_uuid_values = object_uuid_values(ctx, container)?;
         let object_references = object_references(ctx, container)?;
-        let object_record_handle_pairs = object_record_handle_pairs(&object_references);
-        let configurations = configurations(container);
-        let part_attributes = part_attributes(container);
+        let object_record_handle_pairs = object_record_handle_pairs(ctx, &object_references)?;
+        let configurations = configurations(ctx, container)?;
+        let part_attributes = part_attributes(ctx, container)?;
         let configuration_attribute_uses =
-            configuration_attribute_uses(&configurations, &part_attributes);
+            configuration_attribute_uses(ctx, &configurations, &part_attributes)?;
         let external_references = external_references(ctx, container)?;
         let external_reference_records = external_reference_records(ctx, container)?;
         let external_reference_indexed_records =
             external_reference_indexed_records(ctx, container, &external_reference_records)?;
         let external_reference_empty_records =
-            external_reference_empty_records(container, &external_reference_indexed_records);
+            external_reference_empty_records(ctx, container, &external_reference_indexed_records)?;
         let external_reference_tail_reference_pairs =
             external_reference_tail_reference_pairs(ctx, container, &external_reference_records)?;
         let external_reference_record_string_uses = external_reference_record_string_uses(
+            ctx,
             &external_reference_records,
             &external_references,
-        );
+        )?;
         let external_reference_record_children = external_reference_record_children(
+            ctx,
             &external_reference_records,
             &external_references,
             &external_reference_record_string_uses,
-        );
-        let material_texture_assets = material_texture_assets(container);
+        )?;
+        let material_texture_assets = material_texture_assets(ctx, container)?;
         let material_texture_catalog_entries =
-            material_texture_catalog_entries(container, &material_texture_assets);
+            material_texture_catalog_entries(ctx, container, &material_texture_assets)?;
         let persistent_handles = persistent_handles(
+            ctx,
             &object_references,
             &data_block_control_references,
             &external_reference_records,
             &external_reference_tail_reference_pairs,
-        );
+        )?;
         let (
             fast_load_component_prototypes,
             fast_load_component_uuids,
             fast_load_component_occurrences,
-        ) = fast_load_component_roster(container)?;
+        ) = fast_load_component_roster(ctx, container)?;
         let fast_load_component_object_groups = fast_load_component_object_groups(
             ctx,
             &fast_load_component_uuids,

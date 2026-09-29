@@ -19,6 +19,19 @@ struct OccurrenceLane {
 }
 
 impl FastLoadOccurrences {
+    pub(super) fn from_decoded(
+        form: OccurrenceLaneForm,
+        records: Vec<FastLoadComponentOccurrence>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let records =
+            records
+                .try_into()
+                .map_err(|_: cadmpeg_ir::features::BodySelectionError| {
+                    cadmpeg_core::CodecError::malformed("empty NX fast-load occurrence lane")
+                })?;
+        Ok(Self(Some(OccurrenceLane { form, records })))
+    }
+
     pub(in crate::native) fn as_slice(&self) -> &[FastLoadComponentOccurrence] {
         self.0.as_ref().map_or(&[], |lane| lane.records.as_slice())
     }

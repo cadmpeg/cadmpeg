@@ -16,6 +16,256 @@ use crate::test_support::test_om::composed_feature_history_payload;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::NxCodec;
 
+const SYNTHETIC_BOOLEAN_PAYLOAD: &[u8] = b"\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x01\x00\x01\x03\x02\x03\x00";
+
+fn boolean_native_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let part = composed_feature_history_payload(
+        &[(&[0xff; 4], "SUBTRACT", SYNTHETIC_BOOLEAN_PAYLOAD.to_vec())],
+        &[],
+    );
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
+    let container = crate::test_support::with_decode_context(move |ctx| {
+        crate::container::scan_bytes(ctx, file)
+    })
+    .expect("Boolean native container");
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::feature_boolean_operations(ctx, &container)
+    })
+    .expect("admitted native Boolean operations");
+    assert_eq!(admitted.len(), 1);
+    assert_eq!(admitted[0].tools.len(), 2);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    crate::native::features::feature_boolean_operations(&ctx, &container)
+        .expect_err("native Boolean resource limit")
+}
+
+#[test]
+fn native_boolean_route_refuses_collection_limit() {
+    let error = boolean_native_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn native_boolean_route_refuses_retained_limit() {
+    let error = boolean_native_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn native_boolean_route_refuses_scoped_limit() {
+    let error = boolean_native_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn native_boolean_route_refuses_work_limit() {
+    let error = boolean_native_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+fn feature_body_segment_uses(
+    references: &[FeatureBodyReference],
+    data_block_uses: &[crate::native::features::FeatureBodyDataBlockUse],
+    inputs: &[FeatureInputBlock],
+    blocks: &[crate::native::om::DataBlock],
+    bindings: &[crate::native::segments::SegmentBodyBinding],
+    object_frames: &[crate::native::features::object_frame::DataBlockObjectFrame],
+) -> Vec<crate::native::features::FeatureBodySegmentUse> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::feature_body_segment_uses(
+            ctx,
+            references,
+            data_block_uses,
+            inputs,
+            blocks,
+            bindings,
+            object_frames,
+        )
+    })
+    .expect("admitted feature body segment uses")
+}
+
+fn body_segment_use_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    use crate::native::om::{DataBlock, DataBlockRole};
+    let reference = FeatureBodyReference {
+        ordinal: None,
+        id: "nx:feature-history:body-reference#0".to_string(),
+        operation_label: "operation#0".to_string(),
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(11, &[11])
+            .expect("reference token"),
+        source_offset: 0,
+    };
+    let binding = crate::native::segments::SegmentBodyBinding {
+        id: "binding#0".to_string(),
+        stream_link: "stream#0".to_string(),
+        stream_ordinal: 0,
+        stream_kind: crate::parasolid::StreamKind::Partition,
+        body_object_index: 10,
+        body_alias_object_index: 11,
+        stream_role: 19,
+        source_offset: 0,
+    };
+    let input = FeatureInputBlock {
+        id: "input#0".to_string(),
+        operation_label: "other-operation".to_string(),
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(1, &[1])
+            .expect("input token"),
+        data_block: "block#1".to_string(),
+        source_offset: 0,
+    };
+    let block = DataBlock {
+        id: "block#1".to_string(),
+        section_ordinal: 0,
+        block_ordinal: 1,
+        role: DataBlockRole::Column,
+        section_offset: 0,
+        byte_len: 0,
+        sha256: crate::native::hex::Sha256Hex::digest(&[]),
+        stable_identity: None,
+        source_entry: String::new(),
+        source_offset: 0,
+    };
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::native::features::feature_body_segment_uses(
+            ctx,
+            std::slice::from_ref(&reference),
+            &[],
+            std::slice::from_ref(&input),
+            std::slice::from_ref(&block),
+            std::slice::from_ref(&binding),
+            &[],
+        )
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted body segment uses");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("body segment use resource limit")
+}
+
+#[test]
+fn body_segment_uses_refuse_collection_limit() {
+    let error = body_segment_use_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn body_segment_uses_refuse_retained_limit() {
+    let error = body_segment_use_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn body_segment_uses_refuse_scoped_limit() {
+    let error = body_segment_use_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn body_segment_uses_refuse_work_limit() {
+    let error = body_segment_use_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+fn chronological_label_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let labels = [FeatureOperationLabel {
+        id: "operation#0".to_string(),
+        section_link: "section#0".to_string(),
+        ordinal: 0,
+        value: "EXTRUDE".to_string(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
+        stable_identity: None,
+        source_offset: 10,
+    }];
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_chronological_labels(ctx, &labels)
+    })
+    .expect("admitted chronological labels");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    feature_operation_chronological_labels(&ctx, &labels)
+        .expect_err("chronological label resource limit")
+}
+
+#[test]
+fn chronological_labels_refuse_collection_limit() {
+    let error = chronological_label_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn chronological_labels_refuse_retained_limit() {
+    let error = chronological_label_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn chronological_labels_refuse_scoped_limit() {
+    let error = chronological_label_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn chronological_labels_refuse_work_limit() {
+    let error = chronological_label_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
 #[test]
 fn segment_body_lineage_statuses_cover_every_bound_image() {
     use crate::native::features::FeatureBodyReference;
@@ -73,25 +323,29 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
                 source_offset: u64::from(stream_ordinal),
             }
         };
-    let statuses = segment_body_lineage_statuses(
-        &labels,
-        &references,
-        &[],
-        &[],
-        &booleans,
-        &[],
-        &[
-            binding(
-                "binding#0",
-                0,
-                crate::parasolid::StreamKind::Partition,
-                10,
-                11,
-            ),
-            binding("binding#1", 1, crate::parasolid::StreamKind::Plain, 20, 21),
-        ],
-        &[],
-    )
+    let statuses = crate::test_support::with_decode_context(|ctx| {
+        segment_body_lineage_statuses(
+            ctx,
+            &labels,
+            &references,
+            &[],
+            &[],
+            &booleans,
+            &[],
+            &[
+                binding(
+                    "binding#0",
+                    0,
+                    crate::parasolid::StreamKind::Partition,
+                    10,
+                    11,
+                ),
+                binding("binding#1", 1, crate::parasolid::StreamKind::Plain, 20, 21),
+            ],
+            &[],
+        )
+    })
+    .expect("admitted segment lineage statuses")
     .expect("required invariant");
     assert_eq!(statuses.len(), 2);
     assert!(statuses[0].terminal);
@@ -116,14 +370,16 @@ fn unique_feature_body_references_require_one_field_per_operation() {
         reference("reference#1", "operation#0", 11),
         reference("reference#2", "operation#1", 12),
     ];
-    let unique = unique_feature_body_references(&references);
+    let unique = crate::test_support::with_decode_context(|ctx| {
+        unique_feature_body_references(ctx, &references)
+    })
+    .expect("admitted unique body references");
     assert!(!unique.contains_key("operation#0"));
     assert_eq!(unique["operation#1"].id, "reference#2");
 }
 
 #[test]
 fn feature_body_segment_uses_require_one_alias_pair() {
-    use crate::native::features::feature_body_segment_uses;
     use crate::native::features::FeatureBodyReference;
     use crate::native::segments::SegmentBodyBinding;
     let reference = FeatureBodyReference {
@@ -183,7 +439,6 @@ fn feature_body_segment_uses_require_one_alias_pair() {
 
 #[test]
 fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
-    use crate::native::features::feature_body_segment_uses;
     use crate::native::features::object_frame::DataBlockObjectFrame;
     use crate::native::features::FeatureBodyDataBlockUse;
     use crate::native::features::FeatureBodyReference;
@@ -394,7 +649,6 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
 
 #[test]
 fn feature_body_segment_uses_reject_primary_index_offset_collision() {
-    use crate::native::features::feature_body_segment_uses;
     use crate::native::features::FeatureBodyDataBlockUse;
     use crate::native::features::FeatureBodyReference;
     use crate::native::segments::SegmentBodyBinding;
@@ -429,7 +683,6 @@ fn feature_body_segment_uses_reject_primary_index_offset_collision() {
 
 #[test]
 fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
-    use crate::native::features::feature_body_segment_uses;
     use crate::native::features::FeatureBodyReference;
     use crate::native::features::FeatureInputBlock;
     use crate::native::om::{DataBlock, DataBlockRole};
@@ -481,7 +734,6 @@ fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
 
 #[test]
 fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
-    use crate::native::features::feature_body_segment_uses;
     use crate::native::features::FeatureBodyReference;
     use crate::native::features::FeatureInputBlock;
     use crate::native::om::{DataBlock, DataBlockRole};
@@ -579,11 +831,15 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
         block("nx:om-data-blocks-1:block#72", 1, 72),
         block("nx:om-data-blocks-2:block#72", 2, 72),
     ];
-    let uses = feature_body_data_block_uses(
-        std::slice::from_ref(&reference),
-        std::slice::from_ref(&input),
-        &blocks,
-    );
+    let uses = crate::test_support::with_decode_context(|ctx| {
+        feature_body_data_block_uses(
+            ctx,
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&input),
+            &blocks,
+        )
+    })
+    .unwrap();
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].data_block, blocks[2].id);
     let duplicate_reference = FeatureBodyReference {
@@ -593,10 +849,74 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
         body: crate::om::reference_index::FeatureReferenceToken::from_wire(73, &[73]).unwrap(),
         source_offset: 91,
     };
-    assert!(
-        feature_body_data_block_uses(&[reference, duplicate_reference], &[input], &blocks,)
-            .is_empty()
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        feature_body_data_block_uses(ctx, &[reference, duplicate_reference], &[input], &blocks)
+    })
+    .unwrap()
+    .is_empty());
+}
+
+#[test]
+fn feature_body_data_block_uses_refuse_collection_at_caller_limit() {
+    use crate::native::features::{
+        feature_body_data_block_uses, FeatureBodyReference, FeatureInputBlock,
+    };
+    use crate::native::om::{DataBlock, DataBlockRole};
+
+    let reference = FeatureBodyReference {
+        ordinal: None,
+        id: "nx:feature-history:body-reference#0".into(),
+        operation_label: "operation#0".into(),
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(72, &[72]).unwrap(),
+        source_offset: 90,
+    };
+    let input = FeatureInputBlock {
+        id: "input#0".into(),
+        operation_label: "operation#0".into(),
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
+        data_block: "nx:om-data-blocks-2:block#3".into(),
+        source_offset: 80,
+    };
+    let blocks = [
+        DataBlock {
+            id: "nx:om-data-blocks-2:block#3".into(),
+            section_ordinal: 2,
+            block_ordinal: 3,
+            role: DataBlockRole::Column,
+            section_offset: 10,
+            byte_len: 19,
+            sha256: crate::native::hex::Sha256Hex::digest(&[0]),
+            stable_identity: None,
+            source_entry: "part".into(),
+            source_offset: 20,
+        },
+        DataBlock {
+            id: "nx:om-data-blocks-2:block#72".into(),
+            section_ordinal: 2,
+            block_ordinal: 72,
+            role: DataBlockRole::Column,
+            section_offset: 10,
+            byte_len: 19,
+            sha256: crate::native::hex::Sha256Hex::digest(&[0]),
+            stable_identity: None,
+            source_entry: "part".into(),
+            source_offset: 20,
+        },
+    ];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = feature_body_data_block_uses(&ctx, &[reference], &[input], &blocks)
+        .expect_err("body block use needs one collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "NX feature body block uses"
+    ));
 }
 
 #[test]
@@ -650,16 +970,20 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
         binding("binding#2", 2, 40, 20),
     ];
 
-    let statuses = segment_body_lineage_statuses(
-        &labels,
-        &references,
-        &[],
-        &[],
-        &booleans,
-        &[],
-        &bindings,
-        &[],
-    )
+    let statuses = crate::test_support::with_decode_context(|ctx| {
+        segment_body_lineage_statuses(
+            ctx,
+            &labels,
+            &references,
+            &[],
+            &[],
+            &booleans,
+            &[],
+            &bindings,
+            &[],
+        )
+    })
+    .expect("admitted segment lineage statuses")
     .expect("required invariant");
     assert_eq!(statuses.len(), 3);
     assert!(statuses.iter().all(|status| !status.terminal));
@@ -667,8 +991,8 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
 
 #[test]
 fn nx_block_payload_points_require_exactly_two_named_scalars() {
-    use crate::native::features::feature_block_payload_point_groups;
-    use crate::native::features::feature_block_payload_points;
+    use crate::native::features::construction_records::feature_block_payload_point_groups;
+    use crate::native::features::construction_records::feature_block_payload_points;
     use crate::native::features::FeatureBlockPayloadNamedRecord;
     use crate::native::features::FeaturePayloadScalar;
 
@@ -717,18 +1041,25 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
         payload_end_offset: 50,
     };
 
-    let points = feature_block_payload_points(
-        std::slice::from_ref(&record),
-        std::slice::from_ref(&name),
-        &scalars,
-    );
+    let points = crate::test_support::with_decode_context(|ctx| {
+        feature_block_payload_points(
+            ctx,
+            std::slice::from_ref(&record),
+            std::slice::from_ref(&name),
+            &scalars,
+        )
+    })
+    .expect("admitted block points");
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].name, "Point7");
     assert_eq!(points[0].coordinates, [1.25, -2.5]);
 
     let mut duplicate = points[0].clone();
     duplicate.id = "point-2".to_string();
-    let groups = feature_block_payload_point_groups(&[points[0].clone(), duplicate]);
+    let groups = crate::test_support::with_decode_context(|ctx| {
+        feature_block_payload_point_groups(ctx, &[points[0].clone(), duplicate])
+    })
+    .expect("admitted block point group");
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].points.len(), 2);
     assert_eq!(groups[0].coordinates, [1.25, -2.5]);
@@ -740,13 +1071,23 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
         f64::from_bits((-2.5_f64).to_bits() + 1),
     ])
     .expect("finite coordinates");
-    assert!(feature_block_payload_point_groups(&[points[0].clone(), conflicting]).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        feature_block_payload_point_groups(ctx, &[points[0].clone(), conflicting])
+    })
+    .expect("conflicting block point group")
+    .is_empty());
 
     let mut incomplete = record.clone();
     incomplete.scalar_fields.pop();
     assert!(
-        feature_block_payload_points(&[incomplete], std::slice::from_ref(&name), &scalars,)
-            .is_empty()
+        crate::test_support::with_decode_context(|ctx| feature_block_payload_points(
+            ctx,
+            &[incomplete],
+            std::slice::from_ref(&name),
+            &scalars,
+        ))
+        .expect("incomplete block point")
+        .is_empty()
     );
     let mut malformed = name;
     malformed.frame = crate::om::name_field::NameField::new(
@@ -758,7 +1099,16 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
         }),
     )
     .unwrap();
-    assert!(feature_block_payload_points(&[record], &[malformed], &scalars).is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| feature_block_payload_points(
+            ctx,
+            &[record],
+            &[malformed],
+            &scalars,
+        ))
+        .expect("malformed block point")
+        .is_empty()
+    );
 }
 
 #[test]
@@ -779,10 +1129,13 @@ fn operation_history_reverses_source_order_within_each_section() {
         label("second", 1, "oldest-second"),
     ];
 
-    let values = feature_operation_chronological_labels(&labels)
-        .into_iter()
-        .map(|label| label.value.as_str())
-        .collect::<Vec<_>>();
+    let values = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_chronological_labels(ctx, &labels)
+    })
+    .expect("admitted chronological labels")
+    .into_iter()
+    .map(|label| label.value.as_str())
+    .collect::<Vec<_>>();
 
     assert_eq!(
         values,
@@ -813,10 +1166,13 @@ fn operation_history_groups_interleaved_sections_before_reversing() {
         label("second", 1, "oldest-second"),
     ];
 
-    let values = feature_operation_chronological_labels(&labels)
-        .into_iter()
-        .map(|label| label.value.as_str())
-        .collect::<Vec<_>>();
+    let values = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_chronological_labels(ctx, &labels)
+    })
+    .expect("admitted chronological labels")
+    .into_iter()
+    .map(|label| label.value.as_str())
+    .collect::<Vec<_>>();
 
     assert_eq!(
         values,
@@ -847,10 +1203,13 @@ fn operation_history_uses_serialized_offsets_for_section_and_member_order() {
         label("second", 0, "newest-second", 100),
     ];
 
-    let values = feature_operation_chronological_labels(&labels)
-        .into_iter()
-        .map(|label| label.value.as_str())
-        .collect::<Vec<_>>();
+    let values = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_chronological_labels(ctx, &labels)
+    })
+    .expect("admitted chronological labels")
+    .into_iter()
+    .map(|label| label.value.as_str())
+    .collect::<Vec<_>>();
 
     assert_eq!(
         values,

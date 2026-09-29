@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::ids::BodyId;
@@ -12,6 +14,20 @@ use cadmpeg_ir::ids::BodyId;
 pub(super) const NATIVE_PRIMARY_BODY_CLOSURE_WITNESS: &str = "native_primary_body_closure_witness";
 /// Source property carrying an admitted native primary-body object index.
 pub(super) const NATIVE_PRIMARY_BODY_OBJECT_INDEX: &str = "primary_body_object_index";
+
+fn charge_history_bytes(
+    ctx: &DecodeContext<'_>,
+    fixed_bytes: usize,
+    key_bytes: usize,
+    value_bytes: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let bytes = fixed_bytes
+        .checked_add(key_bytes)
+        .and_then(|bytes| bytes.checked_add(value_bytes))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64_from_index(value_bytes)))?;
+    ctx.charge_retained(u64_from_index(bytes), operation)
+}
 
 /// Ordered feature writers indexed by both native history identity and the
 /// neutral body identity established by projection.
@@ -52,12 +68,30 @@ impl BodyWriterHistory {
 
     pub(super) fn extend_primary_dependencies(
         &self,
+        ctx: &DecodeContext<'_>,
         provisional_feature: Option<&FeatureId>,
         native_body: Option<u32>,
         offset_store_body: Option<&str>,
         outputs: &[BodyId],
         dependencies: &mut Vec<FeatureId>,
-    ) {
+    ) -> Result<(), CodecError> {
+        let mut append = |writer: &FeatureId| -> Result<(), CodecError> {
+            if !dependencies.contains(writer) {
+                ctx.charge_collection_items(1, "NX primary writer dependencies")?;
+                charge_history_bytes(
+                    ctx,
+                    std::mem::size_of::<FeatureId>(),
+                    0,
+                    writer.as_str().len(),
+                    "NX primary writer dependencies",
+                )?;
+                dependencies
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("NX primary writer dependencies", 0, 1))?;
+                dependencies.push(writer.clone());
+            }
+            Ok(())
+        };
         let mut has_output_writer = false;
         for output in outputs {
             if let Some(writer) = self.outputs.get(output) {
@@ -65,43 +99,86 @@ impl BodyWriterHistory {
                     continue;
                 }
                 has_output_writer = true;
-                if !dependencies.contains(writer) {
-                    dependencies.push(writer.clone());
-                }
+                append(writer)?;
             }
         }
         if !has_output_writer {
             if let Some(writer) = native_body.and_then(|body| self.native.get(&body)) {
-                if !dependencies.contains(writer) {
-                    dependencies.push(writer.clone());
-                }
+                append(writer)?;
             } else if let Some(writer) =
                 offset_store_body.and_then(|body| self.offset_store.get(body))
             {
-                if !dependencies.contains(writer) {
-                    dependencies.push(writer.clone());
-                }
+                append(writer)?;
             }
         }
+        Ok(())
     }
 
     pub(super) fn record_writer(
         &mut self,
+        ctx: &DecodeContext<'_>,
         native_body: Option<u32>,
         offset_store_body: Option<&str>,
         outputs: &[BodyId],
         feature: &FeatureId,
-    ) {
+    ) -> Result<(), CodecError> {
+        let feature_bytes = feature.as_str().len();
         if let Some(body) = native_body {
+            if self.native.contains_key(&body) {
+                ctx.charge_retained(
+                    u64_from_index(feature_bytes),
+                    "NX native body writer history",
+                )?;
+            } else {
+                ctx.charge_collection_items(1, "NX native body writer history")?;
+                charge_history_bytes(
+                    ctx,
+                    std::mem::size_of::<(u32, FeatureId)>(),
+                    0,
+                    feature_bytes,
+                    "NX native body writer history",
+                )?;
+            }
             self.native.insert(body, feature.clone());
         }
         if let Some(data_block) = offset_store_body {
+            if self.offset_store.contains_key(data_block) {
+                ctx.charge_retained(
+                    u64_from_index(feature_bytes),
+                    "NX offset-store writer history",
+                )?;
+            } else {
+                ctx.charge_collection_items(1, "NX offset-store writer history")?;
+                charge_history_bytes(
+                    ctx,
+                    std::mem::size_of::<(String, FeatureId)>(),
+                    data_block.len(),
+                    feature_bytes,
+                    "NX offset-store writer history",
+                )?;
+            }
             self.offset_store
                 .insert(data_block.to_string(), feature.clone());
         }
         for output in outputs {
+            if self.outputs.contains_key(output) {
+                ctx.charge_retained(
+                    u64_from_index(feature_bytes),
+                    "NX neutral body writer history",
+                )?;
+            } else {
+                ctx.charge_collection_items(1, "NX neutral body writer history")?;
+                charge_history_bytes(
+                    ctx,
+                    std::mem::size_of::<(BodyId, FeatureId)>(),
+                    output.as_str().len(),
+                    feature_bytes,
+                    "NX neutral body writer history",
+                )?;
+            }
             self.outputs.insert(output.clone(), feature.clone());
         }
+        Ok(())
     }
 
     /// Retract provisional output ownership when a later construction record
@@ -271,11 +348,218 @@ pub(crate) fn active_feature_closure(
         .collect())
 }
 
+fn charge_closure_identity(ctx: &DecodeContext<'_>, id: &FeatureId) -> Result<(), CodecError> {
+    ctx.charge_retained(
+        u64_from_index(id.as_str().len()),
+        "NX active feature closure identity",
+    )
+}
+
+/// Resolve the active feature closure while accounting for decode scratch and
+/// the returned identities. The CADIR evaluator uses the context-free form.
+pub(crate) fn active_feature_closure_for_decode(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    bodies: &[BodyId],
+) -> Result<Result<BTreeMap<FeatureId, usize>, ActiveFeatureClosureRejection>, CodecError> {
+    let feature_count = ir.model.features.len();
+    let scratch_nodes = feature_count
+        .checked_mul(
+            std::mem::size_of::<(&FeatureId, (usize, &cadmpeg_ir::features::Feature))>() * 8,
+        )
+        .and_then(|bytes| {
+            feature_count
+                .checked_mul(std::mem::size_of::<(usize, &cadmpeg_ir::features::Feature)>())
+                .and_then(|more| bytes.checked_add(more))
+        })
+        .and_then(|bytes| {
+            bodies
+                .len()
+                .checked_mul(std::mem::size_of::<&BodyId>() * 4)
+                .and_then(|more| bytes.checked_add(more))
+        })
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX active feature closure scratch",
+                0,
+                u64_from_index(feature_count),
+            )
+        })?;
+    let _scratch = ctx.reserve_scoped(
+        u64_from_index(scratch_nodes),
+        "NX active feature closure scratch",
+    )?;
+    let mut features = BTreeMap::new();
+    for (index, feature) in ir.model.features.iter().enumerate() {
+        ctx.charge_work(
+            u64_from_index(features.len()),
+            "NX active feature identity lookup",
+        )?;
+        if features.contains_key(&feature.id) {
+            charge_closure_identity(ctx, &feature.id)?;
+            return Ok(Err(
+                ActiveFeatureClosureRejection::DuplicateFeatureIdentity {
+                    feature: feature.id.clone(),
+                },
+            ));
+        }
+        ctx.charge_collection_items(1, "NX active feature identity index")?;
+        features.insert(&feature.id, (index, feature));
+    }
+    let mut active_bodies = BTreeSet::new();
+    for body in bodies {
+        ctx.charge_work(u64_from_index(active_bodies.len()), "NX active body lookup")?;
+        if !active_bodies.contains(body) {
+            ctx.charge_collection_items(1, "NX active bodies")?;
+            active_bodies.insert(body);
+        }
+    }
+    let mut active_features = BTreeMap::new();
+    for (id, &resolved) in &features {
+        ctx.charge_work(
+            u64_from_index(resolved.1.evaluation.outputs().len()),
+            "NX active body writer lookup",
+        )?;
+        if resolved
+            .1
+            .evaluation
+            .outputs()
+            .iter()
+            .any(|body| active_bodies.contains(body))
+        {
+            ctx.charge_collection_items(1, "NX active feature writers")?;
+            active_features.insert(*id, resolved);
+        }
+    }
+    let has_neutral_body_writer = active_features.values().any(|(_, feature)| {
+        !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
+        )
+    });
+    let has_native_body_witness = active_features.values().any(|(_, feature)| {
+        matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
+        ) && feature.evaluation.outputs().len() == active_bodies.len()
+            && feature
+                .evaluation
+                .outputs()
+                .iter()
+                .all(|body| active_bodies.contains(body))
+            && feature
+                .source_properties
+                .contains_key(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
+    });
+    let has_retained_history_input = active_features.values().any(|(_, feature)| {
+        matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
+        ) && feature
+            .source_properties
+            .keys()
+            .any(|key| key.as_str().starts_with("segment_body_binding."))
+    });
+    if !has_neutral_body_writer && has_retained_history_input && !has_native_body_witness {
+        return Ok(Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter));
+    }
+    if !has_neutral_body_writer && has_native_body_witness {
+        for (id, &resolved) in &features {
+            let feature = resolved.1;
+            if feature.native_ref.is_some()
+                && feature.source_tag.is_some()
+                && feature
+                    .source_properties
+                    .get(NATIVE_PRIMARY_BODY_OBJECT_INDEX)
+                    .is_some_and(|reference| !reference.is_empty())
+                && !active_features.contains_key(id)
+            {
+                ctx.charge_collection_items(1, "NX native active feature witnesses")?;
+                active_features.insert(*id, resolved);
+            }
+        }
+    }
+    if active_features.is_empty() {
+        return Ok(Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter));
+    }
+    let mut pending = Vec::new();
+    for &resolved in active_features.values() {
+        ctx.charge_collection_items(1, "NX pending active features")?;
+        pending
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("NX pending active features", 0, 1))?;
+        pending.push(resolved);
+    }
+    while let Some((_, feature)) = pending.pop() {
+        for dependency in &feature.dependencies {
+            ctx.charge_work(
+                u64_from_index(features.len()),
+                "NX active feature dependency lookup",
+            )?;
+            let Some((&dependency_id, &(index, dependency_feature))) =
+                features.get_key_value(dependency)
+            else {
+                charge_closure_identity(ctx, &feature.id)?;
+                charge_closure_identity(ctx, dependency)?;
+                return Ok(Err(ActiveFeatureClosureRejection::MissingDependency {
+                    feature: feature.id.clone(),
+                    dependency: dependency.clone(),
+                }));
+            };
+            if dependency_feature.ordinal >= feature.ordinal {
+                charge_closure_identity(ctx, &feature.id)?;
+                charge_closure_identity(ctx, dependency)?;
+                return Ok(Err(ActiveFeatureClosureRejection::DependencyNotEarlier {
+                    feature: feature.id.clone(),
+                    feature_ordinal: feature.ordinal,
+                    dependency: dependency.clone(),
+                    dependency_ordinal: dependency_feature.ordinal,
+                }));
+            }
+            if !active_features.contains_key(dependency_id) {
+                ctx.charge_collection_items(1, "NX active feature dependencies")?;
+                active_features.insert(dependency_id, (index, dependency_feature));
+                ctx.charge_collection_items(1, "NX pending active features")?;
+                pending
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("NX pending active features", 0, 1))?;
+                pending.push((index, dependency_feature));
+            }
+        }
+    }
+    if let Some((_, feature)) = active_features
+        .values()
+        .find(|(_, feature)| feature.suppressed == Some(true))
+    {
+        charge_closure_identity(ctx, &feature.id)?;
+        return Ok(Err(ActiveFeatureClosureRejection::ExplicitlySuppressed {
+            feature: feature.id.clone(),
+        }));
+    }
+    let mut result = BTreeMap::new();
+    for (id, (index, _)) in active_features {
+        ctx.charge_collection_items(1, "NX active feature closure result")?;
+        let bytes = std::mem::size_of::<(FeatureId, usize)>()
+            .checked_mul(4)
+            .and_then(|bytes| bytes.checked_add(id.as_str().len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX active feature closure result",
+                    0,
+                    u64_from_index(id.as_str().len()),
+                )
+            })?;
+        ctx.charge_retained(u64_from_index(bytes), "NX active feature closure result")?;
+        result.insert(id.clone(), index);
+    }
+    Ok(Ok(result))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        active_feature_closure, ActiveFeatureClosureRejection, BodyWriterHistory,
-        NATIVE_PRIMARY_BODY_CLOSURE_WITNESS, NATIVE_PRIMARY_BODY_OBJECT_INDEX,
+        active_feature_closure, active_feature_closure_for_decode, ActiveFeatureClosureRejection,
+        BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS, NATIVE_PRIMARY_BODY_OBJECT_INDEX,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::FeatureDefinition;
@@ -284,7 +568,62 @@ mod tests {
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureTreeNodeRole};
+
+    #[test]
+    fn body_writer_history_refuses_collection_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
+        let mut history = BodyWriterHistory::default();
+        let error = history
+            .record_writer(&ctx, Some(7), None, &[], &feature)
+            .unwrap_err();
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+        );
+    }
+
+    #[test]
+    fn body_writer_history_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
+        let mut history = BodyWriterHistory::default();
+        let error = history
+            .record_writer(&ctx, Some(7), None, &[], &feature)
+            .unwrap_err();
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
+    }
+
+    #[test]
+    fn primary_writer_dependency_refuses_collection_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let feature = FeatureId::mint("synthetic:test:id#writer").unwrap();
+        let mut history = BodyWriterHistory::default();
+        history
+            .record_writer(&ctx, Some(7), None, &[], &feature)
+            .unwrap();
+        let mut dependencies = Vec::new();
+        let error = history
+            .extend_primary_dependencies(&ctx, None, Some(7), None, &[], &mut dependencies)
+            .unwrap_err();
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+        );
+    }
 
     fn history_feature(
         id: &str,
@@ -322,6 +661,57 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.features = features;
         (ir, body)
+    }
+
+    fn closure_refusal_for_limit(dimension: ResourceDimension) -> CodecError {
+        let (ir, body) = closure_ir(vec![history_feature(
+            "synthetic:test:id#writer",
+            0,
+            Vec::new(),
+            vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
+            BTreeMap::new(),
+            false,
+        )]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            _ => unreachable!("test only covers four closure dimensions"),
+        }
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        active_feature_closure_for_decode(&ctx, &ir, &[body]).expect_err("closure must refuse")
+    }
+
+    #[test]
+    fn active_feature_closure_refuses_collection_limit() {
+        assert!(
+            matches!(closure_refusal_for_limit(ResourceDimension::CollectionItems), CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+        );
+    }
+
+    #[test]
+    fn active_feature_closure_refuses_retained_limit() {
+        assert!(
+            matches!(closure_refusal_for_limit(ResourceDimension::RetainedBytes), CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
+    }
+
+    #[test]
+    fn active_feature_closure_refuses_scoped_limit() {
+        assert!(
+            matches!(closure_refusal_for_limit(ResourceDimension::MaterializedBytes), CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes)
+        );
+    }
+
+    #[test]
+    fn active_feature_closure_refuses_work_limit() {
+        assert!(
+            matches!(closure_refusal_for_limit(ResourceDimension::WorkUnits), CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
+        );
     }
 
     #[test]
@@ -424,31 +814,47 @@ mod tests {
 
     #[test]
     fn neutral_output_identity_closes_lineage_across_native_identities() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+
         let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
         let first = FeatureId::mint("synthetic:test:id#first").expect("identity grammar");
         let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
         let mut history = BodyWriterHistory::default();
-        history.record_writer(Some(7), None, std::slice::from_ref(&body), &first);
+        history
+            .record_writer(&ctx, Some(7), None, std::slice::from_ref(&body), &first)
+            .expect("admitted writer history");
 
         let mut dependencies = Vec::new();
-        history.extend_primary_dependencies(
-            None,
-            Some(8),
-            None,
-            std::slice::from_ref(&body),
-            &mut dependencies,
-        );
+        history
+            .extend_primary_dependencies(
+                &ctx,
+                None,
+                Some(8),
+                None,
+                std::slice::from_ref(&body),
+                &mut dependencies,
+            )
+            .expect("admitted writer history");
 
         assert_eq!(dependencies, [first]);
         assert!(history.native_writer(8).is_none());
-        history.record_writer(Some(8), None, std::slice::from_ref(&body), &second);
+        history
+            .record_writer(&ctx, Some(8), None, std::slice::from_ref(&body), &second)
+            .expect("admitted writer history");
         assert_eq!(history.native_writer(8), Some(&second));
         dependencies.clear();
-        history.extend_primary_dependencies(None, Some(7), None, &[body], &mut dependencies);
+        history
+            .extend_primary_dependencies(&ctx, None, Some(7), None, &[body], &mut dependencies)
+            .expect("admitted writer history");
         assert_eq!(dependencies, [second]);
 
         dependencies.clear();
-        history.extend_primary_dependencies(None, Some(7), None, &[], &mut dependencies);
+        history
+            .extend_primary_dependencies(&ctx, None, Some(7), None, &[], &mut dependencies)
+            .expect("admitted writer history");
         assert_eq!(
             dependencies,
             [FeatureId::mint("synthetic:test:id#first").expect("identity grammar")]
@@ -457,19 +863,35 @@ mod tests {
 
     #[test]
     fn provisional_output_writer_can_be_retracted_without_affecting_other_writers() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+
         let provisional =
             FeatureId::mint("synthetic:test:id#provisional").expect("identity grammar");
         let retained = FeatureId::mint("synthetic:test:id#retained").expect("identity grammar");
         let created = BodyId::mint("test:model:entity#created").expect("identity grammar");
         let existing = BodyId::mint("test:model:entity#existing").expect("identity grammar");
         let mut history = BodyWriterHistory::default();
-        history.record_writer(
-            None,
-            None,
-            &[created.clone(), existing.clone()],
-            &provisional,
-        );
-        history.record_writer(Some(7), None, std::slice::from_ref(&existing), &retained);
+        history
+            .record_writer(
+                &ctx,
+                None,
+                None,
+                &[created.clone(), existing.clone()],
+                &provisional,
+            )
+            .expect("admitted writer history");
+        history
+            .record_writer(
+                &ctx,
+                Some(7),
+                None,
+                std::slice::from_ref(&existing),
+                &retained,
+            )
+            .expect("admitted writer history");
 
         assert!(!history.has_preceding_writer(
             Some(&provisional),
@@ -485,23 +907,29 @@ mod tests {
         ));
 
         let mut dependencies = Vec::new();
-        history.extend_primary_dependencies(
-            Some(&provisional),
-            Some(7),
-            None,
-            std::slice::from_ref(&existing),
-            &mut dependencies,
-        );
+        history
+            .extend_primary_dependencies(
+                &ctx,
+                Some(&provisional),
+                Some(7),
+                None,
+                std::slice::from_ref(&existing),
+                &mut dependencies,
+            )
+            .expect("admitted writer history");
         assert_eq!(dependencies, [retained]);
 
         let mut dependencies = Vec::new();
-        history.extend_primary_dependencies(
-            Some(&provisional),
-            Some(7),
-            None,
-            std::slice::from_ref(&created),
-            &mut dependencies,
-        );
+        history
+            .extend_primary_dependencies(
+                &ctx,
+                Some(&provisional),
+                Some(7),
+                None,
+                std::slice::from_ref(&created),
+                &mut dependencies,
+            )
+            .expect("admitted writer history");
         assert_eq!(
             dependencies,
             [FeatureId::mint("synthetic:test:id#retained").expect("identity grammar")]
@@ -515,43 +943,61 @@ mod tests {
 
     #[test]
     fn exact_offset_store_identity_orders_writers_without_cross_store_aliases() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+
         let first = FeatureId::mint("synthetic:test:id#first").expect("identity grammar");
         let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
         let mut history = BodyWriterHistory::default();
-        history.record_writer(None, Some("store-a:block#7"), &[], &first);
+        history
+            .record_writer(&ctx, None, Some("store-a:block#7"), &[], &first)
+            .expect("admitted writer history");
 
         let mut dependencies = Vec::new();
-        history.extend_primary_dependencies(
-            None,
-            None,
-            Some("store-a:block#7"),
-            &[],
-            &mut dependencies,
-        );
+        history
+            .extend_primary_dependencies(
+                &ctx,
+                None,
+                None,
+                Some("store-a:block#7"),
+                &[],
+                &mut dependencies,
+            )
+            .expect("admitted writer history");
         assert_eq!(dependencies, [first]);
         dependencies.clear();
-        history.extend_primary_dependencies(
-            None,
-            None,
-            Some("store-b:block#7"),
-            &[],
-            &mut dependencies,
-        );
+        history
+            .extend_primary_dependencies(
+                &ctx,
+                None,
+                None,
+                Some("store-b:block#7"),
+                &[],
+                &mut dependencies,
+            )
+            .expect("admitted writer history");
         assert!(dependencies.is_empty());
 
-        history.record_writer(None, Some("store-a:block#7"), &[], &second);
+        history
+            .record_writer(&ctx, None, Some("store-a:block#7"), &[], &second)
+            .expect("admitted writer history");
         assert_eq!(
             history.offset_store_writer("store-a:block#7"),
             Some(&second)
         );
         dependencies.clear();
-        history.extend_primary_dependencies(
-            None,
-            None,
-            Some("store-a:block#7"),
-            &[],
-            &mut dependencies,
-        );
+        history
+            .extend_primary_dependencies(
+                &ctx,
+                None,
+                None,
+                Some("store-a:block#7"),
+                &[],
+                &mut dependencies,
+            )
+            .expect("admitted writer history");
         assert_eq!(dependencies, [second]);
     }
 
