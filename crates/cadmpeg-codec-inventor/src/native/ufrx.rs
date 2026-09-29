@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `UFRx` document states and their owned child records.
 
-use crate::native::digest::Sha256Hex;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_core::text::NonBlankString;
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
@@ -75,7 +75,7 @@ pub(crate) enum UfrxRecord {
         schema: u16,
         section_versions: Vec<u16>,
         tail_len: u64,
-        tail_sha256: Sha256Hex,
+        tail_sha256: Sha256Digest,
         detail: String,
     },
     Malformed {
@@ -99,7 +99,7 @@ pub(crate) struct UfrxParsedPrefix {
     pub(crate) embedded_references: Vec<EmbeddedReferenceRecord>,
     pub(crate) occurrences: Vec<UfrxOccurrenceRecord>,
     pub(crate) tail_len: u64,
-    pub(crate) tail_sha256: Sha256Hex,
+    pub(crate) tail_sha256: Sha256Digest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -188,7 +188,7 @@ pub(crate) struct UfrxModelStateRecord {
     state: [u16; 2],
     prefix_count: u32,
     parameters: Vec<UfrxModelStateParameterRecord>,
-    suffix_sha256: Sha256Hex,
+    suffix_sha256: Sha256Digest,
 }
 
 impl Serialize for UfrxModelStateRecord {
@@ -234,7 +234,7 @@ impl TryFrom<UfrxModelStateRecordWire> for UfrxModelStateRecord {
             state: wire.state,
             prefix_count: wire.prefix_count,
             parameters: wire.parameters,
-            suffix_sha256: Sha256Hex::try_from(wire.suffix_sha256)
+            suffix_sha256: Sha256Digest::try_from(wire.suffix_sha256)
                 .map_err(|error| format!("suffix_sha256: {error}"))?,
         })
     }
@@ -293,7 +293,7 @@ struct UfrxRecordView<'a> {
     embedded_reference_count: u64,
     occurrence_count: u64,
     tail_len: u64,
-    tail_sha256: Option<&'a Sha256Hex>,
+    tail_sha256: Option<&'a Sha256Digest>,
     detail: Option<&'a str>,
 }
 
@@ -484,7 +484,7 @@ impl UfrxRecordWire {
                     embedded_references,
                     occurrences,
                     tail_len: wire.tail_len,
-                    tail_sha256: Sha256Hex::try_from(
+                    tail_sha256: Sha256Digest::try_from(
                         wire.tail_sha256
                             .ok_or_else(|| "parsed UFRxDoc requires tail_sha256".to_owned())?,
                     )
@@ -501,7 +501,7 @@ impl UfrxRecordWire {
                     .ok_or_else(|| "unsupported UFRxDoc requires schema".to_owned())?,
                 section_versions: wire.section_versions,
                 tail_len: wire.tail_len,
-                tail_sha256: Sha256Hex::try_from(
+                tail_sha256: Sha256Digest::try_from(
                     wire.tail_sha256
                         .ok_or_else(|| "unsupported UFRxDoc requires tail_sha256".to_owned())?,
                 )
@@ -682,7 +682,7 @@ pub(crate) struct EmbeddedReferenceRecord {
     display_name: String,
     state_values: [u8; 8],
     record_len: NonZeroU64,
-    record_sha256: Sha256Hex,
+    record_sha256: Sha256Digest,
 }
 
 impl Serialize for EmbeddedReferenceRecord {
@@ -747,7 +747,7 @@ impl TryFrom<EmbeddedReferenceRecordWire> for EmbeddedReferenceRecord {
             display_name: wire.display_name,
             state_values: wire.state_values,
             record_len: NonZeroU64::new(wire.record_len).ok_or("record_len must not be zero")?,
-            record_sha256: Sha256Hex::try_from(wire.record_sha256)
+            record_sha256: Sha256Digest::try_from(wire.record_sha256)
                 .map_err(|error| format!("record_sha256: {error}"))?,
         })
     }
@@ -765,7 +765,7 @@ pub(crate) struct UfrxOccurrenceRecord {
     pub(crate) title: Option<String>,
     header_padding_words: u8,
     record_len: NonZeroU64,
-    record_sha256: Sha256Hex,
+    record_sha256: Sha256Digest,
 }
 
 impl Serialize for UfrxOccurrenceRecord {
@@ -815,7 +815,7 @@ impl TryFrom<UfrxOccurrenceRecordWire> for UfrxOccurrenceRecord {
             title: wire.title,
             header_padding_words: wire.header_padding_words,
             record_len: NonZeroU64::new(wire.record_len).ok_or("record_len must not be zero")?,
-            record_sha256: Sha256Hex::try_from(wire.record_sha256)
+            record_sha256: Sha256Digest::try_from(wire.record_sha256)
                 .map_err(|error| format!("record_sha256: {error}"))?,
         })
     }
@@ -892,7 +892,7 @@ mod tests {
         ExternalReferenceRecord, UfrxModelStateRecord, UfrxModelStateRecordWire,
         UfrxOccurrenceRecord, UfrxParsedPrefix, UfrxRecord, UfrxRepresentationRecord,
     };
-    use crate::native::digest::Sha256Hex;
+    use cadmpeg_ir::hash::digest::Sha256Digest;
     use cadmpeg_ir::native::NativeNamespace;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
@@ -970,7 +970,7 @@ mod tests {
             "end_string_flag": 0, "file_reference_id": 1,
             "occurrence_id": 1, "header_value": 0, "title": null,
             "header_padding_words": 8, "record_len": 1,
-            "record_sha256": "A".repeat(64)
+            "record_sha256": "a".repeat(64)
         });
         let record: UfrxOccurrenceRecord =
             serde_json::from_value(expected.clone()).expect("valid fixture");
@@ -992,7 +992,7 @@ mod tests {
             embedded_references: vec![],
             occurrences: vec![],
             tail_len: 0,
-            tail_sha256: Sha256Hex::try_from("0".repeat(64)).expect("valid fixture"),
+            tail_sha256: Sha256Digest::try_from("0".repeat(64)).expect("valid fixture"),
         }));
         let expected = serde_json::to_value(&record).expect("valid fixture");
         assert_native_limit(&record, expected);
@@ -1083,7 +1083,7 @@ mod tests {
             "id": "occurrence", "ordinal": 0, "end_string_flag": 0,
             "file_reference_id": 1, "occurrence_id": 1, "header_value": 0,
             "title": null, "header_padding_words": 8, "record_len": 1,
-            "record_sha256": "A".repeat(64)
+            "record_sha256": "a".repeat(64)
         });
         let embedded = serde_json::json!({
             "id": "embedded", "ordinal": 0, "value_0": 0, "filetime": 0,
@@ -1108,6 +1108,7 @@ mod tests {
             ("record_len", serde_json::json!(0)),
             ("record_sha256", serde_json::json!("a".repeat(63))),
             ("record_sha256", serde_json::json!("g".repeat(64))),
+            ("record_sha256", serde_json::json!("A".repeat(64))),
         ] {
             let mut wire = occurrence.clone();
             wire[field] = value.clone();
@@ -1221,7 +1222,7 @@ mod tests {
             embedded_references: vec![],
             occurrences: vec![],
             tail_len: 0,
-            tail_sha256: Sha256Hex::try_from("0".repeat(64)).expect("64 hexadecimal digits"),
+            tail_sha256: Sha256Digest::try_from("0".repeat(64)).expect("64 hexadecimal digits"),
         }));
         let mut namespace = NativeNamespace::default();
         record
@@ -1269,7 +1270,7 @@ mod tests {
                 schema: 1,
                 section_versions: vec![1],
                 tail_len: 0,
-                tail_sha256: Sha256Hex::try_from("0".repeat(64)).expect("64 hexadecimal digits"),
+                tail_sha256: Sha256Digest::try_from("0".repeat(64)).expect("64 hexadecimal digits"),
                 detail: "schema".into(),
             },
         ] {

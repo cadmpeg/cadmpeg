@@ -295,7 +295,7 @@ fn decode_container<'a>(
                             raw_len: cadmpeg_core::decode::u64_from_index(
                                 property.raw.window().len(),
                             ),
-                            raw_sha256: crate::native::digest::Sha256Hex::digest(
+                            raw_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
                                 property.raw.window(),
                             ),
                         });
@@ -1375,13 +1375,13 @@ fn retained_native_sha256(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     operation: &'static str,
-) -> Result<crate::native::digest::Sha256Hex, CodecError> {
+) -> Result<cadmpeg_ir::hash::digest::Sha256Digest, CodecError> {
     ctx.charge_retained(64, operation)?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
         "hash Inventor native bytes",
     )?;
-    Ok(crate::native::digest::Sha256Hex::digest(bytes))
+    Ok(cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes))
 }
 
 fn admit_native_format(
