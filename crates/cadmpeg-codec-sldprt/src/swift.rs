@@ -265,7 +265,11 @@ pub(crate) fn annotations(
         };
         for annotation in projected.iter().filter(|annotation| {
             annotation.id.as_str() == prefix
-                || annotation.id.as_str().starts_with(&format!("{prefix}:"))
+                || annotation
+                    .id
+                    .as_str()
+                    .strip_prefix(&prefix)
+                    .is_some_and(|suffix| suffix.starts_with(':'))
         }) {
             crate::annotations::note(
                 annotations,
