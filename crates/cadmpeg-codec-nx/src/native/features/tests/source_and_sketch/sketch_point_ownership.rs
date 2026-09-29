@@ -128,7 +128,7 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     }).expect("named sketch payload records");
     assert_eq!(records[0].fixed_pairs, ["pair", "auxiliary-pair"]);
     assert!(records[1].fixed_pairs.is_empty());
-    let points = feature_sketch_fixed_points(&records, &names, &pairs);
+    let points = crate::test_support::with_decode_context(|ctx| feature_sketch_fixed_points(ctx, &records, &names, &pairs)).unwrap();
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].name, "Point1");
     assert_eq!(

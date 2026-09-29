@@ -7116,124 +7116,137 @@ pub(super) fn feature_sketch_payload_named_records(
 
 /// Decode complete `Point<decimal>` records with exactly two scalar fields.
 pub(super) fn feature_sketch_points(
+    ctx: &DecodeContext<'_>,
     records: &[FeatureSketchPayloadNamedRecord],
     names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
-) -> Vec<FeatureSketchPoint> {
-    let names = names
-        .iter()
-        .map(|name| (name.id.as_str(), name))
-        .collect::<BTreeMap<_, _>>();
-    let scalars = scalars
-        .iter()
-        .map(|scalar| (scalar.id.as_str(), scalar))
-        .collect::<BTreeMap<_, _>>();
-    records
-        .iter()
-        .filter_map(|record| {
-            let name = names.get(record.name_field.as_str())?;
+) -> Result<Vec<FeatureSketchPoint>, CodecError> {
+    let mut points = Vec::new();
+    for record in records {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(names.len()),
+                "resolve NX sketch point name")?;
+            let Some(name) = names.iter().rev().find(|name| name.id == record.name_field)
+            else { continue; };
             if name.operation_label != record.operation_label
                 || name.construction_payload != record.construction_payload
             {
-                return None;
+                continue;
             }
-            parse_sketch_point_name(name.frame.value())?;
+            if parse_sketch_point_name(name.frame.value()).is_none() { continue; }
             let [first_id, second_id] = record.scalar_fields.as_slice() else {
-                return None;
+                continue;
             };
-            let first = scalars.get(first_id.as_str())?;
-            let second = scalars.get(second_id.as_str())?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(scalars.len())
+                .checked_mul(2).ok_or_else(||
+                    ctx.refuse_codec_limit("resolve NX sketch point scalars", 0, 1))?,
+                "resolve NX sketch point scalars")?;
+            let Some(first) = scalars.iter().rev().find(|scalar| scalar.id == *first_id)
+            else { continue; };
+            let Some(second) = scalars.iter().rev().find(|scalar| scalar.id == *second_id)
+            else { continue; };
             if [first, second].into_iter().any(|scalar| {
                 scalar.operation_label != record.operation_label
                     || scalar.payload.id() != record.construction_payload
             }) {
-                return None;
+                continue;
             }
-            Some(FeatureSketchPoint {
-                id: format!(
-                    "nx:feature-history:sketch-point#{}",
-                    record.id.rsplit_once('#').map_or("unknown", |(_, key)| key)
-                ),
-                operation_label: record.operation_label.clone(),
-                named_record: record.id.clone(),
-                name: name.frame.value().to_owned(),
-                scalar_fields: [first.id.clone(), second.id.clone()],
+            let key = record.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+            let id = format_charged_text(ctx,
+                format_args!("nx:feature-history:sketch-point#{key}"),
+                "NX sketch point identity")?;
+            let operation_label = copy_operation_text(ctx, &record.operation_label,
+                "NX sketch point operation label")?;
+            let named_record = copy_operation_text(ctx, &record.id,
+                "NX sketch point named record")?;
+            let name = copy_operation_text(ctx, name.frame.value(), "NX sketch point name")?;
+            let first_id = copy_operation_text(ctx, &first.id, "NX sketch point first scalar")?;
+            let second_id = copy_operation_text(ctx, &second.id, "NX sketch point second scalar")?;
+            ctx.charge_collection_items(1, "NX sketch points")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureSketchPoint>()), "NX sketch points")?;
+            points.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX sketch points", 0, 1))?;
+            points.push(FeatureSketchPoint {
+                id, operation_label, named_record, name,
+                scalar_fields: [first_id, second_id],
                 coordinates: [first.scalar.value(), second.scalar.value()].into(),
-            })
-        })
-        .collect()
+            });
+    }
+    Ok(points)
 }
 
 /// Decode `Point<positive decimal>` records containing exactly one fixed pair.
 pub(super) fn feature_sketch_fixed_points(
+    ctx: &DecodeContext<'_>,
     records: &[FeatureSketchPayloadNamedRecord],
     names: &[FeaturePayloadName],
     fixed_pairs: &[FeatureSketchPayloadFixedPair],
-) -> Vec<FeatureSketchFixedPoint> {
-    let names = names
-        .iter()
-        .map(|name| (name.id.as_str(), name))
-        .collect::<BTreeMap<_, _>>();
-    let fixed_pairs = fixed_pairs
-        .iter()
-        .map(|pair| (pair.id.as_str(), pair))
-        .collect::<BTreeMap<_, _>>();
-    records
-        .iter()
-        .filter_map(|record| {
+) -> Result<Vec<FeatureSketchFixedPoint>, CodecError> {
+    let mut points = Vec::new();
+    for record in records {
             if !record.scalar_fields.is_empty() || !record.mixed_pairs.is_empty() {
-                return None;
+                continue;
             }
-            let point_pairs = record
-                .fixed_pairs
-                .iter()
-                .filter(|fixed_pair_id| {
-                    fixed_pairs.get(fixed_pair_id.as_str()).is_some_and(|pair| {
-                        matches!(
-                            pair.position.form(),
-                            SketchPairForm::Legacy
-                                | SketchPairForm::Short
-                                | SketchPairForm::Extended
-                        )
-                    })
-                })
-                .collect::<Vec<_>>();
-            let [fixed_pair_id] = point_pairs.as_slice() else {
-                return None;
-            };
-            let name = names.get(record.name_field.as_str())?;
+            let mut point_pair = None;
+            for fixed_pair_id in &record.fixed_pairs {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(fixed_pairs.len()),
+                    "resolve NX sketch fixed pair")?;
+                let Some(pair) = fixed_pairs.iter().rev()
+                    .find(|pair| pair.id == *fixed_pair_id) else { continue; };
+                if !matches!(pair.position.form(),
+                    SketchPairForm::Legacy | SketchPairForm::Short | SketchPairForm::Extended) {
+                    continue;
+                }
+                if point_pair.replace(pair).is_some() {
+                    point_pair = None;
+                    break;
+                }
+            }
+            let Some(pair) = point_pair else { continue; };
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(names.len()),
+                "resolve NX sketch fixed point name")?;
+            let Some(name) = names.iter().rev().find(|name| name.id == record.name_field)
+            else { continue; };
             if name.operation_label != record.operation_label
                 || name.construction_payload != record.construction_payload
             {
-                return None;
+                continue;
             }
-            parse_sketch_point_name(name.frame.value())?;
-            let pair = fixed_pairs.get(fixed_pair_id.as_str())?;
+            if parse_sketch_point_name(name.frame.value()).is_none() { continue; }
             if pair.operation_label != record.operation_label
                 || pair.construction_payload != record.construction_payload
             {
-                return None;
+                continue;
             }
             let [Some(first), Some(second)] = pair
                 .values
                 .map(SketchScaledAtom::value)
                 .map(cadmpeg_ir::scalar::FiniteReal::new)
             else {
-                return None;
+                continue;
             };
-            Some(FeatureSketchFixedPoint {
-                id: record
-                    .id
-                    .replacen("sketch-payload-record", "sketch-fixed-point", 1),
-                operation_label: record.operation_label.clone(),
-                named_record: record.id.clone(),
-                name: name.frame.value().to_owned(),
-                fixed_pair: pair.id.clone(),
+            let id = replace_operation_text(ctx, &record.id,
+                "sketch-payload-record", "sketch-fixed-point",
+                "NX sketch fixed point identity")?;
+            let operation_label = copy_operation_text(ctx, &record.operation_label,
+                "NX sketch fixed point operation label")?;
+            let named_record = copy_operation_text(ctx, &record.id,
+                "NX sketch fixed point named record")?;
+            let name = copy_operation_text(ctx, name.frame.value(), "NX sketch fixed point name")?;
+            let fixed_pair = copy_operation_text(ctx, &pair.id,
+                "NX sketch fixed point pair")?;
+            ctx.charge_collection_items(1, "NX sketch fixed points")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureSketchFixedPoint>()), "NX sketch fixed points")?;
+            points.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX sketch fixed points", 0, 1))?;
+            points.push(FeatureSketchFixedPoint {
+                id, operation_label, named_record, name, fixed_pair,
                 values: [first, second],
                 source_offset: pair.source_offset,
-            })
-        })
-        .collect()
+            });
+    }
+    Ok(points)
 }
 
 /// Group every bit-identical same-name sketch-point witness.
