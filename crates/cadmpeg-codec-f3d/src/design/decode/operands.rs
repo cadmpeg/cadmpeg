@@ -229,7 +229,7 @@ pub(crate) fn decode_edge_operands(
             out.push(operand);
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -339,7 +339,7 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             });
         }
     }
-    out.sort_by(|left, right| left.id.cmp(&right.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |left, right| left.id.cmp(&right.id))?;
     Ok(out)
 }
 
@@ -829,7 +829,7 @@ pub(crate) fn decode_edge_identity_operands(
             );
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -1105,7 +1105,7 @@ pub(crate) fn decode_face_operands(
             }
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -1260,7 +1260,7 @@ pub(crate) fn decode_face_source_groups(
             })?;
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -1497,9 +1497,7 @@ pub(crate) fn bind_face_operand_candidates(
                 push_operand_face_candidate(ctx, &mut operand.candidate_faces, face)?;
             }
         }
-        operand
-            .candidate_faces
-            .sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        crate::design::sort::sort_by(Some(ctx), &mut operand.candidate_faces[..], |left, right| left.as_str().cmp(right.as_str()))?;
         operand.candidate_faces.dedup();
         let referenced = referenced_operand_faces(ctx, &operand.recipe_references, design_reference)?;
         operand.unreferenced_candidate_faces.clear();
@@ -1512,9 +1510,7 @@ pub(crate) fn bind_face_operand_candidates(
         {
             push_operand_face_candidate(ctx, &mut operand.alternate_selector_candidate_faces, face)?;
         }
-        operand
-            .alternate_selector_candidate_faces
-            .sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        crate::design::sort::sort_by(Some(ctx), &mut operand.alternate_selector_candidate_faces[..], |left, right| left.as_str().cmp(right.as_str()))?;
         operand.alternate_selector_candidate_faces.dedup();
     }
     Ok(())
@@ -1549,7 +1545,7 @@ pub(crate) fn bind_edge_operand_candidates(
                 push_operand_face_candidate(ctx, &mut operand.candidate_faces, face)?;
             }
         }
-        operand.candidate_faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        crate::design::sort::sort_by(Some(ctx), &mut operand.candidate_faces[..], |a, b| a.as_str().cmp(b.as_str()))?;
         operand.candidate_faces.dedup();
     }
     Ok(())
@@ -1674,7 +1670,7 @@ pub(crate) fn decode_extrude_selection_groups(
             }
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -1787,7 +1783,7 @@ pub(crate) fn decode_construction_operand_groups(
             assign_extrude_face_roles(scope, &mut out[scope_group_start..]);
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -1865,7 +1861,7 @@ pub(crate) fn decode_loft_legacy_body_carriers(
             push_loft_legacy_body_carrier(ctx, &mut out, carrier, &entry.name, header.byte_offset)?;
         }
     }
-    out.sort_by(|left, right| left.id.cmp(&right.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |left, right| left.id.cmp(&right.id))?;
     out.dedup_by(|left, right| left.id == right.id);
     Ok(out)
 }
@@ -2149,7 +2145,7 @@ pub(crate) fn decode_fillet_radius_groups(
                 native_stream(&group.id) == Some(stream)
                     && group.scope_record_index == scope.record_index
             }), "f3d Fillet scope groups")?;
-        scope_groups.sort_by_key(|group| group.scope_reference_ordinal);
+        crate::design::sort::sort_by_key(Some(ctx), &mut scope_groups[..], |group| group.scope_reference_ordinal)?;
         let mut owned_parameters = collect_fillet_items(ctx, owners
             .iter()
             .filter(|owner| {
@@ -2162,7 +2158,7 @@ pub(crate) fn decode_fillet_radius_groups(
                     *parameter_index.get(&(stream, owner.parameter_record_index()))?,
                 ))
             }), "f3d Fillet owned parameters")?;
-        owned_parameters.sort_by_key(|(ordinal, _)| *ordinal);
+        crate::design::sort::sort_by_key(Some(ctx), &mut owned_parameters[..], |(ordinal, _)| *ordinal)?;
         let radii = collect_fillet_items(ctx, owned_parameters
             .iter()
             .filter_map(|(_, parameter)| {
@@ -2291,7 +2287,7 @@ pub(crate) fn decode_fillet_radius_groups(
                 .map(|parameter| parameter.record_index),
         )?;
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -3119,7 +3115,7 @@ pub(crate) fn decode_construction_operand_identities(
             out.push(identity);
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     out.dedup_by(|left, right| left.id == right.id);
     Ok(out)
 }
@@ -3138,7 +3134,7 @@ fn collect_stream_lost_edges<'a>(
         })?;
         edges.push(edge);
     }
-    edges.sort_by_key(|edge| edge.record_byte_offset());
+    crate::design::sort::sort_by_key(Some(ctx), &mut edges[..], |edge| edge.record_byte_offset())?;
     Ok(edges)
 }
 
@@ -3587,7 +3583,7 @@ pub(crate) fn decode_extrude_selection_members(
             }
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -3635,7 +3631,7 @@ pub(crate) fn decode_entity_selection_operands(
             }
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -4068,7 +4064,7 @@ pub(crate) fn decode_body_recipe_operands(
         stream_recipes.push(recipe);
     }
     for stream_recipes in body_recipes_by_stream.values_mut() {
-        stream_recipes.sort_by_key(|recipe| recipe.byte_offset);
+        crate::design::sort::sort_by_key(Some(ctx), &mut stream_recipes[..], |recipe| recipe.byte_offset)?;
     }
     let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     let mut out = Vec::new();
@@ -4188,7 +4184,7 @@ pub(crate) fn decode_body_recipe_operands(
             }
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     let mut owner_counts = HashMap::<String, u32>::new();
     for operand in &out {
         if let Some(count) = owner_counts.get_mut(&operand.id) {
@@ -4552,9 +4548,7 @@ pub(crate) fn bind_body_recipe_operand_candidates(
                     }
                 }
             }
-            reference
-                .candidate_faces
-                .sort_by(|left, right| left.as_str().cmp(right.as_str()));
+            crate::design::sort::sort_by(ctx, &mut reference.candidate_faces[..], |left, right| left.as_str().cmp(right.as_str()))?;
             reference.candidate_faces.dedup();
         }
     }
@@ -4655,12 +4649,12 @@ pub(crate) fn bind_extrude_selection_identities(
             })?;
             matches.push(identity);
         }
-        matches.sort_by_key(|identity| {
+        crate::design::sort::sort_by_key(Some(ctx), &mut matches[..], |identity| {
             identity
                 .wrappers()
                 .first()
                 .map(|wrapper| wrapper.byte_offset)
-        });
+        })?;
         let count = u64::try_from(matches.len()).map_err(|_| {
             ctx.refuse_codec_limit("f3d Extrude identity ID count", 0, 1)
         })?;

@@ -52,3 +52,15 @@ fn stable_sort_matches_equal_key_order_without_cloning() {
         assert_eq!(values.iter().map(|item| (item.key, item.ordinal)).collect::<Vec<_>>(), expected);
     }
 }
+
+#[test]
+fn stable_key_sort_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 20;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut values = [0; 21];
+    assert!(matches!(super::sort_by_key(Some(&ctx), &mut values, |value| *value),
+        Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d stable sort permutation"));
+}

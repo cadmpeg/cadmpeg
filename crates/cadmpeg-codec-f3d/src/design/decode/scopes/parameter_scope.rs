@@ -479,7 +479,7 @@ pub(crate) fn decode_parameter_scopes(
         bind_joint_origin_frames_from_assemblies(ctx, bytes, &mut out[stream_scope_start..])?;
         bind_axial_assembly_operand_targets(ctx, bytes, &records, &mut out[stream_scope_start..])?;
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     out.dedup_by(|a, b| a.id == b.id);
     Ok(out)
 }

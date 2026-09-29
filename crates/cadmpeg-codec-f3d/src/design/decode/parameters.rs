@@ -101,7 +101,7 @@ pub(crate) fn decode_parameters(
             }
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -654,7 +654,7 @@ pub(crate) fn decode_parameter_owners(
         })?;
         out.push(owner);
     }
-    out.sort_by(|a, b| a.id().cmp(b.id()));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id().cmp(b.id()))?;
     Ok(out)
 }
 
@@ -995,7 +995,7 @@ pub(crate) fn decode_parameter_companions(
         })?;
         out.push(companion);
     }
-    out.sort_by(|a, b| a.id().cmp(b.id()));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id().cmp(b.id()))?;
     Ok(out)
 }
 
@@ -1187,7 +1187,7 @@ fn companion_payload<S: std::hash::BuildHasher>(
         })?;
         owned.push(recipe);
     }
-    owned.sort_by_key(|recipe| recipe.byte_offset);
+    crate::design::sort::sort_by_key(Some(ctx), &mut owned[..], |recipe| recipe.byte_offset)?;
     let mut owned_ids = Vec::new();
     for recipe in owned {
         let id = String::from_utf8(ctx.copy_retained(

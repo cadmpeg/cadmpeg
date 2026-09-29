@@ -1982,3 +1982,5 @@ const EPS_CONTAINMENT_LINEAR: f64 = 1.0e-6;
 const EPS_CONTAINMENT_DISTANCE: f64 = 1.0e-9;
 
 mod containment_limits;
+
+mod sort_limits;

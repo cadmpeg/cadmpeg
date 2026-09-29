@@ -1409,7 +1409,7 @@ linear_tolerance,
         }
     }
     for records in recipes_by_companion.values_mut() {
-        records.sort_by_key(|record| record.recipe_ordinal);
+        crate::design::sort::sort_by_key(ctx, &mut records[..], |record| record.recipe_ordinal)?;
     }
     for ((scope, companion_record_index), records) in recipes_by_companion {
         let Some(companion) = companions_by_key.get(&(scope, companion_record_index)) else {
@@ -1740,7 +1740,7 @@ curves,
                 "f3d companion dimension constraint")?;
         }
     }
-    constraints.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(ctx, &mut constraints[..], |a, b| a.id.cmp(&b.id))?;
     Ok(constraints)
 }
 
@@ -3210,7 +3210,7 @@ spatial_sketches,
         push_dimension_item(ctx, &mut missing, parameter_id,
             "f3d missing spatial parameter")?;
     }
-    missing.sort_by(|first, second| first.as_str().cmp(second.as_str()));
+    crate::design::sort::sort_by(ctx, &mut missing[..], |first, second| first.as_str().cmp(second.as_str()))?;
     for parameter_id in missing {
         let Some(parameter) = parameters_by_id.get(parameter_id) else { continue; };
         let Some(scope) = native_stream(&parameter.id) else { continue; };

@@ -68,5 +68,13 @@ pub(super) fn sort_by<T>(
     Ok(())
 }
 
+pub(super) fn sort_by_key<T, K: Ord>(
+    ctx: Option<&DecodeContext<'_>>,
+    values: &mut [T],
+    mut key: impl FnMut(&T) -> K,
+) -> Result<(), CodecError> {
+    sort_by(ctx, values, |left, right| key(left).cmp(&key(right)))
+}
+
 #[cfg(test)]
 mod tests;

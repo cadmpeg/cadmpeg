@@ -255,7 +255,7 @@ pub(crate) fn decode_dimension_recipe_records(
             });
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -832,13 +832,13 @@ pub(crate) fn bind_recipe_reference_candidates_charged(
             _ => {}
         }
     }
-    reference.candidate_faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    crate::design::sort::sort_by(Some(ctx), &mut reference.candidate_faces[..], |a, b| a.as_str().cmp(b.as_str()))?;
     reference.candidate_faces.dedup();
-    reference.candidate_edges.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    crate::design::sort::sort_by(Some(ctx), &mut reference.candidate_edges[..], |a, b| a.as_str().cmp(b.as_str()))?;
     reference.candidate_edges.dedup();
-    reference.alternate_selector_faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    crate::design::sort::sort_by(Some(ctx), &mut reference.alternate_selector_faces[..], |a, b| a.as_str().cmp(b.as_str()))?;
     reference.alternate_selector_faces.dedup();
-    reference.alternate_selector_edges.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    crate::design::sort::sort_by(Some(ctx), &mut reference.alternate_selector_edges[..], |a, b| a.as_str().cmp(b.as_str()))?;
     reference.alternate_selector_edges.dedup();
     Ok(())
 }
@@ -901,7 +901,7 @@ pub(crate) fn bind_dimension_recipe_edge_operands(
         for operand in operands.iter().filter(|operand| dimension_recipe_edge_matches(record, operand)) {
             push_dimension_recipe_edge_id(ctx, &mut ids, &operand.id)?;
         }
-        ids.sort();
+        crate::design::sort::sort_by(Some(ctx), &mut ids[..], Ord::cmp)?;
         ids.dedup();
         record.matching_edge_operand_ids = ids;
     }
@@ -1101,7 +1101,7 @@ pub(crate) fn decode_dimension_locus_pairs(
         })?;
         out.push(pair);
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -1331,7 +1331,7 @@ pub(crate) fn decode_dimension_null_locus_pairs(
         })?;
         out.push(pair);
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -1588,7 +1588,7 @@ pub(crate) fn decode_dimension_annotation_frames(
             }
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -1940,7 +1940,7 @@ pub(crate) fn decode_dimension_presentation_frames(
             out.push(frame);
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -2124,7 +2124,7 @@ pub(crate) fn decode_dimension_locus_groups(
             out.push(group);
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -2174,7 +2174,7 @@ fn find_dimension_locus_groups(
         }
         position = at.saturating_add(1);
     }
-    candidates.sort_by_key(|group| group.byte_offset);
+    crate::design::sort::sort_by_key(Some(ctx), &mut candidates[..], |group| group.byte_offset)?;
     candidates.dedup_by_key(|group| group.byte_offset);
     Ok(candidates)
 }

@@ -348,7 +348,7 @@ pub(crate) fn decode_component_naming_spaces(
         })?;
         out.extend(by_component.into_values());
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 

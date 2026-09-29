@@ -73,8 +73,8 @@ pub(super) fn exact_assembly_alignment(
         ctx.refuse_codec_limit("f3d assembly alignment lanes allocation", 0, 1)
     })?;
     lanes.extend(parameter_owners.iter().filter(matching));
+    crate::design::sort::sort_by_key(Some(ctx), &mut lanes[..], |owner| owner.local_ordinal())?;
     (|| -> Option<Result<DesignAssemblyAlignment, CodecError>> {
-    lanes.sort_by_key(|owner| owner.local_ordinal());
     if lanes
         .iter()
         .enumerate()

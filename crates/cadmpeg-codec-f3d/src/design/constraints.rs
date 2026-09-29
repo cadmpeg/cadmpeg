@@ -354,7 +354,7 @@ pub(crate) fn project_sketch_constraints(
                 "f3d projected sketch constraint")?;
         }
     }
-    constraints.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(ctx, &mut constraints[..], |a, b| a.id.cmp(&b.id))?;
     Ok(constraints)
 }
 

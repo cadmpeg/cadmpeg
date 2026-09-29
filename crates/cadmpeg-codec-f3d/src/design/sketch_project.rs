@@ -363,7 +363,7 @@ pub(crate) fn project_sketch_design(
             "f3d planar sketch",
         )?;
     }
-    sketches.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(ctx, &mut sketches[..], |a, b| a.id.cmp(&b.id))?;
 
     let mut entities = Vec::new();
     for point in points {
@@ -547,7 +547,7 @@ pub(crate) fn project_sketch_design(
             "f3d planar sketch text entity",
         )?;
     }
-    entities.sort_by(|a, b| a.id().cmp(b.id()));
+    crate::design::sort::sort_by(ctx, &mut entities[..], |a, b| a.id().cmp(b.id()))?;
     for sketch in &mut sketches {
         let inferred = closed_sketch_profiles(ctx, &sketch.id, &entities, linear_tolerance)?;
         let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(inferred) else {
@@ -928,7 +928,7 @@ pub(crate) fn project_spatial_sketch_design(
             "f3d spatial sketch surface entity",
         )?;
     }
-    entities.sort_by(|a, b| a.id().cmp(b.id()));
+    crate::design::sort::sort_by(ctx, &mut entities[..], |a, b| a.id().cmp(b.id()))?;
     let mut spatial_ids = HashSet::<cadmpeg_ir::sketches::SpatialSketchId>::new();
     for entity in &entities {
         if !spatial_ids.contains(&entity.sketch) {
@@ -961,7 +961,7 @@ pub(crate) fn project_spatial_sketch_design(
             "f3d spatial sketch",
         )?;
     }
-    sketches.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(ctx, &mut sketches[..], |a, b| a.id.cmp(&b.id))?;
     Ok((sketches, entities))
 }
 
@@ -1220,7 +1220,7 @@ pub(crate) fn project_spatial_sketch_constraints(
         push_project_item(ctx, &mut constraints, constraint,
             "f3d spatial constraint output")?;
     }
-    constraints.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(ctx, &mut constraints[..], |a, b| a.id.cmp(&b.id))?;
     Ok(constraints)
 }
 

@@ -168,7 +168,7 @@ pub(super) fn decode_scoped_images<T>(
             }
         }
     }
-    images.sort_by(|a, b| id(a).cmp(id(b)));
+    crate::design::sort::sort_by(Some(ctx), &mut images[..], |a, b| id(a).cmp(id(b)))?;
     images.dedup_by(|a, b| id(a) == id(b));
     Ok(images)
 }
