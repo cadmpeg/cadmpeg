@@ -271,34 +271,64 @@ pub(crate) fn project_features(
 
 /// Project standalone history notes into the semantic-annotation arena.
 pub(crate) fn project_semantic_notes(
+    ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
-) -> Vec<cadmpeg_ir::semantic_annotations::SemanticAnnotation> {
-    histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter(|feature| is_semantic_note(feature))
-        .map(|feature| {
-            let key = feature_identity_key(&feature.id);
-            cadmpeg_ir::semantic_annotations::SemanticAnnotation {
-                id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId::compose(
-                    &cadmpeg_ir::identity_namespace!("sldprt", "semantic-annotation", "note"),
-                    key,
+) -> Result<Vec<cadmpeg_ir::semantic_annotations::SemanticAnnotation>, CodecError> {
+    const OPERATION: &str = "project SLDPRT semantic notes";
+    let mut notes = Vec::new();
+    let copy = |value: &str| -> Result<String, CodecError> {
+        let mut copied = String::new();
+        ctx.reserve_retained_string(&mut copied, value.len(), OPERATION)?;
+        copied.push_str(value);
+        Ok(copied)
+    };
+    ctx.charge_work(histories.len() as u64, OPERATION)?;
+    for history in histories {
+        ctx.charge_work(history.features.len() as u64, OPERATION)?;
+        for feature in &history.features {
+            ctx.charge_work(feature.xml_tag.len() as u64, OPERATION)?;
+            if !is_semantic_note(feature) {
+                continue;
+            }
+            ctx.charge_work(feature.id.len() as u64, OPERATION)?;
+            let native_id = feature
+                .id
+                .strip_prefix("sldprt:history:feature#")
+                .unwrap_or(&feature.id);
+            let id = ctx.format_retained(
+                format_args!(
+                    "sldprt:semantic-annotation:note#{}",
+                    EncodedFeatureKey(native_id)
                 ),
-                object: feature.id.clone(),
+                OPERATION,
+            )?;
+            let id = cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(id)
+                .map_err(|_| CodecError::malformed("invalid SLDPRT semantic note ID"))?;
+            let mut text = Vec::new();
+            if let Some(value) = &feature.text {
+                let value = copy(value)?;
+                ctx.reserve_collection_vec(&mut text, 1, OPERATION)?;
+                text.push(value);
+            }
+            ctx.reserve_collection_vec(&mut notes, 1, OPERATION)?;
+            notes.push(cadmpeg_ir::semantic_annotations::SemanticAnnotation {
+                id,
+                object: copy(&feature.id)?,
                 kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
-                runtime_type: feature.kind.clone(),
+                runtime_type: copy(&feature.kind)?,
                 order: feature.ordinal,
-                text: feature.text.iter().cloned().collect(),
+                text,
                 references: BTreeMap::new(),
                 value: None,
                 format: None,
                 position: None,
                 parameters: BTreeMap::new(),
                 assets: Vec::new(),
-                native_ref: feature.id.clone(),
-            }
-        })
-        .collect()
+                native_ref: copy(&feature.id)?,
+            });
+        }
+    }
+    Ok(notes)
 }
 
 pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) {
