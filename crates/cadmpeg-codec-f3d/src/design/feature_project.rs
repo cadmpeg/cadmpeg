@@ -951,7 +951,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         )
                     })
                     .map_or_else(
-                        || native_scope_definition(scope, &parameters),
+                        || native_scope_definition(ctx, scope, &parameters),
                         |_| Ok(FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
                             joint: crate::ids::neutral_assembly_joint_id(scope),
                         })),
@@ -965,7 +965,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     placements,
                     body_recipe_operands,
                 )?
-                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Fillet) => {
                     project_fillet_arm(ctx, inputs, scope, parameters.as_slice(), native_scope)?
                 }
@@ -991,7 +991,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             ctx,
                         )?;
                     }
-                    chamfer.map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                    chamfer.map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Combine) => project_combine(ctx, scope, native_scope)?
                     .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1017,7 +1017,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     face_operands,
                     body_recipe_operands,
                 )
-                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Revolve) => project_fixed_revolve_with_entities(
                     scope,
                     construction_groups,
@@ -1066,7 +1066,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     ctx,
                 )
                 ?
-                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::SurfacePatch) => project_surface_patch(
                     ctx,
                     scope,
@@ -1126,7 +1126,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     edge_identity_operands,
                     ctx,
                 )?
-                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::SurfaceTrim) => {
                     project_surface_trim(scope, construction_groups, body_recipe_operands)
                         .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1143,7 +1143,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     })
                 }
                 Some(DesignFeatureFamily::Hole) => project_hole(ctx, scope, &parameters, face_operands)?
-                    .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                    .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Split) => {
                     project_split(scope, construction_groups, face_operands).unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1175,21 +1175,21 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::OffsetFaces) => {
                     project_offset_faces(scope, &parameters, face_operands, construction_groups)
-                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                        .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Move) => project_move(scope, construction_groups)
-                    .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                    .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Shell) => {
                     project_shell(scope, face_operands, construction_groups)
-                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                        .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Thicken) => {
                     project_thicken(scope, face_operands, construction_groups)
-                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                        .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Coil) => {
                     project_coil(scope, &parameters, construction_groups)
-                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                        .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Scale) => if let Some(operation) = scope.scale_operation() {
                         let factor = cadmpeg_ir::scalar::NonZeroReal::from(operation.uniform_factor);
@@ -1237,7 +1237,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             .map(|size| (construction, size))
                     })
                     .map_or_else(
-                        || native_scope_definition(scope, &parameters),
+                        || native_scope_definition(ctx, scope, &parameters),
                         |(construction, nominal_size)| {
                             let face = project_thread_face_selection(
                                 ctx,
@@ -1306,10 +1306,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     )?,
                 Some(DesignFeatureFamily::SheetMetalEdgeFlange) => {
                     project_edge_flange(scope, inputs, ctx)?
-                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                        .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs, ctx)?
-                    .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                    .map_or_else(|| native_scope_definition(ctx, scope, &parameters), Ok)?,
                 None => {
                     if let Some(primitive) = project_solid_primitive(scope) {
                         primitive
@@ -1331,12 +1331,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                     transform[1][2],
                                     transform[2][2],
                                 ))).map_or_else(
-                            || native_scope_definition(scope, &parameters),
+                            || native_scope_definition(ctx, scope, &parameters),
                             |frame| Ok(FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame })),
                         )?
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane {
                         scope.work_plane_transform().map_or_else(
-                            || native_scope_definition(scope, &parameters),
+                            || native_scope_definition(ctx, scope, &parameters),
                             |transform| Ok(project_work_plane(scope, transform.into())),
                         )?
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkAxis {
@@ -1358,7 +1358,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 ))
                             })
                             .map_or_else(
-                                || native_scope_definition(scope, &parameters),
+                                || native_scope_definition(ctx, scope, &parameters),
                                 |(origin, direction)| Ok(FeatureDefinition::Operation(FeatureOperation::DatumAxis { origin, direction })),
                             )?
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPoint {
@@ -1370,7 +1370,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 construction.position[2].get() * 10.0,
                             ))?,
                         ))).map_or_else(
-                            || native_scope_definition(scope, &parameters),
+                            || native_scope_definition(ctx, scope, &parameters),
                             |(construction, position)| Ok(FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                                 position,
                                 construction: project_work_point_construction(
@@ -1481,7 +1481,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             })
                         }
                     } else {
-                        native_scope_definition(scope, &parameters)?
+                        native_scope_definition(ctx, scope, &parameters)?
                     }
                 }
             };
@@ -2318,8 +2318,7 @@ fn scope_properties(
     native_scope: &str,
     placements: &[DesignSketchPlacement],
 ) -> Result<std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
-    use std::collections::BTreeMap;
-    let mut properties = BTreeMap::new();
+    let mut properties = std::collections::BTreeMap::new();
     for (ordinal, record_index) in scope.reference_members().values().enumerate() {
         insert_feature_tree(ctx, &mut properties,
             cadmpeg_core::text::NonBlankString::new(format!("reference:{ordinal}"))
@@ -2350,22 +2349,35 @@ fn scope_properties(
 ///
 /// Names the scope whose parameter set states a blank parameter name.
 fn native_scope_definition(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
 ) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
+    let mut properties = std::collections::BTreeMap::new();
+    for (_, parameter) in parameters {
+        let name = copy_feature_text(ctx, parameter.name(), "f3d native parameter name")?;
+        let Some(name) = cadmpeg_core::text::NonBlankString::new(name) else {
+            return Err(cadmpeg_core::text::NamedEntryError::Blank {
+                record: copy_feature_text(ctx, &scope.id, "f3d native property error scope")?,
+            }.into());
+        };
+        if properties.contains_key(&name) {
+            return Err(cadmpeg_core::text::NamedEntryError::Restated {
+                record: copy_feature_text(ctx, &scope.id, "f3d native property error scope")?,
+                key: name,
+            }.into());
+        }
+        let expression = copy_feature_text(ctx, parameter.expression(),
+            "f3d native parameter expression")?;
+        insert_feature_tree(ctx, &mut properties, name, expression,
+            "f3d native parameter property")?;
+    }
+
     Ok(FeatureDefinition::Operation(FeatureOperation::Native {
         kind: scope.kind_name().into(),
-        parameters: cadmpeg_core::text::named_entries(
-            &scope.id,
-            parameters.iter().map(|(_, parameter)| {
-                (
-                    parameter.name().to_owned(),
-                    parameter.expression().to_owned(),
-                )
-            }),
-        )?,
+        parameters: properties,
     }))
 }
 
@@ -2408,7 +2420,7 @@ fn project_fillet_arm(
     assignments.sort_by_key(|assignment| assignment.group_ordinal);
     if !assignments.is_empty() {
         let Some(assignments) = resolved_fillet_assignments(ctx, &assignments, parameters)? else {
-            return native_scope_definition(scope, parameters);
+            return native_scope_definition(ctx, scope, parameters);
         };
         let mut groups = Vec::new();
         for resolved in assignments {
@@ -2447,7 +2459,7 @@ fn project_fillet_arm(
         }
         let groups = groups.try_into().ok();
         return groups.map_or_else(
-            || native_scope_definition(scope, parameters),
+            || native_scope_definition(ctx, scope, parameters),
             |groups| {
                 Ok(FeatureDefinition::Operation(FeatureOperation::Fillet {
                     groups,
@@ -2472,13 +2484,13 @@ fn project_fillet_arm(
         }
     }
     let [(_, parameter)] = parameters else {
-        return native_scope_definition(scope, parameters);
+        return native_scope_definition(ctx, scope, parameters);
     };
     let Some(radius) = (parameter.source_kind() == "Radius")
         .then(|| design_positive_length(parameter))
         .flatten()
     else {
-        return native_scope_definition(scope, parameters);
+        return native_scope_definition(ctx, scope, parameters);
     };
     Ok(FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {

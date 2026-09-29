@@ -13,6 +13,7 @@ mod dispatcher;
 mod extrude;
 mod form;
 mod mirror;
+mod native_scope_definition_limits;
 mod parameter_cycles;
 mod parameters;
 mod pattern;
