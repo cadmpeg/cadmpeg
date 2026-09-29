@@ -2046,7 +2046,8 @@ fn contextual_deleted_edge_group_candidates(
             {
                 return Ok(None);
             }
-            deleted.push(*edge);
+            push_edge_item(ctx, &mut deleted, *edge,
+                "f3d contextual deleted edge")?;
             has_deleted_member = true;
         }
     }
@@ -2059,20 +2060,20 @@ fn contextual_deleted_edge_group_candidates(
         return Ok(None);
     }
 
-    let candidate_sets = operands
-        .iter()
-        .map(|operand| {
-            let mut candidates = operand
-                .recipe_reference_contexts
-                .iter()
-                .flat_map(|context| context.changed_reference_edge_slots.iter().copied())
-                .filter(|edge| deleted.binary_search(edge).is_ok())
-                .collect::<Vec<_>>();
-            candidates.sort_unstable();
-            candidates.dedup();
-            candidates
-        })
-        .collect::<Vec<_>>();
+    let mut candidate_sets = Vec::new();
+    for operand in operands {
+        let mut candidates = Vec::new();
+        for edge in operand.recipe_reference_contexts.iter()
+            .flat_map(|context| context.changed_reference_edge_slots.iter().copied())
+            .filter(|edge| deleted.binary_search(edge).is_ok()) {
+            push_edge_item(ctx, &mut candidates, edge,
+                "f3d contextual deleted candidate")?;
+        }
+        candidates.sort_unstable();
+        candidates.dedup();
+        push_edge_item(ctx, &mut candidate_sets, candidates,
+            "f3d contextual deleted candidate set")?;
+    }
     let Some(mut assignment) = unique_bipartite_assignment(&candidate_sets, ctx)? else {
         return Ok(None);
     };
