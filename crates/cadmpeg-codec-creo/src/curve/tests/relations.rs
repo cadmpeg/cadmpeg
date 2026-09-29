@@ -75,6 +75,26 @@ fn relation_referenced_string_refuses_retained_clone() {
             && resource.operation == "creo relation referenced string value"));
 }
 
+#[test]
+fn relation_string_concatenation_refuses_retained_growth() {
+    let error = relation_parse_limit_error(
+        "'a'+'b'",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| policy.limits.max_retained_bytes = 2,
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo relation string concatenation"));
+    assert_eq!(
+        parse_relation_expression::<CurveExpressionValue>(
+            "'a'+'b'",
+            &BTreeMap::new(),
+            RelationEvaluationContext::default(),
+        ),
+        Some(CurveExpressionValue::String("ab".to_owned()))
+    );
+}
+
 fn affine_probe_values() -> BTreeMap<String, SimultaneousAffineValue> {
     BTreeMap::from([(
         "driver".to_owned(),
