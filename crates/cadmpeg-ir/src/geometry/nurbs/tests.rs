@@ -200,14 +200,23 @@ fn owned_curve_mapping_preserves_polynomial_and_rational_poles() {
         let weights = actual.weights();
         actual
             .try_map_control_points(|_, point| {
-                FinitePoint3::new(Point3::new(point.get().x + 1.0, point.get().y, point.get().z))
-                    .ok_or("finite map")
+                FinitePoint3::new(Point3::new(
+                    point.get().x + 1.0,
+                    point.get().y,
+                    point.get().z,
+                ))
+                .ok_or("finite map")
             })
             .expect("finite point map");
         assert_eq!(actual.weights(), weights);
         assert_eq!(actual.control_points().len(), source.control_points().len());
+        assert_eq!(actual.degree(), source.degree());
+        assert_eq!(actual.knots(), source.knots());
+        assert_eq!(actual.periodic(), source.periodic());
         for (mapped, original) in actual.control_points().iter().zip(source.control_points()) {
             assert_eq!(mapped.get().x, original.get().x + 1.0);
+            assert_eq!(mapped.get().y, original.get().y);
+            assert_eq!(mapped.get().z, original.get().z);
         }
     }
 }
@@ -270,8 +279,12 @@ fn curve_map_updates_every_polynomial_and_rational_pole_atomically() {
                 if index == last {
                     Err("last pole")
                 } else {
-                    FinitePoint3::new(Point3::new(point.get().x + 1.0, point.get().y, point.get().z))
-                        .ok_or("non-finite point")
+                    FinitePoint3::new(Point3::new(
+                        point.get().x + 1.0,
+                        point.get().y,
+                        point.get().z,
+                    ))
+                    .ok_or("non-finite point")
                 }
             }),
             Err("last pole")
@@ -279,12 +292,24 @@ fn curve_map_updates_every_polynomial_and_rational_pole_atomically() {
         assert_eq!(curve, original);
         curve
             .try_map_control_points(|index, point| {
-                FinitePoint3::new(Point3::new(point.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0, point.get().y, point.get().z))
-                    .ok_or("non-finite point")
+                FinitePoint3::new(Point3::new(
+                    point.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0,
+                    point.get().y,
+                    point.get().z,
+                ))
+                .ok_or("non-finite point")
             })
             .unwrap();
-        for (index, (mapped, prior)) in curve.control_points().iter().zip(original.control_points()).enumerate() {
-            assert_eq!(mapped.get().x, prior.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0);
+        for (index, (mapped, prior)) in curve
+            .control_points()
+            .iter()
+            .zip(original.control_points())
+            .enumerate()
+        {
+            assert_eq!(
+                mapped.get().x,
+                prior.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0
+            );
         }
         assert_eq!(curve.weights(), weights);
     }
@@ -299,7 +324,14 @@ fn surface_map_updates_every_polynomial_and_rational_pole_atomically() {
     let polynomial = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(1, rational.u_knots().to_vec(), rational.u_periodic()),
         NurbsSurfaceAxis::new(1, rational.v_knots().to_vec(), rational.v_periodic()),
-        NurbsSurfaceLanes::new(rational.control_grid().into_iter().map(|row| row.into_iter().map(FinitePoint3::get).collect()).collect(), None::<Vec<Vec<f64>>>),
+        NurbsSurfaceLanes::new(
+            rational
+                .control_grid()
+                .into_iter()
+                .map(|row| row.into_iter().map(FinitePoint3::get).collect())
+                .collect(),
+            None::<Vec<Vec<f64>>>,
+        ),
         rational.normal_reversed(),
     )
     .unwrap();
@@ -312,8 +344,12 @@ fn surface_map_updates_every_polynomial_and_rational_pole_atomically() {
                 if index == last {
                     Err("last pole")
                 } else {
-                    FinitePoint3::new(Point3::new(point.get().x + 1.0, point.get().y, point.get().z))
-                        .ok_or("non-finite point")
+                    FinitePoint3::new(Point3::new(
+                        point.get().x + 1.0,
+                        point.get().y,
+                        point.get().z,
+                    ))
+                    .ok_or("non-finite point")
                 }
             }),
             Err("last pole")
@@ -321,12 +357,19 @@ fn surface_map_updates_every_polynomial_and_rational_pole_atomically() {
         assert_eq!(surface, original);
         surface
             .try_map_control_points(|index, point| {
-                FinitePoint3::new(Point3::new(point.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0, point.get().y, point.get().z))
-                    .ok_or("non-finite point")
+                FinitePoint3::new(Point3::new(
+                    point.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0,
+                    point.get().y,
+                    point.get().z,
+                ))
+                .ok_or("non-finite point")
             })
             .unwrap();
         for (index, (mapped, prior)) in surface.poles().iter().zip(original.poles()).enumerate() {
-            assert_eq!(mapped.get().x, prior.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0);
+            assert_eq!(
+                mapped.get().x,
+                prior.get().x + f64::from(u32::try_from(index).unwrap()) + 1.0
+            );
         }
         assert_eq!(surface.weights(), weights);
     }

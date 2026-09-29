@@ -2879,8 +2879,12 @@ mod tests {
                 if index == 4 {
                     pole.z += 1.0;
                 }
-                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
                 })
+            })
             .expect("finite offset-support test pole edit");
         let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support));
         let candidate = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate));
@@ -3086,8 +3090,12 @@ mod tests {
             .try_map_control_points(|_, point| {
                 let mut point = point.get();
                 point.z = -1.0;
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
                 })
+            })
             .expect("finite translated support");
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&near_zero);
         let target = Point3::new(3., 0.25, 1e-200);

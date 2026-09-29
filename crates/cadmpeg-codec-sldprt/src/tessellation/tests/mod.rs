@@ -370,8 +370,12 @@ fn flat_test_nurbs_surface() -> NurbsSurface {
         .try_map_control_points(|_, point| {
             let mut point = point.get();
             point.z = 0.0;
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
             })
+        })
         .unwrap();
     surface
 }

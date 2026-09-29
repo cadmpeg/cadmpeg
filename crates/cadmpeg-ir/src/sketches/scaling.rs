@@ -299,9 +299,11 @@ impl SpatialSketchGeometry {
                         scaled.x *= scale.get();
                         scaled.y *= scale.get();
                         scaled.z *= scale.get();
-                        FinitePoint3::new(scaled).ok_or_else(|| NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        ))
+                        FinitePoint3::new(scaled).ok_or_else(|| {
+                            NurbsError::Structure(
+                                "control_points contains a non-finite point".into(),
+                            )
+                        })
                     })
                     .map_err(SketchLengthScaleError::CurveControlPoints)?;
             }

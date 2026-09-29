@@ -86,8 +86,12 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     .try_map_control_points(|_, pole| {
                         let mut pole = pole.get();
                         pole.x += dx;
-                        cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+                        cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                                "control_points contains a non-finite point".into(),
+                            )
                         })
+                    })
                     .unwrap();
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
@@ -192,8 +196,12 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     .try_map_control_points(|_, pole| {
                         let mut pole = pole.get();
                         pole.x += dx;
-                        cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+                        cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                                "control_points contains a non-finite point".into(),
+                            )
                         })
+                    })
                     .unwrap();
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(surface)) => {
