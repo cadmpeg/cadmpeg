@@ -147,12 +147,12 @@ impl SketchReferenceField {
         };
         references
             .into_iter()
-            .enumerate()
-            .map(move |(ordinal, reference)| {
+            .zip(0u8..=u8::MAX)
+            .map(move |(reference, ordinal)| {
                 (
                     SketchReferencePosition {
                         declared_count,
-                        ordinal: ordinal as u8,
+                        ordinal,
                     },
                     reference,
                 )
@@ -178,9 +178,10 @@ impl SketchReferencePosition {
                 "ordinal/declared_count: ordinal must be within the effective reference count",
             );
         }
+        let ordinal = u8::try_from(ordinal).map_err(|_| "ordinal/declared_count: ordinal must be within the effective reference count")?;
         Ok(Self {
             declared_count,
-            ordinal: ordinal as u8,
+            ordinal,
         })
     }
     pub(crate) fn ordinal(self) -> u32 {

@@ -29,7 +29,7 @@ impl TryFrom<u32> for FieldPosition {
     type Error = &'static str;
 
     fn try_from(reference_ordinal: u32) -> Result<Self, Self::Error> {
-        let end = LEADING_REFERENCE_COUNT + MAX_TRAILING_REFERENCE_COUNT as u32;
+        let end = LEADING_REFERENCE_COUNT + 32;
         if !(LEADING_REFERENCE_COUNT..end).contains(&reference_ordinal) {
             return Err("reference_ordinal must address a trailing field in slots 5 through 36");
         }
@@ -48,9 +48,9 @@ impl EntityReferences {
         Ok(Self(values))
     }
     pub(crate) fn fields(&self) -> impl Iterator<Item = (FieldPosition, &u32)> {
-        self.0.iter().enumerate().map(|(ordinal, value)| {
+        self.0.iter().zip(LEADING_REFERENCE_COUNT..37).map(|(value, ordinal)| {
             (
-                FieldPosition(ordinal as u32 + LEADING_REFERENCE_COUNT),
+                FieldPosition(ordinal),
                 value,
             )
         })

@@ -2849,10 +2849,11 @@ pub(crate) fn datum_csys_payload_fixed_pairs(
             else {
                 continue;
             };
+            let (Some(first_value), Some(second_value)) = (Q155::from_raw(first_raw), Q155::from_raw(second_raw)) else { continue; };
             ctx.reserve_retained_vec(&mut pairs, 1, "NX datum CSYS pairs")?;
             pairs.push(DatumCsysPayloadFixedPair {
                 offset,
-                values: [Q155::from_raw(first_raw), Q155::from_raw(second_raw)],
+                values: [first_value, second_value],
                 form,
             });
         }
@@ -2891,11 +2892,12 @@ pub(crate) fn draft_construction_fixed_lanes(
             else {
                 break false;
             };
+            let Some(scalar) = Q155::from_raw(raw) else { break false; };
             ctx.reserve_retained_vec(&mut values, 1, "NX draft fixed atoms")?;
             values.push((
                 Q155Atom {
                     marker,
-                    scalar: Q155::from_raw(raw),
+                    scalar,
                 },
                 (),
             ));

@@ -57,7 +57,7 @@ impl std::fmt::Display for HeaderSlot {
 }
 
 // Five marker bytes, eight scalar bytes, and two ff bytes precede the slots.
-const FIXED_HEADER_LEN: usize = 5 + 8 + 2;
+const FIXED_HEADER_LEN: u8 = 5 + 8 + 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(try_from = "HeaderReferencesWire")]
@@ -79,10 +79,10 @@ impl HeaderReferences {
         Some(Self(tokens))
     }
 
-    fn byte_len(self) -> usize {
+    fn byte_len(self) -> u8 {
         self.0
             .iter()
-            .map(|token| token.as_ref().map_or(1, |token| token.raw().len()))
+            .map(|token| token.as_ref().map_or(1, |token| token.byte_len()))
             .sum()
     }
 
@@ -172,7 +172,7 @@ macro_rules! checked_header {
     ($offset:ty) => {
         impl OperationHeader<$offset> {
             pub(crate) fn new(offset: $offset, objects: HeaderReferences) -> Option<Self> {
-                offset.checked_add((FIXED_HEADER_LEN + objects.byte_len()) as $offset)?;
+                offset.checked_add(<$offset>::from(FIXED_HEADER_LEN + objects.byte_len()))?;
                 Some(Self { offset, objects })
             }
         }
@@ -190,16 +190,16 @@ impl<O: Copy + std::ops::Add<Output = O> + From<u8>> OperationHeader<O> {
     }
     pub(crate) fn byte_len(self) -> u8 {
         // Four tokens of at most three bytes follow the 15-byte fixed prefix.
-        (FIXED_HEADER_LEN + self.objects.byte_len()) as u8
+        FIXED_HEADER_LEN + self.objects.byte_len()
     }
     pub(crate) fn end_offset(self) -> O {
         self.offset + O::from(self.byte_len())
     }
     pub(crate) fn object_offsets(self) -> [O; 4] {
-        let mut at = self.offset + O::from(FIXED_HEADER_LEN as u8);
+        let mut at = self.offset + O::from(FIXED_HEADER_LEN);
         self.objects.0.map(|token| {
             let offset = at;
-            at = at + O::from(token.as_ref().map_or(1, |token| token.raw().len() as u8));
+            at = at + O::from(token.as_ref().map_or(1, |token| token.byte_len()));
             offset
         })
     }

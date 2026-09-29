@@ -26,7 +26,7 @@ impl<O> DatumIndexLane<O> {
             .indices
             .as_slice()
             .iter()
-            .map(|atom| atom.raw().len() as u16)
+            .map(|atom| u16::from(atom.byte_len()))
             .sum::<u16>()
     }
 }
@@ -42,7 +42,7 @@ impl<O: Copy + Add<Output = O> + From<u16>> DatumIndexLane<O> {
                 atom: *atom,
                 offset,
             };
-            offset = offset + O::from(atom.raw().len() as u16);
+            offset = offset + O::from(u16::from(atom.byte_len()));
             token
         })
     }
