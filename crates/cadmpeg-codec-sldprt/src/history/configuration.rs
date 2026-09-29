@@ -112,7 +112,7 @@ pub(crate) fn enrich_history_semantic(
         crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(histories, lanes);
     } else {
         crate::resolved_features::holes::
-            enrich_history_cosmetic_thread_diameters_without_hole_constructions(histories, lanes);
+            enrich_history_cosmetic_thread_diameters_without_hole_constructions(ctx, histories, lanes)?;
     }
     crate::resolved_features::reference_geometry::enrich_history_reference_planes(ctx, histories, lanes)?;
     crate::resolved_features::reference_geometry::enrich_history_reference_points(ctx, histories, lanes)?;
@@ -207,7 +207,9 @@ pub(crate) fn project_configuration_design_states(
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
         let scoped_lanes = &lanes[lane_index..=lane_index];
-        let mut projection = histories.to_vec();
+        let mut projection = crate::records::charged_clone::clone_histories_charged(
+            ctx, histories, "clone SLDPRT configuration parameter histories",
+        )?;
         // Seed PMI types before lane enrichment so dimension semantics reject
         // incompatible native scalar candidates. Reapply afterward to add PMI
         // parameters that the lane does not carry without replacing overrides.
@@ -220,9 +222,10 @@ pub(crate) fn project_configuration_design_states(
         enrich_history_parameters_semantic(ctx, &mut projection, scoped_lanes)?;
         crate::resolved_features::holes::
             enrich_history_cosmetic_thread_diameters_without_hole_constructions(
+                ctx,
                 &mut projection,
                 scoped_lanes,
-            );
+            )?;
         crate::pmi::enrich_history_parameters_with_features(
             ctx,
             &mut projection,
@@ -235,7 +238,9 @@ pub(crate) fn project_configuration_design_states(
                 .filter_map(|parameter| parameter.value.map(|value| (parameter.id, value)))
                 .collect();
 
-        let mut projection = histories.to_vec();
+        let mut projection = crate::records::charged_clone::clone_histories_charged(
+            ctx, histories, "clone SLDPRT configuration feature histories",
+        )?;
         enrich_history_semantic(
             ctx,
             &mut projection,

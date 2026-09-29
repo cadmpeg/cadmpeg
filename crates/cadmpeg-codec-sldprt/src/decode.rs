@@ -4391,7 +4391,9 @@ fn project_design_history(
         lanes,
         pmi_dimensions,
     } = input;
-    let mut semantic_projection = histories.to_vec();
+    let mut semantic_projection = crate::records::charged_clone::clone_histories_charged(
+        ctx, histories, "clone SLDPRT semantic histories",
+    )?;
     let scene_feature_classes = crate::tessellation::scene_feature_classes(ctx, scan)?;
     crate::history::enrich_scene_classes(
         ctx,
@@ -4423,7 +4425,9 @@ fn project_design_history(
     )?;
     ir.model.configurations =
         crate::history::project::project_configurations_charged(ctx, &semantic_projection)?;
-    let mut parameter_projection = histories.to_vec();
+    let mut parameter_projection = crate::records::charged_clone::clone_histories_charged(
+        ctx, histories, "clone SLDPRT parameter histories",
+    )?;
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(
         ctx,
         &mut parameter_projection,
@@ -4436,9 +4440,10 @@ fn project_design_history(
     )?;
     crate::resolved_features::holes::
         enrich_history_cosmetic_thread_diameters_without_hole_constructions(
+            ctx,
             &mut parameter_projection,
             lanes,
-        );
+        )?;
     crate::pmi::enrich_history_parameters(ctx, &mut parameter_projection, pmi_dimensions)?;
     ir.model.parameters = crate::history::parameters::project_parameters(&parameter_projection);
     crate::history::configuration::project_configuration_design_states(
