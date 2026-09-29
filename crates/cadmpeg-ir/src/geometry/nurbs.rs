@@ -731,22 +731,21 @@ impl BsplineSurface {
         self.v_degree
     }
 
-    /// Atomically edit pole coordinates while preserving the grid and finite values.
+    /// Map every pole position in row-major order, or change nothing.
     ///
-    /// The closure states its own refusal, which discards the whole edit.
-    pub fn edit_control_points(
+    /// `map` receives each pole's row-major index and position. The first
+    /// refusal returns before any pole changes; otherwise `map` runs again for
+    /// every pole and the results are written in place. Nothing is allocated.
+    pub fn try_map_control_points<E>(
         &mut self,
-        mut edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
-    ) -> Result<(), NurbsError> {
-        let mut points = Vec::with_capacity(self.control_points.len());
-        for row in &self.control_points {
-            let mut row: Vec<Point3> = row.iter().map(|point| point.get()).collect();
-            for point in &mut row {
-                edit(point)?;
-            }
-            points.push(admit_finite_row_3(row)?);
+        map: impl Fn(usize, FinitePoint3) -> Result<FinitePoint3, E>,
+    ) -> Result<(), E> {
+        for (index, point) in self.control_points.iter().flatten().copied().enumerate() {
+            map(index, point)?;
         }
-        self.control_points = points;
+        for (index, point) in self.control_points.iter_mut().flatten().enumerate() {
+            *point = map(index, *point)?;
+        }
         Ok(())
     }
 }
