@@ -7177,11 +7177,12 @@ mod tests {
                 .unwrap(),
             source_offset: 900,
         };
-        let bindings = crate::native::features::feature_parameter_bindings(
-            std::slice::from_ref(&input),
-            &references,
-            std::slice::from_ref(&expression),
-        );
+        let bindings = crate::test_support::with_decode_context(|ctx| {
+            crate::native::features::feature_parameter_bindings(
+                ctx, std::slice::from_ref(&input), &references,
+                std::slice::from_ref(&expression),
+            )
+        }).expect("admitted parameter bindings");
         assert_eq!(bindings.len(), 1);
         assert_eq!(
             bindings[0].id,
@@ -7201,11 +7202,11 @@ mod tests {
 
         let mut duplicate = expression.clone();
         duplicate.id = "nx:om-entry-9:expression#30".to_string();
-        let ambiguous = crate::native::features::feature_parameter_bindings(
-            &[input],
-            &references,
-            &[expression, duplicate],
-        );
+        let ambiguous = crate::test_support::with_decode_context(|ctx| {
+            crate::native::features::feature_parameter_bindings(
+                ctx, &[input], &references, &[expression, duplicate],
+            )
+        }).expect("ambiguous parameter binding");
         assert_eq!(ambiguous.len(), 1);
         assert_eq!(ambiguous[0].expression, None);
     }

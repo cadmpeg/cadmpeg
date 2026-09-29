@@ -14,6 +14,7 @@ mod lane_wire;
 mod link_order;
 mod named_point_limits;
 mod operation_identity;
+mod parameter_limits;
 mod reference_admission;
 mod record_wire;
 mod sketch_admission;
