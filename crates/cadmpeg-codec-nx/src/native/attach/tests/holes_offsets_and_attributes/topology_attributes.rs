@@ -190,51 +190,6 @@ fn topology_context_index_refuses_work_limit() {
     );
 }
 
-fn attribute_lookup_with_limit(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> Result<(), cadmpeg_core::CodecError> {
-    let records = [("first", 1_u8), ("second", 2_u8)];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    
-    let (indexed, _index_reservation) = ctx.collect_scoped_btree_map(records.iter().map(|record| (record.0, record)), "NX Parasolid attribute record index")?;
-    let (grouped, _group_reservation) = ctx.collect_scoped_btree_groups(records.iter().map(|record| (record.0, record)), "NX Parasolid attribute use groups")?;
-    assert_eq!(indexed.len(), 2);
-    assert_eq!(grouped.len(), 2);
-    Ok(())
-}
-
-#[test]
-fn attribute_lookup_refuses_collection_limit() {
-    let error =
-        attribute_lookup_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn attribute_lookup_refuses_scoped_limit() {
-    let error =
-        attribute_lookup_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn attribute_lookup_refuses_work_limit() {
-    let error = attribute_lookup_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
-}
-
 fn fallback_attribute_name_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<String, cadmpeg_core::CodecError> {

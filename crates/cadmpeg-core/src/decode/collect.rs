@@ -2365,4 +2365,50 @@ fn operation_record_index_refuses_work_limit() {
         ctx.admit_retained_btree_record::<String, u16>(3, "test retained tree record").unwrap();
     }
 
+fn attribute_lookup_with_limit(
+    configure: impl FnOnce(&mut crate::decode::DecodePolicy),
+) -> Result<(), crate::CodecError> {
+    let records = [("first", 1_u8), ("second", 2_u8)];
+    let arena = crate::decode::DecodeArena::new();
+    let mut policy = crate::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = crate::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    
+    let (indexed, _index_reservation) = ctx.collect_scoped_btree_map(records.iter().map(|record| (record.0, record)), "NX Parasolid attribute record index")?;
+    let (grouped, _group_reservation) = ctx.collect_scoped_btree_groups(records.iter().map(|record| (record.0, record)), "NX Parasolid attribute use groups")?;
+    assert_eq!(indexed.len(), 2);
+    assert_eq!(grouped.len(), 2);
+    Ok(())
+}
+
+#[test]
+fn attribute_lookup_refuses_collection_limit() {
+    let error =
+        attribute_lookup_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(
+        matches!(error, crate::CodecError::ResourceLimit(limit)
+        if limit.dimension == crate::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn attribute_lookup_refuses_scoped_limit() {
+    let error =
+        attribute_lookup_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, crate::CodecError::ResourceLimit(limit)
+        if limit.dimension == crate::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn attribute_lookup_refuses_work_limit() {
+    let error = attribute_lookup_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, crate::CodecError::ResourceLimit(limit)
+        if limit.dimension == crate::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+
 }
