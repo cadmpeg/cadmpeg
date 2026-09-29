@@ -1,4 +1,5 @@
 use super::super::project_relation_point_dimensioned_circles;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
@@ -18,6 +19,8 @@ use std::collections::BTreeMap;
 
 #[test]
 fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"point projection", &arena, &DecodePolicy::service()).unwrap();
     let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let relation = FeatureInputRelationInstance {
@@ -127,6 +130,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     .with_native_ref(Some("center".into()))];
 
     project_relation_point_dimensioned_circles(
+        &ctx,
         &mut entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -146,6 +150,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     classless_lane.references[0].class_ref = None;
     let mut classless_entities = vec![entities[0].clone()];
     project_relation_point_dimensioned_circles(
+        &ctx,
         &mut classless_entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -169,6 +174,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     object_index_lane.relation_instances[0].operands[0].entity_index = 1;
     let mut object_index_entities = vec![entities[0].clone()];
     project_relation_point_dimensioned_circles(
+        &ctx,
         &mut object_index_entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),

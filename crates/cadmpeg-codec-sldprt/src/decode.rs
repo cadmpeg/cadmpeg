@@ -2835,6 +2835,7 @@ fn build_geometry_ir(
         &sketch_lanes,
     );
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
+        ctx,
         &mut sketch_entities,
         &ir.model.features,
         &ir.model.parameters,
@@ -4159,6 +4160,7 @@ fn build_metadata_ir(
         &sketch_lanes,
     );
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
+        ctx,
         &mut ir.model.sketch_entities,
         &ir.model.features,
         &ir.model.parameters,

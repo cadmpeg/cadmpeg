@@ -29,7 +29,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_core::decode::id_from_index;
+use cadmpeg_core::decode::{id_from_index, DecodeContext};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
@@ -860,33 +860,55 @@ pub(crate) fn project_dimensioned_sketch_geometry(
 /// relation-point projector has established one same-sketch neutral point;
 /// ambiguous or missing witnesses remain native.
 pub(crate) fn project_relation_point_dimensioned_circles(
+    ctx: &DecodeContext<'_>,
     entities: &mut Vec<SketchEntity>,
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let sketches_by_feature = features
-        .iter()
-        .filter_map(|feature| {
-            let FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            }) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            Some((feature.native_ref.as_deref()?, sketch))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut sketches_by_feature = HashMap::new();
+    for feature in features {
+        let FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+        }) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        if !sketches_by_feature.contains_key(native_ref) {
+            let operation = "index SLDPRT dimensioned point sketches";
+            ctx.charge_collection_items(1, operation)?;
+            sketches_by_feature.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        sketches_by_feature.insert(native_ref, sketch);
+    }
     let ownership = owned_relation_parameters(features, parameters, lanes);
-    let parameters_by_id = parameters
-        .iter()
-        .map(|parameter| (&parameter.id, parameter))
-        .collect::<HashMap<_, _>>();
-    let markers_by_id = lanes
-        .iter()
-        .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id(), marker))
-        .collect::<HashMap<_, _>>();
+    let mut parameters_by_id = HashMap::new();
+    for parameter in parameters {
+        if !parameters_by_id.contains_key(&parameter.id) {
+            let operation = "index SLDPRT dimensioned point parameters";
+            ctx.charge_collection_items(1, operation)?;
+            parameters_by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        parameters_by_id.insert(&parameter.id, parameter);
+    }
+    let mut markers_by_id = HashMap::new();
+    for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
+        if !markers_by_id.contains_key(marker.id()) {
+            let operation = "index SLDPRT dimensioned point markers";
+            ctx.charge_collection_items(1, operation)?;
+            markers_by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        markers_by_id.insert(marker.id(), marker);
+    }
 
     for lane in lanes {
         let lane_key = lane
