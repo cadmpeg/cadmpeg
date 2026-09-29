@@ -108,7 +108,7 @@ fn compact_parting_line_draft_operands(
 ) -> Option<DraftOperands> {
     let end = super::DeclaredEnd::of(object_end, lane.native_payload.len())?.get();
     let final_marker = end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len())?;
-    let mut records = (object_start.saturating_add(12)..=final_marker)
+    let records = (object_start.saturating_add(12)..=final_marker)
         .filter(|marker| {
             lane.native_payload
                 .get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
@@ -134,25 +134,27 @@ fn compact_parting_line_draft_operands(
     })?;
     let pull_direction =
         unique_draft_direction(&lane.native_payload, parting_record.3, first_face.0)?;
-    let faces = records
-        .iter()
-        .filter(|(marker, role, _, _)| {
-            *role == CompactDraftSelectionRole::DraftedFace && *marker > parting_record.0
-        })
-        .flat_map(|(_, _, paths, _)| paths.iter().cloned())
-        .fold(
-            Vec::<Vec<FeatureInputComponentPathEntry>>::new(),
-            |mut paths, path| {
-                if !paths
-                    .iter()
-                    .any(|existing| same_component_path_semantics(existing, &path))
-                {
-                    paths.push(path);
-                }
-                paths
-            },
-        );
-    let (_, _, parting_paths, _) = records.swap_remove(parting_index);
+    let parting_start = parting_record.0;
+    let mut parting_paths = None;
+    let mut faces = Vec::<Vec<FeatureInputComponentPathEntry>>::new();
+    for (index, (marker, role, paths, _)) in records.into_iter().enumerate() {
+        if index == parting_index {
+            parting_paths = Some(paths);
+            continue;
+        }
+        if role != CompactDraftSelectionRole::DraftedFace || marker <= parting_start {
+            continue;
+        }
+        for path in paths {
+            if !faces
+                .iter()
+                .any(|existing| same_component_path_semantics(existing, &path))
+            {
+                faces.push(path);
+            }
+        }
+    }
+    let parting_paths = parting_paths?;
     (!faces.is_empty()).then_some(DraftOperands {
         anchor: DraftAnchor::PartingTool(parting_paths),
         faces,
