@@ -21,6 +21,39 @@ const EPS_WEIGHT_SYMMETRY: f64 = 1.0e-12;
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
 const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-12;
 
+struct JoinedRefusals<'a>(&'a [String]);
+
+impl std::fmt::Display for JoinedRefusals<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, record) in self.0.iter().enumerate() {
+            if index != 0 {
+                formatter.write_str("; ")?;
+            }
+            formatter.write_str(record)?;
+        }
+        Ok(())
+    }
+}
+
+fn report_cubic_generator_loss(
+    ctx: &DecodeContext<'_>,
+    surface_id: u32,
+    refused: &[String],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    let message = ctx.format_retained(
+        format_args!(
+            "VisibGeom surface row {surface_id} states no cubic-extrusion plane generator \
+             carrier: {}",
+            JoinedRefusals(refused)
+        ),
+        "creo cubic generator loss message",
+    )?;
+    ctx.try_reserve_items(losses, 1, "creo cubic generator loss notes")?;
+    losses.push(crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved.note(message));
+    Ok(())
+}
+
 struct NurbsSurfaceBoundary {
     curve: NurbsCurve,
     control_indices: Vec<usize>,
@@ -921,13 +954,7 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
     if refused.is_empty() {
         return recognized;
     }
-    losses.push(
-        crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved.note(format!(
-            "VisibGeom surface row {surface_id} states no cubic-extrusion plane generator \
-             carrier: {}",
-            refused.join("; ")
-        )),
-    );
+    report_cubic_generator_loss(ctx, surface_id, &refused, losses)?;
     Ok(None)
 }
 
@@ -939,6 +966,46 @@ mod tests {
 
     const EPS_TEST_VALUE: f64 = 1.0e-11;
     const EPS_TEST_ROOT: f64 = 1.0e-12;
+
+    fn generator_loss_with_policy(
+        policy: DecodePolicy,
+    ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let refused = ["first lane".to_owned(), "second lane".to_owned()];
+        let mut losses = Vec::new();
+        super::report_cubic_generator_loss(&ctx, 7, &refused, &mut losses)?;
+        Ok(losses)
+    }
+
+    #[test]
+    fn cubic_generator_loss_message_refuses_retained_limit() {
+        let service = generator_loss_with_policy(DecodePolicy::service())
+            .expect("service profile admits the loss note");
+        assert_eq!(service.len(), 1);
+        assert_eq!(
+            service[0].message,
+            "VisibGeom surface row 7 states no cubic-extrusion plane generator carrier: first lane; second lane"
+        );
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = service[0].message.len() as u64 - 1;
+        let error = generator_loss_with_policy(policy).expect_err("message exceeds retained cap");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "creo cubic generator loss message"));
+    }
+
+    #[test]
+    fn cubic_generator_loss_note_refuses_collection_limit() {
+        assert_eq!(generator_loss_with_policy(DecodePolicy::service()).expect("service note").len(), 1);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let error = generator_loss_with_policy(policy).expect_err("one loss exceeds item cap");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo cubic generator loss notes"));
+    }
 
     fn boundary_count_with_limit(limit: u64) -> Result<usize, cadmpeg_core::CodecError> {
         let surface = NurbsSurface::from_lanes(

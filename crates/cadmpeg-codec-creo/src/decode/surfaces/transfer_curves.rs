@@ -225,37 +225,54 @@ fn extrusion_plane_boundary_curve(
         cubic_extrusion_plane_generator_curve(ctx, nurbs, surface_id, plane, &mut fallback_losses)?
             .map(|geometry| (geometry, NurbsBoundaryKind::ExtrusionPlaneSectionGenerator));
     if fallback.is_none() {
-        losses.extend(fallback_losses);
-        note_boundary_lane_records(curve_row_id, &refused, losses);
+        append_boundary_fallback_losses(ctx, losses, fallback_losses)?;
+        note_boundary_lane_records(ctx, curve_row_id, &refused, losses)?;
     }
     Ok(fallback)
 }
 
+fn append_boundary_fallback_losses(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    fallback_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    ctx.try_reserve_items(losses, fallback_losses.len(), "creo boundary fallback losses")?;
+    losses.extend(fallback_losses);
+    Ok(())
+}
+
 /// Drain every refused boundary lane into one loss note per record.
 fn note_refused_boundary_lanes(
+    ctx: &DecodeContext<'_>,
     curve_row_id: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let records = refusal.take_records_checked()?;
-    note_boundary_lane_records(curve_row_id, &records, losses);
-    Ok(())
+    note_boundary_lane_records(ctx, curve_row_id, &records, losses)
 }
 
 /// One loss note per refused boundary-lane record, each naming the row.
 fn note_boundary_lane_records(
+    ctx: &DecodeContext<'_>,
     curve_row_id: u32,
     records: &[String],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) {
+) -> Result<(), CodecError> {
     for record in records {
-        losses.push(
-            crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved.note(format!(
+        let message = ctx.format_retained(
+            format_args!(
                 "VisibGeom curve-topology row {curve_row_id} states no NURBS boundary carrier: \
                  {record}"
-            )),
+            ),
+            "creo boundary loss message",
+        )?;
+        ctx.try_reserve_items(losses, 1, "creo boundary loss notes")?;
+        losses.push(
+            crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved.note(message),
         );
     }
+    Ok(())
 }
 
 pub(in super::super) fn transfer_nurbs_boundary_curves(
@@ -354,7 +371,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             _ => None,
         };
         let Some((geometry, kind)) = resolved else {
-            note_refused_boundary_lanes(row.id, refusal, losses)?;
+            note_refused_boundary_lanes(ctx, row.id, refusal, losses)?;
             continue;
         };
         let id = crate::identity::compose_checked::<CurveId>(
@@ -922,7 +939,11 @@ mod tests {
         );
         let mut losses = Vec::new();
 
-        super::note_refused_boundary_lanes(41, &mut refusal, &mut losses)
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty root admitted");
+
+        super::note_refused_boundary_lanes(&ctx, 41, &mut refusal, &mut losses)
             .expect("refusal report is admitted");
 
         let [note] = losses.as_slice() else {
@@ -935,5 +956,68 @@ mod tests {
         assert!(note.message.contains("row 41"), "{}", note.message);
         assert!(note.message.contains("surface row 7"), "{}", note.message);
         assert!(refusal.take_records().is_empty());
+    }
+
+    fn boundary_loss_with_limits(
+        policy: DecodePolicy,
+    ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let mut losses = Vec::new();
+        super::note_boundary_lane_records(&ctx, 41, &["surface row 7".to_owned()], &mut losses)?;
+        Ok(losses)
+    }
+
+    #[test]
+    fn boundary_loss_message_refuses_retained_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let service = boundary_loss_with_limits(DecodePolicy::service())
+            .expect("service profile admits the loss note");
+        assert_eq!(service.len(), 1);
+        assert!(service[0].message.contains("row 41"));
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = service[0].message.len() as u64 - 1;
+        let error = boundary_loss_with_limits(policy).expect_err("message exceeds retained cap");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "creo boundary loss message"));
+    }
+
+    #[test]
+    fn boundary_loss_note_refuses_collection_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        assert_eq!(boundary_loss_with_limits(DecodePolicy::service()).expect("service note").len(), 1);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let error = boundary_loss_with_limits(policy).expect_err("one loss exceeds item cap");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo boundary loss notes"));
+    }
+
+    #[test]
+    fn boundary_fallback_losses_refuse_collection_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let run = |policy: DecodePolicy| {
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root admitted");
+            let mut losses = Vec::new();
+            let fallback = crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved
+                .note("fallback failure");
+            super::append_boundary_fallback_losses(&ctx, &mut losses, vec![fallback])?;
+            Ok::<_, cadmpeg_core::CodecError>(losses)
+        };
+        assert_eq!(run(DecodePolicy::service()).expect("service fallback").len(), 1);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let error = run(policy).expect_err("one fallback exceeds item cap");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo boundary fallback losses"));
     }
 }
