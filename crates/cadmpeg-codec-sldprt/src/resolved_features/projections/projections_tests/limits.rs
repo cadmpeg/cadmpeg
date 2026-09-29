@@ -1,6 +1,9 @@
 //! Compact selection projection and resource-limit tests.
 
-use super::super::{project_compact_body_selections, project_compact_edge_selections};
+use super::super::{
+    project_compact_body_selections, project_compact_edge_selections,
+    project_compact_surface_selections,
+};
 use crate::records::{FeatureInputBodySelection, FeatureInputLane};
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, FeatureDefinition, FeatureId, FeatureOperation,
@@ -225,4 +228,52 @@ fn compact_edge_projection_refuses_index_retained_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "index SLDPRT compact edge selections"));
+}
+
+#[test]
+fn compact_surface_projection_refuses_index_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut feature = compact_edge_projection_feature();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = project_compact_surface_selections(&ctx, std::slice::from_mut(&mut feature), &[], &[])
+        .expect_err("surface feature index exceeds collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "index SLDPRT compact surface selections"));
+}
+
+#[test]
+fn compact_surface_projection_refuses_index_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut feature = compact_edge_projection_feature();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = project_compact_surface_selections(&ctx, std::slice::from_mut(&mut feature), &[], &[])
+        .expect_err("surface feature ID exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "index SLDPRT compact surface selections"));
+}
+
+#[test]
+fn compact_surface_projection_refuses_index_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut feature = compact_edge_projection_feature();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = project_compact_surface_selections(&ctx, std::slice::from_mut(&mut feature), &[], &[])
+        .expect_err("surface feature scan exceeds work limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "index SLDPRT compact surface selections"));
 }
