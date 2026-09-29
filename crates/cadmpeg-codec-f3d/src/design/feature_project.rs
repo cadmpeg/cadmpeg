@@ -9054,60 +9054,65 @@ fn project_extrude(
                 return Ok(None);
             };
             if rest.is_empty() {
-                resolved_extrude_profile_face_group(
+                match resolved_extrude_profile_face_group(
                     scope,
                     first,
                     construction_groups,
                     face_operands,
-                )
-                .unwrap_or_else(|| ProfileRef::Planar(PlanarProfileRef::Native(first.id.clone())))
+                ) {
+                    Some(profile) => profile,
+                    None => ProfileRef::Planar(PlanarProfileRef::Native(copy_feature_text(
+                        ctx, &first.id, "f3d Extrude profile group id")?)),
+                }
             } else {
-                let resolved = profile_groups
-                    .iter()
-                    .map(|group| {
-                        resolved_extrude_profile_face_group(
+                let mut state = None;
+                let mut faces = Vec::new();
+                let mut native = Vec::new();
+                let mut complete = true;
+                for group in &profile_groups {
+                    let Some(selection) = resolved_extrude_profile_face_group(
                             scope,
                             group,
                             construction_groups,
                             face_operands,
-                        )
-                    })
-                    .collect::<Option<Vec<_>>>();
-                ProfileRef::Planar(match resolved {
-                    Some(selections) => {
-                        let mut state = None;
-                        let mut faces = Vec::new();
-                        let mut native = Vec::new();
-                        let complete = selections.into_iter().all(|selection| {
-                            let ProfileRef::Planar(PlanarProfileRef::HistoricalFaces {
-                                state: selected_state,
-                                faces: selected_faces,
-                                native: selected_native,
-                            }) = selection
-                            else {
-                                return false;
-                            };
-                            if state.as_ref().is_some_and(|state| state != &selected_state) {
-                                return false;
-                            }
-                            state = Some(selected_state);
-                            for face in selected_faces {
-                                if !faces.contains(&face) {
-                                    faces.push(face);
-                                }
-                            }
-                            native.extend(selected_native);
-                            true
-                        });
-                        match (complete, state) {
-                            (true, Some(state)) if !faces.is_empty() => {
-                                PlanarProfileRef::historical_faces(state, faces, native)
-                                    .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone()))
-                            }
-                            _ => PlanarProfileRef::Native(scope.id.clone()),
+                    ) else {
+                        complete = false;
+                        break;
+                    };
+                    let ProfileRef::Planar(PlanarProfileRef::HistoricalFaces {
+                        state: selected_state,
+                        faces: selected_faces,
+                        native: selected_native,
+                    }) = selection else {
+                        complete = false;
+                        break;
+                    };
+                    if state.as_ref().is_some_and(|state| state != &selected_state) {
+                        complete = false;
+                        break;
+                    }
+                    state = Some(selected_state);
+                    for face in selected_faces {
+                        if !faces.contains(&face) {
+                            push_feature_item(ctx, &mut faces, face,
+                                "f3d Extrude profile historical face")?;
                         }
                     }
-                    None => PlanarProfileRef::Native(scope.id.clone()),
+                    for id in selected_native {
+                        push_feature_item(ctx, &mut native, id,
+                            "f3d Extrude profile historical native id")?;
+                    }
+                }
+                ProfileRef::Planar(match (complete, state) {
+                    (true, Some(state)) if !faces.is_empty() => {
+                        match PlanarProfileRef::historical_faces(state, faces, native) {
+                            Ok(profile) => profile,
+                            Err(_) => PlanarProfileRef::Native(copy_feature_text(
+                                ctx, &scope.id, "f3d Extrude fallback scope id")?),
+                        }
+                    }
+                    _ => PlanarProfileRef::Native(copy_feature_text(
+                        ctx, &scope.id, "f3d Extrude fallback scope id")?),
                 })
             }
         }
