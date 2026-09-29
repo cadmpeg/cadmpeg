@@ -203,6 +203,31 @@ impl DecodeContext<'_> {
         text.try_reserve(additional).map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::RetainedBytes, u64::MAX, u64_from_index(additional), operation)))
     }
 
+    /// Inserts a new scoped tree key after charging lookup work and node storage.
+    pub fn insert_scoped_btree_set<T: Ord>(&self, reservation: &mut ScopedReservation<'_>, values: &mut BTreeSet<T>, value: T, work_operation: &'static str, operation: &'static str) -> Result<bool, CodecError> {
+        self.charge_work(u64_from_index(values.len()), work_operation)?;
+        if values.contains(&value) { return Ok(false); }
+        let bytes = std::mem::size_of::<T>().checked_mul(4).ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        self.charge_collection_items(1, operation)?;
+        reservation.grow(u64_from_index(bytes))?;
+        Ok(values.insert(value))
+    }
+
+    /// Inserts a vacant scoped tree entry after charging lookup work and node storage.
+    pub fn insert_scoped_btree_map_if_vacant<K: Ord, V>(&self, reservation: &mut ScopedReservation<'_>, values: &mut BTreeMap<K, V>, key: K, value: V, work_operation: &'static str, operation: &'static str) -> Result<bool, CodecError> {
+        self.charge_work(u64_from_index(values.len()), work_operation)?;
+        match values.entry(key) {
+            std::collections::btree_map::Entry::Occupied(_) => Ok(false),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                let bytes = std::mem::size_of::<(K, V)>().checked_mul(4).ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                self.charge_collection_items(1, operation)?;
+                reservation.grow(u64_from_index(bytes))?;
+                entry.insert(value);
+                Ok(true)
+            }
+        }
+    }
+
     fn collection_allocation_failed(&self, count: usize, operation: &'static str) -> CodecError {
         CodecError::ResourceLimit(ResourceLimit::allocation_failed(
             ResourceDimension::CollectionItems,
@@ -1929,6 +1954,50 @@ mod tests {
         let mut values = Vec::<u16>::new();
         ctx.push_retained_vec(&mut values, 7, "test retained push").unwrap();
         assert_eq!(values, [7]);
+    }
+
+    #[test]
+    fn scoped_tree_set_refuses_one_below_storage_before_insertion() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, 3);
+        let mut reservation = ctx.reserve_scoped(0, "test scoped tree").unwrap();
+        let mut values = BTreeSet::new();
+        let error = ctx.insert_scoped_btree_set(&mut reservation, &mut values, 7u8, "test scoped lookup", "test scoped tree").unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes));
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn scoped_tree_set_preserves_unique_values_under_service_profile() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
+        let mut reservation = ctx.reserve_scoped(0, "test scoped tree").unwrap();
+        let mut values = BTreeSet::new();
+        assert!(ctx.insert_scoped_btree_set(&mut reservation, &mut values, 7u8, "test scoped lookup", "test scoped tree").unwrap());
+        assert!(!ctx.insert_scoped_btree_set(&mut reservation, &mut values, 7u8, "test scoped lookup", "test scoped tree").unwrap());
+        assert_eq!(values, BTreeSet::from([7]));
+    }
+
+    #[test]
+    fn scoped_tree_map_refuses_one_below_storage_before_insertion() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, 7);
+        let mut reservation = ctx.reserve_scoped(0, "test scoped tree").unwrap();
+        let mut values = BTreeMap::new();
+        let error = ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut values, 7u8, 9u8, "test scoped lookup", "test scoped tree").unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes));
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn scoped_tree_map_preserves_first_entry_under_service_profile() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
+        let mut reservation = ctx.reserve_scoped(0, "test scoped tree").unwrap();
+        let mut values = BTreeMap::new();
+        assert!(ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut values, 7u8, 9u8, "test scoped lookup", "test scoped tree").unwrap());
+        assert!(!ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut values, 7u8, 11u8, "test scoped lookup", "test scoped tree").unwrap());
+        assert_eq!(values, BTreeMap::from([(7, 9)]));
     }
 
 }
