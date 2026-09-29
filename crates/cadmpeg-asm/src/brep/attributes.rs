@@ -25,14 +25,14 @@ pub fn collect_attributes(
     let mut current = entity.ref_at(0);
     let mut chain = HashSet::new();
     while let Some(index) = current {
-        if !crate::decode_alloc::insert_hash_set(ctx, &mut chain, index, "ASM attribute chain")? {
+        if !ctx.insert_hash_set(&mut chain, index, "ASM attribute chain")? {
             break;
         }
         let Some(record) = by_index.get(&index) else {
             break;
         };
-        if crate::decode_alloc::insert_hash_set(ctx, emitted, index, "ASM emitted attributes")? {
-            crate::decode_alloc::reserve_vec_slot(ctx, out, "ASM source attributes")?;
+        if ctx.insert_hash_set(emitted, index, "ASM emitted attributes")? {
+            ctx.reserve_vec(out, 1, "ASM source attributes")?;
             out.push(source_attribute(ctx, record, target.clone(), format)?);
         }
         current = attribute_next(record);
@@ -158,7 +158,7 @@ pub fn source_attribute(
     // rather than carrying an attribute value.
     let mut values = Vec::new();
     for token in record.chunks() {
-        crate::decode_alloc::reserve_vec_slot(ctx, &mut values, "ASM attribute values")?;
+        ctx.reserve_vec(&mut values, 1, "ASM attribute values")?;
         let value = attribute_value(ctx, token, format)?.ok_or_else(|| {
             cadmpeg_core::CodecError::malformed(format_args!(
                 "attribute record {} ({}) holds a non-finite number",

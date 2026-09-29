@@ -1724,7 +1724,7 @@ pub(super) fn vertex_blend_spl_sur(
         return None;
     }
     let mut boundaries =
-        match crate::decode_alloc::counted_vec(ctx, count, "ASM vertex blend boundaries") {
+        match ctx.collection_vec(count, "ASM vertex blend boundaries") {
             Ok(boundaries) => boundaries,
             Err(error) => return Some(Err(error)),
         };

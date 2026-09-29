@@ -678,12 +678,7 @@ fn pcurve_for_selector_recursive(
     if let Some(index) = direct_subtype_reference(ctx, toks) {
         let index = propagate_resource!(index);
         if !seen.contains(&index) {
-            propagate_resource!(crate::decode_alloc::push_vec(
-                ctx,
-                seen,
-                index,
-                "ASM pcurve references",
-            ));
+            propagate_resource!(ctx.push_vec(seen, index, "ASM pcurve references"));
             // Not the search refusal the four `for` loops over
             // `subtype_refs` state. This is the single record-level
             // delegation, and the wrapper's own routes below run whenever the
@@ -924,12 +919,7 @@ fn cacheless_procedural_curve_recursive(
         // decoder does about it is the decoder's decision: the search refuses
         // the stream rather than skipping the reference and reading the one
         // behind it.
-        propagate_resource!(crate::decode_alloc::push_vec(
-            ctx,
-            seen,
-            index,
-            "ASM cacheless curve references",
-        ));
+        propagate_resource!(ctx.push_vec(seen, index, "ASM cacheless curve references"));
         let target = table.span(index)?;
         if let Some(decoded) =
             cacheless_procedural_curve_recursive(ctx, target.tokens(), table, seen)
@@ -1073,12 +1063,7 @@ fn procedural_curve_recursive(
         // decoder does about it is the decoder's decision: the search refuses
         // the stream rather than skipping the reference and reading the one
         // behind it.
-        propagate_resource!(crate::decode_alloc::push_vec(
-            ctx,
-            seen,
-            index,
-            "ASM procedural curve references",
-        ));
+        propagate_resource!(ctx.push_vec(seen, index, "ASM procedural curve references"));
         let target = table.span(index)?;
         if let Some(decoded) = procedural_curve_recursive(ctx, target.tokens(), table, seen) {
             return Some(decoded);
@@ -1217,11 +1202,7 @@ fn embedded_deformable(
             }
             let count = cur.take_long()?;
             let count = usize::try_from(count).ok()?;
-            let mut parameter_pairs = match crate::decode_alloc::counted_vec(
-                ctx,
-                count,
-                "ASM deformable curve parameter pairs",
-            ) {
+            let mut parameter_pairs = match ctx.collection_vec(count, "ASM deformable curve parameter pairs") {
                 Ok(parameter_pairs) => parameter_pairs,
                 Err(error) => return Some(Err(error)),
             };
@@ -1391,11 +1372,7 @@ fn embedded_law_curve(
     if count > 100_000 {
         return None;
     }
-    let mut additional = propagate_resource!(crate::decode_alloc::counted_vec(
-        ctx,
-        count,
-        "ASM law curve additional formulas",
-    ));
+    let mut additional = propagate_resource!(ctx.collection_vec(count, "ASM law curve additional formulas"));
     for _ in 0..count {
         additional.push(propagate_resource!(law_formula(ctx, &mut cur)?));
     }
@@ -3629,7 +3606,7 @@ fn compound_definition(
         return None;
     }
     let mut component_parameters =
-        match crate::decode_alloc::counted_vec(ctx, count, "ASM compound curve parameters") {
+        match ctx.collection_vec(count, "ASM compound curve parameters") {
             Ok(component_parameters) => component_parameters,
             Err(error) => return Some(Err(error)),
         };
@@ -3641,7 +3618,7 @@ fn compound_definition(
     }
     cur.bump();
     let mut components =
-        match crate::decode_alloc::counted_vec(ctx, count, "ASM compound curve components") {
+        match ctx.collection_vec(count, "ASM compound curve components") {
             Ok(components) => components,
             Err(error) => return Some(Err(error)),
         };

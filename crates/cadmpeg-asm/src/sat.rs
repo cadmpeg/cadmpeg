@@ -84,9 +84,7 @@ impl TextHeader {
     /// the same unit a binary stream carries.
     pub fn as_kernel_header(&self, ctx: &DecodeContext<'_>) -> Result<KernelHeader, CodecError> {
         let copy = |value: &str| -> Result<String, CodecError> {
-            let requested = cadmpeg_core::decode::u64_from_index(value.len());
-            ctx.charge_retained(requested, "retain SAT kernel header string")?;
-            copy_sat_string(ctx, value, "SAT kernel header string")
+            ctx.copy_retained_text(value, "retain SAT kernel header string")
         };
         Ok(KernelHeader {
             save_format_version: Some(self.save_format_version),
@@ -159,27 +157,6 @@ fn is_ws(b: u8) -> bool {
     matches!(b, b' ' | b'\t' | b'\n' | b'\r')
 }
 
-fn copy_sat_string(
-    _ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let amount = cadmpeg_core::decode::u64_from_index(value.len());
-    let mut copy = String::new();
-    copy.try_reserve(value.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                amount,
-                operation,
-            ),
-        )
-    })?;
-    copy.push_str(value);
-    Ok(copy)
-}
-
 struct FieldReader<'a> {
     bytes: &'a [u8],
     pos: usize,
@@ -215,12 +192,11 @@ impl FieldReader<'_> {
                 offset: start + error.valid_up_to(),
                 reason: "field is not valid UTF-8".to_string(),
             })?;
-        if retained {
-            ctx.charge_retained(word.len() as u64, "retain SAT record name")?;
+        let word = if retained {
+            ctx.copy_retained_text(word, "retain SAT record name")?
         } else {
-            scratch.grow(word.len() as u64)?;
-        }
-        let word = copy_sat_string(ctx, word, "SAT field")?;
+            ctx.copy_scoped_text(word, scratch, "SAT field")?
+        };
         Ok(Some((start, word)))
     }
 
@@ -252,8 +228,7 @@ impl FieldReader<'_> {
                 offset: self.pos + error.valid_up_to(),
                 reason: format!("@{len} string is not valid UTF-8"),
             })?;
-        scratch.grow(payload.len() as u64)?;
-        let payload = copy_sat_string(ctx, payload, "SAT string payload")?;
+        let payload = ctx.copy_scoped_text(payload, scratch, "SAT string payload")?;
         self.pos = end;
         Ok(payload)
     }
@@ -340,8 +315,7 @@ fn counted_string(
         offset: at + *pos + error.valid_up_to(),
         reason: format!("header {what} string is not valid UTF-8"),
     })?;
-    ctx.charge_retained(value.len() as u64, "retain SAT header string")?;
-    let value = copy_sat_string(ctx, value, "SAT header string")?;
+    let value = ctx.copy_retained_text(value, "retain SAT header string")?;
     *pos = end;
     Ok(value)
 }
@@ -892,12 +866,7 @@ impl<'a> Cur<'a, '_, '_> {
             return;
         }
         let copy = if let Some(ctx) = self.ctx {
-            let requested = cadmpeg_core::decode::u64_from_index(value.len());
-            if let Err(error) = ctx.charge_retained(requested, "retain SAT typed string") {
-                self.resource = Some(error);
-                return;
-            }
-            match copy_sat_string(ctx, value, "SAT typed string") {
+            match ctx.copy_retained_text(value, "retain SAT typed string") {
                 Ok(copy) => copy,
                 Err(error) => {
                     self.resource = Some(error);
