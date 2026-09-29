@@ -140,7 +140,7 @@ fn unbound_cosmetic_thread_refuses_work_limit() {
     let (mut features, histories, faces, surfaces) = cosmetic_fallback_fixture();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     let error = project_unbound_cosmetic_thread_faces(&ctx, &mut features, &histories, &[], &faces, &surfaces)
         .expect_err("cylindrical scan exceeds work limit");
@@ -172,7 +172,7 @@ fn unbound_cosmetic_thread_refuses_collection_limit() {
     let (mut features, histories, faces, surfaces) = cosmetic_fallback_fixture();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     let error = project_unbound_cosmetic_thread_faces(&ctx, &mut features, &histories, &[], &faces, &surfaces)
         .expect_err("cylindrical face slot exceeds collection limit");
