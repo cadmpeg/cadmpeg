@@ -314,3 +314,5 @@ fn bspline_basis_scaled_derivative_level(
     Some(derivative)
 }
 
+#[cfg(test)]
+mod tests;

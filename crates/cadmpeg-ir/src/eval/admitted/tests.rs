@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::eval::test_support::with_policy;
 use crate::geometry::nurbs::NurbsCurve;
 use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
 use crate::math::Point3;
@@ -376,106 +377,4 @@ fn admitted_polar_pcurve_refuses_weight_copy() {
         .expect("service"),
         crate::eval::pcurve_uv(&geometry, 0.5)
     );
-}
-
-#[test]
-fn admitted_scaled_derivatives_refuse_each_collection() {
-    for (degree, cap, operation) in [
-        (0, 0, "IR scaled B-spline first basis"),
-        (0, 1, "IR scaled B-spline second basis"),
-        (1, 1, "IR scaled B-spline derivative basis"),
-        (1, 3, "IR scaled B-spline second basis"),
-        (2, 2, "IR scaled B-spline derivative basis"),
-        (2, 4, "IR scaled B-spline derivative basis"),
-        (2, 7, "IR scaled B-spline derivative basis"),
-    ] {
-        let mut knots = vec![0.0; degree + 1];
-        knots.extend(vec![1.0; degree + 1]);
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let result = with_policy(policy, |ctx| {
-            let scratch = super::Scratch::new(ctx);
-            let result = crate::eval::basis::bspline_basis_scaled_derivatives(
-                &scratch,
-                &knots,
-                degree,
-                degree,
-                0.5,
-                crate::scalar::PositiveReal::ONE,
-            );
-            scratch.finish(result)
-        });
-        assert!(
-            matches!(result, Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
-        );
-        let result = with_policy(DecodePolicy::service(), |ctx| {
-            let scratch = super::Scratch::new(ctx);
-            let result = crate::eval::basis::bspline_basis_scaled_derivatives(
-                &scratch,
-                &knots,
-                degree,
-                degree,
-                0.5,
-                crate::scalar::PositiveReal::ONE,
-            );
-            scratch.finish(result)
-        })
-        .expect("service");
-        assert_eq!(
-            result,
-            crate::eval::basis::bspline_basis_scaled_derivatives(
-                &super::Scratch::default(),
-                &knots,
-                degree,
-                degree,
-                0.5,
-                crate::scalar::PositiveReal::ONE
-            )
-        );
-        assert!(result.is_some());
-    }
-}
-
-#[test]
-fn admitted_derivative_arithmetic_refuses_each_work_loop() {
-    let knots = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
-    for (kind, cap, operation) in [
-        (0, 2, "IR B-spline derivative work"),
-        (1, 1, "IR B-spline derivative work"),
-        (1, 4, "IR B-spline second derivative work"),
-        (2, 2, "IR scaled B-spline derivative work"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let result = with_policy(policy, |ctx| {
-            let scratch = super::Scratch::new(ctx);
-            let result = match kind {
-                0 => crate::eval::basis::bspline_basis_derivative(&scratch, &knots, 2, 2, 0.5).map(|_| ()),
-                1 => crate::eval::basis::bspline_basis_second_derivative(&scratch, &knots, 2, 2, 0.5)
-                    .map(|_| ()),
-                _ => crate::eval::basis::bspline_basis_scaled_derivatives(
-                    &scratch,
-                    &knots,
-                    2,
-                    2,
-                    0.5,
-                    crate::scalar::PositiveReal::ONE,
-                )
-                .map(|_| ()),
-            };
-            scratch.finish(result)
-        });
-        assert!(
-            matches!(result, Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
-        );
-    }
-}
-
-fn with_policy<T>(
-    policy: DecodePolicy,
-    run: impl FnOnce(&DecodeContext<'_>) -> T,
-) -> T {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    run(&ctx)
 }

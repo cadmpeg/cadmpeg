@@ -2,10 +2,10 @@
 //! Feature edge selection and generated result-edge identity.
 
 use super::axes::model_feature_ids;
-use super::outputs::CommaList;
 use super::dependencies::{
     agreed_feature_replay_edge_ids, agreed_feature_replay_geometry_ids, has_feature_affected_ids,
 };
+use super::outputs::CommaList;
 use crate::container::ContainerScan;
 use crate::feature::rows::agreed_feature_affected_ids;
 use cadmpeg_core::decode::DecodeContext;
@@ -39,7 +39,8 @@ pub(in super::super) fn feature_edge_selection(
         crate::feature::rows::AffectedIdKind::Edges,
     ) {
         if ids.is_empty() {
-            let native = edge_selection_native(ctx, "creo:allfeatur:edgs_affected", feature_id, ids)?;
+            let native =
+                edge_selection_native(ctx, "creo:allfeatur:edgs_affected", feature_id, ids)?;
             return Ok(Some(EdgeSelection::Resolved {
                 edges: Vec::new(),
                 native,
@@ -59,26 +60,34 @@ pub(in super::super) fn feature_edge_selection(
             agreed_feature_replay_edge_ids(&scan.features.replay_affected_ids, feature_id)
         {
             if ids.is_empty() {
-                let native = edge_selection_native(ctx, "creo:allfeatur:replay_edgs_affected", feature_id, ids)?;
+                let native = edge_selection_native(
+                    ctx,
+                    "creo:allfeatur:replay_edgs_affected",
+                    feature_id,
+                    ids,
+                )?;
                 return Ok(Some(EdgeSelection::Resolved {
                     edges: Vec::new(),
                     native,
                 }));
             }
-            let native = edge_selection_native(ctx, "creo:allfeatur:replay_edgs_affected", feature_id, ids)?;
+            let native =
+                edge_selection_native(ctx, "creo:allfeatur:replay_edgs_affected", feature_id, ids)?;
             (ids, native)
         } else {
             let Some(round) = scan
                 .features
                 .legacy_rounds
                 .iter()
-                .find(|round| round.feature_id == feature_id) else {
+                .find(|round| round.feature_id == feature_id)
+            else {
                 return Ok(None);
             };
             let Some(ids) = round.edge_ids.as_deref() else {
                 return Ok(None);
             };
-            let native = edge_selection_native(ctx, "creo:legacy_ascii:feature_edges", feature_id, ids)?;
+            let native =
+                edge_selection_native(ctx, "creo:legacy_ascii:feature_edges", feature_id, ids)?;
             (ids, native)
         }
     };
@@ -128,7 +137,7 @@ pub(in super::super) fn feature_edge_selection(
                 edges,
                 ctx.copy_retained_text(&native, "creo generated edge selection native")?,
             )
-                .unwrap_or(EdgeSelection::Native(native)),
+            .unwrap_or(EdgeSelection::Native(native)),
         ))
     } else {
         Ok(Some(EdgeSelection::Native(native)))
@@ -244,10 +253,35 @@ fn feature_result_edge_ids_by_feature(
     Ok(by_feature)
 }
 
+pub(in super::super) fn agreed_feature_geometry_ids<'a>(
+    affected_ids: &'a [crate::feature::rows::FeatureAffectedIds],
+    replay_affected_ids: &'a [crate::feature::rows::FeatureReplayAffectedIds],
+    feature_id: u32,
+) -> Option<&'a [u32]> {
+    let named = agreed_feature_affected_ids(
+        affected_ids,
+        feature_id,
+        crate::feature::rows::AffectedIdKind::Geometry,
+    );
+    if named.is_some() {
+        return named;
+    }
+    if has_feature_affected_ids(
+        affected_ids,
+        feature_id,
+        crate::feature::rows::AffectedIdKind::Geometry,
+    ) {
+        return None;
+    }
+    agreed_feature_replay_geometry_ids(replay_affected_ids, feature_id)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{feature_edge_selection, feature_result_edge_ids, feature_result_edge_ids_by_feature,
-        generated_curve_edge_refs};
+    use super::{
+        feature_edge_selection, feature_result_edge_ids, feature_result_edge_ids_by_feature,
+        generated_curve_edge_refs,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::BTreeSet;
 
@@ -257,7 +291,10 @@ mod tests {
             type_byte: 8,
             feature_id: 97,
             directions: [1, 0xf6],
-            faces: [std::num::NonZeroU32::new(98), std::num::NonZeroU32::new(145)],
+            faces: [
+                std::num::NonZeroU32::new(98),
+                std::num::NonZeroU32::new(145),
+            ],
             next_edges: [77, 77],
             offset: 0,
         }]
@@ -269,10 +306,11 @@ mod tests {
         operation: &'static str,
     ) {
         let rows = one_edge();
-        let available = BTreeSet::from([
-            cadmpeg_ir::features::FeatureId::mint("creo:model:feature#97")
-                .expect("fixture feature ID"),
-        ]);
+        let available =
+            BTreeSet::from([
+                cadmpeg_ir::features::FeatureId::mint("creo:model:feature#97")
+                    .expect("fixture feature ID"),
+            ]);
         let results = std::collections::BTreeMap::from([(97, vec![77])]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -282,12 +320,15 @@ mod tests {
         if let Some(limit) = retained {
             policy.limits.max_retained_bytes = limit;
         }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty source is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source is admitted");
         let error = generated_curve_edge_refs(&ctx, &[77], &rows, &available, &results)
             .expect_err("one generated reference exceeds the resource limit");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == operation), "{error:?}");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == operation),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -312,24 +353,32 @@ mod tests {
 
     #[test]
     fn generated_curve_feature_id_refuses_retained_limit() {
-        generated_reference_error(None, Some("creo:model:feature#97".len() as u64 - 1),
-            "creo generated curve feature IDs");
+        generated_reference_error(
+            None,
+            Some("creo:model:feature#97".len() as u64 - 1),
+            "creo generated curve feature IDs",
+        );
     }
 
     #[test]
     fn generated_curve_local_id_refuses_retained_limit() {
-        generated_reference_error(None, Some("creo:model:feature#97".len() as u64),
-            "creo generated curve local IDs");
+        generated_reference_error(
+            None,
+            Some("creo:model:feature#97".len() as u64),
+            "creo generated curve local IDs",
+        );
     }
 
     fn one_selected_edge() -> crate::container::ContainerScan<'static> {
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
-        scan.features.affected_ids.push(crate::feature::rows::FeatureAffectedIds {
-            feature_id: 10,
-            kind: crate::feature::rows::AffectedIdKind::Edges,
-            ids: vec![45],
-            offset: 0,
-        });
+        scan.features
+            .affected_ids
+            .push(crate::feature::rows::FeatureAffectedIds {
+                feature_id: 10,
+                kind: crate::feature::rows::AffectedIdKind::Edges,
+                ids: vec![45],
+                offset: 0,
+            });
         scan
     }
 
@@ -344,15 +393,17 @@ mod tests {
             body_offset: 1,
             offset: 0,
         });
-        scan.curves.topology_rows.push(crate::curve::CurveTopologyRow {
-            id: 59,
-            type_byte: 8,
-            feature_id: 50,
-            directions: [1, 0xf6],
-            faces: [std::num::NonZeroU32::new(61), std::num::NonZeroU32::new(62)],
-            next_edges: [59, 59],
-            offset: 100,
-        });
+        scan.curves
+            .topology_rows
+            .push(crate::curve::CurveTopologyRow {
+                id: 59,
+                type_byte: 8,
+                feature_id: 50,
+                directions: [1, 0xf6],
+                faces: [std::num::NonZeroU32::new(61), std::num::NonZeroU32::new(62)],
+                next_edges: [59, 59],
+                offset: 100,
+            });
         scan
     }
 
@@ -362,16 +413,23 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 139;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty source is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source is admitted");
         let error = feature_edge_selection(&ctx, &scan, &cadmpeg_ir::document::CadIr::empty(), 10)
             .expect_err("the generated native copy exceeds the retained limit");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo generated edge selection native"), "{error:?}");
+                && resource.operation == "creo generated edge selection native"),
+            "{error:?}"
+        );
     }
 
-    fn selection_limit_error(collection: Option<u64>, retained: Option<u64>, operation: &'static str) {
+    fn selection_limit_error(
+        collection: Option<u64>,
+        retained: Option<u64>,
+        operation: &'static str,
+    ) {
         let scan = one_selected_edge();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -381,24 +439,33 @@ mod tests {
         if let Some(limit) = retained {
             policy.limits.max_retained_bytes = limit;
         }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let error = feature_edge_selection(&ctx, &scan, &cadmpeg_ir::document::CadIr::empty(), 10)
             .expect_err("selected edge exceeds the resource limit");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == operation), "{error:?}");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == operation),
+            "{error:?}"
+        );
     }
 
     #[test]
     fn feature_edge_native_text_refuses_retained_limit() {
-        selection_limit_error(None, Some("creo:allfeatur:edgs_affected#10:45".len() as u64 - 1),
-            "creo feature edge selection native");
+        selection_limit_error(
+            None,
+            Some("creo:allfeatur:edgs_affected#10:45".len() as u64 - 1),
+            "creo feature edge selection native",
+        );
     }
 
     #[test]
     fn feature_edge_identity_refuses_retained_limit() {
-        selection_limit_error(None, Some("creo:allfeatur:edgs_affected#10:45".len() as u64),
-            "creo selected edge IDs");
+        selection_limit_error(
+            None,
+            Some("creo:allfeatur:edgs_affected#10:45".len() as u64),
+            "creo selected edge IDs",
+        );
     }
 
     #[test]
@@ -416,17 +483,20 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty source is admitted");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source is admitted");
         let error = if by_feature {
             feature_result_edge_ids_by_feature(&ctx, &rows).map(|_| ())
         } else {
             feature_result_edge_ids(&ctx, &rows, 97).map(|_| ())
         }
         .expect_err("one edge exceeds the collection limit");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == operation), "{error:?}");
+                && resource.operation == operation),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -454,31 +524,12 @@ mod tests {
         let rows = one_edge();
         crate::decode::with_test_decode_ctx(|ctx| {
             assert_eq!(feature_result_edge_ids(ctx, &rows, 97)?, Some(vec![77]));
-            assert_eq!(feature_result_edge_ids_by_feature(ctx, &rows)?.get(&97), Some(&vec![77]));
+            assert_eq!(
+                feature_result_edge_ids_by_feature(ctx, &rows)?.get(&97),
+                Some(&vec![77])
+            );
             Ok::<(), cadmpeg_core::CodecError>(())
-        }).expect("service profile admits one result edge");
+        })
+        .expect("service profile admits one result edge");
     }
-}
-
-pub(in super::super) fn agreed_feature_geometry_ids<'a>(
-    affected_ids: &'a [crate::feature::rows::FeatureAffectedIds],
-    replay_affected_ids: &'a [crate::feature::rows::FeatureReplayAffectedIds],
-    feature_id: u32,
-) -> Option<&'a [u32]> {
-    let named = agreed_feature_affected_ids(
-        affected_ids,
-        feature_id,
-        crate::feature::rows::AffectedIdKind::Geometry,
-    );
-    if named.is_some() {
-        return named;
-    }
-    if has_feature_affected_ids(
-        affected_ids,
-        feature_id,
-        crate::feature::rows::AffectedIdKind::Geometry,
-    ) {
-        return None;
-    }
-    agreed_feature_replay_geometry_ids(replay_affected_ids, feature_id)
 }
