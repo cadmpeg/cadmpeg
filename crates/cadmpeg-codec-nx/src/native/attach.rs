@@ -2461,6 +2461,7 @@ fn attach_feature_operations(
             .zip(boolean_offset_store_resolution.as_ref())
             .map(|(operation, resolution)| {
                 boolean_feature_definition(
+                    ctx,
                     operation,
                     &body_alias_roots,
                     resolution,
@@ -3520,9 +3521,9 @@ fn attach_feature_operations(
                 },
             ))
         });
-        let sew_projection = (label.value == "SEW")
-            .then(|| {
+        let sew_projection = if label.value == "SEW" {
                 sew_body_feature_definition(
+                    ctx,
                     body_references.get(label.id.as_str()).copied(),
                     offset_store_bodies_by_operation
                         .get(label.id.as_str())
@@ -3532,37 +3533,31 @@ fn attach_feature_operations(
                         .map_or([].as_slice(), Vec::as_slice),
                     &body_alias_roots,
                     &bodies_by_object_index,
-                )
-            })
-            .flatten();
-        let trim_body_projection = (label.value == "TRIM BODY")
-            .then(|| {
-                body_references
-                    .get(label.id.as_str())
-                    .map(|primary| {
-                        trim_body_feature_definition(
+                )?
+        } else { None };
+        let trim_body_projection = if label.value == "TRIM BODY" {
+            if let Some(primary) = body_references.get(label.id.as_str()) {
+                Some(trim_body_feature_definition(
+                            ctx,
                             *primary,
                             operation_body_operands_by_operation
                                 .get(label.id.as_str())
                                 .map_or([].as_slice(), Vec::as_slice),
                             &body_alias_roots,
                             &bodies_by_object_index,
-                        )
-                    })
-                    .or_else(|| {
-                        offset_store_trim_body_feature_definition(
+                        )?)
+            } else {
+                offset_store_trim_body_feature_definition(
+                            ctx,
                             offset_store_bodies_by_operation
                                 .get(label.id.as_str())
                                 .map_or([].as_slice(), Vec::as_slice),
                             operation_body_operands_by_operation
                                 .get(label.id.as_str())
                                 .map_or([].as_slice(), Vec::as_slice),
-                        )
-                        .map(Ok)
-                    })
-            })
-            .flatten()
-            .transpose()?;
+                        )?
+            }
+        } else { None };
         let offset_projection = if label.value == "OFFSET" {
             offset_surface_feature_definition(ctx, ir, &outputs)?
         } else {
@@ -3631,8 +3626,7 @@ fn attach_feature_operations(
         } else {
             None
         };
-        let delete_projection = deletes_body
-            .then(|| {
+        let delete_projection = if deletes_body {
                 let field = body_references
                     .get(label.id.as_str())
                     .copied()
@@ -3649,24 +3643,25 @@ fn attach_feature_operations(
                                 }
                                 _ => None,
                             })
-                    })?;
-                Some(delete_body_feature_definition(
+                    });
+                field.map(|field| delete_body_feature_definition(
+                    ctx,
                     field,
                     &body_alias_roots,
                     &bodies_by_object_index,
-                ))
-            })
-            .flatten();
-        let extract_body_projection = (label.value == "EXTRACT_BODY").then(|| {
-            extract_body_feature_definition(
+                )).transpose()?
+        } else { None };
+        let extract_body_projection = if label.value == "EXTRACT_BODY" {
+            Some(extract_body_feature_definition(
+                ctx,
                 body_references.get(label.id.as_str()).copied(),
                 offset_store_bodies_by_operation
                     .get(label.id.as_str())
                     .map_or([].as_slice(), Vec::as_slice),
                 &body_alias_roots,
                 &bodies_by_object_index,
-            )
-        });
+            )?)
+        } else { None };
         let operation_parameter_uses = parameter_uses_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
@@ -6298,6 +6293,59 @@ fn projection_surface_copy(
         .ok_or_else(|| ctx.refuse_codec_limit("NX feature projection surface identity", 0, 1))?;
     ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX feature projection surface identity")?;
     Ok(surface.clone())
+}
+
+fn selection_scoped_string(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    args: std::fmt::Arguments<'_>,
+) -> Result<String, CodecError> {
+    struct Length(usize);
+    impl std::fmt::Write for Length {
+        fn write_str(&mut self, text: &str) -> std::fmt::Result {
+            self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
+            Ok(())
+        }
+    }
+    let mut length = Length(0);
+    std::fmt::write(&mut length, args)
+        .map_err(|_| ctx.refuse_codec_limit("NX body selection text", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length.0), "NX body selection text")?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(length.0))?;
+    let mut text = String::new();
+    text.try_reserve(length.0).map_err(|_| ctx.refuse_codec_limit("NX body selection text", 0, cadmpeg_core::decode::u64_from_index(length.0)))?;
+    std::fmt::write(&mut text, args)
+        .map_err(|_| CodecError::InvalidInput("NX body selection text formatting failed".to_string()))?;
+    Ok(text)
+}
+
+fn selection_indices_native(
+    ctx: &DecodeContext<'_>,
+    indices: impl Iterator<Item = u32> + Clone,
+) -> Result<String, CodecError> {
+    const PREFIX: &str = "nx:om-object-indices#";
+    let mut count = 0usize;
+    let mut length = PREFIX.len();
+    for index in indices.clone() {
+        let digits = if index == 0 { 1 } else { index.ilog10() + 1 };
+        length = length.checked_add(usize::try_from(digits).map_err(|_| ctx.refuse_codec_limit("NX body selection indices", 0, 1))?)
+            .and_then(|length| length.checked_add(usize::from(count != 0)))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX body selection indices", 0, 1))?;
+        count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("NX body selection indices", 0, 1))?;
+    }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), "NX body selection indices")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX body selection indices")?;
+    let mut text = String::new();
+    text.try_reserve(length).map_err(|_| ctx.refuse_codec_limit("NX body selection indices", 0, cadmpeg_core::decode::u64_from_index(length)))?;
+    text.push_str(PREFIX);
+    for (ordinal, index) in indices.enumerate() {
+        if ordinal != 0 {
+            text.push(',');
+        }
+        std::fmt::write(&mut text, format_args!("{index}"))
+            .map_err(|_| CodecError::InvalidInput("NX body selection index formatting failed".to_string()))?;
+    }
+    Ok(text)
 }
 
 impl std::ops::Deref for ScopedSurfaceIds<'_> {
@@ -9493,33 +9541,70 @@ fn offset_store_identity(data_block: &str) -> Option<&str> {
         .map(|(store, _)| store)
 }
 
-enum FeatureBodySelection {
+enum FeatureBodySelection<'ctx> {
     Native(String),
     Local {
         bodies: Vec<String>,
         native: String,
         identity_keys: Vec<FeatureBodyIdentity>,
+        _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
     },
     Resolved {
         bodies: Vec<BodyId>,
         native: String,
         identity_keys: Vec<FeatureBodyIdentity>,
+        _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
     },
 }
 
-fn local_body_selection(bodies: Vec<String>, native: String) -> BodySelection {
-    BodySelection::local(bodies, native.clone()).unwrap_or(BodySelection::Native(native))
+fn local_body_selection(
+    ctx: &DecodeContext<'_>,
+    bodies: Vec<String>,
+    native: String,
+) -> Result<BodySelection, CodecError> {
+    let count = bodies.len();
+    let validation_work = count.checked_mul(count)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX local body selection validation", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(validation_work), "NX local body selection validation")?;
+    if native.trim().is_empty() || bodies.is_empty() || bodies.iter().any(|body| body.trim().is_empty())
+        || bodies.iter().enumerate().any(|(index, body)| bodies[..index].contains(body)) {
+        return Ok(BodySelection::Native(native));
+    }
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "NX local body selection validation")?;
+    let bytes = count.checked_mul(std::mem::size_of::<&String>() * 4)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX local body selection validation", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+    let _reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(bytes), "NX local body selection validation")?;
+    let retained_bytes = bodies.iter().try_fold(0usize, |sum, body| {
+        sum.checked_add(std::mem::size_of::<String>())?.checked_add(body.len())
+    }).ok_or_else(|| ctx.refuse_codec_limit("NX local body selection", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(retained_bytes), "NX local body selection")?;
+    let native_copy = projection_string(ctx, format_args!("{native}"))?;
+    Ok(BodySelection::local(bodies, native_copy).unwrap_or(BodySelection::Native(native)))
 }
 
-impl FeatureBodySelection {
-    fn into_selection(self) -> BodySelection {
+impl FeatureBodySelection<'_> {
+    fn into_selection(self, ctx: &DecodeContext<'_>) -> Result<BodySelection, CodecError> {
         match self {
-            Self::Native(native) => BodySelection::Native(native),
-            Self::Local { bodies, native, .. } => local_body_selection(bodies, native),
-            Self::Resolved { bodies, native, .. } => match bodies.try_into() {
-                Ok(bodies) => BodySelection::Resolved { bodies, native },
-                Err(_) => BodySelection::Native(native),
-            },
+            Self::Native(native) => Ok(BodySelection::Native(native)),
+            Self::Local { bodies, native, .. } => local_body_selection(ctx, bodies, native),
+            Self::Resolved { bodies, native, .. } => {
+                let count = bodies.len();
+                let work = count.checked_mul(count)
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX resolved body selection validation", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX resolved body selection validation")?;
+                if bodies.is_empty() || bodies.iter().enumerate().any(|(index, body)| bodies[..index].contains(body)) {
+                    return Ok(BodySelection::Native(native));
+                }
+                ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "NX resolved body selection validation")?;
+                let scratch = count.checked_mul(std::mem::size_of::<&BodyId>() * 4)
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX resolved body selection validation", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+                let _reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(scratch), "NX resolved body selection validation")?;
+                let retained = bodies.iter().try_fold(0usize, |sum, body| sum.checked_add(std::mem::size_of::<BodyId>())?.checked_add(body.as_str().len()))
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX resolved body selection", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(retained), "NX resolved body selection")?;
+                let bodies = bodies.try_into().map_err(cadmpeg_core::CodecError::malformed)?;
+                Ok(BodySelection::Resolved { bodies, native })
+            }
         }
     }
 
@@ -9537,13 +9622,15 @@ impl FeatureBodySelection {
 /// section. A complete operation-local offset-store map takes precedence over
 /// a segment alias with the same integer; mixed namespace coverage remains
 /// native.
-fn feature_body_selection(
+fn feature_body_selection<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     object_indices: &[u32],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
     native: String,
-) -> FeatureBodySelection {
+) -> Result<FeatureBodySelection<'ctx>, CodecError> {
     feature_body_selection_with_offset_blocks(
+        ctx,
         object_indices,
         body_alias_roots,
         &BTreeMap::new(),
@@ -9552,42 +9639,54 @@ fn feature_body_selection(
     )
 }
 
-fn feature_body_selection_with_offset_blocks(
+fn feature_body_selection_with_offset_blocks<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     object_indices: &[u32],
     body_alias_roots: &BTreeMap<u32, u32>,
     offset_store_body_blocks: &BTreeMap<u32, String>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
     native: String,
-) -> FeatureBodySelection {
+) -> Result<FeatureBodySelection<'ctx>, CodecError> {
     let mut roots = Vec::new();
-    let mut offset_blocks = Vec::new();
+    let mut offset_blocks: Vec<&String> = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX feature body selection")?;
     for index in object_indices {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(roots.len().checked_add(offset_blocks.len()).ok_or_else(|| ctx.refuse_codec_limit("NX feature body selection lookup", 0, 1))?), "NX feature body selection lookup")?;
         match (
             body_alias_roots.get(index),
             offset_store_body_blocks.get(index),
         ) {
             (Some(_), Some(data_block)) => {
-                if !offset_blocks.contains(data_block) {
-                    offset_blocks.push(data_block.clone());
+                if !offset_blocks.contains(&data_block) {
+                    ctx.charge_collection_items(1, "NX feature body offset blocks")?;
+                    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&String>()))?;
+                    reserve_attach_vec(ctx, &mut offset_blocks, 1, "NX feature body offset blocks")?;
+                    offset_blocks.push(data_block);
                 }
             }
             (Some(root), None) => {
                 if !roots.contains(root) {
+                    ctx.charge_collection_items(1, "NX feature body roots")?;
+                    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))?;
+                    reserve_attach_vec(ctx, &mut roots, 1, "NX feature body roots")?;
                     roots.push(*root);
                 }
             }
             (None, Some(data_block)) => {
-                if !offset_blocks.contains(data_block) {
-                    offset_blocks.push(data_block.clone());
+                if !offset_blocks.contains(&data_block) {
+                    ctx.charge_collection_items(1, "NX feature body offset blocks")?;
+                    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&String>()))?;
+                    reserve_attach_vec(ctx, &mut offset_blocks, 1, "NX feature body offset blocks")?;
+                    offset_blocks.push(data_block);
                 }
             }
             (None, None) => {
-                return FeatureBodySelection::Native(native);
+                return Ok(FeatureBodySelection::Native(native));
             }
         }
     }
     if !roots.is_empty() && !offset_blocks.is_empty() {
-        return FeatureBodySelection::Native(native);
+        return Ok(FeatureBodySelection::Native(native));
     }
     let offset_store = offset_blocks
         .first()
@@ -9598,97 +9697,141 @@ fn feature_body_selection_with_offset_blocks(
                 .iter()
                 .any(|block| offset_store_identity(block) != offset_store))
     {
-        return FeatureBodySelection::Native(native);
+        return Ok(FeatureBodySelection::Native(native));
     }
     if !offset_blocks.is_empty() {
-        return FeatureBodySelection::Local {
-            bodies: offset_blocks.clone(),
-            native,
-            identity_keys: offset_blocks
-                .into_iter()
-                .map(FeatureBodyIdentity::OffsetStore)
-                .collect(),
-        };
-    }
-    let resolved = roots
-        .iter()
-        .map(|root| {
-            let [body] = bodies_by_object_index.get(root)?.as_slice() else {
-                return None;
-            };
-            Some(body.clone())
-        })
-        .collect::<Option<Vec<_>>>();
-    if let Some(bodies) =
-        resolved.filter(|bodies| bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len())
-    {
-        return FeatureBodySelection::Resolved {
+        let mut bodies = Vec::new();
+        let mut identity_keys = Vec::new();
+        for block in offset_blocks {
+            ctx.charge_collection_items(2, "NX feature body offset selection")?;
+            let bytes = std::mem::size_of::<String>()
+                .checked_add(std::mem::size_of::<FeatureBodyIdentity>())
+                .and_then(|bytes| bytes.checked_add(block.len().checked_mul(2)?))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX feature body offset selection", 0, cadmpeg_core::decode::u64_from_index(block.len())))?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+            reserve_attach_vec(ctx, &mut bodies, 1, "NX feature body offset selection")?;
+            reserve_attach_vec(ctx, &mut identity_keys, 1, "NX feature body offset identities")?;
+            bodies.push(block.clone());
+            identity_keys.push(FeatureBodyIdentity::OffsetStore(block.clone()));
+        }
+        return Ok(FeatureBodySelection::Local {
             bodies,
             native,
-            identity_keys: roots
-                .into_iter()
-                .map(FeatureBodyIdentity::Segment)
-                .collect(),
+            identity_keys,
+            _reservation: reservation,
+        });
+    }
+    let mut resolved = Vec::new();
+    let mut all_resolved = true;
+    for root in &roots {
+        let Some([body]) = bodies_by_object_index.get(root).map(Vec::as_slice) else {
+            all_resolved = false;
+            break;
         };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(resolved.len()), "NX feature body resolved uniqueness")?;
+        if resolved.contains(body) {
+            all_resolved = false;
+            break;
+        }
+        ctx.charge_collection_items(1, "NX feature body resolved candidates")?;
+        let bytes = std::mem::size_of::<BodyId>().checked_add(body.as_str().len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX feature body resolved candidate", 0, 1))?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+        reserve_attach_vec(ctx, &mut resolved, 1, "NX feature body resolved candidates")?;
+        resolved.push(body.clone());
     }
-    FeatureBodySelection::Local {
-        bodies: roots
-            .iter()
-            .map(|root| format!("nx:om-body-object#{root}"))
-            .collect(),
+    if all_resolved {
+        let mut identity_keys = Vec::new();
+        for root in roots {
+            ctx.charge_collection_items(1, "NX feature body segment identities")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureBodyIdentity>()))?;
+            reserve_attach_vec(ctx, &mut identity_keys, 1, "NX feature body segment identities")?;
+            identity_keys.push(FeatureBodyIdentity::Segment(root));
+        }
+        return Ok(FeatureBodySelection::Resolved {
+            bodies: resolved,
+            native,
+            identity_keys,
+            _reservation: reservation,
+        });
+    }
+    let mut bodies = Vec::new();
+    let mut identity_keys = Vec::new();
+    for root in roots {
+        ctx.charge_collection_items(2, "NX feature body local selection")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>() + std::mem::size_of::<FeatureBodyIdentity>()))?;
+        reserve_attach_vec(ctx, &mut bodies, 1, "NX feature body local selection")?;
+        reserve_attach_vec(ctx, &mut identity_keys, 1, "NX feature body local identities")?;
+        bodies.push(selection_scoped_string(ctx, &mut reservation, format_args!("nx:om-body-object#{root}"))?);
+        identity_keys.push(FeatureBodyIdentity::Segment(root));
+    }
+    Ok(FeatureBodySelection::Local {
+        bodies,
         native,
-        identity_keys: roots
-            .into_iter()
-            .map(FeatureBodyIdentity::Segment)
-            .collect(),
-    }
+        identity_keys,
+        _reservation: reservation,
+    })
 }
 
 /// Resolve one complete body set when possible. Otherwise retain every exact
 /// input-local object identity. A body set needs no cross-role disjointness
 /// proof, so an identity outside the segment alias table remains its own root.
 fn feature_body_set_selection(
+    ctx: &DecodeContext<'_>,
     object_indices: &[u32],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
     native: String,
-) -> BodySelection {
+) -> Result<BodySelection, CodecError> {
     let mut roots = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX feature body set")?;
     for index in object_indices {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(roots.len()), "NX feature body set roots")?;
         let root = body_alias_roots.get(index).copied().unwrap_or(*index);
         if !roots.contains(&root) {
+            ctx.charge_collection_items(1, "NX feature body set roots")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))?;
+            reserve_attach_vec(ctx, &mut roots, 1, "NX feature body set roots")?;
             roots.push(root);
         }
     }
-    let resolved = roots
-        .iter()
-        .map(|root| {
-            let [body] = bodies_by_object_index.get(root)?.as_slice() else {
-                return None;
-            };
-            Some(body.clone())
-        })
-        .collect::<Option<Vec<_>>>();
-    if let Some(bodies) =
-        resolved.filter(|bodies| bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len())
-    {
-        if let Ok(bodies) = bodies.try_into() {
-            return BodySelection::Resolved { bodies, native };
+    let mut resolved = Vec::new();
+    let mut all_resolved = true;
+    for root in &roots {
+        let Some([body]) = bodies_by_object_index.get(root).map(Vec::as_slice) else {
+            all_resolved = false;
+            break;
+        };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(resolved.len()), "NX feature body set uniqueness")?;
+        if resolved.contains(body) {
+            all_resolved = false;
+            break;
         }
+        ctx.charge_collection_items(1, "NX feature body set resolved candidates")?;
+        let bytes = std::mem::size_of::<BodyId>().checked_add(body.as_str().len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX feature body set candidate", 0, 1))?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+        reserve_attach_vec(ctx, &mut resolved, 1, "NX feature body set resolved candidates")?;
+        resolved.push(body.clone());
     }
-    local_body_selection(
-        roots
-            .iter()
-            .map(|root| format!("nx:om-body-object#{root}"))
-            .collect(),
-        native,
-    )
+    if all_resolved && !resolved.is_empty() {
+        return FeatureBodySelection::Resolved { bodies: resolved, native, identity_keys: Vec::new(), _reservation: reservation }.into_selection(ctx);
+    }
+    let mut bodies = Vec::new();
+    for root in roots {
+        ctx.charge_collection_items(1, "NX feature body set local selection")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()))?;
+        reserve_attach_vec(ctx, &mut bodies, 1, "NX feature body set local selection")?;
+        bodies.push(selection_scoped_string(ctx, &mut reservation, format_args!("nx:om-body-object#{root}"))?);
+    }
+    FeatureBodySelection::Local { bodies, native, identity_keys: Vec::new(), _reservation: reservation }.into_selection(ctx)
 }
 
 fn atomic_disjoint_body_selections(
-    left: FeatureBodySelection,
-    right: FeatureBodySelection,
-) -> (BodySelection, BodySelection) {
+    ctx: &DecodeContext<'_>,
+    left: FeatureBodySelection<'_>,
+    right: FeatureBodySelection<'_>,
+) -> Result<(BodySelection, BodySelection), CodecError> {
     let complete = match (&left, &right) {
         (
             FeatureBodySelection::Local {
@@ -9724,9 +9867,9 @@ fn atomic_disjoint_body_selections(
         _ => false,
     };
     if complete {
-        (left.into_selection(), right.into_selection())
+        Ok((left.into_selection(ctx)?, right.into_selection(ctx)?))
     } else {
-        (left.into_native(), right.into_native())
+        Ok((left.into_native(), right.into_native()))
     }
 }
 
@@ -9808,22 +9951,15 @@ fn copy_feature_output_bodies(
 }
 
 pub(super) fn boolean_feature_definition(
+    ctx: &DecodeContext<'_>,
     operation: &crate::native::features::FeatureBooleanOperation,
     body_alias_roots: &BTreeMap<u32, u32>,
     offset_store_resolution: &BooleanOffsetStoreResolution,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Result<FeatureDefinition, CodecError> {
     let empty_offset_store_body_blocks = BTreeMap::new();
-    let native_target = format!("nx:om-object-index#{}", operation.target.token.value());
-    let native_tools = format!(
-        "nx:om-object-indices#{}",
-        operation
-            .tools
-            .iter()
-            .map(|token| token.token.value().to_string())
-            .collect::<Vec<_>>()
-            .join(",")
-    );
+    let native_target = projection_string(ctx, format_args!("nx:om-object-index#{}", operation.target.token.value()))?;
+    let native_tools = selection_indices_native(ctx, operation.tools.iter().map(|token| token.token.value()))?;
     let offset_store_body_blocks = match offset_store_resolution {
         BooleanOffsetStoreResolution::Unresolved => None,
         BooleanOffsetStoreResolution::None => Some(&empty_offset_store_body_blocks),
@@ -9834,26 +9970,34 @@ pub(super) fn boolean_feature_definition(
             BodySelection::Native(native_target),
             BodySelection::Native(native_tools),
         ),
-        Some(offset_store_body_blocks) => atomic_disjoint_body_selections(
+        Some(offset_store_body_blocks) => {
+            let mut tool_indices = Vec::new();
+            let mut reservation = ctx.reserve_scoped(0, "NX Boolean tool indices")?;
+            for tool in &operation.tools {
+                ctx.charge_collection_items(1, "NX Boolean tool indices")?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))?;
+                reserve_attach_vec(ctx, &mut tool_indices, 1, "NX Boolean tool indices")?;
+                tool_indices.push(tool.token.value());
+            }
+            atomic_disjoint_body_selections(
+            ctx,
             feature_body_selection_with_offset_blocks(
+                ctx,
                 &[operation.target.token.value()],
                 body_alias_roots,
                 offset_store_body_blocks,
                 bodies_by_object_index,
-                native_target.clone(),
-            ),
+                native_target,
+            )?,
             feature_body_selection_with_offset_blocks(
-                &operation
-                    .tools
-                    .iter()
-                    .map(|token| token.token.value())
-                    .collect::<Vec<_>>(),
+                ctx,
+                &tool_indices,
                 body_alias_roots,
                 offset_store_body_blocks,
                 bodies_by_object_index,
-                native_tools.clone(),
-            ),
-        ),
+                native_tools,
+            )?,
+        )?},
     };
     Ok(FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(target, tools)
@@ -9887,232 +10031,258 @@ enum DeleteBodyField<'a> {
 /// carries a primary-body field. Other `DELETE` payloads target a different
 /// object family and remain native until that family is decoded.
 fn delete_body_feature_definition(
+    ctx: &DecodeContext<'_>,
     field: DeleteBodyField<'_>,
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> FeatureDefinition {
+) -> Result<FeatureDefinition, CodecError> {
     let bodies = match field {
         DeleteBodyField::Native(body) => match feature_body_selection(
+            ctx,
             &[body],
             body_alias_roots,
             bodies_by_object_index,
-            format!("nx:om-object-index#{body}"),
-        ) {
+            projection_string(ctx, format_args!("nx:om-object-index#{body}"))?,
+        )? {
             FeatureBodySelection::Native(native) => {
-                local_body_selection(vec![format!("nx:om-body-object#{body}")], native)
+                let mut reservation = ctx.reserve_scoped(0, "NX DELETE local body")?;
+                ctx.charge_collection_items(1, "NX DELETE local body")?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()))?;
+                let mut bodies = Vec::new();
+                reserve_attach_vec(ctx, &mut bodies, 1, "NX DELETE local body")?;
+                bodies.push(selection_scoped_string(ctx, &mut reservation, format_args!("nx:om-body-object#{body}"))?);
+                local_body_selection(ctx, bodies, native)?
             }
-            selection => selection.into_selection(),
+            selection => selection.into_selection(ctx)?,
         },
         DeleteBodyField::OffsetStore {
             object_index,
             data_block,
-        } => local_body_selection(
-            vec![data_block.to_string()],
-            format!("nx:om-object-index#{object_index}"),
-        ),
+        } => {
+            let mut reservation = ctx.reserve_scoped(0, "NX DELETE offset body")?;
+            ctx.charge_collection_items(1, "NX DELETE offset body")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()))?;
+            let mut bodies = Vec::new();
+            reserve_attach_vec(ctx, &mut bodies, 1, "NX DELETE offset body")?;
+            bodies.push(selection_scoped_string(ctx, &mut reservation, format_args!("{data_block}"))?);
+            local_body_selection(ctx, bodies, projection_string(ctx, format_args!("nx:om-object-index#{object_index}"))?)?
+        }
     };
-    FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+    Ok(FeatureDefinition::Operation(FeatureOperation::DeleteBody {
         // A typed DELETE primary-body field names one exact feature input. It
         // needs no cross-selection alias proof when it has no segment binding.
         bodies,
         mode: BodyRetentionMode::DeleteSelected,
-    })
+    }))
 }
 
 /// Project the exact source body of an `EXTRACT_BODY` operation.
 fn extract_body_feature_definition(
+    ctx: &DecodeContext<'_>,
     body_object_index: Option<u32>,
     offset_store_bodies: &[(u32, String)],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> FeatureDefinition {
-    let source = body_object_index.map_or_else(
-        || match offset_store_bodies {
-            [(object_index, data_block)] => local_body_selection(
-                vec![data_block.clone()],
-                format!("nx:om-object-index#{object_index}"),
-            ),
-            _ => BodySelection::Unresolved,
-        },
-        |body| {
-            feature_body_selection(
-                &[body],
-                body_alias_roots,
-                bodies_by_object_index,
-                format!("nx:om-object-index#{body}"),
-            )
-            .into_selection()
-        },
-    );
-    FeatureDefinition::Operation(FeatureOperation::ExtractBody { source })
+) -> Result<FeatureDefinition, CodecError> {
+    let source = if let Some(body) = body_object_index {
+        feature_body_selection(
+            ctx,
+            &[body],
+            body_alias_roots,
+            bodies_by_object_index,
+            projection_string(ctx, format_args!("nx:om-object-index#{body}"))?,
+        )?.into_selection(ctx)?
+    } else if let [(object_index, data_block)] = offset_store_bodies {
+        let mut reservation = ctx.reserve_scoped(0, "NX EXTRACT local body")?;
+        ctx.charge_collection_items(1, "NX EXTRACT local body")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()))?;
+        let mut bodies = Vec::new();
+        reserve_attach_vec(ctx, &mut bodies, 1, "NX EXTRACT local body")?;
+        bodies.push(selection_scoped_string(ctx, &mut reservation, format_args!("{data_block}"))?);
+        local_body_selection(ctx, bodies, projection_string(ctx, format_args!("nx:om-object-index#{object_index}"))?)?
+    } else {
+        BodySelection::Unresolved
+    };
+    Ok(FeatureDefinition::Operation(FeatureOperation::ExtractBody { source }))
 }
 
 /// Project exact feature-local input-store identities for a trim target and
 /// every complete, distinct tool operand. Retained-side semantics stay unresolved.
 fn offset_store_trim_body_feature_definition(
+    ctx: &DecodeContext<'_>,
     offset_store_bodies: &[(u32, String)],
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
-) -> Option<FeatureDefinition> {
+) -> Result<Option<FeatureDefinition>, CodecError> {
     let [(object_index, data_block)] = offset_store_bodies else {
-        return None;
+        return Ok(None);
     };
     let primary_store = data_block.rsplit_once(":block#").map(|(store, _)| store);
-    let tool_data_blocks = operands
-        .iter()
-        .map(|operand| operand.operand_data_block.clone())
-        .collect::<Option<Vec<_>>>();
-    let tools = match (operands.is_empty(), primary_store, tool_data_blocks) {
-        (true, _, _) | (_, None, _) | (_, _, None) => BodySelection::Unresolved,
-        (false, Some(primary_store), Some(tool_data_blocks)) => {
-            let mut operand_indices = BTreeSet::new();
-            let distinct_operand_indices = operands
-                .iter()
-                .all(|operand| operand_indices.insert(operand.operand.atom.value()));
-            let same_store = tool_data_blocks.iter().all(|tool_data_block| {
-                tool_data_block
-                    .rsplit_once(":block#")
-                    .is_some_and(|(store, _)| store == primary_store)
-            });
-            let distinct_tool_blocks =
-                tool_data_blocks.iter().collect::<BTreeSet<_>>().len() == tool_data_blocks.len();
-            let no_target_alias = tool_data_blocks
-                .iter()
-                .all(|tool_data_block| tool_data_block != data_block);
-            if operands.iter().all(|operand| {
-                operand.body_object_index == *object_index
-                    && operand.operand.atom.value() != *object_index
-            }) && distinct_operand_indices
-                && same_store
-                && distinct_tool_blocks
-                && no_target_alias
-            {
-                local_body_selection(
-                    tool_data_blocks,
-                    format!(
-                        "nx:om-object-indices#{}",
-                        operands
-                            .iter()
-                            .map(|operand| operand.operand.atom.value().to_string())
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    ),
-                )
-            } else {
-                BodySelection::Unresolved
+    let mut tool_data_blocks = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX trim offset tool blocks")?;
+    let mut complete = true;
+    for operand in operands {
+        let Some(block) = operand.operand_data_block.as_deref() else {
+            complete = false;
+            break;
+        };
+        ctx.charge_collection_items(1, "NX trim offset tool blocks")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&str>()))?;
+        reserve_attach_vec(ctx, &mut tool_data_blocks, 1, "NX trim offset tool blocks")?;
+        tool_data_blocks.push(block);
+    }
+    let tools = if operands.is_empty() || primary_store.is_none() || !complete {
+        BodySelection::Unresolved
+    } else {
+        let primary_store = primary_store.ok_or_else(|| ctx.refuse_codec_limit("NX trim offset primary store", 0, 1))?;
+        let work = operands.len().checked_mul(operands.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX trim offset uniqueness", 0, cadmpeg_core::decode::u64_from_index(operands.len())))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX trim offset uniqueness")?;
+        let distinct_operand_indices = operands.iter().enumerate().all(|(index, operand)| {
+            !operands[..index].iter().any(|other| other.operand.atom.value() == operand.operand.atom.value())
+        });
+        let same_store = tool_data_blocks.iter().all(|block| block.rsplit_once(":block#").is_some_and(|(store, _)| store == primary_store));
+        let distinct_tool_blocks = tool_data_blocks.iter().enumerate().all(|(index, block)| !tool_data_blocks[..index].contains(block));
+        let no_target_alias = tool_data_blocks.iter().all(|block| *block != data_block);
+        if operands.iter().all(|operand| operand.body_object_index == *object_index && operand.operand.atom.value() != *object_index)
+            && distinct_operand_indices && same_store && distinct_tool_blocks && no_target_alias {
+            let mut bodies = Vec::new();
+            for block in tool_data_blocks {
+                ctx.charge_collection_items(1, "NX trim local tool bodies")?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()))?;
+                reserve_attach_vec(ctx, &mut bodies, 1, "NX trim local tool bodies")?;
+                bodies.push(selection_scoped_string(ctx, &mut reservation, format_args!("{block}"))?);
             }
-        }
+            let native = selection_indices_native(ctx, operands.iter().map(|operand| operand.operand.atom.value()))?;
+            local_body_selection(ctx, bodies, native)?
+        } else { BodySelection::Unresolved }
     };
-    Some(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
-        operands: cadmpeg_ir::features::TrimBodyOperands::new(
-            local_body_selection(
-                vec![data_block.clone()],
-                format!("nx:om-object-index#{object_index}"),
-            ),
-            tools,
-        )
-        .ok()?,
-
+    let mut target = Vec::new();
+    ctx.charge_collection_items(1, "NX trim local target body")?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()))?;
+    reserve_attach_vec(ctx, &mut target, 1, "NX trim local target body")?;
+    target.push(selection_scoped_string(ctx, &mut reservation, format_args!("{data_block}"))?);
+    let target = local_body_selection(ctx, target, projection_string(ctx, format_args!("nx:om-object-index#{object_index}"))?)?;
+    let Ok(operands) = cadmpeg_ir::features::TrimBodyOperands::new(target, tools) else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
+        operands,
         keep: BodyTrimSide::Unresolved,
-    }))
+    })))
 }
 
 fn sew_body_feature_definition(
+    ctx: &DecodeContext<'_>,
     primary_segment_body_object_index: Option<u32>,
     offset_store_bodies: &[(u32, String)],
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> Option<FeatureDefinition> {
+) -> Result<Option<FeatureDefinition>, CodecError> {
     if operands.is_empty() {
-        return None;
+        return Ok(None);
     }
     let primary_offset_store_body = match offset_store_bodies {
         [(object_index, data_block)] => Some((*object_index, data_block.as_str())),
         _ => None,
     };
-    let primary_body_object_index = primary_segment_body_object_index
-        .or_else(|| primary_offset_store_body.map(|(object_index, _)| object_index))?;
-    let object_indices = std::iter::once(primary_body_object_index)
-        .chain(operands.iter().map(|operand| operand.operand.atom.value()))
-        .collect::<Vec<_>>();
-    let native = format!(
-        "nx:om-object-indices#{}",
-        object_indices
-            .iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join(",")
-    );
+    let Some(primary_body_object_index) = primary_segment_body_object_index
+        .or_else(|| primary_offset_store_body.map(|(object_index, _)| object_index)) else {
+        return Ok(None);
+    };
+    let indices = std::iter::once(primary_body_object_index)
+        .chain(operands.iter().map(|operand| operand.operand.atom.value()));
+    let native = selection_indices_native(ctx, indices.clone())?;
+    let mut object_indices = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX sew body indices")?;
+    for index in indices {
+        ctx.charge_collection_items(1, "NX sew body indices")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))?;
+        reserve_attach_vec(ctx, &mut object_indices, 1, "NX sew body indices")?;
+        object_indices.push(index);
+    }
     let bodies = if primary_segment_body_object_index.is_some() {
         if operands
             .iter()
             .all(|operand| !operand.segment_body_bindings.is_empty())
         {
             feature_body_set_selection(
+                ctx,
                 &object_indices,
                 body_alias_roots,
                 bodies_by_object_index,
-                native.clone(),
-            )
+                native,
+            )?
         } else {
-            BodySelection::Native(native.clone())
+            BodySelection::Native(native)
         }
     } else if let Some((primary_object_index, primary_data_block)) = primary_offset_store_body {
         let primary_store = primary_data_block
             .rsplit_once(":block#")
             .map(|(store, _)| store);
-        let operand_data_blocks = operands
-            .iter()
-            .map(|operand| operand.operand_data_block.as_deref())
-            .collect::<Option<Vec<_>>>();
-        let offset_store_participants = operand_data_blocks.as_ref().filter(|blocks| {
-            operands
-                .iter()
-                .all(|operand| operand.body_object_index == primary_object_index)
-                && blocks.iter().all(|block| {
-                    block
-                        .rsplit_once(":block#")
-                        .is_some_and(|(store, _)| Some(store) == primary_store)
-                })
-                && blocks.iter().collect::<BTreeSet<_>>().len() == blocks.len()
-                && !blocks.contains(&primary_data_block)
-        });
-        if let Some(blocks) = offset_store_participants {
-            local_body_selection(
-                std::iter::once(primary_data_block.to_string())
-                    .chain(blocks.iter().map(|block| (*block).to_string()))
-                    .collect(),
-                native,
-            )
+        let mut blocks = Vec::new();
+        let mut complete = true;
+        for operand in operands {
+            let Some(block) = operand.operand_data_block.as_deref() else {
+                complete = false;
+                break;
+            };
+            ctx.charge_collection_items(1, "NX sew offset blocks")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&str>()))?;
+            reserve_attach_vec(ctx, &mut blocks, 1, "NX sew offset blocks")?;
+            blocks.push(block);
+        }
+        let work = blocks.len().checked_mul(blocks.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX sew offset blocks", 0, cadmpeg_core::decode::u64_from_index(blocks.len())))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX sew offset uniqueness")?;
+        let valid = complete
+            && operands.iter().all(|operand| operand.body_object_index == primary_object_index)
+            && blocks.iter().all(|block| block.rsplit_once(":block#").is_some_and(|(store, _)| Some(store) == primary_store))
+            && blocks.iter().enumerate().all(|(index, block)| !blocks[..index].contains(block))
+            && !blocks.contains(&primary_data_block);
+        if valid {
+            let mut bodies = Vec::new();
+            for block in std::iter::once(primary_data_block).chain(blocks.into_iter()) {
+                ctx.charge_collection_items(1, "NX sew local bodies")?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()))?;
+                reserve_attach_vec(ctx, &mut bodies, 1, "NX sew local bodies")?;
+                bodies.push(selection_scoped_string(ctx, &mut reservation, format_args!("{block}"))?);
+            }
+            local_body_selection(ctx, bodies, native)?
         } else {
-            BodySelection::Native(native.clone())
+            BodySelection::Native(native)
         }
     } else {
         BodySelection::Native(native)
     };
-    Some(FeatureDefinition::Operation(FeatureOperation::SewBodies {
-        bodies: (bodies).try_into().ok()?,
+    let Ok(bodies) = bodies.try_into() else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::SewBodies {
+        bodies,
         gap_tolerance: None,
-    }))
+    })))
 }
 
 fn trim_body_feature_definition(
+    ctx: &DecodeContext<'_>,
     target_object_index: u32,
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Result<FeatureDefinition, CodecError> {
-    let native_target = format!("nx:om-object-index#{target_object_index}");
+    let native_target = projection_string(ctx, format_args!("nx:om-object-index#{target_object_index}"))?;
     if operands.is_empty() {
         return Ok(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 feature_body_selection(
+                    ctx,
                     &[target_object_index],
                     body_alias_roots,
                     bodies_by_object_index,
                     native_target,
-                )
-                .into_selection(),
+                )?
+                .into_selection(ctx)?,
                 BodySelection::Unresolved,
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -10120,18 +10290,15 @@ fn trim_body_feature_definition(
             keep: BodyTrimSide::Unresolved,
         }));
     }
-    let tool_object_indices = operands
-        .iter()
-        .map(|operand| operand.operand.atom.value())
-        .collect::<Vec<_>>();
-    let native_tools = format!(
-        "nx:om-object-indices#{}",
-        tool_object_indices
-            .iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join(",")
-    );
+    let native_tools = selection_indices_native(ctx, operands.iter().map(|operand| operand.operand.atom.value()))?;
+    let mut tool_object_indices = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX trim tool indices")?;
+    for operand in operands {
+        ctx.charge_collection_items(1, "NX trim tool indices")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))?;
+        reserve_attach_vec(ctx, &mut tool_object_indices, 1, "NX trim tool indices")?;
+        tool_object_indices.push(operand.operand.atom.value());
+    }
     if operands.iter().any(|operand| {
         operand.operand_data_block.is_some() || operand.segment_body_bindings.is_empty()
     }) {
@@ -10146,19 +10313,22 @@ fn trim_body_feature_definition(
         }));
     }
     let (targets, tools) = atomic_disjoint_body_selections(
+        ctx,
         feature_body_selection(
+            ctx,
             &[target_object_index],
             body_alias_roots,
             bodies_by_object_index,
             native_target,
-        ),
+        )?,
         feature_body_selection(
+            ctx,
             &tool_object_indices,
             body_alias_roots,
             bodies_by_object_index,
             native_tools,
-        ),
-    );
+        )?,
+    )?;
     Ok(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
         operands: cadmpeg_ir::features::TrimBodyOperands::new(targets, tools)
             .map_err(cadmpeg_core::CodecError::malformed)?,

@@ -187,6 +187,9 @@ fn feature_source_text_refuses_work_limit() {
 
 #[test]
 fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
     use std::collections::BTreeMap;
 
@@ -204,6 +207,7 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
 
     assert_eq!(
         crate::native::attach::boolean_feature_definition(
+            &ctx,
             &operation,
             &roots,
             &crate::native::segments::BooleanOffsetStoreResolution::None,
@@ -225,6 +229,7 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
     let missing_tool = BTreeMap::from([(10, 10)]);
     assert!(matches!(
         crate::native::attach::boolean_feature_definition(
+            &ctx,
             &operation,
             &missing_tool,
             &crate::native::segments::BooleanOffsetStoreResolution::None,
