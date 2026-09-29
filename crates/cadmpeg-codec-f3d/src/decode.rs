@@ -2803,9 +2803,10 @@ impl<'a> F3dDecodeSession<'a> {
             )?,
         );
         crate::design::dimensions::bind_offset_dimension_parameters(
+            ctx,
             &mut self.ir.model.sketch_constraints,
             &self.native.design_parameters,
-        );
+        )?;
         self.ir
             .model
             .sketch_constraints

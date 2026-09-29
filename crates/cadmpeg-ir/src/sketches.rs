@@ -3092,6 +3092,16 @@ impl SketchConstraintDefinition {
         &self.0
     }
 
+    /// Set the driving parameter of an admitted planar offset relation.
+    /// The parameter does not change offset-pair admission.
+    pub fn set_offset_parameter(&mut self, driving: OffsetParameter) -> bool {
+        let SketchConstraintDefinitionInput::Offset { parameter, .. } = &mut self.0 else {
+            return false;
+        };
+        *parameter = Some(driving);
+        true
+    }
+
     /// Consume the admitted definition and return its kind.
     #[must_use]
     pub fn into_kind(self) -> SketchConstraintDefinitionInput {

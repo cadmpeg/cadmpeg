@@ -13,6 +13,32 @@ fn length(value: f64) -> Length {
 }
 
 #[test]
+fn planar_offset_parameter_setter_preserves_admitted_pairs() {
+    use crate::features::ParameterId;
+    use crate::sketches::{
+        OffsetParameter, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+        SketchEntityId, SketchOffsetPair,
+    };
+
+    let source = SketchEntityId::mint("test:model:entity#source").unwrap();
+    let result = SketchEntityId::mint("test:model:entity#result").unwrap();
+    let pair = SketchOffsetPair { source, result, source_reversed: false };
+    let mut definition = SketchConstraintDefinition::try_from(
+        SketchConstraintDefinitionInput::Offset {
+            pairs: vec![pair.clone()], distance: length(5.0), parameter: None,
+        },
+    ).unwrap();
+    let parameter = OffsetParameter {
+        id: ParameterId::mint("test:model:parameter#distance").unwrap(),
+        negated: true,
+    };
+    assert!(definition.set_offset_parameter(parameter.clone()));
+    assert!(matches!(definition.kind(),
+        SketchConstraintDefinitionInput::Offset { pairs, parameter: Some(driving), .. }
+            if pairs == &[pair] && driving == &parameter));
+}
+
+#[test]
 fn sketch_ellipse_serialization_keeps_its_wire_fields() {
     let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(1.0, 2.0),
