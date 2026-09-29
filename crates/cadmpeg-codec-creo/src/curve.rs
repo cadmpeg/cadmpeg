@@ -5155,24 +5155,8 @@ fn solve_dimension_axis(
             *coefficient /= divisor;
         }
         rows[pivot_row].rhs /= divisor;
-        let pivot_coefficients = rows[pivot_row].coefficients.clone();
-        let pivot_rhs = rows[pivot_row].rhs;
-        for (row_index, row) in rows.iter_mut().enumerate() {
-            if row_index == pivot_row {
-                continue;
-            }
-            let factor = row.coefficients[column];
-            if factor.abs() <= coefficient_tolerance {
-                continue;
-            }
-            for (coefficient, pivot) in row.coefficients.iter_mut().zip(&pivot_coefficients) {
-                *coefficient -= factor * pivot;
-                if coefficient.abs() <= coefficient_tolerance {
-                    *coefficient = 0.0;
-                }
-            }
-            row.rhs -= factor * pivot_rhs;
-        }
+        eliminate_pivot_column(rows, pivot_row, column, coefficient_tolerance);
+        ctx.try_reserve_items(&mut pivot_rows, 1, "creo solve dimension pivot rows")?;
         pivot_rows.push((column, pivot_row));
         pivot_row += 1;
     }
@@ -5656,6 +5640,31 @@ struct AffineEquationRow {
     rhs: f64,
 }
 
+fn eliminate_pivot_column(
+    rows: &mut [AffineEquationRow],
+    pivot_row: usize,
+    column: usize,
+    coefficient_tolerance: f64,
+) {
+    let (before, pivot_and_after) = rows.split_at_mut(pivot_row);
+    let Some((pivot, after)) = pivot_and_after.split_first_mut() else {
+        return;
+    };
+    for row in before.iter_mut().chain(after.iter_mut()) {
+        let factor = row.coefficients[column];
+        if factor.abs() <= coefficient_tolerance {
+            continue;
+        }
+        for (coefficient, pivot_coefficient) in row.coefficients.iter_mut().zip(&pivot.coefficients) {
+            *coefficient -= factor * pivot_coefficient;
+            if coefficient.abs() <= coefficient_tolerance {
+                *coefficient = 0.0;
+            }
+        }
+        row.rhs -= factor * pivot.rhs;
+    }
+}
+
 fn solve_unique_affine_system(
     rows: &mut [AffineEquationRow],
     variable_count: usize,
@@ -5691,24 +5700,7 @@ fn solve_unique_affine_system(
             *coefficient /= divisor;
         }
         rows[pivot_row].rhs /= divisor;
-        let pivot_coefficients = rows[pivot_row].coefficients.clone();
-        let pivot_rhs = rows[pivot_row].rhs;
-        for (row_index, row) in rows.iter_mut().enumerate() {
-            if row_index == pivot_row {
-                continue;
-            }
-            let factor = row.coefficients[column];
-            if factor.abs() <= coefficient_tolerance {
-                continue;
-            }
-            for (coefficient, pivot) in row.coefficients.iter_mut().zip(&pivot_coefficients) {
-                *coefficient -= factor * pivot;
-                if coefficient.abs() <= coefficient_tolerance {
-                    *coefficient = 0.0;
-                }
-            }
-            row.rhs -= factor * pivot_rhs;
-        }
+        eliminate_pivot_column(rows, pivot_row, column, coefficient_tolerance);
         pivot_row += 1;
     }
     rows.iter()
