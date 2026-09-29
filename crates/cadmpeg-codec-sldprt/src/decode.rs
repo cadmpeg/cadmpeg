@@ -4365,7 +4365,8 @@ fn project_design_history(
         &semantic_projection,
         lanes,
     )?;
-    ir.model.configurations = crate::history::project::project_configurations(&semantic_projection);
+    ir.model.configurations =
+        crate::history::project::project_configurations_charged(ctx, &semantic_projection)?;
     let mut parameter_projection = histories.to_vec();
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(
         &mut parameter_projection,

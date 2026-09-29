@@ -298,7 +298,7 @@ pub(crate) fn project_semantic_notes(
             let id = ctx.format_retained(
                 format_args!(
                     "sldprt:semantic-annotation:note#{}",
-                    EncodedFeatureKey(native_id)
+                    EncodedNativeKey(native_id)
                 ),
                 OPERATION,
             )?;
@@ -863,9 +863,9 @@ fn bind_native_construction_features(
     }
 }
 
-struct EncodedFeatureKey<'a>(&'a str);
+struct EncodedNativeKey<'a>(&'a str);
 
-impl fmt::Display for EncodedFeatureKey<'_> {
+impl fmt::Display for EncodedNativeKey<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         const HEX: &[u8; 16] = b"0123456789ABCDEF";
         if self.0.is_empty() {
@@ -910,7 +910,7 @@ pub(crate) fn custom_property_attributes(
             let id = ctx.format_retained(
                 format_args!(
                     "sldprt:history:custom-property#{}",
-                    EncodedFeatureKey(native_id)
+                    EncodedNativeKey(native_id)
                 ),
                 OPERATION,
             )?;
@@ -1096,6 +1096,73 @@ pub(crate) fn project_configurations(histories: &[FeatureHistory]) -> Vec<Design
             native_ref: Some(configuration.id.clone()),
         })
         .collect()
+}
+
+/// Project decoded native configurations under the caller's resource budget.
+pub(crate) fn project_configurations_charged(
+    ctx: &DecodeContext<'_>,
+    histories: &[FeatureHistory],
+) -> Result<Vec<DesignConfiguration>, CodecError> {
+    const OPERATION: &str = "project SLDPRT configurations";
+    let copy = |value: &str| -> Result<String, CodecError> {
+        let mut copied = String::new();
+        ctx.reserve_retained_string(&mut copied, value.len(), OPERATION)?;
+        copied.push_str(value);
+        Ok(copied)
+    };
+    let mut projected = Vec::new();
+    ctx.charge_work(histories.len() as u64, OPERATION)?;
+    for history in histories {
+        ctx.charge_work(history.configurations.len() as u64, OPERATION)?;
+        for configuration in &history.configurations {
+            ctx.charge_work(configuration.id.len() as u64, OPERATION)?;
+            let native_id = configuration
+                .id
+                .strip_prefix("sldprt:history:configuration#")
+                .unwrap_or(&configuration.id);
+            let id = ctx.format_retained(
+                format_args!(
+                    "sldprt:model:configuration#{}",
+                    EncodedNativeKey(native_id)
+                ),
+                OPERATION,
+            )?;
+            let id = ConfigurationId::mint(id)
+                .map_err(|_| CodecError::malformed("invalid SLDPRT configuration ID"))?;
+            let mut properties = BTreeMap::new();
+            ctx.charge_work(configuration.properties.len() as u64, OPERATION)?;
+            for (key, value) in &configuration.properties {
+                let key = cadmpeg_core::text::NonBlankString::new(copy(key.as_str())?)
+                    .ok_or_else(|| CodecError::malformed("blank SLDPRT configuration property"))?;
+                let value = copy(value)?;
+                ctx.charge_collection_items(1, OPERATION)?;
+                properties.insert(key, value);
+            }
+            let material = configuration
+                .material
+                .as_deref()
+                .map(copy)
+                .transpose()?;
+            let native_ref = copy(&configuration.id)?;
+            let name = copy(&configuration.name)?;
+            ctx.reserve_collection_vec(&mut projected, 1, OPERATION)?;
+            projected.push(DesignConfiguration {
+                id,
+                ordinal: configuration.ordinal,
+                active: false,
+                source_index: configuration.source_index,
+                name: Some(name),
+                material,
+                properties,
+                bodies: None,
+                parameter_values: BTreeMap::new(),
+                feature_states: BTreeMap::new(),
+                parameter_overrides: BTreeMap::new(),
+                native_ref: Some(native_ref),
+            });
+        }
+    }
+    Ok(projected)
 }
 
 /// Project every native feature dimension into the neutral parameter arena.
