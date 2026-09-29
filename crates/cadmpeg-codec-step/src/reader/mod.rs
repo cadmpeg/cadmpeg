@@ -215,13 +215,19 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
     fn charge_stage(&mut self, operation: &'static str) -> Result<(), CodecError> {
         self.charge_pending_ir_entities(operation)?;
         let output_work = u64_from_index(self.ir.model.entity_count());
-        let units = self.semantic_input_work.saturating_add(output_work);
+        let units = self.semantic_input_work.checked_add(output_work).ok_or_else(|| {
+            self.ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX)
+        })?;
         self.ctx.charge_work(units, operation)
     }
 
     fn charge_pending_ir_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
         let current_entities = u64_from_index(self.ir.model.entity_count());
-        let additional_entities = current_entities.saturating_sub(self.admitted_ir_entities);
+        if current_entities < self.admitted_ir_entities {
+            self.admitted_ir_entities = current_entities;
+            return Ok(());
+        }
+        let additional_entities = current_entities - self.admitted_ir_entities;
         self.ctx.charge_entities(additional_entities, operation)?;
         self.admitted_ir_entities = current_entities;
         Ok(())
@@ -387,7 +393,7 @@ fn decode_exchange_mode(
         return session.into_result(SourceFidelity::default(), BTreeSet::new());
     }
 
-    session.semantic_input_work = semantic_input_work(exchange);
+    session.semantic_input_work = semantic_input_work(exchange)?;
     session.charge_stage("step_geometry_decode")?;
     let mut geometry = geometry::decode(exchange, &mut session.ir, session.ctx)?;
     session.charge_stage("step_dependency_decode")?;
@@ -396,7 +402,7 @@ fn decode_exchange_mode(
     let carrier_index = index::CarrierIndex::from_ir(&session.ir, session.ctx)?;
     session.charge_stage("step_topology_decode")?;
     session.ctx.charge_work(
-        implicit_face_plane_work(exchange),
+        implicit_face_plane_work(exchange)?,
         "step_implicit_face_plane",
     )?;
     let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index, session.ctx)?;
@@ -579,12 +585,11 @@ fn decode_exchange_mode(
             }
             count_unknown_kind(&mut counts, record, session.ctx)?;
             let mut links = BTreeSet::new();
-            let reference_work = record
+            let reference_work = work_sum(record
                 .partials
                 .iter()
                 .flat_map(|partial| partial.parameters.iter())
-                .map(reference_work_units)
-                .fold(0, u64::saturating_add);
+                .map(reference_work_units))?;
             for partial in &record.partials {
                 for value in &partial.parameters {
                     collect_references(value, &mut links, session.ctx)?;
@@ -755,83 +760,67 @@ fn decode_exchange_mode(
 }
 
 /// Count the source graph nodes that each semantic pass may inspect.
-fn semantic_input_work(exchange: &Exchange) -> u64 {
+fn work_overflow() -> CodecError {
+    cadmpeg_core::decode::refuse_local_limit("step semantic work", u64::MAX, u64::MAX)
+}
+
+fn add_work(total: u64, additional: u64) -> Result<u64, CodecError> {
+    total.checked_add(additional).ok_or_else(work_overflow)
+}
+
+fn work_sum(values: impl IntoIterator<Item = Result<u64, CodecError>>) -> Result<u64, CodecError> {
+    values
+        .into_iter()
+        .try_fold(0_u64, |total, value| add_work(total, value?))
+}
+
+fn semantic_input_work(exchange: &Exchange) -> Result<u64, CodecError> {
     let records = exchange.records().values().map(|record| {
-        1_u64.saturating_add(
-            record
-                .partials
-                .iter()
-                .map(|partial| {
-                    1_u64.saturating_add(
-                        partial
-                            .parameters
-                            .iter()
-                            .map(value_work_units)
-                            .fold(0, u64::saturating_add),
-                    )
-                })
-                .fold(0, u64::saturating_add),
-        )
+        let partials = work_sum(record.partials.iter().map(|partial| {
+            let parameters = work_sum(partial.parameters.iter().map(value_work_units))?;
+            add_work(1, parameters)
+        }))?;
+        add_work(1, partials)
     });
     let headers = exchange.header().iter().map(|record| {
-        1_u64.saturating_add(
-            record
-                .parameters
-                .iter()
-                .map(value_work_units)
-                .fold(0, u64::saturating_add),
-        )
+        let parameters = work_sum(record.parameters.iter().map(value_work_units))?;
+        add_work(1, parameters)
     });
     let anchors = exchange
         .anchors()
         .iter()
-        .map(|anchor| 1_u64.saturating_add(value_work_units(&anchor.value)));
+        .map(|anchor| add_work(1, value_work_units(&anchor.value)?));
     let data = exchange.data().iter().map(|section| {
-        1_u64
-            .saturating_add(
-                section
-                    .parameters
-                    .iter()
-                    .map(value_work_units)
-                    .fold(0, u64::saturating_add),
-            )
-            .saturating_add(u64_from_index(section.records.len()))
+        let parameters = work_sum(section.parameters.iter().map(value_work_units))?;
+        add_work(add_work(1, parameters)?, u64_from_index(section.records.len()))
     });
     let references = u64_from_index(exchange.references().len());
     records
         .chain(headers)
         .chain(anchors)
         .chain(data)
-        .fold(references, u64::saturating_add)
+        .try_fold(references, |total, value| add_work(total, value?))
 }
 
-fn value_work_units(value: &Value) -> u64 {
+fn value_work_units(value: &Value) -> Result<u64, CodecError> {
     match value {
-        Value::List(values) => 1_u64.saturating_add(
-            values
-                .iter()
-                .map(value_work_units)
-                .fold(0, u64::saturating_add),
-        ),
-        Value::Typed(_, value) => 1_u64.saturating_add(value_work_units(value)),
-        _ => 1,
+        Value::List(values) => add_work(1, work_sum(values.iter().map(value_work_units))?),
+        Value::Typed(_, value) => add_work(1, value_work_units(value)?),
+        _ => Ok(1),
     }
 }
 
-fn reference_work_units(value: &Value) -> u64 {
+fn reference_work_units(value: &Value) -> Result<u64, CodecError> {
     match value {
-        Value::Reference(_) => 1,
-        Value::List(values) => values
-            .iter()
-            .map(reference_work_units)
-            .fold(0, u64::saturating_add),
+        Value::Reference(_) => Ok(1),
+        Value::List(values) => work_sum(values.iter().map(reference_work_units)),
         Value::Typed(_, value) => reference_work_units(value),
-        _ => 0,
+        _ => Ok(0),
     }
 }
 
 /// Reserve the linear scan used to derive a plane for an implicit face.
-fn implicit_face_plane_work(exchange: &Exchange) -> u64 {
+fn implicit_face_plane_work(exchange: &Exchange) -> Result<u64, CodecError> {
     exchange
         .records()
         .values()
@@ -847,7 +836,7 @@ fn implicit_face_plane_work(exchange: &Exchange) -> u64 {
                 })
                 .map(|points| u64_from_index(points.len()))
         })
-        .fold(0, u64::saturating_add)
+        .try_fold(0_u64, add_work)
 }
 
 fn insert_retained_identity(
