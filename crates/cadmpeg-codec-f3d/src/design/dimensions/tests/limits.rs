@@ -13,8 +13,9 @@ use crate::records::parameters::{
 use crate::records::dimensions::{
     DesignDimensionAnnotationFrame, DesignDimensionAnnotationFrameDraft,
     DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignDimensionLocusPairDraft,
+    DesignDimensionLocusPair, DesignDimensionLocusPairDraft, DesignDimensionRecipeRecord,
 };
+use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::sketch_placement::{DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -220,6 +221,58 @@ fn native_fallback_annotation() -> DesignDimensionAnnotationFrame {
         owner_reference: 7,
         owner_reference_offset: 120,
     }).unwrap()
+}
+
+fn dimension_recipe_record(index: u32) -> DesignDimensionRecipeRecord {
+    DesignDimensionRecipeRecord {
+        id: format!("f3d:Design/BulkStream.dat:dimension-recipe#{index}"),
+        companion_record_index: 22,
+        recipe_ordinal: index,
+        recipe_id: format!("f3d:Design/BulkStream.dat:construction-recipe#{index}"),
+        recipe_kind: ConstructionRecipeKind::Edge,
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("423".to_owned()).unwrap(),
+        record_index: index,
+        frame_length: 10,
+        prefix_offset: 0,
+        prefix_bytes: Vec::new(),
+        references: Vec::new(),
+        program_offset: 0,
+        program: vec![-1],
+        matching_edge_operand_ids: Vec::new(),
+    }
+}
+
+fn assert_recipe_group_refusal(operation: &'static str) {
+    let fixture = fixture();
+    let recipes = [dimension_recipe_record(40), dimension_recipe_record(41)];
+    let mut inputs = fixture.inputs();
+    inputs.recipe_records = &recipes;
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn dimension_recipe_group_refuses_collection_limit() {
+    assert_recipe_group_refusal("f3d dimension recipe group");
+}
+
+#[test]
+fn dimension_recipe_group_member_refuses_collection_limit() {
+    assert_recipe_group_refusal("f3d dimension recipe group member");
 }
 
 fn assert_native_auxiliary_refusal(
