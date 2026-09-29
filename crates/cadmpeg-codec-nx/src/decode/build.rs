@@ -816,7 +816,7 @@ pub(super) fn try_decode_geometry(
                                 if support_uv[side].is_none() {
                                     support_uv[side] = ext_support_uv[side]
                                         .as_ref()
-                                        .map(|lane| lane.clone_charged(ctx))
+                                        .map(|lane| crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.as_slice().len()).ok_or_else(|| CodecError::malformed("NX copied support-UV lane count")))
                                         .transpose()?;
                                 }
                             }
@@ -883,13 +883,13 @@ pub(super) fn try_decode_geometry(
                 let [value_first, value_second] = [0, 1].map(|side| {
                     charted.support_uv[side]
                         .as_ref()
-                        .map(|lane| lane.clone_charged(ctx))
+                        .map(|lane| crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.as_slice().len()).ok_or_else(|| CodecError::malformed("NX copied support-UV lane count")))
                         .transpose()
                 });
                 let [ext_first, ext_second] = [0, 1].map(|side| {
                     charted.ext_support_uv[side]
                         .as_ref()
-                        .map(|lane| lane.clone_charged(ctx))
+                        .map(|lane| crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.as_slice().len()).ok_or_else(|| CodecError::malformed("NX copied support-UV lane count")))
                         .transpose()
                 });
                 ctx.reserve_vec(&mut pending_ext11_support_uv, 1, "nx pending EXT11 support UV")?;
@@ -990,7 +990,7 @@ pub(super) fn try_decode_geometry(
                     let [first, second] = [0, 1].map(|side| {
                         lanes[side]
                             .as_ref()
-                            .map(|lane| lane.clone_charged(ctx))
+                            .map(|lane| crate::intersection::SupportUvLane::from_checked(ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.as_slice().len()).ok_or_else(|| CodecError::malformed("NX copied support-UV lane count")))
                             .transpose()
                     });
                     [first?, second?]
