@@ -293,9 +293,11 @@ fn packed_u32(value: i64) -> Option<u32> {
         .or_else(|| i32::try_from(value).ok().map(|value| value.cast_unsigned()))
 }
 
-fn packed_rgb(packed: u32) -> Color {
-    let [_, red, green, blue] = packed.to_be_bytes();
-    Color::from_rgba8(red, green, blue, 255)
+fn packed_rgb(packed: u32) -> Option<Color> {
+    let red = u8::try_from((packed >> 16) & 0xff).ok()?;
+    let green = u8::try_from((packed >> 8) & 0xff).ok()?;
+    let blue = u8::try_from(packed & 0xff).ok()?;
+    Some(Color::from_rgba8(red, green, blue, 255))
 }
 
 /// Decode one well-formed exact direct-color attribute.
@@ -354,7 +356,7 @@ fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
                 return None;
             }
             Some(DirectAttributeColor {
-                color: packed_rgb(packed),
+                color: packed_rgb(packed)?,
                 carrier: DirectColorCarrier::AutodeskTrueColor { field },
             })
         }
@@ -376,7 +378,7 @@ fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
                 .ok()
                 .filter(|value| *value <= 0xff_ffff)?;
             Some(DirectAttributeColor {
-                color: packed_rgb(packed),
+                color: packed_rgb(packed)?,
                 carrier: DirectColorCarrier::DecimalRgb { field },
             })
         }
