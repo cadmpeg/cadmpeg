@@ -1012,15 +1012,59 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lanes(
 
 /// Resolve the tagged block-index pairs following both repeated scalar-lane
 /// witnesses through the unique offset store that owns the operation inputs.
+fn simple_hole_block_reference(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    blocks: &[crate::native::om::DataBlock],
+    prefix: &str,
+    entry_offset: u64,
+    (token, offset): (crate::om::reference_index::PayloadIndexToken, usize),
+) -> Result<Option<SimpleHoleBlockReference>, cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(blocks.len()),
+        "resolve NX simple hole block reference",
+    )?;
+    let Some(block) = blocks.iter().find(|block| {
+        block.block_ordinal == token.value()
+            && block.id.rsplit_once(":block#").is_some_and(|(owner, _)| owner == prefix)
+    }) else {
+        return Ok(None);
+    };
+    let Some(source_offset) = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(offset))
+    else {
+        return Ok(None);
+    };
+    Ok(Some(SimpleHoleBlockReference {
+        data_block: copy_operation_text(ctx, &block.id, "NX simple hole block reference")?,
+        source_offset,
+    }))
+}
+
+fn simple_hole_reference_pair(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    blocks: &[crate::native::om::DataBlock],
+    prefix: &str,
+    entry_offset: u64,
+    pair: crate::om::simple_hole_references::ReferencePair,
+) -> Result<Option<SimpleHoleReferencePair>, cadmpeg_core::CodecError> {
+    let [first, second] = pair.references();
+    let Some(first) = simple_hole_block_reference(ctx, blocks, prefix, entry_offset, first)? else {
+        return Ok(None);
+    };
+    let Some(second) = simple_hole_block_reference(ctx, blocks, prefix, entry_offset, second)? else {
+        return Ok(None);
+    };
+    Ok(Some(SimpleHoleReferencePair {
+        references: [first, second],
+        wrapped: pair.wrapped(),
+    }))
+}
+
 pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>, cadmpeg_core::CodecError> {
     let inputs = feature_input_blocks(ctx, container)?;
-    let blocks = data_blocks(ctx, container)?
-        .into_iter()
-        .map(|block| block.id)
-        .collect::<BTreeSet<_>>();
+    let blocks = data_blocks(ctx, container)?;
     let mut references = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
@@ -1030,20 +1074,33 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_referenc
             if failure.is_some() {
                 return;
             }
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let prefixes = inputs
-                .iter()
-                .filter(|input| input.operation_label == operation_label)
-                .filter_map(|input| {
-                    input
-                        .data_block
-                        .rsplit_once(":block#")
-                        .map(|(prefix, _)| prefix)
-                })
-                .collect::<BTreeSet<_>>();
-            let mut prefixes = prefixes.into_iter();
-            let (Some(prefix), None) = (prefixes.next(), prefixes.next()) else {
+            let operation_label = match format_feature_history_id(
+                ctx, "operation-label", section_key, operation_ordinal, None,
+            ) {
+                Ok(label) => label,
+                Err(error) => { failure = Some(error); return; }
+            };
+            if let Err(error) = ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(inputs.len()),
+                "find NX simple hole block owner",
+            ) {
+                failure = Some(error);
+                return;
+            }
+            let mut prefix = None;
+            for input in &inputs {
+                if input.operation_label != operation_label {
+                    continue;
+                }
+                let Some(candidate) = input.data_block.rsplit_once(":block#").map(|(owner, _)| owner) else {
+                    continue;
+                };
+                if prefix.is_some_and(|first| first != candidate) {
+                    return;
+                }
+                prefix = Some(candidate);
+            }
+            let Some(prefix) = prefix else {
                 return;
             };
             let decoded = match crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(ctx, record.payload_view()) {
@@ -1051,27 +1108,37 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_referenc
                 Ok(None) => return,
                 Err(error) => { failure = Some(error); return; }
             };
-            let resolve = |pair: crate::om::simple_hole_references::ReferencePair| {
-                let [first, second] = pair.references().map(|(token, offset)| {
-                    let data_block = format!("{prefix}:block#{}", token.value());
-                    blocks.contains(&data_block).then_some(())?;
-                    Some(SimpleHoleBlockReference {
-                        data_block,
-                        source_offset: entry_offset.checked_add(offset as u64)?,
-                    })
-                });
-                Some(SimpleHoleReferencePair {
-                    references: [first?, second?],
-                    wrapped: pair.wrapped(),
-                })
+            let first = match simple_hole_reference_pair(ctx, &blocks, prefix, entry_offset, decoded[0]) {
+                Ok(Some(first)) => first,
+                Ok(None) => return,
+                Err(error) => { failure = Some(error); return; }
             };
-            let (Some(first), Some(second)) = (resolve(decoded[0]), resolve(decoded[1])) else {
+            let second = match simple_hole_reference_pair(ctx, &blocks, prefix, entry_offset, decoded[1]) {
+                Ok(Some(second)) => second,
+                Ok(None) => return,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let id = match format_feature_history_id(
+                ctx, "simple-hole-repeated-scalar-lane-block-references",
+                section_key, operation_ordinal, None,
+            ) {
+                Ok(id) => id,
+                Err(error) => { failure = Some(error); return; }
+            };
+            if let Err(error) = ctx.charge_collection_items(1, "NX simple hole block reference lanes")
+                .and_then(|()| ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>()),
+                    "NX simple hole block reference lanes",
+                ))
+                .and_then(|()| references.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("allocate NX simple hole block reference lanes", 0, 1)
+                }))
+            {
+                failure = Some(error);
                 return;
-            };
+            }
             references.push(FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
-                id: format!(
-                    "nx:feature-history:simple-hole-repeated-scalar-lane-block-references#{section_key}-{operation_ordinal:010}"
-                ),
+                id,
                 operation_label,
                 first,
                 second,
