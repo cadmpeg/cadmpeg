@@ -79,6 +79,9 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
         }
     };
     let segment_bindings = [segment_binding("binding#0", 0, 94, 150)];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
         feature_body_selection(
             &[94],
@@ -93,7 +96,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
         }
     );
     assert_eq!(
-        feature_body_outputs(94, &segment_bindings, &bindings),
+        feature_body_outputs(&ctx, 94, &segment_bindings, &bindings).unwrap(),
         vec![first]
     );
     let ambiguous_body_bindings = BTreeMap::from([(
@@ -103,13 +106,52 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             BodyId::mint("nx:s2:body#4".to_string()).expect("identity grammar"),
         ],
     )]);
-    assert!(feature_body_outputs(94, &segment_bindings, &ambiguous_body_bindings).is_empty());
-    assert!(feature_body_outputs(123, &segment_bindings, &bindings).is_empty());
+    assert!(feature_body_outputs(&ctx, 94, &segment_bindings, &ambiguous_body_bindings).unwrap().is_empty());
+    assert!(feature_body_outputs(&ctx, 123, &segment_bindings, &bindings).unwrap().is_empty());
     let ambiguous_bindings = [
         segment_binding("binding#0", 0, 94, 150),
         segment_binding("binding#1", 1, 94, 151),
     ];
-    assert!(feature_body_outputs(94, &ambiguous_bindings, &bindings).is_empty());
+    assert!(feature_body_outputs(&ctx, 94, &ambiguous_bindings, &bindings).unwrap().is_empty());
+}
+
+fn feature_body_output_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<Vec<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::ids::BodyId;
+    use std::collections::BTreeMap;
+
+    let body = BodyId::mint("test:model:entity#selected-body").unwrap();
+    let bindings = [crate::native::segments::SegmentBodyBinding {
+        id: "binding".into(),
+        stream_link: "stream".into(),
+        stream_ordinal: 0,
+        stream_kind: crate::parasolid::StreamKind::Partition,
+        body_object_index: 94,
+        body_alias_object_index: 94,
+        stream_role: 0,
+        source_offset: 0,
+    }];
+    let bodies = BTreeMap::from([(94, vec![body])]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    feature_body_outputs(&ctx, 94, &bindings, &bodies)
+}
+
+#[test]
+fn feature_body_output_refuses_collection_limit() {
+    let error = feature_body_output_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn feature_body_output_refuses_retained_limit() {
+    let error = feature_body_output_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
 }
 
 #[test]

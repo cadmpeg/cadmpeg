@@ -2350,11 +2350,12 @@ fn attach_feature_operations(
         ),
     );
     let explicit_hole_outputs = primary_hole_outputs(
+        ctx,
         simple_hole_templates,
         &body_references,
         body_bindings,
         &bodies_by_object_index,
-    );
+    )?;
     let simple_hole_operations = simple_hole_operations(
         ctx,
         simple_hole_templates,
@@ -2838,11 +2839,10 @@ fn attach_feature_operations(
         let mut outputs = if deletes_body {
             Vec::new()
         } else {
-            body_references
-                .get(label.id.as_str())
-                .map_or_else(Vec::new, |body| {
-                    feature_body_outputs(*body, body_bindings, &bodies_by_object_index)
-                })
+            match body_references.get(label.id.as_str()) {
+                Some(body) => feature_body_outputs(ctx, *body, body_bindings, &bodies_by_object_index)?,
+                None => Vec::new(),
+            }
         };
         if !deletes_body && outputs.is_empty() && !operation_body_writes.is_empty() {
             outputs = complete_operation_body_image_outputs(
@@ -7193,21 +7193,23 @@ fn native_feature_parameters(
 /// Offset-store body fields remain absent so a complete unique-solid topology
 /// witness can apply the documented fallback.
 fn primary_hole_outputs(
+    ctx: &DecodeContext<'_>,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     body_references: &BTreeMap<&str, u32>,
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> BTreeMap<String, Vec<BodyId>> {
-    templates
-        .iter()
-        .filter_map(|template| {
-            let object_index = body_references.get(template.operation_label.as_str())?;
-            Some((
-                template.operation_label.clone(),
-                feature_body_outputs(*object_index, body_bindings, bodies_by_object_index),
-            ))
-        })
-        .collect()
+) -> Result<BTreeMap<String, Vec<BodyId>>, CodecError> {
+    let mut outputs = BTreeMap::new();
+    for template in templates {
+        ctx.charge_work(1, "NX primary hole output scan")?;
+        let Some(object_index) = body_references.get(template.operation_label.as_str()) else {
+            continue;
+        };
+        let bodies = feature_body_outputs(ctx, *object_index, body_bindings, bodies_by_object_index)?;
+        charge_hole_map_entry::<Vec<BodyId>>(ctx, &template.operation_label, 0, "NX primary hole output map")?;
+        outputs.insert(template.operation_label.clone(), bodies);
+    }
+    Ok(outputs)
 }
 
 fn push_hole_operation_label(
@@ -9486,19 +9488,27 @@ fn trim_body_feature_definition(
 }
 
 fn feature_body_outputs(
+    ctx: &DecodeContext<'_>,
     object_index: u32,
     segment_bindings: &[crate::native::segments::SegmentBodyBinding],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> Vec<BodyId> {
+) -> Result<Vec<BodyId>, CodecError> {
     if crate::native::segments::unique_segment_body_binding(object_index, segment_bindings)
         .is_none()
     {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Some([body]) = bodies_by_object_index.get(&object_index).map(Vec::as_slice) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    vec![body.clone()]
+    let bytes = std::mem::size_of::<BodyId>().checked_add(body.as_str().len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX feature body output", 0, cadmpeg_core::decode::u64_from_index(body.as_str().len())))?;
+    ctx.charge_collection_items(1, "NX feature body output")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX feature body output")?;
+    let mut outputs = Vec::new();
+    reserve_attach_vec(ctx, &mut outputs, 1, "NX feature body output")?;
+    outputs.push(body.clone());
+    Ok(outputs)
 }
 
 fn operation_body_image_outputs_by_write<'a>(
