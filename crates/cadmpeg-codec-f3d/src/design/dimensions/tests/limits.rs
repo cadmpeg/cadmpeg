@@ -372,6 +372,72 @@ fn spatial_source_parameter_id_refuses_retained_limit() {
     assert_spatial_companion_retained_refusal("f3d spatial source parameter id");
 }
 
+fn assert_missing_spatial_refusal(
+    operation: &'static str,
+    dimension: ResourceDimension,
+) {
+    let fixture = fixture();
+    let companion = parameter_companion();
+    let mut inputs = fixture.inputs();
+    inputs.companions = std::slice::from_ref(&companion);
+    for limit in 0..1024 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            _ => panic!("unsupported dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = project_spatial_dimension_constraints(Some(&ctx), &inputs,
+            std::slice::from_ref(&fixture.spatial), &[], 1.0e-6);
+        match result {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation && failure.dimension == dimension => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn missing_spatial_parameter_refuses_collection_limit() {
+    assert_missing_spatial_refusal("f3d missing spatial parameter",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn missing_spatial_constraint_output_refuses_collection_limit() {
+    assert_missing_spatial_refusal("f3d missing spatial constraint output",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn missing_spatial_sketch_id_refuses_retained_limit() {
+    assert_missing_spatial_refusal("f3d missing spatial sketch id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn missing_spatial_operand_native_id_refuses_retained_limit() {
+    assert_missing_spatial_refusal("f3d missing spatial operand native id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn missing_spatial_constraint_native_id_refuses_retained_limit() {
+    assert_missing_spatial_refusal("f3d missing spatial constraint native id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn missing_spatial_output_parameter_id_refuses_retained_limit() {
+    assert_missing_spatial_refusal("f3d missing spatial output parameter id",
+        ResourceDimension::RetainedBytes);
+}
+
 #[test]
 fn planar_spatial_sketch_index_refuses_collection_limit() {
     assert_refusal("f3d planar spatial sketch index");
