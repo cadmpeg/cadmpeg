@@ -145,7 +145,7 @@ pub(crate) fn operation_terminal_discriminator(
     };
 
     let mut found = None;
-    for start in 0..record.payload().len().saturating_sub(18) {
+    for start in record.payload().len().checked_sub(18).into_iter().flat_map(|last| 0..last) {
         if record.payload().get(start..start + 3) == Some(&[0x01, 0x01, 0x02]) {
             ctx.charge_work(
                 u64_from_index(record.payload().len() - start),

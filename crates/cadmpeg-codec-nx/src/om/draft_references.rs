@@ -83,7 +83,7 @@ pub(crate) fn draft_feature_payload_references(
         })
     };
     super::unique_candidate(
-        (PAYLOAD_PREFIX.len()..=record.payload().len().saturating_sub(GRAPH_PREFIX.len()))
+        (record.payload().len().checked_sub(GRAPH_PREFIX.len()).into_iter().flat_map(|last| PAYLOAD_PREFIX.len()..=last))
             .filter(|&start| {
                 record.payload().get(start..start + GRAPH_PREFIX.len()) == Some(&GRAPH_PREFIX)
             })

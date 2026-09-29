@@ -174,7 +174,10 @@ pub(super) fn operation_state_block_before_boundary<'a>(
         ctx.reserve_scoped(u64_from_index(opaque_bytes), "scan NX opaque state lanes")?;
 
     let mut opaque_lane_starts = Vec::new();
-    for at in start..end.saturating_sub(1) {
+    let Some(last_pair) = end.checked_sub(1) else {
+        return Ok(None);
+    };
+    for at in start..last_pair {
         if bytes.get(at..at + 2) == Some(&[0x02, 0x11]) {
             ctx.reserve_vec(&mut opaque_lane_starts, 1, "nx opaque state lanes")?;
             opaque_lane_starts.push(at);
@@ -238,7 +241,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
             if has_exact_boundary_path {
                 path.end == end
             } else {
-                path.end >= *at && end.saturating_sub(path.end) <= MAX_STATE_BLOCK_TAIL_BYTES
+                path.end >= *at && end.checked_sub(path.end).is_some_and(|tail| tail <= MAX_STATE_BLOCK_TAIL_BYTES)
             }
         })
         .max_by_key(|(at, path)| (path.length, std::cmp::Reverse(*at)))

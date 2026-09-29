@@ -87,7 +87,7 @@ pub(crate) fn scan(
 ) -> Result<Vec<DatumIndexLane>, CodecError> {
     let mut lanes = Vec::new();
     ctx.charge_work(u64_from_index(bytes.len()), "scan NX datum index lanes")?;
-    for start in 0..bytes.len().saturating_sub(7) {
+    for start in bytes.len().checked_sub(7).into_iter().flat_map(|last| 0..last) {
         if bytes[start] != 0x01 {
             continue;
         }

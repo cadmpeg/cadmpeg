@@ -429,7 +429,7 @@ pub(crate) fn construction_payload_scalar_fields(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
         "scan NX construction scalars",
     )?;
-    for start in 0..bytes.len().saturating_sub(12) {
+    for start in bytes.len().checked_sub(12).into_iter().flat_map(|last| 0..last) {
         if bytes.get(start..start + 3) != Some(b"PYf") || bytes.get(start + 4) != Some(&0x00) {
             continue;
         }
@@ -1707,7 +1707,7 @@ pub(crate) fn hole_package_construction_group_lane(
         return None;
     }
     let mut candidate = None;
-    for start in 0..record.payload().len().saturating_sub(PREFIX.len()) {
+    for start in record.payload().len().checked_sub(PREFIX.len()).into_iter().flat_map(|last| 0..last) {
         if record.payload().get(start..start + PREFIX.len()) != Some(&PREFIX) {
             continue;
         }
@@ -1772,7 +1772,7 @@ pub(crate) fn sketch_payload_references(
         "scan NX sketch reference fields",
     )?;
     let mut failure = None;
-    let field = unique_candidate((0..record.payload().len().saturating_sub(3)).filter_map(
+    let field = unique_candidate(record.payload().len().checked_sub(3).into_iter().flat_map(|last| 0..last).filter_map(
         |start| {
             if failure.is_some() {
                 return None;
@@ -1970,9 +1970,9 @@ pub(crate) fn pattern_payload_transform_lane(
         })
     };
     let candidate = unique_candidate(
-        (0..record.payload().len().saturating_sub(1))
+        record.payload().len().checked_sub(1).into_iter().flat_map(|last| 0..last)
             .filter_map(decode)
-            .chain((0..record.payload().len().saturating_sub(1)).filter_map(decode_wide)),
+            .chain(record.payload().len().checked_sub(1).into_iter().flat_map(|last| 0..last).filter_map(decode_wide)),
     );
     if let Some(error) = failure.into_inner() {
         return Err(error);
@@ -2076,7 +2076,7 @@ pub(crate) fn multi_instance_output_payload_lane(
         })
     };
     let candidate = unique_candidate(
-        (0..=record.payload().len().saturating_sub(ENVELOPE.len())).filter_map(&mut decode),
+        record.payload().len().checked_sub(ENVELOPE.len()).into_iter().flat_map(|last| 0..=last).filter_map(&mut decode),
     );
     if let Some(error) = failure {
         return Err(error);
@@ -2135,7 +2135,7 @@ pub(crate) fn identical_instance_output_payload_lane(
         ))
     };
     let Some((start, leading_schema_index, count_schema_index, declared_count)) =
-        unique_candidate((0..record.payload().len().saturating_sub(3)).filter_map(decode))
+        unique_candidate(record.payload().len().checked_sub(3).into_iter().flat_map(|last| 0..last).filter_map(decode))
     else {
         return Ok(None);
     };
@@ -3044,7 +3044,7 @@ pub(crate) fn expression_declaration_name<'a>(
     let mut declaration = None;
     let mut literal = None;
     let mut multiple_literals = false;
-    for at in 0..bytes.len().saturating_sub(4) {
+    for at in bytes.len().checked_sub(4).into_iter().flat_map(|last| 0..last) {
         if bytes[at] != 0x04 {
             continue;
         }
@@ -3263,7 +3263,7 @@ fn operation_state_group_table_before_counter_map(
         return Ok(None);
     }
     let mut candidates = Vec::new();
-    for at in 0..map_start.saturating_sub(2) {
+    for at in map_start.checked_sub(2).into_iter().flat_map(|last| 0..last) {
         ctx.charge_work(1, "nx operation-state group scan")?;
         if !matches!(bytes.get(at..at + 2), Some([0x01, 0x00 | 0x01])) {
             continue;
@@ -3667,7 +3667,7 @@ pub(crate) fn operation_terminal_frame(
     }
     let common_frames = operation_common_frames(ctx, record)?;
     Ok(unique_candidate(
-        (terminator.saturating_sub(9)..terminator).filter_map(|start| {
+        (0..terminator).rev().take(9).filter_map(|start| {
             let suffix = CommonFrameSuffix::read(record.payload().get(start..)?)?;
             (start + suffix.byte_len() == record.payload().len()).then_some(())?;
             let frame =
@@ -4240,11 +4240,10 @@ pub(crate) fn numeric_expressions<'a>(
         .enumerate()
         .filter(|(_, window)| *window == b"(Number [")
     {
-        let Some(expression) = numeric_expression_at(
-            &bytes[offset.saturating_sub(3)..],
-            offset.saturating_sub(3),
-            None,
-        ) else {
+        let Some(start) = offset.checked_sub(3) else {
+            continue;
+        };
+        let Some(expression) = numeric_expression_at(&bytes[start..], start, None) else {
             continue;
         };
         ctx.reserve_retained_vec(&mut expressions, 1, "nx numeric expressions")?;
@@ -4342,7 +4341,7 @@ fn section_record_area_pointer(
     schema_start: usize,
     section_end: usize,
 ) -> Option<(usize, usize)> {
-    let mut matches = (schema_start..section_end.saturating_sub(3)).filter_map(|at| {
+    let mut matches = (schema_start..section_end.checked_sub(3)?).filter_map(|at| {
         let relative = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
         let target = section_offset.checked_add(relative)?;
         (target >= at.checked_add(4)? && target.checked_add(15)? <= section_end).then_some(())?;
@@ -4371,7 +4370,7 @@ fn legacy_feature_record_area_pointer(
         return None;
     }
     unique_candidate(
-        (schema_start..section_end.saturating_sub(4)).filter_map(|at| {
+        (schema_start..section_end.checked_sub(4)?).filter_map(|at| {
             if bytes.get(at) != Some(&0x01) {
                 return None;
             }
@@ -4451,7 +4450,10 @@ fn record_area_product_end(bytes: &[u8], offset: usize) -> Option<usize> {
 fn product_record_count_within(ranges: &[ProductRecordRange], lower: usize, upper: usize) -> usize {
     let first = ranges.partition_point(|range| range.start < lower);
     let end = ranges.partition_point(|range| range.end <= upper);
-    end.saturating_sub(first)
+    let Some(contained) = ranges.get(first..end) else {
+        return 0;
+    };
+    contained.len()
 }
 
 /// Select outer indexed interpretations before materializing section records.
@@ -4575,7 +4577,7 @@ pub(crate) fn indexed_sections<'a>(
         }
     }
     let descending_u32_edges = DescendingU32Edges::new(ctx, &mut temporary, bytes)?;
-    for table in 0..bytes.len().saturating_sub(4) {
+    for table in bytes.len().checked_sub(4).into_iter().flat_map(|last| 0..last) {
         let Some(count) = View::u32_le_at(bytes, table).map(cadmpeg_core::decode::index_from_u32)
         else {
             continue;
@@ -4632,7 +4634,7 @@ pub(crate) fn indexed_sections<'a>(
             kind: IndexedCandidateKind::Fixed(index),
         });
     }
-    for count_offset in 8..bytes.len().saturating_sub(4) {
+    for count_offset in bytes.len().checked_sub(4).into_iter().flat_map(|last| 8..last) {
         let Some(record_count) =
             View::u32_le_at(bytes, count_offset).map(cadmpeg_core::decode::index_from_u32)
         else {
@@ -4681,9 +4683,9 @@ pub(crate) fn indexed_sections<'a>(
         // table; malformed payloads commonly satisfy the cheap monotonicity
         // checks while carrying no self-framed NX record at all.
         let product_record_count =
-            product_record_count_within(&product_record_ranges, first, second).saturating_add(
+            product_record_count_within(&product_record_ranges, first, second).checked_add(
                 product_record_count_within(&product_record_ranges, second, third),
-            );
+            ).ok_or_else(|| CodecError::Malformed("NX product record count overflow".into()))?;
         if product_record_count != 1 {
             continue;
         }
@@ -4725,7 +4727,7 @@ pub(crate) fn indexed_sections<'a>(
 
 /// Decode the first self-framed NX product/version marker in `bytes`.
 pub(crate) fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVersion<'_>> {
-    (0..bytes.len().saturating_sub(3)).find_map(|at| {
+    bytes.len().checked_sub(3).into_iter().flat_map(|last| 0..last).find_map(|at| {
         let product = ProductRecord::read(&bytes[at..], ProductRecordForm::Modern)?;
         Some(StoreVersion {
             offset: base_offset.checked_add(at)?,
