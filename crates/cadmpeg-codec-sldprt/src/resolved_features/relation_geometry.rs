@@ -809,12 +809,25 @@ pub(crate) fn project_relation_point_geometry(
                     .with_geometry_ref(geometry_ref),
             );
         }
-        let markers_by_id = lane
-            .sketch_entities
-            .iter()
-            .map(|marker| (marker.id(), marker))
-            .collect::<HashMap<_, _>>();
-        let marker_roster = lane.sketch_entities.iter().collect::<Vec<_>>();
+        let mut markers_by_id = HashMap::new();
+        let mut marker_roster = Vec::new();
+        ctx.reserve_collection_vec(
+            &mut marker_roster,
+            lane.sketch_entities.len(),
+            "collect SLDPRT relation-line marker roster",
+        )?;
+        for marker in &lane.sketch_entities {
+            let operation = "index SLDPRT relation-line markers";
+            ctx.charge_work(1, operation)?;
+            if !markers_by_id.contains_key(marker.id()) {
+                ctx.charge_collection_items(1, operation)?;
+                markers_by_id.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                })?;
+            }
+            markers_by_id.insert(marker.id(), marker);
+            marker_roster.push(marker);
+        }
         for marker in &lane.sketch_entities {
             let marker_offset = usize::try_from(marker.offset()).ok();
             let undetailed_arc_line = marker.kind() == SketchInputKind::Arc
@@ -875,31 +888,41 @@ pub(crate) fn project_relation_point_geometry(
                     .collect();
             }
             if endpoints.len() != 2 {
-                endpoints = self_linked_curve_handle
-                    .then_some(marker)
-                    .into_iter()
-                    .chain(
-                        marker
-                            .links()
-                            .iter()
-                            .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
-                            .filter(|endpoint| endpoint.id() != marker.id())
-                            .filter(|endpoint| {
-                                endpoint.feature_ref == marker.feature_ref
-                                    && endpoint.coordinates_m.is_some()
-                                    && entities.iter().any(|entity| {
-                                        entity.sketch == *sketch
-                                            && matches!(
-                                                *entity.geometry.definition(),
-                                                SketchGeometryDefinition::Point { .. }
-                                            )
-                                            && (entity.native_ref.as_deref() == Some(endpoint.id())
-                                                || entity.geometry_ref.as_deref()
-                                                    == Some(endpoint.id()))
-                                    })
-                            }),
-                    )
-                    .collect::<Vec<_>>();
+                endpoints.clear();
+                if self_linked_curve_handle {
+                    ctx.reserve_collection_vec(
+                        &mut endpoints,
+                        1,
+                        "collect SLDPRT relation-line fallback endpoints",
+                    )?;
+                    endpoints.push(marker);
+                }
+                for endpoint in marker
+                    .links()
+                    .iter()
+                    .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
+                    .filter(|endpoint| endpoint.id() != marker.id())
+                    .filter(|endpoint| {
+                        endpoint.feature_ref == marker.feature_ref
+                            && endpoint.coordinates_m.is_some()
+                            && entities.iter().any(|entity| {
+                                entity.sketch == *sketch
+                                    && matches!(
+                                        *entity.geometry.definition(),
+                                        SketchGeometryDefinition::Point { .. }
+                                    )
+                                    && (entity.native_ref.as_deref() == Some(endpoint.id())
+                                        || entity.geometry_ref.as_deref() == Some(endpoint.id()))
+                            })
+                    })
+                {
+                    ctx.reserve_collection_vec(
+                        &mut endpoints,
+                        1,
+                        "collect SLDPRT relation-line fallback endpoints",
+                    )?;
+                    endpoints.push(endpoint);
+                }
                 endpoints.sort_unstable_by_key(|endpoint| endpoint.offset());
                 endpoints.dedup_by_key(|endpoint| endpoint.id());
             }
@@ -919,19 +942,28 @@ pub(crate) fn project_relation_point_geometry(
                 Point2::new(second[0] * NATIVE_TO_IR, second[1] * NATIVE_TO_IR),
                 QUANTUM,
             );
-            let candidates = transforms
+            let mut unique_candidate = None;
+            let mut ambiguous = false;
+            for transform in transforms
                 .get(feature)
                 .into_iter()
                 .flatten()
-                .filter_map(|transform| {
-                    Some((
-                        transform.apply(first_native)?,
-                        transform.apply(second_native)?,
-                    ))
-                })
-                .collect::<HashSet<_>>();
-            let mut candidates = candidates.into_iter();
-            let (Some((start, end)), None) = (candidates.next(), candidates.next()) else {
+            {
+                ctx.charge_work(1, "scan SLDPRT relation-line transforms")?;
+                let (Some(start), Some(end)) = (
+                    transform.apply(first_native),
+                    transform.apply(second_native),
+                ) else {
+                    continue;
+                };
+                let candidate = (start, end);
+                if unique_candidate.is_some_and(|previous| previous != candidate) {
+                    ambiguous = true;
+                } else if unique_candidate.is_none() {
+                    unique_candidate = Some(candidate);
+                }
+            }
+            let Some((start, end)) = unique_candidate.filter(|_| !ambiguous) else {
                 continue;
             };
             if start == end {
@@ -950,34 +982,54 @@ pub(crate) fn project_relation_point_geometry(
             if already_present {
                 continue;
             }
+            let id_text = ctx.format_retained(
+                format_args!(
+                    "sldprt:model:sketch-entity#relation-line:{lane_key}:{}",
+                    marker.offset()
+                ),
+                "format SLDPRT relation-line entity identity",
+            )?;
+            let Ok(id) = SketchEntityId::mint(id_text) else {
+                continue;
+            };
+            let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end })
+            else {
+                continue;
+            };
+            let sketch_id = copy_planar_sketch_id(ctx, sketch)?;
+            let native_ref = if !matches!(marker.kind(), SketchInputKind::Relation(_)) {
+                Some(ctx.format_retained(
+                    format_args!("{}", marker.id()),
+                    "copy SLDPRT relation-line native reference",
+                )?)
+            } else {
+                None
+            };
+            let geometry_ref = if matches!(marker.kind(), SketchInputKind::Relation(_)) {
+                Some(ctx.format_retained(
+                    format_args!("{}", marker.id()),
+                    "copy SLDPRT relation-line geometry reference",
+                )?)
+            } else {
+                None
+            };
+            let endpoint_refs = vec![
+                ctx.format_retained(
+                    format_args!("{}", first_marker.id()),
+                    "copy SLDPRT relation-line first endpoint reference",
+                )?,
+                ctx.format_retained(
+                    format_args!("{}", second_marker.id()),
+                    "copy SLDPRT relation-line second endpoint reference",
+                )?,
+            ];
+            ctx.reserve_collection_vec(entities, 1, "append SLDPRT relation line")?;
             entities.push(
-                SketchEntity::new(
-                    match SketchEntityId::mint(format!(
-                        "sldprt:model:sketch-entity#relation-line:{lane_key}:{}",
-                        marker.offset()
-                    )) {
-                        Ok(id) => id,
-                        Err(_) => continue,
-                    },
-                    sketch.clone(),
-                    match SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }) {
-                        Ok(geometry) => geometry,
-                        Err(_) => continue,
-                    },
-                )
-                .with_construction(true)
-                .with_native_ref(
-                    (!matches!(marker.kind(), SketchInputKind::Relation(_)))
-                        .then(|| marker.id().to_string()),
-                )
-                .with_geometry_ref(
-                    matches!(marker.kind(), SketchInputKind::Relation(_))
-                        .then(|| marker.id().to_string()),
-                )
-                .with_endpoint_refs(vec![
-                    first_marker.id().to_string(),
-                    second_marker.id().to_string(),
-                ]),
+                SketchEntity::new(id, sketch_id, geometry)
+                    .with_construction(true)
+                    .with_native_ref(native_ref)
+                    .with_geometry_ref(geometry_ref)
+                    .with_endpoint_refs(endpoint_refs),
             );
         }
     }
