@@ -1955,7 +1955,9 @@ pub(in crate::decode) fn planar_curve_pcurve(
     geometry: &CurveGeometry,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<PcurveGeometry> {
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    let mut resource_error = None;
+    let result = (|| -> Option<PcurveGeometry> {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return None;
     };
@@ -2073,16 +2075,96 @@ pub(in crate::decode) fn planar_curve_pcurve(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             nurbs_intrinsic_parameter_range(nurbs)?;
             let tolerance = EPS_AGREE * nurbs_control_extent(nurbs);
-            let control_points = nurbs
-                .control_points()
-                .iter()
-                .map(|point| project_point([point.x, point.y, point.z], tolerance))
-                .collect::<Option<Vec<_>>>()?;
-            match PcurveNurbs::from_checked_lanes(
+            let poles = match nurbs.pole_rows() {
+                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+                    let mut projected = Vec::new();
+                    if let Err(error) = ctx.try_reserve_items(
+                        &mut projected,
+                        points.len(),
+                        "creo planar projected NURBS poles",
+                    ) {
+                        resource_error = Some(error);
+                        return None;
+                    }
+                    for point in points {
+                        let point = point.get();
+                        let projected_point = project_point([point.x, point.y, point.z], tolerance)?;
+                        let Some(projected_point) = cadmpeg_ir::units::FinitePoint2::new(projected_point) else {
+                            let reason = match ctx.copy_retained_text(
+                                "control_points contains a non-finite point",
+                                "creo planar projected NURBS refusal text",
+                            ) {
+                                Ok(reason) => reason,
+                                Err(error) => {
+                                    resource_error = Some(error);
+                                    return None;
+                                }
+                            };
+                            refusal.note_checked(
+                                ctx,
+                                format_args!("creo planar-curve pcurve record for {record}"),
+                                &cadmpeg_ir::geometry::nurbs::NurbsError::Structure(reason),
+                            );
+                            return None;
+                        };
+                        projected.push(projected_point);
+                    }
+                    cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points: projected }
+                }
+                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                    let mut projected = Vec::new();
+                    if let Err(error) = ctx.try_reserve_items(
+                        &mut projected,
+                        points.len(),
+                        "creo planar projected NURBS poles",
+                    ) {
+                        resource_error = Some(error);
+                        return None;
+                    }
+                    for pole in points {
+                        let point = pole.point.get();
+                        let projected_point = project_point([point.x, point.y, point.z], tolerance)?;
+                        let Some(projected_point) = cadmpeg_ir::units::FinitePoint2::new(projected_point) else {
+                            let reason = match ctx.copy_retained_text(
+                                "control_points contains a non-finite point",
+                                "creo planar projected NURBS refusal text",
+                            ) {
+                                Ok(reason) => reason,
+                                Err(error) => {
+                                    resource_error = Some(error);
+                                    return None;
+                                }
+                            };
+                            refusal.note_checked(
+                                ctx,
+                                format_args!("creo planar-curve pcurve record for {record}"),
+                                &cadmpeg_ir::geometry::nurbs::NurbsError::Structure(reason),
+                            );
+                            return None;
+                        };
+                        projected.push(cadmpeg_ir::geometry::pcurve::WeightedPole2 {
+                            point: projected_point,
+                            weight: pole.weight,
+                        });
+                    }
+                    cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points: projected }
+                }
+            };
+            let knots = match ctx.try_collection(
+                nurbs.knots().len(),
+                "creo planar projected NURBS knots",
+                || nurbs.knots().try_clone(),
+            ) {
+                Ok(knots) => knots,
+                Err(error) => {
+                    resource_error = Some(error);
+                    return None;
+                }
+            };
+            match PcurveNurbs::new_admitted_poles(
                 nurbs.degree(),
-                nurbs.knots().clone(),
-                control_points,
-                nurbs.weights(),
+                knots,
+                poles,
                 nurbs.periodic(),
             ) {
                 Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
@@ -2096,6 +2178,11 @@ pub(in crate::decode) fn planar_curve_pcurve(
             }
         }
         _ => None,
+    }
+    })();
+    match resource_error {
+        Some(error) => Err(error),
+        None => Ok(result),
     }
 }
 

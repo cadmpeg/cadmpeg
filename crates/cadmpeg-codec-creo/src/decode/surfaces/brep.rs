@@ -2692,6 +2692,7 @@ pub(in super::super) fn transfer_native_brep(
                     let native_candidates = native_pcurves.get(&(half_edge.curve_id, *face_id));
                     let mut refusal = crate::lane_refusal::LaneRefusals::new();
                     let refusal_cell = &mut refusal;
+                    let mut planar_resource_error = None;
                     let pcurve_geometry = native_candidates
                         .and_then(|candidates| {
                             let incidence = incidence.get(half_edge)?;
@@ -2748,7 +2749,7 @@ pub(in super::super) fn transfer_native_brep(
                                         half_edge.curve_id,
                                     )),
                             )?;
-                            let (geometry, tag) = planar_curve_pcurve(
+                            let planar = match planar_curve_pcurve(
                                 ctx,
                                 source_carriers.surface_geometry(surface),
                                 source_carriers.curve_geometry(curve),
@@ -2757,7 +2758,17 @@ pub(in super::super) fn transfer_native_brep(
                                     half_edge.curve_id
                                 ),
                                 refusal_cell,
-                            )
+                            ) {
+                                Ok(planar) => planar,
+                                Err(error) => {
+                                    planar_resource_error = Some(error);
+                                    None
+                                }
+                            };
+                            if planar_resource_error.is_some() {
+                                return None;
+                            }
+                            let (geometry, tag) = planar
                             .map(|geometry| (geometry, "projected_planar_pcurve"))
                             .or_else(|| {
                                 surface_of_revolution_parallel_pcurve(
@@ -2787,6 +2798,9 @@ pub(in super::super) fn transfer_native_brep(
                                 tag,
                             ))
                         });
+                    if let Some(error) = planar_resource_error {
+                        return Err(error);
+                    }
                     let refused = refusal.take_records_checked()?;
                     if pcurve_geometry.is_none() {
                         for record in refused {
