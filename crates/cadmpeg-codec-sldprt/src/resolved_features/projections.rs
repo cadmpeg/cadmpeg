@@ -1709,10 +1709,11 @@ fn full_round_fillet_selection_triple<'a>(
 }
 
 pub(crate) fn project_draft_operands(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let feature_ids_by_native = features
         .iter()
         .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
@@ -1722,16 +1723,21 @@ pub(crate) fn project_draft_operands(
         .flat_map(|history| &history.features)
         .cloned()
         .collect::<Vec<_>>();
-    let candidates = lanes
-        .iter()
-        .flat_map(|lane| draft_operand_candidates(histories, lane))
-        .fold(
-            HashMap::<String, Vec<DraftOperands>>::new(),
-            |mut by_feature, (feature, operands)| {
-                by_feature.entry(feature).or_default().push(operands);
-                by_feature
-            },
-        );
+    let mut candidates = HashMap::<String, Vec<DraftOperands>>::new();
+    for lane in lanes {
+        for (feature, operands) in draft_operand_candidates(ctx, histories, lane)? {
+            const OPERATION: &str = "group SLDPRT draft operand candidates";
+            if !candidates.contains_key(&feature) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                candidates.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                })?;
+            }
+            let by_feature = candidates.entry(feature).or_default();
+            ctx.reserve_collection_vec(by_feature, 1, OPERATION)?;
+            by_feature.push(operands);
+        }
+    }
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
@@ -1817,6 +1823,7 @@ pub(crate) fn project_draft_operands(
         }
         feature.evaluation.set_definition(definition);
     }
+    Ok(())
 }
 
 fn draft_face_selection(
