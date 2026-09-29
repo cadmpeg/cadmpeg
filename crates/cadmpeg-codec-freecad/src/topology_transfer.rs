@@ -641,7 +641,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             "FreeCAD body identity",
         )?)
         .map_err(CodecError::malformed)?;
-        self.current_body = Some(body_id.try_clone_for_decode(self.ctx, "FreeCAD current body identity")?);
+        self.current_body =
+            Some(body_id.try_clone_for_decode(self.ctx, "FreeCAD current body identity")?);
         let kind = match root_kind {
             TextShapeKind::Solid => BodyKind::Solid,
             TextShapeKind::Wire | TextShapeKind::Edge => BodyKind::Wire,
@@ -835,7 +836,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .collection_vec(components.len(), "FreeCAD shell components")?;
             for (component_index, component) in components.iter().enumerate() {
                 let component_id = if component_index == 0 {
-                    shell_id.try_clone_for_decode(self.ctx, "FreeCAD first shell component identity")?
+                    shell_id
+                        .try_clone_for_decode(self.ctx, "FreeCAD first shell component identity")?
                 } else {
                     self.shell_component_id(&key, component_index)?
                 };
@@ -857,8 +859,14 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     .reserve_vec(&mut ir.model.shells, 1, "FreeCAD shells records")?;
                 ir.model.shells.push(
                     Shell::new(
-                        component_id.try_clone_for_decode(self.ctx, "FreeCAD component shell record identity")?,
-                        region.try_clone_for_decode(self.ctx, "FreeCAD component shell region identity")?,
+                        component_id.try_clone_for_decode(
+                            self.ctx,
+                            "FreeCAD component shell record identity",
+                        )?,
+                        region.try_clone_for_decode(
+                            self.ctx,
+                            "FreeCAD component shell region identity",
+                        )?,
                         faces,
                         Vec::new(),
                         Vec::new(),
@@ -927,8 +935,14 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     .reserve_vec(&mut ir.model.shells, 1, "FreeCAD shells records")?;
                 ir.model.shells.push(
                     Shell::new(
-                        shell_id.try_clone_for_decode(self.ctx, "FreeCAD vertex shell record identity")?,
-                        region.try_clone_for_decode(self.ctx, "FreeCAD vertex shell region identity")?,
+                        shell_id.try_clone_for_decode(
+                            self.ctx,
+                            "FreeCAD vertex shell record identity",
+                        )?,
+                        region.try_clone_for_decode(
+                            self.ctx,
+                            "FreeCAD vertex shell region identity",
+                        )?,
                         faces,
                         wire_edges,
                         vec![vertex],
@@ -1297,7 +1311,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 let edge = self.ensure_edge(ir, edge_use, wire_transform)?;
                 let pcurve =
                     self.face_pcurve(edge_use, edge_transform, surface, surface_transform)?;
-                let id: CoedgeId = coedge_ids[index].try_clone_for_decode(self.ctx, "FreeCAD coedge radial identity")?;
+                let id: CoedgeId = coedge_ids[index]
+                    .try_clone_for_decode(self.ctx, "FreeCAD coedge radial identity")?;
                 self.ctx
                     .reserve_vec(&mut ir.model.coedges, 1, "FreeCAD coedges records")?;
                 ir.model.coedges.push(Coedge {
@@ -1659,7 +1674,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .map_err(location_transform_error)?,
         );
         if let Some(id) = self.vertices.get(&key) {
-            let id: VertexId = id.try_clone_for_decode(self.ctx, "FreeCAD cached vertex lookup identity")?;
+            let id: VertexId =
+                id.try_clone_for_decode(self.ctx, "FreeCAD cached vertex lookup identity")?;
             self.bind_topology(
                 TextShapeKind::Vertex,
                 vertex_use.shape,
@@ -1874,7 +1890,10 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             if has_procedural_construction {
                 ir.model
                     .add_procedural_surface(
-                        &id.try_clone_for_decode(self.ctx, "FreeCAD procedural surface owner identity")?,
+                        &id.try_clone_for_decode(
+                            self.ctx,
+                            "FreeCAD procedural surface owner identity",
+                        )?,
                         ProceduralSurface::new(
                             ProceduralSurfaceId::compose(
                                 &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),

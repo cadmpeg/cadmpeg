@@ -914,7 +914,8 @@ pub(super) fn emit_pcurves(
                 )?;
             }
             for occurrence in occurrences {
-                let use_id = id.try_clone_for_decode(admission.context(), "catia_b5_pcurve_use_id")?;
+                let use_id =
+                    id.try_clone_for_decode(admission.context(), "catia_b5_pcurve_use_id")?;
                 admission.context().insert_hash_map(
                     &mut pcurve_uses,
                     occurrence,
@@ -922,7 +923,8 @@ pub(super) fn emit_pcurves(
                     "catia_b5_pcurve_uses",
                 )?;
             }
-            let geometry = geometry.try_clone_for_decode(admission.context(), "catia_b5_emitted_pcurve_geometry")?;
+            let geometry = geometry
+                .try_clone_for_decode(admission.context(), "catia_b5_emitted_pcurve_geometry")?;
             admission.reserve_entity(&mut ir.model.pcurves, "catia_b5_emit_pcurves")?;
             ir.model.pcurves.push(Pcurve {
                 id,

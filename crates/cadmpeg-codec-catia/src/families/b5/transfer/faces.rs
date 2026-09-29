@@ -539,7 +539,8 @@ pub(super) fn emit_faces(
             .context()
             .push_vec(&mut body_regions, id, "catia_b5_body_regions")?;
     }
-    let body_record_id = body_id.try_clone_for_decode(admission.context(), "catia_b5_body_record_id")?;
+    let body_record_id =
+        body_id.try_clone_for_decode(admission.context(), "catia_b5_body_record_id")?;
     admission.reserve_entity(&mut ir.model.bodies, "catia_b5_emit_bodies")?;
     ir.model.bodies.push(Body {
         id: body_record_id,
@@ -551,7 +552,8 @@ pub(super) fn emit_faces(
         visible: None,
     });
     for (component_index, component_faces) in &components {
-        let region_id = region_ids[component_index].try_clone_for_decode(admission.context(), "catia_b5_region_ref_id")?;
+        let region_id = region_ids[component_index]
+            .try_clone_for_decode(admission.context(), "catia_b5_region_ref_id")?;
         let shell_id = crate::resource::compose_index_id(
             admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "shell"),
@@ -576,9 +578,12 @@ pub(super) fn emit_faces(
                 "catia_b5_region_annotation",
             )?;
         }
-        let region_record_id = region_id.try_clone_for_decode(admission.context(), "catia_b5_region_record_id")?;
-        let region_body_id = body_id.try_clone_for_decode(admission.context(), "catia_b5_region_body_id")?;
-        let region_shell_id = shell_id.try_clone_for_decode(admission.context(), "catia_b5_region_shell_id")?;
+        let region_record_id =
+            region_id.try_clone_for_decode(admission.context(), "catia_b5_region_record_id")?;
+        let region_body_id =
+            body_id.try_clone_for_decode(admission.context(), "catia_b5_region_body_id")?;
+        let region_shell_id =
+            shell_id.try_clone_for_decode(admission.context(), "catia_b5_region_shell_id")?;
         let mut region_shells = Vec::new();
         admission.context().push_vec(
             &mut region_shells,
@@ -684,9 +689,12 @@ pub(super) fn emit_faces(
                 "catia_b5_face_annotation",
             )?;
         }
-        let face_record_id = face_id.try_clone_for_decode(admission.context(), "catia_b5_face_record_id")?;
-        let face_shell_id = shell_id.try_clone_for_decode(admission.context(), "catia_b5_face_shell_ref")?;
-        let face_surface_id = surface_ids[&face.surface].try_clone_for_decode(admission.context(), "catia_b5_face_surface_ref")?;
+        let face_record_id =
+            face_id.try_clone_for_decode(admission.context(), "catia_b5_face_record_id")?;
+        let face_shell_id =
+            shell_id.try_clone_for_decode(admission.context(), "catia_b5_face_shell_ref")?;
+        let face_surface_id = surface_ids[&face.surface]
+            .try_clone_for_decode(admission.context(), "catia_b5_face_surface_ref")?;
         let face_loop_copy = copy_face_loops(admission.context(), &face_loops)?;
         admission.reserve_entity(&mut ir.model.faces, "catia_b5_emit_faces")?;
         ir.model.faces.push(Face {
@@ -730,7 +738,8 @@ pub(super) fn emit_faces(
             }
             let mut coedge_ids = Vec::new();
             for member in orientation.member_order() {
-                let id = coedge_ids_by_member[member].try_clone_for_decode(admission.context(), "catia_b5_oriented_coedge_id")?;
+                let id = coedge_ids_by_member[member]
+                    .try_clone_for_decode(admission.context(), "catia_b5_oriented_coedge_id")?;
                 admission.context().push_vec(
                     &mut coedge_ids,
                     id,
@@ -748,7 +757,8 @@ pub(super) fn emit_faces(
                     "catia_b5_loop_vertex_use_id",
                 )?)
                 .map_err(CodecError::malformed)?;
-                let after = coedge_ids_by_member[member].try_clone_for_decode(admission.context(), "catia_b5_loop_vertex_after_id")?;
+                let after = coedge_ids_by_member[member]
+                    .try_clone_for_decode(admission.context(), "catia_b5_loop_vertex_after_id")?;
                 admission.context().push_vec(
                     &mut vertex_uses,
                     AnchoredVertexUse {
@@ -788,8 +798,10 @@ pub(super) fn emit_faces(
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses) else {
                 return Ok(false);
             };
-            let loop_record_id = loop_id.try_clone_for_decode(admission.context(), "catia_b5_loop_record_id")?;
-            let loop_face_id = face_id.try_clone_for_decode(admission.context(), "catia_b5_loop_face_id")?;
+            let loop_record_id =
+                loop_id.try_clone_for_decode(admission.context(), "catia_b5_loop_record_id")?;
+            let loop_face_id =
+                face_id.try_clone_for_decode(admission.context(), "catia_b5_loop_face_id")?;
             admission.reserve_entity(&mut ir.model.loops, "catia_b5_emit_loops")?;
             ir.model.loops.push(Loop {
                 id: loop_record_id,
@@ -799,7 +811,8 @@ pub(super) fn emit_faces(
             for member in orientation.member_order() {
                 let edge = loop_.members[member].edge;
                 let reversed = orientation.members[member].reversed;
-                let id = coedge_ids_by_member[member].try_clone_for_decode(admission.context(), "catia_b5_coedge_emit_id")?;
+                let id = coedge_ids_by_member[member]
+                    .try_clone_for_decode(admission.context(), "catia_b5_coedge_emit_id")?;
                 annotate(
                     admission.context(),
                     annotations,
@@ -828,9 +841,12 @@ pub(super) fn emit_faces(
                     arena_index,
                     "catia_b5_coedge_radial_occurrences",
                 )?;
-                let coedge_record_id = id.try_clone_for_decode(admission.context(), "catia_b5_coedge_record_id")?;
-                let owner_loop_id = loop_id.try_clone_for_decode(admission.context(), "catia_b5_coedge_owner_loop_id")?;
-                let edge_ref_id = edge_id_map[&edge].try_clone_for_decode(admission.context(), "catia_b5_coedge_edge_id")?;
+                let coedge_record_id =
+                    id.try_clone_for_decode(admission.context(), "catia_b5_coedge_record_id")?;
+                let owner_loop_id = loop_id
+                    .try_clone_for_decode(admission.context(), "catia_b5_coedge_owner_loop_id")?;
+                let edge_ref_id = edge_id_map[&edge]
+                    .try_clone_for_decode(admission.context(), "catia_b5_coedge_edge_id")?;
                 let mut coedge_pcurves = Vec::new();
                 if let Some((pcurve, parameter_range)) = pcurve_uses.get(&(loop_.object_id, member))
                 {
@@ -845,7 +861,8 @@ pub(super) fn emit_faces(
                     } else {
                         None
                     };
-                    let pcurve_id = pcurve.try_clone_for_decode(admission.context(), "catia_b5_coedge_pcurve_id")?;
+                    let pcurve_id = pcurve
+                        .try_clone_for_decode(admission.context(), "catia_b5_coedge_pcurve_id")?;
                     admission.context().push_vec(
                         &mut coedge_pcurves,
                         cadmpeg_ir::topology::PcurveUse {
@@ -876,7 +893,9 @@ pub(super) fn emit_faces(
     for occurrences in coedges_by_edge.values() {
         for (position, &arena_index) in occurrences.iter().enumerate() {
             let radial = occurrences[(position + 1) % occurrences.len()];
-            let next = ir.model.coedges[radial].id.try_clone_for_decode(admission.context(), "catia_b5_radial_next_id")?;
+            let next = ir.model.coedges[radial]
+                .id
+                .try_clone_for_decode(admission.context(), "catia_b5_radial_next_id")?;
             ir.model.coedges[arena_index].radial_next = next;
         }
     }

@@ -5857,7 +5857,9 @@ fn decode_pcurves(
                 .then(cadmpeg_ir::identity_key!(".trim-"))
                 .then(index),
         );
-        let knots = nurbs.knots().try_clone_for_decode(ctx, "Rhino Brep pcurve knots")?;
+        let knots = nurbs
+            .knots()
+            .try_clone_for_decode(ctx, "Rhino Brep pcurve knots")?;
         let nurbs =
             match PcurveNurbs::from_admitted_rows(nurbs.degree(), knots, poles, nurbs.periodic()) {
                 Ok(nurbs) => nurbs,

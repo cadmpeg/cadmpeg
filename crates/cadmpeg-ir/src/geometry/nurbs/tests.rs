@@ -13,10 +13,14 @@ fn knot_copy_refuses_collection_limit_before_allocation() {
     policy.limits.max_collection_items = 3;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty input");
-    let error = knots.try_clone_for_decode(&ctx, "knot copy").expect_err("limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    let error = knots
+        .try_clone_for_decode(&ctx, "knot copy")
+        .expect_err("limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "knot copy"));
+            && limit.operation == "knot copy")
+    );
 }
 
 #[test]
@@ -27,10 +31,14 @@ fn knot_copy_refuses_retained_limit_before_allocation() {
     policy.limits.max_retained_bytes = 31;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty input");
-    let error = knots.try_clone_for_decode(&ctx, "knot copy").expect_err("limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    let error = knots
+        .try_clone_for_decode(&ctx, "knot copy")
+        .expect_err("limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && limit.operation == "knot copy"));
+            && limit.operation == "knot copy")
+    );
 }
 
 #[test]
@@ -40,7 +48,12 @@ fn knot_copy_succeeds_under_service_profile() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty input");
-    assert_eq!(knots.try_clone_for_decode(&ctx, "knot copy").expect("service budget"), knots);
+    assert_eq!(
+        knots
+            .try_clone_for_decode(&ctx, "knot copy")
+            .expect("service budget"),
+        knots
+    );
 }
 
 #[test]

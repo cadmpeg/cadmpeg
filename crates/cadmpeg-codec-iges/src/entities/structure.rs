@@ -1563,7 +1563,10 @@ fn bounded_plane_curve_is_simple(
                 if active.contains(&segment.curve) {
                     return Ok(false);
                 }
-                let active_id = segment.curve.try_clone_for_decode(Some(context.ctx), "iges plane boundary child curve ID")?;
+                let active_id = segment.curve.try_clone_for_decode(
+                    Some(context.ctx),
+                    "iges plane boundary child curve ID",
+                )?;
                 cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                     Some(context.ctx),
                     active,
@@ -1736,7 +1739,8 @@ fn plane_boundary_edge(
         .get(&boundary_sequence)
         .is_some_and(|entry| entry.entity_type == 106 && entry.form == 63);
     let mut active = BTreeSet::new();
-    let active_id = curve_id.try_clone_for_decode(Some(ctx), "iges plane boundary active curve ID")?;
+    let active_id =
+        curve_id.try_clone_for_decode(Some(ctx), "iges plane boundary active curve ID")?;
     if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
         Some(ctx),
         &mut active,
@@ -1805,7 +1809,9 @@ fn plane_face_draft(
     let mut candidate = ModelDraft::new();
     let mut loop_ids = ctx.collection_vec(boundary_edges.len(), "iges legacy plane loop IDs")?;
     for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
-        let edge_id = edge.id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
+        let edge_id = edge
+            .id
+            .try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
         ctx.reserve_vec(
             &mut candidate.model_mut().edges,
             1,
@@ -1825,7 +1831,8 @@ fn plane_face_draft(
             id: coedge_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
             owner_loop: loop_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
             edge: edge_id,
-            radial_next: coedge_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+            radial_next: coedge_id
+                .try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
@@ -2045,7 +2052,9 @@ fn legacy_single_parent_face(
             ctx,
         )?;
         edge.id = edge_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
-        edge.end = edge.start.try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
+        edge.end = edge
+            .start
+            .try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
         boundary_edges.push(edge);
     }
     let stem =
@@ -3145,7 +3154,9 @@ pub(super) fn project(
                         ),
                         ctx,
                     )?;
-                    edge.end = edge.start.try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
+                    edge.end = edge
+                        .start
+                        .try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
                     let stem = crate::ids::Stem::word_directory(
                         crate::ids::Word::BoundedPlane,
                         entry.sequence,

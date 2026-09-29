@@ -994,8 +994,10 @@ pub(super) fn standard_oriented_native_support_pcurves(
 ) -> Result<Option<[PcurveGeometry; 2]>, cadmpeg_core::CodecError> {
     let copy_native = || -> Result<[PcurveGeometry; 2], cadmpeg_core::CodecError> {
         Ok([
-            native.pcurves[0].try_clone_for_decode(ctx, "catia_standard_native_support_pcurve_copy")?,
-            native.pcurves[1].try_clone_for_decode(ctx, "catia_standard_native_support_pcurve_copy")?,
+            native.pcurves[0]
+                .try_clone_for_decode(ctx, "catia_standard_native_support_pcurve_copy")?,
+            native.pcurves[1]
+                .try_clone_for_decode(ctx, "catia_standard_native_support_pcurve_copy")?,
         ])
     };
     let Some(native_pair) =
@@ -1134,7 +1136,16 @@ pub(super) fn build_standard_edge_curve(
                         ),
                         None => (
                             CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                                record: Some(ctx.copy_retained_text("catia:payload:unknown#brep-stream", "catia_standard_unknown_curve_record_id").and_then(|text| UnknownId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?),
+                                record: Some(
+                                    ctx.copy_retained_text(
+                                        "catia:payload:unknown#brep-stream",
+                                        "catia_standard_unknown_curve_record_id",
+                                    )
+                                    .and_then(|text| {
+                                        UnknownId::mint(text)
+                                            .map_err(cadmpeg_core::CodecError::malformed)
+                                    })?,
+                                ),
                             }),
                             None,
                         ),
@@ -1223,7 +1234,15 @@ pub(super) fn build_standard_edge_curve(
                 }
                 None => (
                     CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                        record: Some(ctx.copy_retained_text("catia:payload:unknown#brep-stream", "catia_standard_unknown_curve_record_id").and_then(|text| UnknownId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?),
+                        record: Some(
+                            ctx.copy_retained_text(
+                                "catia:payload:unknown#brep-stream",
+                                "catia_standard_unknown_curve_record_id",
+                            )
+                            .and_then(|text| {
+                                UnknownId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
+                            })?,
+                        ),
                     }),
                     None,
                 ),
@@ -1267,7 +1286,17 @@ pub(super) fn build_standard_edge_curve(
                                     Some(geometry) => (geometry, None),
                                     None => (
                                         CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                                            record: Some(ctx.copy_retained_text("catia:payload:unknown#brep-stream", "catia_standard_unknown_curve_record_id").and_then(|text| UnknownId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?),
+                                            record: Some(
+                                                ctx.copy_retained_text(
+                                                    "catia:payload:unknown#brep-stream",
+                                                    "catia_standard_unknown_curve_record_id",
+                                                )
+                                                .and_then(|text| {
+                                                    UnknownId::mint(text).map_err(
+                                                        cadmpeg_core::CodecError::malformed,
+                                                    )
+                                                })?,
+                                            ),
                                         }),
                                         None,
                                     ),
@@ -1508,7 +1537,10 @@ pub(super) fn build_standard_edge_curve(
             let side = |face| -> Result<IntcurveSupportSide, CodecError> {
                 let surface = match bindings.get(face) {
                     Some((id, _, _)) if surface_indices.contains_key(id) => {
-                        Some(id.try_clone_for_decode(ctx, "catia_standard_intersection_side_surface_id")?)
+                        Some(id.try_clone_for_decode(
+                            ctx,
+                            "catia_standard_intersection_side_surface_id",
+                        )?)
                     }
                     _ => None,
                 };
@@ -1613,7 +1645,10 @@ pub(super) fn ensure_native_edge_support_surface(
     let source_matches_empty = source_match.is_none();
     if !source_ambiguous {
         if let Some(surface_id) = source_match {
-            return surface_id.try_clone_for_decode(admission.context(), "catia_native_edge_support_matched_surface_id");
+            return surface_id.try_clone_for_decode(
+                admission.context(),
+                "catia_native_edge_support_matched_surface_id",
+            );
         }
     }
     if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
@@ -1633,7 +1668,10 @@ pub(super) fn ensure_native_edge_support_surface(
         }
         if source_matches_empty && !geometry_ambiguous {
             if let Some(surface_id) = geometry_match {
-                return surface_id.try_clone_for_decode(admission.context(), "catia_native_edge_support_matched_surface_id");
+                return surface_id.try_clone_for_decode(
+                    admission.context(),
+                    "catia_native_edge_support_matched_surface_id",
+                );
             }
         }
     }
@@ -1650,7 +1688,10 @@ pub(super) fn ensure_native_edge_support_surface(
             let copy = match geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                        surface.try_clone_for_decode(admission.context(), "catia_native_edge_support_geometry")?,
+                        surface.try_clone_for_decode(
+                            admission.context(),
+                            "catia_native_edge_support_geometry",
+                        )?,
                     ))
                 }
                 _ => geometry.clone(),
@@ -1667,7 +1708,10 @@ pub(super) fn ensure_native_edge_support_surface(
             )?;
             (
                 SurfaceGeometry::Procedural {
-                    construction: procedural_id.try_clone_for_decode(admission.context(), "catia_native_edge_support_construction_id")?,
+                    construction: procedural_id.try_clone_for_decode(
+                        admission.context(),
+                        "catia_native_edge_support_construction_id",
+                    )?,
                     cache: None,
                 },
                 Some(procedural_id),

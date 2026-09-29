@@ -60,9 +60,7 @@ pub(crate) fn admit_optional_entities(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        admit_optional_entities, lossy_retained,
-    };
+    use super::{admit_optional_entities, lossy_retained};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 

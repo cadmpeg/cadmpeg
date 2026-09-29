@@ -1211,7 +1211,8 @@ pub(super) fn project(
             });
         let payload = match range {
             Ok(range) => {
-                let source_id = offset_source_id.try_clone_for_decode(ctx, "iges offset procedural source identity")?;
+                let source_id = offset_source_id
+                    .try_clone_for_decode(ctx, "iges offset procedural source identity")?;
                 cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::with_unit_plane_normal(
                     source_id, distance, normal, Some(range),
                 )
@@ -1250,7 +1251,8 @@ pub(super) fn project(
             )?;
             crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
             ir.model.curves.push(Curve {
-                id: offset_source_id.try_clone_for_decode(ctx, "iges offset placed source identity")?,
+                id: offset_source_id
+                    .try_clone_for_decode(ctx, "iges offset placed source identity")?,
                 geometry: CurveGeometry::Solved(placed_geometry),
                 source_object: Some(match source_object(entry, ctx) {
                     Ok(source) => source,
