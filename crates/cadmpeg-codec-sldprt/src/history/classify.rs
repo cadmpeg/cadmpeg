@@ -397,7 +397,7 @@ pub(super) fn principal_plane_in_history(
         }
     }
 
-    let triplets = history_features
+    let mut triplets = history_features
         .windows(4)
         .filter_map(|records| {
             let [front, top, right, successor] = records else {
@@ -435,12 +435,11 @@ pub(super) fn principal_plane_in_history(
                 return None;
             }
             Some([front, top, right])
-        })
-        .collect::<Vec<_>>();
-    let [triplet] = triplets.as_slice() else {
+        });
+    let [front, top, right] = triplets.next()?;
+    if triplets.next().is_some() {
         return None;
-    };
-    let [front, top, right] = *triplet;
+    }
     match feature.id.as_str() {
         id if id == front.id => Some(PrincipalPlane::Front),
         id if id == top.id => Some(PrincipalPlane::Top),
