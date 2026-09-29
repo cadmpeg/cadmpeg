@@ -1707,32 +1707,20 @@ fn resolve_identity(
             ctx,
             format_args!("object at {} has nil object UUID", descriptor.range.start),
         )?;
-        crate::wire::admitted_format(
-            ctx,
-            format_args!(
+        ctx.format_retained(format_args!(
                 "rhino:object:record#record-{index:06}-offset-{}",
                 descriptor.range.start
-            ),
-            "Rhino identity source ID",
-        )?
+            ), "Rhino identity source ID")?
     } else if seen_ids.contains(&object_id) {
         warnings.push_admitted(ctx, format_args!("duplicate object UUID {object_id}"))?;
-        crate::wire::admitted_format(
-            ctx,
-            format_args!(
+        ctx.format_retained(format_args!(
                 "rhino:object:record#record-{index:06}-offset-{}",
                 descriptor.range.start
-            ),
-            "Rhino identity source ID",
-        )?
+            ), "Rhino identity source ID")?
     } else {
-        crate::wire::reserve_hash_set(ctx, seen_ids, 1, "Rhino identity seen UUIDs")?;
+        ctx.reserve_set(seen_ids, 1, "Rhino identity seen UUIDs")?;
         seen_ids.insert(object_id);
-        crate::wire::admitted_format(
-            ctx,
-            format_args!("rhino:object:record#{object_id}"),
-            "Rhino identity source ID",
-        )?
+        ctx.format_retained(format_args!("rhino:object:record#{object_id}"), "Rhino identity source ID")?
     };
     let layer = layer
         .map(|value| {
@@ -1991,14 +1979,10 @@ pub(crate) fn degraded_object_record(
 ) -> Result<ObjectRecord<()>, cadmpeg_core::CodecError> {
     Ok(ObjectRecord::Degraded {
         range: record.range.clone(),
-        warning: crate::wire::admitted_format(
-            ctx,
-            format_args!(
+        warning: ctx.format_retained(format_args!(
                 "bounded object record at {} degraded: {error}",
                 record.range.start
-            ),
-            "Rhino degraded object warning",
-        )?,
+            ), "Rhino degraded object warning")?,
     })
 }
 
@@ -2016,7 +2000,7 @@ pub(crate) fn resolve_identities(
     }
     let mut resolved = Vec::new();
     for (index, object) in objects.into_iter().enumerate() {
-        crate::wire::reserve_collection(ctx, &mut resolved, 1, "Rhino resolved object identities")?;
+        ctx.reserve_vec(&mut resolved, 1, "Rhino resolved object identities")?;
         resolved.push(match object {
             ObjectRecord::Degraded { range, warning } => ObjectRecord::Degraded { range, warning },
             ObjectRecord::Framed(mut object) => {
@@ -2085,12 +2069,7 @@ impl<'a> LayerLookup<'a> {
         layer: &'a crate::settings::LayerRecord,
     ) -> Result<(), cadmpeg_core::CodecError> {
         if !self.entries.contains_key(&layer.index) {
-            crate::wire::reserve_hash_map(
-                ctx,
-                &mut self.entries,
-                1,
-                "Rhino identity layer lookup",
-            )?;
+            ctx.reserve_map(&mut self.entries, 1, "Rhino identity layer lookup")?;
         }
         match self.entries.entry(layer.index) {
             std::collections::hash_map::Entry::Vacant(entry) => {

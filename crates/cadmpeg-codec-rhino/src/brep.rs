@@ -16,7 +16,7 @@ use crate::chunks::{
     chunk_at, verify_checksum, verify_checksum_ranges, ArchiveVersion, BoundedReader,
     ChecksumStatus, Chunk, FramingError,
 };
-use crate::curves::{charged_vec, error, reserve_collection, GeometryError};
+use crate::curves::{charged_vec, error, GeometryError};
 use crate::objects::{
     parse_class_wrapper, parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor,
 };
@@ -1331,7 +1331,7 @@ fn parse_legacy_major2(
                     })?
                     .domain;
                 if trims.len() >= trim_count {
-                    reserve_collection(ctx, &mut trims, 1, "Rhino legacy Brep trims")?;
+                    ctx.reserve_vec(&mut trims, 1, "Rhino legacy Brep trims")?;
                 }
                 trims.push(RawBrepTrim {
                     index: trim_index,
@@ -1357,7 +1357,7 @@ fn parse_legacy_major2(
                 loop_trim_indexes.push(trim_index);
             }
             if loops.len() >= loop_count {
-                reserve_collection(ctx, &mut loops, 1, "Rhino legacy Brep loops")?;
+                ctx.reserve_vec(&mut loops, 1, "Rhino legacy Brep loops")?;
             }
             loops.push(RawBrepLoop {
                 index: loop_index,
@@ -1396,7 +1396,7 @@ fn parse_legacy_major2(
     for (trim_index, trim) in trims.iter().enumerate() {
         if let Some(edge_index) = position(trim.edge).filter(|index| *index < edge_count) {
             let group = &mut edge_trim_indexes[edge_index];
-            reserve_collection(ctx, group, 1, "Rhino legacy Brep edge-trim indexes")?;
+            ctx.reserve_vec(group, 1, "Rhino legacy Brep edge-trim indexes")?;
             group.push(trim_index);
         }
     }
@@ -1462,7 +1462,7 @@ fn parse_legacy_major2(
                 let position_in_array = vertices.len();
                 let index = i32::try_from(position_in_array)
                     .map_err(|_| error(reader.position(), "legacy Brep vertex index overflow"))?;
-                reserve_collection(ctx, &mut vertices, 1, "Rhino legacy Brep vertices")?;
+                ctx.reserve_vec(&mut vertices, 1, "Rhino legacy Brep vertices")?;
                 root_vertices[root] = Some(position_in_array);
                 vertices.push(LegacyVertex {
                     vertex: RawBrepVertex {
@@ -1560,12 +1560,7 @@ fn parse_legacy_major2(
     for edge in &edges {
         for vertex in edge.vertices {
             let vertex = slot(vertex, vertices.len(), "legacy Brep edge vertex")?;
-            reserve_collection(
-                ctx,
-                &mut vertices[vertex].edges,
-                1,
-                "Rhino legacy Brep vertex edges",
-            )?;
+            ctx.reserve_vec(&mut vertices[vertex].edges, 1, "Rhino legacy Brep vertex edges")?;
             vertices[vertex].edges.push(edge.index);
         }
     }
@@ -1822,7 +1817,7 @@ fn legacy_vertex(
     let index = vertices.len();
     let stored_index =
         i32::try_from(index).map_err(|_| error(position, "legacy Brep vertex index overflow"))?;
-    reserve_collection(ctx, vertices, 1, "Rhino legacy Brep vertices")?;
+    ctx.reserve_vec(vertices, 1, "Rhino legacy Brep vertices")?;
     vertices.push(LegacyVertex {
         vertex: RawBrepVertex {
             index: stored_index,
@@ -2058,7 +2053,7 @@ fn unstamped_legacy_layout(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), GeometryError> {
     if archive.value() >= 3 && writer_version.is_none() && count > 0 {
-        crate::wire::reserve_collection(ctx, losses, 1, "Rhino Brep unstamped layout losses")?;
+        ctx.reserve_vec(losses, 1, "Rhino Brep unstamped layout losses")?;
         losses.push(crate::wire::admitted_loss(
             ctx,
             crate::loss::RhinoLossCode::SourceWriterStampUnverified,

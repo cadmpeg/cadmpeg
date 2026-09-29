@@ -13,7 +13,7 @@ use crate::container::Scan;
 use crate::loss::RhinoLossCode;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
 use crate::settings::{utf16_retained, CoordinateLane, MillimeterScale, Plane, UnitBinding};
-use crate::wire::{admitted_format, scaled_coordinate, uuid, Uuid};
+use crate::wire::{scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const TEXT: Uuid = Uuid::from_canonical([
@@ -303,11 +303,7 @@ fn parse_v5_text_extra(
     Ok(V5TextExtraRecord {
         parent_text_uuid: (!parent_text_uuid.is_nil())
             .then(|| {
-                admitted_format(
-                    ctx,
-                    format_args!("{parent_text_uuid}"),
-                    "Rhino V5 text parent UUID",
-                )
+                ctx.format_retained(format_args!("{parent_text_uuid}"), "Rhino V5 text parent UUID")
             })
             .transpose()?,
         draw_mask,
@@ -606,11 +602,7 @@ fn source_key(
     source_order: usize,
 ) -> Result<String, CodecError> {
     let Some((_, key)) = identity.source_id.rsplit_once('#') else {
-        return admitted_format(
-            ctx,
-            format_args!("record-{source_order:06}"),
-            "Rhino annotation source key",
-        );
+        return ctx.format_retained(format_args!("record-{source_order:06}"), "Rhino annotation source key");
     };
     ctx.copy_retained_text(key, "Rhino annotation source key")
 }
@@ -627,19 +619,11 @@ fn record_identity(
         Some(key) => key,
         None => source_key(ctx, identity, source_order)?,
     };
-    links.push(admitted_format(
-        ctx,
-        format_args!("rhino:object:record#{source_order:06}"),
-        "Rhino annotation object link",
-    )?);
+    links.push(ctx.format_retained(format_args!("rhino:object:record#{source_order:06}"), "Rhino annotation object link")?);
     Ok((
         links,
         key,
-        admitted_format(
-            ctx,
-            format_args!("{}", identity.object_id),
-            "Rhino annotation object UUID",
-        )?,
+        ctx.format_retained(format_args!("{}", identity.object_id), "Rhino annotation object UUID")?,
     ))
 }
 
@@ -658,11 +642,7 @@ fn annotation_record_dropped(
         format_args!("annotation object {source_id} at offset {source_offset} (class {class_uuid}) could not be transferred: {error}"),
         "Rhino annotation loss text",
     )?;
-    let tag = admitted_format(
-        ctx,
-        format_args!("ANNOTATION/source={source_id}/class={class_uuid}"),
-        "Rhino annotation loss tag",
-    )?;
+    let tag = ctx.format_retained(format_args!("ANNOTATION/source={source_id}/class={class_uuid}"), "Rhino annotation loss tag")?;
     losses.push(
         loss.with_provenance(SourceProvenance::root("rhino", source_offset as u64).with_tag(tag)),
     );
@@ -792,11 +772,7 @@ pub(crate) fn install(
                 let (links, key, source_uuid) =
                     record_identity(ctx, identity, source_order, v2_key.take())?;
                 annotations.push(AnnotationRecord {
-                    id: admitted_format(
-                        ctx,
-                        format_args!("rhino:document:annotation#{key}"),
-                        "Rhino annotation ID",
-                    )?,
+                    id: ctx.format_retained(format_args!("rhino:document:annotation#{key}"), "Rhino annotation ID")?,
                     source_offset: object.range.start as u64,
                     source_uuid,
                     kind: if leader {
@@ -812,11 +788,7 @@ pub(crate) fn install(
                     plane_equation: value.plane.equation,
                     dimstyle_uuid: (!value.dimstyle_id.is_nil())
                         .then(|| {
-                            admitted_format(
-                                ctx,
-                                format_args!("{}", value.dimstyle_id),
-                                "Rhino annotation dimstyle UUID",
-                            )
+                            ctx.format_retained(format_args!("{}", value.dimstyle_id), "Rhino annotation dimstyle UUID")
                         })
                         .transpose()?,
                     annotation_type: value.kind,
@@ -881,11 +853,7 @@ pub(crate) fn install(
                 let (links, key, source_uuid) =
                     record_identity(ctx, identity, source_order, v2_key.take())?;
                 annotations.push(AnnotationRecord {
-                    id: admitted_format(
-                        ctx,
-                        format_args!("rhino:document:annotation#{key}"),
-                        "Rhino annotation ID",
-                    )?,
+                    id: ctx.format_retained(format_args!("rhino:document:annotation#{key}"), "Rhino annotation ID")?,
                     source_offset: object.range.start as u64,
                     source_uuid,
                     kind: if leader {
@@ -982,11 +950,7 @@ pub(crate) fn install(
                 let (links, key, source_uuid) =
                     record_identity(ctx, identity, source_order, v2_key.take())?;
                 annotations.push(AnnotationRecord {
-                    id: admitted_format(
-                        ctx,
-                        format_args!("rhino:document:annotation#{key}"),
-                        "Rhino annotation ID",
-                    )?,
+                    id: ctx.format_retained(format_args!("rhino:document:annotation#{key}"), "Rhino annotation ID")?,
                     source_offset: object.range.start as u64,
                     source_uuid,
                     kind,
@@ -1045,11 +1009,7 @@ pub(crate) fn install(
                 let (links, key, source_uuid) =
                     record_identity(ctx, identity, source_order, v2_key.take())?;
                 dots.push(TextDotRecord {
-                    id: admitted_format(
-                        ctx,
-                        format_args!("rhino:document:text_dot#{key}"),
-                        "Rhino text dot ID",
-                    )?,
+                    id: ctx.format_retained(format_args!("rhino:document:text_dot#{key}"), "Rhino text dot ID")?,
                     source_offset: object.range.start as u64,
                     source_uuid,
                     data,
@@ -1079,11 +1039,7 @@ pub(crate) fn install(
                 let (links, key, source_uuid) =
                     record_identity(ctx, identity, source_order, v2_key.take())?;
                 arrows.push(AnnotationArrowRecord {
-                    id: admitted_format(
-                        ctx,
-                        format_args!("rhino:document:annotation_arrow#{key}"),
-                        "Rhino annotation arrow ID",
-                    )?,
+                    id: ctx.format_retained(format_args!("rhino:document:annotation_arrow#{key}"), "Rhino annotation arrow ID")?,
                     source_offset: object.range.start as u64,
                     source_uuid,
                     tail,

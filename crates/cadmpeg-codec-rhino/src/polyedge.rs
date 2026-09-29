@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persistent polyedge-reference construction decoding.
-#![deny(clippy::disallowed_methods)]
 
 use crate::loss::Diagnostics;
 use std::io::{self, Write};

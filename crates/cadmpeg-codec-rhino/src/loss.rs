@@ -57,8 +57,8 @@ impl Diagnostics {
         code: impl Into<Option<RhinoLossCode>>,
         message: std::fmt::Arguments<'_>,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::wire::reserve_collection(ctx, &mut self.0, 1, "Rhino diagnostics")?;
-        let message = crate::wire::admitted_format(ctx, message, "Rhino diagnostic message")?;
+        ctx.reserve_vec(&mut self.0, 1, "Rhino diagnostics")?;
+        let message = ctx.format_retained(message, "Rhino diagnostic message")?;
         self.0.push(RhinoDiagnostic {
             code: code.into(),
             message,
@@ -93,12 +93,7 @@ impl Diagnostics {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         other: &mut Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::wire::reserve_collection(
-            ctx,
-            &mut self.0,
-            other.0.len(),
-            "Rhino diagnostic copies",
-        )?;
+        ctx.reserve_vec(&mut self.0, other.0.len(), "Rhino diagnostic copies")?;
         self.0.append(&mut other.0);
         Ok(())
     }
@@ -126,12 +121,7 @@ impl Diagnostics {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         other: &Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::wire::reserve_collection(
-            ctx,
-            &mut self.0,
-            other.0.len(),
-            "Rhino diagnostic copies",
-        )?;
+        ctx.reserve_vec(&mut self.0, other.0.len(), "Rhino diagnostic copies")?;
         for diagnostic in &other.0 {
             self.0.push(RhinoDiagnostic {
                 code: diagnostic.code,

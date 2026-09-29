@@ -1367,9 +1367,9 @@ fn insert_summary_attribute(
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "Rhino container summary attributes")?;
-    let key = crate::wire::admitted_format(ctx, key, "Rhino container summary attribute key")?;
+    let key = ctx.format_retained(key, "Rhino container summary attribute key")?;
     let value =
-        crate::wire::admitted_format(ctx, value, "Rhino container summary attribute value")?;
+        ctx.format_retained(value, "Rhino container summary attribute value")?;
     attributes.insert(key, value);
     Ok(())
 }
@@ -1379,12 +1379,8 @@ fn push_container_note(
     notes: &mut Vec<String>,
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    crate::wire::reserve_collection(ctx, notes, 1, "Rhino container summary notes")?;
-    notes.push(crate::wire::admitted_format(
-        ctx,
-        value,
-        "Rhino container summary note text",
-    )?);
+    ctx.reserve_vec(notes, 1, "Rhino container summary notes")?;
+    notes.push(ctx.format_retained(value, "Rhino container summary note text")?);
     Ok(())
 }
 
@@ -1430,13 +1426,9 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
             .map_or(EntryStorage::unreported(VerbatimLabel::None), |body| {
                 EntryStorage::framed_by(VerbatimLabel::None, body.into(), table.framing())
             });
-        crate::wire::reserve_collection(ctx, &mut entries, 1, "Rhino container summary entries")?;
+        ctx.reserve_vec(&mut entries, 1, "Rhino container summary entries")?;
         entries.push(ContainerEntry {
-            name: crate::wire::admitted_format(
-                ctx,
-                format_args!("table-{:#x}", table.typecode),
-                "Rhino container entry name",
-            )?,
+            name: ctx.format_retained(format_args!("table-{:#x}", table.typecode), "Rhino container entry name")?,
             role: ContainerRole::Table,
             storage,
             attributes,
@@ -1479,13 +1471,9 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
             format_args!("total_record_bytes"),
             format_args!("{bytes}"),
         )?;
-        crate::wire::reserve_collection(ctx, &mut entries, 1, "Rhino container summary entries")?;
+        ctx.reserve_vec(&mut entries, 1, "Rhino container summary entries")?;
         entries.push(ContainerEntry {
-            name: crate::wire::admitted_format(
-                ctx,
-                format_args!("class-{class_uuid}"),
-                "Rhino container entry name",
-            )?,
+            name: ctx.format_retained(format_args!("class-{class_uuid}"), "Rhino container entry name")?,
             role: ContainerRole::ObjectClass,
             storage: EntryStorage::verbatim(VerbatimLabel::None, bytes as u64),
             attributes,
@@ -1510,7 +1498,7 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
     let matched = dialect_match(scan);
     let mut losses = Vec::new();
     if let Some(loss) = crate::dialect::admission_loss(ctx, &matched)? {
-        crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container summary losses")?;
+        ctx.reserve_vec(&mut losses, 1, "Rhino container summary losses")?;
         losses.push(loss);
     }
     Ok(ContainerSummary::classified(
@@ -1555,7 +1543,7 @@ fn insert_source_meta_attribute(
     let key = ctx.copy_retained_text(key, "Rhino source metadata key")?;
     let key = NonBlankString::new(key)
         .ok_or_else(|| CodecError::malformed("generated Rhino source metadata key is blank"))?;
-    let value = crate::wire::admitted_format(ctx, value, "Rhino source metadata value")?;
+    let value = ctx.format_retained(value, "Rhino source metadata value")?;
     attributes.insert(key, value);
     Ok(())
 }
@@ -1663,7 +1651,7 @@ pub(crate) fn container_only_result(
     }
     let mut losses = Vec::new();
     for diagnostic in &scan.warnings {
-        crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container-only losses")?;
+        ctx.reserve_vec(&mut losses, 1, "Rhino container-only losses")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(diagnostic.message.len()),
             "Rhino container-only loss message",
@@ -1676,12 +1664,12 @@ pub(crate) fn container_only_result(
         );
     }
     for diagnostic in scan.definitions.diagnostics() {
-        crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container-only losses")?;
+        ctx.reserve_vec(&mut losses, 1, "Rhino container-only losses")?;
         losses.push(diagnostic.to_loss(ctx)?);
     }
     let primary = dialect_match(scan);
     if let Some(loss) = crate::dialect::admission_loss(ctx, &primary)? {
-        crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container-only losses")?;
+        ctx.reserve_vec(&mut losses, 1, "Rhino container-only losses")?;
         losses.push(loss);
     }
     let ir = CadIr::decoded(source_meta(
@@ -1715,7 +1703,7 @@ pub(crate) fn inspect(
         let matched = header.archive_version.classify(None);
         let mut losses = Vec::new();
         if let Some(loss) = crate::dialect::admission_loss(ctx, &matched)? {
-            crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container summary losses")?;
+            ctx.reserve_vec(&mut losses, 1, "Rhino container summary losses")?;
             losses.push(loss);
         }
         let mut notes = Vec::new();

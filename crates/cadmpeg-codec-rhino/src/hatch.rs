@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded hatch payload decoding.
-#![deny(clippy::disallowed_methods)]
 
 use crate::loss::Diagnostics;
 use std::ops::Range;

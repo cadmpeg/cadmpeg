@@ -31,7 +31,7 @@ use crate::chunks::{chunk_at, parse_header, ArchiveVersion, BoundedReader, Frami
 use crate::layout::file_header;
 use crate::loss::RhinoLossCode;
 use crate::settings::MillimeterScale;
-use crate::wire::{admitted_format, admitted_loss, reserve_collection};
+use crate::wire::admitted_loss;
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
 const TCODE_RH_POINT: u32 = 0x0010_0001;
@@ -605,7 +605,7 @@ fn push_v1_record(
     chunk: &crate::chunks::Chunk,
     retained_bytes: &mut usize,
 ) -> Result<(), CodecError> {
-    reserve_collection(ctx, records, 1, "Rhino V1 source records")?;
+    ctx.reserve_vec(records, 1, "Rhino V1 source records")?;
     records.push(retain_v1_record(ctx, data, chunk, retained_bytes)?);
     Ok(())
 }
@@ -627,12 +627,8 @@ fn push_v1_diagnostic(
     diagnostics: &mut Vec<String>,
     message: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    reserve_collection(ctx, diagnostics, 1, "Rhino V1 diagnostics")?;
-    diagnostics.push(admitted_format(
-        ctx,
-        message,
-        "Rhino V1 diagnostic message",
-    )?);
+    ctx.reserve_vec(diagnostics, 1, "Rhino V1 diagnostics")?;
+    diagnostics.push(ctx.format_retained(message, "Rhino V1 diagnostic message")?);
     Ok(())
 }
 
@@ -822,7 +818,7 @@ fn legacy_spline(
         .copied()
         .ok_or_else(|| CodecError::malformed("V1 spline has no stored knots"))?;
     if clamped & 2 != 0 {
-        stored_knots.resize(knot_count, last);
+        stored_knots.extend(std::iter::repeat(last).take(knot_count - stored_knots.len()));
     } else {
         while stored_knots.len() < knot_count {
             stored_knots.push(reader.f64().map_err(malformed)?);
@@ -1822,7 +1818,9 @@ fn append_legacy_brep(
         brep.faces.len(),
         "Rhino V1 Brep face trim rows",
     )?;
-    face_trim_indices.resize_with(brep.faces.len(), Vec::new);
+    for _ in 0..brep.faces.len() {
+        face_trim_indices.push(Vec::new());
+    }
     for (face_index, face) in brep.faces.iter().enumerate() {
         let face_trim_count = face
             .loops
@@ -3198,7 +3196,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         cadmpeg_core::decode::u64_from_index(std::mem::size_of::<V1DirectRecord>()),
                         "Rhino V1 direct record storage",
                     )?;
-                    reserve_collection(ctx, &mut direct_records, 1, "Rhino V1 direct records")?;
+                    ctx.reserve_vec(&mut direct_records, 1, "Rhino V1 direct records")?;
                     if matches!(
                         chunk.typecode,
                         TCODE_TEXT_BLOCK
@@ -3466,7 +3464,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         .count();
     let mut losses = Vec::new();
     for (typecode, count) in omitted {
-        reserve_collection(ctx, &mut losses, 1, "Rhino V1 report losses")?;
+        ctx.reserve_vec(&mut losses, 1, "Rhino V1 report losses")?;
         losses.push(if is_v1_presentation_setting(typecode) {
             admitted_loss(
                 ctx,
@@ -3483,37 +3481,32 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             )?
         });
     }
-    reserve_collection(
-        ctx,
-        &mut losses,
-        tolerance_losses.len(),
-        "Rhino V1 report losses",
-    )?;
+    ctx.reserve_vec(&mut losses, tolerance_losses.len(), "Rhino V1 report losses")?;
     losses.append(&mut tolerance_losses);
     let mut notes = Vec::new();
-    reserve_collection(ctx, &mut notes, 1, "Rhino V1 report notes")?;
-    notes.push(admitted_format(ctx, format_args!(
+    ctx.reserve_vec(&mut notes, 1, "Rhino V1 report notes")?;
+    notes.push(ctx.format_retained(format_args!(
         "decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"
     ), "Rhino V1 report note text")?);
     if !direct_records.is_empty() {
-        reserve_collection(ctx, &mut notes, 1, "Rhino V1 report notes")?;
-        notes.push(admitted_format(ctx, format_args!(
+        ctx.reserve_vec(&mut notes, 1, "Rhino V1 report notes")?;
+        notes.push(ctx.format_retained(format_args!(
             "typed {decoded_annotations} V1 annotations, {decoded_nurbs_curves} pre-class NURBS curves, {decoded_nurbs_surfaces} pre-class NURBS surfaces, and {decoded_nurbs_breps} pre-class NURBS Breps"
         ), "Rhino V1 report note text")?);
     }
     if opaque_count > 0 {
-        reserve_collection(ctx, &mut notes, 1, "Rhino V1 report notes")?;
-        notes.push(admitted_format(ctx, format_args!(
+        ctx.reserve_vec(&mut notes, 1, "Rhino V1 report notes")?;
+        notes.push(ctx.format_retained(format_args!(
             "retained metadata/digests for {opaque_count} unsupported V1 records; complete bytes for {opaque_bytes}"
         ), "Rhino V1 report note text")?);
     }
     if typed_source_count > 0 {
-        reserve_collection(ctx, &mut notes, 1, "Rhino V1 report notes")?;
-        notes.push(admitted_format(ctx, format_args!(
+        ctx.reserve_vec(&mut notes, 1, "Rhino V1 report notes")?;
+        notes.push(ctx.format_retained(format_args!(
             "retained complete source boundaries/digests for {typed_source_count} typed V1 records; complete bytes for {typed_source_bytes}"
         ), "Rhino V1 report note text")?);
     }
-    reserve_collection(ctx, &mut notes, diagnostics.len(), "Rhino V1 report notes")?;
+    ctx.reserve_vec(&mut notes, diagnostics.len(), "Rhino V1 report notes")?;
     notes.extend(diagnostics);
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     for (key, count) in [

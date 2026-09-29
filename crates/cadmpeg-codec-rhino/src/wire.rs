@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Archive-wide wire primitives and checked numeric conversions.
-#![deny(clippy::disallowed_methods)]
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::Hash;
 
@@ -27,114 +25,6 @@ pub(crate) struct ExactVec<T> {
     capacity: usize,
 }
 
-/// Charges and reserves a decoded collection before it grows.
-pub(crate) fn reserve_collection<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    additional: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(u64_from_index(additional), operation)?;
-    values.try_reserve(additional).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::CollectionItems,
-            u64::MAX,
-            u64_from_index(additional),
-            operation,
-        ))
-    })
-}
-
-/// Charges and reserves entries before a decoded hash map grows.
-pub(crate) fn reserve_hash_map<K: Eq + Hash, V>(
-    ctx: &DecodeContext<'_>,
-    values: &mut HashMap<K, V>,
-    additional: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(u64_from_index(additional), operation)?;
-    values.try_reserve(additional).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::CollectionItems,
-            u64::MAX,
-            u64_from_index(additional),
-            operation,
-        ))
-    })
-}
-
-/// Charges and reserves entries before a decoded hash set grows.
-pub(crate) fn reserve_hash_set<T: Eq + Hash>(
-    ctx: &DecodeContext<'_>,
-    values: &mut HashSet<T>,
-    additional: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(u64_from_index(additional), operation)?;
-    values.try_reserve(additional).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::CollectionItems,
-            u64::MAX,
-            u64_from_index(additional),
-            operation,
-        ))
-    })
-}
-
-/// Creates a count-driven vector through the active decode session.
-pub(crate) fn admitted_collection<T>(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let mut values = Vec::new();
-    reserve_collection(ctx, &mut values, count, operation)?;
-    Ok(values)
-}
-
-/// Reserves a retained string after charging its known byte length.
-pub(crate) fn admitted_retained_string(
-    ctx: &DecodeContext<'_>,
-    length: usize,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    ctx.charge_retained(u64_from_index(length), operation)?;
-    let mut value = String::new();
-    value.try_reserve_exact(length).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::RetainedBytes,
-            u64::MAX,
-            u64_from_index(length),
-            operation,
-        ))
-    })?;
-    Ok(value)
-}
-
-/// Formats retained text after measuring and charging its exact byte length.
-pub(crate) fn admitted_format(
-    ctx: &DecodeContext<'_>,
-    arguments: fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    struct ByteCount(usize);
-
-    impl fmt::Write for ByteCount {
-        fn write_str(&mut self, value: &str) -> fmt::Result {
-            self.0 = self.0.checked_add(value.len()).ok_or(fmt::Error)?;
-            Ok(())
-        }
-    }
-
-    let mut bytes = ByteCount(0);
-    fmt::write(&mut bytes, arguments)
-        .map_err(|_| CodecError::malformed("retained text length overflow"))?;
-    let mut text = admitted_retained_string(ctx, bytes.0, operation)?;
-    fmt::write(&mut text, arguments)
-        .map_err(|_| CodecError::malformed("retained text formatting failed"))?;
-    Ok(text)
-}
-
 /// Admits both the formatted source text and the loss note's retained copy.
 pub(crate) fn admitted_loss(
     ctx: &DecodeContext<'_>,
@@ -142,7 +32,7 @@ pub(crate) fn admitted_loss(
     arguments: fmt::Arguments<'_>,
     operation: &'static str,
 ) -> Result<cadmpeg_ir::report::loss::LossNote, CodecError> {
-    let message = admitted_format(ctx, arguments, operation)?;
+    let message = ctx.format_retained(arguments, operation)?;
     ctx.charge_retained(u64_from_index(message.len()), operation)?;
     Ok(code.note(&message))
 }
@@ -308,7 +198,7 @@ impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
     ) -> Result<Self::Value, A::Error> {
         let mut values = Vec::new();
         while let Some(value) = sequence.next_element_seed(self.0)? {
-            reserve_collection(self.0.ctx, &mut values, 1, self.0.operation)
+            self.0.ctx.reserve_vec(&mut values, 1, self.0.operation)
                 .map_err(|error| self.0.fail(error))?;
             values.push(value);
         }
@@ -378,16 +268,7 @@ impl<T> ExactVec<T> {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         let capacity = count.get();
-        ctx.charge_collection_items(u64_from_index(capacity), operation)?;
-        let mut values = Vec::new();
-        values.try_reserve_exact(capacity).map_err(|_| {
-            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                ResourceDimension::CollectionItems,
-                u64::MAX,
-                u64_from_index(capacity),
-                operation,
-            ))
-        })?;
+        let values = ctx.collection_vec(capacity, operation)?;
         Ok(Self { values, capacity })
     }
 
