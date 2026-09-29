@@ -3823,6 +3823,31 @@ fn format_feature_history_id(
     Ok(id)
 }
 
+fn format_feature_child_id(
+    ctx: &DecodeContext<'_>,
+    parent: &str,
+    suffix: &'static str,
+    ordinal: usize,
+) -> Result<String, CodecError> {
+    let digits = match ordinal.checked_ilog10() {
+        Some(digits) => usize::try_from(digits)
+            .map_err(|_| ctx.refuse_codec_limit("NX feature child identity width", 0, 1))?
+            .checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX feature child identity width", 0, 1))?,
+        None => 1,
+    }.max(10);
+    let length = parent.len().checked_add(suffix.len())
+        .and_then(|length| length.checked_add(digits))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX feature child identity", 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX feature child identity")?;
+    let mut id = String::new();
+    id.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX feature child identity", 0, 1))?;
+    write!(&mut id, "{parent}{suffix}{ordinal:010}")
+        .map_err(|_| ctx.refuse_codec_limit("write NX feature child identity", 0, 1))?;
+    Ok(id)
+}
+
 /// Decode ordered operation labels from feature-history record areas.
 pub(super) fn feature_operation_labels(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
