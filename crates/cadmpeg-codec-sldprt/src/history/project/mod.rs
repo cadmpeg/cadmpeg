@@ -31,6 +31,10 @@ pub(super) mod datum;
 mod custom_property_tests;
 #[cfg(test)]
 mod feature_projection_tests;
+#[cfg(test)]
+mod dimension_projection_tests;
+#[cfg(test)]
+mod regeneration_tests;
 pub(crate) mod modify;
 pub(crate) mod pattern;
 pub(super) mod sketch;
