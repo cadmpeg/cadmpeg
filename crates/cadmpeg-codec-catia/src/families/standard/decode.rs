@@ -2077,31 +2077,50 @@ fn rescope_standard_id(text: &str, scope: &str) -> String {
     )
 }
 
-struct StandardPopulationScope<'a> {
+struct StandardPopulationScope<'a, 'b> {
     scope: &'a str,
+    ctx: &'a DecodeContext<'b>,
 }
 
-impl EntityRewrite for StandardPopulationScope<'_> {
-    type Error = String;
+impl EntityRewrite for StandardPopulationScope<'_, '_> {
+    type Error = CodecError;
 
     fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, Self::Error> {
+        struct CountBytes(usize);
+        impl std::io::Write for CountBytes {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0 = self.0.checked_add(bytes.len())
+                    .ok_or(std::io::ErrorKind::OutOfMemory)?;
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        let mut size = CountBytes(0);
+        serde_json::to_writer(&mut size, &entity).map_err(CodecError::malformed)?;
+        let bytes = u64::try_from(size.0)
+            .map_err(|_| self.ctx.refuse_codec_limit("catia_standard_population_rewrite", u64::MAX, u64::MAX))?;
+        self.ctx.charge_collection_items(bytes, "catia_standard_population_rewrite")?;
+        let retained = bytes.checked_mul(4)
+            .ok_or_else(|| self.ctx.refuse_codec_limit("catia_standard_population_rewrite", u64::MAX, u64::MAX))?;
+        self.ctx.charge_retained(retained, "catia_standard_population_rewrite")?;
         let rewritten = cadmpeg_ir::schema::rewrite::identities(&entity, |id| {
             rescope_standard_id(id, self.scope)
         });
         let value = serde_value::to_value(rewritten)
-            .map_err(|error| format!("standard population entity serialization failed: {error}"))?;
+            .map_err(CodecError::malformed)?;
         T::deserialize(ValueDeserializer::<serde_value::DeserializerError>::new(
             value,
         ))
-        .map_err(|error| format!("standard population entity rewrite failed: {error}"))
+        .map_err(CodecError::malformed)
     }
 }
 
 fn merge_standard_population_annotations(
+    ctx: &DecodeContext<'_>,
     target: &mut Annotations,
     mut source: Annotations,
     scope: &str,
-) -> Result<(), cadmpeg_ir::annotations::AnnotationIdentityCollision> {
+) -> Result<Result<(), cadmpeg_ir::annotations::AnnotationIdentityCollision>, CodecError> {
     // Only standard-owned entities survive retain_standard_population_model.
     // The first population retains the shared payload and other carriers.
     source
@@ -2110,8 +2129,18 @@ fn merge_standard_population_annotations(
     let mut annotations = AnnotationBuilder::resume(source);
     annotations.retain_exactness(|id| id.starts_with("catia:standard:"));
     source = annotations.build();
-    source.map_ids(|id| rescope_standard_id(id, scope))?;
-    target.append(source)
+    if let Err(collision) = source.map_ids_charged(ctx, |id| {
+        match id.strip_prefix("catia:standard:") {
+            Some(rest) => crate::resource::format_retained(ctx,
+                format_args!("catia:standard:{scope}/{rest}"),
+                "catia_standard_population_annotation_id"),
+            None => crate::resource::copy_retained_str(ctx, id,
+                "catia_standard_population_annotation_id"),
+        }
+    }, "catia_standard_population_annotation_remap")? {
+        return Ok(Err(collision));
+    }
+    target.append_charged(ctx, source, "catia_standard_population_annotation_append")
 }
 
 fn try_decode_standard_populations(
@@ -2211,23 +2240,27 @@ fn try_decode_standard_populations(
                     u64::MAX,
                 )
             })?;
-        let scope = format!("population-{}", index + 1);
+        let (scope, _scope_reservation) = crate::resource::format_scoped(ctx,
+            format_args!("population-{}", index + 1),
+            "catia_standard_population_scope")?;
         let mut model = output.ir.model;
         retain_standard_population_model(&mut model);
-        let mut rewriter = StandardPopulationScope { scope: &scope };
-        if merged
+        let mut rewriter = StandardPopulationScope { scope: &scope, ctx };
+        match merged
             .ir
             .model
-            .extend_rewritten(model, &mut rewriter)
-            .is_err()
-        {
-            return Ok(None);
+            .extend_rewritten_charged(ctx, model, &mut rewriter,
+                "catia_standard_population_model_merge") {
+            Ok(()) => {},
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => return Ok(None),
         }
         if let Err(error) = merge_standard_population_annotations(
+            ctx,
             &mut merged.annotations,
             output.annotations,
             &scope,
-        ) {
+        )? {
             refusal.push_annotation_collision(ctx, &error)?;
             return Ok(None);
         }
