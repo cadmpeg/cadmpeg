@@ -684,6 +684,22 @@ pub(in super::super) fn transfer_positional_spline_replays(
     Ok(transferred)
 }
 
+fn legacy_carrier_counts(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ids: impl IntoIterator<Item = u32>,
+) -> Result<BTreeMap<u32, usize>, cadmpeg_core::CodecError> {
+    let mut counts = BTreeMap::new();
+    for id in ids {
+        if let Some(count) = counts.get_mut(&id) {
+            *count += 1;
+        } else {
+            ctx.charge_collection_items(1, "creo legacy carrier count nodes")?;
+            counts.insert(id, 1);
+        }
+    }
+    Ok(counts)
+}
+
 /// Transfer one exact surface carrier per unique legacy ASCII carrier record.
 ///
 /// A carrier spline whose lanes the IR carrier refuses states no carrier. The
@@ -703,10 +719,10 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
     ) {
         return Ok(0);
     }
-    let mut carrier_counts = BTreeMap::<u32, usize>::new();
-    for carrier in &scan.surfaces.legacy_carriers {
-        *carrier_counts.entry(carrier.surface_id).or_default() += 1;
-    }
+    let carrier_counts = legacy_carrier_counts(
+        ctx,
+        scan.surfaces.legacy_carriers.iter().map(|carrier| carrier.surface_id),
+    )?;
 
     let mut transferred = 0;
     for carrier in &scan.surfaces.legacy_carriers {
