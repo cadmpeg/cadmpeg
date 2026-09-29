@@ -105,14 +105,14 @@ fn sync_neutral_parameters(
                 .map(|name| (feature.id.clone(), name.clone()))
         })
         .collect::<HashMap<_, _>>();
+    let lane_bytes = native.as_ref().into_iter().flat_map(|native| &native.feature_input_lanes)
+        .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane_bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let global_owners = global_parameter_owners(&ir.model.features);
     if let Some(native) = native.as_ref() {
-        let lane_bytes = native.feature_input_lanes.iter()
-            .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &lane_bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-        )?;
         let original = project_parameters(&ctx, &native.feature_histories)?;
         let original_feature_names = native
             .feature_histories
@@ -127,7 +127,7 @@ fn sync_neutral_parameters(
             &feature_names,
         );
     }
-    if parameters_with_incoherent_dependencies(&parameters, &feature_names, &global_owners) > 0 {
+    if parameters_with_incoherent_dependencies(&ctx, &parameters, &feature_names, &global_owners)? > 0 {
         return Err(CodecError::Malformed(
             "SLDPRT parameter dependencies are inconsistent with their expressions".into(),
         ));

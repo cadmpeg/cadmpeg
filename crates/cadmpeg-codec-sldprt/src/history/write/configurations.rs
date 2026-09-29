@@ -131,12 +131,19 @@ fn sync_configuration_design_state(
         })
         .collect::<HashMap<_, _>>();
     let global_owners = global_parameter_owners(&ir.model.features);
+    let validation_bytes = native.as_ref().into_iter().flat_map(|native| &native.feature_input_lanes)
+        .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+    let validation_arena = DecodeArena::new();
+    let (validation_ctx, _) = DecodeContext::from_root_bytes(
+        &validation_bytes, &validation_arena, &DecodePolicy::service(),
+    )?;
     if parameters_with_incoherent_evaluated_values(
+        &validation_ctx,
         &ir.model.parameters,
         &feature_names,
         &global_owners,
         &ir.model.configurations,
-    ) > 0
+    )? > 0
     {
         return Err(CodecError::Malformed(
             "SLDPRT configuration parameter values are inconsistent with their expressions".into(),
