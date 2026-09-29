@@ -309,10 +309,15 @@ fn generated_planar_section_transform(
     let Some(variables) = definition.variables.as_ref() else { return Ok(None) };
     let (points, conflicting_points) = variables.reconciled_points(ctx)?;
     if !conflicting_points.is_empty() { return Ok(None); }
-    let table = exactly_one(entity_tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id)
-        .filter(|table| generated_planar_table_shape(table)));
+    let mut table = None;
+    for candidate in entity_tables.iter().filter(|table| table.feature_id == feature_id) {
+        if generated_planar_table_shape(ctx, candidate)? {
+            if table.is_some() {
+                return Ok(None);
+            }
+            table = Some(candidate);
+        }
+    }
     let Some(table) = table else {
         return Ok(None);
     };
@@ -502,44 +507,29 @@ fn generated_planar_section_transform(
     Ok(Some(transform.clone()))
 }
 
-fn generated_planar_table_shape(table: &FeatureEntityTable) -> bool {
+fn generated_planar_table_shape(
+    ctx: &DecodeContext<'_>,
+    table: &FeatureEntityTable,
+) -> Result<bool, CodecError> {
     let [first, second, rest @ ..] = table.entries.as_slice() else {
-        return false;
+        return Ok(false);
     };
     if first.class_id() != 204
         || second.class_id() != 203
         || rest.is_empty()
         || !rest.iter().all(|entry| entry.source_entity_id().is_some())
     {
-        return false;
+        return Ok(false);
     }
-    let entry_ids = table
-        .entries
-        .iter()
-        .map(|entry| entry.entity_id)
-        .collect::<BTreeSet<_>>();
-    let roster = table
-        .surface_ids_iter()
-        .chain(table.non_surface_entity_ids_iter())
-        .collect::<BTreeSet<_>>();
-    table.entries.len() == entry_ids.len()
-        && roster == entry_ids
-        && table.surface_ids_iter().all(|id| {
-            !table.non_surface_entity_ids_iter().any(|candidate| candidate == id)
-                && table
-                    .surface_ids_iter()
-                    .filter(|candidate| *candidate == id)
-                    .count()
-                    == 1
-        })
-        && table.non_surface_entity_ids_iter().all(|id| {
-            !table.contains_surface_id(id)
-                && table
-                    .non_surface_entity_ids_iter()
-                    .filter(|candidate| *candidate == id)
-                    .count()
-                    == 1
-        })
+    let mut entry_ids = BTreeSet::new();
+    for entry in &table.entries {
+        if entry_ids.contains(&entry.entity_id) {
+            return Ok(false);
+        }
+        ctx.charge_collection_items(1, "creo generated planar table entry nodes")?;
+        entry_ids.insert(entry.entity_id);
+    }
+    Ok(true)
 }
 
 fn plane_equation(
