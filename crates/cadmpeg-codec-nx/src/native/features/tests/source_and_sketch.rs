@@ -1151,7 +1151,7 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
         data_block: Some(format!("block-{ordinal}")),
         source_offset: u64::from(ordinal),
     });
-    let profiles = feature_extrude_construction_profiles(&references);
+    let profiles = crate::test_support::with_decode_context(|ctx| feature_extrude_construction_profiles(ctx, &references)).unwrap();
     assert_eq!(profiles.len(), 1);
     assert_eq!(
         profiles[0]
@@ -1181,15 +1181,15 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
     for ordinal in [0, 2] {
         let mut malformed = references.clone();
         malformed[1].ordinal = ordinal;
-        assert!(feature_extrude_construction_profiles(&malformed).is_empty());
+        assert!(crate::test_support::with_decode_context(|ctx| feature_extrude_construction_profiles(ctx, &malformed)).unwrap().is_empty());
     }
 
     let mut unwitnessed = references.clone();
     unwitnessed[1].witness_source_offset = None;
-    assert!(feature_extrude_construction_profiles(&unwitnessed).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| feature_extrude_construction_profiles(ctx, &unwitnessed)).unwrap().is_empty());
     let mut unresolved = references;
     unresolved[1].data_block = None;
-    assert!(feature_extrude_construction_profiles(&unresolved).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| feature_extrude_construction_profiles(ctx, &unresolved)).unwrap().is_empty());
 }
 
 #[test]

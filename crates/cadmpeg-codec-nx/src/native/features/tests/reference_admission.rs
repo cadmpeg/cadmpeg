@@ -9,6 +9,8 @@ use crate::native::features::feature_point_construction_scalar_lanes;
 use crate::native::features::feature_swp104_leading_branches;
 use crate::native::features::feature_extrude_profile_references;
 use crate::native::features::feature_extrude_payload_headers;
+use crate::native::features::feature_extrude_construction_profiles;
+use crate::native::features::FeatureExtrudeProfileReference;
 use crate::native::features::feature_operation_terminal_discriminators;
 use crate::native::features::feature_operation_body_scalar_triples;
 use crate::native::features::feature_operation_body_members;
@@ -86,6 +88,60 @@ fn swp104_container() -> crate::container::Container<'static> {
 
 #[derive(Clone, Copy)]
 enum ExtrudeRoute { Profile, Header }
+
+fn extrude_profile_join_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let references = [100_u32, 101].map(|object_index| FeatureExtrudeProfileReference {
+        id: format!("profile-{object_index}"), operation_label: "operation".into(),
+        ordinal: object_index - 100, field_tag: 0x16,
+        witness_source_offset: Some(u64::from(object_index + 20)),
+        token: crate::om::reference_index::PayloadIndexToken::from_wire(
+            object_index, &[0xf0, u8::try_from(object_index).expect("small object index")],
+        ).expect("payload index token"),
+        data_block: Some(format!("block-{object_index}")),
+        source_offset: u64::from(object_index),
+    });
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_extrude_construction_profiles(ctx, &references)
+    };
+    assert_eq!(crate::test_support::with_decode_context(|ctx| decode(ctx))
+        .expect("admitted extrude profile join").len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    decode(&ctx).expect_err("extrude profile join resource limit")
+}
+
+#[test]
+fn extrude_profile_join_refuses_collection_limit() {
+    let error = extrude_profile_join_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn extrude_profile_join_refuses_retained_limit() {
+    let error = extrude_profile_join_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn extrude_profile_join_refuses_scoped_limit() {
+    let error = extrude_profile_join_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn extrude_profile_join_refuses_work_limit() {
+    let error = extrude_profile_join_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
 
 #[derive(Clone, Copy)]
 enum OperationLaneRoute { Terminal, ScalarTriple, BodyMember, Continuation, CompactReferences, ObjectReferences }
