@@ -166,13 +166,41 @@ impl DecodeContext<'_> {
         values: &mut Vec<T>,
         count: usize,
         operation: &'static str,
-    ) -> Result<ScopedReservation<'_>, CodecError> {
-        let bytes = count
-            .checked_mul(std::mem::size_of::<T>())
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        let reservation = self.reserve_scoped(u64_from_index(bytes), operation)?;
-        self.reserve_vec(values, count, operation)?;
+    ) -> Result<ScopedReservation<'_>, ResourceLimit> {
+        let count_u64 = u64_from_index(count);
+        self.charge_collection_items_limit(count_u64, operation)?;
+        let bytes = count.checked_mul(std::mem::size_of::<T>()).ok_or_else(|| {
+            ResourceLimit {
+                dimension: ResourceDimension::MaterializedBytes,
+                reason: super::ResourceFailure::BudgetExceeded,
+                limit: self.policy().limits.max_materialized_bytes,
+                used: 0,
+                additional: u64::MAX,
+                operation,
+            }
+        })?;
+        let reservation = self.reserve_scoped_limit(u64_from_index(bytes), operation)?;
+        values.try_reserve_exact(count).map_err(|_| {
+            ResourceLimit::allocation_failed(
+                ResourceDimension::CollectionItems,
+                self.policy().limits.max_collection_items,
+                count_u64,
+                operation,
+            )
+        })?;
         Ok(reservation)
+    }
+
+    /// Copies a slice into scoped storage and returns its live byte reservation.
+    pub fn copy_temporary_slice<T: Clone>(
+        &self,
+        values: &[T],
+        operation: &'static str,
+    ) -> Result<(Vec<T>, ScopedReservation<'_>), ResourceLimit> {
+        let mut copy = Vec::new();
+        let reservation = self.reserve_temporary_vec(&mut copy, values.len(), operation)?;
+        copy.extend_from_slice(values);
+        Ok((copy, reservation))
     }
 
     /// Copies text whose byte storage was admitted in aggregate.
@@ -2189,7 +2217,8 @@ mod tests {
             let mut values = Vec::<u8>::new();
             let result = ctx
                 .reserve_temporary_vec(&mut values, 2, "test temporary vec")
-                .map(|_| ());
+                .map(|_| ())
+                .map_err(CodecError::from);
             if result.is_err() {
                 assert_eq!(values.capacity(), 0);
             }
@@ -2281,6 +2310,37 @@ mod tests {
             "aé"
         );
     }
+    #[test]
+    fn copy_temporary_slice_refuses_before_allocation_and_clone() {
+        #[derive(Debug)]
+        struct ObservedClone<'a>(&'a std::cell::Cell<usize>);
+        impl Clone for ObservedClone<'_> {
+            fn clone(&self) -> Self {
+                self.0.set(self.0.get() + 1);
+                Self(self.0)
+            }
+        }
+        let cloned = std::cell::Cell::new(0);
+        let arena = DecodeArena::new();
+        let need = super::u64_from_index(std::mem::size_of::<ObservedClone<'_>>());
+        let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, need - 1);
+        let error = ctx.copy_temporary_slice(&[ObservedClone(&cloned)], "test scoped copy")
+            .expect_err("copy exceeds scoped storage");
+        assert_eq!(error.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(cloned.get(), 0);
+    }
+
+    #[test]
+    fn copy_temporary_slice_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty service root is admitted");
+        let (copy, reservation) = ctx.copy_temporary_slice(&[1u8, 2], "test scoped copy")
+            .expect("copy fits service profile");
+        assert_eq!(copy, [1, 2]);
+        drop(reservation);
+    }
+
     operation_case!(
         copy_temporary_slice_optional_limit_refuses_before_copy,
         copy_temporary_slice_optional_limit_succeeds_under_service_profile,

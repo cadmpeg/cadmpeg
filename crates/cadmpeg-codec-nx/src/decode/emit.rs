@@ -1543,6 +1543,7 @@ pub(super) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> O
 
 #[cfg(test)]
 pub(super) fn orient_edge_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     curve: &CurveId,
     range: [f64; 2],
@@ -1550,8 +1551,8 @@ pub(super) fn orient_edge_range(
     end: &VertexId,
     edge_tolerance: Option<f64>,
 ) -> Option<([f64; 2], bool)> {
-    let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
-    crate::test_support::with_decode_context(|ctx| {
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK));
+
         orient_edge_range_with_budget(
             ctx,
             ir,
@@ -1561,7 +1562,6 @@ pub(super) fn orient_edge_range(
             edge_tolerance,
             &geometry_budget,
         )
-    })
 }
 
 #[cfg(test)]
@@ -2321,6 +2321,11 @@ mod tests {
 
     #[test]
     fn curve_point_cache_reuses_an_exact_parameter_evaluation() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
         let curve = CurveId::mint("test:model:entity#synthetic:curve").expect("identity grammar");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -2332,7 +2337,7 @@ mod tests {
             )
             .expect("valid test curve"),
         ));
-        let geometry_budget = GeometryWorkBudget::new(1024);
+        let geometry_budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(1024));
         let mut cache = CurvePointCache::default();
 
         crate::test_support::with_decode_context(|ctx| {

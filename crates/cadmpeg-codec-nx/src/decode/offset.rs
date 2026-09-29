@@ -171,12 +171,13 @@ pub(super) fn saved_offset_carriers(
 
 #[cfg(test)]
 pub(super) fn certified_offset_cache_fit(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     support: &SurfaceGeometry,
     candidate: &SurfaceGeometry,
     distance: f64,
     tolerance: NonNegativeLength,
 ) -> Option<f64> {
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     certified_offset_cache_fit_with_budget(
         support,
         candidate,
@@ -430,9 +431,7 @@ impl HomogeneousSurfaceNet {
         let mut controls = Vec::new();
         for u in 0..u_count {
             let _reservation =
-                cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                    geometry_budget.charges,
-                    &mut controls,
+                geometry_budget.charges.reserve_temporary_vec(&mut controls,
                     v_count,
                     "nx offset net controls",
                 )?;
@@ -458,15 +457,11 @@ impl HomogeneousSurfaceNet {
         Ok(Some(Self {
             u_degree,
             v_degree,
-            u_knots: cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                geometry_budget.charges,
-                surface.u_knots(),
+            u_knots: geometry_budget.charges.copy_temporary_slice(surface.u_knots(),
                 "nx offset net knots",
             )
             .map(|(copy, _reservation)| copy)?,
-            v_knots: cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                geometry_budget.charges,
-                surface.v_knots(),
+            v_knots: geometry_budget.charges.copy_temporary_slice(surface.v_knots(),
                 "nx offset net knots",
             )
             .map(|(copy, _reservation)| copy)?,
@@ -494,9 +489,7 @@ impl HomogeneousSurfaceNet {
         let mut controls = Vec::new();
         for u in 0..next_u_count {
             let _reservation =
-                cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                    geometry_budget.charges,
-                    &mut controls,
+                geometry_budget.charges.reserve_temporary_vec(&mut controls,
                     next_v_count,
                     "nx offset derivative controls",
                 )?;
@@ -534,31 +527,23 @@ impl HomogeneousSurfaceNet {
             u_degree: self.u_degree - usize::from(u_axis),
             v_degree: self.v_degree - usize::from(!u_axis),
             u_knots: if u_axis {
-                cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                    geometry_budget.charges,
-                    &self.u_knots[1..self.u_knots.len() - 1],
+                geometry_budget.charges.copy_temporary_slice(&self.u_knots[1..self.u_knots.len() - 1],
                     "nx offset net knots",
                 )
                 .map(|(copy, _reservation)| copy)?
             } else {
-                cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                    geometry_budget.charges,
-                    &self.u_knots,
+                geometry_budget.charges.copy_temporary_slice(&self.u_knots,
                     "nx offset net knots",
                 )
                 .map(|(copy, _reservation)| copy)?
             },
             v_knots: if u_axis {
-                cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                    geometry_budget.charges,
-                    &self.v_knots,
+                geometry_budget.charges.copy_temporary_slice(&self.v_knots,
                     "nx offset net knots",
                 )
                 .map(|(copy, _reservation)| copy)?
             } else {
-                cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                    geometry_budget.charges,
-                    &self.v_knots[1..self.v_knots.len() - 1],
+                geometry_budget.charges.copy_temporary_slice(&self.v_knots[1..self.v_knots.len() - 1],
                     "nx offset net knots",
                 )
                 .map(|(copy, _reservation)| copy)?
@@ -687,9 +672,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
         };
 
         let mut u_breaks =
-            match cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                geometry_budget.charges,
-                &support_net.u_knots[support_net.u_degree..=support_net.u_count],
+            match geometry_budget.charges.copy_temporary_slice(&support_net.u_knots[support_net.u_degree..=support_net.u_count],
                 "nx offset net knots",
             )
             .map(|(copy, _reservation)| copy)
@@ -700,9 +683,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
         let candidate_u_breaks =
             &candidate_net.u_knots[candidate_net.u_degree..=candidate_net.u_count];
         if let Err(limit) =
-            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
-                &mut u_breaks,
+            geometry_budget.charges.reserve_temporary_vec(&mut u_breaks,
                 candidate_u_breaks.len(),
                 "nx offset u breaks",
             )
@@ -713,9 +694,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
         u_breaks.sort_by(f64::total_cmp);
         u_breaks.dedup();
         let mut v_breaks =
-            match cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                geometry_budget.charges,
-                &support_net.v_knots[support_net.v_degree..=support_net.v_count],
+            match geometry_budget.charges.copy_temporary_slice(&support_net.v_knots[support_net.v_degree..=support_net.v_count],
                 "nx offset net knots",
             )
             .map(|(copy, _reservation)| copy)
@@ -726,9 +705,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
         let candidate_v_breaks =
             &candidate_net.v_knots[candidate_net.v_degree..=candidate_net.v_count];
         if let Err(limit) =
-            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
-                &mut v_breaks,
+            geometry_budget.charges.reserve_temporary_vec(&mut v_breaks,
                 candidate_v_breaks.len(),
                 "nx offset v breaks",
             )
@@ -742,9 +719,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
         for u in u_breaks.windows(2).filter(|span| span[0] < span[1]) {
             for v in v_breaks.windows(2).filter(|span| span[0] < span[1]) {
                 if let Err(limit) =
-                    cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                        geometry_budget.charges,
-                        &mut rectangles,
+                    geometry_budget.charges.reserve_temporary_vec(&mut rectangles,
                         1,
                         "nx offset rectangles",
                     )
@@ -1001,9 +976,7 @@ pub(super) fn subdivide_offset_rectangle(
     let v_divisible = v != v0 && v != v1;
     if u_divisible && (split_u || !v_divisible) {
         let _reservation =
-            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
-                rectangles,
+            geometry_budget.charges.reserve_temporary_vec(rectangles,
                 2,
                 "nx offset subdivision rectangles",
             )?;
@@ -1011,9 +984,7 @@ pub(super) fn subdivide_offset_rectangle(
         Ok(true)
     } else if v_divisible {
         let _reservation =
-            cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
-                rectangles,
+            geometry_budget.charges.reserve_temporary_vec(rectangles,
                 2,
                 "nx offset subdivision rectangles",
             )?;
@@ -1187,16 +1158,18 @@ fn offset_support_control_hull_excludes_point(
 
 #[cfg(test)]
 pub(super) fn offset_surface_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surface: &SurfaceId,
     point: Point3,
     seed: Option<Point2>,
 ) -> Option<Point2> {
-    offset_surface_parameters_with_tolerance(ir, surface, point, seed, None)
+    offset_surface_parameters_with_tolerance(ctx, ir, surface, point, seed, None)
 }
 
 #[cfg(test)]
 pub(super) fn offset_surface_parameters_with_tolerance(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surface: &SurfaceId,
     point: Point3,
@@ -1204,18 +1177,19 @@ pub(super) fn offset_surface_parameters_with_tolerance(
     fit_tolerance: Option<f64>,
 ) -> Option<Point2> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    offset_surface_parameters_with_tolerance_with_index(&index, surface, point, seed, fit_tolerance)
+    offset_surface_parameters_with_tolerance_with_index(ctx, &index, surface, point, seed, fit_tolerance)
 }
 
 #[cfg(test)]
 fn offset_surface_parameters_with_tolerance_with_index(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
 ) -> Option<Point2> {
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     offset_surface_parameters_with_tolerance_with_index_and_budget(
         index,
         surface,
@@ -1280,9 +1254,7 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     }
     let mut starts = Vec::new();
     let _starts_reservation =
-        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
-            &mut starts,
+        geometry_budget.charges.reserve_temporary_vec(&mut starts,
             3,
             "nx offset support starting parameters",
         )?;
@@ -1878,12 +1850,13 @@ fn model_surface_point_and_derivatives(
 /// satisfy the two support surfaces rather than interpolating chart samples.
 #[cfg(test)]
 pub(super) fn continue_surface_intersection_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
     chart: &[Point3],
     fit_tolerance: f64,
 ) -> Option<[Vec<Point2>; 2]> {
-    continue_surface_intersection_parameters_with_seeds(
+    continue_surface_intersection_parameters_with_seeds(ctx,
         ir,
         surfaces,
         chart,
@@ -1894,13 +1867,14 @@ pub(super) fn continue_surface_intersection_parameters(
 
 #[cfg(test)]
 fn continue_surface_intersection_parameters_with_seeds(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
     chart: &[Point3],
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
 ) -> Option<[Vec<Point2>; 2]> {
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
         &index,
@@ -1991,9 +1965,7 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                         0,
                         geometry_budget,
                     )?;
-                    geometry_budget.charges.map_or(Ok(()), |ctx| {
-                        ctx.charge_collection_items_limit(1, "nx intersection blend grid cache")
-                    })?;
+                    geometry_budget.charges.charge_collection_items_limit(1, "nx intersection blend grid cache")?;
                     blend_parameter_grids.insert(surface.as_str(), grid);
                 }
                 let grid = blend_parameter_grids
@@ -2065,16 +2037,12 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
     }
     let mut lanes = [Vec::new(), Vec::new()];
     let _first_lane_reservation =
-        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
-            &mut lanes[0],
+        geometry_budget.charges.reserve_temporary_vec(&mut lanes[0],
             chart.len(),
             "nx intersection first parameter lane",
         )?;
     let _second_lane_reservation =
-        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
-            &mut lanes[1],
+        geometry_budget.charges.reserve_temporary_vec(&mut lanes[1],
             chart.len(),
             "nx intersection second parameter lane",
         )?;
@@ -2655,9 +2623,7 @@ pub(super) fn intersection_side(
         } else if let Some(geometry) = geometry {
             let mut control_points = Vec::new();
             let _reservation =
-                cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                    geometry_budget.charges,
-                    &mut control_points,
+                geometry_budget.charges.reserve_temporary_vec(&mut control_points,
                     uv.len(),
                     "nx intersection support controls",
                 )?;
@@ -2804,6 +2770,11 @@ mod tests {
 
     #[test]
     fn coarse_surface_search_samples_a_wide_finite_nurbs_domain() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
         use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
         use cadmpeg_ir::geometry::Surface;
 
@@ -2830,7 +2801,7 @@ mod tests {
             source_object: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
-        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+        let geometry_budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
         let parameters = super::coarse_model_surface_parameters(
             &index,
             &surface,
@@ -2890,6 +2861,11 @@ mod tests {
 
     #[test]
     fn pointwise_offset_rejection_preserves_the_adaptive_budget() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
         let coordinates = [0.0, 0.5, 1.0];
         let square_controls = [0.0, 0.0, 1.0];
         let support = NurbsSurface::from_lanes(
@@ -2938,7 +2914,7 @@ mod tests {
             .expect("finite offset-support test pole edit");
         let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support));
         let candidate = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate));
-        let budget = GeometryWorkBudget::new(200);
+        let budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(200));
 
         assert!(certified_offset_cache_fit_with_budget(
             &support,
@@ -3004,6 +2980,11 @@ mod tests {
 
     #[test]
     fn offset_inverse_continues_past_a_linear_support_boundary() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
         let support = SurfaceId::mint("test:model:entity#synthetic:linear-support")
             .expect("identity grammar");
         let offset =
@@ -3082,7 +3063,7 @@ mod tests {
             target,
             fit_tolerance,
         ));
-        let parameters = offset_surface_parameters_with_tolerance(
+        let parameters = offset_surface_parameters_with_tolerance(&geometry_ctx,
             &ir,
             &offset,
             target,
@@ -3094,7 +3075,7 @@ mod tests {
         assert!((parameters.u - 3.0).abs() <= fit_tolerance);
         assert!((parameters.v - 0.25).abs() <= fit_tolerance);
 
-        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+        let geometry_budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
         let refined = refine_offset_surface_parameters_with_index_and_budget(
             &index,
             &offset,
@@ -3109,7 +3090,7 @@ mod tests {
         assert!((refined.v - 0.25).abs() <= fit_tolerance);
 
         let remote = Point3::new(3.0, 0.25, 1e200);
-        assert!(offset_surface_parameters_with_tolerance(
+        assert!(offset_surface_parameters_with_tolerance(&geometry_ctx,
             &ir,
             &offset,
             remote,
@@ -3117,7 +3098,7 @@ mod tests {
             Some(1e190),
         )
         .is_none());
-        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+        let geometry_budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
         assert!(super::coarse_model_surface_parameters(
             &index,
             &offset,
@@ -3149,7 +3130,7 @@ mod tests {
             .expect("finite translated support");
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&near_zero);
         let target = Point3::new(3., 0.25, 1e-200);
-        assert!(offset_surface_parameters_with_tolerance(
+        assert!(offset_surface_parameters_with_tolerance(&geometry_ctx,
             &near_zero,
             &offset,
             target,
@@ -3157,7 +3138,7 @@ mod tests {
             Some(1e-210),
         )
         .is_none());
-        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+        let geometry_budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
         assert!(refine_offset_surface_parameters_with_index_and_budget(
             &index,
             &offset,
@@ -3191,6 +3172,11 @@ mod tests {
     }
     #[test]
     fn audit_regression_derivative_bounds_ignore_common_weight_scale() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
         use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
         for weight in [1., 1e-300, 1e-200, 1e-120, 1e120, 1e200, 1e300] {
             let axis = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
@@ -3207,7 +3193,7 @@ mod tests {
                 false,
             )
             .unwrap();
-            let geometry_budget = super::GeometryWorkBudget::new(super::MAX_ADAPTIVE_GEOMETRY_WORK);
+            let geometry_budget = super::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(super::MAX_ADAPTIVE_GEOMETRY_WORK));
             let net =
                 super::HomogeneousSurfaceNet::from_homogeneous_surface(&surface, &geometry_budget)
                     .unwrap()
@@ -3336,6 +3322,11 @@ mod tests {
     /// first Gauss-Newton step lands near `u = -0.2`, where x exceeds the
     /// finite range; the search halves it and converges.
     fn refine_across_the_overflowing_step(ir: &CadIr, offset: &SurfaceId) -> Option<Point2> {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
         let axis_x = 1.701e308;
         let radius = 1.0e307;
         let target = Point3::new(axis_x + radius * 0.3_f64.cos(), radius * 0.3_f64.sin(), 0.0);
@@ -3349,7 +3340,7 @@ mod tests {
             ),
             "{first_candidate:?}"
         );
-        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+        let geometry_budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
         refine_offset_surface_parameters_with_index_and_budget(
             &index,
             offset,

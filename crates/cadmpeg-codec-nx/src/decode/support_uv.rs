@@ -136,9 +136,7 @@ pub(super) fn linear_knots(
                 operation: "nx linear knot count",
             })?;
     let mut knots = Vec::new();
-    let _reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-        geometry_budget.charges,
-        &mut knots,
+    let _reservation = geometry_budget.charges.reserve_temporary_vec(&mut knots,
         count,
         "nx linear knots",
     )?;
@@ -303,6 +301,7 @@ fn support_uv_lane_matches_surface_with_budget(
 
 #[cfg(test)]
 pub(super) fn assign_ext11_support_uv_to_surfaces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
     points: &[Point3],
@@ -310,8 +309,8 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
     lanes: &SupportUv,
 ) -> Option<SupportUv> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
-    crate::test_support::with_decode_context(|ctx| {
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK));
+
         assign_ext11_support_uv_to_surfaces_with_index(
             ctx,
             &index,
@@ -321,7 +320,6 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
             lanes,
             &geometry_budget,
         )
-    })
     .expect("evaluator allocation succeeds")
 }
 
@@ -664,13 +662,13 @@ fn serialized_support_uv_seed_for_side(
 
 #[cfg(test)]
 pub(super) fn complete_ext11_support_uv(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
-    crate::test_support::with_decode_context(|ctx| {
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK));
+
         complete_ext11_support_uv_with_budget(ctx, ir, pending, &geometry_budget)
-    })
 }
 
 pub(super) fn complete_ext11_support_uv_with_budget(
@@ -799,12 +797,13 @@ pub(super) fn complete_ext11_support_uv_with_budget(
 
 #[cfg(test)]
 pub(super) fn complete_support_uv(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let support_budget = new_support_uv_budget();
     let coupled_support_budget = new_support_uv_budget();
-    let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK));
     complete_support_uv_with_budget(
         ir,
         pending,
@@ -825,16 +824,14 @@ pub(super) fn complete_support_uv_with_budget(
     coupled_geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut endpoint_witnesses = BTreeMap::new();
-    crate::test_support::with_decode_context(|ctx| {
         complete_support_uv_with_budget_and_endpoint_witnesses(
-            ctx,
+            geometry_budget.charges,
             ir,
             pending,
             (support_budget, geometry_budget),
             (coupled_support_budget, coupled_geometry_budget),
             &mut endpoint_witnesses,
         )
-    })
 }
 
 pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
@@ -883,12 +880,13 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
 
 #[cfg(test)]
 pub(super) fn invalidate_inconsistent_support_uv(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
 ) {
-    let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK));
     let support_budget = WorkBudget::new(MAX_SUPPORT_UV_SAMPLES);
-    crate::test_support::with_decode_context(|ctx| {
+
         invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
             ctx,
             ir,
@@ -898,7 +896,6 @@ pub(super) fn invalidate_inconsistent_support_uv(
             &geometry_budget,
             false,
         )
-    })
     .expect("evaluator allocation succeeds");
 }
 
@@ -2057,10 +2054,11 @@ fn complete_coupled_support_uv(
 
 #[cfg(test)]
 pub(super) fn complete_coupled_support_uv_for_test(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
 ) {
-    complete_coupled_support_uv_with_geometry_budget_for_test(
+    complete_coupled_support_uv_with_geometry_budget_for_test(ctx,
         ir,
         pending,
         super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
@@ -2069,14 +2067,15 @@ pub(super) fn complete_coupled_support_uv_for_test(
 
 #[cfg(test)]
 pub(super) fn complete_coupled_support_uv_with_geometry_budget_for_test(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     geometry_work: usize,
 ) {
     let coupled_support_budget = new_support_uv_budget();
-    let geometry_budget = GeometryWorkBudget::new(geometry_work);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(geometry_work));
     let mut failed_attempts = BTreeMap::new();
-    crate::test_support::with_decode_context(|ctx| {
+
         complete_coupled_support_uv(
             ctx,
             ir,
@@ -2086,7 +2085,6 @@ pub(super) fn complete_coupled_support_uv_with_geometry_budget_for_test(
             &mut failed_attempts,
             &mut BTreeMap::new(),
         )
-    })
     .expect("the coupled support-uv wave pairs its lanes");
 }
 
@@ -2917,6 +2915,11 @@ mod tests {
 
     #[test]
     fn oversized_serialized_lane_is_declined_before_geometry_work() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
         let surface_id =
             SurfaceId::mint("test:model:entity#synthetic:support-plane").expect("identity grammar");
         let mut ir = CadIr::empty();
@@ -2936,7 +2939,7 @@ mod tests {
         let points = vec![Point3::new(0.0, 0.0, 0.0); MAX_SUPPORT_UV_SAMPLES + 1];
         let values =
             SupportUvLane::new(vec![[0.0, 0.0]; MAX_SUPPORT_UV_SAMPLES + 1], points.len()).unwrap();
-        let geometry_budget = GeometryWorkBudget::new(1);
+        let geometry_budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(1));
 
         assert!(!support_uv_lane_matches_surface_with_budget(
             &index,
@@ -2976,6 +2979,11 @@ mod tests {
 
     #[test]
     fn unseeded_nurbs_completion_accepts_only_a_tolerance_certified_coarse_fit() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
         const FIT_TOLERANCE: f64 = 1.0e-10;
         const GEOMETRY_WORK: usize = 1_024;
 
@@ -3003,7 +3011,7 @@ mod tests {
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
 
-        let fit_budget = GeometryWorkBudget::new(GEOMETRY_WORK);
+        let fit_budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(GEOMETRY_WORK));
         let parameters = unseeded_nurbs_surface_parameters_with_index_and_budget(
             &index,
             &surface_id,
@@ -3017,7 +3025,7 @@ mod tests {
         .expect("coarse grid contains the exact chart point");
         assert_eq!(parameters, Point2::new(0.5, 0.5));
 
-        let miss_budget = GeometryWorkBudget::new(GEOMETRY_WORK);
+        let miss_budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(GEOMETRY_WORK));
         assert!(unseeded_nurbs_surface_parameters_with_index_and_budget(
             &index,
             &surface_id,

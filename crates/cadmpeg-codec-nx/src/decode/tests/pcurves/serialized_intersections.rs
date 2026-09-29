@@ -12,6 +12,11 @@ use super::{
 
 #[test]
 fn serialized_surface_curves_select_a_terminal_intersection_branch() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut ir = CadIr::empty();
     let surfaces = [
         SurfaceId::mint("nx:test:surface#0").expect("identity grammar"),
@@ -177,7 +182,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         })
         .into_iter()
         .collect();
-    complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(&geometry_ctx,
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
@@ -199,7 +204,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             cadmpeg_ir::geometry::FitTolerance::try_new(0.01).unwrap(),
         ));
     }
-    complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(&geometry_ctx,
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
@@ -255,7 +260,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             .unwrap(),
         );
     }
-    complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(&geometry_ctx,
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
@@ -353,7 +358,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             .unwrap(),
         );
     }
-    complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(&geometry_ctx,
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
@@ -394,7 +399,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         *parameterization = None;
     });
     ir.model.edges[0].set_param_range(None);
-    complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(&geometry_ctx,
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
@@ -410,6 +415,11 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
 
 #[test]
 fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut ir = CadIr::empty();
     let curve = CurveId::mint("test:model:entity#nx:test:closed-orientation-curve")
         .expect("identity grammar");
@@ -451,7 +461,7 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
     );
     let endpoint = Point3::new(2.0, 0.0, 0.0);
 
-    let oriented = orient_tolerant_intersection_pcurve(
+    let oriented = orient_tolerant_intersection_pcurve(&geometry_ctx,
         &ir,
         &curve,
         &support,

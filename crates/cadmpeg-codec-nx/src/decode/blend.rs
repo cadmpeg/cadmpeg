@@ -151,6 +151,11 @@ mod tests {
 
     #[test]
     fn blend_surface_frame_cache_evicts_old_entries_at_its_bound() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
         let mut cache = BlendSurfaceFrameCache::default();
         let frame = (
             Point3::new(0.0, 0.0, 0.0),
@@ -168,7 +173,7 @@ mod tests {
                     index as f64,
                     false,
                     frame,
-                    &GeometryWorkBudget::new(100),
+                    &GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100)),
                 )
                 .expect("cache allocation succeeds");
         }
@@ -177,7 +182,7 @@ mod tests {
 
         let newest = SurfaceId::mint("test:model:entity#surface-newest").expect("identity grammar");
         cache
-            .remember(&newest, 0.0, false, frame, &GeometryWorkBudget::new(100))
+            .remember(&newest, 0.0, false, frame, &GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100)))
             .expect("cache allocation succeeds");
         assert!(cache.get(&first, 0.0, false).is_none());
         assert_eq!(cache.get(&newest, 0.0, false), Some(frame));
@@ -186,6 +191,11 @@ mod tests {
 
     #[test]
     fn blend_boundary_point_cache_evicts_old_entries_at_its_bound() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
         let mut cache = BlendSurfaceFrameCache::default();
         let point = Point3::new(1.0, 2.0, 3.0);
         for index in 0..MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
@@ -197,7 +207,7 @@ mod tests {
                     index as f64,
                     index % 2,
                     point,
-                    &GeometryWorkBudget::new(100),
+                    &GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100)),
                 )
                 .expect("cache allocation succeeds");
         }
@@ -209,7 +219,7 @@ mod tests {
         let newest =
             SurfaceId::mint("test:model:entity#boundary-surface-newest").expect("identity grammar");
         cache
-            .remember_boundary_point(&newest, 0.0, 1, point, &GeometryWorkBudget::new(100))
+            .remember_boundary_point(&newest, 0.0, 1, point, &GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100)))
             .expect("cache allocation succeeds");
         assert!(cache.get_boundary_point(&first, 0.0, 0).is_none());
         assert_eq!(cache.get_boundary_point(&newest, 0.0, 1), Some(point));
@@ -297,6 +307,11 @@ mod tests {
 
     #[test]
     fn blend_contact_seed_cache_is_bounded_and_uses_the_nearest_chart() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
         let support =
             SurfaceId::mint("test:model:entity#synthetic:seed-support").expect("identity grammar");
         let spine =
@@ -315,7 +330,7 @@ mod tests {
                         offset_surface: offset_surface.as_str().to_owned(),
                         parameters: Point2::new(parameter, -parameter),
                     },
-                    &GeometryWorkBudget::new(100),
+                    &GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100)),
                 )
                 .expect("cache allocation succeeds");
         }
@@ -329,6 +344,11 @@ mod tests {
 
     #[test]
     fn numerical_seventh_common_weights_preserve_closest_point() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
         for weight in [1.0e-200, 1.0, 1.0e200] {
             let controls = [
@@ -339,7 +359,7 @@ mod tests {
                 &controls,
                 0.0,
                 [0.0, 1.0],
-                &GeometryWorkBudget::new(100),
+                &GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100)),
             )
             .expect("test solver allocation succeeds");
             assert!((distance - 0.25).abs() <= 4.0 * f64::EPSILON);
@@ -355,7 +375,7 @@ mod tests {
                 &curve,
                 Point3::new(0.25, 0.0, 0.0),
                 None,
-                &super::GeometryWorkBudget::new(super::MAX_ADAPTIVE_GEOMETRY_WORK),
+                &super::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(super::MAX_ADAPTIVE_GEOMETRY_WORK)),
             )
             .expect("evaluator allocation succeeds")
             .unwrap();
@@ -549,13 +569,14 @@ pub(super) fn decoded_surface_point_with_geometry_and_budget(
 
 #[cfg(test)]
 pub(super) fn blend_surface_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surface: &SurfaceId,
     point: Point3,
     seed: Option<Point2>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     blend_surface_parameters_inner(
         &index,
         surface,
@@ -571,6 +592,7 @@ pub(super) fn blend_surface_parameters(
 
 #[cfg(test)]
 pub(super) fn blend_surface_parameters_for_fit(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surface: &SurfaceId,
     point: Point3,
@@ -578,7 +600,7 @@ pub(super) fn blend_surface_parameters_for_fit(
     fit_tolerance: f64,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    blend_surface_parameters_for_fit_with_grid(
+    blend_surface_parameters_for_fit_with_grid(ctx,
         &index,
         surface,
         point,
@@ -598,6 +620,7 @@ pub(super) enum BlendParameterGrid<'a> {
 
 #[cfg(test)]
 fn blend_surface_parameters_for_fit_with_grid(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -605,7 +628,7 @@ fn blend_surface_parameters_for_fit_with_grid(
     fit_tolerance: f64,
     grid: BlendParameterGrid<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     blend_surface_parameters_for_fit_with_grid_and_budget(
         index,
         surface,
@@ -949,13 +972,14 @@ fn blend_surface_parameters_inner(
 
 #[cfg(test)]
 pub(super) fn coarse_blend_surface_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surface: &SurfaceId,
     point: Point3,
     depth: usize,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     coarse_blend_surface_parameters_with_index_and_budget(
         &index,
         surface,
@@ -1013,7 +1037,7 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
     let mut grid = Vec::new();
     let _grid_reservation =
         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
+            Some(geometry_budget.charges),
             &mut grid,
             9 * 5,
             "nx blend parameter grid",
@@ -1151,6 +1175,7 @@ fn blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
 
 #[cfg(test)]
 pub(super) fn refine_blend_surface_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surface: &SurfaceId,
     point: Point3,
@@ -1158,7 +1183,7 @@ pub(super) fn refine_blend_surface_parameters(
     depth: usize,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     refine_blend_surface_parameters_with_section_domain_and_budget(
         &index,
         surface,
@@ -1348,16 +1373,18 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
 
 #[cfg(test)]
 pub(super) fn blend_surface_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surface: &SurfaceId,
     u: f64,
     v: f64,
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
-    blend_surface_point_inner(ir, surface, u, v, 0)
+    blend_surface_point_inner(ctx, ir, surface, u, v, 0)
 }
 
 #[cfg(test)]
 fn blend_surface_point_inner(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surface: &SurfaceId,
     u: f64,
@@ -1365,7 +1392,7 @@ fn blend_surface_point_inner(
     depth: usize,
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     blend_surface_point_inner_with_index_and_budget(&index, surface, u, v, depth, &geometry_budget)
 }
 
@@ -1481,18 +1508,11 @@ impl BlendSurfaceFrameCache {
             entry.frame = frame;
             return Ok(());
         }
-        let surface = match geometry_budget.charges {
-            Some(ctx) => {
-                ctx.copy_retained_text_limit(surface.as_str(), "nx blend frame cache identity")
-            }
-            None => Ok(surface.as_str().to_owned()),
-        }?;
-        geometry_budget.charges.map_or(Ok(()), |ctx| {
-            ctx.charge_collection_items_limit(
+        let surface = geometry_budget.charges.copy_retained_text_limit(surface.as_str(), "nx blend frame cache identity")?;
+        geometry_budget.charges.charge_collection_items_limit(
                 cadmpeg_core::decode::u64_from_index(1),
                 "nx blend frame cache entries",
-            )
-        })?;
+            )?;
         if self.entries.len() == MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES {
             self.entries.pop_front();
         }
@@ -1537,18 +1557,11 @@ impl BlendSurfaceFrameCache {
             entry.point = point;
             return Ok(());
         }
-        let surface = match geometry_budget.charges {
-            Some(ctx) => {
-                ctx.copy_retained_text_limit(surface.as_str(), "nx blend boundary cache identity")
-            }
-            None => Ok(surface.as_str().to_owned()),
-        }?;
-        geometry_budget.charges.map_or(Ok(()), |ctx| {
-            ctx.charge_collection_items_limit(
+        let surface = geometry_budget.charges.copy_retained_text_limit(surface.as_str(), "nx blend boundary cache identity")?;
+        geometry_budget.charges.charge_collection_items_limit(
                 cadmpeg_core::decode::u64_from_index(1),
                 "nx blend boundary cache entries",
-            )
-        })?;
+            )?;
         if self.boundary_points.len() == MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
             self.boundary_points.pop_front();
         }
@@ -1630,7 +1643,7 @@ impl BlendContactSeedCache {
         if self.entries.len() < MAX_BLEND_CONTACT_SEEDS {
             let _entry_reservation =
                 cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                    geometry_budget.charges,
+                    Some(geometry_budget.charges),
                     &mut self.entries,
                     1,
                     "nx blend contact seed cache entries",
@@ -1671,6 +1684,7 @@ fn blend_surface_point_from_frame(
 
 #[cfg(test)]
 pub(super) fn blend_surface_u_derivative(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surface: &SurfaceId,
     u: f64,
@@ -1678,7 +1692,7 @@ pub(super) fn blend_surface_u_derivative(
     depth: usize,
 ) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     blend_surface_u_derivative_with_index_and_budget(&index, surface, u, v, depth, &geometry_budget)
 }
 
@@ -2737,6 +2751,7 @@ fn closest_pcurve_parameter_from_seed(
 
 #[cfg(test)]
 pub(super) fn closest_pcurve_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &PcurveGeometry,
     point: Point2,
     seed: Option<f64>,
@@ -2771,7 +2786,7 @@ pub(super) fn closest_pcurve_parameters(
     else {
         return Ok(None);
     };
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     let candidates = if degree != 1 || nurbs.weights().is_some() {
         let Some(candidates) =
             stationary_rational_distance_candidates(&homogeneous, search_seed, &geometry_budget)?
@@ -2925,7 +2940,7 @@ fn stationary_rational_distance_candidates<const DIMENSION: usize>(
         let mut parameters = Vec::new();
         let _reservation =
             cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 &mut parameters,
                 parameter_count,
                 "nx stationary parameters",
@@ -2938,7 +2953,7 @@ fn stationary_rational_distance_candidates<const DIMENSION: usize>(
         }
         let _candidate_reservation =
             cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 &mut candidates,
                 parameter_count,
                 "nx stationary candidates",
@@ -2982,7 +2997,7 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
     let mut normalized_controls = Vec::new();
     let _normalized_reservation =
         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
+            Some(geometry_budget.charges),
             &mut normalized_controls,
             controls.len(),
             "nx rational derivative normalized controls",
@@ -3000,7 +3015,7 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
     let mut weight = Vec::new();
     let _weight_reservation =
         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
+            Some(geometry_budget.charges),
             &mut weight,
             controls.len(),
             "nx rational derivative weights",
@@ -3015,7 +3030,7 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
         let mut residual = Vec::new();
         let _residual_reservation =
             cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 &mut residual,
                 controls.len(),
                 "nx rational derivative residuals",
@@ -3069,7 +3084,7 @@ fn difference_controls(
         values.len() - 1
     };
     let _reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-        geometry_budget.charges,
+        Some(geometry_budget.charges),
         &mut differences,
         count,
         "nx rational derivative differences",
@@ -3098,7 +3113,7 @@ fn bernstein_product(
     };
     let mut product = Vec::new();
     let _reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-        geometry_budget.charges,
+        Some(geometry_budget.charges),
         &mut product,
         count,
         "nx Bernstein product",
@@ -3194,7 +3209,7 @@ pub(super) fn scalar_bezier_roots_with_budget(
     {
         let _reservation =
             cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 &mut parameters,
                 1,
                 "nx Bezier root parameters",
@@ -3208,7 +3223,7 @@ pub(super) fn scalar_bezier_roots_with_budget(
     {
         let _reservation =
             cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 &mut parameters,
                 1,
                 "nx Bezier root parameters",
@@ -3219,7 +3234,7 @@ pub(super) fn scalar_bezier_roots_with_budget(
     let mut intervals = Vec::new();
     let _interval_reservation =
         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
+            Some(geometry_budget.charges),
             &mut intervals,
             1,
             "nx Bezier root intervals",
@@ -3252,7 +3267,7 @@ pub(super) fn scalar_bezier_roots_with_budget(
             if value <= tolerance {
                 let _reservation =
                     cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                        geometry_budget.charges,
+                        Some(geometry_budget.charges),
                         &mut parameters,
                         1,
                         "nx Bezier root parameters",
@@ -3265,7 +3280,7 @@ pub(super) fn scalar_bezier_roots_with_budget(
         if first.controls.last().is_some_and(|value| *value == 0.0) {
             let _reservation =
                 cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                    geometry_budget.charges,
+                    Some(geometry_budget.charges),
                     &mut parameters,
                     1,
                     "nx Bezier root parameters",
@@ -3274,7 +3289,7 @@ pub(super) fn scalar_bezier_roots_with_budget(
         }
         let _reservation =
             cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 &mut intervals,
                 2,
                 "nx Bezier root intervals",
@@ -3320,7 +3335,7 @@ fn subdivide_scalar_bezier_span(
     let mut first = Vec::new();
     let _first_reservation =
         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
+            Some(geometry_budget.charges),
             &mut first,
             count,
             "nx first Bezier subdivision",
@@ -3328,7 +3343,7 @@ fn subdivide_scalar_bezier_span(
     let mut second = Vec::new();
     let _second_reservation =
         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
+            Some(geometry_budget.charges),
             &mut second,
             count,
             "nx second Bezier subdivision",
@@ -3363,7 +3378,7 @@ fn scalar_bezier_value(
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
     let mut values = Vec::new();
     let _reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-        geometry_budget.charges,
+        Some(geometry_budget.charges),
         &mut values,
         controls.len(),
         "nx scalar Bezier evaluation",
@@ -3387,7 +3402,7 @@ pub(super) fn homogeneous_residual_distance<const DIMENSION: usize>(
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
     let mut values = Vec::new();
     let _reservation = cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-        geometry_budget.charges,
+        Some(geometry_budget.charges),
         &mut values,
         controls.len(),
         "nx rational Bezier evaluation",
@@ -3415,7 +3430,7 @@ fn closest_parameter_candidates(
     for candidate in candidates {
         let _reservation =
             cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 &mut candidates_copy,
                 1,
                 "nx closest parameter candidates",
@@ -3439,7 +3454,7 @@ fn closest_parameter_candidates(
         if (candidate.1 - minimum_distance).abs() <= 128.0 * f64::EPSILON * scale {
             let _reservation =
                 cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                    geometry_budget.charges,
+                    Some(geometry_budget.charges),
                     &mut nearest,
                     1,
                     "nx closest parameter minima",
@@ -3791,33 +3806,22 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
             return None;
         };
         let contact_seed = BlendContactSeed {
-            support: match match geometry_budget.charges {
-                Some(ctx) => ctx.copy_retained_text_limit(
+            support: match geometry_budget.charges.copy_retained_text_limit(
                     support.as_str(),
                     "nx blend contact support identity",
-                ),
-                None => Ok(support.as_str().to_owned()),
-            } {
+                ) {
                 Ok(value) => value,
                 Err(limit) => return Some(Err(limit)),
             },
-            spine: match match geometry_budget.charges {
-                Some(ctx) => {
-                    ctx.copy_retained_text_limit(spine.as_str(), "nx blend contact spine identity")
-                }
-                None => Ok(spine.as_str().to_owned()),
-            } {
+            spine: match geometry_budget.charges.copy_retained_text_limit(spine.as_str(), "nx blend contact spine identity") {
                 Ok(value) => value,
                 Err(limit) => return Some(Err(limit)),
             },
             parameter,
-            offset_surface: match match geometry_budget.charges {
-                Some(ctx) => ctx.copy_retained_text_limit(
+            offset_surface: match geometry_budget.charges.copy_retained_text_limit(
                     offset_surface.as_str(),
                     "nx blend contact offset identity",
-                ),
-                None => Ok(offset_surface.as_str().to_owned()),
-            } {
+                ) {
                 Ok(value) => value,
                 Err(limit) => return Some(Err(limit)),
             },
@@ -4202,6 +4206,7 @@ fn blend_surface_definition_from_procedural(
 
 #[cfg(test)]
 pub(super) fn surface_contact_direction(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surface: &SurfaceId,
     center: Point3,
@@ -4209,18 +4214,19 @@ pub(super) fn surface_contact_direction(
     depth: usize,
 ) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    surface_contact_direction_with_index(&index, surface, center, radius, depth)
+    surface_contact_direction_with_index(ctx, &index, surface, center, radius, depth)
 }
 
 #[cfg(test)]
 fn surface_contact_direction_with_index(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     center: Point3,
     radius: f64,
     depth: usize,
 ) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     surface_contact_direction_with_index_and_budget(
         index,
         surface,
@@ -4426,13 +4432,14 @@ fn model_curve_tangent_with_index_and_budget(
 
 #[cfg(test)]
 pub(super) fn closest_spine_parameter(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     curve: &CurveId,
     point: Point3,
     seed: Option<f64>,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     closest_spine_parameter_with_index_and_budget(&index, curve, point, seed, &geometry_budget)
 }
 
@@ -4560,7 +4567,7 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
         }
         let _reservation =
             cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 &mut candidates,
                 1,
                 "nx analytic inverse candidates",
@@ -4735,7 +4742,7 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
     let _weight_reservation = if curve.pole_rows().weight_at(0).is_some() {
         let reservation =
             cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 &mut weights,
                 count,
                 "nx spine NURBS weights",
@@ -4762,7 +4769,7 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
     let mut residuals = Vec::new();
     let _residual_reservation =
         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
+            Some(geometry_budget.charges),
             &mut residuals,
             count,
             "nx spine NURBS residuals",
@@ -4774,12 +4781,10 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
             control.z - point.z,
         ));
     }
-    geometry_budget.charges.map_or(Ok(()), |ctx| {
-        ctx.charge_collection_items_limit(
+    geometry_budget.charges.charge_collection_items_limit(
             cadmpeg_core::decode::u64_from_index(count),
             "nx spine positive controls",
-        )
-    })?;
+        )?;
     let Some(controls) = positive_controls(
         &residuals,
         (!weights.is_empty()).then_some(weights.as_slice()),
@@ -4789,12 +4794,10 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
     };
     let Some(spans) =
         homogeneous_spans_with_charge(degree, curve.knots(), controls, |count, operation| {
-            geometry_budget.charges.map_or(Ok(()), |ctx| {
-                ctx.charge_collection_items_limit(
+            geometry_budget.charges.charge_collection_items_limit(
                     cadmpeg_core::decode::u64_from_index(count),
                     operation,
                 )
-            })
         })?
     else {
         return Ok(None);
