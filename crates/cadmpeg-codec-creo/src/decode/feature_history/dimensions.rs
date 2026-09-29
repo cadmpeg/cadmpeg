@@ -16,9 +16,11 @@ use crate::container::ContainerScan;
 use crate::feature::definitions::SolverSubtable;
 
 use super::super::native::annotate;
+#[cfg(test)]
+use super::super::sketch_ids::sketch_identity_key;
 use super::super::sketch_ids::{
     feature_sketch_record_id_in_scan, model_sketch_id, section_owner_feature_id,
-    sketch_identity_key, sketch_identity_scope,
+    sketch_identity_scope,
 };
 use super::super::uniqueness::exactly_one;
 

@@ -344,6 +344,7 @@ pub(in super::super) fn saved_section_external_id(
     (!ambiguous_segment_ids.contains(&external_id)).then_some(external_id)
 }
 
+#[cfg(test)]
 pub(in super::super) fn section_segment_identity_suffix(
     unique_external_ids: &BTreeSet<u32>,
     segment: &crate::feature::definitions::FeatureSegment,
