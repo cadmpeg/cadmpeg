@@ -95,13 +95,14 @@ fn split_face_path_binds_to_projected_sketch_geometry() {
     let sketch_id =
         cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch-geometry").unwrap();
 
-    assert!(bind_definition_sketch(
+    assert!(with_test_ctx(|ctx| bind_definition_sketch(
+        ctx,
         &mut definition,
         "sketch-native",
         &feature_id,
         &sketch_id,
         true,
-    ));
+    )).unwrap());
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitFace {

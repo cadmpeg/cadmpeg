@@ -1902,13 +1902,14 @@ fn profile_consumers_require_a_regeneration_profile() {
     });
     let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
 
-    assert!(!bind_definition_sketch(
+    assert!(!with_test_ctx(|ctx| bind_definition_sketch(
+        ctx,
         &mut definition,
         "sketch-native",
         &FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
         &sketch,
         false,
-    ));
+    )).unwrap());
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -1916,13 +1917,14 @@ fn profile_consumers_require_a_regeneration_profile() {
             ..
         })
     ));
-    assert!(bind_definition_sketch(
+    assert!(with_test_ctx(|ctx| bind_definition_sketch(
+        ctx,
         &mut definition,
         "sketch-native",
         &FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
         &sketch,
         true,
-    ));
+    )).unwrap());
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Extrude {
