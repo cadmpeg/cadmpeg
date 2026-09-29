@@ -126,6 +126,23 @@ fn insert_feature_set<T: Eq + Hash>(
     Ok(items.insert(item))
 }
 
+fn insert_feature_tree<K: Ord, V>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut std::collections::BTreeMap<K, V>,
+    key: K,
+    value: V,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !items.contains_key(&key) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+        }
+    }
+    // discarded-value: parameter properties keep the last value for a repeated key.
+    let _ = items.insert(key, value);
+    Ok(())
+}
+
 fn copy_feature_text(
     ctx: Option<&DecodeContext<'_>>,
     text: &str,
@@ -1582,7 +1599,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
 
     let mut parameters = native
         .iter()
-        .map(|parameter| {
+        .map(|parameter| -> Result<NeutralParameter, CodecError> {
             let stream = native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM);
             let native_owner = parameter
                 .owner_record_index()
@@ -1591,16 +1608,17 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 native_owner.and_then(|owner| scope_ids.get(&(stream, owner.scope_record_index())));
             let mut properties = BTreeMap::new();
             if parameter.kind() != DesignParameterKind::User {
-                properties.insert(
+                insert_feature_tree(ctx, &mut properties,
                     cadmpeg_core::nonblank_literal!("source_kind"),
-                    parameter.source_kind().to_owned(),
-                );
+                    copy_feature_text(ctx, parameter.source_kind(),
+                        "f3d projected parameter source kind")?,
+                    "f3d projected parameter property")?;
             }
             if let (Some(owner_record_index), None) = (parameter.owner_record_index(), owner) {
-                properties.insert(
+                insert_feature_tree(ctx, &mut properties,
                     cadmpeg_core::nonblank_literal!("owner_record_index"),
                     owner_record_index.to_string(),
-                );
+                    "f3d projected parameter property")?;
             }
             let value = match parameter.unit().map(|field| field.value.as_str()) {
                 Some(unit) if design_length_unit(unit) => {
@@ -1612,22 +1630,28 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
                 None => Some(ParameterValue::Real(parameter.evaluated_value())),
                 Some(unit) => {
-                    properties.insert(cadmpeg_core::nonblank_literal!("unit"), unit.into());
-                    properties.insert(
+                    insert_feature_tree(ctx, &mut properties,
+                        cadmpeg_core::nonblank_literal!("unit"),
+                        copy_feature_text(ctx, unit, "f3d projected parameter unit")?,
+                        "f3d projected parameter property")?;
+                    insert_feature_tree(ctx, &mut properties,
                         cadmpeg_core::nonblank_literal!("evaluated_scalar"),
                         parameter.evaluated_value().get().to_string(),
-                    );
+                        "f3d projected parameter property")?;
                     None
                 }
             };
-            NeutralParameter {
+            Ok(NeutralParameter {
                 id: neutral_parameter_id(parameter),
-                owner: owner.cloned(),
+                owner: owner.map(|id| copy_feature_id(ctx, id,
+                    "f3d projected parameter owner id")).transpose()?,
                 ordinal: owner
                     .zip(native_owner)
                     .map_or(parameter.source_ordinal, |(_, owner)| owner.local_ordinal()),
-                name: parameter.name().to_owned(),
-                expression: parameter.expression().to_owned(),
+                name: copy_feature_text(ctx, parameter.name(),
+                    "f3d projected parameter name")?,
+                expression: copy_feature_text(ctx, parameter.expression(),
+                    "f3d projected parameter expression")?,
                 display: if parameter.source_kind().contains("Diameter Dimension") {
                     Some(DimensionDisplay::Diameter)
                 } else if parameter.source_kind().contains("Radius Dimension") {
@@ -1639,10 +1663,15 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 properties,
                 pmi: None,
-                native_ref: Some(parameter.id.clone()),
-            }
+                native_ref: Some(copy_feature_text(ctx, &parameter.id,
+                    "f3d projected parameter native reference")?),
+            })
         })
-        .collect::<Vec<_>>();
+        .try_fold(Vec::new(), |mut projected, parameter| {
+            push_feature_item(ctx, &mut projected, parameter?,
+                "f3d projected parameter output")?;
+            Ok::<_, CodecError>(projected)
+        })?;
     let parameter_scopes = native
         .iter()
         .filter_map(|parameter| {
