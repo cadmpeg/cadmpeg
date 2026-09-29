@@ -84,7 +84,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     );
     body.losses.extend(transfer_losses);
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
-    source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns)?;
+    source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns, ctx)?;
     Ok(Decoded {
         ir,
         body,

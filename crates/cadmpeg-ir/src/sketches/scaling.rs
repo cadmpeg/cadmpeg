@@ -210,10 +210,12 @@ impl SketchGeometry {
             }
             Definition::Nurbs { curve } => {
                 curve
-                    .edit_control_points(|point| {
-                        point.u *= scale.get();
-                        point.v *= scale.get();
-                        Ok(())
+                    .try_map_control_points(|_, point| {
+                        planar_point(point, scale).ok_or_else(|| {
+                            NurbsError::Structure(
+                                "control_points contains a non-finite point".into(),
+                            )
+                        })
                     })
                     .map_err(SketchLengthScaleError::CurveControlPoints)?;
             }

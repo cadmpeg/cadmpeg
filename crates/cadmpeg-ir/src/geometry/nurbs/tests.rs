@@ -763,7 +763,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     );
     let mut mapped = pcurve.clone();
     mapped
-        .map_control_points(|point| Ok(point.negated()))
+        .try_map_control_points(|_, point| Ok::<_, NurbsError>(point.negated()))
         .unwrap();
     assert_eq!(
         mapped.control_points(),

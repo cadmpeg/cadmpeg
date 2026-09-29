@@ -3113,9 +3113,10 @@ fn e5_pcurve_on_surface(
                 };
                 let scale = decoded_surface.uv_scale.map(FiniteReal::get);
                 if nurbs
-                    .edit_control_points(|point| {
-                        *point = Point2::new(point.u * scale[0], point.v * scale[1]);
-                        Ok(())
+                    .try_map_control_points(|_, point| {
+                        let point = point.get();
+                        FinitePoint2::new(Point2::new(point.u * scale[0], point.v * scale[1]))
+                            .ok_or(())
                     })
                     .is_err()
                 {

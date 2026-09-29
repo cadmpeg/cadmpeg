@@ -6968,22 +6968,6 @@ impl IntcurveSupportContext {
         self.sides[side].pcurve = geometry.map(SupportPcurve::from);
     }
 
-    /// Copy a pcurve mapping between support sides of this context.
-    pub fn copy_pcurve(&mut self, source: usize, target: usize) {
-        let (source, target) = match source.cmp(&target) {
-            std::cmp::Ordering::Less => {
-                let (before, after) = self.sides.split_at_mut(target);
-                (&before[source], &mut after[0])
-            }
-            std::cmp::Ordering::Greater => {
-                let (before, after) = self.sides.split_at_mut(source);
-                (&after[0], &mut before[target])
-            }
-            std::cmp::Ordering::Equal => return,
-        };
-        target.pcurve.clone_from(&source.pcurve);
-    }
-
     /// Copy a support pcurve under a decoder's allocation limits.
     pub fn try_copy_pcurve_for_decode(
         &mut self,

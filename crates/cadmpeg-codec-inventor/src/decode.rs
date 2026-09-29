@@ -1068,7 +1068,7 @@ fn decode_container<'a>(
     if !kernel_unknowns.is_empty() {
         admit_kernel_unknown_fidelity(ctx, &source_fidelity, &kernel_unknowns)?;
         source_fidelity
-            .attach_native_unknown_records(&mut ir, "inventor", kernel_unknowns)
+            .attach_native_unknown_records(&mut ir, "inventor", kernel_unknowns, ctx)
             .map_err(|error| {
                 CodecError::malformed(format_args!(
                     "Inventor kernel unknown retention failed: {error}"

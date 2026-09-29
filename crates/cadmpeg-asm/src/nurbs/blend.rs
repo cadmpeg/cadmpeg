@@ -702,9 +702,13 @@ fn blend_value_name<'a>(cur: &mut Cur<'a>) -> Option<&'a str> {
 
 fn radius_function_geometry(mut function: PcurveNurbs) -> Option<PcurveGeometry> {
     function
-        .edit_control_points(|point| {
-            point.u *= LEN_TO_MM;
-            Ok(())
+        .try_map_control_points(|_, point| {
+            let point = point.get();
+            cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                point.u * LEN_TO_MM,
+                point.v,
+            ))
+            .ok_or(())
         })
         .ok()?;
     Some(PcurveGeometry::Nurbs { nurbs: function })

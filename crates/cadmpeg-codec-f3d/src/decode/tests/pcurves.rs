@@ -1187,14 +1187,13 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected NURBS pcurve")
     };
-    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|point| {
+        .try_map_control_points(|pole_index, point| {
+            let mut point = point.get();
             if pole_index == 0 {
                 point.u = -0.75;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
         })
         .unwrap();
     let cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { form: inline } =
@@ -1226,14 +1225,13 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
     else {
         panic!("expected rational pcurve")
     };
-    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|point| {
+        .try_map_control_points(|pole_index, point| {
+            let mut point = point.get();
             if pole_index == 0 {
                 point.u = -0.25;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
         })
         .unwrap();
     let mut weights = nurbs.pole_rows().weights();
@@ -1286,17 +1284,16 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected ref-form NURBS pcurve")
     };
-    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|point| {
+        .try_map_control_points(|pole_index, point| {
+            let mut point = point.get();
             if pole_index == 0 {
                 point.u = -0.75;
             }
             if pole_index == 1 {
                 point.v = 3.5;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
         })
         .unwrap();
     edit::replace(nurbs, |previous| {

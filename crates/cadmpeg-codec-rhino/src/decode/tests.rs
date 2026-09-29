@@ -33,6 +33,8 @@ use cadmpeg_ir::topology::{Body, BodyKind, Point, Sense};
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
+mod carrier_copy;
+
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
     NurbsCurve::from_lanes(
         1,

@@ -456,58 +456,9 @@ impl SourceFidelity {
         Ok(())
     }
 
-    /// Stores source bytes in the sidecar and references in the product model.
-    ///
-    /// Incoming identities must be distinct from each other and from existing
-    /// retained and native unknown records. Both destinations are committed
-    /// after all admission succeeds. Existing records remain.
+    /// Stores source bytes and native references within the decode budget.
+    /// Both destinations are committed after all admission succeeds.
     pub fn attach_native_unknown_records(
-        &mut self,
-        ir: &mut CadIr,
-        format: &str,
-        records: impl IntoIterator<Item = UnknownRecord>,
-    ) -> Result<(), NativeConvertError> {
-        let mut incoming = records.into_iter().peekable();
-        if incoming.peek().is_none() {
-            return Ok(());
-        }
-        let mut products = ir.native_unknowns(format)?;
-        let existing_ids: BTreeSet<&str> = ir
-            .native
-            .0
-            .values()
-            .filter_map(|namespace| namespace.arenas().get("unknowns"))
-            .flatten()
-            .map(crate::native::NativeRecord::id)
-            .collect();
-        let mut retained = BTreeMap::new();
-        for record in incoming {
-            if self.retained_records.contains_key(record.id())
-                || existing_ids.contains(record.id().as_str())
-                || retained.contains_key(record.id())
-            {
-                return Err(duplicate_record(record.id()));
-            }
-            let product = crate::NativeUnknownRecord::try_from(&record)?;
-            let stream = self
-                .annotations
-                .provenance
-                .get(record.id().as_str())
-                .map_or(SourceOwner::Root, |provenance| {
-                    SourceOwner::from(provenance.stream())
-                });
-            let (id, record) = RetainedSourceRecord::from_unknown(stream, record)?;
-            products.push(product);
-            retained.insert(id, record);
-        }
-        ir.set_native_unknowns_from(format, products)?;
-        self.retained_records.extend(retained);
-        Ok(())
-    }
-
-    /// Attach decode-produced unknowns with every typed and native projection
-    /// admitted through the caller's resource budget.
-    pub fn attach_native_unknown_records_for_decode(
         &mut self,
         ir: &mut CadIr,
         format: &str,
@@ -794,6 +745,10 @@ mod tests {
 
     #[test]
     fn unknown_conversion_keeps_the_retained_bytes_as_the_record_image() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
         for attach in [false, true] {
             let unknown: UnknownRecord = serde_json::from_value(serde_json::json!({
                 "id": "synthetic:model:unknown#0",
@@ -804,7 +759,12 @@ mod tests {
             let mut fidelity = SourceFidelity::default();
             if attach {
                 fidelity
-                    .attach_native_unknown_records(&mut CadIr::empty(), "synthetic", [unknown])
+                    .attach_native_unknown_records(
+                        &mut CadIr::empty(),
+                        "synthetic",
+                        [unknown].into(),
+                        &ctx,
+                    )
                     .unwrap();
             } else {
                 fidelity

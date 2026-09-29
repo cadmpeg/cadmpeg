@@ -854,7 +854,9 @@ impl CodecBackend for FcstdCodec {
                     0,
                     ctx.copy_retained(bytes, "retain FCStd thumbnail")?,
                     vec![native::native_id("document", "0")],
-                )],
+                )]
+                .into(),
+                ctx,
             )?;
         }
         let namespace = ir.native.namespace_mut("fcstd");
