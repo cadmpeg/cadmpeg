@@ -2854,20 +2854,17 @@ pub(super) fn project(
         } else if let Some(orientation) = similarity_orientation(transform) {
             // This arm is the transformed route, so the generatrix is placed
             // here rather than carried past the untransformed one.
-            let placed_generatrix = match generatrix
+            let Ok(placed_generatrix) = generatrix
                 .try_map_owned_control_points(|point| transform.apply_point(point.get()).ok_or(()))
-            {
-                Ok(placed) => placed,
-                Err(()) => {
-                    super::push_optional_attributed_loss(
-                        ctx,
-                        &mut losses,
-                        entry,
-                        IgesLossCode::NurbsTransformNonFinite,
-                        format_args!("{}", "IGES placement produces non-finite generatrix poles"),
-                    )?;
-                    continue;
-                }
+            else {
+                super::push_optional_attributed_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    IgesLossCode::NurbsTransformNonFinite,
+                    format_args!("{}", "IGES placement produces non-finite generatrix poles"),
+                )?;
+                continue;
             };
             procedural_directrix = crate::ids::curve_admitted(
                 &crate::ids::Stem::directory(entry.sequence)

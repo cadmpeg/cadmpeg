@@ -3035,22 +3035,19 @@ pub(super) fn project(
                     use_curve: None,
                 });
             }
-            let ring = match cadmpeg_ir::topology::LoopRing::try_new_for_decode(
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::try_new_for_decode(
                 ctx,
                 coedge_ids,
                 Vec::new(),
-            )? {
-                Ok(ring) => ring,
-                Err(_) => {
-                    super::push_optional_entity_loss(
-                        Some(ctx),
-                        &mut losses,
-                        entry,
-                        format_args!("{}", "boundary loop contains no coedges"),
-                    )?;
-                    valid = false;
-                    break;
-                }
+            )? else {
+                super::push_optional_entity_loss(
+                    Some(ctx),
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "boundary loop contains no coedges"),
+                )?;
+                valid = false;
+                break;
             };
             crate::decode_resource::admit_optional_entities(
                 Some(ctx),

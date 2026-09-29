@@ -1013,7 +1013,9 @@ fn e5_native_uv_endpoints(
                 None,
                 range[1].get(),
             ))?;
-            Ok(start.zip(end).map(|(start, end)| [start.into(), end.into()]))
+            Ok(start
+                .zip(end)
+                .map(|(start, end)| [start.into(), end.into()]))
         }
     }
 }
@@ -3063,12 +3065,14 @@ fn e5_pcurve_on_surface(
             }
             let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
                 cadmpeg_ir::eval::surface_point(surface, uv[0].u, uv[0].v),
-            )? else {
+            )?
+            else {
                 return Ok(None);
             };
-            let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::surface_point(surface, uv[1].u, uv[1].v),
-            )? else {
+            let Some(end) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
+                surface, uv[1].u, uv[1].v,
+            ))?
+            else {
                 return Ok(None);
             };
             let Ok(line) = cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction)
@@ -3120,22 +3124,22 @@ fn e5_pcurve_on_surface(
                 let geometry = PcurveGeometry::Nurbs { nurbs };
                 let start_angle = angular_range[0];
                 let end_angle = angular_range[1];
-                let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::surface_point(
+                let Some(start) =
+                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
                         surface,
                         (center[0] + radius * start_angle.cos()) * scale[0],
                         (center[1] + radius * start_angle.sin()) * scale[1],
-                    ),
-                )? else {
+                    ))?
+                else {
                     return Ok(None);
                 };
-                let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::surface_point(
+                let Some(end) =
+                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
                         surface,
                         (center[0] + radius * end_angle.cos()) * scale[0],
                         (center[1] + radius * end_angle.sin()) * scale[1],
-                    ),
-                )? else {
+                    ))?
+                else {
                     return Ok(None);
                 };
                 Ok(Some((geometry, angular_range, [start.get(), end.get()])))
@@ -3193,12 +3197,14 @@ fn e5_pcurve_on_surface(
             };
             let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
                 cadmpeg_ir::eval::surface_point(surface, first[0], first[1]),
-            )? else {
+            )?
+            else {
                 return Ok(None);
             };
-            let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::surface_point(surface, last[0], last[1]),
-            )? else {
+            let Some(end) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
+                surface, last[0], last[1],
+            ))?
+            else {
                 return Ok(None);
             };
             Ok(Some((
@@ -3257,22 +3263,26 @@ fn e5_pcurve_on_surface(
                 let range = range.map(FiniteReal::get);
                 let Some(start_uv) = cadmpeg_ir::eval::finite_or_refusal(
                     cadmpeg_ir::eval::pcurve_uv(&geometry, range[0]),
-                )? else {
+                )?
+                else {
                     return Ok(None);
                 };
                 let Some(end_uv) = cadmpeg_ir::eval::finite_or_refusal(
                     cadmpeg_ir::eval::pcurve_uv(&geometry, range[1]),
-                )? else {
+                )?
+                else {
                     return Ok(None);
                 };
                 let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
                     cadmpeg_ir::eval::surface_point(surface, start_uv.u, start_uv.v),
-                )? else {
+                )?
+                else {
                     return Ok(None);
                 };
                 let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
                     cadmpeg_ir::eval::surface_point(surface, end_uv.u, end_uv.v),
-                )? else {
+                )?
+                else {
                     return Ok(None);
                 };
                 Ok(Some((geometry, range, [start.get(), end.get()])))
@@ -3620,16 +3630,18 @@ fn e5_occurrence_intersection_cache(
     )? {
         return Ok(Some((left_curve, *left_range)));
     }
-    Ok(match (
-        is_exact_e5_analytic_curve(left_curve),
-        is_exact_e5_analytic_curve(right_curve),
-        is_e5_nurbs_curve(right_curve),
-        is_e5_nurbs_curve(left_curve),
-    ) {
-        (true, false, true, _) => Some((left_curve, *left_range)),
-        (false, true, _, true) => Some((right_curve, *right_range)),
-        _ => None,
-    })
+    Ok(
+        match (
+            is_exact_e5_analytic_curve(left_curve),
+            is_exact_e5_analytic_curve(right_curve),
+            is_e5_nurbs_curve(right_curve),
+            is_e5_nurbs_curve(left_curve),
+        ) {
+            (true, false, true, _) => Some((left_curve, *left_range)),
+            (false, true, _, true) => Some((right_curve, *right_range)),
+            _ => None,
+        },
+    )
 }
 
 fn copy_e5_curve(
@@ -3739,28 +3751,30 @@ fn e5_circle_carriers_have_same_ordered_sweep(
     {
         return Ok(false);
     }
-    let Some(left_start) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::curve_point(left, left_range[0]),
-    )? else {
+    let Some(left_start) =
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(left, left_range[0]))?
+    else {
         return Ok(false);
     };
-    let Some(left_end) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::curve_point(left, left_range[1]),
-    )? else {
+    let Some(left_end) =
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(left, left_range[1]))?
+    else {
         return Ok(false);
     };
-    let Some(right_start) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::curve_point(right, right_range[0]),
-    )? else {
+    let Some(right_start) =
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(right, right_range[0]))?
+    else {
         return Ok(false);
     };
-    let Some(right_end) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::curve_point(right, right_range[1]),
-    )? else {
+    let Some(right_end) =
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(right, right_range[1]))?
+    else {
         return Ok(false);
     };
-    Ok(left_start.distance(right_start.get()) <= E5_ENDPOINT_MATCH_TOLERANCE
-        && left_end.distance(right_end.get()) <= E5_ENDPOINT_MATCH_TOLERANCE)
+    Ok(
+        left_start.distance(right_start.get()) <= E5_ENDPOINT_MATCH_TOLERANCE
+            && left_end.distance(right_end.get()) <= E5_ENDPOINT_MATCH_TOLERANCE,
+    )
 }
 
 fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> bool {

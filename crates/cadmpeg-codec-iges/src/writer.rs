@@ -11,7 +11,9 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{ExportBody, WritePath};
-use cadmpeg_ir::eval::{curve_point, finite_or_refusal, model_surface_point, pcurve_uv, EvaluationFailure};
+use cadmpeg_ir::eval::{
+    curve_point, finite_or_refusal, model_surface_point, pcurve_uv, EvaluationFailure,
+};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError, NurbsSurface},
@@ -2304,16 +2306,39 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
         });
         let mut is_pcurve_carrier = false;
         for pcurve in &ir.model.pcurves {
-            let Some(range) = pcurve.parameter_range() else { continue };
+            let Some(range) = pcurve.parameter_range() else {
+                continue;
+            };
             if !curve_matches_pcurve(&curve.geometry, range.get(), pcurve)
-                || !edge.param_range().is_some_and(|edge_range| same_range(edge_range.get(), range.get()))
-            { continue; }
+                || !edge
+                    .param_range()
+                    .is_some_and(|edge_range| same_range(edge_range.get(), range.get()))
+            {
+                continue;
+            }
             let evaluated_start = finite_or_refusal(curve_point(&curve.geometry, range[0]))?;
-            let (Some(start), Some(evaluated_start)) = (vertex_position(ir, &edge.start), evaluated_start) else { continue };
-            if !same_point_with_tolerance(start.get(), evaluated_start.get(), matching_topology_tolerance) { continue; }
+            let (Some(start), Some(evaluated_start)) =
+                (vertex_position(ir, &edge.start), evaluated_start)
+            else {
+                continue;
+            };
+            if !same_point_with_tolerance(
+                start.get(),
+                evaluated_start.get(),
+                matching_topology_tolerance,
+            ) {
+                continue;
+            }
             let evaluated_end = finite_or_refusal(curve_point(&curve.geometry, range[1]))?;
-            let (Some(end), Some(evaluated_end)) = (vertex_position(ir, &edge.end), evaluated_end) else { continue };
-            if same_point_with_tolerance(end.get(), evaluated_end.get(), matching_topology_tolerance) {
+            let (Some(end), Some(evaluated_end)) = (vertex_position(ir, &edge.end), evaluated_end)
+            else {
+                continue;
+            };
+            if same_point_with_tolerance(
+                end.get(),
+                evaluated_end.get(),
+                matching_topology_tolerance,
+            ) {
                 is_pcurve_carrier = true;
                 break;
             }
@@ -4179,10 +4204,12 @@ impl PcurveOrientationContext<'_> {
                           position: &str| {
                 point.map_err(|failure| match failure {
                     EvaluationFailure::ResourceLimit(limit) => limit.into(),
-                    EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => CodecError::malformed(format_args!(
-                        "IGES point {} pcurve {} {position} has non-finite coordinates",
-                        self.owner, pcurve.id
-                    )),
+                    EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
+                        CodecError::malformed(format_args!(
+                            "IGES point {} pcurve {} {position} has non-finite coordinates",
+                            self.owner, pcurve.id
+                        ))
+                    }
                 })
             };
             mapped.push((finite(start, "start")?.get(), finite(end, "end")?.get()));
@@ -5292,13 +5319,18 @@ fn revolution_surface_entities(
     } else {
         [start_parameter, terminate_parameter]
     };
-    let start = curve_point(&geometry, evaluation_interval[0]).map_err(|failure| match failure {
-        EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
-        EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => CodecError::Malformed("IGES Type 120 generatrix start cannot be evaluated".into()),
-    })?;
+    let start =
+        curve_point(&geometry, evaluation_interval[0]).map_err(|failure| match failure {
+            EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
+            EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
+                CodecError::Malformed("IGES Type 120 generatrix start cannot be evaluated".into())
+            }
+        })?;
     let end = curve_point(&geometry, evaluation_interval[1]).map_err(|failure| match failure {
         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
-        EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => CodecError::Malformed("IGES Type 120 generatrix terminate cannot be evaluated".into()),
+        EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
+            CodecError::Malformed("IGES Type 120 generatrix terminate cannot be evaluated".into())
+        }
     })?;
     let axis_direction = axis_direction.to_unit_length();
     let axis_end = axis_origin.translated(*axis_direction.as_raw(), 1.0);
@@ -5623,20 +5655,48 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
     })
 }
 
-fn nurbs_surface_closed_u(nurbs: &NurbsSurface, u_range: [f64; 2], v_range: [f64; 2]) -> Result<bool, CodecError> {
+fn nurbs_surface_closed_u(
+    nurbs: &NurbsSurface,
+    u_range: [f64; 2],
+    v_range: [f64; 2],
+) -> Result<bool, CodecError> {
     for v in [v_range[0], v_range[0].midpoint(v_range[1]), v_range[1]] {
-        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_surface_point(nurbs, u_range[0], v))? else { return Ok(false) };
-        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::nurbs_surface_point(nurbs, u_range[1], v))? else { return Ok(false) };
-        if !close_point(start.get(), end.get()) { return Ok(false); }
+        let Some(start) =
+            finite_or_refusal(cadmpeg_ir::eval::nurbs_surface_point(nurbs, u_range[0], v))?
+        else {
+            return Ok(false);
+        };
+        let Some(end) =
+            finite_or_refusal(cadmpeg_ir::eval::nurbs_surface_point(nurbs, u_range[1], v))?
+        else {
+            return Ok(false);
+        };
+        if !close_point(start.get(), end.get()) {
+            return Ok(false);
+        }
     }
     Ok(true)
 }
 
-fn nurbs_surface_closed_v(nurbs: &NurbsSurface, u_range: [f64; 2], v_range: [f64; 2]) -> Result<bool, CodecError> {
+fn nurbs_surface_closed_v(
+    nurbs: &NurbsSurface,
+    u_range: [f64; 2],
+    v_range: [f64; 2],
+) -> Result<bool, CodecError> {
     for u in [u_range[0], u_range[0].midpoint(u_range[1]), u_range[1]] {
-        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_surface_point(nurbs, u, v_range[0]))? else { return Ok(false) };
-        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::nurbs_surface_point(nurbs, u, v_range[1]))? else { return Ok(false) };
-        if !close_point(start.get(), end.get()) { return Ok(false); }
+        let Some(start) =
+            finite_or_refusal(cadmpeg_ir::eval::nurbs_surface_point(nurbs, u, v_range[0]))?
+        else {
+            return Ok(false);
+        };
+        let Some(end) =
+            finite_or_refusal(cadmpeg_ir::eval::nurbs_surface_point(nurbs, u, v_range[1]))?
+        else {
+            return Ok(false);
+        };
+        if !close_point(start.get(), end.get()) {
+            return Ok(false);
+        }
     }
     Ok(true)
 }
@@ -5981,17 +6041,24 @@ fn curve_reference_span_inner(
                     let range = default_range(geometry.solved().ok_or_else(|| {
                         CodecError::NotImplemented("IGES carrier has no solved geometry".into())
                     })?)?;
-                    let start = curve_point(geometry, range[0]).map_err(|failure| match failure {
-                        EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
-                        EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => CodecError::NotImplemented(format!(
-                            "IGES composite child curve {curve_id} has no evaluable start"
-                        )),
-                    })?;
+                    let start =
+                        curve_point(geometry, range[0]).map_err(|failure| match failure {
+                            EvaluationFailure::ResourceLimit(limit) => {
+                                CodecError::ResourceLimit(limit)
+                            }
+                            EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
+                                CodecError::NotImplemented(format!(
+                                    "IGES composite child curve {curve_id} has no evaluable start"
+                                ))
+                            }
+                        })?;
                     let end = curve_point(geometry, range[1]).map_err(|failure| match failure {
                         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
-                        EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => CodecError::NotImplemented(format!(
-                            "IGES composite child curve {curve_id} has no evaluable end"
-                        )),
+                        EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
+                            CodecError::NotImplemented(format!(
+                                "IGES composite child curve {curve_id} has no evaluable end"
+                            ))
+                        }
                     })?;
                     Ok(CurveSpan {
                         range,
@@ -6115,17 +6182,18 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
     ) {
         let evaluated_start = curve_point(geometry, range[0]).map_err(|failure| match failure {
             EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
-            EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => CodecError::malformed(format_args!(
-                "IGES edge {} start cannot be evaluated on its curve",
-                edge.id
-            )),
+            EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
+                CodecError::malformed(format_args!(
+                    "IGES edge {} start cannot be evaluated on its curve",
+                    edge.id
+                ))
+            }
         })?;
         let evaluated_end = curve_point(geometry, range[1]).map_err(|failure| match failure {
             EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
-            EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => CodecError::malformed(format_args!(
-                "IGES edge {} end cannot be evaluated on its curve",
-                edge.id
-            )),
+            EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => CodecError::malformed(
+                format_args!("IGES edge {} end cannot be evaluated on its curve", edge.id),
+            ),
         })?;
         let tolerance = edge_topology_tolerance(ir, edge)?;
         if !close_point_with_tolerance(start, evaluated_start.get(), tolerance)
@@ -6606,10 +6674,12 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
 }
 
 fn nurbs_is_closed(nurbs: &NurbsCurve, domain: [f64; 2]) -> Result<bool, CodecError> {
-    let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, domain[0]))? else {
+    let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, domain[0]))?
+    else {
         return Ok(false);
     };
-    let Some(end) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, domain[1]))? else {
+    let Some(end) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, domain[1]))?
+    else {
         return Ok(false);
     };
     let scale = nurbs

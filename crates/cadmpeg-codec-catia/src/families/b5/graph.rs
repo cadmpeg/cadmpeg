@@ -5092,175 +5092,185 @@ fn lift_pcurve_endpoints(
 ) -> Result<Option<[FinitePoint3; 2]>, cadmpeg_core::decode::ResourceLimit> {
     if let B5Surface::Nurbs(surface) = surface {
         let Some(start) = cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(
-            surface, endpoints[0][0], endpoints[0][1],
-        ))? else { return Ok(None) };
+            surface,
+            endpoints[0][0],
+            endpoints[0][1],
+        ))?
+        else {
+            return Ok(None);
+        };
         let Some(end) = cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(
-            surface, endpoints[1][0], endpoints[1][1],
-        ))? else { return Ok(None) };
+            surface,
+            endpoints[1][0],
+            endpoints[1][1],
+        ))?
+        else {
+            return Ok(None);
+        };
         return Ok(Some([start, end]));
     }
     Ok((|| {
-    let lifted = match surface {
-        B5Surface::UnresolvedNurbs { .. }
-        | B5Surface::Unknown { .. }
-        | B5Surface::RollingBall { .. } => None,
-        B5Surface::Plane {
-            origin,
-            frame,
-            direction_v,
-            ..
-        } => {
-            let (origin, direction_u) = (coordinates(*origin), components(frame.reference()));
-            Some(endpoints.map(|[u, v]| {
-                add(
-                    origin,
-                    add(scale(direction_u, u), scale(direction_v.get(), v)),
-                )
-            }))
-        }
-        B5Surface::Cylinder {
-            origin,
-            frame,
-            radius,
-            angular_scale,
-            ..
-        } => {
-            let (origin, axis, reference_x) = (
-                coordinates(*origin),
-                components(frame.axis()),
-                components(frame.reference()),
-            );
-            let reference_y = cross(axis, reference_x);
-            Some(endpoints.map(|[u, v]| {
-                let angle = u / angular_scale.get();
-                add(
-                    origin,
+        let lifted = match surface {
+            B5Surface::UnresolvedNurbs { .. }
+            | B5Surface::Unknown { .. }
+            | B5Surface::RollingBall { .. } => None,
+            B5Surface::Plane {
+                origin,
+                frame,
+                direction_v,
+                ..
+            } => {
+                let (origin, direction_u) = (coordinates(*origin), components(frame.reference()));
+                Some(endpoints.map(|[u, v]| {
                     add(
-                        scale(
-                            add(
-                                scale(reference_x, angle.cos()),
-                                scale(reference_y, angle.sin()),
-                            ),
-                            radius.get(),
-                        ),
-                        scale(axis, v),
-                    ),
-                )
-            }))
-        }
-        B5Surface::Cone {
-            apex,
-            frame,
-            direction_y,
-            half_angle,
-            angular_scale,
-            ..
-        } => Some(endpoints.map(|[u, v]| {
-            let angle = u / angular_scale.get();
-            let radial = add(
-                scale(components(frame.reference()), angle.cos()),
-                scale(components(direction_y), angle.sin()),
-            );
-            add(
-                coordinates(*apex),
-                scale(
-                    add(
-                        scale(components(frame.axis()), half_angle.get().cos()),
-                        scale(radial, half_angle.get().sin()),
-                    ),
-                    v,
-                ),
-            )
-        })),
-        B5Surface::Torus {
-            center,
-            frame,
-            direction_y,
-            major_radius,
-            minor_radius,
-            major_scale,
-            minor_scale,
-            ..
-        } => {
-            let (center, axis, direction_x) = (
-                coordinates(*center),
-                components(frame.axis()),
-                components(frame.reference()),
-            );
-            let (major_radius, minor_radius) = (major_radius.get(), minor_radius.get());
-            Some(endpoints.map(|[u, v]| {
-                let major_angle = u / major_scale.get();
-                let minor_angle = v / minor_scale.get();
-                let radial = add(
-                    scale(direction_x, major_angle.cos()),
-                    scale(direction_y.get(), major_angle.sin()),
+                        origin,
+                        add(scale(direction_u, u), scale(direction_v.get(), v)),
+                    )
+                }))
+            }
+            B5Surface::Cylinder {
+                origin,
+                frame,
+                radius,
+                angular_scale,
+                ..
+            } => {
+                let (origin, axis, reference_x) = (
+                    coordinates(*origin),
+                    components(frame.axis()),
+                    components(frame.reference()),
                 );
-                add(
-                    center,
+                let reference_y = cross(axis, reference_x);
+                Some(endpoints.map(|[u, v]| {
+                    let angle = u / angular_scale.get();
                     add(
-                        scale(radial, major_radius + minor_radius * minor_angle.cos()),
-                        scale(axis, minor_radius * minor_angle.sin()),
-                    ),
-                )
-            }))
-        }
-        B5Surface::Sphere { .. } => None,
-        B5Surface::Revolution {
-            profile_curve,
-            axis_origin,
-            axis_direction,
-            profile_range,
-            angular_scale,
-            ..
-        } => {
-            let profile = profiles.get(profile_curve)?;
-            (profile
-                .parameter_range()
-                .endpoints()
-                .into_iter()
-                .zip(profile_range.endpoints())
-                .all(|(profile, surface)| profile.to_bits() == surface.to_bits()))
-            .then_some(())?;
-            Some(endpoints.map(|[u, v]| {
-                let point = match profile {
-                    B5Profile::Line {
-                        point, direction, ..
-                    } => add(coordinates(*point), scale(direction.get(), u)),
-                    B5Profile::Arc {
-                        center,
-                        direction_x,
-                        direction_y,
-                        radius,
-                        ..
-                    } => {
-                        let angle = u / radius.get();
+                        origin,
                         add(
-                            coordinates(*center),
                             scale(
                                 add(
-                                    scale(direction_x.get(), angle.cos()),
-                                    scale(direction_y.get(), angle.sin()),
+                                    scale(reference_x, angle.cos()),
+                                    scale(reference_y, angle.sin()),
                                 ),
                                 radius.get(),
                             ),
-                        )
-                    }
-                };
-                rotate_about_axis(
-                    point,
-                    coordinates(*axis_origin),
-                    components(axis_direction),
-                    v / angular_scale.get(),
+                            scale(axis, v),
+                        ),
+                    )
+                }))
+            }
+            B5Surface::Cone {
+                apex,
+                frame,
+                direction_y,
+                half_angle,
+                angular_scale,
+                ..
+            } => Some(endpoints.map(|[u, v]| {
+                let angle = u / angular_scale.get();
+                let radial = add(
+                    scale(components(frame.reference()), angle.cos()),
+                    scale(components(direction_y), angle.sin()),
+                );
+                add(
+                    coordinates(*apex),
+                    scale(
+                        add(
+                            scale(components(frame.axis()), half_angle.get().cos()),
+                            scale(radial, half_angle.get().sin()),
+                        ),
+                        v,
+                    ),
                 )
-            }))
-        }
-        B5Surface::Nurbs(_) => None,
-    };
-    let [start, end] = lifted?;
-    Some([
-        FinitePoint3::new(Point3::from(start))?,
-        FinitePoint3::new(Point3::from(end))?,
-    ])
+            })),
+            B5Surface::Torus {
+                center,
+                frame,
+                direction_y,
+                major_radius,
+                minor_radius,
+                major_scale,
+                minor_scale,
+                ..
+            } => {
+                let (center, axis, direction_x) = (
+                    coordinates(*center),
+                    components(frame.axis()),
+                    components(frame.reference()),
+                );
+                let (major_radius, minor_radius) = (major_radius.get(), minor_radius.get());
+                Some(endpoints.map(|[u, v]| {
+                    let major_angle = u / major_scale.get();
+                    let minor_angle = v / minor_scale.get();
+                    let radial = add(
+                        scale(direction_x, major_angle.cos()),
+                        scale(direction_y.get(), major_angle.sin()),
+                    );
+                    add(
+                        center,
+                        add(
+                            scale(radial, major_radius + minor_radius * minor_angle.cos()),
+                            scale(axis, minor_radius * minor_angle.sin()),
+                        ),
+                    )
+                }))
+            }
+            B5Surface::Sphere { .. } => None,
+            B5Surface::Revolution {
+                profile_curve,
+                axis_origin,
+                axis_direction,
+                profile_range,
+                angular_scale,
+                ..
+            } => {
+                let profile = profiles.get(profile_curve)?;
+                (profile
+                    .parameter_range()
+                    .endpoints()
+                    .into_iter()
+                    .zip(profile_range.endpoints())
+                    .all(|(profile, surface)| profile.to_bits() == surface.to_bits()))
+                .then_some(())?;
+                Some(endpoints.map(|[u, v]| {
+                    let point = match profile {
+                        B5Profile::Line {
+                            point, direction, ..
+                        } => add(coordinates(*point), scale(direction.get(), u)),
+                        B5Profile::Arc {
+                            center,
+                            direction_x,
+                            direction_y,
+                            radius,
+                            ..
+                        } => {
+                            let angle = u / radius.get();
+                            add(
+                                coordinates(*center),
+                                scale(
+                                    add(
+                                        scale(direction_x.get(), angle.cos()),
+                                        scale(direction_y.get(), angle.sin()),
+                                    ),
+                                    radius.get(),
+                                ),
+                            )
+                        }
+                    };
+                    rotate_about_axis(
+                        point,
+                        coordinates(*axis_origin),
+                        components(axis_direction),
+                        v / angular_scale.get(),
+                    )
+                }))
+            }
+            B5Surface::Nurbs(_) => None,
+        };
+        let [start, end] = lifted?;
+        Some([
+            FinitePoint3::new(Point3::from(start))?,
+            FinitePoint3::new(Point3::from(end))?,
+        ])
     })())
 }
 

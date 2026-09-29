@@ -707,7 +707,8 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
             )]),
             &support,
             [0, 1],
-        ).expect("surface evaluator accepts the fixture")
+        )
+        .expect("surface evaluator accepts the fixture")
     };
     let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

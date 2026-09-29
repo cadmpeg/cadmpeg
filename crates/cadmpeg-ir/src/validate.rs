@@ -184,7 +184,10 @@ pub fn validate_neutral_with_additional_native_identities<'a>(
 }
 
 /// Validate one neutral product model.
-pub fn validate_neutral(ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, ResourceLimit> {
+pub fn validate_neutral(
+    ir: &CadIr,
+    losses: Vec<LossNote>,
+) -> Result<ValidationReport, ResourceLimit> {
     validate_model(ir, losses)
 }
 
