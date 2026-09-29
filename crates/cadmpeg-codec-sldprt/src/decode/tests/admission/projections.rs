@@ -802,3 +802,36 @@ fn geometry_configuration_lanes_refuse_work_limit() {
     let refusal = work_refusal_with_options(&configuration_lane_source(), DecodeOptions::default(), "scan SLDPRT configuration lane identities");
     assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
 }
+
+#[test]
+fn metadata_configuration_parameter_kinds_refuse_collection_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = collection_refusal_with_options(&native_definition_source(), options, "index SLDPRT configuration parameter kinds");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn geometry_configuration_parameter_kinds_refuse_collection_limit() {
+    let refusal = collection_refusal_with_options(&geometry_parameter_source(), DecodeOptions::default(), "index SLDPRT configuration parameter kinds");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn metadata_configuration_parameter_kinds_refuse_work_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = work_refusal_with_options(&native_definition_source(), options, "scan SLDPRT configuration parameter kinds");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}
+
+#[test]
+fn geometry_configuration_parameter_kinds_refuse_work_limit() {
+    let refusal = work_refusal_with_options(&geometry_parameter_source(), DecodeOptions::default(), "scan SLDPRT configuration parameter kinds");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}
+
+fn geometry_parameter_source() -> Vec<u8> {
+    let mut source = crate::test_support::container::sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x43, "Contents/Keywords",
+        br#"<Keywords><Feature Name="Custom" Type="Custom" id="10"><Dimension Name="Length">1mm</Dimension></Feature></Keywords>"#));
+    source
+}
