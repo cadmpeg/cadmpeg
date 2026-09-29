@@ -497,13 +497,13 @@ fn historical_edge_axis_uses_the_state_specific_curve_carrier() {
         ..AsmHistoricalTopology::default()
     };
     assert_eq!(
-        historical_edge_axis(7, &topology),
+        historical_edge_axis(None, 7, &topology).unwrap(),
         Some((
             cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
         ))
     );
-    assert_eq!(historical_edge_axis(8, &topology), None);
+    assert_eq!(historical_edge_axis(None, 8, &topology).unwrap(), None);
 }
 
 #[test]
@@ -546,7 +546,7 @@ fn historical_edge_axis_uses_a_unique_incident_surface_axis() {
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
         cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
     ));
-    assert_eq!(historical_edge_axis(7, &topology), expected);
+    assert_eq!(historical_edge_axis(None, 7, &topology).unwrap(), expected);
 
     topology.face_surfaces.push(AsmHistoricalCarrierBinding {
         entity: 11,
@@ -557,7 +557,7 @@ fn historical_edge_axis_uses_a_unique_incident_surface_axis() {
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
     ));
-    assert_eq!(historical_edge_axis(7, &topology), None);
+    assert_eq!(historical_edge_axis(None, 7, &topology).unwrap(), None);
 
     topology.face_surfaces.pop();
     topology
@@ -586,7 +586,7 @@ fn historical_edge_axis_uses_a_unique_incident_surface_axis() {
         entity: 12,
         carrier: 42,
     });
-    assert_eq!(historical_edge_axis(7, &topology), None);
+    assert_eq!(historical_edge_axis(None, 7, &topology).unwrap(), None);
 }
 
 #[test]
@@ -1265,7 +1265,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     assert_eq!(topology.coedge_topology[0].edge, 7);
     assert_eq!(topology.coedge_topology[0].radial_next, 6);
     assert_eq!(
-        historical_edge_context(7, &topology),
+        historical_edge_context(None, 7, &topology).unwrap(),
         crate::records::topology::historical_context::DesignHistoricalEdgeContext {
             edge_slot: 7,
             incident_loops: vec![

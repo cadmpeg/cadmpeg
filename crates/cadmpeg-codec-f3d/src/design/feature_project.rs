@@ -3901,7 +3901,8 @@ fn project_hem(
         _ => None,
     };
     let semantics = edge_slot
-        .map(|edge_slot| crate::history::hem_geometry_semantics(scope, edge_slot, histories));
+        .map(|edge_slot| crate::history::hem_geometry_semantics(ctx, scope, edge_slot, histories))
+        .transpose()?;
     let form = match (
         form,
         semantics.and_then(|semantics| semantics.gap_length_form),

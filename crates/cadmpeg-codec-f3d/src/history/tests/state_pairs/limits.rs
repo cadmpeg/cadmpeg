@@ -7,7 +7,7 @@ use super::{
     AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, HashMap,
 };
 use crate::history::resolve_pattern_face_by_surface_radius;
-use crate::history::{boundary_edges_in_changes, collect_reference_edge_sets, face_boundary_contexts_for_slots, face_boundary_edge_index, face_boundary_edges, faces_in_topology, historical_face_support_contexts, historical_loop_boundary, preceding_support_face_slots, recipe_selector_candidates, terminal_edge_recipe_faces, terminal_edge_recipe_reference_faces, treatment_edge_candidates, treatment_face_supports};
+use crate::history::{boundary_edges_in_changes, collect_reference_edge_sets, face_boundary_contexts_for_slots, face_boundary_edge_index, face_boundary_edges, faces_in_topology, historical_edge_context, historical_edge_axis, historical_face_support_contexts, historical_loop_boundary, preceding_support_face_slots, recipe_selector_candidates, terminal_edge_recipe_faces, terminal_edge_recipe_reference_faces, treatment_edge_candidates, treatment_face_supports};
 use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalEdge, AsmHistoricalRelation, AsmHistoricalSurfaceRadius};
 use std::collections::HashSet;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
@@ -43,6 +43,46 @@ fn identity_edges_refuse_collection_limit() {
     let error = historical_identity_edge(Some(&ctx), AsmHistoricalEntityKind::Edge, 7, &topology).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D identity edges"));
+}
+
+fn edge_context_topology() -> AsmHistoricalTopology {
+    use crate::history_records::{AsmHistoricalCoedge, AsmHistoricalCarrierBinding, AsmHistoricalRelation, AsmHistoricalSurfaceAxis};
+    AsmHistoricalTopology {
+        coedge_topology: vec![AsmHistoricalCoedge {
+            coedge: 6, owner_loop: 5, edge: 7, next: 6, previous: 6, radial_next: 6,
+        }],
+        loop_coedges: vec![AsmHistoricalRelation { owner_ref: 5, member_refs: vec![6] }],
+        face_loops: vec![AsmHistoricalRelation { owner_ref: 4, member_refs: vec![5] }],
+        face_surfaces: vec![AsmHistoricalCarrierBinding { entity: 4, carrier: 8 }],
+        surface_axes: vec![AsmHistoricalSurfaceAxis {
+            surface: 8,
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        }],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn historical_edge_context_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = historical_edge_context(Some(&ctx), 7, &edge_context_topology()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D historical incident loops"));
+}
+
+#[test]
+fn historical_edge_axis_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = historical_edge_axis(Some(&ctx), 7, &edge_context_topology()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D historical incident loops"));
 }
 
 pub(super) fn change_state(state_id: i64) -> AsmDeltaState {

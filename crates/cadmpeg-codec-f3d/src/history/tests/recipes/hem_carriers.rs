@@ -90,11 +90,12 @@ fn hem_carrier_offsets_prove_fold_direction() {
     let forward_second = cylinder(Point3::new(2.0, 0.0, 0.0));
     assert_eq!(
         super::super::super::hem_direction_from_transition(
+            None,
             7,
             [&forward_first, &forward_second].into_iter(),
             &previous,
             &transition,
-        ),
+        ).unwrap(),
         Some(SheetMetalHemDirection::Forward)
     );
 
@@ -102,22 +103,24 @@ fn hem_carrier_offsets_prove_fold_direction() {
     let reverse_second = cylinder(Point3::new(-2.0, 0.0, 0.0));
     assert_eq!(
         super::super::super::hem_direction_from_transition(
+            None,
             7,
             [&reverse_first, &reverse_second].into_iter(),
             &previous,
             &transition,
-        ),
+        ).unwrap(),
         Some(SheetMetalHemDirection::Reverse)
     );
 
     let zero_offset = cylinder(Point3::new(0.0, 0.0, 0.0));
     assert_eq!(
         super::super::super::hem_direction_from_transition(
+            None,
             7,
             [&zero_offset, &forward_second].into_iter(),
             &previous,
             &transition,
-        ),
+        ).unwrap(),
         None
     );
 }
