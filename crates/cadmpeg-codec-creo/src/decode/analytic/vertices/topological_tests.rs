@@ -8,6 +8,38 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+fn service_line_conic_intersections(
+    line: &CurveGeometry,
+    conic: &CurveGeometry,
+) -> Vec<[f64; 3]> {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    line_conic_intersections(&ctx, line, conic).expect("service intersection")
+}
+
+#[test]
+fn line_conic_second_intersection_refuses_at_collection_limit() {
+    let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("circle fixture"),
+    ));
+    let secant = line([-3.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert_vertex_collection_refusal(
+        line_conic_intersections(&ctx, &secant, &circle).expect_err("second point needs an item"),
+        "creo line-conic intersection points",
+    );
+}
+
 fn incident_line_collection_error(limit: u64) -> CodecError {
     let first = line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
     let second = line([0.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
@@ -643,14 +675,14 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
     // from (-3, 0, 0) along +x, so it meets the circle of radius 2 at the
     // parameters 1 and 5.
     assert_eq!(
-        line_conic_intersections(&secant, &circle),
+        service_line_conic_intersections(&secant, &circle),
         [[-2.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
     );
     assert_eq!(
-        line_conic_intersections(&tangent, &circle),
+        service_line_conic_intersections(&tangent, &circle),
         [[0.0, 2.0, 0.0]]
     );
-    assert!(line_conic_intersections(&skew, &circle).is_empty());
+    assert!(service_line_conic_intersections(&skew, &circle).is_empty());
 
     let ellipse = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
         cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
@@ -663,7 +695,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
         .expect("valid EllipseCurve fixture"),
     ));
     assert_eq!(
-        line_conic_intersections(&secant, &ellipse),
+        service_line_conic_intersections(&secant, &ellipse),
         [[-3.0, 0.0, 0.0], [3.0, 0.0, 0.0]]
     );
 
@@ -677,11 +709,11 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
         .expect("valid ParabolaCurve fixture"),
     ));
     assert_eq!(
-        line_conic_intersections(&line([1.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &parabola),
+        service_line_conic_intersections(&line([1.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &parabola),
         [[1.0, -2.0, 0.0], [1.0, 2.0, 0.0]]
     );
     assert_eq!(
-        line_conic_intersections(&line([-3.0, 2.0, 0.0], [1.0, 0.0, 0.0]), &parabola),
+        service_line_conic_intersections(&line([-3.0, 2.0, 0.0], [1.0, 0.0, 0.0]), &parabola),
         [[1.0, 2.0, 0.0]]
     );
 
@@ -696,13 +728,13 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
         .expect("valid HyperbolaCurve fixture"),
     ));
     let hyperbola_points =
-        line_conic_intersections(&line([4.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &hyperbola);
+        service_line_conic_intersections(&line([4.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &hyperbola);
     assert_eq!(hyperbola_points.len(), 2);
     assert!(hyperbola_points.iter().all(|point| {
         agree(*point, [4.0, 3.0_f64.sqrt(), 0.0]) || agree(*point, [4.0, -3.0_f64.sqrt(), 0.0])
     }));
     assert_eq!(
-        line_conic_intersections(&line([-3.0, 0.0, 0.0], [1.0, 0.0, 0.0]), &hyperbola),
+        service_line_conic_intersections(&line([-3.0, 0.0, 0.0], [1.0, 0.0, 0.0]), &hyperbola),
         [[2.0, 0.0, 0.0]]
     );
 }

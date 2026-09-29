@@ -147,9 +147,13 @@ fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Opti
 ///
 /// The points are in ascending order of the line parameter, which is the order
 /// `real_roots` states its roots in.
-fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<[f64; 3]> {
+fn line_conic_intersections(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    line: &CurveGeometry,
+    conic: &CurveGeometry,
+) -> Result<Vec<[f64; 3]>, cadmpeg_core::CodecError> {
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = line else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let origin = line_curve.origin().get();
     let Some(PlanarConicEquation {
@@ -163,7 +167,7 @@ fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<
         scale: conic_scale,
     }) = planar_conic_equation(conic)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let origin = [origin.x, origin.y, origin.z];
     let direction = unit_length(line_curve.direction());
@@ -180,14 +184,17 @@ fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<
         let point = std::array::from_fn(|coordinate| {
             direction[coordinate].mul_add(parameter, origin[coordinate])
         });
-        return (point.iter().all(|value| value.is_finite())
-            && curve_contains_points(conic, [point, point]))
-        .then_some(point)
-        .into_iter()
-        .collect();
+        let mut points = Vec::new();
+        if point.iter().all(|value| value.is_finite())
+            && curve_contains_points(conic, [point, point])
+        {
+            ctx.try_reserve_items(&mut points, 1, "creo line-conic intersection points")?;
+            points.push(point);
+        }
+        return Ok(points);
     }
     if origin_plane.abs() > EPS_AGREE * model_scale {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let local_origin = [dot(relative, x_axis), dot(relative, y_axis)];
     let local_direction = [dot(direction, x_axis), dot(direction, y_axis)];
@@ -221,18 +228,21 @@ fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<
             + (linear[1] * local_origin[1]).abs()
             + constant.abs(),
     );
-    real_roots(line_quadratic, line_linear, line_constant)
+    let mut points = Vec::new();
+    for parameter in real_roots(line_quadratic, line_linear, line_constant)
         .into_iter()
-        .map(|parameter| {
-            std::array::from_fn(|coordinate| {
-                direction[coordinate].mul_add(parameter, origin[coordinate])
-            })
-        })
-        .filter(|point: &[f64; 3]| {
-            point.iter().all(|value| value.is_finite())
-                && curve_contains_points(conic, [*point, *point])
-        })
-        .collect()
+    {
+        let point = std::array::from_fn(|coordinate| {
+            direction[coordinate].mul_add(parameter, origin[coordinate])
+        });
+        if point.iter().all(|value| value.is_finite())
+            && curve_contains_points(conic, [point, point])
+        {
+            ctx.try_reserve_items(&mut points, 1, "creo line-conic intersection points")?;
+            points.push(point);
+        }
+    }
+    Ok(points)
 }
 
 /// The conic in the chart `origin + u * u_axis + v * v_axis`.
@@ -337,7 +347,7 @@ fn conic_conic_intersections(
             return Ok(Vec::new());
         };
         let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(line));
-        let mut points = line_conic_intersections(&line, first);
+        let mut points = line_conic_intersections(ctx, &line, first)?;
         points.retain(|point| curve_contains_points(second, [*point, *point]));
         return Ok(points);
     }
@@ -401,8 +411,8 @@ fn incident_analytic_vertex_domain(
             let conic_points = conic_conic_intersections(ctx, curves[first], curves[second])?;
             for point in line_line_intersection(curves[first], curves[second])
                     .into_iter()
-                    .chain(line_conic_intersections(curves[first], curves[second]))
-                    .chain(line_conic_intersections(curves[second], curves[first]))
+                    .chain(line_conic_intersections(ctx, curves[first], curves[second])?)
+                    .chain(line_conic_intersections(ctx, curves[second], curves[first])?)
                     .chain(conic_points)
             {
                 ctx.try_reserve_items(&mut candidates, 1, "creo incident analytic candidates")?;
@@ -1091,7 +1101,11 @@ mod tests {
             .expect("valid LineCurve fixture"),
         ));
 
-        let points = line_conic_intersections(&line, &circle);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root");
+        let points = line_conic_intersections(&ctx, &line, &circle).expect("service intersection");
 
         assert_eq!(points.len(), 1);
         assert!((points[0][0] - RADIUS).abs() <= EPS_TEST_TANGENCY);
