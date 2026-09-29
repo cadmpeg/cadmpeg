@@ -39,7 +39,7 @@ pub(super) fn move_body_translation_record(
         let value = View::f64_le_at(payload, offset)?;
         FiniteReal::new(value)
     };
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     for selection_offset in data_class_offset..end.saturating_sub(TRAILER_OFFSET + 20) {
         let Some(count) = View::u32_le_at(payload, selection_offset).map(|value| value as usize)
         else {
@@ -116,16 +116,16 @@ pub(super) fn move_body_translation_record(
         if local_body_ids.contains(&0) {
             continue;
         }
-        candidates.push(MoveBodyTranslationRecord {
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(MoveBodyTranslationRecord {
             selection_offset,
             local_body_ids,
             translation_m,
         });
     }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    candidate
 }
 
 pub(super) fn move_body_selection_at(payload: &[u8], offset: usize) -> Option<Vec<u32>> {
