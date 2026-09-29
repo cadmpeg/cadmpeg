@@ -49,6 +49,7 @@ use cadmpeg_ir::{
     scalar::{Angle, Length},
 };
 use std::collections::{BTreeMap, BTreeSet};
+use std::cell::Cell;
 
 const EPS_POLAR_ZERO: f64 = 1.0e-12;
 
@@ -516,6 +517,8 @@ pub(in super::super) fn joined_relation_incidence_entities(
 }
 
 fn relation_incidence_loci(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    refusal: &Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     relation_id: u32,
@@ -525,8 +528,8 @@ fn relation_incidence_loci(
         return None;
     };
     Some([
-        section_skamp_locus(definition, sketch, first)?,
-        section_skamp_locus(definition, sketch, second)?,
+        section_skamp_locus(ctx, refusal, definition, sketch, first)?,
+        section_skamp_locus(ctx, refusal, definition, sketch, second)?,
     ])
 }
 
@@ -1805,6 +1808,7 @@ pub(in super::super) fn section_dimension_constraints(
     let mut constraints = Vec::new();
     for relation in &relations.rows {
         let mut coordinate_refusal = None;
+        let locus_refusal = Cell::new(None);
         let candidate = (|| {
             Some({
                 let unique_relation_id = feature_relation_table_complete(relations)
@@ -2030,7 +2034,7 @@ pub(in super::super) fn section_dimension_constraints(
                         }
                     }
                     if let Some([first, second]) =
-                        relation_incidence_loci(definition, sketch, relation.relation_id)
+                        relation_incidence_loci(ctx, &locus_refusal, definition, sketch, relation.relation_id)
                     {
                         return Some(SketchConstraintDefinitionInput::DistanceLoci {
                             first,
@@ -2043,8 +2047,8 @@ pub(in super::super) fn section_dimension_constraints(
                     {
                         if let [first, second] = incidence.items.as_slice() {
                             if let (Some(first), Some(second)) = (
-                                section_skamp_locus(definition, sketch, first),
-                                section_skamp_locus(definition, sketch, second),
+                                section_skamp_locus(ctx, &locus_refusal, definition, sketch, first),
+                                section_skamp_locus(ctx, &locus_refusal, definition, sketch, second),
                             ) {
                                 return Some(SketchConstraintDefinitionInput::DistanceLoci {
                                     first,
@@ -2102,6 +2106,9 @@ pub(in super::super) fn section_dimension_constraints(
                 )
             })
         })();
+        if let Some(error) = locus_refusal.into_inner() {
+            return Err(error);
+        }
         if let Some(error) = coordinate_refusal {
             return Err(error);
         }
