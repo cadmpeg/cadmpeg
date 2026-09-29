@@ -52,38 +52,42 @@ fn one_incomplete_expression_parameter() -> cadmpeg_ir::CadIr {
 
 #[test]
 fn expression_completeness_refuses_owner_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{ResourceDimension};
 
     let ir = one_incomplete_expression_parameter();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits service policy");
-    let result = super::incomplete_expression_parameters(&ctx, &ir);
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
+    let result = super::incomplete_expression_parameters(ctx, &ir);
     let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
         panic!("expected expression collection refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     assert_eq!(limit.operation, "nx expression parameter owners");
+
+})
 }
 
 #[test]
 fn expression_completeness_refuses_incomplete_identity_retention() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{ResourceDimension};
 
     let ir = one_incomplete_expression_parameter();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits service policy");
-    let result = super::incomplete_expression_parameters(&ctx, &ir);
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
+    let result = super::incomplete_expression_parameters(ctx, &ir);
     let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
         panic!("expected expression identity refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(limit.operation, "nx incomplete expression identity");
+
+})
 }
 
 #[test]

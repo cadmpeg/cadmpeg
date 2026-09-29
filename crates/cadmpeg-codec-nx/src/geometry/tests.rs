@@ -14,7 +14,7 @@ use crate::test_support::test_streams::offset_surface_topology_partition_stream;
 use crate::test_support::test_streams::topology_partition_stream;
 
 use crate::framing::node_kind::NodeKind;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{ResourceDimension};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 fn analytic_points(stream: &[u8]) -> Vec<super::DecodedPoint> {
@@ -39,31 +39,37 @@ fn single_analytic_point() -> Vec<u8> {
 #[test]
 fn analytic_point_scanner_refuses_output_slot_at_collection_limit() {
     let stream = single_analytic_point();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
     assert!(matches!(
-        super::points(&ctx, &stream),
+        super::points(ctx, &stream),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "nx analytic records"
     ));
+
+})
 }
 
 #[test]
 fn analytic_point_scanner_refuses_scan_work_at_caller_limit() {
     let stream = single_analytic_point();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_work_units = 0; }, |ctx| {
+
     assert!(matches!(
-        super::points(&ctx, &stream),
+        super::points(ctx, &stream),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "scan NX analytic records"
     ));
+
+})
 }
 
 #[test]

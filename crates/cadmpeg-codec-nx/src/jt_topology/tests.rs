@@ -5,12 +5,12 @@
 
 #[test]
 fn jt_topological_dual_mesh_reconstructs_closed_tetrahedron() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    crate::test_support::with_decode_context(|ctx| {
+
     let polygons = super::decode(
-        &ctx,
+        ctx,
         [&[3, 3, 3], &[3], &[], &[], &[], &[], &[], &[]],
         &[3, 3, 3, 3],
         &[10, 12, 11, 13],
@@ -55,17 +55,19 @@ fn jt_topological_dual_mesh_reconstructs_closed_tetrahedron() {
             .collect::<Vec<_>>(),
         vec![Some(0), Some(1), Some(2)]
     );
+
+})
 }
 
 #[test]
 fn jt_vertex_face_slots_refuse_collection_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 2; }, |ctx| {
+
     let error = super::decode(
-        &ctx,
+        ctx,
         [&[3], &[], &[], &[], &[], &[], &[], &[]],
         &[3],
         &[10],
@@ -89,17 +91,19 @@ fn jt_vertex_face_slots_refuse_collection_limit() {
                 && limit.used == 0
                 && limit.additional == 3
     ));
+
+})
 }
 
 #[test]
 fn jt_face_vertex_slots_refuse_through_decode() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 10;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    
+    
+    
+    crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 10; }, |ctx| {
+
     let error = super::decode(
-        &ctx,
+        ctx,
         [&[3, 3, 3], &[3], &[], &[], &[], &[], &[], &[]],
         &[3, 3, 3, 3],
         &[10, 12, 11, 13],
@@ -123,6 +127,8 @@ fn jt_face_vertex_slots_refuse_through_decode() {
                 && limit.used == 8
                 && limit.additional == 3
     ));
+
+})
 }
 
 #[test]

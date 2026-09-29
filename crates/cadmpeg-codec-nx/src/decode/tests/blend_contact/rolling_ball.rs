@@ -29,13 +29,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     const OUTSIDE_BLEND_SECTION_DELTA: f64 = 1.0e-6;
     const DIRECT_INVERSE_TOLERANCE: f64 = 1.0e-8;
 
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &geometry_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("empty geometry root is admitted");
+    
+    crate::test_support::with_decode_context(|geometry_ctx| {
+
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let first =
@@ -145,15 +141,15 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         None,
     ));
     let expected = Point2::new(8.0, 0.35);
-    let point = blend_surface_point(&geometry_ctx, &ir, &surface, expected.u, expected.v)
+    let point = blend_surface_point(geometry_ctx, &ir, &surface, expected.u, expected.v)
         .expect("evaluator allocation succeeds")
         .unwrap();
     let boundary_without_contact_chart =
-        blend_surface_point(&geometry_ctx, &ir, &surface, expected.u, 1.0)
+        blend_surface_point(geometry_ctx, &ir, &surface, expected.u, 1.0)
             .expect("evaluator allocation succeeds")
             .expect("analytic supports provide a blend boundary without a spine pcurve");
     let boundary_without_contact_parameters = blend_surface_parameters(
-        &geometry_ctx,
+        geometry_ctx,
         &ir,
         &surface,
         boundary_without_contact_chart,
@@ -214,24 +210,24 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         1.0
     );
 
-    let actual = blend_surface_parameters(&geometry_ctx, &ir, &surface, point, None)
+    let actual = blend_surface_parameters(geometry_ctx, &ir, &surface, point, None)
         .expect("evaluator allocation succeeds")
         .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
 
-    let boundary_point = blend_surface_point(&geometry_ctx, &ir, &surface, expected.u, 1.0)
+    let boundary_point = blend_surface_point(geometry_ctx, &ir, &surface, expected.u, 1.0)
         .expect("evaluator allocation succeeds")
         .unwrap();
     let boundary_parameters =
-        blend_surface_parameters(&geometry_ctx, &ir, &surface, boundary_point, None)
+        blend_surface_parameters(geometry_ctx, &ir, &surface, boundary_point, None)
             .expect("evaluator allocation succeeds")
             .expect("blend inverse returns the section boundary");
     assert!((0.0..=1.0).contains(&boundary_parameters.v));
 
     let outside_boundary_point = blend_surface_point(
-        &geometry_ctx,
+        geometry_ctx,
         &ir,
         &surface,
         expected.u,
@@ -240,11 +236,11 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     .expect("evaluator allocation succeeds")
     .unwrap();
     let outside_parameters =
-        blend_surface_parameters(&geometry_ctx, &ir, &surface, outside_boundary_point, None)
+        blend_surface_parameters(geometry_ctx, &ir, &surface, outside_boundary_point, None)
             .expect("evaluator allocation succeeds");
     assert!(outside_parameters.is_none());
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
-        &geometry_ctx,
+        geometry_ctx,
         cadmpeg_core::decode::u64_from_index(
             crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         ),
@@ -265,7 +261,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     assert!((continuation_parameters.v - (1.0 + OUTSIDE_BLEND_SECTION_DELTA)).abs() < 1.0e-8);
 
     let direct_geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
-        &geometry_ctx,
+        geometry_ctx,
         cadmpeg_core::decode::u64_from_index(
             crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         ),
@@ -290,7 +286,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     );
 
     let continued = blend_surface_parameters_for_fit(
-        &geometry_ctx,
+        geometry_ctx,
         &ir,
         &surface,
         point,
@@ -366,7 +362,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         });
     let parameters = Point2::new(0.4, 0.35);
     let exact = blend_surface_u_derivative(
-        &geometry_ctx,
+        geometry_ctx,
         &varying_frame,
         &surface,
         parameters.u,
@@ -377,7 +373,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     .expect("complete rolling-ball frame has an exact derivative");
     let step = 1.0e-6;
     let before = blend_surface_point(
-        &geometry_ctx,
+        geometry_ctx,
         &varying_frame,
         &surface,
         parameters.u - step,
@@ -386,7 +382,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     .expect("evaluator allocation succeeds")
     .unwrap();
     let after = blend_surface_point(
-        &geometry_ctx,
+        geometry_ctx,
         &varying_frame,
         &surface,
         parameters.u + step,
@@ -445,11 +441,11 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
     *cache = geometry;
     let translated_point =
-        blend_surface_point(&geometry_ctx, &translated, &surface, expected.u, expected.v)
+        blend_surface_point(geometry_ctx, &translated, &surface, expected.u, expected.v)
             .expect("evaluator allocation succeeds")
             .unwrap();
     let translated_parameters = blend_surface_parameters_for_fit(
-        &geometry_ctx,
+        geometry_ctx,
         &translated,
         &surface,
         translated_point,
@@ -518,7 +514,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         ),
     });
     crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(
-        &geometry_ctx,
+        geometry_ctx,
         &mut ir,
     )
     .unwrap();
@@ -541,7 +537,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     );
     assert_eq!(
         blend_boundary_parameter_from_support_spine(
-            &geometry_ctx,
+            geometry_ctx,
             &ir,
             &surface,
             &first,
@@ -567,7 +563,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         });
     assert_eq!(
         blend_boundary_parameter_from_support_spine(
-            &geometry_ctx,
+            geometry_ctx,
             &ir,
             &surface,
             &first,
@@ -605,10 +601,10 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .expect("solved carrier")
         .clone(),
     );
-    let coarse = coarse_blend_surface_parameters(&geometry_ctx, &ir, &surface, point, 0)
+    let coarse = coarse_blend_surface_parameters(geometry_ctx, &ir, &surface, point, 0)
         .expect("evaluator allocation succeeds")
         .unwrap();
-    let coarse_point = blend_surface_point(&geometry_ctx, &ir, &surface, coarse.u, coarse.v)
+    let coarse_point = blend_surface_point(geometry_ctx, &ir, &surface, coarse.u, coarse.v)
         .expect("evaluator allocation succeeds")
         .unwrap();
     assert!(
@@ -620,7 +616,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     );
 
     let refined = refine_blend_surface_parameters(
-        &geometry_ctx,
+        geometry_ctx,
         &ir,
         &surface,
         point,
@@ -629,7 +625,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     )
     .expect("evaluator allocation succeeds")
     .unwrap();
-    let refined_point = blend_surface_point(&geometry_ctx, &ir, &surface, refined.u, refined.v)
+    let refined_point = blend_surface_point(geometry_ctx, &ir, &surface, refined.u, refined.v)
         .expect("evaluator allocation succeeds")
         .unwrap();
     let refined_error = ((refined_point.x - point.x).powi(2)
@@ -702,7 +698,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         None,
     ));
     let expected = Point2::new(4.0, 0.2);
-    let point = blend_surface_point(&geometry_ctx, &ir, &outer, expected.u, expected.v)
+    let point = blend_surface_point(geometry_ctx, &ir, &outer, expected.u, expected.v)
         .expect("evaluator allocation succeeds")
         .unwrap();
     let outer_geometry = ir
@@ -714,7 +710,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .unwrap();
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
-        &geometry_ctx,
+        geometry_ctx,
         cadmpeg_core::decode::u64_from_index(
             crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         ),
@@ -731,7 +727,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     .expect("evaluator allocation succeeds")
     .expect("budgeted evaluation handles a nested blend support");
     assert!(Point3::distance(evaluated, point) <= 64.0 * f64::EPSILON);
-    let actual = blend_surface_parameters(&geometry_ctx, &ir, &outer, point, None)
+    let actual = blend_surface_parameters(geometry_ctx, &ir, &outer, point, None)
         .expect("evaluator allocation succeeds")
         .unwrap();
     assert!((actual.u - expected.u).abs() < 1.0e-8);
@@ -770,8 +766,10 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .unwrap();
     });
     assert!(
-        blend_surface_point(&geometry_ctx, &ir, &outer, expected.u, expected.v)
+        blend_surface_point(geometry_ctx, &ir, &outer, expected.u, expected.v)
             .expect("evaluator allocation succeeds")
             .is_none()
     );
+
+})
 }

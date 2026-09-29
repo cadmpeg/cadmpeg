@@ -518,7 +518,6 @@ impl SourceChartData {
 #[cfg(test)]
 mod tests {
     use super::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAMETER};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::math::Point3;
 
@@ -529,15 +528,18 @@ mod tests {
             vec![0.0, 1.0],
         )
         .unwrap();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 1; }, |ctx| {
+
         assert!(matches!(
-            samples.points_charged(&ctx),
+            samples.points_charged(ctx),
             Err(CodecError::ResourceLimit(_))
         ));
-    }
+    
+})
+}
 
     #[test]
     fn chart_parameter_projection_refuses_retained_limit() {
@@ -546,15 +548,18 @@ mod tests {
             vec![0.0, 1.0],
         )
         .unwrap();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 15;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 15; }, |ctx| {
+
         assert!(matches!(
-            samples.parameters_charged(&ctx),
+            samples.parameters_charged(ctx),
             Err(CodecError::ResourceLimit(_))
         ));
-    }
+    
+})
+}
 
     #[test]
     fn chart_preamble_retains_finite_parameter_scale_and_angle() {

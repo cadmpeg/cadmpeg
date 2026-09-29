@@ -46,11 +46,11 @@ mod tests {
 
     #[test]
     fn repeated_and_rejected_fills_preserve_the_empty_count() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut slots = FaceSlots::new(&ctx, 2).unwrap();
+        
+        
+        crate::test_support::with_decode_context(|ctx| {
+
+        let mut slots = FaceSlots::new(ctx, 2).unwrap();
         assert_eq!(slots.fill(0, 7), Some(()));
         assert_eq!(slots.fill(0, 7), Some(()));
         assert_eq!(slots.fill(0, 8), None);
@@ -59,16 +59,18 @@ mod tests {
         assert_eq!(slots.empty(), 1);
         assert_eq!(slots.fill(1, 8), Some(()));
         assert_eq!(slots.empty(), 0);
-    }
+    
+})
+}
 
     #[test]
     fn face_vertex_slots_refuse_collection_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = FaceSlots::new(&ctx, 3)
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 2; }, |ctx| {
+
+        let error = FaceSlots::new(ctx, 3)
             .err()
             .expect("three slots exceed two items");
         assert!(matches!(
@@ -78,5 +80,7 @@ mod tests {
                     && limit.used == 0
                     && limit.additional == 3
         ));
-    }
+    
+})
+}
 }

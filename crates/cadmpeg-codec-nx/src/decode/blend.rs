@@ -151,13 +151,9 @@ mod tests {
 
     #[test]
     fn blend_surface_frame_cache_evicts_old_entries_at_its_bound() {
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
+        
+        crate::test_support::with_decode_context(|geometry_ctx| {
+
 
         let mut cache = BlendSurfaceFrameCache::default();
         let frame = (
@@ -178,7 +174,7 @@ mod tests {
                     false,
                     frame,
                     &GeometryWorkBudget::from_context(
-                        &geometry_ctx,
+                        geometry_ctx,
                         cadmpeg_core::decode::u64_from_index(100),
                     ),
                 )
@@ -195,7 +191,7 @@ mod tests {
                 false,
                 frame,
                 &GeometryWorkBudget::from_context(
-                    &geometry_ctx,
+                    geometry_ctx,
                     cadmpeg_core::decode::u64_from_index(100),
                 ),
             )
@@ -203,17 +199,15 @@ mod tests {
         assert!(cache.get(&first, 0.0, false).is_none());
         assert_eq!(cache.get(&newest, 0.0, false), Some(frame));
         assert!(cache.get(&newest, -0.0, false).is_none());
-    }
+    
+})
+}
 
     #[test]
     fn blend_boundary_point_cache_evicts_old_entries_at_its_bound() {
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
+        
+        crate::test_support::with_decode_context(|geometry_ctx| {
+
 
         let mut cache = BlendSurfaceFrameCache::default();
         let point = Point3::new(1.0, 2.0, 3.0);
@@ -228,7 +222,7 @@ mod tests {
                     index % 2,
                     point,
                     &GeometryWorkBudget::from_context(
-                        &geometry_ctx,
+                        geometry_ctx,
                         cadmpeg_core::decode::u64_from_index(100),
                     ),
                 )
@@ -248,7 +242,7 @@ mod tests {
                 1,
                 point,
                 &GeometryWorkBudget::from_context(
-                    &geometry_ctx,
+                    geometry_ctx,
                     cadmpeg_core::decode::u64_from_index(100),
                 ),
             )
@@ -257,18 +251,20 @@ mod tests {
         assert_eq!(cache.get_boundary_point(&newest, 0.0, 1), Some(point));
         assert!(cache.get_boundary_point(&newest, 0.0, 0).is_none());
         assert!(cache.get_boundary_point(&newest, -0.0, 1).is_none());
-    }
+    
+})
+}
 
     #[test]
     fn blend_frame_cache_refuses_retained_identity_at_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::{ResourceDimension};
 
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits service policy");
-        let budget = GeometryWorkBudget::from_context(&ctx, 100);
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_retained_bytes = 0; }, |ctx| {
+
+        let budget = GeometryWorkBudget::from_context(ctx, 100);
         let surface = SurfaceId::mint("test:model:entity#blend-frame").expect("identity grammar");
         let frame = (
             Point3::new(0.0, 0.0, 0.0),
@@ -282,18 +278,20 @@ mod tests {
             .expect_err("frame identity exceeds retained limit");
         assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(limit.operation, "nx blend frame cache identity");
-    }
+    
+})
+}
 
     #[test]
     fn blend_frame_cache_refuses_entry_at_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::{ResourceDimension};
 
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits service policy");
-        let budget = GeometryWorkBudget::from_context(&ctx, 100);
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
+        let budget = GeometryWorkBudget::from_context(ctx, 100);
         let surface = SurfaceId::mint("test:model:entity#blend-frame").expect("identity grammar");
         let frame = (
             Point3::new(0.0, 0.0, 0.0),
@@ -307,7 +305,9 @@ mod tests {
             .expect_err("frame entry exceeds collection limit");
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, "nx blend frame cache entries");
-    }
+    
+})
+}
 
     #[test]
     fn blend_section_boundary_clamps_only_nearby_roundoff() {
@@ -339,13 +339,9 @@ mod tests {
 
     #[test]
     fn blend_contact_seed_cache_is_bounded_and_uses_the_nearest_chart() {
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
+        
+        crate::test_support::with_decode_context(|geometry_ctx| {
+
 
         let support =
             SurfaceId::mint("test:model:entity#synthetic:seed-support").expect("identity grammar");
@@ -367,7 +363,7 @@ mod tests {
                         parameters: Point2::new(parameter, -parameter),
                     },
                     &GeometryWorkBudget::from_context(
-                        &geometry_ctx,
+                        geometry_ctx,
                         cadmpeg_core::decode::u64_from_index(100),
                     ),
                 )
@@ -379,18 +375,16 @@ mod tests {
             cache.seed_for(&support, &spine, 7.1, &offset_surface),
             Some(Point2::new(7.0, -7.0))
         );
-    }
+    
+})
+}
 
     #[test]
     fn numerical_seventh_common_weights_preserve_closest_point() {
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
+        
+        crate::test_support::with_decode_context(|geometry_ctx| {
+
 
         for weight in [1.0e-200, 1.0, 1.0e200] {
             let controls = [
@@ -402,7 +396,7 @@ mod tests {
                 0.0,
                 [0.0, 1.0],
                 &GeometryWorkBudget::from_context(
-                    &geometry_ctx,
+                    geometry_ctx,
                     cadmpeg_core::decode::u64_from_index(100),
                 ),
             )
@@ -421,7 +415,7 @@ mod tests {
                 Point3::new(0.25, 0.0, 0.0),
                 None,
                 &super::GeometryWorkBudget::from_context(
-                    &geometry_ctx,
+                    geometry_ctx,
                     cadmpeg_core::decode::u64_from_index(super::MAX_ADAPTIVE_GEOMETRY_WORK),
                 ),
             )
@@ -429,11 +423,13 @@ mod tests {
             .unwrap();
             assert!((parameter - 0.25).abs() <= 128.0 * f64::EPSILON);
         }
-    }
+    
+})
+}
 
     #[test]
     fn nurbs_closest_parameter_refuses_weight_scratch_at_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::{ResourceDimension};
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
         let curve = NurbsCurve::from_lanes(
@@ -444,12 +440,12 @@ mod tests {
             false,
         )
         .expect("valid rational curve");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits service policy");
-        let budget = super::GeometryWorkBudget::from_context(&ctx, 8_000_000);
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 1; }, |ctx| {
+
+        let budget = super::GeometryWorkBudget::from_context(ctx, 8_000_000);
         let result = super::closest_nurbs_curve_parameter_with_budget(
             &curve,
             Point3::new(0.25, 0.0, 0.0),
@@ -459,11 +455,13 @@ mod tests {
         let limit = result.expect_err("two weights exceed one collection item");
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, "nx spine NURBS weights");
-    }
+    
+})
+}
 
     #[test]
     fn nurbs_closest_parameter_refuses_residual_scratch_at_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::{ResourceDimension};
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
         let curve = NurbsCurve::from_lanes(
@@ -474,12 +472,12 @@ mod tests {
             false,
         )
         .expect("valid polynomial curve");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits service policy");
-        let budget = super::GeometryWorkBudget::from_context(&ctx, 8_000_000);
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_collection_items = 1; }, |ctx| {
+
+        let budget = super::GeometryWorkBudget::from_context(ctx, 8_000_000);
         let result = super::closest_nurbs_curve_parameter_with_budget(
             &curve,
             Point3::new(0.25, 0.0, 0.0),
@@ -489,11 +487,13 @@ mod tests {
         let limit = result.expect_err("two residuals exceed one collection item");
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, "nx spine NURBS residuals");
-    }
+    
+})
+}
 
     #[test]
     fn nurbs_closest_parameter_refuses_session_work_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::{ResourceDimension};
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
         let curve = NurbsCurve::from_lanes(
@@ -504,12 +504,12 @@ mod tests {
             false,
         )
         .expect("valid polynomial curve");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits service policy");
-        let budget = super::GeometryWorkBudget::from_context(&ctx, 8_000_000);
+        
+        
+        
+        crate::test_support::with_decode_context_over(&[], |policy| { policy.limits.max_work_units = 0; }, |ctx| {
+
+        let budget = super::GeometryWorkBudget::from_context(ctx, 8_000_000);
         let result = super::closest_nurbs_curve_parameter_with_budget(
             &curve,
             Point3::new(0.25, 0.0, 0.0),
@@ -518,11 +518,13 @@ mod tests {
         );
         let limit = result.expect_err("closest-parameter search needs work");
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    }
+    
+})
+}
 
     #[test]
     fn nurbs_closest_parameter_refuses_local_geometry_work_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::{ResourceDimension};
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
         let curve = NurbsCurve::from_lanes(
@@ -533,10 +535,10 @@ mod tests {
             false,
         )
         .expect("valid polynomial curve");
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("empty root fits service policy");
-        let budget = super::GeometryWorkBudget::from_context(&ctx, 0);
+        
+        crate::test_support::with_decode_context(|ctx| {
+
+        let budget = super::GeometryWorkBudget::from_context(ctx, 0);
         let result = super::closest_nurbs_curve_parameter_with_budget(
             &curve,
             Point3::new(0.25, 0.0, 0.0),
@@ -549,7 +551,9 @@ mod tests {
             ResourceDimension::Codec("nx adaptive geometry work")
         );
         assert_eq!(ctx.resource_refusal(), Some(limit));
-    }
+    
+})
+}
 }
 
 pub(super) fn decoded_surface_point_inner_with_budget(

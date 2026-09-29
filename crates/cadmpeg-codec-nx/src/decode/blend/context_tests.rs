@@ -33,6 +33,7 @@ fn in_memory_spine_inverse_refuses_default_scoped_limit() {
     // An empty root admits 16 MiB of scoped storage. Each residual uses 24 bytes.
     const POLES_OVER_SCOPED_LIMIT: u32 = 16 * 1024 * 1024 / 24 + 1;
     let (ir, curve) = spine_model(POLES_OVER_SCOPED_LIMIT);
+    // This test asserts the default policy.
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
         .expect("empty in-memory root is admitted");
@@ -47,6 +48,7 @@ fn in_memory_spine_inverse_refuses_default_scoped_limit() {
 #[test]
 fn in_memory_spine_inverse_accepts_normal_input_under_default_policy() {
     let (ir, curve) = spine_model(2);
+    // This test asserts the default policy.
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
         .expect("empty in-memory root is admitted");

@@ -13,7 +13,7 @@ use cadmpeg_ir::math::Vector3;
 
 use crate::decode::pcurves::{orient_tolerant_intersection_pcurve, reverse_pcurve_over_range};
 
-fn reversal_limit_error(policy: &cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+fn reversal_limit_error(adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
             1,
@@ -24,38 +24,37 @@ fn reversal_limit_error(policy: &cadmpeg_core::decode::DecodePolicy) -> cadmpeg_
         )
         .expect("test pcurve"),
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, policy)
-        .expect("test context");
-    reverse_pcurve_over_range(&ctx, &pcurve, [0.0, 1.0]).expect_err("pcurve reversal limit refusal")
+    
+    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+
+    reverse_pcurve_over_range(ctx, &pcurve, [0.0, 1.0]).expect_err("pcurve reversal limit refusal")
+
+})
 }
 
 #[test]
 fn pcurve_reversal_route_refuses_collection_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 0; };
     assert!(matches!(
-        reversal_limit_error(&policy),
+        reversal_limit_error(adjust_policy),
         cadmpeg_core::CodecError::ResourceLimit(_)
     ));
 }
 
 #[test]
 fn pcurve_reversal_route_refuses_retained_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_retained_bytes = 0; };
     assert!(matches!(
-        reversal_limit_error(&policy),
+        reversal_limit_error(adjust_policy),
         cadmpeg_core::CodecError::ResourceLimit(_)
     ));
 }
 
 #[test]
 fn pcurve_reversal_route_refuses_nesting_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_recursion_depth = 0;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_recursion_depth = 0; };
     assert!(matches!(
-        reversal_limit_error(&policy),
+        reversal_limit_error(adjust_policy),
         cadmpeg_core::CodecError::ResourceLimit(_)
     ));
 }
@@ -253,13 +252,9 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
 
 #[test]
 fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &geometry_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("empty geometry root is admitted");
+    
+    crate::test_support::with_decode_context(|geometry_ctx| {
+
 
     let pcurve = PcurveGeometry::Offset(
         cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(
@@ -323,7 +318,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
     let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).unwrap();
     let second = cadmpeg_ir::eval::pcurve_uv(&pcurve, 6.0).unwrap();
     let oriented = orient_tolerant_intersection_pcurve(
-        &geometry_ctx,
+        geometry_ctx,
         &ir,
         &CurveId::mint("test:model:entity#nx:test:unused-orientation-curve")
             .expect("identity grammar"),
@@ -343,6 +338,8 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
         assert!((actual.u - expected.u).abs() < 1.0e-12);
         assert!((actual.v - expected.v).abs() < 1.0e-12);
     }
+
+})
 }
 
 #[test]
