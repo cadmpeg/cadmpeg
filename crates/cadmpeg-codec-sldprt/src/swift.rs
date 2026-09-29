@@ -1038,7 +1038,7 @@ fn diameter_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Option<PositiveReal> {
-    unique_diameter(&diameter_contributors(annotation, feature_index))
+    unique_diameter(diameter_contributors(annotation, feature_index).into_iter())
 }
 
 fn directional_distance(
@@ -1381,14 +1381,17 @@ fn hole_diameter_excluding_counterbore(
         .filter_map(|candidate| counterbore_from_direct_geometry(candidate, feature_index));
     let counterbore_diameter = unique_measurement(counterbore_diameters)?;
     let contributors = diameter_contributors(annotation, feature_index);
-    let remaining = contributors
-        .iter()
-        .copied()
-        .filter(|value| !diameters_equivalent(value.get(), counterbore_diameter.get()))
-        .collect::<Vec<_>>();
-    (remaining.len() < contributors.len())
-        .then(|| unique_diameter(&remaining))
-        .flatten()
+    let mut removed_counterbore = false;
+    let remaining = contributors.into_iter().filter(|value| {
+        if diameters_equivalent(value.get(), counterbore_diameter.get()) {
+            removed_counterbore = true;
+            false
+        } else {
+            true
+        }
+    });
+    let remaining_diameter = unique_diameter(remaining);
+    removed_counterbore.then_some(remaining_diameter).flatten()
 }
 
 fn diameter_contributors(
@@ -2020,11 +2023,10 @@ fn unique_measurement<T: Copy + Into<f64>>(mut values: impl Iterator<Item = T>) 
         .then_some(first)
 }
 
-fn unique_diameter<T: Copy + Into<f64>>(values: &[T]) -> Option<T> {
-    let first = *values.first()?;
+fn unique_diameter<T: Copy + Into<f64>>(mut values: impl Iterator<Item = T>) -> Option<T> {
+    let first = values.next()?;
     values
-        .iter()
-        .all(|value| diameters_equivalent((*value).into(), first.into()))
+        .all(|value| diameters_equivalent(value.into(), first.into()))
         .then_some(first)
 }
 

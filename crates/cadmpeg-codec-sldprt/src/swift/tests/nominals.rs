@@ -366,8 +366,8 @@ fn numerically_equivalent_pattern_sizes_supply_diameter_without_rendered_text() 
 
 #[test]
 fn diameter_equivalence_does_not_merge_distinct_sizes() {
-    assert_eq!(unique_diameter(&[10.0, 10.000_005]), Some(10.0));
-    assert_eq!(unique_diameter(&[10.0, 10.000_02]), None);
+    assert_eq!(unique_diameter([10.0, 10.000_005].into_iter()), Some(10.0));
+    assert_eq!(unique_diameter([10.0, 10.000_02].into_iter()), None);
 }
 
 #[test]
