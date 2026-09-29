@@ -3,12 +3,58 @@ use crate::native::attach::hole_body_projection;
 use crate::native::attach::hole_operations_by_body;
 use crate::native::attach::hole_operations_are_unique;
 use crate::native::attach::insert_hole_output_body;
+use crate::native::attach::primary_hole_outputs;
 use crate::native::attach::simple_hole_chamfers;
 use crate::native::attach::simple_hole_native_properties;
 use crate::native::attach::tests::hole_diameters_for_operations;
 use crate::native::attach::tests::simple_hole_diameters;
 use crate::native::attach::SolvedSurfaceGeometry;
 use crate::native::attach::SurfaceGeometry;
+
+fn primary_hole_output_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    use crate::native::features::holes::{FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm};
+    let template = FeatureSimpleHoleTemplate {
+        id: "template".into(),
+        operation_label: "operation".into(),
+        payload_string: "payload".into(),
+        family: SimpleHoleFamily::GeneralHole,
+        form: SimpleHoleForm::Simple,
+        extent: SimpleHoleExtent::Through,
+        start_treatment: SimpleHoleEndTreatment::None,
+        end_treatment: SimpleHoleEndTreatment::None,
+    };
+    let references = std::collections::BTreeMap::from([("operation", 94)]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let outputs = primary_hole_outputs(&ctx, &[template], &references, &[], &std::collections::BTreeMap::new())?;
+    assert_eq!(outputs["operation"], []);
+    Ok(())
+}
+
+#[test]
+fn primary_hole_output_refuses_collection_limit() {
+    let error = primary_hole_output_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn primary_hole_output_refuses_retained_limit() {
+    let error = primary_hole_output_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn primary_hole_output_refuses_work_limit() {
+    let error = primary_hole_output_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
 
 fn hole_output_map_result(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
