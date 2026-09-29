@@ -315,11 +315,11 @@ fn sketch_arrangement_faces(
         let mut angles = arrangement_circle_angles(&nodes, center, radius, tolerance, ctx)?;
         if angles.len() < 2 {
             let additional = if angles.is_empty() {
-                vec![0.0, std::f64::consts::PI]
+                [Some(0.0), Some(std::f64::consts::PI)]
             } else {
-                vec![angles[0] + std::f64::consts::PI]
+                [Some(angles[0] + std::f64::consts::PI), None]
             };
-            for angle in additional {
+            for angle in additional.into_iter().flatten() {
                 arrangement_node(
                     &mut nodes,
                     Point2::new(
@@ -443,18 +443,21 @@ fn sketch_arrangement_faces(
         for right_index in left_index + 1..edges.len() {
             let left = &edges[left_index];
             let right = &edges[right_index];
-            let shared_nodes = left
-                .nodes
-                .into_iter()
-                .filter(|node| right.nodes.contains(node))
-                .collect::<Vec<_>>();
-            if !shared_nodes.is_empty() {
+            let mut shared_nodes = [0; 2];
+            let mut shared_count = 0;
+            for node in left.nodes {
+                if right.nodes.contains(&node) {
+                    shared_nodes[shared_count] = node;
+                    shared_count += 1;
+                }
+            }
+            if shared_count != 0 {
                 if !arrangement_edges_meet_only_at_nodes(
                     left,
                     right,
                     entities,
                     &nodes,
-                    &shared_nodes,
+                    &shared_nodes[..shared_count],
                     tolerance,
                 ) {
                     return Ok(None);
@@ -667,7 +670,7 @@ fn arrangement_edges_meet_only_at_nodes(
         }
     }
     analytic_segment_intersections(&left_segment, &right_segment).is_some_and(|intersections| {
-        intersections.iter().all(|intersection| {
+        intersections.iter().flatten().all(|intersection| {
             shared_nodes
                 .iter()
                 .any(|node| point_distance(*intersection, nodes[*node]) <= tolerance)
@@ -870,7 +873,7 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
 fn analytic_segment_intersections(
     left: &ProfileBoundarySegment,
     right: &ProfileBoundarySegment,
-) -> Option<Vec<Point2>> {
+) -> Option<[Option<Point2>; 2]> {
     match (left, right) {
         (
             ProfileBoundarySegment::Line { start: a, end: b },
@@ -880,12 +883,12 @@ fn analytic_segment_intersections(
                 cadmpeg_ir::math::planar::line_line_parameters(*a, *b, *c, *d)?
                     .map(cadmpeg_ir::scalar::FiniteReal::get);
             if !(0.0..=1.0).contains(&parameter) || !(0.0..=1.0).contains(&other_parameter) {
-                return Some(Vec::new());
+                return Some([None; 2]);
             }
-            Some(vec![Point2::new(
+            Some([Some(Point2::new(
                 cadmpeg_ir::math::interpolate(a.u, b.u, parameter)?.get(),
                 cadmpeg_ir::math::interpolate(a.v, b.v, parameter)?.get(),
-            )])
+            )), None])
         }
         (ProfileBoundarySegment::Line { start, end }, arc @ ProfileBoundarySegment::Arc { .. })
         | (arc @ ProfileBoundarySegment::Arc { .. }, ProfileBoundarySegment::Line { start, end }) => {
@@ -900,7 +903,7 @@ fn analytic_segment_intersections(
 fn line_arc_intersection_points(
     (start, end): (Point2, Point2),
     arc: &ProfileBoundarySegment,
-) -> Option<Vec<Point2>> {
+) -> Option<[Option<Point2>; 2]> {
     let ProfileBoundarySegment::Arc {
         center,
         radius,
@@ -913,16 +916,15 @@ fn line_arc_intersection_points(
     let radius = radius.get();
     let offset = Point2::new(start.u - center.u, start.v - center.v);
     if start == end {
-        return Some(
+        return Some([
             (offset.u.hypot(offset.v) == radius
                 && directed_angle_parameter(offset.v.atan2(offset.u), *start_angle, *end_angle)
                     .is_some())
-            .then_some(start)
-            .into_iter()
-            .collect(),
-        );
+            .then_some(start), None,
+        ]);
     }
-    let mut points = Vec::new();
+    let mut points = [None; 2];
+    let mut point_count = 0;
     let Some(parameters) =
         cadmpeg_ir::math::planar::line_circle_intersections(start, end, *center, radius)
     else {
@@ -945,9 +947,10 @@ fn line_arc_intersection_points(
                     *end_angle,
                 )
                 .is_some()
-                && !points.contains(&point)
+                && !points.contains(&Some(point))
             {
-                points.push(point);
+                points[point_count] = Some(point);
+                point_count += 1;
             }
         }
     }
@@ -957,7 +960,7 @@ fn line_arc_intersection_points(
 fn arc_intersection_points(
     left: &ProfileBoundarySegment,
     right: &ProfileBoundarySegment,
-) -> Option<Vec<Point2>> {
+) -> Option<[Option<Point2>; 2]> {
     let ProfileBoundarySegment::Arc {
         center: lc,
         radius: lr,
@@ -978,14 +981,11 @@ fn arc_intersection_points(
     };
     Some(
         cadmpeg_ir::math::planar::circle_intersections(*lc, lr.get(), *rc, rr.get())?
-            .into_iter()
-            .map(cadmpeg_ir::units::FinitePoint2::get)
-            .filter(|point| {
+            .map(|point| point.map(cadmpeg_ir::units::FinitePoint2::get).filter(|point| {
                 directed_angle_parameter((point.v - lc.v).atan2(point.u - lc.u), *ls, *le).is_some()
                     && directed_angle_parameter((point.v - rc.v).atan2(point.u - rc.u), *rs, *re)
                         .is_some()
-            })
-            .collect(),
+            })),
     )
 }
 
@@ -2679,7 +2679,7 @@ fn boundary_segments_intersect(
         (ProfileBoundarySegment::Line { start, end }, arc @ ProfileBoundarySegment::Arc { .. })
         | (arc @ ProfileBoundarySegment::Arc { .. }, ProfileBoundarySegment::Line { start, end }) => {
             line_arc_intersection_points((*start, *end), arc)
-                .is_some_and(|points| !points.is_empty())
+                .is_some_and(|points| points.iter().any(Option::is_some))
         }
         (
             ProfileBoundarySegment::Arc {
@@ -2727,7 +2727,7 @@ fn arcs_intersect(
         start_angle: right_start,
         end_angle: right_end,
     };
-    arc_intersection_points(&left, &right).is_some_and(|points| !points.is_empty())
+    arc_intersection_points(&left, &right).is_some_and(|points| points.iter().any(Option::is_some))
 }
 
 pub(super) fn historical_member_points_in_state(

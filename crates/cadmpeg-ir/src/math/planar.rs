@@ -395,13 +395,13 @@ pub fn line_line_parameters(a: Point2, b: Point2, c: Point2, d: Point2) -> Optio
 
 /// The finite intersections of two positive-radius circles.
 /// Coincident circles and invalid or unrepresentable results return `None`.
-/// Disjoint circles return an empty vector; a tangent returns one point.
+/// Disjoint circles return two empty slots; a tangent returns one point.
 pub fn circle_intersections(
     first: Point2,
     first_radius: f64,
     second: Point2,
     second_radius: f64,
-) -> Option<Vec<FinitePoint2>> {
+) -> Option<[Option<FinitePoint2>; 2]> {
     if !first.is_finite()
         || !second.is_finite()
         || !first_radius.is_finite()
@@ -419,7 +419,7 @@ pub fn circle_intersections(
     let (delta, scale) = scaled_displacement(first, second, 0.0);
     let distance = delta.u.hypot(delta.v);
     if distance == 0.0 {
-        return (first_radius != second_radius).then(Vec::new);
+        return (first_radius != second_radius).then_some([None; 2]);
     }
     let mut denominator = ExactSignedSum::default();
     denominator.add_factors([2.0, distance, scale]);
@@ -435,7 +435,7 @@ pub fn circle_intersections(
     let Some(along) = numerator.finish().map_or(Some(FiniteReal::ZERO), |value| {
         value.quotient(denominator).ok()
     }) else {
-        return Some(Vec::new());
+        return Some([None; 2]);
     };
     let along = along.get();
     // `along` is the signed perpendicular distance from the smaller circle's
@@ -447,18 +447,18 @@ pub fn circle_intersections(
     let radial_scale = first_radius.max(perpendicular);
     let Some(half_chord) = half_chord(first_radius / radial_scale, perpendicular / radial_scale)
     else {
-        return Some(Vec::new());
+        return Some([None; 2]);
     };
     let height = radial_scale * half_chord;
     let unit = Point2::new(delta.u / distance, delta.v / distance);
-    let mut points = Vec::new();
-    for height in [height, -height] {
+    let mut points = [None; 2];
+    for (index, height) in [height, -height].into_iter().enumerate() {
         let point = FinitePoint2::from_coordinates(
             super::sum::finite_dot([1.0, along, -height], [first.u, unit.u, unit.v]).ok()?,
             super::sum::finite_dot([1.0, along, height], [first.v, unit.v, unit.u]).ok()?,
         );
-        if !points.contains(&point) {
-            points.push(point);
+        if !points.contains(&Some(point)) {
+            points[index] = Some(point);
         }
     }
     Some(points)
@@ -597,7 +597,7 @@ mod tests {
             1e308,
         )
         .unwrap();
-        assert_eq!(points, vec![Point2::new(0.0, 0.0)]);
+        assert_eq!(points.into_iter().flatten().collect::<Vec<_>>(), vec![Point2::new(0.0, 0.0)]);
     }
 
     #[test]
@@ -606,8 +606,8 @@ mod tests {
             let a = Point2::new(0., 0.);
             let b = Point2::new(r, 0.);
             let points = circle_intersections(a, r, b, r).unwrap();
-            assert_eq!(points.len(), 2);
-            for p in points {
+            assert_eq!(points.iter().flatten().count(), 2);
+            for p in points.into_iter().flatten() {
                 assert!((p.u / r - 0.5).abs() <= 4. * f64::EPSILON);
                 assert!((p.v.abs() / r - 0.75_f64.sqrt()).abs() <= 4. * f64::EPSILON);
             }
@@ -669,6 +669,7 @@ mod tests {
         circle_intersections(Point2::new(0.0, 0.0), 1.0, Point2::new(distance, 0.0), 1.0)
             .unwrap()
             .into_iter()
+            .flatten()
             .map(FinitePoint2::get)
             .collect()
     }
@@ -712,8 +713,8 @@ mod tests {
                     circle_intersections(small_center, 1.0, large_center, large)
                 }
                 .unwrap();
-                assert_eq!(points.len(), 2);
-                for point in points {
+                assert_eq!(points.iter().flatten().count(), 2);
+                for point in points.into_iter().flatten() {
                     assert!((point.u * large - 0.5).abs() <= 8.0 * f64::EPSILON);
                     assert!((point.v.abs() - 1.0).abs() <= 8.0 * f64::EPSILON);
                 }

@@ -773,7 +773,7 @@ fn analytic_arrangement_intersections_include_hidden_second_crossing() {
     assert_eq!(
         analytic_segment_intersections(&line, &circle)
             .expect("analytic intersection family")
-            .len(),
+            .into_iter().flatten().count(),
         2
     );
 }
@@ -1403,13 +1403,13 @@ fn numerical_audit_line_circle_intersections_are_scale_invariant() {
             &circle
         )
         .unwrap()
-        .is_empty());
+        .iter().all(Option::is_none));
         let tangent = super::line_arc_intersection_points(
             (Point2::new(-radius, radius), Point2::new(radius, radius)),
             &circle,
         )
         .unwrap();
-        assert_eq!(tangent, vec![Point2::new(0.0, radius)]);
+        assert_eq!(tangent.into_iter().flatten().collect::<Vec<_>>(), vec![Point2::new(0.0, radius)]);
     }
 }
 
@@ -1499,9 +1499,9 @@ fn scaled_planar_intersections_preserve_separation_and_witnesses() {
             end_angle: std::f64::consts::TAU,
         };
         let points = super::arc_intersection_points(&arc(0.), &arc(r)).unwrap();
-        assert_eq!(points.len(), 2);
+        assert_eq!(points.iter().flatten().count(), 2);
         assert!(super::boundary_segments_intersect(&arc(0.), &arc(r)));
-        for point in points {
+        for point in points.into_iter().flatten() {
             assert!((point.u / r - 0.5).abs() <= 4. * f64::EPSILON);
         }
     }
@@ -1525,7 +1525,7 @@ fn disparate_segment_and_point_scales_preserve_distance() {
         &arc
     )
     .unwrap()
-    .is_empty());
+    .iter().all(Option::is_none));
 }
 
 const LARGE_LINE_TOLERANCE: f64 = 1e-6;
@@ -1545,7 +1545,7 @@ fn numerical_0922b_line_arc_crossings() {
         .unwrap();
         println!("Fusion line[-{half},{half}],r=.001 => {points:?}");
         assert_eq!(
-            points,
+            points.into_iter().flatten().collect::<Vec<_>>(),
             vec![Point2::new(-0.001, 0.), Point2::new(0.001, 0.)]
         );
     }
@@ -1563,7 +1563,7 @@ fn numerical_0922b_large_line_crossing() {
         };
         let r = analytic_segment_intersections(&a, &b).unwrap();
         println!("Fusion crossing scale{s:e}: {r:?}");
-        assert_eq!(r, vec![Point2::new(0., 0.)]);
+        assert_eq!(r.into_iter().flatten().collect::<Vec<_>>(), vec![Point2::new(0., 0.)]);
     }
 }
 #[test]
