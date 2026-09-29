@@ -865,6 +865,37 @@ fn native_alias_f1_resolves_record_in_declared_part_container() {
 }
 
 #[test]
+fn native_alias_graph_link_refuses_retained_limit() {
+    let mut stream = object_graph_stream();
+    let mut alias = surface_alias_stream();
+    alias[13..16].copy_from_slice(&[3, 0, 2]);
+    stream.extend(alias);
+    let (bytes, _) = outer_container_catpart(&stream);
+    let mut found = false;
+    for cap in 0..=4096 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes, &arena, &policy).expect("fixture fits input limit");
+        match super::super::CatiaNative::decode_with_record_sources(
+            &ctx, &bytes, &[], &mut crate::nurbs::LaneRefusals::new()) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_native_alias_object_graph_id" => {
+                    found = true;
+                    break;
+                }
+            Ok(native) => {
+                assert!(native.alias_rows[0].object_graph.is_some());
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert!(found, "retained sweep must reach the alias graph link");
+}
+
+#[test]
 fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes() {
     let mut bytes = vec![0x02, 0x00];
     bytes.extend_from_slice(&0xafu32.to_le_bytes());
