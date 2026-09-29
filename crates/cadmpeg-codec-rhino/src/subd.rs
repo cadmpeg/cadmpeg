@@ -131,7 +131,8 @@ fn insert_incidence(
     if values.contains(&value) {
         return Ok(false);
     }
-    ctx.reserve_set(values, 1, "Rhino SubD incidence members").map_err(SubdError::from)?;
+    ctx.reserve_set(values, 1, "Rhino SubD incidence members")
+        .map_err(SubdError::from)?;
     Ok(values.insert(value))
 }
 
@@ -139,7 +140,9 @@ impl From<cadmpeg_core::CodecError> for SubdError {
     fn from(error: cadmpeg_core::CodecError) -> Self {
         match error {
             cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit),
-            other => Self::Unpositioned { message: other.to_string() },
+            other => Self::Unpositioned {
+                message: other.to_string(),
+            },
         }
     }
 }
@@ -410,7 +413,8 @@ fn read_subdimple(
     for expected_level in 0..level_count {
         let start = reader.position();
         let level = read_level(ctx, reader, archive, expected_level, warnings)?;
-        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges").map_err(SubdError::from)?;
+        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges")
+            .map_err(SubdError::from)?;
         children.push(start..reader.position());
         validate_level(ctx, &level, expected_level)?;
         if expected_level == 0 {
@@ -422,13 +426,15 @@ fn read_subdimple(
         reader.u8()?;
         let start = reader.position();
         read_mapping_tag(ctx, reader, archive, warnings)?;
-        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges").map_err(SubdError::from)?;
+        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges")
+            .map_err(SubdError::from)?;
         children.push(start..reader.position());
     }
     if minor >= 2 {
         let start = reader.position();
         read_symmetry(ctx, reader, archive, enum_diagnostics, warnings)?;
-        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges").map_err(SubdError::from)?;
+        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges")
+            .map_err(SubdError::from)?;
         children.push(start..reader.position());
     }
     if minor >= 3 {
@@ -440,7 +446,8 @@ fn read_subdimple(
         reader.bool()?;
         let start = reader.position();
         read_subd_hash(ctx, reader, archive, warnings)?;
-        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges").map_err(SubdError::from)?;
+        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges")
+            .map_err(SubdError::from)?;
         children.push(start..reader.position());
     }
 
@@ -505,7 +512,9 @@ fn read_level(
         ));
     }
 
-    let mut vertices = ctx.collection_vec(vertex_count, "Rhino SubD level vertices").map_err(SubdError::from)?;
+    let mut vertices = ctx
+        .collection_vec(vertex_count, "Rhino SubD level vertices")
+        .map_err(SubdError::from)?;
     for archive_id in partitions[0]..partitions[1] {
         vertices.push(read_vertex(
             ctx,
@@ -515,7 +524,9 @@ fn read_level(
             level_index,
         )?);
     }
-    let mut edges = ctx.collection_vec(edge_count, "Rhino SubD level edges").map_err(SubdError::from)?;
+    let mut edges = ctx
+        .collection_vec(edge_count, "Rhino SubD level edges")
+        .map_err(SubdError::from)?;
     for archive_id in partitions[1]..partitions[2] {
         edges.push(read_edge(
             ctx,
@@ -525,7 +536,9 @@ fn read_level(
             level_index,
         )?);
     }
-    let mut faces = ctx.collection_vec(face_count, "Rhino SubD level faces").map_err(SubdError::from)?;
+    let mut faces = ctx
+        .collection_vec(face_count, "Rhino SubD level faces")
+        .map_err(SubdError::from)?;
     for archive_id in partitions[2]..partitions[3] {
         faces.push(read_face(
             ctx,
@@ -937,7 +950,9 @@ fn read_pointers(
             "SubD pointer count exceeds bounded cap",
         ));
     }
-    let mut pointers = ctx.collection_vec(count, "Rhino SubD component pointers").map_err(SubdError::from)?;
+    let mut pointers = ctx
+        .collection_vec(count, "Rhino SubD component pointers")
+        .map_err(SubdError::from)?;
     for _ in 0..count {
         pointers.push(read_pointer(reader, allow_null)?);
     }
@@ -995,7 +1010,8 @@ fn validate_level(
         .and_then(|value| value.checked_add(level.faces.len()))
         .ok_or_else(|| malformed(level.source_offset, "SubD map size overflow"))?;
     let mut types = HashMap::new();
-    ctx.reserve_map(&mut types, component_count, "Rhino SubD component types").map_err(SubdError::from)?;
+    ctx.reserve_map(&mut types, component_count, "Rhino SubD component types")
+        .map_err(SubdError::from)?;
     for vertex in &level.vertices {
         types.insert(vertex.base.archive_id, ComponentType::Vertex);
     }
@@ -1079,7 +1095,12 @@ fn incidence_from_edges(
     level: &RawLevel,
 ) -> Result<HashMap<u32, HashSet<u32>>, SubdError> {
     let mut result = HashMap::new();
-    ctx.reserve_map(&mut result, level.vertices.len(), "Rhino SubD vertex-edge map").map_err(SubdError::from)?;
+    ctx.reserve_map(
+        &mut result,
+        level.vertices.len(),
+        "Rhino SubD vertex-edge map",
+    )
+    .map_err(SubdError::from)?;
     for edge in &level.edges {
         for vertex in edge.vertices {
             insert_incidence(ctx, &mut result, vertex.archive_id, edge.base.archive_id)?;
@@ -1093,12 +1114,18 @@ fn incidence_from_faces(
     level: &RawLevel,
 ) -> Result<HashMap<u32, HashSet<u32>>, SubdError> {
     let mut edges = HashMap::new();
-    ctx.reserve_map(&mut edges, level.edges.len(), "Rhino SubD face edge lookup").map_err(SubdError::from)?;
+    ctx.reserve_map(&mut edges, level.edges.len(), "Rhino SubD face edge lookup")
+        .map_err(SubdError::from)?;
     for edge in &level.edges {
         edges.insert(edge.base.archive_id, edge);
     }
     let mut result = HashMap::new();
-    ctx.reserve_map(&mut result, level.vertices.len(), "Rhino SubD vertex-face map").map_err(SubdError::from)?;
+    ctx.reserve_map(
+        &mut result,
+        level.vertices.len(),
+        "Rhino SubD vertex-face map",
+    )
+    .map_err(SubdError::from)?;
     for face in &level.faces {
         let mut first = None;
         let mut previous_end = None;
@@ -1138,7 +1165,8 @@ fn edge_face_incidence(
     level: &RawLevel,
 ) -> Result<HashMap<u32, HashSet<u32>>, SubdError> {
     let mut result = HashMap::new();
-    ctx.reserve_map(&mut result, level.edges.len(), "Rhino SubD edge-face map").map_err(SubdError::from)?;
+    ctx.reserve_map(&mut result, level.edges.len(), "Rhino SubD edge-face map")
+        .map_err(SubdError::from)?;
     for face in &level.faces {
         for edge in &face.edges {
             if !insert_incidence(ctx, &mut result, edge.archive_id, face.base.archive_id)? {
@@ -1159,7 +1187,12 @@ fn compare_incidence(
     label: &str,
 ) -> Result<(), SubdError> {
     let mut serialized_ids = HashSet::new();
-    ctx.reserve_set(&mut serialized_ids, serialized.len(), "Rhino SubD serialized incidence").map_err(SubdError::from)?;
+    ctx.reserve_set(
+        &mut serialized_ids,
+        serialized.len(),
+        "Rhino SubD serialized incidence",
+    )
+    .map_err(SubdError::from)?;
     for pointer in serialized {
         serialized_ids.insert(pointer.archive_id);
     }
@@ -1194,20 +1227,32 @@ fn materialize(
     id: cadmpeg_ir::ids::SubdId,
 ) -> Result<SubdSurface, SubdError> {
     let mut vertex_indices = HashMap::new();
-    ctx.reserve_map(&mut vertex_indices, level.vertices.len(), "Rhino SubD vertex indices").map_err(SubdError::from)?;
+    ctx.reserve_map(
+        &mut vertex_indices,
+        level.vertices.len(),
+        "Rhino SubD vertex indices",
+    )
+    .map_err(SubdError::from)?;
     for (index, vertex) in level.vertices.iter().enumerate() {
         let index = u32::try_from(index)
             .map_err(|_| malformed(vertex.base.source_offset, "SubD vertex index overflow"))?;
         vertex_indices.insert(vertex.base.archive_id, index);
     }
     let mut edge_indices = HashMap::new();
-    ctx.reserve_map(&mut edge_indices, level.edges.len(), "Rhino SubD edge indices").map_err(SubdError::from)?;
+    ctx.reserve_map(
+        &mut edge_indices,
+        level.edges.len(),
+        "Rhino SubD edge indices",
+    )
+    .map_err(SubdError::from)?;
     for (index, edge) in level.edges.iter().enumerate() {
         let index = u32::try_from(index)
             .map_err(|_| malformed(edge.base.source_offset, "SubD edge index overflow"))?;
         edge_indices.insert(edge.base.archive_id, index);
     }
-    let mut vertices = ctx.collection_vec(level.vertices.len(), "Rhino SubD vertices").map_err(SubdError::from)?;
+    let mut vertices = ctx
+        .collection_vec(level.vertices.len(), "Rhino SubD vertices")
+        .map_err(SubdError::from)?;
     for vertex in level.vertices {
         let tag = vertex.tag.ok_or_else(|| {
             malformed(
@@ -1232,7 +1277,9 @@ fn materialize(
             None,
         ));
     }
-    let mut edges = ctx.collection_vec(level.edges.len(), "Rhino SubD edges").map_err(SubdError::from)?;
+    let mut edges = ctx
+        .collection_vec(level.edges.len(), "Rhino SubD edges")
+        .map_err(SubdError::from)?;
     for edge in level.edges {
         let tag = edge.tag.ok_or_else(|| {
             malformed(
@@ -1262,9 +1309,13 @@ fn materialize(
             .map_err(|error| malformed(edge.base.source_offset, error.to_string()))?,
         );
     }
-    let mut faces = ctx.collection_vec(level.faces.len(), "Rhino SubD faces").map_err(SubdError::from)?;
+    let mut faces = ctx
+        .collection_vec(level.faces.len(), "Rhino SubD faces")
+        .map_err(SubdError::from)?;
     for face in level.faces {
-        let mut face_edges = ctx.collection_vec(face.edges.len(), "Rhino SubD face edges").map_err(SubdError::from)?;
+        let mut face_edges = ctx
+            .collection_vec(face.edges.len(), "Rhino SubD face edges")
+            .map_err(SubdError::from)?;
         for edge in face.edges {
             face_edges.push(SubdEdgeUse {
                 edge: *edge_indices
@@ -1432,7 +1483,8 @@ fn read_symmetry(
     let symmetry_type = match SubdSymmetry::parse(reader.u8()?) {
         SubdSymmetry::Absent => return finish_direct_chunk(ctx, parent, &chunk, reader, warnings),
         SubdSymmetry::Invalid(raw) => {
-            ctx.reserve_vec(enum_diagnostics, 1, "Rhino SubD enum diagnostics").map_err(SubdError::from)?;
+            ctx.reserve_vec(enum_diagnostics, 1, "Rhino SubD enum diagnostics")
+                .map_err(SubdError::from)?;
             enum_diagnostics.push(SubdEnumDiagnostic::SymmetryType(raw));
             return finish_direct_chunk(ctx, parent, &chunk, reader, warnings);
         }
@@ -1479,7 +1531,8 @@ fn read_symmetry(
     if version >= 2 {
         let coordinate_system = reader.u8()?;
         if coordinate_system > 2 {
-            ctx.reserve_vec(enum_diagnostics, 1, "Rhino SubD enum diagnostics").map_err(SubdError::from)?;
+            ctx.reserve_vec(enum_diagnostics, 1, "Rhino SubD enum diagnostics")
+                .map_err(SubdError::from)?;
             enum_diagnostics.push(SubdEnumDiagnostic::SymmetryCoordinateSystem(
                 coordinate_system,
             ));

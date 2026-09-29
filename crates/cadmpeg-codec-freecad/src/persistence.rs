@@ -508,7 +508,11 @@ fn parse_document(
                 extension_types
                     .insert(ctx.copy_retained_text(&type_name, "FCStd extension type copy")?);
                 let id = extension_id(ctx, &object.id, &name, order)?;
-                ctx.reserve_map(&mut extension_ids_by_start, 1, "FCStd extension identity lookup")?;
+                ctx.reserve_map(
+                    &mut extension_ids_by_start,
+                    1,
+                    "FCStd extension identity lookup",
+                )?;
                 extension_ids_by_start.insert(
                     node.range().start,
                     ctx.copy_retained_text(&id, "FCStd extension identity copy")?,

@@ -22,8 +22,6 @@ use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
-
-
 /// Return the counted physical edge rows in their serialized table order.
 ///
 /// Each row retains its table-kind byte, native handle width semantics, and

@@ -134,7 +134,11 @@ pub(crate) fn transfer_neutral(
     properties: &[PropertyRecord],
 ) -> Result<(), CodecError> {
     let mut neutral_ids = HashMap::new();
-    ctx.reserve_map(&mut neutral_ids, records.len(), "fcstd drawing neutral identities")?;
+    ctx.reserve_map(
+        &mut neutral_ids,
+        records.len(),
+        "fcstd drawing neutral identities",
+    )?;
     for record in records {
         neutral_ids.insert(
             record.object.as_str(),
@@ -252,9 +256,7 @@ pub(crate) fn transfer_neutral(
             None
         };
         let template = template_id
-            .map(|id| {
-                id.try_clone_for_decode(ctx, "fcstd drawing template identity")
-            })
+            .map(|id| id.try_clone_for_decode(ctx, "fcstd drawing template identity"))
             .transpose()?;
         ctx.reserve_vec(&mut model.drawings, 1, "fcstd neutral drawings")?;
         let mut parameters = BTreeMap::new();
@@ -278,9 +280,7 @@ pub(crate) fn transfer_neutral(
                         format_args!("drawing {} has no admitted neutral identity", record.id),
                     )
                 })
-                .and_then(|id| {
-                    id.try_clone_for_decode(ctx, "fcstd drawing neutral identity")
-                })?,
+                .and_then(|id| id.try_clone_for_decode(ctx, "fcstd drawing neutral identity"))?,
             object: ctx.copy_retained_text(&record.object, "fcstd neutral drawing object")?,
             kind: classify(record.kind.as_str()),
             runtime_type: ctx

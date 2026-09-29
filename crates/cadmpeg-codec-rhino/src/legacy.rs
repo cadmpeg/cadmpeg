@@ -892,8 +892,16 @@ fn legacy_curve_segments(
             "V1 curve segment count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut segments =
-        { let mut values = Vec::new(); ctx.reserve_scoped_vec::<NurbsCurve>(workspace, &mut values, count, "Rhino V1 curve segments")?; values };
+    let mut segments = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<NurbsCurve>(
+            workspace,
+            &mut values,
+            count,
+            "Rhino V1 curve segments",
+        )?;
+        values
+    };
     for _ in 0..count {
         let spline = chunk_at(
             data,
@@ -1584,7 +1592,8 @@ fn legacy_surface(
     let pole_count = counts[0].checked_mul(counts[1]).ok_or_else(|| {
         CodecError::NotImplemented("V1 surface pole count exceeds address space".to_string())
     })?;
-    let mut control_points = ctx.retained_vec::<FinitePoint3>(pole_count, "Rhino V1 surface poles")?;
+    let mut control_points =
+        ctx.retained_vec::<FinitePoint3>(pole_count, "Rhino V1 surface poles")?;
     let mut weights = if rational_mode != 0 {
         Some(ctx.retained_vec::<NonZeroReal>(pole_count, "Rhino V1 surface weights")?)
     } else {
@@ -1766,8 +1775,26 @@ fn append_legacy_brep(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
         suffix_key.clone(),
     );
-    let mut trim_paths = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<(usize, usize, usize)>(&mut workspace, &mut values, trim_count, "Rhino V1 Brep trim paths")?; values };
-    let mut face_trim_indices = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<Vec<usize>>(&mut workspace, &mut values, brep.faces.len(), "Rhino V1 Brep face trim rows")?; values };
+    let mut trim_paths = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<(usize, usize, usize)>(
+            &mut workspace,
+            &mut values,
+            trim_count,
+            "Rhino V1 Brep trim paths",
+        )?;
+        values
+    };
+    let mut face_trim_indices = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<Vec<usize>>(
+            &mut workspace,
+            &mut values,
+            brep.faces.len(),
+            "Rhino V1 Brep face trim rows",
+        )?;
+        values
+    };
     for _ in 0..brep.faces.len() {
         face_trim_indices.push(Vec::new());
     }
@@ -1783,7 +1810,16 @@ fn append_legacy_brep(
                     "Rhino V1 Brep face trim count exceeds address space".to_string(),
                 )
             })?;
-        face_trim_indices[face_index] = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut workspace, &mut values, face_trim_count, "Rhino V1 Brep face trim indices")?; values };
+        face_trim_indices[face_index] = {
+            let mut values = Vec::new();
+            ctx.reserve_scoped_vec::<usize>(
+                &mut workspace,
+                &mut values,
+                face_trim_count,
+                "Rhino V1 Brep face trim indices",
+            )?;
+            values
+        };
         for (loop_index, loop_record) in face.loops.iter().enumerate() {
             for trim_index in 0..loop_record.trims.len() {
                 let global = trim_paths.len();
@@ -1795,7 +1831,16 @@ fn append_legacy_brep(
     if trim_paths.is_empty() {
         return Err(CodecError::Malformed("V1 Brep has no trims".to_string()));
     }
-    let mut parents = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut workspace, &mut values, trim_paths.len(), "Rhino V1 Brep trim parents")?; values };
+    let mut parents = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<usize>(
+            &mut workspace,
+            &mut values,
+            trim_paths.len(),
+            "Rhino V1 Brep trim parents",
+        )?;
+        values
+    };
     parents.extend(0..trim_paths.len());
     let has_edge = |index: usize| {
         let (face, loop_index, trim) = trim_paths[index];
@@ -1810,7 +1855,16 @@ fn append_legacy_brep(
     };
     for (face_index, face) in brep.faces.iter().enumerate() {
         let mut seam_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep seams")?;
-        let mut seams = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut seam_workspace, &mut values, face_trim_indices[face_index].len(), "Rhino V1 Brep seams")?; values };
+        let mut seams = {
+            let mut values = Vec::new();
+            ctx.reserve_scoped_vec::<usize>(
+                &mut seam_workspace,
+                &mut values,
+                face_trim_indices[face_index].len(),
+                "Rhino V1 Brep seams",
+            )?;
+            values
+        };
         for index in face_trim_indices[face_index].iter().copied() {
             let (_, loop_index, trim_index) = trim_paths[index];
             if face.loops[loop_index].trims[trim_index].mate == Mate::Seam {
@@ -1825,7 +1879,16 @@ fn append_legacy_brep(
             }
         }
     }
-    let mut mates = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut workspace, &mut values, trim_paths.len(), "Rhino V1 Brep mated trims")?; values };
+    let mut mates = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<usize>(
+            &mut workspace,
+            &mut values,
+            trim_paths.len(),
+            "Rhino V1 Brep mated trims",
+        )?;
+        values
+    };
     for (index, (face, loop_index, trim)) in trim_paths.iter().enumerate() {
         let record = &brep.faces[*face].loops[*loop_index].trims[*trim];
         if record.mate == Mate::Mated {
@@ -1839,11 +1902,29 @@ fn append_legacy_brep(
             }
         }
     }
-    let mut roots = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut workspace, &mut values, trim_paths.len(), "Rhino V1 Brep trim roots")?; values };
+    let mut roots = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<usize>(
+            &mut workspace,
+            &mut values,
+            trim_paths.len(),
+            "Rhino V1 Brep trim roots",
+        )?;
+        values
+    };
     for index in 0..trim_paths.len() {
         roots.push(find_root(&mut parents, index));
     }
-    let mut group_roots = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut workspace, &mut values, roots.len(), "Rhino V1 Brep unique roots")?; values };
+    let mut group_roots = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<usize>(
+            &mut workspace,
+            &mut values,
+            roots.len(),
+            "Rhino V1 Brep unique roots",
+        )?;
+        values
+    };
     group_roots.extend_from_slice(&roots);
     group_roots.sort_unstable();
     group_roots.dedup();
@@ -1911,7 +1992,16 @@ fn append_legacy_brep(
                 .find_map(|(global, path)| (*path == (face_index, loop_index, 0)).then_some(global))
                 .ok_or_else(|| CodecError::malformed("V1 loop has no indexed trim"))?;
             let mut globals_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep loop globals")?;
-            let mut globals = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut globals_workspace, &mut values, loop_record.trims.len(), "Rhino V1 Brep loop globals")?; values };
+            let mut globals = {
+                let mut values = Vec::new();
+                ctx.reserve_scoped_vec::<usize>(
+                    &mut globals_workspace,
+                    &mut values,
+                    loop_record.trims.len(),
+                    "Rhino V1 Brep loop globals",
+                )?;
+                values
+            };
             globals.extend(start..start + loop_record.trims.len());
             for (position, global) in globals.iter().copied().enumerate() {
                 let root = roots[global];
@@ -1948,7 +2038,16 @@ fn append_legacy_brep(
     let endpoint_count = trim_paths.len().checked_mul(2).ok_or_else(|| {
         CodecError::NotImplemented("Rhino V1 Brep endpoint count exceeds address space".to_string())
     })?;
-    let mut endpoint_parents = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut workspace, &mut values, endpoint_count, "Rhino V1 Brep endpoint parents")?; values };
+    let mut endpoint_parents = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<usize>(
+            &mut workspace,
+            &mut values,
+            endpoint_count,
+            "Rhino V1 Brep endpoint parents",
+        )?;
+        values
+    };
     endpoint_parents.extend(0..endpoint_count);
     for (face_index, face) in brep.faces.iter().enumerate() {
         for (loop_index, loop_record) in face.loops.iter().enumerate() {
@@ -1961,7 +2060,16 @@ fn append_legacy_brep(
                 .map(|position| face_trim_indices[face_index][position])
                 .ok_or_else(|| CodecError::Malformed("V1 loop has no indexed trim".to_string()))?;
             let mut globals_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep endpoint globals")?;
-            let mut globals = { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(&mut globals_workspace, &mut values, loop_record.trims.len(), "Rhino V1 Brep endpoint globals")?; values };
+            let mut globals = {
+                let mut values = Vec::new();
+                ctx.reserve_scoped_vec::<usize>(
+                    &mut globals_workspace,
+                    &mut values,
+                    loop_record.trims.len(),
+                    "Rhino V1 Brep endpoint globals",
+                )?;
+                values
+            };
             globals.extend((0..loop_record.trims.len()).map(|offset| start + offset));
             for (position, global) in globals.iter().copied().enumerate() {
                 let next = globals[(position + 1) % globals.len()];
@@ -2106,9 +2214,11 @@ fn append_legacy_brep(
         let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        model
-            .points
-            .push(Point::new(point_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?, finite_position, None));
+        model.points.push(Point::new(
+            point_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+            finite_position,
+            None,
+        ));
         model.vertices.push(Vertex {
             id: vertex_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
             point: point_id,
@@ -2129,12 +2239,17 @@ fn append_legacy_brep(
     for root in &group_roots {
         let start_class = find_root(&mut endpoint_parents, root * 2);
         let end_class = find_root(&mut endpoint_parents, root * 2 + 1);
-        let start = vertex_by_class.get(&start_class).map(|id| id.try_clone_for_decode(ctx, "Rhino V1 vertex identity copy")).transpose()?.ok_or_else(|| {
-            CodecError::malformed("V1 edge start endpoint has no admitted vertex")
-        })?;
+        let start = vertex_by_class
+            .get(&start_class)
+            .map(|id| id.try_clone_for_decode(ctx, "Rhino V1 vertex identity copy"))
+            .transpose()?
+            .ok_or_else(|| {
+                CodecError::malformed("V1 edge start endpoint has no admitted vertex")
+            })?;
         let end = vertex_by_class
             .get(&end_class)
-            .map(|id| id.try_clone_for_decode(ctx, "Rhino V1 vertex identity copy")).transpose()?
+            .map(|id| id.try_clone_for_decode(ctx, "Rhino V1 vertex identity copy"))
+            .transpose()?
             .ok_or_else(|| CodecError::malformed("V1 edge end endpoint has no admitted vertex"))?;
         let ids = [start, end];
         ctx.charge_collection_items(1, "Rhino V1 Brep grouped vertices")?;
@@ -2176,7 +2291,14 @@ fn append_legacy_brep(
         model.edges.push(Edge {
             id: edge_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                curve_id.as_ref().map(|value| value.0.try_clone_for_decode(ctx, "Rhino V1 curve identity copy")).transpose()?,
+                curve_id
+                    .as_ref()
+                    .map(|value| {
+                        value
+                            .0
+                            .try_clone_for_decode(ctx, "Rhino V1 curve identity copy")
+                    })
+                    .transpose()?,
                 curve_id.map(|value| value.1),
             )
             .map_err(CodecError::malformed)?,
@@ -2222,7 +2344,10 @@ fn append_legacy_brep(
         // Each V1 boundary record states its loop and its role together, so
         // the face's classification is folded from those rows and never
         // recovered from a position in a parallel array.
-        let mut face_loops = ctx.retained_vec::<cadmpeg_ir::ids::LoopId>(face_record.loops.len(), "Rhino V1 face loops")?;
+        let mut face_loops = ctx.retained_vec::<cadmpeg_ir::ids::LoopId>(
+            face_record.loops.len(),
+            "Rhino V1 face loops",
+        )?;
         let mut outer_loop: Option<cadmpeg_ir::ids::LoopId> = None;
         let mut classified = false;
         for (loop_index, loop_record) in face_record.loops.into_iter().enumerate() {
@@ -2230,7 +2355,10 @@ fn append_legacy_brep(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "loop"),
                 legacy_identity_key(format!("{suffix}.face-{face_index}-{loop_index}"))?,
             );
-            let mut coedge_ids = ctx.retained_vec::<cadmpeg_ir::ids::CoedgeId>(loop_record.trims.len(), "Rhino V1 loop coedges")?;
+            let mut coedge_ids = ctx.retained_vec::<cadmpeg_ir::ids::CoedgeId>(
+                loop_record.trims.len(),
+                "Rhino V1 loop coedges",
+            )?;
             for (trim_index, trim) in loop_record.trims.into_iter().enumerate() {
                 let root = roots[global_trim];
                 let pcurve_id = cadmpeg_ir::ids::PcurveId::compose(
@@ -2240,13 +2368,22 @@ fn append_legacy_brep(
                     ))?,
                 );
                 let pcurve_domain = curve_domain(&trim.pcurve)?;
-                let pcurve_knots = trim.pcurve.knots().try_clone_for_decode(ctx, "Rhino V1 pcurve knots")?;
-                let mut pcurve_points = ctx.retained_vec::<cadmpeg_ir::units::FinitePoint2>(trim.pcurve.pole_count(), "Rhino V1 pcurve controls")?;
+                let pcurve_knots = trim
+                    .pcurve
+                    .knots()
+                    .try_clone_for_decode(ctx, "Rhino V1 pcurve knots")?;
+                let mut pcurve_points = ctx.retained_vec::<cadmpeg_ir::units::FinitePoint2>(
+                    trim.pcurve.pole_count(),
+                    "Rhino V1 pcurve controls",
+                )?;
                 let mut pcurve_weights = if matches!(
                     trim.pcurve.pole_rows(),
                     cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
                 ) {
-                    Some(ctx.retained_vec::<cadmpeg_ir::scalar::NonZeroReal>(trim.pcurve.pole_count(), "Rhino V1 pcurve weights")?)
+                    Some(ctx.retained_vec::<cadmpeg_ir::scalar::NonZeroReal>(
+                        trim.pcurve.pole_count(),
+                        "Rhino V1 pcurve weights",
+                    )?)
                 } else {
                     None
                 };
@@ -2335,11 +2472,14 @@ fn append_legacy_brep(
                     .entry(root)
                     .or_default()
                     .push(coedge_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?);
-                coedge_ids.push(coedge_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?);
+                coedge_ids
+                    .push(coedge_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?);
                 model.coedges.push(Coedge {
                     id: coedge_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-                    owner_loop: loop_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-                    edge: group_edges[&root].try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                    owner_loop: loop_id
+                        .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                    edge: group_edges[&root]
+                        .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                     radial_next: coedge_id,
                     sense: if trim.reversed {
                         Sense::Reversed
@@ -2369,7 +2509,10 @@ fn append_legacy_brep(
                 LoopBoundaryRole::Unspecified => {}
                 LoopBoundaryRole::Outer => {
                     classified = true;
-                    if outer_loop.replace(loop_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?).is_some() {
+                    if outer_loop
+                        .replace(loop_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?)
+                        .is_some()
+                    {
                         return Err(CodecError::malformed(format_args!(
                             "V1 face {face_id} states more than one outer boundary"
                         )));
@@ -2430,8 +2573,9 @@ fn append_legacy_brep(
     }
     for ring in coedges_by_root.values() {
         for index in 0..ring.len() {
-            model.coedges[coedge_positions[&ring[index]]].radial_next =
-                ring[(index + 1) % ring.len()].try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?;
+            model.coedges[coedge_positions[&ring[index]]].radial_next = ring
+                [(index + 1) % ring.len()]
+            .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?;
         }
     }
     model.shells.push(
@@ -2546,8 +2690,16 @@ fn legacy_loop(
             "V1 boundary trim count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut trims =
-        { let mut values = Vec::new(); ctx.reserve_scoped_vec::<LegacyTrim>(workspace, &mut values, count, "Rhino V1 boundary trims")?; values };
+    let mut trims = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<LegacyTrim>(
+            workspace,
+            &mut values,
+            count,
+            "Rhino V1 boundary trims",
+        )?;
+        values
+    };
     for _ in 0..count {
         let trim = nested_chunk(data, &mut reader, TCODE_LEGACY_TRM)?;
         trims.push(legacy_trim(ctx, workspace, data, trim.body(), scale)?);
@@ -2591,8 +2743,16 @@ fn legacy_face(
             "V1 face seam count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut seam_glue =
-        { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(workspace, &mut values, glue_count, "Rhino V1 face seam glue")?; values };
+    let mut seam_glue = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<usize>(
+            workspace,
+            &mut values,
+            glue_count,
+            "Rhino V1 face seam glue",
+        )?;
+        values
+    };
     for _ in 0..glue_count {
         seam_glue.push(usize::from(
             reader.u16().map_err(|error| malformed(&error))?,
@@ -2605,8 +2765,16 @@ fn legacy_face(
             "V1 face boundary count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut loops =
-        { let mut values = Vec::new(); ctx.reserve_scoped_vec::<LegacyLoop>(workspace, &mut values, boundary_count, "Rhino V1 face loops")?; values };
+    let mut loops = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<LegacyLoop>(
+            workspace,
+            &mut values,
+            boundary_count,
+            "Rhino V1 face loops",
+        )?;
+        values
+    };
     for _ in 0..boundary_count {
         let loop_chunk = nested_chunk(data, &mut reader, TCODE_LEGACY_BND)?;
         loops.push(legacy_loop(ctx, workspace, data, loop_chunk.body(), scale)?);
@@ -2628,8 +2796,11 @@ fn legacy_brep(
 ) -> Result<LegacyBrep, CodecError> {
     if chunk.typecode == TCODE_LEGACY_FAC {
         let face = legacy_face(ctx, workspace, data, chunk.body().clone(), scale)?;
-        let mut faces =
-            { let mut values = Vec::new(); ctx.reserve_scoped_vec::<LegacyFace>(workspace, &mut values, 1, "Rhino V1 Brep faces")?; values };
+        let mut faces = {
+            let mut values = Vec::new();
+            ctx.reserve_scoped_vec::<LegacyFace>(workspace, &mut values, 1, "Rhino V1 Brep faces")?;
+            values
+        };
         faces.push(face);
         return Ok(LegacyBrep {
             shell_glue: Vec::new(),
@@ -2653,8 +2824,11 @@ fn legacy_brep(
             "V1 shell glue count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut shell_glue =
-        { let mut values = Vec::new(); ctx.reserve_scoped_vec::<usize>(workspace, &mut values, glue_count, "Rhino V1 shell glue")?; values };
+    let mut shell_glue = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<usize>(workspace, &mut values, glue_count, "Rhino V1 shell glue")?;
+        values
+    };
     for _ in 0..glue_count {
         shell_glue.push(usize::from(
             reader.u16().map_err(|error| malformed(&error))?,
@@ -2665,8 +2839,16 @@ fn legacy_brep(
             "V1 shell face count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut faces =
-        { let mut values = Vec::new(); ctx.reserve_scoped_vec::<LegacyFace>(workspace, &mut values, face_count, "Rhino V1 Brep faces")?; values };
+    let mut faces = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<LegacyFace>(
+            workspace,
+            &mut values,
+            face_count,
+            "Rhino V1 Brep faces",
+        )?;
+        values
+    };
     for _ in 0..face_count {
         let face = nested_chunk(data, &mut reader, TCODE_LEGACY_FAC)?;
         faces.push(legacy_face(ctx, workspace, data, face.body(), scale)?);
@@ -2847,7 +3029,11 @@ fn evaluate_nurbs(
     )?;
     let _workspace = ctx.reserve_scoped(bytes, "Rhino V1 curve evaluation")?;
     let mut values = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut values, count, "Rhino V1 curve evaluation")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut values,
+        count,
+        "Rhino V1 curve evaluation",
+    )?;
     let poles = curve.pole_rows();
     for j in 0..count {
         let index = span - degree + j;
@@ -3027,9 +3213,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
                 suffix_key,
             );
-            ir.model
-                .points
-                .push(Point::new(point_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?, position, None));
+            ir.model.points.push(Point::new(
+                point_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                position,
+                None,
+            ));
             ir.model.vertices.push(Vertex {
                 id: vertex_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                 point: point_id,
@@ -3184,7 +3372,8 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         let start = evaluate_nurbs(ctx, &segment, parameter_range[0])?;
                         let end = evaluate_nurbs(ctx, &segment, parameter_range[1])?;
                         ir.model.curves.push(Curve {
-                            id: curve_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                            id: curve_id
+                                .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(segment)),
                             source_object: None,
                         });
@@ -3195,23 +3384,36 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             .ok_or(Point::NON_FINITE_POSITION)
                             .map_err(cadmpeg_core::CodecError::malformed)?;
                         ir.model.points.extend([
-                            Point::new(start_point.try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?, start, None),
-                            Point::new(end_point.try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?, end, None),
+                            Point::new(
+                                start_point
+                                    .try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
+                                start,
+                                None,
+                            ),
+                            Point::new(
+                                end_point
+                                    .try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
+                                end,
+                                None,
+                            ),
                         ]);
                         ir.model.vertices.extend([
                             Vertex {
-                                id: start_vertex.try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
+                                id: start_vertex
+                                    .try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
                                 point: start_point,
                                 tolerance: None,
                             },
                             Vertex {
-                                id: end_vertex.try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
+                                id: end_vertex
+                                    .try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
                                 point: end_point,
                                 tolerance: None,
                             },
                         ]);
                         ir.model.edges.push(Edge {
-                            id: edge_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                            id: edge_id
+                                .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                                 Some(curve_id),
                                 Some(parameter_range),
@@ -3227,8 +3429,10 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             edge_id,
                         ));
                         ir.model.regions.push(Region {
-                            id: region_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
-                            body: body_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                            id: region_id
+                                .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                            body: body_id
+                                .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                             shells: vec![shell_id],
                         });
                         ir.model.bodies.push(Body {

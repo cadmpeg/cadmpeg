@@ -332,14 +332,20 @@ mod id_format_tests {
     #[test]
     fn native_owner_id_format_refuses_retained_limit() {
         let limited = crate::test_support::with_retained_limit(39, |ctx| {
-            ctx.format_retained(format_args!("catia:consolidated:owner-packet#{:010}", 7), "catia_native_owner_packet_id")
+            ctx.format_retained(
+                format_args!("catia:consolidated:owner-packet#{:010}", 7),
+                "catia_native_owner_packet_id",
+            )
         });
         assert!(matches!(
             limited,
             Err(cadmpeg_core::CodecError::ResourceLimit(_))
         ));
         let id = crate::test_support::with_service_context(|ctx| {
-            ctx.format_retained(format_args!("catia:consolidated:owner-packet#{:010}", 7), "catia_native_owner_packet_id")
+            ctx.format_retained(
+                format_args!("catia:consolidated:owner-packet#{:010}", 7),
+                "catia_native_owner_packet_id",
+            )
         })
         .expect("service retained budget");
         assert_eq!(id, "catia:consolidated:owner-packet#0000000007");

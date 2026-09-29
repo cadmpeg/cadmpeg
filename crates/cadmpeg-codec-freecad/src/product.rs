@@ -306,7 +306,11 @@ pub(crate) fn transfer_neutral(
     let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !properties_by_owner.contains_key(property.owner.as_str()) {
-            ctx.reserve_map(&mut properties_by_owner, 1, "fcstd product neutral owner index")?;
+            ctx.reserve_map(
+                &mut properties_by_owner,
+                1,
+                "fcstd product neutral owner index",
+            )?;
             properties_by_owner.insert(property.owner.as_str(), Vec::new());
         }
         if let Some(owned) = properties_by_owner.get_mut(property.owner.as_str()) {
@@ -464,9 +468,9 @@ pub(crate) fn transfer_neutral(
                 parent: parent
                     .as_ref()
                     .map(|occurrence| {
-                        occurrence.try_clone_for_decode(ctx, "fcstd product parent identity")
-                        .map(|occurrence| OccurrenceParent::Occurrence { occurrence })
-
+                        occurrence
+                            .try_clone_for_decode(ctx, "fcstd product parent identity")
+                            .map(|occurrence| OccurrenceParent::Occurrence { occurrence })
                     })
                     .transpose()?
                     .unwrap_or(OccurrenceParent::Root {}),
@@ -506,12 +510,20 @@ pub(crate) fn transfer_neutral(
     }
 
     let mut object_by_id = HashMap::new();
-    ctx.reserve_map(&mut object_by_id, objects.len(), "fcstd product object index")?;
+    ctx.reserve_map(
+        &mut object_by_id,
+        objects.len(),
+        "fcstd product object index",
+    )?;
     for object in objects {
         object_by_id.insert(object.id.as_str(), object);
     }
     let mut property_owner = HashMap::new();
-    ctx.reserve_map(&mut property_owner, properties.len(), "fcstd product property owners")?;
+    ctx.reserve_map(
+        &mut property_owner,
+        properties.len(),
+        "fcstd product property owners",
+    )?;
     for property in properties {
         property_owner.insert(property.id.as_str(), property.owner.as_str());
     }
@@ -569,7 +581,8 @@ pub(crate) fn transfer_neutral(
         }) {
             ctx.reserve_vec(&mut definition_bodies, 1, "fcstd product definition bodies")?;
             definition_bodies.push(
-                body.id.try_clone_for_decode(ctx, "fcstd product body identity")?,
+                body.id
+                    .try_clone_for_decode(ctx, "fcstd product body identity")?,
             );
         }
         definitions.push(ProductDefinition {

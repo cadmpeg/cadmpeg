@@ -777,7 +777,9 @@ pub(crate) fn exact_nurbs(
             end_parameter,
             ..
         } => {
-            let mut segments = ctx.collection_vec(children.len(), "Rhino exact NURBS segments").map_err(crate::curves::GeometryError::from)?;
+            let mut segments = ctx
+                .collection_vec(children.len(), "Rhino exact NURBS segments")
+                .map_err(crate::curves::GeometryError::from)?;
             for (index, (start, child)) in children.iter().enumerate() {
                 let end = children
                     .get(index + 1)
@@ -825,7 +827,9 @@ pub(crate) fn remap_nurbs_domain(
         return Err(error(offset, "curve target domain is invalid"));
     }
     let target = target.map(FiniteReal::get);
-    let mut remapped = ctx.collection_vec(curve.knots().len(), "Rhino remapped NURBS knots").map_err(crate::curves::GeometryError::from)?;
+    let mut remapped = ctx
+        .collection_vec(curve.knots().len(), "Rhino remapped NURBS knots")
+        .map_err(crate::curves::GeometryError::from)?;
     for knot in curve.knots().iter().copied() {
         let fraction = cadmpeg_ir::math::parameter_fraction(knot, source[0], source[1])
             .map(cadmpeg_ir::scalar::FiniteReal::get)
@@ -1088,9 +1092,14 @@ fn elevate_to_degree(
         ctx.reserve_vec(&mut elevated, added, "Rhino polycurve elevated points")?;
         elevated.extend(bezier.into_iter().skip(skip));
     }
-    ctx.reserve_vec(&mut elevated_knots, target + 1, "Rhino polycurve elevated knots")?;
+    ctx.reserve_vec(
+        &mut elevated_knots,
+        target + 1,
+        "Rhino polycurve elevated knots",
+    )?;
     elevated_knots.extend(std::iter::repeat_with(|| domain[1]).take(target + 1));
-    let mut output_weights = ctx.collection_vec(elevated.len(), "Rhino polycurve output weights")?;
+    let mut output_weights =
+        ctx.collection_vec(elevated.len(), "Rhino polycurve output weights")?;
     let mut control_points = ctx.collection_vec(elevated.len(), "Rhino polycurve output points")?;
     for point in elevated {
         let Some(weight) = NonZeroReal::new(point.0[3]) else {
@@ -1133,8 +1142,9 @@ pub(crate) fn join_nurbs_segments(
     if target == 0 {
         return Err(error(offset, "polycurve segment degree must be positive"));
     }
-    let mut elevated_segments =
-        ctx.collection_vec(segments.len(), "Rhino elevated polycurve segments").map_err(crate::curves::GeometryError::from)?;
+    let mut elevated_segments = ctx
+        .collection_vec(segments.len(), "Rhino elevated polycurve segments")
+        .map_err(crate::curves::GeometryError::from)?;
     for segment in &segments {
         elevated_segments.push(elevate_to_degree(ctx, segment, target, offset)?);
     }
@@ -1380,7 +1390,9 @@ fn read_polycurve_2d(
     reader.skip(48)?;
     let (parameters, end_parameter) =
         read_polycurve_parameters(ctx, reader, segment_count, "C2 polycurve")?;
-    let mut children = ctx.collection_vec(segment_count, "Rhino C2 polycurve children").map_err(crate::curves::GeometryError::from)?;
+    let mut children = ctx
+        .collection_vec(segment_count, "Rhino C2 polycurve children")
+        .map_err(crate::curves::GeometryError::from)?;
     for parameter in parameters {
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
@@ -1564,7 +1576,9 @@ fn read_polyline(
             "polyline needs at least two points",
         ));
     }
-    let mut points = ctx.collection_vec(point_count, "Rhino polyline points").map_err(crate::curves::GeometryError::from)?;
+    let mut points = ctx
+        .collection_vec(point_count, "Rhino polyline points")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..point_count {
         let point = native_point(reader)?;
         points.push(
@@ -1579,7 +1593,9 @@ fn read_polyline(
             "polyline parameter count mismatch",
         ));
     }
-    let mut parameters = ctx.collection_vec(parameter_count, "Rhino polyline parameters").map_err(crate::curves::GeometryError::from)?;
+    let mut parameters = ctx
+        .collection_vec(parameter_count, "Rhino polyline parameters")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..parameter_count {
         let value = reader.f64()?;
         let Some(value) = FiniteReal::new(value) else {
@@ -1608,7 +1624,9 @@ fn read_polyline(
     let knot_count = point_count
         .checked_add(2)
         .ok_or_else(|| error(reader.position(), "polyline knot count overflow"))?;
-    let mut knots = ctx.collection_vec(knot_count, "Rhino polyline knots").map_err(crate::curves::GeometryError::from)?;
+    let mut knots = ctx
+        .collection_vec(knot_count, "Rhino polyline knots")
+        .map_err(crate::curves::GeometryError::from)?;
     knots.push(parameters[0]);
     knots.push(parameters[0]);
     knots.extend_from_slice(&parameters[1..point_count - 1]);
@@ -1779,7 +1797,9 @@ fn read_polycurve(
     reader.skip(48)?;
     let (parameters, end_parameter) =
         read_polycurve_parameters(ctx, reader, segment_count, "polycurve")?;
-    let mut children = ctx.collection_vec(segment_count, "Rhino polycurve children").map_err(crate::curves::GeometryError::from)?;
+    let mut children = ctx
+        .collection_vec(segment_count, "Rhino polycurve children")
+        .map_err(crate::curves::GeometryError::from)?;
     for parameter in parameters {
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
@@ -1850,7 +1870,9 @@ fn read_polycurve_parameters(
             format!("{label} parameter count mismatch"),
         ));
     }
-    let mut parameters = ctx.collection_vec(segment_count, "Rhino polycurve parameters").map_err(crate::curves::GeometryError::from)?;
+    let mut parameters = ctx
+        .collection_vec(segment_count, "Rhino polycurve parameters")
+        .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..segment_count {
         let value = reader.f64()?;
         parameters.push(checked_polycurve_parameter(
@@ -1917,9 +1939,15 @@ fn arc_nurbs(
         .checked_mul(2)
         .and_then(|count| count.checked_add(4))
         .ok_or_else(|| error(offset, "arc knot count overflow"))?;
-    let mut control_points = ctx.collection_vec(point_count, "Rhino arc control points").map_err(crate::curves::GeometryError::from)?;
-    let mut weights = ctx.collection_vec(point_count, "Rhino arc weights").map_err(crate::curves::GeometryError::from)?;
-    let mut knots = ctx.collection_vec(knot_count, "Rhino arc knots").map_err(crate::curves::GeometryError::from)?;
+    let mut control_points = ctx
+        .collection_vec(point_count, "Rhino arc control points")
+        .map_err(crate::curves::GeometryError::from)?;
+    let mut weights = ctx
+        .collection_vec(point_count, "Rhino arc weights")
+        .map_err(crate::curves::GeometryError::from)?;
+    let mut knots = ctx
+        .collection_vec(knot_count, "Rhino arc knots")
+        .map_err(crate::curves::GeometryError::from)?;
     for span in 0..spans {
         let a0 = angle[0]
             + step

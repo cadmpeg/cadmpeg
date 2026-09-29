@@ -6,8 +6,8 @@
 //! allocation reference tokens; and fixed-size finite `f64` array reads.
 
 use super::cursor::Cursor;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -21,7 +21,9 @@ pub(crate) fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<FiniteReal>> {
     let mut view = View::over_retained(bytes);
     let arena = DecodeArena::default();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default()).ok()?;
-    let mut values = ctx.retained_vec(bytes.len() / 8, "catia_finite_f64_lane").ok()?;
+    let mut values = ctx
+        .retained_vec(bytes.len() / 8, "catia_finite_f64_lane")
+        .ok()?;
     while !view.is_empty() {
         values.push(FiniteReal::new(view.f64_le()?)?);
     }

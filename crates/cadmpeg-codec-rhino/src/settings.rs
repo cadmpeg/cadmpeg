@@ -1132,7 +1132,10 @@ fn parse_layer_extensions(
         outer_reader.position(),
     )?;
     let parent_is_nil = parent_id.is_none_or(Uuid::is_nil);
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "Rhino layer extension entries")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "Rhino layer extension entries",
+    )?;
     let mut values = Vec::new();
     ctx.reserve_retained_admitted_vec(&mut values, count, "Rhino layer extension capacity")?;
     for _ in 0..count {
@@ -1840,8 +1843,9 @@ pub(crate) fn parse_rendering_attributes(
         payload.position(),
     )?;
     let count = count_bytes;
-    let mut children =
-        ctx.collection_vec(count, "Rhino rendering material references").map_err(crate::chunks::FramingError::from)?;
+    let mut children = ctx
+        .collection_vec(count, "Rhino rendering material references")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         let material =
             crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
@@ -1869,7 +1873,9 @@ pub(crate) fn parse_rendering_attributes(
             MAX_ARRAY_ITEMS,
             material_payload.position(),
         )?;
-        let mut obsolete_mappings = ctx.collection_vec(obsolete_mapping_count, "Rhino obsolete rendering mappings").map_err(crate::chunks::FramingError::from)?;
+        let mut obsolete_mappings = ctx
+            .collection_vec(obsolete_mapping_count, "Rhino obsolete rendering mappings")
+            .map_err(crate::chunks::FramingError::from)?;
         for _ in 0..obsolete_mapping_count {
             let mapping = crate::chunks::chunk_at(
                 data,
@@ -1959,7 +1965,9 @@ pub(crate) fn parse_rendering_attributes(
                 MAX_ARRAY_ITEMS,
                 mapping_payload.position(),
             )?;
-            let mut channels = ctx.collection_vec(channel_count, "Rhino rendering mapping channels").map_err(crate::chunks::FramingError::from)?;
+            let mut channels = ctx
+                .collection_vec(channel_count, "Rhino rendering mapping channels")
+                .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..channel_count {
                 let channel = crate::chunks::chunk_at(
                     data,
@@ -2128,7 +2136,12 @@ pub(crate) fn parse_direct_linetype<'a>(
             uuid(&mut payload)?;
         }
     } else {
-        ctx.reserve_vec(&mut children, 1, "Rhino embedded linetype checksum children").map_err(crate::chunks::FramingError::from)?;
+        ctx.reserve_vec(
+            &mut children,
+            1,
+            "Rhino embedded linetype checksum children",
+        )
+        .map_err(crate::chunks::FramingError::from)?;
         children.push(skip_model_attributes(
             ctx,
             data,
@@ -2217,7 +2230,9 @@ pub(crate) fn parse_direct_section_style<'a>(
             "unsupported embedded section-style version",
         ));
     }
-    let mut children = ctx.collection_vec(1, "Rhino embedded section-style checksum children").map_err(crate::chunks::FramingError::from)?;
+    let mut children = ctx
+        .collection_vec(1, "Rhino embedded section-style checksum children")
+        .map_err(crate::chunks::FramingError::from)?;
     children.push(skip_model_attributes(
         ctx,
         data,
@@ -2289,7 +2304,12 @@ pub(crate) fn parse_direct_section_style<'a>(
         item = payload.u8()?;
     }
     if item == 11 {
-        ctx.reserve_vec(&mut children, 1, "Rhino embedded section-style checksum children").map_err(crate::chunks::FramingError::from)?;
+        ctx.reserve_vec(
+            &mut children,
+            1,
+            "Rhino embedded section-style checksum children",
+        )
+        .map_err(crate::chunks::FramingError::from)?;
         children.push(
             parse_direct_linetype(ctx, data, &mut payload, archive, warnings)?
                 .source
@@ -2354,7 +2374,8 @@ fn push_layer_extension_item(
     items: &mut Vec<u8>,
     item: u8,
 ) -> Result<(), FramingError> {
-    ctx.reserve_vec(items, 1, "Rhino layer extension items").map_err(crate::chunks::FramingError::from)?;
+    ctx.reserve_vec(items, 1, "Rhino layer extension items")
+        .map_err(crate::chunks::FramingError::from)?;
     items.push(item);
     Ok(())
 }

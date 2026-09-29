@@ -415,7 +415,10 @@ pub(super) fn consolidated_vertex_identities(
                 index
             } else {
                 let index = identities.len();
-                let id = ctx.format_retained(format_args!("catia:consolidated:vertex-identity#{:00}", index), "catia_native_vertex_identity_id")?;
+                let id = ctx.format_retained(
+                    format_args!("catia:consolidated:vertex-identity#{index:00}"),
+                    "catia_native_vertex_identity_id",
+                )?;
                 let mut reference_values = Vec::new();
                 ctx.push_vec(
                     &mut reference_values,

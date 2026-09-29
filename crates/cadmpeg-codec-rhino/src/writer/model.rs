@@ -313,7 +313,10 @@ impl<'a> WritableModel<'a> {
             || region.body != body.id
             || region.shells != std::slice::from_ref(&shell.id)
             || shell.region != region.id
-            || !shell.faces().iter().eq(model.faces.iter().map(|face| &face.id))
+            || !shell
+                .faces()
+                .iter()
+                .eq(model.faces.iter().map(|face| &face.id))
             || !shell.wire_edges().is_empty()
             || !shell.free_vertices().is_empty()
         {
@@ -329,7 +332,10 @@ impl<'a> WritableModel<'a> {
         let mut ordered_vertices = Vec::new();
         match layout {
             Layout::SingleFace => {
-                if !model.faces[0].loops.iter().eq(model.loops.iter().map(|loop_| &loop_.id))
+                if !model.faces[0]
+                    .loops
+                    .iter()
+                    .eq(model.loops.iter().map(|loop_| &loop_.id))
                 {
                     return Err(CodecError::Malformed(
                         "single-face loop order is inconsistent".into(),

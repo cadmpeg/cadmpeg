@@ -577,7 +577,8 @@ fn scan_class_wrapper(
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
             if let Some(values) = retained.as_mut() {
-                ctx.reserve_vec(values, 1, "Rhino class userdata").map_err(crate::chunks::FramingError::from)?;
+                ctx.reserve_vec(values, 1, "Rhino class userdata")
+                    .map_err(crate::chunks::FramingError::from)?;
                 values.push(parse_userdata(ctx, bytes, &item, archive, warnings)?);
             } else {
                 parse_userdata(ctx, bytes, &item, archive, warnings)?;
@@ -742,7 +743,9 @@ pub(crate) fn parse_user_string_list(
     }
     let count = reader.i32()?;
     let count_bytes = bounded_count(&reader, count, 1)?;
-    let mut values = ctx.collection_vec(count_bytes, "Rhino user-string entries").map_err(crate::chunks::FramingError::from)?;
+    let mut values = ctx
+        .collection_vec(count_bytes, "Rhino user-string entries")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count_bytes {
         let entry = chunk_at(bytes, reader.position(), list.body().end, archive, false)?;
         require_long(&entry, ANONYMOUS)?;
@@ -995,7 +998,9 @@ pub(crate) fn parse_attributes(
         let groups = if version.1 >= 1 {
             let count = reader.i32()?;
             let bytes = bounded_count(&reader, count, 4)?;
-            let mut values = ctx.collection_vec(bytes / 4, "Rhino object groups").map_err(crate::chunks::FramingError::from)?;
+            let mut values = ctx
+                .collection_vec(bytes / 4, "Rhino object groups")
+                .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..bytes / 4 {
                 values.push(reader.i32()?);
             }
@@ -1011,8 +1016,9 @@ pub(crate) fn parse_attributes(
         let display_materials = if version.1 >= 3 {
             let count = reader.i32()?;
             let bytes = bounded_count(&reader, count, 32)?;
-            let mut values =
-                ctx.collection_vec(bytes / 32, "Rhino object display materials").map_err(crate::chunks::FramingError::from)?;
+            let mut values = ctx
+                .collection_vec(bytes / 32, "Rhino object display materials")
+                .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..bytes / 32 {
                 values.push((uuid(&mut reader)?, uuid(&mut reader)?));
             }
@@ -1037,7 +1043,9 @@ pub(crate) fn parse_attributes(
             let active_space = reader.u8()?;
             let count = reader.i32()?;
             let bytes = bounded_count(&reader, count, 32)?;
-            let mut values = ctx.collection_vec(bytes / 32, "Rhino object explicit display materials").map_err(crate::chunks::FramingError::from)?;
+            let mut values = ctx
+                .collection_vec(bytes / 32, "Rhino object explicit display materials")
+                .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..bytes / 32 {
                 values.push((uuid(&mut reader)?, uuid(&mut reader)?));
             }
@@ -1267,8 +1275,9 @@ pub(crate) fn parse_attributes(
             AttributeItem::Groups => {
                 let count = reader.i32()?;
                 let bytes = bounded_count(&reader, count, 4)?;
-                attributes.groups =
-                    ctx.collection_vec(bytes / 4, "Rhino object groups").map_err(crate::chunks::FramingError::from)?;
+                attributes.groups = ctx
+                    .collection_vec(bytes / 4, "Rhino object groups")
+                    .map_err(crate::chunks::FramingError::from)?;
                 for _ in 0..bytes / 4 {
                     attributes.groups.push(reader.i32()?);
                 }
@@ -1278,8 +1287,9 @@ pub(crate) fn parse_attributes(
             AttributeItem::DisplayMaterials => {
                 let count = reader.i32()?;
                 let bytes = bounded_count(&reader, count, 32)?;
-                attributes.display_materials =
-                    ctx.collection_vec(bytes / 32, "Rhino object display materials").map_err(crate::chunks::FramingError::from)?;
+                attributes.display_materials = ctx
+                    .collection_vec(bytes / 32, "Rhino object display materials")
+                    .map_err(crate::chunks::FramingError::from)?;
                 for _ in 0..bytes / 32 {
                     attributes
                         .display_materials
@@ -1389,7 +1399,9 @@ pub(crate) fn read_uuid_list(
     }
     let count = payload.i32()?;
     let bytes = bounded_count(&payload, count, 16)?;
-    let mut values = ctx.collection_vec(bytes / 16, "Rhino UUID list").map_err(crate::chunks::FramingError::from)?;
+    let mut values = ctx
+        .collection_vec(bytes / 16, "Rhino UUID list")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..bytes / 16 {
         values.push(uuid(&mut payload)?);
     }
@@ -1435,7 +1447,8 @@ pub(crate) fn parse_attribute_userdata(
                     item.typecode, item.header_start
                 ),
             )?;
-            ctx.reserve_vec(&mut result, 1, "Rhino attribute userdata descriptors").map_err(crate::chunks::FramingError::from)?;
+            ctx.reserve_vec(&mut result, 1, "Rhino attribute userdata descriptors")
+                .map_err(crate::chunks::FramingError::from)?;
             result.push(AttributeUserdataDescriptor::Unknown {
                 range: item.range(),
             });
@@ -1450,7 +1463,8 @@ pub(crate) fn parse_attribute_userdata(
                     payload_range,
                     ..
                 })) => {
-                    ctx.reserve_vec(&mut result, 1, "Rhino attribute userdata descriptors").map_err(crate::chunks::FramingError::from)?;
+                    ctx.reserve_vec(&mut result, 1, "Rhino attribute userdata descriptors")
+                        .map_err(crate::chunks::FramingError::from)?;
                     result.push(AttributeUserdataDescriptor::Known(AttributeUserdata {
                         range,
                         class_uuid,
@@ -1462,7 +1476,8 @@ pub(crate) fn parse_attribute_userdata(
                     }));
                 }
                 Ok(UserdataDescriptor::UnknownVersion { range, .. }) => {
-                    ctx.reserve_vec(&mut result, 1, "Rhino attribute userdata descriptors").map_err(crate::chunks::FramingError::from)?;
+                    ctx.reserve_vec(&mut result, 1, "Rhino attribute userdata descriptors")
+                        .map_err(crate::chunks::FramingError::from)?;
                     result.push(AttributeUserdataDescriptor::Unknown { range });
                 }
                 Err(error) => warnings.push_admitted(
@@ -1806,7 +1821,8 @@ pub(crate) fn parse_object_record(
         let item = chunk_at(bytes, offset, class.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
-            ctx.reserve_vec(&mut userdata, 1, "Rhino object userdata").map_err(crate::chunks::FramingError::from)?;
+            ctx.reserve_vec(&mut userdata, 1, "Rhino object userdata")
+                .map_err(crate::chunks::FramingError::from)?;
             userdata.push(parse_userdata(ctx, bytes, &item, archive, &mut warnings)?);
             offset = item.next_offset();
         } else {
@@ -1879,7 +1895,8 @@ pub(crate) fn parse_object_record(
                 phase = 3;
             }
             _ if !item.short() => {
-                ctx.reserve_vec(&mut unknown_trailer, 1, "Rhino object unknown trailer").map_err(crate::chunks::FramingError::from)?;
+                ctx.reserve_vec(&mut unknown_trailer, 1, "Rhino object unknown trailer")
+                    .map_err(crate::chunks::FramingError::from)?;
                 unknown_trailer.push(item.range());
                 phase = 3;
             }

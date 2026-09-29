@@ -2122,7 +2122,8 @@ fn append_file_reference_diagnostics(
 ) -> Result<(), FramingError> {
     for diagnostic in diagnostics {
         let code = diagnostic.code.unwrap_or(RhinoLossCode::IntegrityFailure);
-        ctx.reserve_vec(losses, 1, "Rhino texture file-reference losses").map_err(crate::chunks::FramingError::from)?;
+        ctx.reserve_vec(losses, 1, "Rhino texture file-reference losses")
+            .map_err(crate::chunks::FramingError::from)?;
         let loss = crate::wire::admitted_loss(
             ctx,
             code,
@@ -2311,7 +2312,9 @@ fn texture_array(
             "texture count exceeds limit",
         ));
     }
-    let mut textures = ctx.collection_vec(count, "Rhino material textures").map_err(crate::chunks::FramingError::from)?;
+    let mut textures = ctx
+        .collection_vec(count, "Rhino material textures")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
         let object = chunk_at(data, values.position(), values.end(), archive, false)?;
         if object.short() {
@@ -2474,13 +2477,15 @@ fn parse_v2_v3_material(
     if let Some(texture) =
         parse_v2_v3_texture(ctx, &mut reader, source_offset, LegacyTextureKind::Bitmap)?
     {
-        ctx.reserve_vec(&mut textures, 1, "Rhino V2/V3 material textures").map_err(crate::chunks::FramingError::from)?;
+        ctx.reserve_vec(&mut textures, 1, "Rhino V2/V3 material textures")
+            .map_err(crate::chunks::FramingError::from)?;
         textures.push(texture);
     }
     if let Some(texture) =
         parse_v2_v3_texture(ctx, &mut reader, source_offset, LegacyTextureKind::Bump)?
     {
-        ctx.reserve_vec(&mut textures, 1, "Rhino V2/V3 material textures").map_err(crate::chunks::FramingError::from)?;
+        ctx.reserve_vec(&mut textures, 1, "Rhino V2/V3 material textures")
+            .map_err(crate::chunks::FramingError::from)?;
         textures.push(texture);
     }
     if let Some(texture) = parse_v2_v3_texture(
@@ -2489,7 +2494,8 @@ fn parse_v2_v3_material(
         source_offset,
         LegacyTextureKind::Environment,
     )? {
-        ctx.reserve_vec(&mut textures, 1, "Rhino V2/V3 material textures").map_err(crate::chunks::FramingError::from)?;
+        ctx.reserve_vec(&mut textures, 1, "Rhino V2/V3 material textures")
+            .map_err(crate::chunks::FramingError::from)?;
         textures.push(texture);
     }
 
@@ -2635,7 +2641,8 @@ fn parse_material(
         if writer_version.is_some_and(|version| version < 200_912_010) {
             transparent = diffuse;
         } else if writer_version.is_none() && diffuse != transparent {
-            ctx.reserve_vec(losses, 1, "Rhino material writer-stamp losses").map_err(crate::chunks::FramingError::from)?;
+            ctx.reserve_vec(losses, 1, "Rhino material writer-stamp losses")
+                .map_err(crate::chunks::FramingError::from)?;
             losses.push(crate::wire::admitted_loss(
                 ctx,
                 RhinoLossCode::SourceWriterStampUnverified,
@@ -2974,7 +2981,9 @@ fn segments(
         1 << 16,
         reader.position(),
     )?;
-    let mut values = ctx.collection_vec(bytes / 12, "Rhino linetype segments").map_err(crate::chunks::FramingError::from)?;
+    let mut values = ctx
+        .collection_vec(bytes / 12, "Rhino linetype segments")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..bytes / 12 {
         let length = read_finite(reader, "linetype segment length")?;
         values.push(SourceLinetypeSegment {
@@ -3047,7 +3056,8 @@ fn parse_linetype(
                     1 << 16,
                     reader.position(),
                 )?;
-                ctx.reserve_vec(&mut taper, bytes / 16, "Rhino linetype taper points").map_err(crate::chunks::FramingError::from)?;
+                ctx.reserve_vec(&mut taper, bytes / 16, "Rhino linetype taper points")
+                    .map_err(crate::chunks::FramingError::from)?;
                 let mut invalid = false;
                 for _ in 0..bytes / 16 {
                     let first = reader.f64()?;
@@ -3080,7 +3090,9 @@ fn parse_linetype(
     // An unknown or out-of-order extension has no generic width. The source
     // reader consumes its identifier and leaves a bounded suffix.
     reader.skip_remaining()?;
-    let mut segments = ctx.collection_vec(values.len(), "Rhino projected linetype segments").map_err(crate::chunks::FramingError::from)?;
+    let mut segments = ctx
+        .collection_vec(values.len(), "Rhino projected linetype segments")
+        .map_err(crate::chunks::FramingError::from)?;
     for segment in values {
         let length_millimeters = if always {
             let scale = pattern_document_scale(binding)?;
@@ -3162,7 +3174,9 @@ fn hatch_line_fields(
         1 << 16,
         reader.position(),
     )?;
-    let mut dashes = ctx.collection_vec(bytes / 8, "Rhino hatch line dashes").map_err(crate::chunks::FramingError::from)?;
+    let mut dashes = ctx
+        .collection_vec(bytes / 8, "Rhino hatch line dashes")
+        .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..bytes / 8 {
         dashes.push(read_finite(reader, "hatch dash")?);
     }
@@ -3248,7 +3262,9 @@ fn parse_hatch_pattern(
             )
             .into());
         }
-        let mut lines = ctx.collection_vec(count, "Rhino modern hatch lines").map_err(crate::chunks::FramingError::from)?;
+        let mut lines = ctx
+            .collection_vec(count, "Rhino modern hatch lines")
+            .map_err(crate::chunks::FramingError::from)?;
         for _ in 0..count {
             let line = chunk_at(
                 data,
@@ -3306,7 +3322,9 @@ fn parse_hatch_pattern(
             )
             .into());
         }
-        let mut lines = ctx.collection_vec(count, "Rhino legacy hatch lines").map_err(crate::chunks::FramingError::from)?;
+        let mut lines = ctx
+            .collection_vec(count, "Rhino legacy hatch lines")
+            .map_err(crate::chunks::FramingError::from)?;
         for _ in 0..count {
             lines.push(hatch_line_v5(ctx, &mut reader)?);
         }
@@ -3331,7 +3349,9 @@ fn parse_hatch_pattern(
         Vec::new()
     } else {
         let scale = hatch_pattern_scale(distance_settings, binding)?;
-        let mut projected = ctx.collection_vec(lines.len(), "Rhino projected hatch lines").map_err(crate::chunks::FramingError::from)?;
+        let mut projected = ctx
+            .collection_vec(lines.len(), "Rhino projected hatch lines")
+            .map_err(crate::chunks::FramingError::from)?;
         for line in lines {
             projected.push(line.into_millimeters(scale, source_offset)?);
         }
@@ -3422,7 +3442,9 @@ fn dimension_style_controls(
             1 << 16,
             reader.position() - 4,
         )?;
-        let mut bits = ctx.collection_vec(count, "Rhino dimension override bits").map_err(crate::chunks::FramingError::from)?;
+        let mut bits = ctx
+            .collection_vec(count, "Rhino dimension override bits")
+            .map_err(crate::chunks::FramingError::from)?;
         for bit in reader.take(count)? {
             bits.push(serde_json::Value::from(*bit));
         }
@@ -3641,8 +3663,9 @@ fn parse_v5_dimension_style_extra(
         MAX_DIMSTYLE_EXTRA_FIELDS,
         count_offset,
     )?;
-    let mut valid_fields =
-        ctx.collection_vec(byte_count, "Rhino V5 dimension valid fields").map_err(crate::chunks::FramingError::from)?;
+    let mut valid_fields = ctx
+        .collection_vec(byte_count, "Rhino V5 dimension valid fields")
+        .map_err(crate::chunks::FramingError::from)?;
     for value in reader.take(byte_count)? {
         valid_fields.push(*value != 0);
     }
@@ -4463,7 +4486,9 @@ fn rendering_attributes(
             reader.position() - 4,
         )?;
         let mut presentation = RenderingAttributesPresentation {
-            materials: ctx.collection_vec(material_count, "Rhino projected rendering materials").map_err(crate::chunks::FramingError::from)?,
+            materials: ctx
+                .collection_vec(material_count, "Rhino projected rendering materials")
+                .map_err(crate::chunks::FramingError::from)?,
             ..RenderingAttributesPresentation::default()
         };
         for _ in 0..material_count {
@@ -4547,7 +4572,9 @@ fn rendering_attributes(
                 1 << 16,
                 reader.position() - 4,
             )?;
-            presentation.mappings = ctx.collection_vec(mapping_count, "Rhino projected rendering mappings").map_err(crate::chunks::FramingError::from)?;
+            presentation.mappings = ctx
+                .collection_vec(mapping_count, "Rhino projected rendering mappings")
+                .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..mapping_count {
                 let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
                 let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
@@ -4576,7 +4603,9 @@ fn rendering_attributes(
                     1 << 16,
                     value.position() - 4,
                 )?;
-                let mut channels = ctx.collection_vec(channel_count, "Rhino projected rendering channels").map_err(crate::chunks::FramingError::from)?;
+                let mut channels = ctx
+                    .collection_vec(channel_count, "Rhino projected rendering channels")
+                    .map_err(crate::chunks::FramingError::from)?;
                 for _ in 0..channel_count {
                     let (channel, next_offset) = parse_rendering_mapping_channel(
                         ctx,
@@ -4777,7 +4806,8 @@ fn parse_text_style(
             ctx.copy_retained_text(&description, "Rhino legacy PostScript name")?
         } else {
             if named_description && !apple_runtime && writer_version.is_none() {
-                ctx.reserve_vec(losses, 1, "Rhino text style writer-stamp losses").map_err(crate::chunks::FramingError::from)?;
+                ctx.reserve_vec(losses, 1, "Rhino text style writer-stamp losses")
+                    .map_err(crate::chunks::FramingError::from)?;
                 losses.push(crate::wire::admitted_loss(
                     ctx,
                     RhinoLossCode::SourceWriterStampUnverified,
