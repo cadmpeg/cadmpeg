@@ -1661,7 +1661,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
     let mut shells = std::collections::BTreeSet::new();
     let mut vertices = std::collections::BTreeSet::new();
     let mut points = std::collections::BTreeSet::new();
-    let mut groups = Vec::with_capacity(model.bodies.len());
+    let mut groups = Vec::new();
     for body in &model.bodies {
         if body.kind != BodyKind::General || body.regions.len() != 1 || body.transform.is_some() {
             return Err(CodecError::NotImplemented(format!(
@@ -1704,7 +1704,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                 body.id.as_str()
             )));
         }
-        let mut group = Vec::with_capacity(shell.free_vertices().len());
+        let mut group = Vec::new();
         for vertex_id in shell.free_vertices() {
             let vertex = model
                 .vertices
@@ -1863,7 +1863,7 @@ fn check_knot_roundtrip(
 fn header(version: RhinoArchiveVersion) -> Vec<u8> {
     let text = version.value().to_string();
     let mut bytes = MAGIC.to_vec();
-    bytes.extend(std::iter::repeat_n(b' ', 8 - text.len()));
+    bytes.extend(std::iter::repeat(b' ').take(8 - text.len()));
     bytes.extend(text.bytes());
     bytes
 }

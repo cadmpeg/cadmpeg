@@ -15,7 +15,6 @@ use crate::instances::{hex, DefinitionKind, LinkSource, UnitDetail};
 use crate::loss::RhinoLossCode;
 use crate::settings::UnitBinding;
 use crate::wire::Uuid;
-use crate::wire::{admitted_format, reserve_collection};
 
 fn reserve_map<K: Eq + std::hash::Hash, V>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -123,22 +122,14 @@ fn definition_id(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     id: Uuid,
 ) -> Result<String, CodecError> {
-    admitted_format(
-        ctx,
-        format_args!("rhino:product:definition#{id}"),
-        "Rhino product definition ID",
-    )
+    ctx.format_retained(format_args!("rhino:product:definition#{id}"), "Rhino product definition ID")
 }
 
 fn external_id(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     id: Uuid,
 ) -> Result<String, CodecError> {
-    admitted_format(
-        ctx,
-        format_args!("rhino:product:external#{id}"),
-        "Rhino product external ID",
-    )
+    ctx.format_retained(format_args!("rhino:product:external#{id}"), "Rhino product external ID")
 }
 
 fn external_record(
@@ -151,18 +142,14 @@ fn external_record(
     }
     let definition = definition_id(ctx, definition_uuid)?;
     let mut links = Vec::new();
-    reserve_collection(ctx, &mut links, 1, "Rhino external reference links")?;
+    ctx.reserve_vec(&mut links, 1, "Rhino external reference links")?;
     links.push(definition);
     let (full_path, relative_path, relative_path_preferred) = match link {
         LinkSource::None => return Ok(None),
         LinkSource::Structured(value) => {
             return Ok(Some(ExternalReferenceRecord {
                 id: external_id(ctx, definition_uuid)?,
-                definition_uuid: admitted_format(
-                    ctx,
-                    format_args!("{definition_uuid}"),
-                    "Rhino external definition UUID",
-                )?,
+                definition_uuid: ctx.format_retained(format_args!("{definition_uuid}"), "Rhino external definition UUID")?,
                 full_path: ctx.copy_retained_text(&value.full_path, "Rhino external full path")?,
                 relative_path: ctx
                     .copy_retained_text(&value.relative_path, "Rhino external relative path")?,
@@ -184,7 +171,7 @@ fn external_record(
                 embedded_file_uuid: value
                     .embedded_file_id
                     .map(|id| {
-                        admitted_format(ctx, format_args!("{id}"), "Rhino external embedded UUID")
+                        ctx.format_retained(format_args!("{id}"), "Rhino external embedded UUID")
                     })
                     .transpose()?,
                 links,
@@ -202,11 +189,7 @@ fn external_record(
     };
     Ok(Some(ExternalReferenceRecord {
         id: external_id(ctx, definition_uuid)?,
-        definition_uuid: admitted_format(
-            ctx,
-            format_args!("{definition_uuid}"),
-            "Rhino external definition UUID",
-        )?,
+        definition_uuid: ctx.format_retained(format_args!("{definition_uuid}"), "Rhino external definition UUID")?,
         full_path: ctx.copy_retained_text(full_path, "Rhino external full path")?,
         relative_path: ctx.copy_retained_text(relative_path, "Rhino external relative path")?,
         relative_path_preferred,
@@ -235,14 +218,10 @@ pub(crate) fn install(
                 reserve_map(ctx, &mut object_records, "Rhino product object keys")?;
             }
             let rows = object_records.entry(identity.object_id).or_default();
-            reserve_collection(ctx, rows, 1, "Rhino product object positions")?;
+            ctx.reserve_vec(rows, 1, "Rhino product object positions")?;
             rows.push((
                 source_order,
-                admitted_format(
-                    ctx,
-                    format_args!("rhino:object:record#{source_order:06}"),
-                    "Rhino product object ID",
-                )?,
+                ctx.format_retained(format_args!("rhino:object:record#{source_order:06}"), "Rhino product object ID")?,
             ));
         }
     }
@@ -256,7 +235,7 @@ pub(crate) fn install(
             .map(|value| ctx.copy_retained_text(&value.id, "Rhino definition external ID"))
             .transpose()?;
         if let Some(value) = external_reference {
-            reserve_collection(ctx, &mut external, 1, "Rhino external references")?;
+            ctx.reserve_vec(&mut external, 1, "Rhino external references")?;
             external.push(value);
         }
         let mut links = Vec::new();
@@ -266,38 +245,25 @@ pub(crate) fn install(
             .filter_map(|id| object_records.get(id))
             .filter(|matches| matches.len() == 1)
         {
-            reserve_collection(ctx, &mut links, 1, "Rhino definition links")?;
+            ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
             links.push(ctx.copy_retained_text(&matches[0].1, "Rhino definition member link")?);
         }
         if let Some(id) = &external_id {
-            reserve_collection(ctx, &mut links, 1, "Rhino definition links")?;
+            ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
             links.push(ctx.copy_retained_text(id, "Rhino definition external link")?);
         }
         links.sort();
         links.dedup();
         let mut member_object_ids = Vec::new();
         for id in &definition.members {
-            reserve_collection(
-                ctx,
-                &mut member_object_ids,
-                1,
-                "Rhino definition member UUIDs",
-            )?;
-            member_object_ids.push(admitted_format(
-                ctx,
-                format_args!("{id}"),
-                "Rhino definition member UUID text",
-            )?);
+            ctx.reserve_vec(&mut member_object_ids, 1, "Rhino definition member UUIDs")?;
+            member_object_ids.push(ctx.format_retained(format_args!("{id}"), "Rhino definition member UUID text")?);
         }
-        reserve_collection(ctx, &mut definitions, 1, "Rhino product definitions")?;
+        ctx.reserve_vec(&mut definitions, 1, "Rhino product definitions")?;
         definitions.push(DefinitionRecord {
             id: definition_id(ctx, definition.id())?,
             source_offset: definition.source_range.start as u64,
-            source_uuid: admitted_format(
-                ctx,
-                format_args!("{}", definition.id()),
-                "Rhino definition source UUID",
-            )?,
+            source_uuid: ctx.format_retained(format_args!("{}", definition.id()), "Rhino definition source UUID")?,
             archive_index: definition.index,
             name: ctx.copy_retained_text(&definition.name, "Rhino product definition name")?,
             description: ctx.copy_retained_text(
@@ -338,12 +304,8 @@ pub(crate) fn install(
                 reserve_map(ctx, &mut member_definitions, "Rhino product member keys")?;
             }
             let parents = member_definitions.entry(*member).or_default();
-            reserve_collection(ctx, parents, 1, "Rhino product member parents")?;
-            parents.push(admitted_format(
-                ctx,
-                format_args!("{}", definition.id()),
-                "Rhino product parent UUID",
-            )?);
+            ctx.reserve_vec(parents, 1, "Rhino product member parents")?;
+            parents.push(ctx.format_retained(format_args!("{}", definition.id()), "Rhino product parent UUID")?);
         }
     }
     for parents in member_definitions.values_mut() {
@@ -365,7 +327,7 @@ pub(crate) fn install(
         ) {
             Ok(reference) => reference,
             Err(error) => {
-                reserve_collection(ctx, &mut losses, 1, "Rhino product occurrence losses")?;
+                ctx.reserve_vec(&mut losses, 1, "Rhino product occurrence losses")?;
                 let loss = crate::wire::admitted_loss(
                     ctx,
                     RhinoLossCode::ProductOccurrenceDropped,
@@ -375,14 +337,10 @@ pub(crate) fn install(
                     ),
                     "Rhino product occurrence loss text",
                 )?;
-                let tag = admitted_format(
-                    ctx,
-                    format_args!(
+                let tag = ctx.format_retained(format_args!(
                         "PRODUCT_OCCURRENCE/source={}/class={}",
                         identity.source_id, object.class_uuid
-                    ),
-                    "Rhino product occurrence loss tag",
-                )?;
+                    ), "Rhino product occurrence loss tag")?;
                 losses.push(loss.with_provenance(
                     SourceProvenance::root("rhino", object.range.start as u64).with_tag(tag),
                 ));
@@ -391,19 +349,10 @@ pub(crate) fn install(
         };
         let transform = OccurrenceTransform::from_source(reference.transform(), binding);
         let definition = definition_id(ctx, reference.definition_id())?;
-        let object_record = admitted_format(
-            ctx,
-            format_args!("rhino:object:record#{source_order:06}"),
-            "Rhino occurrence object ID",
-        )?;
+        let object_record = ctx.format_retained(format_args!("rhino:object:record#{source_order:06}"), "Rhino occurrence object ID")?;
         let mut parents = Vec::new();
         if let Some(source_parents) = member_definitions.get(&identity.object_id) {
-            reserve_collection(
-                ctx,
-                &mut parents,
-                source_parents.len(),
-                "Rhino occurrence parents",
-            )?;
+            ctx.reserve_vec(&mut parents, source_parents.len(), "Rhino occurrence parents")?;
             for parent in source_parents {
                 parents.push(ctx.copy_retained_text(parent, "Rhino occurrence parent UUID")?);
             }
@@ -413,44 +362,24 @@ pub(crate) fn install(
                 .get(&identity.object_id)
                 .is_some_and(|matches| matches.len() != 1)
         {
-            admitted_format(
-                ctx,
-                format_args!("record-{source_order:06}"),
-                "Rhino occurrence key",
-            )?
+            ctx.format_retained(format_args!("record-{source_order:06}"), "Rhino occurrence key")?
         } else {
-            admitted_format(
-                ctx,
-                format_args!("{}", identity.object_id),
-                "Rhino occurrence key",
-            )?
+            ctx.format_retained(format_args!("{}", identity.object_id), "Rhino occurrence key")?
         };
         let mut links = Vec::new();
-        reserve_collection(ctx, &mut links, 1, "Rhino occurrence links")?;
+        ctx.reserve_vec(&mut links, 1, "Rhino occurrence links")?;
         links.push(object_record);
         if definition_ids.contains(&reference.definition_id()) {
-            reserve_collection(ctx, &mut links, 1, "Rhino occurrence links")?;
+            ctx.reserve_vec(&mut links, 1, "Rhino occurrence links")?;
             links.push(definition);
         }
         links.sort();
-        reserve_collection(ctx, &mut occurrences, 1, "Rhino product occurrences")?;
+        ctx.reserve_vec(&mut occurrences, 1, "Rhino product occurrences")?;
         occurrences.push(OccurrenceRecord {
-            id: admitted_format(
-                ctx,
-                format_args!("rhino:product:occurrence#{key}"),
-                "Rhino product occurrence ID",
-            )?,
+            id: ctx.format_retained(format_args!("rhino:product:occurrence#{key}"), "Rhino product occurrence ID")?,
             source_offset: object.range.start as u64,
-            source_uuid: admitted_format(
-                ctx,
-                format_args!("{}", identity.object_id),
-                "Rhino occurrence source UUID",
-            )?,
-            definition_uuid: admitted_format(
-                ctx,
-                format_args!("{}", reference.definition_id()),
-                "Rhino occurrence definition UUID",
-            )?,
+            source_uuid: ctx.format_retained(format_args!("{}", identity.object_id), "Rhino occurrence source UUID")?,
+            definition_uuid: ctx.format_retained(format_args!("{}", reference.definition_id()), "Rhino occurrence definition UUID")?,
             transform,
             parent_definition_uuids: parents,
             name: ctx.copy_retained_text(&identity.name, "Rhino occurrence name")?,

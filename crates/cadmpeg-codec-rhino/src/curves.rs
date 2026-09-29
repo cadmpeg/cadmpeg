@@ -1173,7 +1173,7 @@ fn elevate_to_degree(
                     ),
                 ))
             })?;
-            elevated_knots.extend(std::iter::repeat_n(knots[span], added));
+            elevated_knots.extend(std::iter::repeat(knots[span]).take(added));
         }
         let added = bezier.len() - skip;
         ctx.charge_collection_items(added as u64, "Rhino polycurve elevated points")?;
@@ -1200,7 +1200,7 @@ fn elevate_to_degree(
             ),
         ))
     })?;
-    elevated_knots.extend(std::iter::repeat_n(domain[1], target + 1));
+    elevated_knots.extend(std::iter::repeat(domain[1]).take(target + 1));
     ctx.charge_collection_items(elevated.len() as u64, "Rhino polycurve output weights")?;
     let mut output_weights = Vec::new();
     output_weights
@@ -1365,7 +1365,7 @@ pub(crate) fn join_nurbs_segments(
         let skip = usize::from(index > 0 && previous_weight.get() == next_weight.get());
         let count = segment.pole_rows().count() - skip;
         if let Some(target) = &mut weights {
-            reserve_collection(ctx, target, count, "Rhino joined polycurve weights")?;
+            ctx.reserve_vec(target, count, "Rhino joined polycurve weights")?;
             for point_index in skip..segment.pole_rows().count() {
                 let weight = match segment.pole_rows() {
                     cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => unit,
@@ -1376,12 +1376,7 @@ pub(crate) fn join_nurbs_segments(
                 target.push(weight);
             }
         }
-        reserve_collection(
-            ctx,
-            &mut control_points,
-            count,
-            "Rhino joined polycurve points",
-        )?;
+        ctx.reserve_vec(&mut control_points, count, "Rhino joined polycurve points")?;
         for point_index in skip..segment.pole_rows().count() {
             let point = segment
                 .pole_rows()
@@ -1405,7 +1400,7 @@ pub(crate) fn join_nurbs_segments(
         }
         let knot_skip = if index == 0 { 0 } else { multiplicity };
         let knot_added = segment.knots().len() - knot_skip;
-        reserve_collection(ctx, &mut knots, knot_added, "Rhino joined polycurve knots")?;
+        ctx.reserve_vec(&mut knots, knot_added, "Rhino joined polycurve knots")?;
         knots.extend(
             segment
                 .knots()

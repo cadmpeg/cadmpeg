@@ -336,11 +336,7 @@ fn image_reference<'a>(
             embedded_file_uuid: value
                 .embedded_file_id
                 .map(|id| {
-                    crate::wire::admitted_format(
-                        ctx,
-                        format_args!("{id}"),
-                        "Rhino image embedded-file UUID",
-                    )
+                    ctx.format_retained(format_args!("{id}"), "Rhino image embedded-file UUID")
                 })
                 .transpose()?,
         },
@@ -500,7 +496,7 @@ fn push_list_loss(
     tag: &'static str,
     message: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    crate::wire::reserve_collection(ctx, losses, 1, "Rhino view list losses")?;
+    ctx.reserve_vec(losses, 1, "Rhino view list losses")?;
     let loss = crate::wire::admitted_loss(
         ctx,
         crate::loss::RhinoLossCode::PresentationRecordDropped,
@@ -523,7 +519,7 @@ fn push_view_loss(
     tag: &'static str,
     message: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    crate::wire::reserve_collection(ctx, losses, 1, "Rhino view losses")?;
+    ctx.reserve_vec(losses, 1, "Rhino view losses")?;
     let loss = crate::wire::admitted_loss(ctx, code, message, "Rhino view loss message")?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(tag.len()),
@@ -680,7 +676,7 @@ fn parse_viewport(
         source_uuid: viewport_id
             .filter(|id| !id.is_nil())
             .map(|id| {
-                crate::wire::admitted_format(ctx, format_args!("{id}"), "Rhino viewport UUID")
+                ctx.format_retained(format_args!("{id}"), "Rhino viewport UUID")
             })
             .transpose()?,
         camera_up_locked: locks[0],
@@ -829,7 +825,7 @@ fn parse_attributes(
         let id = uuid(&mut reader)?;
         (!id.is_nil())
             .then(|| {
-                crate::wire::admitted_format(ctx, format_args!("{id}"), "Rhino view display UUID")
+                ctx.format_retained(format_args!("{id}"), "Rhino view display UUID")
             })
             .transpose()?
     } else {
@@ -975,11 +971,7 @@ fn parse_attributes(
                 equation_mm: equation,
                 plane_uuid: (!id.is_nil())
                     .then(|| {
-                        crate::wire::admitted_format(
-                            ctx,
-                            format_args!("{id}"),
-                            "Rhino view clipping plane UUID",
-                        )
+                        ctx.format_retained(format_args!("{id}"), "Rhino view clipping plane UUID")
                     })
                     .transpose()?,
                 enabled,
@@ -1000,7 +992,7 @@ fn parse_attributes(
         let id = uuid(&mut reader)?;
         result.named_view_uuid = (!id.is_nil())
             .then(|| {
-                crate::wire::admitted_format(ctx, format_args!("{id}"), "Rhino named view UUID")
+                ctx.format_retained(format_args!("{id}"), "Rhino named view UUID")
             })
             .transpose()?;
     }
@@ -1206,17 +1198,8 @@ fn parse_view(
                         return Err(FramingError::Resource(limit));
                     }
                     Err(error) => {
-                        let message = crate::wire::admitted_format(
-                            ctx,
-                            format_args!("viewport retained: {error}"),
-                            "Rhino view parse warning",
-                        )?;
-                        crate::wire::reserve_collection(
-                            ctx,
-                            &mut parse_warnings,
-                            1,
-                            "Rhino view parse warnings",
-                        )?;
+                        let message = ctx.format_retained(format_args!("viewport retained: {error}"), "Rhino view parse warning")?;
+                        ctx.reserve_vec(&mut parse_warnings, 1, "Rhino view parse warnings")?;
                         parse_warnings.push(
                             ctx.copy_retained_text(&message, "Rhino view parse warning copy")?,
                         );
@@ -1394,11 +1377,7 @@ fn parse_view(
         }
         reserve_admitted_vec(ctx, &mut children, 1, "Rhino view children")?;
         children.push(ViewChild {
-            typecode: crate::wire::admitted_format(
-                ctx,
-                format_args!("{:#010x}", child.typecode),
-                "Rhino view child typecode",
-            )?,
+            typecode: ctx.format_retained(format_args!("{:#010x}", child.typecode), "Rhino view child typecode")?,
             kind: child_kind(child.typecode),
             source_offset: offset as u64,
             byte_len: (child.next_offset() - offset) as u64,
@@ -1438,11 +1417,7 @@ fn parse_view(
         )?;
     }
     Ok(ViewRecord {
-        id: crate::wire::admitted_format(
-            ctx,
-            format_args!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
-            "Rhino view ID",
-        )?,
+        id: ctx.format_retained(format_args!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()), "Rhino view ID")?,
         source_offset: record.header_start as u64,
         list_kind,
         list_index,
@@ -1638,11 +1613,7 @@ fn parse_named_cplanes(
         }
         reserve_admitted_vec(ctx, &mut values, 1, "Rhino named construction planes")?;
         values.push(NamedConstructionPlane {
-            id: crate::wire::admitted_format(
-                ctx,
-                format_args!("rhino:document:construction_plane#{index:04}"),
-                "Rhino named construction plane ID",
-            )?,
+            id: ctx.format_retained(format_args!("rhino:document:construction_plane#{index:04}"), "Rhino named construction plane ID")?,
             source_offset: chunk.header_start as u64,
             list_index: index,
             value: parse_cplane(ctx, data, chunk.body().clone(), scale)?,
@@ -1662,27 +1633,19 @@ fn retain_unbound_view_record(
     binding: UnitBinding,
     kind: &str,
 ) -> Result<(), CodecError> {
-    crate::wire::reserve_collection(ctx, losses, 1, "Rhino unbound view losses")?;
-    let tag = crate::wire::admitted_format(
-        ctx,
-        format_args!("VIEW/{kind}"),
-        "Rhino unbound view loss tag",
-    )?;
-    let message = crate::wire::admitted_format(
-        ctx,
-        format_args!(
+    ctx.reserve_vec(losses, 1, "Rhino unbound view losses")?;
+    let tag = ctx.format_retained(format_args!("VIEW/{kind}"), "Rhino unbound view loss tag")?;
+    let message = ctx.format_retained(format_args!(
             "{kind} record at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
             record.range.start,
             binding.label()
-        ),
-        "Rhino unbound view loss message",
-    )?;
+        ), "Rhino unbound view loss message")?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(message.len()),
         "Rhino unbound view loss message",
     )?;
     losses.push(located_presentation_loss(record.range.start, tag, message));
-    crate::wire::reserve_collection(ctx, opaque_records, 1, "Rhino opaque view records")?;
+    ctx.reserve_vec(opaque_records, 1, "Rhino opaque view records")?;
     opaque_records.push(OpaqueRecord {
         table_typecode,
         record: record.clone(),
@@ -1735,12 +1698,7 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        crate::wire::reserve_collection(
-                            ctx,
-                            &mut losses,
-                            1,
-                            "Rhino view setting losses",
-                        )?;
+                        ctx.reserve_vec(&mut losses, 1, "Rhino view setting losses")?;
                         let loss = crate::wire::admitted_loss(ctx,
                             crate::loss::RhinoLossCode::PresentationRecordDropped,
                             format_args!("named construction-plane list at offset {} was omitted after parsing failed: {error}", record.range.start),
@@ -1755,12 +1713,7 @@ pub(crate) fn install(
                                     .with_tag("VIEW/NAMED_CPLANES"),
                             ),
                         );
-                        crate::wire::reserve_collection(
-                            ctx,
-                            &mut opaque_records,
-                            1,
-                            "Rhino opaque view records",
-                        )?;
+                        ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque view records")?;
                         opaque_records.push(OpaqueRecord {
                             table_typecode: table.typecode,
                             record: record.clone(),
@@ -1793,20 +1746,10 @@ pub(crate) fn install(
                 reserve_admitted_vec(ctx, &mut views, parsed.len(), "Rhino document views")
                     .map_err(codec_error)?;
                 views.extend(parsed);
-                crate::wire::reserve_collection(
-                    ctx,
-                    &mut losses,
-                    parse_losses.len(),
-                    "Rhino view setting losses",
-                )?;
+                ctx.reserve_vec(&mut losses, parse_losses.len(), "Rhino view setting losses")?;
                 losses.append(&mut parse_losses);
                 if has_parse_losses {
-                    crate::wire::reserve_collection(
-                        ctx,
-                        &mut opaque_records,
-                        1,
-                        "Rhino opaque view records",
-                    )?;
+                    ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque view records")?;
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,
                         record: record.clone(),
@@ -1838,20 +1781,10 @@ pub(crate) fn install(
                 reserve_admitted_vec(ctx, &mut views, parsed.len(), "Rhino document views")
                     .map_err(codec_error)?;
                 views.extend(parsed);
-                crate::wire::reserve_collection(
-                    ctx,
-                    &mut losses,
-                    parse_losses.len(),
-                    "Rhino view setting losses",
-                )?;
+                ctx.reserve_vec(&mut losses, parse_losses.len(), "Rhino view setting losses")?;
                 losses.append(&mut parse_losses);
                 if has_parse_losses {
-                    crate::wire::reserve_collection(
-                        ctx,
-                        &mut opaque_records,
-                        1,
-                        "Rhino opaque view records",
-                    )?;
+                    ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque view records")?;
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,
                         record: record.clone(),

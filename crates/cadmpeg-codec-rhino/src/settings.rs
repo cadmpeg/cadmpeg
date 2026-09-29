@@ -1015,7 +1015,7 @@ impl DeferredUtf16<'_> {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<String, FramingError> {
-        let mut value = crate::wire::admitted_retained_string(ctx, self.length, operation)?;
+        let mut value = ctx.retained_string(self.length, operation)?;
         visit_utf16(self.bytes, self.error_offset, |character| {
             value.push(character);
             Ok(())
@@ -2401,7 +2401,7 @@ fn parse_layer(
     let id = serialized_id.filter(|id| !id.is_nil());
     let parent_compatible = writer_version.is_some_and(|version| version > 200_505_110);
     if version.1 >= 6 && writer_version.is_none() {
-        crate::wire::reserve_collection(ctx, losses, 1, "Rhino layer losses")?;
+        ctx.reserve_vec(losses, 1, "Rhino layer losses")?;
         losses.push(crate::wire::admitted_loss(
             ctx,
             crate::loss::RhinoLossCode::SourceWriterStampUnverified,
@@ -2670,12 +2670,7 @@ pub(crate) fn parse_metadata(
                     AS_FILE_NAME => utf16_record(ctx, data, record, "Rhino as-file name")
                         .map(|value| metadata.properties.as_file_name = Some(value)),
                     PREVIEW | COMPRESSED_PREVIEW => {
-                        crate::wire::reserve_collection(
-                            ctx,
-                            &mut metadata.properties.previews,
-                            1,
-                            "Rhino property previews",
-                        )?;
+                        ctx.reserve_vec(&mut metadata.properties.previews, 1, "Rhino property previews")?;
                         metadata.properties.previews.push(PreviewDescriptor {
                             source: SourceRange {
                                 range: record.range.clone(),
@@ -2713,29 +2708,14 @@ pub(crate) fn parse_metadata(
                                 id_workspace.grow(cadmpeg_core::decode::u64_from_index(
                                     std::mem::size_of::<Uuid>(),
                                 ))?;
-                                crate::wire::reserve_hash_set(
-                                    ctx,
-                                    &mut ids,
-                                    1,
-                                    "Rhino layer UUID keys",
-                                )?;
+                                ctx.reserve_set(&mut ids, 1, "Rhino layer UUID keys")?;
                                 ids.insert(id);
                             }
                         }
-                        crate::wire::reserve_collection(
-                            ctx,
-                            &mut metadata.layers,
-                            1,
-                            "Rhino metadata layers",
-                        )?;
+                        ctx.reserve_vec(&mut metadata.layers, 1, "Rhino metadata layers")?;
                         metadata.layers.push(layer);
                         if source_requires_opaque {
-                            crate::wire::reserve_collection(
-                                ctx,
-                                &mut opaque_records,
-                                1,
-                                "Rhino metadata opaque records",
-                            )?;
+                            ctx.reserve_vec(&mut opaque_records, 1, "Rhino metadata opaque records")?;
                             opaque_records.push(OpaqueRecord {
                                 table_typecode: table.typecode,
                                 record: record.clone(),
@@ -2754,24 +2734,14 @@ pub(crate) fn parse_metadata(
                         property_workspace.grow(cadmpeg_core::decode::u64_from_index(
                             std::mem::size_of::<u32>(),
                         ))?;
-                        crate::wire::reserve_hash_set(
-                            ctx,
-                            &mut property_singletons,
-                            1,
-                            "Rhino property singleton keys",
-                        )?;
+                        ctx.reserve_set(&mut property_singletons, 1, "Rhino property singleton keys")?;
                         property_singletons.insert(record.typecode);
                     }
                     SETTINGS if !setting_singletons.contains(&record.typecode) => {
                         setting_workspace.grow(cadmpeg_core::decode::u64_from_index(
                             std::mem::size_of::<u32>(),
                         ))?;
-                        crate::wire::reserve_hash_set(
-                            ctx,
-                            &mut setting_singletons,
-                            1,
-                            "Rhino setting singleton keys",
-                        )?;
+                        ctx.reserve_set(&mut setting_singletons, 1, "Rhino setting singleton keys")?;
                         setting_singletons.insert(record.typecode);
                     }
                     _ => {}
@@ -2794,12 +2764,7 @@ pub(crate) fn parse_metadata(
                 if matches!(table_type, PROPERTIES | SETTINGS | LAYER)
                     && (table_type != LAYER || record.typecode == LAYER_RECORD)
                 {
-                    crate::wire::reserve_collection(
-                        ctx,
-                        &mut opaque_records,
-                        1,
-                        "Rhino metadata opaque records",
-                    )?;
+                    ctx.reserve_vec(&mut opaque_records, 1, "Rhino metadata opaque records")?;
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,
                         record: record.clone(),
@@ -2824,12 +2789,7 @@ pub(crate) fn parse_metadata(
                 index_workspace.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(i32, usize)>(),
                 ))?;
-                crate::wire::reserve_collection(
-                    ctx,
-                    &mut layer_index_counts,
-                    1,
-                    "Rhino layer index counts",
-                )?;
+                ctx.reserve_vec(&mut layer_index_counts, 1, "Rhino layer index counts")?;
                 layer_index_counts.insert(position, (layer.index, 1));
             }
         }
@@ -2865,7 +2825,7 @@ fn report_layer_parent_references(
                     Uuid,
                     usize,
                 )>()))?;
-                crate::wire::reserve_hash_map(ctx, &mut id_counts, 1, "Rhino layer parent counts")?;
+                ctx.reserve_map(&mut id_counts, 1, "Rhino layer parent counts")?;
                 id_counts.insert(id, 1);
             }
         }
@@ -2969,12 +2929,7 @@ fn parse_setting(
         MODEL_URL => utf16_record(ctx, data, record, "Rhino model URL")
             .map(|value| settings.model_url = Some(value)),
         _ => {
-            crate::wire::reserve_collection(
-                ctx,
-                &mut settings.unsupported,
-                1,
-                "Rhino unsupported settings",
-            )?;
+            ctx.reserve_vec(&mut settings.unsupported, 1, "Rhino unsupported settings")?;
             settings.unsupported.push(SettingDescriptor {
                 typecode: record.typecode,
                 source: SourceRange {

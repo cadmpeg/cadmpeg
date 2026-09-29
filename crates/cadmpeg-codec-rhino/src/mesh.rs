@@ -220,19 +220,11 @@ impl MeshId {
         match self {
             Self::Ready(id) => Ok(id),
             Self::ExtrusionCache(index) => {
-                cadmpeg_ir::tessellation::TessellationId::mint(crate::wire::admitted_format(
-                    ctx,
-                    format_args!("rhino:extrusion:mesh-cache#{index}"),
-                    "Rhino extrusion mesh-cache ID",
-                )?)
+                cadmpeg_ir::tessellation::TessellationId::mint(ctx.format_retained(format_args!("rhino:extrusion:mesh-cache#{index}"), "Rhino extrusion mesh-cache ID")?)
                 .map_err(|error| CodecError::Malformed(error.to_string()))
             }
             Self::V5ExtrusionCache(index) => {
-                cadmpeg_ir::tessellation::TessellationId::mint(crate::wire::admitted_format(
-                    ctx,
-                    format_args!("rhino:extrusion:v5-mesh-cache#{index}"),
-                    "Rhino V5 extrusion mesh-cache ID",
-                )?)
+                cadmpeg_ir::tessellation::TessellationId::mint(ctx.format_retained(format_args!("rhino:extrusion:v5-mesh-cache#{index}"), "Rhino V5 extrusion mesh-cache ID")?)
                 .map_err(|error| CodecError::Malformed(error.to_string()))
             }
         }
@@ -500,12 +492,7 @@ pub(crate) fn decode(
     if major == 3 && minor >= 4 && !post_2006_fields {
         let dropped = reader.skip_remaining()?;
         if dropped != 0 && writer_version.is_none() {
-            crate::wire::reserve_collection(
-                expand.ctx(),
-                &mut decoded.losses,
-                1,
-                "Rhino mesh losses",
-            )?;
+            expand.ctx().reserve_vec(&mut decoded.losses, 1, "Rhino mesh losses")?;
             decoded.losses.push(crate::wire::admitted_loss(
                 expand.ctx(),
                 crate::loss::RhinoLossCode::SourceWriterStampUnverified,

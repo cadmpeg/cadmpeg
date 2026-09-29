@@ -521,10 +521,10 @@ fn insert_property(
     key: fmt::Arguments<'_>,
     value: fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let key = crate::wire::admitted_format(ctx, key, "Rhino morph property key")?;
+    let key = ctx.format_retained(key, "Rhino morph property key")?;
     let key = cadmpeg_core::text::NonBlankString::new(key)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank generated Rhino morph key"))?;
-    let value = crate::wire::admitted_format(ctx, value, "Rhino morph property value")?;
+    let value = ctx.format_retained(value, "Rhino morph property value")?;
     ctx.charge_collection_items(1, "Rhino morph property entries")?;
     properties.insert(key, value);
     Ok(())
@@ -747,11 +747,7 @@ pub(crate) fn project(
         }
     };
     for (index, localizer) in morph.localizers.iter().enumerate() {
-        let prefix = crate::wire::admitted_format(
-            ctx,
-            format_args!("localizer_{index}"),
-            "Rhino morph localizer prefix",
-        )?;
+        let prefix = ctx.format_retained(format_args!("localizer_{index}"), "Rhino morph localizer prefix")?;
         insert_property(
             ctx,
             &mut properties,
@@ -777,19 +773,11 @@ pub(crate) fn project(
             format_args!("{}", CommaList(localizer.interval.into_iter())),
         )?;
         if let Some(curve) = &localizer.curve {
-            let curve_prefix = crate::wire::admitted_format(
-                ctx,
-                format_args!("{prefix}_curve"),
-                "Rhino morph localizer prefix",
-            )?;
+            let curve_prefix = ctx.format_retained(format_args!("{prefix}_curve"), "Rhino morph localizer prefix")?;
             curve_properties(ctx, &curve_prefix, curve, &mut properties)?;
         }
         if let Some(surface) = &localizer.surface {
-            let surface_prefix = crate::wire::admitted_format(
-                ctx,
-                format_args!("{prefix}_surface"),
-                "Rhino morph localizer prefix",
-            )?;
+            let surface_prefix = ctx.format_retained(format_args!("{prefix}_surface"), "Rhino morph localizer prefix")?;
             surface_properties(ctx, &surface_prefix, surface, &mut properties)?;
         }
     }
@@ -834,11 +822,7 @@ pub(crate) fn project(
     )?;
     for (index, id) in morph.captive_ids.iter().enumerate() {
         if let Some(record) = resolve_captive(*id)? {
-            let key = crate::wire::admitted_format(
-                ctx,
-                format_args!("captive_{index}_object"),
-                "Rhino morph property key",
-            )?;
+            let key = ctx.format_retained(format_args!("captive_{index}_object"), "Rhino morph property key")?;
             let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("blank generated Rhino morph key")
             })?;

@@ -669,6 +669,19 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
+    /// Reserves an empty retained string after charging its declared length.
+    pub fn retained_string(
+        &self,
+        length: usize,
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
+        self.charge_retained(u64_from_index(length), operation)?;
+        let mut value = String::new();
+        value.try_reserve_exact(length)
+            .map_err(|_| self.allocation_failed(ResourceDimension::RetainedBytes, length, operation))?;
+        Ok(value)
+    }
+
     /// Copies retained text and appends a retained suffix.
     pub fn retained_suffix(
         &self,
@@ -930,6 +943,8 @@ mod tests {
         |ctx: &DecodeContext<'_>| ctx.retained_suffix("a", "b", "test suffix").map(|_| ()));
     retained_case!(join_retained_charges_before_allocation, 3,
         |ctx: &DecodeContext<'_>| ctx.join_retained(&["a", "b"], "-", "test join retained").map(|_| ()));
+    retained_case!(retained_string_charges_before_allocation, 3,
+        |ctx: &DecodeContext<'_>| ctx.retained_string(3, "test retained string").map(|_| ()));
 
     macro_rules! materialized_case {
         ($name:ident, $need:expr, $body:expr) => {

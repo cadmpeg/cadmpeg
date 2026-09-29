@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NURBS cage payload decoding.
-#![deny(clippy::disallowed_methods)]
 
 use std::ops::Range;
 
