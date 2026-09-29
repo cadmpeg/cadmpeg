@@ -7,7 +7,7 @@
 #[test]
 fn parser_accepts_external_instance_references_in_edition_three() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<external>=#100;ENDSEC;REFERENCE;#100=<part.step#root>;ENDSEC;DATA;#1=ITEM(<external>);ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("external reference");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("external reference");
 
     assert!(diagnostics.is_empty());
     assert_eq!(exchange.references()[0].name.to_string(), "#100");
@@ -25,7 +25,7 @@ fn parser_accepts_external_instance_references_in_edition_three() {
 #[test]
 fn standalone_relative_reference_has_no_implicit_transport_base() {
     let source = include_bytes!("data/er01_standalone_relative_uri.p21");
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("standalone URI witness");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("standalone URI witness");
 
     assert!(diagnostics.is_empty());
     assert_eq!(exchange.references()[0].uri, "parts/child.p21#target");
@@ -48,7 +48,7 @@ fn standalone_relative_reference_has_no_implicit_transport_base() {
 #[test]
 fn parser_resolves_local_entity_reference_anchors_before_schema_decoding() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<shape>=#2;ENDSEC;REFERENCE;#10=<#shape>;ENDSEC;DATA;#1=ITEM(#10);#2=TARGET();ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("local entity reference");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("local entity reference");
 
     assert!(diagnostics.is_empty());
     assert_eq!(
@@ -60,7 +60,7 @@ fn parser_resolves_local_entity_reference_anchors_before_schema_decoding() {
 #[test]
 fn parser_resolves_local_value_reference_anchors_and_nulls_invalid_targets() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<length>=3.;<shape>=#2;ENDSEC;REFERENCE;@10=<#length>;@11=<#shape>;#12=<missing>;#13=<external.step>;ENDSEC;DATA;#1=ITEM(@10,@11,#12,#13);#2=TARGET();ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("local value references");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("local value references");
 
     assert!(diagnostics.is_empty());
     assert_eq!(
@@ -77,7 +77,7 @@ fn parser_resolves_local_value_reference_anchors_and_nulls_invalid_targets() {
 #[test]
 fn parser_checks_edition_three_syntax_before_local_reference_substitution() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<length>=3.;ENDSEC;REFERENCE;@10=<#length>;ENDSEC;DATA;#1=ITEM(@10);ENDSEC;END-ISO-10303-21;";
-    let error = crate::parse::parse(source).expect_err("class-2 value occurrence");
+    let error = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect_err("class-2 value occurrence");
 
     assert!(error
         .to_string()
@@ -87,7 +87,7 @@ fn parser_checks_edition_three_syntax_before_local_reference_substitution() {
 #[test]
 fn parser_resolves_cyclic_local_references_to_null_values() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<cycle>=#10;ENDSEC;REFERENCE;#10=<#cycle>;ENDSEC;DATA;#1=ITEM(#10);ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("cyclic reference");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("cyclic reference");
 
     assert!(diagnostics.is_empty());
     assert_eq!(exchange.anchors()[0].value, crate::parse::Value::Omitted);
@@ -100,14 +100,14 @@ fn parser_resolves_cyclic_local_references_to_null_values() {
 #[test]
 fn parser_requires_numeric_reference_left_hand_sides() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;<external>=<part.step#root>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let error = crate::parse::parse(source).expect_err("resource reference name");
+    let error = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect_err("resource reference name");
     assert!(error.to_string().contains("expected reference name"));
 }
 
 #[test]
 fn parser_accepts_value_instances_and_express_constants_in_edition_three() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<constant_entity>=#PI; <constant_value>=@E; <external_value>=@100;ENDSEC;REFERENCE;#200=<part.step#entity>;@100=<part.step#value>;ENDSEC;DATA;#1=ITEM(#PI,@E,@100,#200);ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("edition-3 occurrences");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("edition-3 occurrences");
 
     assert!(diagnostics.is_empty());
     assert_eq!(
@@ -140,7 +140,7 @@ fn parser_accepts_value_instances_and_express_constants_in_edition_three() {
 #[test]
 fn parser_retains_anchor_tags_and_resolves_their_references() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<shape>=#1 {source:<part.step#shape>} {width:@100};ENDSEC;REFERENCE;@100=<part.step#width>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("anchor tags");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("anchor tags");
 
     assert!(diagnostics.is_empty());
     assert_eq!(exchange.anchors()[0].name, "shape");
@@ -170,7 +170,7 @@ fn parser_enforces_anchor_name_and_item_grammar() {
         let source = format!(
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{entry}ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;"
         );
-        let error = crate::parse::parse(source.as_bytes()).expect_err("invalid anchor entry");
+        let error = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect_err("invalid anchor entry");
         assert!(
             error.to_string().contains(message),
             "expected {message:?}, got {error}"
@@ -178,19 +178,19 @@ fn parser_enforces_anchor_name_and_item_grammar() {
     }
 
     let valid = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<a>=(1,(2));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    crate::parse::parse(valid).expect("nested anchor item");
+    crate::test_support::with_service_context(valid, crate::parse::parse_inner).expect("nested anchor item");
 }
 
 #[test]
 fn parser_rejects_unresolved_or_colliding_value_instances() {
     let unresolved = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(@100);ENDSEC;END-ISO-10303-21;";
-    let error = crate::parse::parse(unresolved).expect_err("unresolved value instance");
+    let error = crate::test_support::with_service_context(unresolved, crate::parse::parse_inner).expect_err("unresolved value instance");
     assert!(error
         .to_string()
         .contains("unresolved value instance reference"));
 
     let collision = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;@100=<part.step#value>;ENDSEC;DATA;#100=ITEM();ENDSEC;END-ISO-10303-21;";
-    let error = crate::parse::parse(collision).expect_err("colliding value instance");
+    let error = crate::test_support::with_service_context(collision, crate::parse::parse_inner).expect_err("colliding value instance");
     assert!(error
         .to_string()
         .contains("external value instance collides with a DATA instance"));
@@ -199,7 +199,7 @@ fn parser_rejects_unresolved_or_colliding_value_instances() {
 #[test]
 fn parser_rejects_edition_three_occurrences_in_historical_data() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(#PI);ENDSEC;END-ISO-10303-21;";
-    let error = crate::parse::parse(source).expect_err("historical occurrence name");
+    let error = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect_err("historical occurrence name");
     assert!(error
         .to_string()
         .contains("historical implementation levels forbid edition-3 occurrence names"));
@@ -208,7 +208,7 @@ fn parser_rejects_edition_three_occurrences_in_historical_data() {
 #[test]
 fn parser_resolves_anchor_before_repairing_omitted_entity_names() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<line_name>='anchored line';ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=DIRECTION('',(1.,0.,0.));#3=VECTOR('',#2,1.);#4=LINE(<line_name>,#1,#3);ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("anchored line name");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("anchored line name");
 
     assert!(diagnostics
         .iter()
@@ -226,7 +226,7 @@ fn parser_resolves_anchor_before_repairing_omitted_entity_names() {
 #[test]
 fn parser_resolves_anchor_and_reference_chain_before_name_recovery() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<named>='anchored line';<number>=2.;ENDSEC;REFERENCE;@10=<#named>;@11=<#number>;@12=<#missing>;ENDSEC;DATA;#1=LINE('literal',#6,#7);#2=LINE(<named>,#6,#7);#3=LINE(@10,#6,#7);#4=LINE(@11,#6,#7);#5=LINE(@12,#6,#7);#6=KNOWN();#7=KNOWN();ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("resolve name branches");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("resolve name branches");
 
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(

@@ -26,15 +26,7 @@ pub(super) fn decode(
             let identifier = parameters
                 .first()
                 .map(|value| {
-                    decode_text_charged(
-                        exchange,
-                        value,
-                        &mut losses,
-                        id,
-                        "document identifier",
-                        StepLossCode::MetadataStringInvalid,
-                        Some(ctx),
-                    )
+                    decode_text_charged(exchange, value, &mut losses, id, "document identifier", StepLossCode::MetadataStringInvalid, ctx)
                 })
                 .transpose()?
                 .flatten()
@@ -42,15 +34,7 @@ pub(super) fn decode(
             let name = parameters
                 .get(1)
                 .map(|value| {
-                    decode_text_charged(
-                        exchange,
-                        value,
-                        &mut losses,
-                        id,
-                        "document name",
-                        StepLossCode::MetadataStringInvalid,
-                        Some(ctx),
-                    )
+                    decode_text_charged(exchange, value, &mut losses, id, "document name", StepLossCode::MetadataStringInvalid, ctx)
                 })
                 .transpose()?
                 .flatten()
@@ -92,15 +76,7 @@ pub(super) fn decode(
             let source = parameters
                 .get(1)
                 .map(|value| {
-                    decode_text_charged(
-                        exchange,
-                        value,
-                        &mut losses,
-                        id,
-                        "document reference source",
-                        StepLossCode::MetadataStringInvalid,
-                        Some(ctx),
-                    )
+                    decode_text_charged(exchange, value, &mut losses, id, "document reference source", StepLossCode::MetadataStringInvalid, ctx)
                 })
                 .transpose()?
                 .flatten()
@@ -218,15 +194,7 @@ fn source_text(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
     match value {
-        Value::String(_) => decode_text_charged(
-            exchange,
-            value,
-            losses,
-            record_id,
-            field,
-            StepLossCode::MetadataStringInvalid,
-            Some(ctx),
-        ),
+        Value::String(_) => decode_text_charged(exchange, value, losses, record_id, field, StepLossCode::MetadataStringInvalid, ctx),
         Value::Typed(_, value) => source_text(exchange, value, losses, record_id, field, ctx),
         _ => Ok(None),
     }

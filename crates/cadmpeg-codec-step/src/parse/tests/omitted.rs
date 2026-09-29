@@ -70,7 +70,7 @@ fn expected_name_error_refuses_retained_limit() {
 #[test]
 fn omitted_name_recovery_accounts_for_inserted_parameter_storage() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,0.,0.));ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("recover omitted name");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("recover omitted name");
     let parameters = &exchange.records()[&1].partials[0].parameters;
 
     assert_eq!(parameters.len(), 2);
@@ -106,7 +106,7 @@ fn omitted_name_recovery_accounts_for_inserted_parameter_storage() {
 fn parser_recovers_omitted_repositioned_tessellated_item_name() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=REPOSITIONED_TESSELLATED_ITEM(#2);#2=KNOWN();ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) =
-        crate::parse::parse(source).expect("recover omitted repositioned item name");
+        crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("recover omitted repositioned item name");
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(
         diagnostics[0].kind,
@@ -124,7 +124,7 @@ fn parser_recovers_omitted_repositioned_tessellated_item_name() {
 #[test]
 fn parser_retains_user_defined_entity_and_type_names() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=!VENDOR_ENTITY(!VENDOR_TYPE(#2));#2=KNOWN();ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("user-defined names");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("user-defined names");
 
     assert!(diagnostics.is_empty());
     assert_eq!(exchange.records()[&1].partials[0].name, "!VENDOR_ENTITY");
@@ -140,7 +140,7 @@ fn parser_retains_user_defined_entity_and_type_names() {
 #[test]
 fn parser_retains_user_defined_typed_parameter_from_witness() {
     let source = include_bytes!("../../reader/tests/data/ud01_user_defined_entity.p21");
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("user-defined type witness");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("user-defined type witness");
 
     assert!(diagnostics.is_empty());
     assert_eq!(
@@ -157,7 +157,7 @@ fn parser_retains_user_defined_typed_parameter_from_witness() {
 #[test]
 fn parser_does_not_repair_non_carrier_first_parameters() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=!VENDOR_ENTITY(1,#2);#2=KNOWN();ENDSEC;END-ISO-10303-21;";
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("non-carrier entity");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("non-carrier entity");
 
     assert!(diagnostics.is_empty());
     assert_eq!(
@@ -173,7 +173,7 @@ fn parser_does_not_repair_non_carrier_first_parameters() {
 fn parser_recovers_omitted_geometry_name_without_shifting_context_fields() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,1.,2.));#2=GEOMETRIC_REPRESENTATION_CONTEXT(3);#3=MAPPED_ITEM(#1,#2);#4=SEAM_EDGE(*,*,#1,.T.,$);#5=SHAPE_REPRESENTATION((#1),$);#6=CLOSED_SHELL($,(#1));ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) =
-        crate::parse::parse(source).expect("omitted geometry name is recoverable");
+        crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("omitted geometry name is recoverable");
 
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(
@@ -223,7 +223,7 @@ fn parser_recovers_omitted_geometry_name_without_shifting_context_fields() {
 fn parser_recovers_omitted_shape_representation_with_parameters_name() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=SHAPE_REPRESENTATION_WITH_PARAMETERS((#2),#3);#2=KNOWN();#3=KNOWN();ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) =
-        crate::parse::parse(source).expect("recover omitted parameterized shape name");
+        crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("recover omitted parameterized shape name");
 
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(

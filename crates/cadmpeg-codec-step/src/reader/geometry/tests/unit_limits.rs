@@ -19,7 +19,7 @@ fn unit_refusal(
     depth_limit: Option<u64>,
 ) -> CodecError {
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid unit exchange");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid unit exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -30,9 +30,9 @@ fn unit_refusal(
         .expect("source fits policy");
     let mut active = BTreeSet::new();
     let result = if angle {
-        super::super::unit_scale_radians(1, &exchange, &mut active, Some(&ctx))
+        super::super::unit_scale_radians(1, &exchange, &mut active, &ctx)
     } else {
-        super::super::unit_scale_mm(1, &exchange, &mut active, Some(&ctx))
+        super::super::unit_scale_mm(1, &exchange, &mut active, &ctx)
     };
     result.expect_err("unit resolution exceeds the limit")
 }
@@ -79,7 +79,7 @@ fn angle_unit_scale_walk_refuses_depth_limit() {
 
 fn document_refusal(records: &str, collection_limit: u64, with_context: bool) -> CodecError {
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid document units");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid document units");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -152,7 +152,7 @@ fn context_length_scales_refuse_collection_limit() {
         "{LENGTH}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));"
     );
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid context units");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid context units");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
@@ -172,7 +172,7 @@ fn context_angle_scales_refuse_collection_limit() {
         "{ANGLE}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));"
     );
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid context units");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid context units");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 2;
@@ -245,7 +245,7 @@ fn angle_candidate_values_refuse_collection_limit() {
 
 fn scope_refusal(records: &str, collection_limit: u64, depth_limit: Option<u64>) -> CodecError {
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid scope exchange");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid scope exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -340,7 +340,7 @@ fn conflicting_unit_loss_refuses_collection_limit() {
 fn uncertainty_refusal(collection_limit: u64) -> CodecError {
     let records = "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'first_accuracy','');#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2)) REPRESENTATION_CONTEXT('model','3D'));";
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid uncertainty exchange");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid uncertainty exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;

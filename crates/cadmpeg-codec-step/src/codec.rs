@@ -356,7 +356,7 @@ fn inspect_parsed_exchange(
             },
         )?;
     }
-    let identifiers = exchange.joined_schema_identifiers(Some(ctx))?;
+    let identifiers = exchange.joined_schema_identifiers(ctx)?;
     let schema = if identifiers.is_empty() {
         "unspecified".into()
     } else {
@@ -807,7 +807,7 @@ mod tests {
         let mut limit = 0u64;
         for _ in 0..512 {
             let (mut exchange, diagnostics) =
-                crate::parse::parse(source).expect("valid inspect source");
+                crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid inspect source");
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = limit;
@@ -873,7 +873,7 @@ mod tests {
         let mut limit = 0u64;
         for _ in 0..512 {
             let (mut exchange, diagnostics) =
-                crate::parse::parse(SOURCE).expect("valid inspect source");
+                crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).expect("valid inspect source");
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = limit;

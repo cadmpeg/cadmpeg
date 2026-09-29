@@ -6,7 +6,7 @@
 #[test]
 fn parser_rejects_duplicate_complex_partial_names() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(B()A()B());ENDSEC;END-ISO-10303-21;";
-    let error = crate::parse::parse(source).expect_err("duplicate partial names must fail");
+    let error = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect_err("duplicate partial names must fail");
     assert!(matches!(
         error,
         crate::parse::ParseError::Syntax { message, .. }
@@ -18,7 +18,7 @@ fn parser_rejects_duplicate_complex_partial_names() {
 fn parser_reports_recoverable_noncanonical_complex_partial_order() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(NAMED_UNIT(#2)SOLID_ANGLE_UNIT()SI_UNIT($,.STERADIAN.));#2=DIMENSIONAL_EXPONENTS(0.,0.,0.,0.,0.,0.,0.);ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) =
-        crate::parse::parse(source).expect("noncanonical partial order is recoverable");
+        crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("noncanonical partial order is recoverable");
 
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(

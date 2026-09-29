@@ -59,11 +59,11 @@ pub(crate) fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unico
 
 #[test]
 fn writer_and_lexer_preserve_apostrophes_and_backslashes_once() {
-    use crate::lex::{lex, TokenKind};
+    use crate::lex::{TokenKind};
 
     let source = "O'Brien \\ fixtures";
     let encoded = crate::writer::string(source);
-    let tokens = lex(encoded.as_bytes()).expect("lex encoded string");
+    let tokens = crate::test_support::with_service_context(encoded.as_bytes(), crate::lex::lex_with_context).expect("lex encoded string");
     let TokenKind::String(bytes) = &tokens[0].kind else {
         panic!("encoded text did not lex as a string")
     };

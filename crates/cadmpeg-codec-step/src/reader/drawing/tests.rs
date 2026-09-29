@@ -486,7 +486,7 @@ fn deep_drawing_wrapper_graph_resolves_without_call_stack_recursion() {
         target = item;
     }
     source.push_str("ENDSEC;END-ISO-10303-21;");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("deep mapped graph");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("deep mapped graph");
     let identities = std::collections::BTreeMap::from([(
         1,
         std::collections::BTreeSet::from(["step:data:surface#1".into()]),
