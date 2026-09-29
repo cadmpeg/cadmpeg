@@ -438,7 +438,7 @@ fn physical_lines(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<Unframed
                 .checked_add(CARD_WIDTH)
                 .ok_or_else(|| CodecError::Malformed("IGES card offset overflow".into()))?
                 .min(payload_end);
-            ctx.charge_collection_items(1, "iges_cards")?;
+
             let payload =
                 ctx.copy_retained(&source[card_start..card_end], "iges physical card payload")?;
             let marked = !terminated && payload.len() == CARD_WIDTH;
@@ -449,16 +449,8 @@ fn physical_lines(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<Unframed
             } else {
                 LineEnding::None
             };
-            lines.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec("iges_cards"),
-                        u64_from_index(lines.len()),
-                        1,
-                        "iges_cards",
-                    ),
-                )
-            })?;
+
+            ctx.reserve_vec(&mut lines, 1, "iges_cards")?;
             lines.push(UnframedLine {
                 line: PhysicalLine {
                     offset: cadmpeg_core::decode::u64_from_index(card_start),
@@ -473,21 +465,12 @@ fn physical_lines(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<Unframed
             card_start = card_end;
         }
         if card_start != payload_end {
-            ctx.charge_collection_items(1, "iges_cards")?;
             let payload = ctx.copy_retained(
                 &source[card_start..payload_end],
                 "iges physical card payload",
             )?;
-            lines.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec("iges_cards"),
-                        u64_from_index(lines.len()),
-                        1,
-                        "iges_cards",
-                    ),
-                )
-            })?;
+
+            ctx.reserve_vec(&mut lines, 1, "iges_cards")?;
             lines.push(UnframedLine {
                 line: PhysicalLine {
                     offset: cadmpeg_core::decode::u64_from_index(card_start),
@@ -511,19 +494,8 @@ fn frame_sections(
     recoveries: &mut FramingRecoveries,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<ScannedLine>, CodecError> {
-    let count = u64_from_index(lines.len());
-    ctx.charge_collection_items(count, "iges framed cards")?;
-    let mut scanned = Vec::new();
-    scanned.try_reserve_exact(lines.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("iges framed cards"),
-                count,
-                count,
-                "iges framed cards",
-            ),
-        )
-    })?;
+    let mut scanned = ctx.collection_vec(lines.len(), "iges framed cards")?;
+
     let mut section = None;
     let mut position = 1_usize;
     let mut terminated = false;

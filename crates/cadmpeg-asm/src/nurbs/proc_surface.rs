@@ -4293,24 +4293,13 @@ pub(crate) fn copy_revision_discontinuities(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &[Vec<f64>; 6],
 ) -> Result<[Vec<f64>; 6], cadmpeg_core::CodecError> {
-    fn copy_lane(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        source: &[f64],
-    ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
-        let count = cadmpeg_core::decode::u64_from_index(source.len());
-        let bytes = count.checked_mul(8).ok_or_else(|| {
-            ctx.refuse_codec_limit("ASM revision discontinuities", u64::MAX, u64::MAX)
-        })?;
-        ctx.charge_retained(bytes, "ASM revision discontinuities")?;
-        ctx.collect_vec(source.iter().copied(), "ASM revision discontinuities")
-    }
     Ok([
-        copy_lane(ctx, &source[0])?,
-        copy_lane(ctx, &source[1])?,
-        copy_lane(ctx, &source[2])?,
-        copy_lane(ctx, &source[3])?,
-        copy_lane(ctx, &source[4])?,
-        copy_lane(ctx, &source[5])?,
+        ctx.copy_retained_slice(&source[0], "ASM revision discontinuities")?,
+        ctx.copy_retained_slice(&source[1], "ASM revision discontinuities")?,
+        ctx.copy_retained_slice(&source[2], "ASM revision discontinuities")?,
+        ctx.copy_retained_slice(&source[3], "ASM revision discontinuities")?,
+        ctx.copy_retained_slice(&source[4], "ASM revision discontinuities")?,
+        ctx.copy_retained_slice(&source[5], "ASM revision discontinuities")?,
     ])
 }
 

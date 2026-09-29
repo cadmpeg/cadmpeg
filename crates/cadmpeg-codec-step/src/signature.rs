@@ -37,11 +37,13 @@ pub(crate) fn decode_payload(
                 continue;
             }
         }
-        ctx.charge_collection_items(1, "step_signature_compact_items")?;
-        compact_reservation.grow(1)?;
-        compact.try_reserve(1).map_err(|_| {
-            ParseError::Resource(ctx.refuse_codec_limit("step_signature_compact_items", 0, 1))
-        })?;
+
+        ctx.reserve_scoped_vec(
+            &mut compact_reservation,
+            &mut compact,
+            1,
+            "step_signature_compact_items",
+        )?;
         compact.push(input[at]);
         at += 1;
     }

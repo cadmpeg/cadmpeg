@@ -35,38 +35,14 @@ impl CarrierIndex {
         let mut curves = HashMap::new();
         for (index, curve) in ir.model.curves.iter().enumerate() {
             if let Some(id) = step_instance_id(curve.id.as_str()) {
-                ctx.charge_collection_items(1, "step_carrier_curve_index")?;
-                curves.try_reserve(1).map_err(|_| {
-                    cadmpeg_core::CodecError::ResourceLimit(
-                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                            cadmpeg_core::decode::ResourceDimension::Codec(
-                                "step_carrier_curve_index",
-                            ),
-                            0,
-                            1,
-                            "step_carrier_curve_index",
-                        ),
-                    )
-                })?;
+                ctx.reserve_map(&mut curves, 1, "step_carrier_curve_index")?;
                 curves.insert(id, CurveIndex(index));
             }
         }
         let mut points = HashMap::new();
         for (index, point) in ir.model.points.iter().enumerate() {
             if let Some(id) = step_instance_id(point.id.as_str()) {
-                ctx.charge_collection_items(1, "step_carrier_point_index")?;
-                points.try_reserve(1).map_err(|_| {
-                    cadmpeg_core::CodecError::ResourceLimit(
-                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                            cadmpeg_core::decode::ResourceDimension::Codec(
-                                "step_carrier_point_index",
-                            ),
-                            0,
-                            1,
-                            "step_carrier_point_index",
-                        ),
-                    )
-                })?;
+                ctx.reserve_map(&mut points, 1, "step_carrier_point_index")?;
                 points.insert(
                     id,
                     PointCarrier {
@@ -79,19 +55,7 @@ impl CarrierIndex {
         let mut surfaces = HashMap::new();
         for (index, surface) in ir.model.surfaces.iter().enumerate() {
             if let Some(id) = step_instance_id(surface.id.as_str()) {
-                ctx.charge_collection_items(1, "step_carrier_surface_index")?;
-                surfaces.try_reserve(1).map_err(|_| {
-                    cadmpeg_core::CodecError::ResourceLimit(
-                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                            cadmpeg_core::decode::ResourceDimension::Codec(
-                                "step_carrier_surface_index",
-                            ),
-                            0,
-                            1,
-                            "step_carrier_surface_index",
-                        ),
-                    )
-                })?;
+                ctx.reserve_map(&mut surfaces, 1, "step_carrier_surface_index")?;
                 surfaces.insert(id, SurfaceIndex(index));
             }
         }

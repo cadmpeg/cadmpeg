@@ -3,7 +3,6 @@
 
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -49,12 +48,7 @@ pub(super) fn decode(
         };
         let mut items = BTreeSet::new();
         for item in representation_items {
-            insert_tree(
-                &mut items,
-                item,
-                ctx,
-                "step_validation_representation_items",
-            )?;
+            ctx.insert_btree_set(&mut items, item, "step_validation_representation_items")?;
         }
         if !items.is_empty() {
             ctx.charge_collection_items(1, "step_validation_representations")?;
@@ -130,10 +124,9 @@ pub(super) fn decode(
         let Some(item_ids) = representations.get(&representation_id) else {
             continue;
         };
-        insert_tree(
+        ctx.insert_btree_set(
             &mut validation_representations,
             representation_id,
-            ctx,
             "step_validation_used_representations",
         )?;
         for &item_id in item_ids {
@@ -154,15 +147,10 @@ pub(super) fn decode(
                 continue;
             };
             if matches!(expected, Expected::Centroid(_)) {
-                insert_tree(
-                    &mut validation_points,
-                    item_id,
-                    ctx,
-                    "step_validation_points",
-                )?;
+                ctx.insert_btree_set(&mut validation_points, item_id, "step_validation_points")?;
             }
             for id in [property_id, relation_id, representation_id, item_id] {
-                insert_hash(&mut typed, id, ctx, "step_validation_claims")?;
+                ctx.insert_hash_set(&mut typed, id, "step_validation_claims")?;
             }
             if let Some(unit) = measure_unit(item) {
                 collect_unit_records(unit, exchange, &mut typed, ctx)?;
@@ -185,20 +173,17 @@ pub(super) fn decode(
                     Expected::Centroid(_) => format!("distance {actual}"),
                     _ => actual.to_string(),
                 };
-                push_validation_note(
-                    &mut notes,
-                    format_args!(
+                ctx.push_formatted_retained(&mut notes, format_args!(
                         "geometric validation {kind} {description}: expected {expected_text}, tessellation approximation {actual_text}"
-                    ),
-                    ctx,
-                )?;
+                    ), "step_validation_notes", "step_validation_note_text")?;
             } else {
-                push_validation_note(
+                ctx.push_formatted_retained(
                     &mut notes,
                     format_args!(
                         "geometric validation {kind} {description}: expected {expected_text}"
                     ),
-                    ctx,
+                    "step_validation_notes",
+                    "step_validation_note_text",
                 )?;
             }
         }
@@ -345,39 +330,8 @@ fn push_validation_loss(
     message: String,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "step_validation_losses")?;
-    losses.try_reserve(1).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_validation_losses"),
-                0,
-                1,
-                "step_validation_losses",
-            ),
-        )
-    })?;
+    ctx.reserve_vec(losses, 1, "step_validation_losses")?;
     losses.push(code.note(message));
-    Ok(())
-}
-
-fn push_validation_note(
-    notes: &mut Vec<String>,
-    arguments: std::fmt::Arguments<'_>,
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    let note = ctx.format_retained(arguments, "step_validation_note_text")?;
-    ctx.charge_collection_items(1, "step_validation_notes")?;
-    notes.try_reserve(1).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_validation_notes"),
-                0,
-                1,
-                "step_validation_notes",
-            ),
-        )
-    })?;
-    notes.push(note);
     Ok(())
 }
 
@@ -424,7 +378,7 @@ fn collect_unit_records(
     typed: &mut HashSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    insert_hash(typed, id, ctx, "step_validation_claims")?;
+    ctx.insert_hash_set(typed, id, "step_validation_claims")?;
     let Some(record) = exchange.records().get(&id) else {
         return Ok(());
     };
@@ -432,7 +386,7 @@ fn collect_unit_records(
         return Ok(());
     };
     for element in elements.iter().filter_map(ValueExt::reference) {
-        insert_hash(typed, element, ctx, "step_validation_claims")?;
+        ctx.insert_hash_set(typed, element, "step_validation_claims")?;
         if let Some(base) = exchange
             .records()
             .get(&element)
@@ -440,7 +394,7 @@ fn collect_unit_records(
             .and_then(|record| record.parameters.first())
             .and_then(ValueExt::reference)
         {
-            insert_hash(typed, base, ctx, "step_validation_claims")?;
+            ctx.insert_hash_set(typed, base, "step_validation_claims")?;
         }
     }
     Ok(())
@@ -635,7 +589,7 @@ fn collect_validation_references(
     let _nested = ctx.enter_nested("step_validation_reference_walk")?;
     match value {
         Value::Reference(id) if validation_points.contains(id) => {
-            insert_tree(referenced, *id, ctx, "step_validation_referenced_points")?;
+            ctx.insert_btree_set(referenced, *id, "step_validation_referenced_points")?;
         }
         Value::List(values) => {
             for value in values {
@@ -646,42 +600,6 @@ fn collect_validation_references(
             collect_validation_references(value, validation_points, referenced, ctx)?;
         }
         _ => {}
-    }
-    Ok(())
-}
-
-fn insert_tree(
-    values: &mut BTreeSet<u64>,
-    id: u64,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !values.contains(&id) {
-        ctx.charge_collection_items(1, operation)?;
-        values.insert(id);
-    }
-    Ok(())
-}
-
-fn insert_hash(
-    values: &mut HashSet<u64>,
-    id: u64,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !values.contains(&id) {
-        ctx.charge_collection_items(1, operation)?;
-        values.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                    0,
-                    u64_from_index(values.len() + 1),
-                    operation,
-                ),
-            )
-        })?;
-        values.insert(id);
     }
     Ok(())
 }

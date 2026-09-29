@@ -15,7 +15,7 @@ use cadmpeg_ir::transform::Transform;
 use crate::compact_matrix::CompactMatrix;
 use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
 use crate::native::{AssemblyOccurrenceRecord, AssemblyPlacementRecord};
-use crate::record_issue::{admit_issue_detail, RecordIssue, RecordIssueFamily};
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const SUPPRESSED_REFERENCE_STATE: u16 = 0x2000;
@@ -321,7 +321,10 @@ pub(crate) fn inventory<'a>(
                 }
                 ctx.charge_collection_items(1, "admit Inventor assembly issue")?;
                 ctx.charge_entities(1, "admit Inventor assembly issue")?;
-                admit_issue_detail(ctx, &error, "retain Inventor assembly issue detail")?;
+                ctx.charge_formatted_retained(
+                    format_args!("{error}"),
+                    "retain Inventor assembly issue detail",
+                )?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
                     "retain Inventor assembly issue token",
