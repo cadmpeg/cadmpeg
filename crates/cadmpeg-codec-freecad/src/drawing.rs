@@ -253,10 +253,7 @@ pub(crate) fn transfer_neutral(
         };
         let template = template_id
             .map(|id| {
-                DrawingId::mint(
-                    ctx.copy_retained_text(id.as_str(), "fcstd drawing template identity")?,
-                )
-                .map_err(CodecError::malformed)
+                id.try_clone_for_decode(ctx, "fcstd drawing template identity")
             })
             .transpose()?;
         ctx.reserve_vec(&mut model.drawings, 1, "fcstd neutral drawings")?;
@@ -282,10 +279,7 @@ pub(crate) fn transfer_neutral(
                     )
                 })
                 .and_then(|id| {
-                    DrawingId::mint(
-                        ctx.copy_retained_text(id.as_str(), "fcstd drawing neutral identity")?,
-                    )
-                    .map_err(CodecError::malformed)
+                    id.try_clone_for_decode(ctx, "fcstd drawing neutral identity")
                 })?,
             object: ctx.copy_retained_text(&record.object, "fcstd neutral drawing object")?,
             kind: classify(record.kind.as_str()),

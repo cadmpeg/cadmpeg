@@ -242,11 +242,7 @@ pub(crate) fn transfer_neutral(
             }
             Ok(Some(match occurrence_by_native.get(name).copied() {
                 Some(occurrence) => {
-                    let identity = cadmpeg_ir::ids::OccurrenceId::mint(ctx.copy_retained_text(
-                        occurrence.as_str(),
-                        "fcstd joint occurrence identity",
-                    )?)
-                    .map_err(CodecError::malformed)?;
+                    let identity = occurrence.try_clone_for_decode(ctx, "fcstd joint occurrence identity")?;
                     JointOperand::occurrence(identity, object, subelements)
                 }
                 None => JointOperand::root(object, subelements),
