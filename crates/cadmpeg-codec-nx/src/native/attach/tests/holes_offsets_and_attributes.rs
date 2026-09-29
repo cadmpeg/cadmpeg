@@ -753,6 +753,13 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
 
 #[test]
 fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let project_offset = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
+        offset_surface_feature_definition(&ctx, ir, outputs).expect("offset resource admission")
+    };
+
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
@@ -790,7 +797,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     }
 
     let (definition, supports) =
-        offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
+        project_offset(&ir, std::slice::from_ref(&output))
             .expect("unique offset distance");
     assert_eq!(supports.len(), 2);
     assert!(matches!(
@@ -809,7 +816,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
             SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}")).expect("identity grammar"),
         );
     }
-    let (definition, _) = offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
+    let (definition, _) = project_offset(&ir, std::slice::from_ref(&output))
         .expect("uniquely faced supports");
     assert!(matches!(
         definition,
@@ -825,7 +832,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     }) {
         face.sense = cadmpeg_ir::topology::Sense::Reversed;
     }
-    let (definition, _) = offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
+    let (definition, _) = project_offset(&ir, std::slice::from_ref(&output))
         .expect("uniformly reversed support faces");
     assert!(matches!(
         definition,
@@ -843,7 +850,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         })
         .expect("first support face")
         .sense = cadmpeg_ir::topology::Sense::Forward;
-    let (definition, _) = offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
+    let (definition, _) = project_offset(&ir, std::slice::from_ref(&output))
         .expect("mixed support-face orientations retain offset family");
     assert!(matches!(
         definition,
@@ -860,7 +867,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         SurfaceId::mint("nx:s4:nurbs-surf#0").expect("identity grammar"),
     );
     let (definition, _) =
-        offset_surface_feature_definition(&ambiguous, std::slice::from_ref(&output))
+        project_offset(&ambiguous, std::slice::from_ref(&output))
             .expect("offset semantics survive ambiguous face identity");
     assert!(matches!(
         definition,
@@ -872,17 +879,24 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 
     let (unowned, procedural) = make_offset(99, -40.0);
     insert_test_procedural_surface(&mut ir, unowned, procedural);
-    assert!(offset_surface_feature_definition(&ir, std::slice::from_ref(&output)).is_some());
+    assert!(project_offset(&ir, std::slice::from_ref(&output)).is_some());
     ir.model.procedural_surfaces.pop();
     ir.model.surfaces.pop();
 
     let (owner, conflicting) = make_offset(2, -30.0);
     attach_test_body_procedural_surface(&mut ir, &output, owner, conflicting);
-    assert!(offset_surface_feature_definition(&ir, &[output]).is_none());
+    assert!(project_offset(&ir, &[output]).is_none());
 }
 
 #[test]
 fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let project_thicken = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
+        thicken_feature_definition(&ctx, ir, outputs).expect("thicken resource admission")
+    };
+
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ThickenSide};
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
@@ -919,7 +933,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         attach_test_body_procedural_surface(&mut ir, &output, owner, procedural);
     }
 
-    let (definition, supports) = thicken_feature_definition(&ir, std::slice::from_ref(&output))
+    let (definition, supports) = project_thicken(&ir, std::slice::from_ref(&output))
         .expect("unique nonzero offset distance");
     assert_eq!(supports.len(), 2);
     assert!(matches!(
@@ -939,7 +953,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         .find(|body| body.id == output)
         .expect("output body")
         .kind = cadmpeg_ir::topology::BodyKind::Sheet;
-    assert!(thicken_feature_definition(&sheet_output, std::slice::from_ref(&output)).is_none());
+    assert!(project_thicken(&sheet_output, std::slice::from_ref(&output)).is_none());
 
     let input = BodyId::mint("nx:s4:body#input").expect("identity grammar");
     for ordinal in 0..2 {
@@ -949,7 +963,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
             SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}")).expect("identity grammar"),
         );
     }
-    let (definition, _) = thicken_feature_definition(&ir, std::slice::from_ref(&output))
+    let (definition, _) = project_thicken(&ir, std::slice::from_ref(&output))
         .expect("uniquely faced supports");
     assert!(matches!(
         definition,
@@ -968,7 +982,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         })
         .expect("second support face")
         .sense = cadmpeg_ir::topology::Sense::Reversed;
-    let (definition, _) = thicken_feature_definition(&ir, std::slice::from_ref(&output))
+    let (definition, _) = project_thicken(&ir, std::slice::from_ref(&output))
         .expect("mixed support senses preserve thicken semantics");
     assert!(matches!(
         definition,
@@ -981,22 +995,29 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
 
     let (unowned, procedural) = make_offset(99, 40.0);
     insert_test_procedural_surface(&mut ir, unowned, procedural);
-    assert!(thicken_feature_definition(&ir, std::slice::from_ref(&output)).is_some());
+    assert!(project_thicken(&ir, std::slice::from_ref(&output)).is_some());
     ir.model.procedural_surfaces.pop();
     ir.model.surfaces.pop();
 
     let (owner, conflicting) = make_offset(2, 12.5);
     attach_test_body_procedural_surface(&mut ir, &output, owner, conflicting);
-    assert!(thicken_feature_definition(&ir, &[output]).is_none());
+    assert!(project_thicken(&ir, &[output]).is_none());
 
     let zero_output = BodyId::mint("nx:s4:body#4").expect("identity grammar");
     let (owner, zero) = make_offset(3, 0.0);
     attach_test_body_procedural_surface(&mut ir, &zero_output, owner, zero);
-    assert!(thicken_feature_definition(&ir, &[zero_output]).is_none());
+    assert!(project_thicken(&ir, &[zero_output]).is_none());
 }
 
 #[test]
 fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let project_thicken = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
+        thicken_feature_definition(&ctx, ir, outputs).expect("thicken resource admission")
+    };
+
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ThickenSide};
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
@@ -1035,7 +1056,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
         attach_test_body_procedural_surface(&mut ir, &output, owner, procedural);
     }
 
-    let (definition, supports) = thicken_feature_definition(&ir, std::slice::from_ref(&output))
+    let (definition, supports) = project_thicken(&ir, std::slice::from_ref(&output))
         .expect("matched symmetric offsets");
     assert_eq!(supports, std::slice::from_ref(&support));
     assert!(matches!(
@@ -1061,7 +1082,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
                 .set_support(SurfaceId::mint("nx:s4:nurbs-surf#other").expect("identity grammar"));
         });
     assert!(
-        thicken_feature_definition(&mismatched_support, std::slice::from_ref(&output)).is_none()
+        project_thicken(&mismatched_support, std::slice::from_ref(&output)).is_none()
     );
 
     ir.model
@@ -1087,11 +1108,23 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
             }
             .unwrap();
         });
-    assert!(thicken_feature_definition(&ir, std::slice::from_ref(&output)).is_none());
+    assert!(project_thicken(&ir, std::slice::from_ref(&output)).is_none());
 }
 
 #[test]
 fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let project_blend = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId], family: NxBlendFamily| {
+        blend_feature_definition(&ctx, ir, outputs, family).expect("blend resource admission")
+    };
+    let project_bipartition = |pairs: Vec<[SurfaceId; 2]>| {
+        blend_support_bipartition(&ctx, &pairs)
+            .expect("blend graph resource admission")
+            .map(|sides| (sides.first, sides.second))
+    };
+
     use cadmpeg_ir::features::{
         edge_treatments::RadiusSpec, FaceSelection, FeatureDefinition, FeatureOperation,
     };
@@ -1107,7 +1140,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     let support_b = SurfaceId::mint("test:model:entity#support-b").expect("identity grammar");
     let support_c = SurfaceId::mint("test:model:entity#support-c").expect("identity grammar");
     assert_eq!(
-        blend_support_bipartition(vec![
+        project_bipartition(vec![
             [support_a.clone(), support_b.clone()],
             [support_b.clone(), support_c.clone()],
         ]),
@@ -1116,13 +1149,13 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             vec![support_b.clone()],
         ))
     );
-    assert!(blend_support_bipartition(vec![
+    assert!(project_bipartition(vec![
         [support_a.clone(), support_b.clone()],
         [support_b.clone(), support_c.clone()],
         [support_c, support_a],
     ])
     .is_none());
-    assert!(blend_support_bipartition(vec![
+    assert!(project_bipartition(vec![
         [
             SurfaceId::mint("test:model:entity#a").expect("identity grammar"),
             SurfaceId::mint("test:model:entity#b").expect("identity grammar")
@@ -1159,7 +1192,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     attach_test_body_procedural_surface(&mut ir, &output, second_owner, second);
 
     let (definition, surfaces) =
-        blend_feature_definition(&ir, std::slice::from_ref(&output), NxBlendFamily::Edge)
+        project_blend(&ir, std::slice::from_ref(&output), NxBlendFamily::Edge)
             .expect("one circular constant-radius blend result");
     assert_eq!(surfaces.len(), 2);
     assert!(matches!(
@@ -1172,7 +1205,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         }] if actual_radius.get() == 5.0)
     ));
     let (definition, _) =
-        blend_feature_definition(&ir, std::slice::from_ref(&output), NxBlendFamily::Face)
+        project_blend(&ir, std::slice::from_ref(&output), NxBlendFamily::Face)
             .expect("face blend retains unresolved supports");
     assert!(matches!(
         definition, FeatureDefinition::Operation(FeatureOperation::FaceBlend {
@@ -1224,7 +1257,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     }
     attach_test_body_surface(&mut face_blend_ir, &output, first_support);
     attach_test_body_surface(&mut face_blend_ir, &output, second_support);
-    let (definition, _) = blend_feature_definition(
+    let (definition, _) = project_blend(
         &face_blend_ir,
         std::slice::from_ref(&output),
         NxBlendFamily::Edge,
@@ -1239,7 +1272,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
                 ..
             }])
     ));
-    let (definition, _) = blend_feature_definition(
+    let (definition, _) = project_blend(
         &face_blend_ir,
         std::slice::from_ref(&output),
         NxBlendFamily::Face,
@@ -1258,7 +1291,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     let (unowned, procedural) = make_blend(99, BlendRadiusLaw::constant(17.0).unwrap());
     insert_test_procedural_surface(&mut ir, unowned, procedural);
     let (definition, _) =
-        blend_feature_definition(&ir, std::slice::from_ref(&output), NxBlendFamily::Edge)
+        project_blend(&ir, std::slice::from_ref(&output), NxBlendFamily::Edge)
             .expect("required invariant");
     assert!(matches!(
         definition,
@@ -1275,7 +1308,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     let (owner, conflicting) = make_blend(2, BlendRadiusLaw::constant(7.0).unwrap());
     attach_test_body_procedural_surface(&mut ir, &output, owner, conflicting);
     let (definition, _) =
-        blend_feature_definition(&ir, &[output], NxBlendFamily::Edge).expect("required invariant");
+        project_blend(&ir, &[output], NxBlendFamily::Edge).expect("required invariant");
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Fillet {
@@ -1285,7 +1318,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             ..
         }])
     ));
-    assert!(blend_feature_definition(&ir, &[], NxBlendFamily::Edge,).is_none());
+    assert!(project_blend(&ir, &[], NxBlendFamily::Edge,).is_none());
 
     let conic_owner = SurfaceId::mint("nx:s4:blend-surf#3").expect("identity grammar");
     let conic = ProceduralSurface::new(
@@ -1308,7 +1341,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         conic_owner,
         conic,
     );
-    assert!(blend_feature_definition(
+    assert!(project_blend(
         &ir,
         &[BodyId::mint("nx:s4:body#3").expect("identity grammar")],
         NxBlendFamily::Edge,

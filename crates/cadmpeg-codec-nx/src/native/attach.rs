@@ -3563,17 +3563,21 @@ fn attach_feature_operations(
             })
             .flatten()
             .transpose()?;
-        let offset_projection = (label.value == "OFFSET")
-            .then(|| offset_surface_feature_definition(ir, &outputs))
-            .flatten();
+        let offset_projection = if label.value == "OFFSET" {
+            offset_surface_feature_definition(ctx, ir, &outputs)?
+        } else {
+            None
+        };
         if let Some((_, supports)) = &offset_projection {
             for (support_ordinal, support) in supports.iter().enumerate() {
                 insert_source_property(ctx, &mut source_properties, format_args!("offset_support_surface.{support_ordinal}"), format_args!("{}", support.as_str()))?;
             }
         }
-        let thicken_projection = (label.value == "THICKEN_SHEET")
-            .then(|| thicken_feature_definition(ir, &outputs))
-            .flatten();
+        let thicken_projection = if label.value == "THICKEN_SHEET" {
+            thicken_feature_definition(ctx, ir, &outputs)?
+        } else {
+            None
+        };
         if let Some((_, supports)) = &thicken_projection {
             for (support_ordinal, support) in supports.iter().enumerate() {
                 insert_source_property(ctx, &mut source_properties, format_args!("thicken_support_surface.{support_ordinal}"), format_args!("{}", support.as_str()))?;
@@ -3584,8 +3588,11 @@ fn attach_feature_operations(
             "FACE_BLEND" => Some(NxBlendFamily::Face),
             _ => None,
         };
-        let blend_projection =
-            blend_family.and_then(|family| blend_feature_definition(ir, &outputs, family));
+        let blend_projection = if let Some(family) = blend_family {
+            blend_feature_definition(ctx, ir, &outputs, family)?
+        } else {
+            None
+        };
         if let Some((_, surfaces)) = &blend_projection {
             for (surface_ordinal, surface) in surfaces.iter().enumerate() {
                 insert_source_property(ctx, &mut source_properties, format_args!("blend_result_surface.{surface_ordinal}"), format_args!("{}", surface.as_str()))?;
@@ -6112,32 +6119,52 @@ fn extrude_boolean_op(
     }
 }
 
-fn body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
-    let body = ir.model.bodies.iter().find(|body| body.id == *body_id)?;
+fn body_faces<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    ir: &'a CadIr,
+    body_id: &BodyId,
+) -> Result<Option<ScopedFaces<'a, 'ctx>>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()), "NX body face body lookup")?;
+    let Some(body) = ir.model.bodies.iter().find(|body| body.id == *body_id) else {
+        return Ok(None);
+    };
     let mut faces = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX body faces")?;
     for region_id in &body.regions {
-        let region = ir
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.regions.len()), "NX body face region lookup")?;
+        let Some(region) = ir
             .model
             .regions
             .iter()
-            .find(|region| region.id == *region_id && region.body == body.id)?;
+            .find(|region| region.id == *region_id && region.body == body.id) else {
+            return Ok(None);
+        };
         for shell_id in &region.shells {
-            let shell = ir
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.shells.len()), "NX body face shell lookup")?;
+            let Some(shell) = ir
                 .model
                 .shells
                 .iter()
-                .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
+                .find(|shell| shell.id == *shell_id && shell.region == region.id) else {
+                return Ok(None);
+            };
             for face_id in shell.faces() {
-                let face = ir
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.faces.len()), "NX body face lookup")?;
+                let Some(face) = ir
                     .model
                     .faces
                     .iter()
-                    .find(|face| face.id == *face_id && face.shell == shell.id)?;
+                    .find(|face| face.id == *face_id && face.shell == shell.id) else {
+                    return Ok(None);
+                };
+                ctx.charge_collection_items(1, "NX body faces")?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&Face>()))?;
+                reserve_attach_vec(ctx, &mut faces, 1, "NX body faces")?;
                 faces.push(face);
             }
         }
     }
-    Some(faces)
+    Ok(Some(ScopedFaces { faces, _reservation: reservation }))
 }
 
 struct ScopedFaces<'a, 'ctx> {
@@ -6234,13 +6261,76 @@ fn connected_solid_body_exists(
     Ok(shell.faces().iter().all(|face_id| ir.model.faces.iter().any(|face| face.id == *face_id && face.shell == shell.id)))
 }
 
-fn body_surface_ids(ir: &CadIr, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>> {
-    Some(
-        body_faces(ir, body_id)?
-            .into_iter()
-            .map(|face| face.surface.clone())
-            .collect(),
-    )
+struct ScopedSurfaceIds<'ctx> {
+    ids: BTreeSet<SurfaceId>,
+    _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+fn projection_string(
+    ctx: &DecodeContext<'_>,
+    args: std::fmt::Arguments<'_>,
+) -> Result<String, CodecError> {
+    struct Length(usize);
+    impl std::fmt::Write for Length {
+        fn write_str(&mut self, text: &str) -> std::fmt::Result {
+            self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
+            Ok(())
+        }
+    }
+    let mut length = Length(0);
+    std::fmt::write(&mut length, args)
+        .map_err(|_| ctx.refuse_codec_limit("NX feature projection text", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length.0), "NX feature projection text")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length.0), "NX feature projection text")?;
+    let mut text = String::new();
+    text.try_reserve(length.0).map_err(|_| ctx.refuse_codec_limit("NX feature projection text", 0, cadmpeg_core::decode::u64_from_index(length.0)))?;
+    std::fmt::write(&mut text, args)
+        .map_err(|_| CodecError::InvalidInput("NX feature projection text formatting failed".to_string()))?;
+    Ok(text)
+}
+
+fn projection_surface_copy(
+    ctx: &DecodeContext<'_>,
+    surface: &SurfaceId,
+) -> Result<SurfaceId, CodecError> {
+    let bytes = std::mem::size_of::<SurfaceId>()
+        .checked_add(surface.as_str().len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX feature projection surface identity", 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX feature projection surface identity")?;
+    Ok(surface.clone())
+}
+
+impl std::ops::Deref for ScopedSurfaceIds<'_> {
+    type Target = BTreeSet<SurfaceId>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.ids
+    }
+}
+
+fn body_surface_ids<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    ir: &CadIr,
+    body_id: &BodyId,
+) -> Result<Option<ScopedSurfaceIds<'ctx>>, CodecError> {
+    let Some(faces) = body_faces(ctx, ir, body_id)? else {
+        return Ok(None);
+    };
+    let mut ids = BTreeSet::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX body surface identities")?;
+    for face in faces.iter() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(ids.len()), "NX body surface uniqueness")?;
+        if ids.contains(&face.surface) {
+            continue;
+        }
+        let bytes = std::mem::size_of::<SurfaceId>().checked_mul(4)
+            .and_then(|bytes| bytes.checked_add(face.surface.as_str().len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX body surface identity", 0, cadmpeg_core::decode::u64_from_index(face.surface.as_str().len())))?;
+        ctx.charge_collection_items(1, "NX body surface identities")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+        ids.insert(face.surface.clone());
+    }
+    Ok(Some(ScopedSurfaceIds { ids, _reservation: reservation }))
 }
 
 /// Neutral operand family named by an NX rolling-ball blend operation.
@@ -6254,18 +6344,27 @@ enum NxBlendFamily {
 
 /// Project complete owned rolling-ball carriers into their named blend family.
 fn blend_feature_definition(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     outputs: &[BodyId],
     family: NxBlendFamily,
-) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
+) -> Result<Option<(FeatureDefinition, Vec<SurfaceId>)>, CodecError> {
     let [body] = outputs else {
-        return None;
+        return Ok(None);
     };
-    let body_surfaces = body_surface_ids(ir, body)?;
+    let Some(body_surfaces) = body_surface_ids(ctx, ir, body)? else {
+        return Ok(None);
+    };
     let mut surfaces = Vec::new();
-    let mut laws = Vec::new();
-    let mut support_pairs = Vec::new();
+    let mut first_radius = None;
+    let mut constant_radii = true;
+    let mut uniform_radii = true;
+    let mut variable_radii = true;
+    let mut pairs = Vec::new();
+    let mut pairs_reservation = ctx.reserve_scoped(0, "NX blend support pairs")?;
+    let mut complete_pairs = true;
     for procedural in &ir.model.procedural_surfaces {
+        ctx.charge_work(1, "NX blend procedural surface scan")?;
         let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
             continue;
         };
@@ -6280,99 +6379,86 @@ fn blend_feature_definition(
         let cross_section = definition_payload.cross_section();
 
         if *cross_section != BlendCrossSection::Circular {
-            return None;
+            return Ok(None);
         }
-        surfaces.push(owner.clone());
-        laws.push(radius);
-        support_pairs.push(supports);
-    }
-    if laws.is_empty() {
-        return None;
-    }
-    surfaces.sort();
-    let constant_radii = laws
-        .iter()
-        .map(|law| match law {
+        ctx.charge_collection_items(1, "NX blend result surfaces")?;
+        reserve_attach_vec(ctx, &mut surfaces, 1, "NX blend result surfaces")?;
+        surfaces.push(projection_surface_copy(ctx, owner)?);
+        match radius {
             BlendRadiusLaw::Constant { signed_radius } if signed_radius.get() != 0.0 => {
-                Some(signed_radius.get().abs())
-            }
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>();
-    let radius = constant_radii
-        .as_ref()
-        .filter(|radii| {
-            radii
-                .iter()
-                .all(|radius| radius.to_bits() == radii[0].to_bits())
-        })
-        .map_or_else(
-            || {
-                if constant_radii.is_some() {
-                    RadiusSpec::Unresolved {
-                        form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant),
-                    }
-                } else if laws.iter().all(|law| {
-                    matches!(
-                        law,
-                        BlendRadiusLaw::Linear { .. } | BlendRadiusLaw::Law { .. }
-                    )
-                }) {
-                    RadiusSpec::Unresolved {
-                        form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
-                    }
-                } else {
-                    RadiusSpec::Unresolved { form: None }
+                let magnitude = signed_radius.get().abs();
+                if first_radius.is_some_and(|first: f64| first.to_bits() != magnitude.to_bits()) {
+                    uniform_radii = false;
                 }
-            },
-            |radii| match cadmpeg_ir::scalar::PositiveLength::new(radii[0]) {
-                Some(radius) => RadiusSpec::Constant { radius },
-                None => RadiusSpec::Unresolved {
-                    form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant),
-                },
-            },
-        );
-    let face_blend = matches!(family, NxBlendFamily::Face)
-        .then(|| {
-            support_pairs
-                .iter()
-                .map(|supports| {
-                    let [Some(first), Some(second)] = supports else {
-                        return None;
-                    };
-                    (first.surface != second.surface)
-                        .then_some([first.surface.clone(), second.surface.clone()])
-                })
-                .collect::<Option<Vec<_>>>()
-                .and_then(blend_support_bipartition)
-                .and_then(|(first, second)| {
-                    let (first_faces, _) = support_face_projection(
-                        ir,
-                        &first,
-                        format!("{body}:blend-first-support-surfaces"),
-                    );
-                    let (second_faces, _) = support_face_projection(
-                        ir,
-                        &second,
-                        format!("{body}:blend-second-support-surfaces"),
-                    );
-                    match (&first_faces, &second_faces) {
-                        (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
-                            Some(FeatureDefinition::Operation(FeatureOperation::FaceBlend {
-                                operands: cadmpeg_ir::features::FaceBlendOperands::new(
-                                    first_faces,
-                                    second_faces,
-                                )
-                                .ok()?,
-
-                                radius: radius.clone(),
-                            }))
-                        }
-                        _ => None,
-                    }
-                })
-        })
-        .flatten();
+                first_radius.get_or_insert(magnitude);
+                variable_radii = false;
+            }
+            BlendRadiusLaw::Linear { .. } | BlendRadiusLaw::Law { .. } => {
+                constant_radii = false;
+            }
+            _ => {
+                constant_radii = false;
+                variable_radii = false;
+            }
+        }
+        if matches!(family, NxBlendFamily::Face) {
+            if let [Some(first), Some(second)] = supports {
+                if first.surface != second.surface {
+                    let bytes = std::mem::size_of::<[SurfaceId; 2]>()
+                        .checked_add(first.surface.as_str().len())
+                        .and_then(|bytes| bytes.checked_add(second.surface.as_str().len()))
+                        .ok_or_else(|| ctx.refuse_codec_limit("NX blend support pair", 0, 1))?;
+                    ctx.charge_collection_items(1, "NX blend support pairs")?;
+                    pairs_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+                    reserve_attach_vec(ctx, &mut pairs, 1, "NX blend support pairs")?;
+                    pairs.push([first.surface.clone(), second.surface.clone()]);
+                } else {
+                    complete_pairs = false;
+                }
+            } else {
+                complete_pairs = false;
+            }
+        }
+    }
+    if surfaces.is_empty() {
+        return Ok(None);
+    }
+    let sort_work = surfaces.len().checked_mul(usize::try_from(usize::BITS - surfaces.len().leading_zeros()).map_err(|_| ctx.refuse_codec_limit("NX blend result sort", 0, 1))?)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX blend result sort", 0, cadmpeg_core::decode::u64_from_index(surfaces.len())))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(sort_work), "NX blend result sort")?;
+    surfaces.sort();
+    let radius = if constant_radii {
+        if uniform_radii {
+            first_radius.and_then(cadmpeg_ir::scalar::PositiveLength::new)
+                .map_or(RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant) }, |radius| RadiusSpec::Constant { radius })
+        } else {
+            RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant) }
+        }
+    } else if variable_radii {
+        RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) }
+    } else {
+        RadiusSpec::Unresolved { form: None }
+    };
+    let face_blend = if matches!(family, NxBlendFamily::Face) && complete_pairs {
+        if let Some(sides) = blend_support_bipartition(ctx, &pairs)? {
+            let first_native = projection_string(ctx, format_args!("{body}:blend-first-support-surfaces"))?;
+            let second_native = projection_string(ctx, format_args!("{body}:blend-second-support-surfaces"))?;
+            let (first_faces, _) = support_face_projection(ctx, ir, &sides.first, first_native)?;
+            let (second_faces, _) = support_face_projection(ctx, ir, &sides.second, second_native)?;
+            match (&first_faces, &second_faces) {
+                (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
+                    cadmpeg_ir::features::FaceBlendOperands::new(first_faces, second_faces).ok().map(|operands| FeatureDefinition::Operation(FeatureOperation::FaceBlend { operands, radius: radius.clone() }))
+                }
+                _ => None,
+            }
+        } else { None }
+    } else { None };
+    let Some(unresolved_operands) = cadmpeg_ir::features::FaceBlendOperands::new(
+        FaceSelection::Unresolved,
+        FaceSelection::Unresolved,
+    ).ok() else {
+        return Ok(None);
+    };
     let unresolved = match family {
         NxBlendFamily::Edge => FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
@@ -6384,16 +6470,11 @@ fn blend_feature_definition(
             ),
         }),
         NxBlendFamily::Face => FeatureDefinition::Operation(FeatureOperation::FaceBlend {
-            operands: cadmpeg_ir::features::FaceBlendOperands::new(
-                FaceSelection::Unresolved,
-                FaceSelection::Unresolved,
-            )
-            .ok()?,
-
+            operands: unresolved_operands,
             radius,
         }),
     };
-    Some((face_blend.unwrap_or(unresolved), surfaces))
+    Ok(Some((face_blend.unwrap_or(unresolved), surfaces)))
 }
 
 /// Split an unordered rolling-ball support graph into two deterministic face
@@ -6401,69 +6482,103 @@ fn blend_feature_definition(
 /// its lowest surface identity on the first side. The support graph must be
 /// complete bipartite: odd cycles and missing cross-pairs cannot be represented
 /// by one neutral face-blend operation.
-fn blend_support_bipartition(
-    pairs: Vec<[SurfaceId; 2]>,
-) -> Option<(Vec<SurfaceId>, Vec<SurfaceId>)> {
-    let mut adjacent = BTreeMap::<SurfaceId, BTreeSet<SurfaceId>>::new();
+struct ScopedBlendSides<'ctx> {
+    first: Vec<SurfaceId>,
+    second: Vec<SurfaceId>,
+    _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+fn blend_support_bipartition<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    pairs: &[[SurfaceId; 2]],
+) -> Result<Option<ScopedBlendSides<'ctx>>, CodecError> {
+    let mut adjacent = BTreeMap::<&SurfaceId, BTreeSet<&SurfaceId>>::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX blend support graph")?;
     for [first, second] in pairs {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(adjacent.len()), "NX blend support graph lookup")?;
         if first == second {
-            return None;
+            return Ok(None);
         }
-        adjacent
-            .entry(first.clone())
-            .or_default()
-            .insert(second.clone());
-        adjacent.entry(second).or_default().insert(first);
+        for (from, to) in [(first, second), (second, first)] {
+            if !adjacent.contains_key(from) {
+                ctx.charge_collection_items(1, "NX blend support graph nodes")?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&SurfaceId, BTreeSet<&SurfaceId>)>() * 4))?;
+            }
+            let neighbors = adjacent.entry(from).or_default();
+            if !neighbors.contains(to) {
+                ctx.charge_collection_items(1, "NX blend support graph edges")?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&SurfaceId>() * 4))?;
+                neighbors.insert(to);
+            }
+        }
     }
-    let mut sides = BTreeMap::<SurfaceId, bool>::new();
+    let mut sides = BTreeMap::<&SurfaceId, bool>::new();
+    let mut pending = Vec::new();
     for seed in adjacent.keys() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sides.len()), "NX blend support side lookup")?;
         if sides.contains_key(seed) {
             continue;
         }
-        sides.insert(seed.clone(), false);
-        let mut pending = vec![seed.clone()];
+        ctx.charge_collection_items(1, "NX blend support sides")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&SurfaceId, bool)>() * 4))?;
+        sides.insert(*seed, false);
+        ctx.charge_collection_items(1, "NX blend support queue")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&SurfaceId>()))?;
+        reserve_attach_vec(ctx, &mut pending, 1, "NX blend support queue")?;
+        pending.push(*seed);
         while let Some(surface) = pending.pop() {
             let side = sides[&surface];
             for neighbor in &adjacent[&surface] {
+                ctx.charge_work(1, "NX blend support bipartition")?;
                 match sides.get(neighbor) {
-                    Some(neighbor_side) if *neighbor_side == side => return None,
+                    Some(neighbor_side) if *neighbor_side == side => return Ok(None),
                     Some(_) => {}
                     None => {
-                        sides.insert(neighbor.clone(), !side);
-                        pending.push(neighbor.clone());
+                        ctx.charge_collection_items(1, "NX blend support sides")?;
+                        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&SurfaceId, bool)>() * 4))?;
+                        sides.insert(*neighbor, !side);
+                        ctx.charge_collection_items(1, "NX blend support queue")?;
+                        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&SurfaceId>()))?;
+                        reserve_attach_vec(ctx, &mut pending, 1, "NX blend support queue")?;
+                        pending.push(*neighbor);
                     }
                 }
             }
         }
     }
-    let (first, second): (Vec<_>, Vec<_>) = sides
-        .into_iter()
-        .partition(|(_, second_side)| !*second_side);
-    let first = first
-        .into_iter()
-        .map(|(surface, _)| surface)
-        .collect::<Vec<_>>();
-    let second = second
-        .into_iter()
-        .map(|(surface, _)| surface)
-        .collect::<Vec<_>>();
-    if first.iter().any(|surface| {
-        second
-            .iter()
-            .any(|other| !adjacent[surface].contains(other))
-    }) {
-        return None;
+    let mut first = Vec::new();
+    let mut second = Vec::new();
+    for (&surface, &second_side) in &sides {
+        let output = if second_side { &mut second } else { &mut first };
+        let bytes = std::mem::size_of::<SurfaceId>()
+            .checked_add(surface.as_str().len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX blend support output", 0, 1))?;
+        ctx.charge_collection_items(1, "NX blend support output")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+        reserve_attach_vec(ctx, output, 1, "NX blend support output")?;
+        output.push(surface.clone());
     }
-    Some((first, second))
+    for surface in &first {
+        for other in &second {
+            ctx.charge_work(1, "NX blend complete support graph")?;
+            if !adjacent[surface].contains(other) {
+                return Ok(None);
+            }
+        }
+    }
+    Ok(Some(ScopedBlendSides { first, second, _reservation: reservation }))
 }
 
 fn offset_surface_feature_definition(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     outputs: &[BodyId],
-) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
-    let (body, distance, supports) = owned_offset_surface_data(ir, outputs)?;
-    let native = format!("{}:offset-support-surfaces", body.as_str());
-    let (faces, senses) = support_face_projection(ir, &supports, native);
+) -> Result<Option<(FeatureDefinition, Vec<SurfaceId>)>, CodecError> {
+    let Some((body, distance, supports)) = owned_offset_surface_data(ctx, ir, outputs)? else {
+        return Ok(None);
+    };
+    let native = projection_string(ctx, format_args!("{}:offset-support-surfaces", body.as_str()))?;
+    let (faces, senses) = support_face_projection(ctx, ir, &supports, native)?;
     let distance = senses
         .as_deref()
         .and_then(uniform_face_sense)
@@ -6471,46 +6586,75 @@ fn offset_surface_feature_definition(
             Sense::Forward => distance,
             Sense::Reversed => distance.negated(),
         });
-    Some((
+    Ok(Some((
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces,
             distance: distance.map(Length::from_assigned_real),
         }),
         supports,
-    ))
+    )))
 }
 
 fn owned_offset_surface_data<'a>(
-    ir: &CadIr,
+    ctx: &DecodeContext<'_>,
+    ir: &'a CadIr,
     outputs: &'a [BodyId],
-) -> Option<(&'a BodyId, FiniteReal, Vec<SurfaceId>)> {
-    let (body, carriers) = owned_offset_carriers(ir, outputs)?;
-    let distance = carriers[0].1;
-    if carriers
+) -> Result<Option<(&'a BodyId, FiniteReal, Vec<SurfaceId>)>, CodecError> {
+    let Some((body, carriers)) = owned_offset_carriers(ctx, ir, outputs)? else {
+        return Ok(None);
+    };
+    let distance = carriers.values[0].1;
+    if carriers.values
         .iter()
         .any(|(_, candidate)| candidate.get().to_bits() != distance.get().to_bits())
     {
-        return None;
+        return Ok(None);
     }
-    let supports = carriers
-        .into_iter()
-        .map(|(support, _)| support)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-    Some((body, distance, supports))
+    let supports = unique_carrier_supports(ctx, &carriers.values)?;
+    Ok(Some((body, distance, supports)))
 }
 
-fn owned_offset_carriers<'a>(
-    ir: &CadIr,
+struct ScopedOffsetCarriers<'a, 'ctx> {
+    values: Vec<(&'a SurfaceId, FiniteReal)>,
+    _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+fn unique_carrier_supports(
+    ctx: &DecodeContext<'_>,
+    carriers: &[(&SurfaceId, FiniteReal)],
+) -> Result<Vec<SurfaceId>, CodecError> {
+    let mut supports = Vec::new();
+    for &(support, _) in carriers {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(supports.len()), "NX offset support uniqueness")?;
+        if supports.contains(support) {
+            continue;
+        }
+        ctx.charge_collection_items(1, "NX offset support output")?;
+        reserve_attach_vec(ctx, &mut supports, 1, "NX offset support output")?;
+        supports.push(projection_surface_copy(ctx, support)?);
+    }
+    let sort_work = supports.len().checked_mul(usize::try_from(usize::BITS - supports.len().leading_zeros()).map_err(|_| ctx.refuse_codec_limit("NX offset support sort", 0, 1))?)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX offset support sort", 0, cadmpeg_core::decode::u64_from_index(supports.len())))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(sort_work), "NX offset support sort")?;
+    supports.sort();
+    Ok(supports)
+}
+
+fn owned_offset_carriers<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    ir: &'a CadIr,
     outputs: &'a [BodyId],
-) -> Option<(&'a BodyId, Vec<(SurfaceId, FiniteReal)>)> {
+) -> Result<Option<(&'a BodyId, ScopedOffsetCarriers<'a, 'ctx>)>, CodecError> {
     let [body] = outputs else {
-        return None;
+        return Ok(None);
     };
-    let body_surfaces = body_surface_ids(ir, body)?;
+    let Some(body_surfaces) = body_surface_ids(ctx, ir, body)? else {
+        return Ok(None);
+    };
     let mut carriers = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX offset carriers")?;
     for procedural in &ir.model.procedural_surfaces {
+        ctx.charge_work(1, "NX offset procedural surface scan")?;
         let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
             continue;
         };
@@ -6523,18 +6667,24 @@ fn owned_offset_carriers<'a>(
         };
         let support = definition_payload.support();
         let candidate = definition_payload.distance();
-        carriers.push((support.clone(), candidate));
+        ctx.charge_collection_items(1, "NX offset carriers")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&SurfaceId, FiniteReal)>()))?;
+        reserve_attach_vec(ctx, &mut carriers, 1, "NX offset carriers")?;
+        carriers.push((support, candidate));
     }
-    (!carriers.is_empty()).then_some((body, carriers))
+    Ok((!carriers.is_empty()).then_some((body, ScopedOffsetCarriers { values: carriers, _reservation: reservation })))
 }
 
 fn thicken_feature_definition(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     outputs: &[BodyId],
-) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
-    let (body, thickness, supports, direction) = owned_thicken_surface_data(ir, outputs)?;
-    let native = format!("{}:thicken-support-surfaces", body.as_str());
-    let (faces, senses) = support_face_projection(ir, &supports, native);
+) -> Result<Option<(FeatureDefinition, Vec<SurfaceId>)>, CodecError> {
+    let Some((body, thickness, supports, direction)) = owned_thicken_surface_data(ctx, ir, outputs)? else {
+        return Ok(None);
+    };
+    let native = projection_string(ctx, format_args!("{}:thicken-support-surfaces", body.as_str()))?;
+    let (faces, senses) = support_face_projection(ctx, ir, &supports, native)?;
     let side = match direction {
         ThickenDirection::Both => Some(ThickenSide::Both),
         ThickenDirection::Signed(distance) => senses
@@ -6542,14 +6692,14 @@ fn thicken_feature_definition(
             .and_then(uniform_face_sense)
             .map(|sense| thicken_side(distance, sense)),
     };
-    Some((
+    Ok(Some((
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
             thickness: Some(thickness),
             side,
         }),
         supports,
-    ))
+    )))
 }
 
 enum ThickenDirection {
@@ -6558,105 +6708,131 @@ enum ThickenDirection {
 }
 
 fn owned_thicken_surface_data<'a>(
-    ir: &CadIr,
+    ctx: &DecodeContext<'_>,
+    ir: &'a CadIr,
     outputs: &'a [BodyId],
-) -> Option<(&'a BodyId, PositiveLength, Vec<SurfaceId>, ThickenDirection)> {
-    let (body, carriers) = owned_offset_carriers(ir, outputs)?;
-    if ir
+) -> Result<Option<(&'a BodyId, PositiveLength, Vec<SurfaceId>, ThickenDirection)>, CodecError> {
+    let Some((body, carriers)) = owned_offset_carriers(ctx, ir, outputs)? else {
+        return Ok(None);
+    };
+    let Some(output_body) = ir
         .model
         .bodies
         .iter()
-        .find(|candidate| candidate.id == *body)?
-        .kind
-        != BodyKind::Solid
-    {
-        return None;
+        .find(|candidate| candidate.id == *body) else {
+        return Ok(None);
+    };
+    if output_body.kind != BodyKind::Solid {
+        return Ok(None);
     }
-    let distance = carriers[0].1;
-    if carriers
+    let distance = carriers.values[0].1;
+    if carriers.values
         .iter()
         .all(|(_, candidate)| candidate.get().to_bits() == distance.get().to_bits())
     {
         if let Ok(distance) = NonZeroLength::try_from(Length::from_assigned_real(distance)) {
-            let supports = carriers
-                .into_iter()
-                .map(|(support, _)| support)
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .collect();
-            return Some((
+            let supports = unique_carrier_supports(ctx, &carriers.values)?;
+            return Ok(Some((
                 body,
                 distance.abs(),
                 supports,
                 ThickenDirection::Signed(distance),
-            ));
+            )));
         }
-        return None;
+        return Ok(None);
     }
 
     let mut magnitude = None::<PositiveLength>;
     let mut positive = BTreeSet::new();
     let mut negative = BTreeSet::new();
-    for (support, distance) in carriers {
-        let distance = NonZeroLength::try_from(Length::from_assigned_real(distance)).ok()?;
+    let mut support_reservation = ctx.reserve_scoped(0, "NX thicken signed supports")?;
+    for &(support, distance) in &carriers.values {
+        let Ok(distance) = NonZeroLength::try_from(Length::from_assigned_real(distance)) else {
+            return Ok(None);
+        };
         let candidate = distance.abs();
         if magnitude.is_some_and(|magnitude| magnitude.get().to_bits() != candidate.get().to_bits())
         {
-            return None;
+            return Ok(None);
         }
         magnitude = Some(candidate);
         if distance.get().is_sign_positive() {
+            if !positive.contains(support) {
+                ctx.charge_collection_items(1, "NX thicken positive supports")?;
+                support_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&SurfaceId>() * 4))?;
+            }
             positive.insert(support);
         } else {
+            if !negative.contains(support) {
+                ctx.charge_collection_items(1, "NX thicken negative supports")?;
+                support_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&SurfaceId>() * 4))?;
+            }
             negative.insert(support);
         }
     }
     if positive.is_empty() || positive != negative {
-        return None;
+        return Ok(None);
     }
-    let thickness = PositiveLength::new(magnitude?.get() * 2.0)?;
-    Some((
-        body,
-        thickness,
-        positive.into_iter().collect(),
-        ThickenDirection::Both,
-    ))
+    let Some(magnitude) = magnitude else {
+        return Ok(None);
+    };
+    let Some(thickness) = PositiveLength::new(magnitude.get() * 2.0) else {
+        return Ok(None);
+    };
+    let mut supports = Vec::new();
+    for support in positive {
+        ctx.charge_collection_items(1, "NX thicken support output")?;
+        reserve_attach_vec(ctx, &mut supports, 1, "NX thicken support output")?;
+        supports.push(projection_surface_copy(ctx, support)?);
+    }
+    Ok(Some((body, thickness, supports, ThickenDirection::Both)))
 }
 
 fn support_face_projection(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     supports: &[SurfaceId],
     native: String,
-) -> (FaceSelection, Option<Vec<Sense>>) {
-    let faces = supports
-        .iter()
-        .map(|support| {
-            let matches = ir
-                .model
-                .faces
-                .iter()
-                .filter(|face| face.surface == *support)
-                .collect::<Vec<_>>();
-            let [face] = matches.as_slice() else {
-                return None;
-            };
-            Some((face.id.clone(), face.sense))
-        })
-        .collect::<Option<Vec<_>>>();
-    match faces {
-        Some(faces)
-            if faces
-                .iter()
-                .map(|(face, _)| face)
-                .collect::<BTreeSet<_>>()
-                .len()
-                == faces.len() =>
-        {
-            let (faces, senses): (Vec<_>, Vec<_>) = faces.into_iter().unzip();
-            (FaceSelection::Resolved { faces, native }, Some(senses))
+) -> Result<(FaceSelection, Option<Vec<Sense>>), CodecError> {
+    let mut selected = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX support face projection")?;
+    for support in supports {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.faces.len()), "NX support face lookup")?;
+        let mut matches = ir.model.faces.iter().filter(|face| face.surface == *support);
+        let Some(face) = matches.next() else {
+            return Ok((FaceSelection::Native(native), None));
+        };
+        if matches.next().is_some() {
+            return Ok((FaceSelection::Native(native), None));
         }
-        _ => (FaceSelection::Native(native), None),
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(selected.len()), "NX support face uniqueness")?;
+        if selected.iter().any(|(id, _)| *id == face.id) {
+            return Ok((FaceSelection::Native(native), None));
+        }
+        let bytes = std::mem::size_of_val(&face.id)
+            .checked_add(std::mem::size_of::<Sense>())
+            .and_then(|bytes| bytes.checked_add(face.id.as_str().len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX support face projection", 0, 1))?;
+        ctx.charge_collection_items(1, "NX support face projection")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+        reserve_attach_vec(ctx, &mut selected, 1, "NX support face projection")?;
+        selected.push((face.id.clone(), face.sense));
     }
+    let mut faces = Vec::new();
+    let mut senses = Vec::new();
+    for (face, sense) in selected {
+        ctx.charge_collection_items(2, "NX resolved support faces")?;
+        let bytes = std::mem::size_of_val(&face)
+            .checked_add(std::mem::size_of::<Sense>())
+            .and_then(|bytes| bytes.checked_add(face.as_str().len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX resolved support faces", 0, 1))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX resolved support faces")?;
+        reserve_attach_vec(ctx, &mut faces, 1, "NX resolved support faces")?;
+        reserve_attach_vec(ctx, &mut senses, 1, "NX resolved support senses")?;
+        faces.push(face);
+        senses.push(sense);
+    }
+    Ok((FaceSelection::Resolved { faces, native }, Some(senses)))
 }
 
 fn thicken_side(distance: NonZeroLength, sense: Sense) -> ThickenSide {
