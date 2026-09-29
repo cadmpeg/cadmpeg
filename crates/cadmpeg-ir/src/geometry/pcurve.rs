@@ -18,6 +18,8 @@ use cadmpeg_core::CodecError;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+mod scaling_admitted;
+
 fn finite_axis_is_nonzero(axis: FinitePoint2) -> bool {
     let axis = axis.get();
     axis.u.hypot(axis.v) > 0.0

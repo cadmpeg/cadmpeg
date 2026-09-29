@@ -590,14 +590,14 @@ impl SourceUnitCarriers {
         scales: Option<[f64; 2]>,
     ) -> Result<(), CodecError> {
         if let Some(scales) = scales {
-            if pcurve.geometry.try_scale_coordinates(scales).is_err() {
-                return Err(CodecError::NotImplemented(ctx.format_retained(
-                    format_args!(
-                        "Creo pcurve cannot be represented after unit normalization with scales {scales:?}"
-                    ),
+            pcurve.geometry = pcurve.geometry.scaled_coordinates_owned_admitted(ctx, scales)?
+                .map_err(|_refusal| match ctx.format_retained(
+                    format_args!("Creo pcurve cannot be represented after unit normalization with scales {scales:?}"),
                     "creo normalized pcurve refusal text",
-                )?));
-            }
+                ) {
+                    Ok(message) => CodecError::NotImplemented(message),
+                    Err(error) => error,
+                })?;
         }
         ctx.try_reserve_items(&mut ir.model.pcurves, 1, "creo model pcurves")?;
         ir.model.pcurves.push(pcurve);
