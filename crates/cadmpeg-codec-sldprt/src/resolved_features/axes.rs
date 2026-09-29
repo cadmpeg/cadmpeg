@@ -1301,7 +1301,7 @@ fn profile_roster_construction_axis(
         }
         (None, None) => {
             if let Some(endpoints) =
-                profile_roster_implicit_axis_endpoints(lane, profile_native, &markers)
+                profile_roster_implicit_axis_endpoints(ctx, lane, profile_native, &markers)?
             {
                 let (Some(start), Some(end)) =
                     (endpoints[0].coordinates_m, endpoints[1].coordinates_m)
@@ -1310,9 +1310,12 @@ fn profile_roster_construction_axis(
                 };
                 Some([start.get(), end.get()])
             } else {
-                profile_roster_origin_axis_endpoints(lane, profile_native, &markers).or_else(|| {
-                    profile_roster_principal_axis_endpoints(lane, profile_native, &markers)
-                })
+                match profile_roster_origin_axis_endpoints(ctx, lane, profile_native, &markers)? {
+                    Some(endpoints) => Some(endpoints),
+                    None => profile_roster_principal_axis_endpoints(
+                        ctx, lane, profile_native, &markers,
+                    )?,
+                }
             }
         }
         _ => return Ok(None),
@@ -1538,20 +1541,43 @@ fn common_generated_surface_axis(
     })
 }
 
-fn profile_roster_origin_axis_endpoints(
+fn profile_curve_endpoint_ids<'a>(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     profile_native: &str,
-    markers: &[&SketchInputEntity],
-) -> Option<[[f64; 2]; 2]> {
-    let curve_endpoints = markers
+    markers: &[&'a SketchInputEntity],
+    indexed_only: bool,
+) -> Result<HashSet<&'a str>, CodecError> {
+    let mut ids = HashSet::new();
+    for curve in markers
         .iter()
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
-        .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
-        .filter(|endpoint| endpoint.object_index().is_some())
-        .map(super::super::records::SketchInputEntity::id)
-        .collect::<HashSet<_>>();
-    let unreferenced_points = markers
+    {
+        ctx.charge_work(1, "scan SLDPRT profile curve endpoints")?;
+        for endpoint in roster_curve_endpoint_markers(&lane.native_payload, curve, markers) {
+            if (indexed_only && endpoint.object_index().is_none()) || ids.contains(endpoint.id()) {
+                continue;
+            }
+            let operation = "index SLDPRT profile curve endpoints";
+            ctx.charge_collection_items(1, operation)?;
+            ids.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+            ids.insert(endpoint.id());
+        }
+    }
+    Ok(ids)
+}
+
+fn profile_roster_origin_axis_endpoints(
+    ctx: &DecodeContext<'_>,
+    lane: &FeatureInputLane,
+    profile_native: &str,
+    markers: &[&SketchInputEntity],
+) -> Result<Option<[[f64; 2]; 2]>, CodecError> {
+    let curve_endpoints = profile_curve_endpoint_ids(ctx, lane, profile_native, markers, true)?;
+    let mut unreferenced_points = markers
         .iter()
         .copied()
         .filter(|marker| {
@@ -1562,18 +1588,20 @@ fn profile_roster_origin_axis_endpoints(
                 )
                 && marker.coordinates_m.is_some()
                 && !curve_endpoints.contains(marker.id())
-        })
-        .collect::<Vec<_>>();
-    let [origin] = unreferenced_points.as_slice() else {
-        return None;
+        });
+    let (Some(origin), None) = (unreferenced_points.next(), unreferenced_points.next()) else {
+        return Ok(None);
     };
-    let [origin_u, origin_v] = origin.coordinates_m?.get();
+    let Some(coordinates) = origin.coordinates_m else {
+        return Ok(None);
+    };
+    let [origin_u, origin_v] = coordinates.get();
     if origin_u.abs() > EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9
         || origin_v.abs() > EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9
     {
-        return None;
+        return Ok(None);
     }
-    let mut candidates = markers
+    let candidates = markers
         .iter()
         .copied()
         .filter(|marker| marker.object_index().is_some() && curve_endpoints.contains(marker.id()))
@@ -1582,15 +1610,19 @@ fn profile_roster_origin_axis_endpoints(
             let endpoints = [[origin_u, origin_v], end];
             bounded_profile_axis_coordinates(profile_native, markers, &curve_endpoints, endpoints)
                 .then_some(endpoints)
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| {
+        });
+    let mut candidates_sorted = Vec::new();
+    for candidate in candidates {
+        ctx.reserve_collection_vec(&mut candidates_sorted, 1, "collect SLDPRT origin axis candidates")?;
+        candidates_sorted.push(candidate);
+    }
+    candidates_sorted.sort_by(|left, right| {
         left[1][0]
             .total_cmp(&right[1][0])
             .then(left[1][1].total_cmp(&right[1][1]))
     });
     let mut lines = Vec::<[[f64; 2]; 2]>::new();
-    for candidate in candidates {
+    for candidate in candidates_sorted {
         let [u, v] = [candidate[1][0] - origin_u, candidate[1][1] - origin_v];
         if lines.iter().any(|line| {
             let [line_u, line_v] = [line[1][0] - origin_u, line[1][1] - origin_v];
@@ -1601,6 +1633,7 @@ fn profile_roster_origin_axis_endpoints(
         }) {
             continue;
         }
+        ctx.reserve_collection_vec(&mut lines, 1, "collect SLDPRT distinct origin axis lines")?;
         lines.push(candidate);
     }
     let incidence = |line: &[[f64; 2]; 2]| {
@@ -1625,30 +1658,23 @@ fn profile_roster_origin_axis_endpoints(
             })
             .count()
     };
-    let maximum_incidence = lines.iter().map(incidence).max()?;
-    let selected = lines
-        .iter()
-        .filter(|line| incidence(line) == maximum_incidence)
-        .collect::<Vec<_>>();
-    let [axis] = selected.as_slice() else {
-        return None;
+    let Some(maximum_incidence) = lines.iter().map(incidence).max() else {
+        return Ok(None);
     };
-    Some(**axis)
+    let mut selected = lines.iter().filter(|line| incidence(line) == maximum_incidence);
+    let (Some(axis), None) = (selected.next(), selected.next()) else {
+        return Ok(None);
+    };
+    Ok(Some(*axis))
 }
 
 fn profile_roster_principal_axis_endpoints(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     profile_native: &str,
     markers: &[&SketchInputEntity],
-) -> Option<[[f64; 2]; 2]> {
-    let curve_endpoints = markers
-        .iter()
-        .copied()
-        .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
-        .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
-        .filter(|endpoint| endpoint.object_index().is_some())
-        .map(super::super::records::SketchInputEntity::id)
-        .collect::<HashSet<_>>();
+) -> Result<Option<[[f64; 2]; 2]>, CodecError> {
+    let curve_endpoints = profile_curve_endpoint_ids(ctx, lane, profile_native, markers, true)?;
     let incidence = |axis: &[[f64; 2]; 2]| {
         let [axis_u, axis_v] = axis[1];
         markers
@@ -1673,25 +1699,28 @@ fn profile_roster_principal_axis_endpoints(
         })
         .map(|axis| (incidence(&axis), axis))
         .collect::<Vec<_>>();
-    let maximum_incidence = candidates.iter().map(|(count, _)| *count).max()?;
+    let Some(maximum_incidence) = candidates.iter().map(|(count, _)| *count).max() else {
+        return Ok(None);
+    };
     if maximum_incidence < 2 {
-        return None;
+        return Ok(None);
     }
     let selected = candidates
         .iter()
         .filter(|(count, _)| *count == maximum_incidence)
         .collect::<Vec<_>>();
     let [(_, axis)] = selected.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    Some(*axis)
+    Ok(Some(*axis))
 }
 
 fn profile_roster_implicit_axis_endpoints<'a>(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     profile_native: &str,
     markers: &[&'a SketchInputEntity],
-) -> Option<[&'a SketchInputEntity; 2]> {
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
     let curve_candidates = markers.iter().copied().filter(|marker| {
         let Ok(offset) = usize::try_from(marker.offset()) else {
             return false;
@@ -1711,15 +1740,9 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             && compact_bounded_curve_tangent(&lane.native_payload, offset).is_some();
         current_code_two || detailed_indexed_curve
     });
-    let curve_candidates = curve_candidates.collect::<Vec<_>>();
-    let curve_endpoints = markers
-        .iter()
-        .copied()
-        .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
-        .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
-        .map(super::super::records::SketchInputEntity::id)
-        .collect::<HashSet<_>>();
-    let unreferenced_points = markers
+    let curve_candidates = curve_candidates.take(2).collect::<Vec<_>>();
+    let curve_endpoints = profile_curve_endpoint_ids(ctx, lane, profile_native, markers, false)?;
+    let candidates = markers
         .iter()
         .copied()
         .filter(|marker| {
@@ -1730,12 +1753,16 @@ fn profile_roster_implicit_axis_endpoints<'a>(
                 )
                 && marker.coordinates_m.is_some()
                 && !curve_endpoints.contains(marker.id())
-        })
-        .collect::<Vec<_>>();
+        });
+    let mut unreferenced_points = Vec::new();
+    for marker in candidates {
+        ctx.reserve_collection_vec(&mut unreferenced_points, 1, "collect SLDPRT unreferenced profile points")?;
+        unreferenced_points.push(marker);
+    }
     if let [start, end] = unreferenced_points.as_slice() {
         let endpoints = [*start, *end];
         if bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints) {
-            return Some(endpoints);
+            return Ok(Some(endpoints));
         }
     }
     let selected_endpoints = unreferenced_points
@@ -1746,19 +1773,24 @@ fn profile_roster_implicit_axis_endpoints<'a>(
                 lane.native_payload.get(offset + 76..offset + 80) == Some(&1u32.to_le_bytes())
             })
         })
+        .take(3)
         .collect::<Vec<_>>();
     if let [start, end] = selected_endpoints.as_slice() {
         let endpoints = [*start, *end];
         if bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints) {
-            return Some(endpoints);
+            return Ok(Some(endpoints));
         }
     }
     if let [end] = selected_endpoints.as_slice() {
-        let mut owned = markers
+        let owned_markers = markers
             .iter()
             .copied()
-            .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
-            .collect::<Vec<_>>();
+            .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native));
+        let mut owned = Vec::new();
+        for marker in owned_markers {
+            ctx.reserve_collection_vec(&mut owned, 1, "collect SLDPRT owned profile markers")?;
+            owned.push(marker);
+        }
         owned.sort_unstable_by_key(|marker| marker.offset());
         if let Some(start) = owned
             .windows(2)
@@ -1774,11 +1806,11 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             let endpoints = [start, *end];
             if bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints)
             {
-                return Some(endpoints);
+                return Ok(Some(endpoints));
             }
         }
     }
-    let mut boundary_relations = markers
+    let boundary_candidates = markers
         .iter()
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
@@ -1796,26 +1828,30 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             let endpoints = [*start, *end];
             bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints)
                 .then_some(endpoints)
-        })
-        .collect::<Vec<_>>();
+        });
+    let mut boundary_relations = Vec::new();
+    for endpoints in boundary_candidates {
+        ctx.reserve_collection_vec(&mut boundary_relations, 1, "collect SLDPRT profile boundary relations")?;
+        boundary_relations.push(endpoints);
+    }
     boundary_relations
         .sort_unstable_by_key(|endpoints| [endpoints[0].offset(), endpoints[1].offset()]);
     boundary_relations.dedup_by_key(|endpoints| [endpoints[0].id(), endpoints[1].id()]);
     match boundary_relations.as_slice() {
-        [endpoints] => return Some(*endpoints),
+        [endpoints] => return Ok(Some(*endpoints)),
         [] => {}
-        _ => return None,
+        _ => return Ok(None),
     }
     let [candidate] = curve_candidates.as_slice() else {
-        return None;
+        return Ok(None);
     };
     let endpoints = roster_curve_endpoint_markers(&lane.native_payload, candidate, markers);
     let [start, end] = endpoints.as_slice() else {
-        return None;
+        return Ok(None);
     };
     let endpoints = [*start, *end];
-    bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints)
-        .then_some(endpoints)
+    Ok(bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints)
+        .then_some(endpoints))
 }
 
 fn bounded_profile_axis_endpoints(

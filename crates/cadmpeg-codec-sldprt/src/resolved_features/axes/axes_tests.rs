@@ -1283,13 +1283,21 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
         sketch_entities: entities,
     };
     let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload, &arena, &policy,
+    )
+    .expect("profile axis input fits root policy");
 
     assert_eq!(
-        profile_roster_origin_axis_endpoints(&lane, "profile-native", &markers),
+        profile_roster_origin_axis_endpoints(&ctx, &lane, "profile-native", &markers)
+            .expect("origin axis scan fits service policy"),
         Some([[0.0, 0.0], [0.0, 0.01]])
     );
     assert_eq!(
-        profile_roster_principal_axis_endpoints(&lane, "profile-native", &markers),
+        profile_roster_principal_axis_endpoints(&ctx, &lane, "profile-native", &markers)
+            .expect("principal axis scan fits service policy"),
         Some([[0.0, 0.0], [0.0, 1.0]])
     );
 }
