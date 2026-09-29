@@ -322,6 +322,14 @@ impl ReferenceSignature {
             })
             .collect()
     }
+
+    /// Instruction and token counts without materializing the program.
+    pub(crate) fn instruction_and_token_counts(&self) -> (usize, usize) {
+        let qualifier_count = self.tokens.iter()
+            .filter(|token| matches!(token, ReferenceSignatureToken::Qualifier(_)))
+            .count();
+        (self.tokens.len(), self.tokens.len() + qualifier_count)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2411,6 +2419,23 @@ mod tests {
         ] {
             assert_eq!(super::reference_signature_program(malformed, 0), None);
         }
+    }
+
+    #[test]
+    fn reference_signature_counts_without_program_copy() {
+        let program = super::reference_signature_program("2(E#A(E,3)-0(T))", 12)
+            .expect("complete descriptor program");
+        let signature = super::ReferenceSignature {
+            references: super::ConsecutiveReferences::new(207).expect("consecutive"),
+            prefix: super::ReferenceSignaturePrefix::Atom2,
+            tokens: program.iter().cloned().map(super::ReferenceSignatureToken::from).collect(),
+            signature_offset: 12,
+            second_reference_offset: 0,
+        };
+        let qualifier_count = program.iter().filter(|instruction| matches!(instruction,
+            super::ReferenceSignatureInstruction::Qualifier { .. })).count();
+        assert_eq!(signature.instruction_and_token_counts(),
+            (program.len(), program.len() + qualifier_count));
     }
 
     #[test]
