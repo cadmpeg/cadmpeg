@@ -186,7 +186,10 @@ pub(crate) enum PointHeaderMode {
 
 impl From<PointHeaderMode> for u8 {
     fn from(mode: PointHeaderMode) -> Self {
-        mode as Self
+        match mode {
+            PointHeaderMode::Form02 => 0x02,
+            PointHeaderMode::Form03 => 0x03,
+        }
     }
 }
 

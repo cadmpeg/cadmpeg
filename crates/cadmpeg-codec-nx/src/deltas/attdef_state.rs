@@ -67,7 +67,7 @@ impl AttdefSlots {
         if active_count > slot_count {
             return Err("active_count: exceeds slot_count");
         }
-        let active_len = active_count as usize;
+        let active_len = cadmpeg_core::decode::index_from_u32(active_count);
         if references[active_len..]
             .iter()
             .any(|reference| *reference != 1)
@@ -94,10 +94,10 @@ impl AttdefSlots {
         references.remove(0);
         let slot_count =
             u32::try_from(references.len()).map_err(|_| "references: too many slots")?;
-        let active_count = references
+        let active_count = u32::try_from(references
             .iter()
             .take_while(|reference| **reference != 1)
-            .count() as u32;
+            .count()).map_err(|_| "references: too many slots")?;
         Self::new(slot_count, active_count, references)
     }
     fn active_count(&self) -> u32 {

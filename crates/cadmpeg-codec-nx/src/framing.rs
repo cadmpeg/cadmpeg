@@ -148,7 +148,7 @@ pub(crate) fn read_xmt(stream: &[u8], at: usize) -> Option<(u32, usize)> {
     view.seek(at)?;
     let first = view.i16_be()?;
     if first >= 0 {
-        return Some((first as u32, 0));
+        return Some((u32::try_from(first).ok()?, 0));
     }
     let remainder = first.unsigned_abs();
     let quotient = view.u16_be()?;

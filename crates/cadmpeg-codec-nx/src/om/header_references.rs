@@ -19,7 +19,12 @@ pub(crate) enum HeaderSlot {
 impl HeaderSlot {
     pub(crate) const ALL: [Self; 4] = [Self::Zero, Self::One, Self::Two, Self::Three];
     pub(crate) fn number(self) -> u8 {
-        self as u8
+        match self {
+            HeaderSlot::Zero => 0,
+            HeaderSlot::One => 1,
+            HeaderSlot::Two => 2,
+            HeaderSlot::Three => 3,
+        }
     }
     pub(crate) fn index(self) -> usize {
         usize::from(self.number())
