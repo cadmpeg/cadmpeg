@@ -103,7 +103,7 @@ fn project_parameters_preserves_composite_txd_text_without_hiding_bad_equations(
     );
     assert_eq!(by_name["D1"].value, None);
     assert_eq!(
-        parameters_with_unevaluable_expressions(&parameters, &HashMap::new(), &HashSet::new(), &[],),
+        parameters_with_unevaluable_expressions(&cadmpeg_test_support::service_decode_context(), &parameters, &HashMap::new(), &HashSet::new(), &[],).unwrap(),
         1
     );
 }
@@ -141,7 +141,7 @@ fn layered_parameter_aliases_match_materialized_precedence() {
         },
     ];
     let aliases =
-        ParameterAliases::new(&parameters, &HashMap::new(), &HashSet::from([global_owner]));
+        ParameterAliases::new(&cadmpeg_test_support::service_decode_context(), &parameters, &HashMap::new(), &HashSet::from([global_owner])).unwrap();
 
     for owner in [
         Some(local_owner),

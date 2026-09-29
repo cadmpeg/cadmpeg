@@ -26,7 +26,7 @@ fn retained_refusal_at(
     options: &mut DecodeOptions,
     operation: &str,
 ) -> cadmpeg_ir::DecodeFailure {
-    for _ in 0..256 {
+    for _ in 0..4096 {
         let refused = SldprtCodec
             .decode(&mut Cursor::new(source), options)
             .expect_err("fixture must refuse retained bytes");
@@ -1289,5 +1289,89 @@ fn metadata_parameter_ordering_refuses_work_limit() {
         &native_definition_source(), options, "order SLDPRT parameter dependencies",
     );
     assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(refusal.additional, 1);
+}
+
+#[test]
+fn metadata_parameter_aliases_refuse_collection_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = collection_refusal_with_options(
+        &native_definition_source(), options, "index SLDPRT parameter aliases",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(refusal.additional, 1);
+}
+
+#[test]
+fn metadata_parameter_aliases_refuse_retained_limit() {
+    let mut options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&native_definition_source(), &mut options, "retain SLDPRT parameter alias");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT parameter alias"
+    ));
+}
+
+#[test]
+fn metadata_parameter_aliases_refuse_work_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = work_refusal_with_options(
+        &native_definition_source(), options, "scan SLDPRT parameter aliases",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(refusal.additional, 1);
+}
+
+#[test]
+fn metadata_parameter_value_states_refuse_collection_limit() {
+    let options = DecodeOptions::default();
+    let refusal = collection_refusal_with_options(
+        &native_definition_source(), options, "collect SLDPRT parameter value states",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(refusal.additional, 1);
+}
+
+#[test]
+fn metadata_parameter_value_states_refuse_work_limit() {
+    let options = DecodeOptions::default();
+    let refusal = work_refusal_with_options(
+        &native_definition_source(), options, "collect SLDPRT parameter value state",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(refusal.additional, 1);
+}
+
+#[test]
+fn metadata_parameter_value_states_refuse_retained_limit() {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43, "Contents/Keywords",
+        br#"<Keywords><Feature Name="Custom" Type="Custom" id="10"><Dimension Name="Note">plain text</Dimension></Feature></Keywords>"#,
+    ));
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT parameter value text");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT parameter value text"
+    ));
+}
+
+#[test]
+fn metadata_parameter_dependencies_refuse_collection_limit() {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43, "Contents/Keywords",
+        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="10"><Dimension Name="A">1</Dimension><Dimension Name="B">A + 1</Dimension></Feature></Keywords>"#,
+    ));
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = collection_refusal_with_options(
+        &source, options, "collect SLDPRT parameter dependencies",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
     assert_eq!(refusal.additional, 1);
 }

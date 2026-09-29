@@ -106,7 +106,7 @@ pub(super) fn neutral_feature_id_charged(
     FeatureId::mint(id).map_err(CodecError::malformed)
 }
 
-fn copy_projected_feature_id(
+pub(super) fn copy_projected_feature_id(
     ctx: &DecodeContext<'_>,
     id: &FeatureId,
 ) -> Result<FeatureId, CodecError> {
