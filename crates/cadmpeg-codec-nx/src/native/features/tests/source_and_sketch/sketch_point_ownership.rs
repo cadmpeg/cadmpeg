@@ -226,8 +226,8 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
             "nx:om-data-blocks-2:block#11",
         ],
     );
-    let uses =
-        feature_sketch_preceding_named_point_uses(&references, std::slice::from_ref(&preceding));
+    let uses = crate::test_support::with_decode_context(|ctx|
+        feature_sketch_preceding_named_point_uses(ctx, &references, std::slice::from_ref(&preceding))).unwrap();
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].first_sketch_reference, references[0].id);
     assert_eq!(uses[0].named_point, preceding.id);
@@ -237,10 +237,10 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
         "nx:offset-store:named-point#2-11",
         &["nx:om-data-blocks-2:block#11"],
     );
-    assert!(feature_sketch_preceding_named_point_uses(
+    assert!(crate::test_support::with_decode_context(|ctx| feature_sketch_preceding_named_point_uses(ctx,
         &references,
         &[preceding.clone(), ambiguous]
-    )
+    )).unwrap()
     .is_empty());
     let gap = point(
         "nx:offset-store:named-point#2-9",
@@ -250,22 +250,22 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
         "nx:offset-store:named-point#3-11",
         &["nx:om-data-blocks-3:block#11"],
     );
-    assert!(feature_sketch_preceding_named_point_uses(&references, &[gap, other_store]).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| feature_sketch_preceding_named_point_uses(ctx, &references, &[gap, other_store])).unwrap().is_empty());
 
     let unresolved = [references[0].clone(), reference(1, 2, None)];
-    assert!(feature_sketch_preceding_named_point_uses(
+    assert!(crate::test_support::with_decode_context(|ctx| feature_sketch_preceding_named_point_uses(ctx,
         &unresolved,
         std::slice::from_ref(&preceding)
-    )
+    )).unwrap()
     .is_empty());
     let noncontiguous = [
         references[0].clone(),
         reference(2, 3, Some("nx:om-data-blocks-2:block#13")),
     ];
-    assert!(feature_sketch_preceding_named_point_uses(
+    assert!(crate::test_support::with_decode_context(|ctx| feature_sketch_preceding_named_point_uses(ctx,
         &noncontiguous,
         std::slice::from_ref(&preceding),
-    )
+    )).unwrap()
     .is_empty());
     let mut bad_terminal = serde_json::to_value(&references[1]).unwrap();
     bad_terminal["terminal"] = serde_json::json!(false);
