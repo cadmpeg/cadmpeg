@@ -452,7 +452,7 @@ pub(in super::super) fn revolved_nurbs_surface(
     let mut v_knots = Vec::new();
     ctx.try_reserve_items(&mut v_knots, angular_knots.len(), "creo revolved NURBS v knots")?;
     v_knots.extend(angular_knots);
-    match NurbsSurface::from_lanes(
+    match NurbsSurface::from_lanes_admitted(ctx,
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             directrix.degree(),
             u_knots,
@@ -468,7 +468,7 @@ pub(in super::super) fn revolved_nurbs_surface(
             Some(weights),
         ),
         false,
-    ) {
+    )? {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
             refusal.note_checked(ctx,

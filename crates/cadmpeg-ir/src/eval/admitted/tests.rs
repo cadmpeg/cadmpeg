@@ -119,3 +119,36 @@ fn admitted_curve_point_refuses_recursive_frame() {
         Err(CodecError::ResourceLimit(resource)) if resource.dimension == ResourceDimension::RecursionDepth
             && resource.operation == "geometry evaluation nesting"));
 }
+
+#[test]
+fn reusable_nurbs_evaluator_admits_once_and_matches_point_evaluation() {
+    let curve = curve();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(matches!(super::NurbsPointEvaluator::new(&ctx, &curve),
+        Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR B-spline basis"));
+    let arena = DecodeArena::new();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut evaluator = super::NurbsPointEvaluator::new(&ctx, &curve).expect("exact scratch cap");
+    for index in 0..10_000 {
+        let parameter = f64::from(index % 101) / 100.0;
+        assert_eq!(evaluator.point(&ctx, parameter).expect("reused storage"), crate::eval::nurbs_curve_point_at(&curve, parameter));
+    }
+}
+
+#[test]
+fn reusable_nurbs_evaluator_refuses_work_and_depth() {
+    let curve = curve();
+    for (work, depth, operation) in [(8, 128, "IR B-spline basis work"), (u64::MAX, 0, "geometry evaluation nesting")] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work;
+        policy.limits.max_recursion_depth = depth;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut evaluator = super::NurbsPointEvaluator::new(&ctx, &curve).expect("scratch storage");
+        assert!(matches!(evaluator.point(&ctx, 0.5), Err(CodecError::ResourceLimit(resource)) if resource.operation == operation));
+    }
+}

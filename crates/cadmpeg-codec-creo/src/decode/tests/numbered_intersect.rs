@@ -1505,6 +1505,16 @@ fn tabulated_directrix_knots_refuse_collection_limit() {
 }
 
 #[test]
+fn tabulated_directrix_constructor_refuses_typed_poles() {
+    assert!(matches!(tabulated_directrix_limit_error(15), cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "IR NURBS admitted poles"));
+    let (replay, parameters) = tabulated_directrix_limit_fixture();
+    assert!(crate::decode::with_test_decode_ctx(|ctx| checked_tabulated_cylinder_directrix(
+        ctx, &replay, &parameters, None, &mut crate::lane_refusal::LaneRefusals::new()))
+        .expect("service directrix constructor").is_some());
+}
+
+#[test]
 fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     let mut replay = crate::surface::TabulatedCylinderCurveReplay {
         body: Vec::new(),

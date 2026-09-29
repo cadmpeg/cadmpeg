@@ -910,8 +910,7 @@ const NURBS_AREA_GAUSS_WEIGHTS: [f64; 8] = [
     0.101_228_536_290_376_3,
 ];
 
-struct NurbsProfileSpan<'a> {
-    nurbs: &'a NurbsCurve,
+struct NurbsProfileSpan {
     start: f64,
     end: f64,
     start_point: [f64; 2],
@@ -920,18 +919,20 @@ struct NurbsProfileSpan<'a> {
     depth: usize,
 }
 
-fn nurbs_profile_point(ctx: &cadmpeg_core::decode::DecodeContext<'_>, nurbs: &NurbsCurve, parameter: f64) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+fn nurbs_profile_point(ctx: &cadmpeg_core::decode::DecodeContext<'_>, evaluator: &mut cadmpeg_ir::eval::admitted::NurbsPointEvaluator<'_>, nurbs: &NurbsCurve, parameter: f64) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
     let parameter = require_some!(cadmpeg_ir::eval::map_nurbs_curve_parameter(
         nurbs,
         require_some!(cadmpeg_ir::scalar::FiniteReal::new(parameter)),
     ));
-    let point = require_some!(cadmpeg_ir::eval::admitted::nurbs_curve_point_at(ctx, nurbs, parameter.get())?.ok());
+    let point = require_some!(evaluator.point(ctx, parameter.get())?.ok());
     Ok(Some([point.x, point.y]))
 }
 
 fn append_nurbs_profile_span(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    span: &NurbsProfileSpan<'_>,
+    evaluator: &mut cadmpeg_ir::eval::admitted::NurbsPointEvaluator<'_>,
+    nurbs: &NurbsCurve,
+    span: &NurbsProfileSpan,
     points: &mut Vec<[f64; 2]>,
 ) -> Result<Option<()>, cadmpeg_core::CodecError> {
     const MAX_DEPTH: usize = 24;
@@ -953,9 +954,9 @@ fn append_nurbs_profile_span(
     let first_quarter = span.start + (span.end - span.start) * 0.25;
     let third_quarter = span.start + (span.end - span.start) * 0.75;
     let (Some(middle_point), Some(first_quarter_point), Some(third_quarter_point)) = (
-        nurbs_profile_point(ctx, span.nurbs, middle)?,
-        nurbs_profile_point(ctx, span.nurbs, first_quarter)?,
-        nurbs_profile_point(ctx, span.nurbs, third_quarter)?,
+        nurbs_profile_point(ctx, evaluator, nurbs, middle)?,
+        nurbs_profile_point(ctx, evaluator, nurbs, first_quarter)?,
+        nurbs_profile_point(ctx, evaluator, nurbs, third_quarter)?,
     ) else {
         return Ok(None);
     };
@@ -979,8 +980,9 @@ fn append_nurbs_profile_span(
     }
     if append_nurbs_profile_span(
         ctx,
+        evaluator,
+        nurbs,
         &NurbsProfileSpan {
-            nurbs: span.nurbs,
             start: span.start,
             end: middle,
             start_point: span.start_point,
@@ -994,8 +996,9 @@ fn append_nurbs_profile_span(
     }
     append_nurbs_profile_span(
         ctx,
+        evaluator,
+        nurbs,
         &NurbsProfileSpan {
-            nurbs: span.nurbs,
             start: middle,
             end: span.end,
             start_point: middle_point,
@@ -1015,8 +1018,9 @@ fn nurbs_profile_polyline(
     let Some(range) = nurbs_intrinsic_parameter_range(nurbs) else {
         return Ok(None);
     };
+    let mut evaluator = cadmpeg_ir::eval::admitted::NurbsPointEvaluator::new(ctx, nurbs)?;
     let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
-    let Some(first) = nurbs_profile_point(ctx, nurbs, lower)? else {
+    let Some(first) = nurbs_profile_point(ctx, &mut evaluator, nurbs, lower)? else {
         return Ok(None);
     };
     let mut points = Vec::new();
@@ -1029,8 +1033,8 @@ fn nurbs_profile_polyline(
             continue;
         }
         let (Some(start_point), Some(end_point)) = (
-            nurbs_profile_point(ctx, nurbs, start)?,
-            nurbs_profile_point(ctx, nurbs, end)?,
+            nurbs_profile_point(ctx, &mut evaluator, nurbs, start)?,
+            nurbs_profile_point(ctx, &mut evaluator, nurbs, end)?,
         ) else {
             return Ok(None);
         };
@@ -1040,8 +1044,9 @@ fn nurbs_profile_polyline(
         }
         if append_nurbs_profile_span(
             ctx,
+            &mut evaluator,
+            nurbs,
             &NurbsProfileSpan {
-                nurbs,
                 start,
                 end,
                 start_point,

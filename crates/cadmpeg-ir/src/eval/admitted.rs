@@ -198,5 +198,50 @@ pub fn pcurve_uv(ctx: &DecodeContext<'_>, geometry: &PcurveGeometry, parameter: 
     scratch.finish(result)
 }
 
+/// Reusable point-evaluation storage for repeated parameters on one NURBS curve.
+/// The basis is admitted once; evaluations mutate that storage and borrow poles.
+pub struct NurbsPointEvaluator<'curve> {
+    curve: &'curve NurbsCurve,
+    basis: Vec<f64>,
+}
+
+impl<'curve> NurbsPointEvaluator<'curve> {
+    /// Admit the basis storage before allocating it.
+    pub fn new(ctx: &DecodeContext<'_>, curve: &'curve NurbsCurve) -> Result<Self, CodecError> {
+        let support = curve.knots().len() - curve.pole_count();
+        let basis = ctx.alloc_filled(support, 0.0, "IR B-spline basis")?;
+        Ok(Self { curve, basis })
+    }
+
+    /// Evaluate in the knot domain without allocating another basis or pole window.
+    pub fn point(&mut self, ctx: &DecodeContext<'_>, parameter: f64)
+        -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, CodecError>
+    {
+        let _depth = ctx.enter_nested("geometry evaluation nesting")?;
+        let degree = self.basis.len() - 1;
+        for _ in 0..self.basis.len() {
+            ctx.charge_work(u64_from_index(self.basis.len()), "IR B-spline basis work")?;
+        }
+        let result = (|| {
+            let parameter = FiniteReal::new(parameter).ok_or(EvaluationFailure::NoValue)?;
+            let span = super::bspline_span(self.curve.knots(), degree, self.curve.pole_count(), parameter.get())
+                .ok_or(EvaluationFailure::NoValue)?;
+            let unreached = EvaluationFailure::NonFinite(super::UNREACHED_POINT);
+            super::bspline_basis_into(self.curve.knots(), degree, span, parameter.get(), &mut self.basis)
+                .ok_or(unreached)?;
+            if !self.basis.iter().all(|value| value.is_finite()) { return Err(unreached); }
+            let poles = self.curve.pole_rows();
+            let base = super::Homogeneous::sum(self.basis.iter().copied().enumerate().map(|(local, basis)| {
+                let index = span - degree + local;
+                Some(([basis, 1.0], poles.weight_at(index).unwrap_or(1.0), poles.point_at(index)?))
+            })).ok_or(EvaluationFailure::NoValue)?;
+            let [x, y, z] = super::finite_lanes(base.project(base, &[]).ok_or(EvaluationFailure::NoValue)?)
+                .map_err(|[x, y, z]| EvaluationFailure::NonFinite(Point3::new(x, y, z)))?;
+            Ok(FinitePoint3::from_coordinates(x, y, z))
+        })();
+        Ok(result)
+    }
+}
+
 #[cfg(test)]
 mod tests;

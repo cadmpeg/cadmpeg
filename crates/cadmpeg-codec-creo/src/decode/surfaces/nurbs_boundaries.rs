@@ -924,13 +924,17 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         } else {
             None
         };
-        let curve = match NurbsCurve::from_lanes(
+        let curve = match NurbsCurve::from_lanes_admitted(ctx,
             curve.degree(),
             knots,
             control_points,
             weights,
             curve.periodic(),
         ) {
+            Ok(result) => result,
+            Err(error) => return Some(Err(error)),
+        };
+        let curve = match curve {
             Ok(curve) => curve,
             Err(error) => {
                 refusal.note_checked(ctx,
@@ -1079,7 +1083,7 @@ mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "creo cubic generator knots"));
-        assert!(cubic_generator_with_collection_limit(68)
+        assert!(cubic_generator_with_collection_limit(72)
             .expect("collection limit admits the cubic generator")
             .is_some());
     }
@@ -1098,6 +1102,14 @@ mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "creo cubic generator weights"));
+    }
+
+    #[test]
+    fn cubic_generator_constructor_refuses_pairing_and_typed_poles() {
+        for (cap, operation) in [(69, "IR NURBS paired poles"), (71, "IR NURBS admitted poles")] {
+            assert!(matches!(cubic_generator_with_collection_limit(cap),
+                Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal.operation == operation));
+        }
     }
 
     macro_rules! boundary_collection_limit_test {
