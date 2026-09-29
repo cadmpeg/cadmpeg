@@ -1,7 +1,7 @@
 //! Parameter scalar and compact selection projection.
 
 use super::component_paths::{
-    compact_body_selection_value, compact_edge_path_value_charged,
+    compact_body_selection_value_charged, compact_edge_path_value_charged,
     compact_edge_selection_set_value_charged, component_path_feature,
     component_path_terminal_feature, ComponentPathEnd,
 };
@@ -22,7 +22,7 @@ use super::selections::{
 };
 use super::terminations::compact_surface_selection_value;
 use crate::records::{
-    FeatureInputBodySelection, FeatureInputEdgeSelection, FeatureInputLane,
+    FeatureInputEdgeSelection, FeatureInputLane,
     FeatureInputRelationFamily, FeatureInputScalarRole, FeatureInputSurfaceSelection,
 };
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -630,47 +630,57 @@ pub(crate) fn type_display_relation_parameters(
 }
 
 pub(crate) fn project_compact_body_selections(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
-) {
-    let selections = lanes.iter().flat_map(|lane| &lane.body_selections).fold(
-        HashMap::<&str, Vec<&FeatureInputBodySelection>>::new(),
-        |mut by_feature, selection| {
-            by_feature
-                .entry(selection.feature_ref.as_str())
-                .or_default()
-                .push(selection);
-            by_feature
-        },
-    );
+) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "project SLDPRT compact body selections";
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            let Some(native_ref) = feature.native_ref.as_deref() else {
-                break 'feature_edit;
-            };
-            let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
-                break 'feature_edit;
-            };
-            let (bodies, mode) = match &mut definition {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let mut selected = None;
+        let mut duplicate = false;
+        for selection in lanes.iter().flat_map(|lane| &lane.body_selections) {
+            ctx.charge_work(1, OPERATION)?;
+            if selection.feature_ref == native_ref {
+                if selected.replace(selection).is_some() {
+                    duplicate = true;
+                    break;
+                }
+            }
+        }
+        let Some(selection) = selected.filter(|_| !duplicate) else {
+            continue;
+        };
+        let mut edit_result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            edit_result = (|| -> Result<(), cadmpeg_core::CodecError> {
+            let (bodies, mode) = match definition {
                 FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, mode }) => {
                     (bodies, Some(mode))
                 }
                 FeatureDefinition::Operation(FeatureOperation::MoveBody { bodies, .. }) => {
                     (bodies, None)
                 }
-                _ => break 'feature_edit,
+                _ => return Ok(()),
             };
             if matches!(bodies, cadmpeg_ir::features::BodySelection::Unresolved) {
-                let Ok(selection) = cadmpeg_ir::features::BodySelection::local(
-                    selection
-                        .local_body_ids
-                        .iter()
-                        .map(u32::to_string)
-                        .collect(),
-                    compact_body_selection_value(&selection.local_body_ids),
-                ) else {
-                    break 'feature_edit;
+                let mut ids = Vec::new();
+                ctx.reserve_collection_vec(&mut ids, selection.local_body_ids.len(), OPERATION)?;
+                for id in &selection.local_body_ids {
+                    let digits = id.to_string();
+                    let mut text = String::new();
+                    ctx.reserve_retained_string(&mut text, digits.len(), OPERATION)?;
+                    text.push_str(&digits);
+                    ids.push(text);
+                }
+                let Ok(selection) = cadmpeg_ir::features::BodySelection::local_charged(
+                    ids,
+                    compact_body_selection_value_charged(ctx, &selection.local_body_ids)?,
+                    ctx,
+                )? else {
+                    return Ok(());
                 };
                 *bodies = selection;
             }
@@ -681,9 +691,12 @@ pub(crate) fn project_compact_body_selections(
                     }
                 }
             }
-        }
-        feature.evaluation.set_definition(definition);
+            Ok(())
+            })();
+        });
+        edit_result?;
     }
+    Ok(())
 }
 
 pub(crate) fn project_compact_edge_selections(

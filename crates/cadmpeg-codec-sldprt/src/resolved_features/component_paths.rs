@@ -733,6 +733,28 @@ pub(crate) fn compact_body_selection_value(local_body_ids: &[u32]) -> String {
     value
 }
 
+pub(crate) fn compact_body_selection_value_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    local_body_ids: &[u32],
+) -> Result<String, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "format SLDPRT compact body selection";
+    let prefix = "sldprt:feature-input:body-ids:";
+    let mut value = String::new();
+    ctx.reserve_retained_string(&mut value, prefix.len(), OPERATION)?;
+    value.push_str(prefix);
+    for (index, body_id) in local_body_ids.iter().enumerate() {
+        ctx.charge_work(1, OPERATION)?;
+        if index != 0 {
+            ctx.reserve_retained_string(&mut value, 1, OPERATION)?;
+            value.push(',');
+        }
+        let digits = body_id.to_string();
+        ctx.reserve_retained_string(&mut value, digits.len(), OPERATION)?;
+        value.push_str(&digits);
+    }
+    Ok(value)
+}
+
 pub(crate) fn is_compact_body_selection_value(value: &str) -> bool {
     value.starts_with("sldprt:feature-input:body-ids:")
 }
