@@ -771,7 +771,10 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     .expect("required invariant");
     attributes.layer_index = -1;
     attributes.color_source = crate::objects::ColorSource::Material;
-    let material = vec![ObjectRecord::Framed(Box::new(descriptor(attributes.clone(), 10)))];
+    let material = vec![ObjectRecord::Framed(Box::new(descriptor(
+        attributes.clone(),
+        10,
+    )))];
     let mut warnings = Diagnostics::new();
     let material = crate::objects::resolve_identities(
         &cadmpeg_test_support::service_decode_context(),

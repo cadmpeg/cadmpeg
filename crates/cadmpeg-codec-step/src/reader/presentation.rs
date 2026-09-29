@@ -1684,7 +1684,12 @@ fn find_color(
     depth: usize,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<CachedColor, CodecError> {
-    let ColorSearchState { active, cache, losses, invalid_surface_sides } = state;
+    let ColorSearchState {
+        active,
+        cache,
+        losses,
+        invalid_surface_sides,
+    } = state;
     if depth >= 256 {
         return Ok(None);
     }

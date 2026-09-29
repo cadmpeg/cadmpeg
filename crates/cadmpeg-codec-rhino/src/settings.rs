@@ -1687,8 +1687,14 @@ pub(crate) fn parse_mesh_parameters<'a>(
     };
     Ok(MeshParameters {
         version,
-        generation: MeshGenerationFlags { compute_curvature, simple_planes },
-        refinement: MeshRefinementFlags { refine, jagged_seams },
+        generation: MeshGenerationFlags {
+            compute_curvature,
+            simple_planes,
+        },
+        refinement: MeshRefinementFlags {
+            refine,
+            jagged_seams,
+        },
         obsolete_weld,
         tolerance,
         min_edge_length,

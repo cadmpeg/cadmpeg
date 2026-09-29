@@ -1196,7 +1196,10 @@ fn y4_2_gui_xml_tree_is_admitted_before_allocation() {
         xml,
         &super::super::GuiSources {
             entries: &std::collections::BTreeMap::new(),
-            objects: &[], properties: &[], payloads: &[], element_maps: &[],
+            objects: &[],
+            properties: &[],
+            payloads: &[],
+            element_maps: &[],
             requires_alpha_conversion: false,
         },
     )
@@ -1212,7 +1215,10 @@ fn y4_2_gui_xml_tree_is_admitted_before_allocation() {
         xml,
         &super::super::GuiSources {
             entries: &std::collections::BTreeMap::new(),
-            objects: &[], properties: &[], payloads: &[], element_maps: &[],
+            objects: &[],
+            properties: &[],
+            payloads: &[],
+            element_maps: &[],
             requires_alpha_conversion: false,
         },
     )

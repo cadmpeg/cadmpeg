@@ -267,6 +267,7 @@ struct BodyRoot {
     root_ordinal: Option<usize>,
 }
 
+#[derive(Clone, Copy)]
 struct RegionTraversal {
     shape_index: usize,
     transform: Transform,

@@ -104,7 +104,8 @@ fn two_member_radial_ring_with_equal_senses_warns() {
         .find(|coedge| coedge.id == other_id)
         .unwrap()
         .sense = sense;
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
@@ -117,7 +118,8 @@ fn two_member_radial_ring_with_equal_senses_warns() {
 fn coedge_backed_edge_cannot_be_a_wire_edge() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.shells[0].add_wire_edge(ir.model.coedges[0].edge.clone());
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::WireTopology));
@@ -154,7 +156,9 @@ fn wire_and_free_topology_negative_cases_are_reported() {
     ir.model.bodies[0].kind = crate::topology::BodyKind::Wire;
     ir.finalize();
 
-    let findings = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").findings;
+    let findings = validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     for message in [
         "wire edge must belong to exactly one shell",
         "free vertex must belong to exactly one shell",
@@ -193,7 +197,8 @@ fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
     ir.model.regions[0].shells.push(second_shell.id.clone());
     ir.model.shells.push(second_shell);
 
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
@@ -267,7 +272,7 @@ fn spring_support_reference_findings_name_the_construction() {
                         SpringSupport::Surface(missing.clone()),
                         SpringSupport::Ranges([[0.0, 1.0]; 2]),
                     ],
-            first_pcurve: Box::new(SpringPcurve::Range([0.0, 1.0])),
+                    first_pcurve: Box::new(SpringPcurve::Range([0.0, 1.0])),
                     second_pcurve: None,
                     parameter_range: [0.0, 1.0],
                     discontinuities: [Vec::new(), Vec::new(), Vec::new()],

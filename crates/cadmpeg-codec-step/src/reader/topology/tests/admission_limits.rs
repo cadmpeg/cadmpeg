@@ -826,19 +826,33 @@ fn staged_topology_refusal(
             source_object: None,
         })
         .collect();
-    super::super::staged_topology(super::super::StagedTopologyParts { typed: std::collections::HashSet::new(), vertices: Vec::new(), edges: Vec::new(), coedges: Vec::new(), loops: Vec::new(), faces: Vec::new(), surfaces: surfaces, shells: Vec::new(), region: cadmpeg_ir::topology::Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
+    super::super::staged_topology(
+        super::super::StagedTopologyParts {
+            typed: std::collections::HashSet::new(),
+            vertices: Vec::new(),
+            edges: Vec::new(),
+            coedges: Vec::new(),
+            loops: Vec::new(),
+            faces: Vec::new(),
+            surfaces,
             shells: Vec::new(),
-        }, body: cadmpeg_ir::topology::Body {
-            id: body_id,
-            kind: cadmpeg_ir::topology::BodyKind::Sheet,
-            regions: vec![region_id],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        } }, &ctx)
+            region: cadmpeg_ir::topology::Region {
+                id: region_id.clone(),
+                body: body_id.clone(),
+                shells: Vec::new(),
+            },
+            body: cadmpeg_ir::topology::Body {
+                id: body_id,
+                kind: cadmpeg_ir::topology::BodyKind::Sheet,
+                regions: vec![region_id],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        },
+        &ctx,
+    )
     .err()
     .expect("staging exceeds limit")
 }
@@ -917,8 +931,16 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
             point_positions: &carriers,
             ctx: &ctx,
         },
-        super::super::BuildRoot { shell_steps: &[1], bid: body_id(), rid: &region },
-        super::super::BuildScope { faces: false, edges: false, root: false },
+        super::super::BuildRoot {
+            shell_steps: &[1],
+            bid: body_id(),
+            rid: &region,
+        },
+        super::super::BuildScope {
+            faces: false,
+            edges: false,
+            root: false,
+        },
         &mut Vec::new(),
         &mut None,
     )

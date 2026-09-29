@@ -3035,11 +3035,9 @@ pub(super) fn project(
                     use_curve: None,
                 });
             }
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::try_new_for_decode(
-                ctx,
-                coedge_ids,
-                Vec::new(),
-            )? else {
+            let Ok(ring) =
+                cadmpeg_ir::topology::LoopRing::try_new_for_decode(ctx, coedge_ids, Vec::new())?
+            else {
                 super::push_optional_entity_loss(
                     Some(ctx),
                     &mut losses,

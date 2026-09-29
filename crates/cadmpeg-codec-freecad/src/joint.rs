@@ -313,10 +313,7 @@ pub(crate) fn transfer_neutral(
                     None,
                 )
             }
-            JointBody::Pair {
-                kind,
-                connectors,
-            } => {
+            JointBody::Pair { kind, connectors } => {
                 let [first, second] = connectors.as_ref();
                 let kind = joint_kind(
                     ctx,

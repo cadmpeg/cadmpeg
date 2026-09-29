@@ -87,19 +87,19 @@ pub(crate) enum UfrxRecord {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UfrxParsedPrefix {
-        pub(crate) id: String,
-        pub(crate) directory_id: u32,
-        pub(crate) schema: u16,
-        pub(crate) section_versions: Vec<u16>,
-        pub(crate) original_file_name: String,
-        pub(crate) caption: String,
-        pub(crate) representation: Option<UfrxRepresentationRecord>,
-        pub(crate) model_states: Vec<UfrxModelStateRecord>,
-        pub(crate) external_references: Vec<ExternalReferenceRecord>,
-        pub(crate) embedded_references: Vec<EmbeddedReferenceRecord>,
-        pub(crate) occurrences: Vec<UfrxOccurrenceRecord>,
-        pub(crate) tail_len: u64,
-        pub(crate) tail_sha256: Sha256Hex,
+    pub(crate) id: String,
+    pub(crate) directory_id: u32,
+    pub(crate) schema: u16,
+    pub(crate) section_versions: Vec<u16>,
+    pub(crate) original_file_name: String,
+    pub(crate) caption: String,
+    pub(crate) representation: Option<UfrxRepresentationRecord>,
+    pub(crate) model_states: Vec<UfrxModelStateRecord>,
+    pub(crate) external_references: Vec<ExternalReferenceRecord>,
+    pub(crate) embedded_references: Vec<EmbeddedReferenceRecord>,
+    pub(crate) occurrences: Vec<UfrxOccurrenceRecord>,
+    pub(crate) tail_len: u64,
+    pub(crate) tail_sha256: Sha256Hex,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -321,38 +321,38 @@ impl<'a> TryFrom<&'a UfrxRecord> for UfrxRecordView<'a> {
             },
             UfrxRecord::ParsedPrefix(payload) => {
                 let UfrxParsedPrefix {
-                id,
-                directory_id,
-                schema,
-                section_versions,
-                original_file_name,
-                caption,
-                representation,
-                model_states,
-                external_references,
-                embedded_references,
-                occurrences,
-                tail_len,
-                tail_sha256,
+                    id,
+                    directory_id,
+                    schema,
+                    section_versions,
+                    original_file_name,
+                    caption,
+                    representation,
+                    model_states,
+                    external_references,
+                    embedded_references,
+                    occurrences,
+                    tail_len,
+                    tail_sha256,
                 } = payload.as_ref();
                 Self {
-                id,
-                state: UfrxRecordState::ParsedPrefix,
-                directory_id: Some(*directory_id),
-                schema: Some(*schema),
-                section_versions,
-                original_file_name: Some(original_file_name),
-                caption: Some(caption),
-                representation: representation.as_ref(),
-                model_state_count: u64::try_from(model_states.len())?,
-                reference_count: u64::try_from(external_references.len())?,
-                embedded_reference_count: u64::try_from(embedded_references.len())?,
-                occurrence_count: u64::try_from(occurrences.len())?,
-                tail_len: *tail_len,
-                tail_sha256: Some(tail_sha256),
-                detail: None,
+                    id,
+                    state: UfrxRecordState::ParsedPrefix,
+                    directory_id: Some(*directory_id),
+                    schema: Some(*schema),
+                    section_versions,
+                    original_file_name: Some(original_file_name),
+                    caption: Some(caption),
+                    representation: representation.as_ref(),
+                    model_state_count: u64::try_from(model_states.len())?,
+                    reference_count: u64::try_from(external_references.len())?,
+                    embedded_reference_count: u64::try_from(embedded_references.len())?,
+                    occurrence_count: u64::try_from(occurrences.len())?,
+                    tail_len: *tail_len,
+                    tail_sha256: Some(tail_sha256),
+                    detail: None,
                 }
-            },
+            }
             UfrxRecord::Unsupported {
                 id,
                 directory_id,
@@ -456,33 +456,35 @@ impl UfrxRecordWire {
         }
         match wire.state {
             UfrxRecordState::Absent => Ok(UfrxRecord::Absent { id: wire.id }),
-            UfrxRecordState::ParsedPrefix => Ok(UfrxRecord::ParsedPrefix(Box::new(UfrxParsedPrefix {
-                id: wire.id,
-                directory_id: wire
-                    .directory_id
-                    .ok_or_else(|| "parsed UFRxDoc requires directory_id".to_owned())?,
-                schema: wire
-                    .schema
-                    .ok_or_else(|| "parsed UFRxDoc requires schema".to_owned())?,
-                section_versions: wire.section_versions,
-                original_file_name: wire
-                    .original_file_name
-                    .ok_or_else(|| "parsed UFRxDoc requires original_file_name".to_owned())?,
-                caption: wire
-                    .caption
-                    .ok_or_else(|| "parsed UFRxDoc requires caption".to_owned())?,
-                representation: wire.representation,
-                model_states,
-                external_references,
-                embedded_references,
-                occurrences,
-                tail_len: wire.tail_len,
-                tail_sha256: Sha256Hex::try_from(
-                    wire.tail_sha256
-                        .ok_or_else(|| "parsed UFRxDoc requires tail_sha256".to_owned())?,
-                )
-                .map_err(|detail| format!("tail_sha256: {detail}"))?,
-            }))),
+            UfrxRecordState::ParsedPrefix => {
+                Ok(UfrxRecord::ParsedPrefix(Box::new(UfrxParsedPrefix {
+                    id: wire.id,
+                    directory_id: wire
+                        .directory_id
+                        .ok_or_else(|| "parsed UFRxDoc requires directory_id".to_owned())?,
+                    schema: wire
+                        .schema
+                        .ok_or_else(|| "parsed UFRxDoc requires schema".to_owned())?,
+                    section_versions: wire.section_versions,
+                    original_file_name: wire
+                        .original_file_name
+                        .ok_or_else(|| "parsed UFRxDoc requires original_file_name".to_owned())?,
+                    caption: wire
+                        .caption
+                        .ok_or_else(|| "parsed UFRxDoc requires caption".to_owned())?,
+                    representation: wire.representation,
+                    model_states,
+                    external_references,
+                    embedded_references,
+                    occurrences,
+                    tail_len: wire.tail_len,
+                    tail_sha256: Sha256Hex::try_from(
+                        wire.tail_sha256
+                            .ok_or_else(|| "parsed UFRxDoc requires tail_sha256".to_owned())?,
+                    )
+                    .map_err(|detail| format!("tail_sha256: {detail}"))?,
+                })))
+            }
             UfrxRecordState::Unsupported => Ok(UfrxRecord::Unsupported {
                 id: wire.id,
                 directory_id: wire

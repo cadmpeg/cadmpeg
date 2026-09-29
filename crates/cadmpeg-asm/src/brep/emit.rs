@@ -617,7 +617,13 @@ fn emit_carrier_surface(
                 ctx,
                 out,
                 i,
-                BlendSurfaceParts { supports, spine, radius_offsets, cross_section, native },
+                BlendSurfaceParts {
+                    supports,
+                    spine,
+                    radius_offsets,
+                    cross_section,
+                    native,
+                },
                 format,
             )?,
         };
@@ -2272,13 +2278,17 @@ fn emit_sweep_surface(
                 },
             )
         }
-        LegacySweepLayout::Sweep {
-            profile,
-            tail,
-        } => {
+        LegacySweepLayout::Sweep { profile, tail } => {
             let crate::nurbs::proc_surface::SweepProfile {
-                profile, mode, profile_range, profile_frame, origin, directions,
-                path, path_range, path_parameter,
+                profile,
+                mode,
+                profile_range,
+                profile_frame,
+                origin,
+                directions,
+                path,
+                path_range,
+                path_parameter,
             } = *profile;
             let layout = match tail {
                 crate::nurbs::proc_surface::SweepTail::LawOrFormula(
@@ -3257,7 +3267,13 @@ fn emit_blend_surface(
     parts: BlendSurfaceParts,
     format: IdFormat,
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
-    let BlendSurfaceParts { supports, spine, radius_offsets, cross_section, native } = parts;
+    let BlendSurfaceParts {
+        supports,
+        spine,
+        radius_offsets,
+        cross_section,
+        native,
+    } = parts;
     let mut resolved_supports = [None, None];
     for (side, support) in supports.into_iter().enumerate() {
         if let Some(support) = support {
@@ -4270,25 +4286,25 @@ fn emit_spring_curve(
         } => {
             let [first_support, second_support] = *supports;
             cadmpeg_ir::geometry::SpringLayout::ContextFirst {
-            supports: [
-                emit_spring_support(ctx, out, i, format, 0, first_support)?,
-                emit_spring_support(ctx, out, i, format, 1, second_support)?,
-            ],
-            first_pcurve: Box::new(match *first_pcurve {
-                EmbeddedSpringPcurve::Pcurve(pcurve) => {
-                    cadmpeg_ir::geometry::SpringPcurve::Pcurve(emit_pcurve(pcurve))
-                }
-                EmbeddedSpringPcurve::Range(range) => {
-                    cadmpeg_ir::geometry::SpringPcurve::Range(range)
-                }
-            }),
-            second_pcurve: second_pcurve.map(emit_pcurve),
-            parameter_range,
-            discontinuities,
-            discontinuity_flag,
-            cache: None,
+                supports: [
+                    emit_spring_support(ctx, out, i, format, 0, first_support)?,
+                    emit_spring_support(ctx, out, i, format, 1, second_support)?,
+                ],
+                first_pcurve: Box::new(match *first_pcurve {
+                    EmbeddedSpringPcurve::Pcurve(pcurve) => {
+                        cadmpeg_ir::geometry::SpringPcurve::Pcurve(emit_pcurve(pcurve))
+                    }
+                    EmbeddedSpringPcurve::Range(range) => {
+                        cadmpeg_ir::geometry::SpringPcurve::Range(range)
+                    }
+                }),
+                second_pcurve: second_pcurve.map(emit_pcurve),
+                parameter_range,
+                discontinuities,
+                discontinuity_flag,
+                cache: None,
             }
-        },
+        }
         EmbeddedSpringLayout::CacheFirst { context } => {
             let (context, form) = (*context)
                 .into_intersection(solved_domain.ok_or("missing procedural curve cache domain")?);
@@ -5272,7 +5288,15 @@ pub(super) fn emit_containers(
     out: &mut AsmBrep,
     inputs: ContainerInputs<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let ContainerInputs { records, by_index, reach, wire, stream, header_scale, format } = inputs;
+    let ContainerInputs {
+        records,
+        by_index,
+        reach,
+        wire,
+        stream,
+        header_scale,
+        format,
+    } = inputs;
     let Reachable {
         faces: kept_faces, ..
     } = reach;

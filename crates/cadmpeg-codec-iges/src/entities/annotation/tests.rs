@@ -776,9 +776,33 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
             .collect(),
         Vec::new(),
     );
-    assert!(sectioned_area_valid(&ir, &record, &entries, 0, super::SectionedAreaContext { global_table: GlobalTable::V4_0, transform: Transform::identity(), length_factor: 1.0, resolution: 0.001 }, None)
+    assert!(sectioned_area_valid(
+        &ir,
+        &record,
+        &entries,
+        0,
+        super::SectionedAreaContext {
+            global_table: GlobalTable::V4_0,
+            transform: Transform::identity(),
+            length_factor: 1.0,
+            resolution: 0.001
+        },
+        None
+    )
     .unwrap());
-    assert!(!sectioned_area_valid(&ir, &record, &entries, 0, super::SectionedAreaContext { global_table: GlobalTable::V5_0, transform: Transform::identity(), length_factor: 1.0, resolution: 0.001 }, None)
+    assert!(!sectioned_area_valid(
+        &ir,
+        &record,
+        &entries,
+        0,
+        super::SectionedAreaContext {
+            global_table: GlobalTable::V5_0,
+            transform: Transform::identity(),
+            length_factor: 1.0,
+            resolution: 0.001
+        },
+        None
+    )
     .unwrap());
     if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
         &mut ir.model.curves[0].geometry
@@ -803,7 +827,19 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         [0.0, 0.0, 1.0, 0.01],
     ])
     .expect("affine transform");
-    assert!(sectioned_area_valid(&ir, &record, &entries, 0, super::SectionedAreaContext { global_table: GlobalTable::V5_0, transform: translated_pattern_plane, length_factor: 1.0, resolution: 0.001 }, None)
+    assert!(sectioned_area_valid(
+        &ir,
+        &record,
+        &entries,
+        0,
+        super::SectionedAreaContext {
+            global_table: GlobalTable::V5_0,
+            transform: translated_pattern_plane,
+            length_factor: 1.0,
+            resolution: 0.001
+        },
+        None
+    )
     .unwrap());
 }
 
@@ -873,11 +909,47 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         )
     };
 
-    assert!(sectioned_area_valid(&ir, &record(1), &entries, 1, super::SectionedAreaContext { global_table: GlobalTable::V5_0, transform: Transform::identity(), length_factor: 1.0, resolution: 0.001 }, None)
+    assert!(sectioned_area_valid(
+        &ir,
+        &record(1),
+        &entries,
+        1,
+        super::SectionedAreaContext {
+            global_table: GlobalTable::V5_0,
+            transform: Transform::identity(),
+            length_factor: 1.0,
+            resolution: 0.001
+        },
+        None
+    )
     .unwrap());
-    assert!(!sectioned_area_valid(&ir, &record(0), &entries, 1, super::SectionedAreaContext { global_table: GlobalTable::V5_0, transform: Transform::identity(), length_factor: 1.0, resolution: 0.001 }, None)
+    assert!(!sectioned_area_valid(
+        &ir,
+        &record(0),
+        &entries,
+        1,
+        super::SectionedAreaContext {
+            global_table: GlobalTable::V5_0,
+            transform: Transform::identity(),
+            length_factor: 1.0,
+            resolution: 0.001
+        },
+        None
+    )
     .unwrap());
-    assert!(!sectioned_area_valid(&ir, &record(1), &entries, 0, super::SectionedAreaContext { global_table: GlobalTable::V5_0, transform: Transform::identity(), length_factor: 1.0, resolution: 0.001 }, None)
+    assert!(!sectioned_area_valid(
+        &ir,
+        &record(1),
+        &entries,
+        0,
+        super::SectionedAreaContext {
+            global_table: GlobalTable::V5_0,
+            transform: Transform::identity(),
+            length_factor: 1.0,
+            resolution: 0.001
+        },
+        None
+    )
     .unwrap());
 }
 

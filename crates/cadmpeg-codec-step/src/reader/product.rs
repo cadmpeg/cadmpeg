@@ -797,7 +797,11 @@ pub(super) fn decode(
     }
     apply_body_placements(
         exchange,
-        BodyPlacementSources { geometry, topology, usages: &usages },
+        BodyPlacementSources {
+            geometry,
+            topology,
+            usages: &usages,
+        },
         ir,
         &mut losses,
         ctx,
@@ -895,6 +899,7 @@ fn assembly_depth_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
         .map_or(MAX_ASSEMBLY_DEPTH, |policy| policy.min(MAX_ASSEMBLY_DEPTH))
 }
 
+#[derive(Clone, Copy)]
 struct BodyPlacementSources<'a> {
     geometry: &'a GeometryData,
     topology: &'a TopologyData,
@@ -908,7 +913,11 @@ fn apply_body_placements(
     losses: &mut Vec<LossNote>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(), CodecError> {
-    let BodyPlacementSources { geometry, topology, usages } = sources;
+    let BodyPlacementSources {
+        geometry,
+        topology,
+        usages,
+    } = sources;
     let mut pds = BTreeMap::new();
     for (id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
         if let Some(definition) =

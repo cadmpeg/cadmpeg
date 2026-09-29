@@ -651,7 +651,10 @@ fn absent_native_parameter_record_keeps_empty_wire_fields() {
         parameters: super::NativeParameterRecordSlot,
     }
     assert_eq!(
-        serde_json::to_value(Record { parameters: super::NativeParameterRecordSlot(None) }).unwrap(),
+        serde_json::to_value(Record {
+            parameters: super::NativeParameterRecordSlot(None)
+        })
+        .unwrap(),
         serde_json::json!({
             "parameter_line_start": null,
             "parameter_line_end": null,

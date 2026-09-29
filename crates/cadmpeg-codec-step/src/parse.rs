@@ -3164,7 +3164,9 @@ fn references(
 
 fn contains_class3_occurrence(value: &Value) -> bool {
     match value {
-        Value::ExternalReference(_) | Value::ConstantEntity(_) | Value::ExpressValueConstant(_) => true,
+        Value::ExternalReference(_) | Value::ConstantEntity(_) | Value::ExpressValueConstant(_) => {
+            true
+        }
         Value::List(values) => values.iter().any(contains_class3_occurrence),
         Value::Typed(_, value) => contains_class3_occurrence(value),
         _ => false,

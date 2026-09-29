@@ -432,14 +432,14 @@ impl SourceUnitCarriers {
     pub(super) fn admit_procedural_surface(
         &mut self,
         ir: &mut CadIr,
-        owner: SurfaceId,
+        owner: &SurfaceId,
         mut procedural: ProceduralSurface,
     ) -> Result<(), CodecError> {
         if let Some(scale) = self.length_scale_mm {
             crate::decode::build::units::scale_procedural_surface(&mut procedural, scale)?;
         }
         ir.model
-            .add_procedural_surface(&owner, procedural)
+            .add_procedural_surface(owner, procedural)
             .map_err(CodecError::malformed)?;
         Ok(())
     }
@@ -447,14 +447,14 @@ impl SourceUnitCarriers {
     pub(super) fn admit_procedural_curve(
         &mut self,
         ir: &mut CadIr,
-        owner: CurveId,
+        owner: &CurveId,
         mut procedural: ProceduralCurve,
     ) -> Result<(), CodecError> {
         if let Some(scale) = self.length_scale_mm {
             crate::decode::build::units::scale_procedural_curve(&mut procedural, scale)?;
         }
         ir.model
-            .add_procedural_curve(&owner, procedural)
+            .add_procedural_curve(owner, procedural)
             .map_err(CodecError::malformed)?;
         Ok(())
     }
@@ -934,7 +934,7 @@ mod tests {
             None,
         );
         source_carriers
-            .admit_procedural_surface(&mut ir, surface_id, procedural)
+            .admit_procedural_surface(&mut ir, &surface_id, procedural)
             .expect("procedural attachment");
         let ProceduralSurfaceDefinition::Extrusion(construction) =
             ir.model.procedural_surfaces[0].definition()
@@ -957,7 +957,7 @@ mod tests {
         let error = source_carriers
             .admit_procedural_surface(
                 &mut ir,
-                SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
+                &SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
                 ProceduralSurface::new(
                     ProceduralSurfaceId::mint("creo:visibgeom:extrusion#1")
                         .expect("identity grammar"),
@@ -997,7 +997,7 @@ mod tests {
         source_carriers
             .admit_procedural_curve(
                 &mut ir,
-                curve_id,
+                &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint("creo:depdb:helix#1").expect("identity grammar"),
                     ProceduralCurveDefinition::Helix(

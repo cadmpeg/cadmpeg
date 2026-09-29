@@ -971,6 +971,7 @@ fn finite_or_omitted(record: &ParameterRecord, index: usize) -> bool {
     }
 }
 
+#[derive(Clone, Copy)]
 struct SectionedAreaContext {
     global_table: GlobalTable,
     transform: Transform,
@@ -986,7 +987,12 @@ fn sectioned_area_valid(
     context: SectionedAreaContext,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<bool, CodecError> {
-    let SectionedAreaContext { global_table, transform, length_factor, resolution } = context;
+    let SectionedAreaContext {
+        global_table,
+        transform,
+        length_factor,
+        resolution,
+    } = context;
     if !matches!(form, 0 | 1) {
         return Ok(false);
     }
@@ -1152,7 +1158,19 @@ pub(super) fn project(
                             ),
                             AnnotationKind::SectionedArea => {
                                 if let Some(transform) = resolved_transform {
-                                    sectioned_area_valid(ir, record, &entries, entry.form, SectionedAreaContext { global_table: global.global_table(), transform: transform, length_factor: global.length_factor_mm(), resolution: global.minimum_resolution_mm() }, ctx)?
+                                    sectioned_area_valid(
+                                        ir,
+                                        record,
+                                        &entries,
+                                        entry.form,
+                                        SectionedAreaContext {
+                                            global_table: global.global_table(),
+                                            transform,
+                                            length_factor: global.length_factor_mm(),
+                                            resolution: global.minimum_resolution_mm(),
+                                        },
+                                        ctx,
+                                    )?
                                 } else {
                                     false
                                 }

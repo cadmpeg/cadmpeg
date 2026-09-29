@@ -679,7 +679,11 @@ fn parse_viewport(
     reader.skip_remaining()?;
     Ok(Viewport {
         version,
-        validity: ViewportValidity { camera_valid, frustum_valid, port_valid },
+        validity: ViewportValidity {
+            camera_valid,
+            frustum_valid,
+            port_valid,
+        },
         projection,
         camera_location_mm: camera_location,
         camera_direction,

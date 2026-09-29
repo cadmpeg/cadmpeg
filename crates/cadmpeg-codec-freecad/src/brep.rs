@@ -2984,13 +2984,13 @@ fn parse_binary_prefix(
             index + 1,
             tshape_count,
             BinaryGeometryCounts {
-                curve_count,
-                curve2d_count: curve2ds.len(),
-                surface_count: surfaces.len(),
-                location_count: locations.len(),
-                polygon3d_count: polygons3d.len(),
-                indexed_polygon_count: polygons_on_triangulations.len(),
-                triangulation_count: triangulations.len(),
+                curves: curve_count,
+                curves2d: curve2ds.len(),
+                surfaces: surfaces.len(),
+                locations: locations.len(),
+                polygons3d: polygons3d.len(),
+                indexed_polygons: polygons_on_triangulations.len(),
+                triangulations: triangulations.len(),
             },
         )?);
     }
@@ -3041,13 +3041,13 @@ fn parse_binary_prefix(
 
 #[derive(Clone, Copy)]
 struct BinaryGeometryCounts {
-    curve_count: usize,
-    curve2d_count: usize,
-    surface_count: usize,
-    location_count: usize,
-    polygon3d_count: usize,
-    indexed_polygon_count: usize,
-    triangulation_count: usize,
+    curves: usize,
+    curves2d: usize,
+    surfaces: usize,
+    locations: usize,
+    polygons3d: usize,
+    indexed_polygons: usize,
+    triangulations: usize,
 }
 
 fn parse_binary_tshape(
@@ -3058,11 +3058,11 @@ fn parse_binary_tshape(
     counts: BinaryGeometryCounts,
 ) -> Result<TextTShape, CodecError> {
     let BinaryGeometryCounts {
-        curve_count,
-        curve2d_count,
-        surface_count,
-        location_count,
-        triangulation_count,
+        curves: curve_count,
+        curves2d: curve2d_count,
+        surfaces: surface_count,
+        locations: location_count,
+        triangulations: triangulation_count,
         ..
     } = counts;
     let kind = match cursor.u8("binary TShape kind")? {
@@ -3307,13 +3307,13 @@ fn parse_binary_edge_representation(
     counts: BinaryGeometryCounts,
 ) -> Result<TextEdgeRepresentation, CodecError> {
     let BinaryGeometryCounts {
-        curve_count,
-        curve2d_count,
-        surface_count,
-        location_count,
-        polygon3d_count,
-        indexed_polygon_count,
-        triangulation_count,
+        curves: curve_count,
+        curves2d: curve2d_count,
+        surfaces: surface_count,
+        locations: location_count,
+        polygons3d: polygon3d_count,
+        indexed_polygons: indexed_polygon_count,
+        triangulations: triangulation_count,
     } = counts;
     match kind {
         1 => {

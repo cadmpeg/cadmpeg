@@ -280,7 +280,13 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
             let mut reach = Reachable::default();
             let format = crate::asm_format!("f3d");
             keep_faces_and_carriers(
-                TopologyContext { ctx: &asm_decode_ctx, by_index: &by_index, token_table: &table, purpose: DecodePurpose::Model, format },
+                TopologyContext {
+                    ctx: &asm_decode_ctx,
+                    by_index: &by_index,
+                    token_table: &table,
+                    purpose: DecodePurpose::Model,
+                    format,
+                },
                 &mut out,
                 &records,
                 &mut carriers,
@@ -342,7 +348,13 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
     };
     let mut out = AsmBrep::default();
     walk_reachable_topology(
-        TopologyContext { ctx: &asm_decode_ctx, by_index: &by_index, token_table: &table, purpose: DecodePurpose::History, format: crate::asm_format!("f3d") },
+        TopologyContext {
+            ctx: &asm_decode_ctx,
+            by_index: &by_index,
+            token_table: &table,
+            purpose: DecodePurpose::History,
+            format: crate::asm_format!("f3d"),
+        },
         &mut out,
         &mut carriers,
         &mut reach,
@@ -417,7 +429,13 @@ fn model_pcurve_parameter_range_refuses_collection_limit() {
             ..Reachable::default()
         };
         walk_reachable_topology(
-            TopologyContext { ctx, by_index: &by_index, token_table: &table, purpose: DecodePurpose::Model, format: crate::asm_format!("f3d") },
+            TopologyContext {
+                ctx,
+                by_index: &by_index,
+                token_table: &table,
+                purpose: DecodePurpose::Model,
+                format: crate::asm_format!("f3d"),
+            },
             &mut out,
             &mut carriers,
             &mut reach,

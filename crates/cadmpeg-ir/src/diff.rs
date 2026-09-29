@@ -922,12 +922,17 @@ mod tests {
         for (left, right) in [(&bare, &populated), (&populated, &bare)] {
             let result = diff(left, right);
             assert!(!result.is_empty());
-            let change = result.source.format_change.as_ref().expect("test fixture invariant");
+            let change = result
+                .source
+                .format_change
+                .as_ref()
+                .expect("test fixture invariant");
             assert_ne!(change.before(), change.after());
             assert_eq!(result.source.attributes.len(), 1);
         }
 
-        let rendered = serde_json::to_value(&diff(&bare, &populated).source).expect("test fixture invariant");
+        let rendered =
+            serde_json::to_value(&diff(&bare, &populated).source).expect("test fixture invariant");
         assert_eq!(rendered["format_change"], serde_json::json!(["", "rhino"]));
 
         assert!(diff(&bare, &bare).is_empty());
@@ -960,9 +965,26 @@ mod tests {
 
         let result = diff(&left, &right);
         assert!(!result.is_empty());
-        let change = result.source.dialects_change.as_ref().expect("test fixture invariant");
-        assert_eq!(change.before(), left.source.as_ref().expect("test fixture invariant").dialects());
-        assert_eq!(change.after(), right.source.as_ref().expect("test fixture invariant").dialects());
+        let change = result
+            .source
+            .dialects_change
+            .as_ref()
+            .expect("test fixture invariant");
+        assert_eq!(
+            change.before(),
+            left.source
+                .as_ref()
+                .expect("test fixture invariant")
+                .dialects()
+        );
+        assert_eq!(
+            change.after(),
+            right
+                .source
+                .as_ref()
+                .expect("test fixture invariant")
+                .dialects()
+        );
 
         let mut declared_left = with_source(&[]);
         let mut declared_right = declared_left.clone();
@@ -989,14 +1011,26 @@ mod tests {
 
         let declared = diff(&declared_left, &declared_right);
         assert!(!declared.is_empty());
-        let declared_change = declared.source.dialects_change.as_ref().expect("test fixture invariant");
+        let declared_change = declared
+            .source
+            .dialects_change
+            .as_ref()
+            .expect("test fixture invariant");
         assert_eq!(
             declared_change.before(),
-            declared_left.source.as_ref().expect("test fixture invariant").dialects()
+            declared_left
+                .source
+                .as_ref()
+                .expect("test fixture invariant")
+                .dialects()
         );
         assert_eq!(
             declared_change.after(),
-            declared_right.source.as_ref().expect("test fixture invariant").dialects()
+            declared_right
+                .source
+                .as_ref()
+                .expect("test fixture invariant")
+                .dialects()
         );
         assert!(declared.source.attributes.is_empty());
     }
@@ -1057,7 +1091,8 @@ mod tests {
     #[test]
     fn an_unpopulated_dialect_adds_no_key_to_the_serialized_diff() {
         let ir = with_source(&[]);
-        let rendered = serde_json::to_string(&diff(&ir, &ir).source).expect("test fixture invariant");
+        let rendered =
+            serde_json::to_string(&diff(&ir, &ir).source).expect("test fixture invariant");
 
         assert!(!rendered.contains("dialects_change"), "{rendered}");
     }

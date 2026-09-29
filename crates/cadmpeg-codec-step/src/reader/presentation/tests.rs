@@ -53,7 +53,19 @@ fn surface_color_search_ignores_curve_style_colors() {
 ENDSEC;END-ISO-10303-21;",
     )
     .expect("parse style graph");
-    let color = find_color(5, &exchange, StyleDomain::Surface, super::ColorSearchState { active: &mut BTreeSet::new(), cache: &mut BTreeMap::new(), losses: &mut Vec::new(), invalid_surface_sides: &mut BTreeSet::new() }, 0, None)
+    let color = find_color(
+        5,
+        &exchange,
+        StyleDomain::Surface,
+        super::ColorSearchState {
+            active: &mut BTreeSet::new(),
+            cache: &mut BTreeMap::new(),
+            losses: &mut Vec::new(),
+            invalid_surface_sides: &mut BTreeSet::new(),
+        },
+        0,
+        None,
+    )
     .expect("colour search fits local resources")
     .expect("surface color");
     let ColorResolution::Candidate(color) = color else {

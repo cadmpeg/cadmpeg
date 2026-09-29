@@ -1026,7 +1026,21 @@ pub(super) fn decode(
         let mut decoded = None;
         let mut decoded_count = 0;
         for curve in items {
-            if let Some(geometry) = decode_pcurve_geometry(curve, exchange, PcurveSources { points: &points2, vectors: &vectors2, placements: &placements2, transformations: &transformation_operators2, angle_scale: pcurve_angle_scale, }, &mut losses, &mut BTreeSet::new(), 0, ctx,)? {
+            if let Some(geometry) = decode_pcurve_geometry(
+                curve,
+                exchange,
+                PcurveSources {
+                    points: &points2,
+                    vectors: &vectors2,
+                    placements: &placements2,
+                    transformations: &transformation_operators2,
+                    angle_scale: pcurve_angle_scale,
+                },
+                &mut losses,
+                &mut BTreeSet::new(),
+                0,
+                ctx,
+            )? {
                 decoded_count += 1;
                 decoded = Some((curve, geometry));
             }
@@ -5738,6 +5752,7 @@ fn nurbs_pcurve(
     }
 }
 
+#[derive(Clone, Copy)]
 struct PcurveSources<'a> {
     points: &'a BTreeMap<u64, Point2>,
     vectors: &'a BTreeMap<u64, Point2>,
@@ -5755,7 +5770,13 @@ fn decode_pcurve_geometry(
     depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(PcurveGeometry, BTreeSet<u64>)>, CodecError> {
-    let PcurveSources { points, vectors, placements, transformations, angle_scale } = sources;
+    let PcurveSources {
+        points,
+        vectors,
+        placements,
+        transformations,
+        angle_scale,
+    } = sources;
     if depth >= 256 || active.contains(&id) {
         return Ok(None);
     }
@@ -5918,7 +5939,15 @@ fn decode_pcurve_geometry(
                         geometry_or_none!(
                             named_parameter(record, "CURVE_REPLICA", 2).and_then(Value::reference)
                         );
-                    let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(basis_id, exchange, PcurveSources { points: points, vectors: vectors, placements: placements, transformations: transformations, angle_scale: angle_scale, }, losses, active, depth + 1, ctx,)?);
+                    let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
+                        basis_id,
+                        exchange,
+                        sources,
+                        losses,
+                        active,
+                        depth + 1,
+                        ctx,
+                    )?);
                     let transform = geometry_or_none!(transformations.get(&operator_id).copied());
                     for record in basis_records {
                         insert_geometry_set(
@@ -5950,7 +5979,15 @@ fn decode_pcurve_geometry(
                     let sense = geometry_or_none!(
                         named_parameter(record, "TRIMMED_CURVE", 4).and_then(Value::logical)
                     );
-                    let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(basis_id, exchange, PcurveSources { points: points, vectors: vectors, placements: placements, transformations: transformations, angle_scale: angle_scale, }, losses, active, depth + 1, ctx,)?);
+                    let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
+                        basis_id,
+                        exchange,
+                        sources,
+                        losses,
+                        active,
+                        depth + 1,
+                        ctx,
+                    )?);
                     let scale = if matches!(
                         basis,
                         PcurveGeometry::Circle(_) | PcurveGeometry::Ellipse(_)
@@ -5999,7 +6036,15 @@ fn decode_pcurve_geometry(
                     geometry_or_none!(
                         named_parameter(record, "OFFSET_CURVE_2D", 3).and_then(Value::logical)
                     );
-                    let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(basis_id, exchange, PcurveSources { points: points, vectors: vectors, placements: placements, transformations: transformations, angle_scale: angle_scale, }, losses, active, depth + 1, ctx,)?);
+                    let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
+                        basis_id,
+                        exchange,
+                        sources,
+                        losses,
+                        active,
+                        depth + 1,
+                        ctx,
+                    )?);
                     for record in basis_records {
                         insert_geometry_set(
                             &mut records,

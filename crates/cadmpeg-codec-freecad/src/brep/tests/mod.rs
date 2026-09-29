@@ -799,22 +799,21 @@ fn binary_edge_continuity_retains_decimal_byte_spelling() {
                     bytes.extend_from_slice(&0_i32.to_le_bytes());
                 }
                 let mut cursor = BinaryCursor::new(ctx, &bytes);
-                let record =
-                    parse_binary_edge_representation(
-                        &mut cursor,
-                        1,
-                        kind,
-                        super::BinaryGeometryCounts {
-                            curve_count: 0,
-                            curve2d_count: 2,
-                            surface_count: 1,
-                            location_count: 0,
-                            polygon3d_count: 0,
-                            indexed_polygon_count: 0,
-                            triangulation_count: 0,
-                        },
-                    )
-                        .unwrap();
+                let record = parse_binary_edge_representation(
+                    &mut cursor,
+                    1,
+                    kind,
+                    super::BinaryGeometryCounts {
+                        curves: 0,
+                        curves2d: 2,
+                        surfaces: 1,
+                        locations: 0,
+                        polygons3d: 0,
+                        indexed_polygons: 0,
+                        triangulations: 0,
+                    },
+                )
+                .unwrap();
                 let (TextEdgeRepresentation::PcurvePair { continuity, .. }
                 | TextEdgeRepresentation::Regularity { continuity, .. }) = record
                 else {

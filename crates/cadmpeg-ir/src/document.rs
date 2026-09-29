@@ -337,6 +337,10 @@ macro_rules! declare_model {
             fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
                 let mut schema = ModelReadWire::json_schema(generator);
                 schema.ensure_object().remove("additionalProperties");
+                schema.ensure_object().insert(
+                    "description".into(),
+                    "Format-neutral entity arenas connected by typed IDs.".into(),
+                );
                 schema
             }
         }

@@ -1525,7 +1525,11 @@ fn build_wire(
             id,
             set_id,
             exchange,
-            WireSources { vdefs, edefs, point_positions },
+            WireSources {
+                vdefs,
+                edefs,
+                point_positions,
+            },
             scoped,
             losses,
             ctx,
@@ -1560,7 +1564,11 @@ fn build_wire_set(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Built>, CodecError> {
-    let WireSources { vdefs, edefs, point_positions } = sources;
+    let WireSources {
+        vdefs,
+        edefs,
+        point_positions,
+    } = sources;
     let Some(set) = exchange.records().get(&set_id) else {
         return Ok(None);
     };
@@ -1697,19 +1705,33 @@ fn build_wire_set(
             return Ok(None);
         }
     };
-    let staged = staged_topology(StagedTopologyParts { typed: typed, vertices: built_vertices, edges: built_edges, coedges: Vec::new(), loops: Vec::new(), faces: Vec::new(), surfaces: Vec::new(), shells: one_topology_vec(shell_value, ctx, "step_wire_shells")?, region: Region {
-            id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
-            body: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
-            shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
-        }, body: Body {
-            id: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
-            kind: BodyKind::Wire,
-            regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        }, }, ctx,);
+    let staged = staged_topology(
+        StagedTopologyParts {
+            typed,
+            vertices: built_vertices,
+            edges: built_edges,
+            coedges: Vec::new(),
+            loops: Vec::new(),
+            faces: Vec::new(),
+            surfaces: Vec::new(),
+            shells: one_topology_vec(shell_value, ctx, "step_wire_shells")?,
+            region: Region {
+                id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
+                body: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
+                shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
+            },
+            body: Body {
+                id: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
+                kind: BodyKind::Wire,
+                regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        },
+        ctx,
+    );
     let mut built = match staged {
         Ok(built) => built,
         Err(StageError::Draft(error)) => {
@@ -1766,8 +1788,15 @@ fn build_shell_wire(
             id,
             shell_id,
             exchange,
-            WireSources { vdefs, edefs, point_positions },
-            WireScope { scoped, root: scope_root },
+            WireSources {
+                vdefs,
+                edefs,
+                point_positions,
+            },
+            WireScope {
+                scoped,
+                root: scope_root,
+            },
             losses,
             ctx,
         ) {
@@ -1788,8 +1817,15 @@ fn build_shell_wire_set(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Built>, CodecError> {
-    let WireSources { vdefs, edefs, point_positions } = sources;
-    let WireScope { scoped, root: scope_root } = scope;
+    let WireSources {
+        vdefs,
+        edefs,
+        point_positions,
+    } = sources;
+    let WireScope {
+        scoped,
+        root: scope_root,
+    } = scope;
     let Some(shell_record) = exchange.records().get(&shell_id) else {
         return Ok(None);
     };
@@ -2004,19 +2040,33 @@ fn build_shell_wire_set(
             return Ok(None);
         }
     };
-    let staged = staged_topology(StagedTopologyParts { typed: typed, vertices: vertices, edges: edges, coedges: Vec::new(), loops: Vec::new(), faces: Vec::new(), surfaces: Vec::new(), shells: one_topology_vec(shell_value, ctx, "step_wire_shells")?, region: Region {
-            id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
-            body: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
-            shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
-        }, body: Body {
-            id: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
-            kind: BodyKind::Wire,
-            regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        }, }, ctx,);
+    let staged = staged_topology(
+        StagedTopologyParts {
+            typed,
+            vertices,
+            edges,
+            coedges: Vec::new(),
+            loops: Vec::new(),
+            faces: Vec::new(),
+            surfaces: Vec::new(),
+            shells: one_topology_vec(shell_value, ctx, "step_wire_shells")?,
+            region: Region {
+                id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
+                body: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
+                shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
+            },
+            body: Body {
+                id: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
+                kind: BodyKind::Wire,
+                regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        },
+        ctx,
+    );
     let mut built = match staged {
         Ok(built) => built,
         Err(StageError::Draft(error)) => {
@@ -2169,19 +2219,33 @@ fn build_geometric_set(
         Vec::new(),
     )
     .map_err(CodecError::malformed)?;
-    let staged = staged_topology(StagedTopologyParts { typed: typed, vertices: Vec::new(), edges: Vec::new(), coedges: Vec::new(), loops: Vec::new(), faces: faces, surfaces: Vec::new(), shells: one_topology_vec(shell, ctx, "step_geometric_set_shells")?, region: Region {
-            id: region.clone(),
-            body: body.clone(),
-            shells: one_topology_vec(shell_id, ctx, "step_geometric_set_region_shells")?,
-        }, body: Body {
-            id: body,
-            kind: BodyKind::Sheet,
-            regions: one_topology_vec(region, ctx, "step_geometric_set_body_regions")?,
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        }, }, ctx,);
+    let staged = staged_topology(
+        StagedTopologyParts {
+            typed,
+            vertices: Vec::new(),
+            edges: Vec::new(),
+            coedges: Vec::new(),
+            loops: Vec::new(),
+            faces,
+            surfaces: Vec::new(),
+            shells: one_topology_vec(shell, ctx, "step_geometric_set_shells")?,
+            region: Region {
+                id: region.clone(),
+                body: body.clone(),
+                shells: one_topology_vec(shell_id, ctx, "step_geometric_set_region_shells")?,
+            },
+            body: Body {
+                id: body,
+                kind: BodyKind::Sheet,
+                regions: one_topology_vec(region, ctx, "step_geometric_set_body_regions")?,
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        },
+        ctx,
+    );
     match staged {
         Ok(built) => Ok(Some(built)),
         Err(StageError::Draft(error)) => {
@@ -2713,7 +2777,18 @@ fn staged_topology(
     parts: StagedTopologyParts,
     ctx: &DecodeContext<'_>,
 ) -> Result<Built, StageError> {
-    let StagedTopologyParts { typed, vertices, edges, coedges, loops, faces, surfaces, shells, region, body } = parts;
+    let StagedTopologyParts {
+        typed,
+        vertices,
+        edges,
+        coedges,
+        loops,
+        faces,
+        surfaces,
+        shells,
+        region,
+        body,
+    } = parts;
     let mut draft = ModelDraft::new();
     for vertex in vertices {
         ctx.charge_collection_items(1, "step_staged_vertices")?;
@@ -2930,7 +3005,12 @@ fn build(
     scope_root: bool,
     losses: &mut Vec<LossNote>,
 ) -> Result<BuildOutcome, CodecError> {
-    let BuildSources { exchange, shell_definitions, ctx, .. } = sources;
+    let BuildSources {
+        exchange,
+        shell_definitions,
+        ctx,
+        ..
+    } = sources;
     let Some(shell_steps) = root_shell_steps(root, exchange, shell_definitions, ctx)? else {
         return Ok(BuildOutcome::Partial {
             built: Vec::new(),
@@ -2955,8 +3035,16 @@ fn build(
             id,
             root,
             sources,
-            BuildRoot { shell_steps: &shell_steps, bid: body, rid: &region },
-            BuildScope { faces: scope_shell_carriers, edges: scope_shell_carriers, root: scope_root },
+            BuildRoot {
+                shell_steps: &shell_steps,
+                bid: body,
+                rid: &region,
+            },
+            BuildScope {
+                faces: scope_shell_carriers,
+                edges: scope_shell_carriers,
+                root: scope_root,
+            },
             losses,
             &mut failure,
         );
@@ -3012,8 +3100,16 @@ fn build(
             id,
             root,
             sources,
-            BuildRoot { shell_steps: &[shell_reference], bid: body, rid: &region },
-            BuildScope { faces: scoped || scope_root, edges: scoped || scope_root, root: scope_root },
+            BuildRoot {
+                shell_steps: &[shell_reference],
+                bid: body,
+                rid: &region,
+            },
+            BuildScope {
+                faces: scoped || scope_root,
+                edges: scoped || scope_root,
+                root: scope_root,
+            },
             losses,
             &mut failure,
         ) {
@@ -3045,9 +3141,27 @@ fn build_one(
     losses: &mut Vec<LossNote>,
     failure: &mut Option<BuildFailure>,
 ) -> Result<Built, BuildError> {
-    let BuildSources { exchange, ir, vdefs, edefs, odefs, shell_definitions, decoded_pcurves, point_positions, ctx } = sources;
-    let BuildRoot { shell_steps, bid, rid } = root_parts;
-    let BuildScope { faces: scope_faces, edges: scope_edges, root: scope_root } = scope;
+    let BuildSources {
+        exchange,
+        ir,
+        vdefs,
+        edefs,
+        odefs,
+        shell_definitions,
+        decoded_pcurves,
+        point_positions,
+        ctx,
+    } = sources;
+    let BuildRoot {
+        shell_steps,
+        bid,
+        rid,
+    } = root_parts;
+    let BuildScope {
+        faces: scope_faces,
+        edges: scope_edges,
+        root: scope_root,
+    } = scope;
     let solid = root.partial("MANIFOLD_SOLID_BREP").is_some()
         || root.partial("BREP_WITH_VOIDS").is_some()
         || root.partial("FACETED_BREP").is_some();
@@ -4145,7 +4259,21 @@ fn build_one(
             }
         }
     }
-    let mut built = match staged_topology(StagedTopologyParts { typed: typed, vertices: vertices, edges: edges, coedges: coedges, loops: loops, faces: faces, surfaces: surfaces, shells: shells, region: region, body: body, }, ctx,) {
+    let mut built = match staged_topology(
+        StagedTopologyParts {
+            typed,
+            vertices,
+            edges,
+            coedges,
+            loops,
+            faces,
+            surfaces,
+            shells,
+            region,
+            body,
+        },
+        ctx,
+    ) {
         Ok(built) => built,
         Err(StageError::Draft(_)) => {
             note_failure(failure, id, CarrierKind::TopologyDraft);
@@ -4743,6 +4871,7 @@ struct PcurveEndpointFit {
     max_residual: f64,
 }
 
+#[derive(Clone, Copy)]
 struct PcurveAssociationSources<'a> {
     vdefs: &'a BTreeMap<u64, VertexDef>,
     point_positions: &'a CarrierIndex,
@@ -4757,7 +4886,11 @@ fn select_associated_pcurve(
     sources: PcurveAssociationSources<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<SelectedPcurve, PcurveSelectionFailure> {
-    let PcurveAssociationSources { vdefs, point_positions, candidates } = sources;
+    let PcurveAssociationSources {
+        vdefs,
+        point_positions,
+        candidates,
+    } = sources;
     let [candidate] = candidates else {
         return Err(PcurveSelectionFailure::NotUnique {
             count: candidates.len(),
@@ -4816,7 +4949,12 @@ fn select_associated_pcurve(
         edge,
         &surface_id,
         geometry,
-        PcurveWitness { endpoint, curve_start, curve_end, bound },
+        PcurveWitness {
+            endpoint,
+            curve_start,
+            curve_end,
+            bound,
+        },
         ctx,
     )? {
         return Err(PcurveSelectionFailure::Locus);
@@ -4845,6 +4983,7 @@ fn select_associated_pcurve(
 
 const PCURVE_LOCUS_SAMPLE_COUNT: usize = 23;
 
+#[derive(Clone, Copy)]
 struct PcurveWitness {
     endpoint: PcurveEndpointFit,
     curve_start: Point3,
@@ -4861,7 +5000,12 @@ fn pcurve_locus_witness(
     witness: PcurveWitness,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, PcurveSelectionFailure> {
-    let PcurveWitness { endpoint, curve_start, curve_end, bound } = witness;
+    let PcurveWitness {
+        endpoint,
+        curve_start,
+        curve_end,
+        bound,
+    } = witness;
     let Some(curve_step) = edge
         .curve()
         .and_then(|curve| curve_carrier_record(curve, exchange))

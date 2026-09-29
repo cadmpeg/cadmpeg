@@ -120,7 +120,19 @@ impl FormatDescriptor {
     pub const fn id(&self) -> FormatId {
         match &self.kind {
             FormatKind::Neutral { id, .. } => *id,
-            #[cfg(any(feature = "fcstd", feature = "f3d", feature = "inventor", feature = "sldprt", feature = "catia", feature = "creo", feature = "nx", feature = "rhino", feature = "step", feature = "iges", feature = "sat"))]
+            #[cfg(any(
+                feature = "fcstd",
+                feature = "f3d",
+                feature = "inventor",
+                feature = "sldprt",
+                feature = "catia",
+                feature = "creo",
+                feature = "nx",
+                feature = "rhino",
+                feature = "step",
+                feature = "iges",
+                feature = "sat"
+            ))]
             FormatKind::Native(native) => native.id,
         }
     }
@@ -131,7 +143,19 @@ impl FormatDescriptor {
             FormatKind::Neutral {
                 input_extensions, ..
             } => input_extensions,
-            #[cfg(any(feature = "fcstd", feature = "f3d", feature = "inventor", feature = "sldprt", feature = "catia", feature = "creo", feature = "nx", feature = "rhino", feature = "step", feature = "iges", feature = "sat"))]
+            #[cfg(any(
+                feature = "fcstd",
+                feature = "f3d",
+                feature = "inventor",
+                feature = "sldprt",
+                feature = "catia",
+                feature = "creo",
+                feature = "nx",
+                feature = "rhino",
+                feature = "step",
+                feature = "iges",
+                feature = "sat"
+            ))]
             FormatKind::Native(native) => native.input_extensions,
         }
     }
@@ -139,7 +163,19 @@ impl FormatDescriptor {
     fn forced_input(&'static self) -> ForcedInput {
         match &self.kind {
             FormatKind::Neutral { .. } => ForcedInput::Cadir,
-            #[cfg(any(feature = "fcstd", feature = "f3d", feature = "inventor", feature = "sldprt", feature = "catia", feature = "creo", feature = "nx", feature = "rhino", feature = "step", feature = "iges", feature = "sat"))]
+            #[cfg(any(
+                feature = "fcstd",
+                feature = "f3d",
+                feature = "inventor",
+                feature = "sldprt",
+                feature = "catia",
+                feature = "creo",
+                feature = "nx",
+                feature = "rhino",
+                feature = "step",
+                feature = "iges",
+                feature = "sat"
+            ))]
             FormatKind::Native(native) => ForcedInput::Codec(native),
         }
     }
