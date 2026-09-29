@@ -795,7 +795,12 @@ fn project_all_dimension_constraints(
                 return None;
             }
             let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
-            match exact_group_definition(scope, group, parameter, parameter_id.clone()) {
+            let copied = match copy_dimension_parameter_id(ctx, &parameter_id,
+                "f3d radial group parameter id") {
+                Ok(copied) => copied,
+                Err(error) => return Some(Err(error)),
+            };
+            match exact_group_definition(scope, group, parameter, copied) {
                 Some(Ok(_)) => return None,
                 Some(Err(error)) => return Some(Err(error)),
                 None => {}
@@ -895,7 +900,9 @@ fn project_all_dimension_constraints(
         }
         let Some((parameter, parameter_id)) =
             parameter_for(scope, group.companion_record_index) else { continue; };
-        let definition = exact_group_definition(scope, group, parameter, parameter_id.clone())
+        let copied = copy_dimension_parameter_id(ctx, &parameter_id,
+            "f3d projected group parameter id")?;
+        let definition = exact_group_definition(scope, group, parameter, copied)
             .transpose()?;
         if definition.as_ref()
             .is_none_or(|definition| constraint_parameters(definition).contains(&&parameter_id)) {
@@ -930,7 +937,12 @@ fn project_all_dimension_constraints(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            let exact = match exact_group_definition(scope, group, parameter, parameter_id.clone()).transpose() {
+            let copied = match copy_dimension_parameter_id(ctx, &parameter_id,
+                "f3d group constraint parameter id") {
+                Ok(copied) => copied,
+                Err(error) => return Some(Err(error)),
+            };
+            let exact = match exact_group_definition(scope, group, parameter, copied).transpose() {
                 Ok(definition) => definition,
                 Err(error) => return Some(Err(error)),
             };
@@ -1011,7 +1023,9 @@ fn project_all_dimension_constraints(
             let Some(sketch) = sketch_for_geometry(scope, &indices,
                 "f3d dimension pair sketch id")? else { continue; };
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair");
-            let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())?
+            let copied = copy_dimension_parameter_id(ctx, &parameter_id,
+                "f3d pair exact parameter id")?;
+            let definition = exact_definition(scope, parameter, &indices, copied)?
                 .or_else(|| {
                     let [first_index, second_index] = indices;
                     let first = projected.get(&(scope, first_index))?;
@@ -1091,7 +1105,12 @@ fn project_all_dimension_constraints(
                 Err(error) => return Some(Err(error)),
             };
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "annotation");
-            let exact = match exact_definition(scope, parameter, &indices, parameter_id.clone()) {
+            let copied = match copy_dimension_parameter_id(ctx, &parameter_id,
+                "f3d annotation exact parameter id") {
+                Ok(copied) => copied,
+                Err(error) => return Some(Err(error)),
+            };
+            let exact = match exact_definition(scope, parameter, &indices, copied) {
                 Ok(definition) => definition,
                 Err(error) => return Some(Err(error)),
             }
@@ -1199,12 +1218,17 @@ fn project_all_dimension_constraints(
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "null-pair");
             if design_dimension_unit(parameter) {
                 if let Some(entity) = projected.get(&(scope, pair.loci()[1].geometry_index())) {
+                    let copied = match copy_dimension_parameter_id(ctx, &parameter_id,
+                        "f3d null pair exact parameter id") {
+                        Ok(copied) => copied,
+                        Err(error) => return Some(Err(error)),
+                    };
                     if let Some(definition) = null_locus_dimension_definition(
                         pair,
                         entity,
                         parameter.source_kind(),
                         parameter.evaluated_value().get(),
-                        parameter_id.clone(),
+                        copied,
                         linear_tolerance,
                     ) {
                         let definition = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(

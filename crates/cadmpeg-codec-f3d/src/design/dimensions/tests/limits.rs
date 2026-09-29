@@ -525,6 +525,8 @@ fn assert_exact_group_variant_refusal(
     let mut group = native_fallback_group();
     if variant == "offset" {
         group.state = 0x20;
+    } else if variant == "radial-call" {
+        group.state = 0;
     }
     if variant == "angular" {
         let mut parameter = parse_design_parameter_record(&parameter_record(
@@ -590,6 +592,42 @@ fn exact_group_angular_index_refuses_collection_limit() {
 #[test]
 fn exact_group_angular_parameter_refuses_retained_limit() {
     assert_exact_group_variant_refusal("angular", "f3d exact group angular parameter id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn radial_group_parameter_refuses_retained_limit() {
+    assert_exact_group_variant_refusal("radial-call", "f3d radial group parameter id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn projected_group_parameter_refuses_retained_limit() {
+    assert_exact_group_variant_refusal("linear", "f3d projected group parameter id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn group_constraint_parameter_refuses_retained_limit() {
+    assert_exact_group_variant_refusal("linear", "f3d group constraint parameter id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn pair_exact_parameter_refuses_retained_limit() {
+    assert_native_fallback_refusal(false, "f3d pair exact parameter id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn annotation_exact_parameter_refuses_retained_limit() {
+    assert_native_auxiliary_refusal(true, "f3d annotation exact parameter id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn null_pair_exact_parameter_refuses_retained_limit() {
+    assert_native_auxiliary_refusal(false, "f3d null pair exact parameter id",
         ResourceDimension::RetainedBytes);
 }
 
