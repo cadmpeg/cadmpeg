@@ -184,6 +184,7 @@ fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -
     )
 }
 
+mod admission;
 mod axial_profile;
 mod feature_ranges;
 mod hole_axis;
