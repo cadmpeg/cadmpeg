@@ -650,14 +650,14 @@ fn bind_occurrences(
                 &reference.neutron_role,
             )?;
             ctx.charge_collection_items(
-                selected.len() as u64,
+                cadmpeg_core::decode::u64_from_index(selected.len()),
                 "collect F3D xref occurrence transforms",
             )?;
             occurrences.try_reserve(selected.len()).map_err(|_| {
                 ctx.refuse_codec_limit(
                     "collect F3D xref occurrence transforms",
                     0,
-                    selected.len() as u64,
+                    cadmpeg_core::decode::u64_from_index(selected.len()),
                 )
             })?;
             occurrences.extend(selected);
@@ -908,7 +908,7 @@ fn indexed_records(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<IndexedRecord>, CodecError> {
-    ctx.charge_work(bytes.len() as u64, "scan F3D xref record headers")?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan F3D xref record headers")?;
     let mut records: Vec<IndexedRecord> = Vec::new();
     for at in 0..bytes.len().saturating_sub(11) {
         if View::u32_le_at(bytes, at) != Some(3) {

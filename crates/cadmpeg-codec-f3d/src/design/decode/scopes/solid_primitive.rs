@@ -73,7 +73,7 @@ pub(super) fn exact_solid_primitive(
         }
         Some((
             crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform).ok()?,
-            matrix_at as u64,
+            cadmpeg_core::decode::u64_from_index(matrix_at),
         ))
     };
     match scope.kind_name() {
@@ -96,7 +96,7 @@ pub(super) fn exact_solid_primitive(
                     diameter_record_index,
                     diameter_offset,
                     operation,
-                    operation_offset: operation_offset as u64,
+                    operation_offset: cadmpeg_core::decode::u64_from_index(operation_offset),
                 },
             ))
         }
@@ -129,7 +129,7 @@ pub(super) fn exact_solid_primitive(
                     minor_diameter_record_index,
                     minor_diameter_offset,
                     operation,
-                    operation_offset: operation_offset as u64,
+                    operation_offset: cadmpeg_core::decode::u64_from_index(operation_offset),
                 },
             ))
         }
@@ -163,7 +163,7 @@ pub(super) fn exact_solid_primitive(
                     offset_y_record_index: offset_y.record_index(),
                     offset_y_offset: offset_y.evaluated_value_offset(),
                     operation,
-                    operation_offset: operation_offset as u64,
+                    operation_offset: cadmpeg_core::decode::u64_from_index(operation_offset),
                 },
             ))
         }
@@ -188,7 +188,7 @@ pub(super) fn exact_solid_primitive(
                     diameter_offset: diameter.evaluated_value_offset(),
                     transform: cylinder_transform,
                     operation,
-                    operation_offset: operation_offset as u64,
+                    operation_offset: cadmpeg_core::decode::u64_from_index(operation_offset),
                 },
             ))
         }

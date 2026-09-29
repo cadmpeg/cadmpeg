@@ -340,7 +340,7 @@ pub(super) fn decode_stream(
                                 value,
                                 "f3d construction recipe design ID",
                             )?,
-                            offset: design_id_at as u64,
+                            offset: cadmpeg_core::decode::u64_from_index(design_id_at),
                         },
                         selector,
                     })
@@ -1263,15 +1263,15 @@ pub(crate) fn decode_design_body_bindings(
                         pair_count,
                         pair_ordinal: ordinal,
                         asm_body_key: binding.asm_key,
-                        asm_body_key_offset: binding.asm_key_offset as u64,
+                        asm_body_key_offset: cadmpeg_core::decode::u64_from_index(binding.asm_key_offset),
                         entity_suffix: binding.entity_suffix,
-                        entity_suffix_offset: binding.entity_suffix_offset() as u64,
+                        entity_suffix_offset: cadmpeg_core::decode::u64_from_index(binding.entity_suffix_offset()),
                         blob_name: copy_body_map_name(
                             ctx,
                             &record.blob_name,
                             "f3d body-binding blob name",
                         )?,
-                        blob_name_offset: record.blob_name_offset as u64,
+                        blob_name_offset: cadmpeg_core::decode::u64_from_index(record.blob_name_offset),
                         body: body
                             .map(|id| crate::brep::copy_body_id(ctx, id))
                             .transpose()?,
@@ -1386,7 +1386,7 @@ pub(crate) fn decode_all_body_visibility(
                     DecodedBodyVisibility {
                         stream,
                         byte_offset: node.byte_offset,
-                        asm_body_key_offset: binding.asm_key_offset as u64,
+                        asm_body_key_offset: cadmpeg_core::decode::u64_from_index(binding.asm_key_offset),
                         entity_suffix: binding.entity_suffix,
                         visible: !node.hidden,
                     },

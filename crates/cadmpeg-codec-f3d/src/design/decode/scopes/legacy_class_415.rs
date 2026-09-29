@@ -25,7 +25,7 @@ pub(crate) fn is_symmetric_distance_layout(
 ) -> bool {
     class_tag == "415"
         && paired_class_tag == "265"
-        && reference_count_delta == symmetric::REFERENCE_COUNT as u64
+        && reference_count_delta == cadmpeg_core::decode::u64_from_index(symmetric::REFERENCE_COUNT)
         && matches!((frame_length, reference_member_count), (447, 5) | (469, 7))
 }
 

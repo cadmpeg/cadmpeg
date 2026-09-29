@@ -513,7 +513,7 @@ pub(super) fn patch_history_states(
     if let Some(history) = &edits.preamble {
         let start = history
             .byte_offset
-            .checked_add(PREAMBLE_LEN as u64)
+            .checked_add(cadmpeg_core::decode::u64_from_index(PREAMBLE_LEN))
             .ok_or_else(|| {
                 CodecError::Malformed("ASM preamble offset exceeds address space".into())
             })?;
@@ -526,7 +526,7 @@ pub(super) fn patch_history_states(
     for state in &edits.states {
         let first_tag = state
             .byte_offset
-            .checked_add(DELTA_HEADER_LEN as u64)
+            .checked_add(cadmpeg_core::decode::u64_from_index(DELTA_HEADER_LEN))
             .ok_or_else(|| {
                 CodecError::Malformed("ASM history offset exceeds address space".into())
             })?;

@@ -606,11 +606,11 @@ pub(super) fn exact_ruled_surface_operation(
         }
         Some(Ok(DesignRuledSurfaceOperation {
             method,
-            method_offset: method_offset as u64,
+            method_offset: cadmpeg_core::decode::u64_from_index(method_offset),
             corner,
-            corner_offset: corner_offset as u64,
+            corner_offset: cadmpeg_core::decode::u64_from_index(corner_offset),
             alternate_face,
-            alternate_face_offset: alternate_face_offset as u64,
+            alternate_face_offset: cadmpeg_core::decode::u64_from_index(alternate_face_offset),
             angle_owner_record_index,
             distance_owner_record_index,
             edge_group_record_indices,

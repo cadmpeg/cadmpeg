@@ -9733,7 +9733,7 @@ fn project_coil(
             None
         } else {
             let expected_role = if scope.coil_operation_offset()
-                == scope.byte_offset().checked_add(coil_long::OPERATION as u64)
+                == scope.byte_offset().checked_add(cadmpeg_core::decode::u64_from_index(coil_long::OPERATION))
             {
                 DesignOperandRole::BODIES_A
             } else {

@@ -259,7 +259,7 @@ struct MeshTextureTableRecord {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshWrapperRecord {
-    identity: DesignMeshFixedRecord<{ body_wrapper::LEN as u64 }>,
+    identity: DesignMeshFixedRecord<{ cadmpeg_core::decode::u64_from_index(body_wrapper::LEN) }>,
     body_record_index: u32,
 }
 

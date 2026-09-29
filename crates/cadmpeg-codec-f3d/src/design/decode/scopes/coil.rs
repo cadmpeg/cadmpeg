@@ -620,19 +620,19 @@ pub(super) fn exact_coil_discriminators(
     };
     Some(CoilDiscriminators {
         operation,
-        operation_offset: operation_offset as u64,
+        operation_offset: cadmpeg_core::decode::u64_from_index(operation_offset),
         extent: Some(crate::records::identity::MaybeRecordedValue::Located(
             crate::records::identity::RecordedValue {
                 value: extent,
-                offset: extent_offset as u64,
+                offset: cadmpeg_core::decode::u64_from_index(extent_offset),
             },
         )),
         section,
-        section_offset: Some(section_offset as u64),
+        section_offset: Some(cadmpeg_core::decode::u64_from_index(section_offset)),
         section_placement,
-        section_placement_offset: Some(section_placement_offset as u64),
+        section_placement_offset: Some(cadmpeg_core::decode::u64_from_index(section_placement_offset)),
         clockwise,
-        clockwise_offset: Some(clockwise_offset as u64),
+        clockwise_offset: Some(cadmpeg_core::decode::u64_from_index(clockwise_offset)),
     })
 }
 

@@ -185,7 +185,7 @@ pub(super) fn exact_work_plane_frame(
                 {
                     (
                         start + 76,
-                        Some((View::u32_le_at(bytes, start + 58)?, (start + 58) as u64)),
+                        Some((View::u32_le_at(bytes, start + 58)?, cadmpeg_core::decode::u64_from_index(start + 58))),
                     )
                 }
                 _ => continue,
@@ -203,7 +203,7 @@ pub(super) fn exact_work_plane_frame(
             if candidate
                 .replace(ScopePlacementFrame {
                     transform,
-                    transform_offset: matrix_at as u64,
+                    transform_offset: cadmpeg_core::decode::u64_from_index(matrix_at),
                     reference,
                 })
                 .is_some()
@@ -447,7 +447,7 @@ pub(super) fn exact_joint_origin_frame(
                     if candidate
                         .replace(ScopePlacementFrame {
                             transform,
-                            transform_offset: (start + joint_origin_class_337_266::MATRIX) as u64,
+                            transform_offset: cadmpeg_core::decode::u64_from_index(start + joint_origin_class_337_266::MATRIX),
                             reference: None,
                         })
                         .is_some()
@@ -474,7 +474,7 @@ pub(super) fn exact_joint_origin_frame(
                     if candidate
                         .replace(ScopePlacementFrame {
                             transform,
-                            transform_offset: (start + 49) as u64,
+                            transform_offset: cadmpeg_core::decode::u64_from_index(start + 49),
                             reference: None,
                         })
                         .is_some()
@@ -504,8 +504,8 @@ pub(super) fn exact_joint_origin_frame(
             if candidate
                 .replace(ScopePlacementFrame {
                     transform,
-                    transform_offset: (start + 60) as u64,
-                    reference: Some((reference, (start + 46) as u64)),
+                    transform_offset: cadmpeg_core::decode::u64_from_index(start + 60),
+                    reference: Some((reference, cadmpeg_core::decode::u64_from_index(start + 46))),
                 })
                 .is_some()
             {

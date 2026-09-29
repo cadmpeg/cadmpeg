@@ -948,7 +948,7 @@ fn exact_fixed_pattern_count(
                 return None;
             }
             let count = View::u32_le_at(bytes, start + 40)?;
-            (count > 0).then_some((count, (start + 40) as u64))
+            (count > 0).then_some((count, cadmpeg_core::decode::u64_from_index(start + 40)))
         });
     let candidate = candidates.next()?;
     candidates.next().is_none().then_some(candidate)

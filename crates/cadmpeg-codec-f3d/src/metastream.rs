@@ -534,18 +534,18 @@ fn parse_inner(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<MetaStream, Pars
         at = ids_end;
         types.push(SegmentType {
             id: String::new(),
-            byte_offset: entry_at as u64,
+            byte_offset: cadmpeg_core::decode::u64_from_index(entry_at),
             type_guid,
-            type_guid_offset: type_guid_offset as u64,
+            type_guid_offset: cadmpeg_core::decode::u64_from_index(type_guid_offset),
             base_type_guid: base_type_guid.map_or(
                 crate::records::entity_header::BaseTypeGuid::Absent,
                 |value| crate::records::entity_header::BaseTypeGuid::Guid {
                     value,
-                    offset: base_type_guid_offset as u64,
+                    offset: cadmpeg_core::decode::u64_from_index(base_type_guid_offset),
                 },
             ),
             version,
-            version_offset: version_offset as u64,
+            version_offset: cadmpeg_core::decode::u64_from_index(version_offset),
             module,
             entities: crate::records::identity::ReferenceRun::located(entity_rows),
         });

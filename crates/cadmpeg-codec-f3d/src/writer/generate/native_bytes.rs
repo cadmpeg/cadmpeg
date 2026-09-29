@@ -71,7 +71,7 @@ pub(super) fn native_length_prefixed_string(
         bytes.extend_from_slice(value.as_bytes());
         Ok(())
     } else {
-        let length = value.len() as u64;
+        let length = cadmpeg_core::decode::u64_from_index(value.len());
         bytes.push(0x09);
         bytes.extend_from_slice(&length.to_le_bytes());
         bytes.extend_from_slice(value.as_bytes());
