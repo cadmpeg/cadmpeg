@@ -19,7 +19,11 @@ impl NonWhitespaceChar {
     #[must_use]
     pub const fn from_ascii(byte: u8) -> Option<Self> {
         if byte.is_ascii() && !matches!(byte, b'\t'..=b'\r' | b' ') {
-            Some(Self(byte as char))
+            // endian-exception: reconstructed-scalar
+            match char::from_u32(u32::from_be_bytes([0, 0, 0, byte])) {
+                Some(character) => Some(Self(character)),
+                None => None,
+            }
         } else {
             None
         }
@@ -30,11 +34,11 @@ impl NonWhitespaceChar {
     /// Every hexadecimal digit is non-whitespace, and the mask makes the four
     /// bits total over `u8`, so this constructor refuses nothing.
     #[must_use]
-    pub const fn hex_digit(nibble: u8) -> Self {
+    pub fn hex_digit(nibble: u8) -> Self {
         const DIGITS: [char; 16] = [
             '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
         ];
-        Self(DIGITS[(nibble & 0x0f) as usize])
+        Self(DIGITS[usize::from(nibble & 0x0f)])
     }
 }
 

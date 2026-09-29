@@ -100,7 +100,11 @@ fn parse_stream<'a>(
         }
         return Ok(ParsedProtein::Empty);
     };
-    let payload_len = source.window().len().saturating_sub(protein_header::LEN);
+    let payload_len = source
+        .window()
+        .len()
+        .checked_sub(protein_header::LEN)
+        .ok_or_else(|| CodecError::Malformed("Inventor Protein header is truncated".into()))?;
     if declared_len.get() as usize != payload_len {
         return Err(CodecError::malformed(format_args!(
             "Inventor Protein declares {declared_len} bytes but stores {payload_len}"

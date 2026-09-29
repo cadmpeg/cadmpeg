@@ -213,7 +213,7 @@ fn finish_decode(
     // The fall-through statements say which route refused and where the decode
     // went next.
     for statement in fell_through {
-        let message = resource::copy_retained_str(ctx, statement, "catia_route_fallthrough_loss")?;
+        let message = ctx.copy_retained_text(statement, "catia_route_fallthrough_loss")?;
         resource::push(
             ctx,
             &mut report.losses,
@@ -229,9 +229,7 @@ fn finish_decode(
         resource::push(ctx, &mut report.losses, note, "catia_lane_refusal_loss")?;
     }
     ctx.admit_entities(
-        u64::try_from(ir.model.entity_count()).map_err(|_| {
-            ctx.refuse_codec_limit("count CATIA route entities", u64::MAX, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
         &mut admitted_model_entities,
         "admit CATIA route entities",
     )?;
@@ -3750,11 +3748,9 @@ fn modeling_graph_scope(
             .is_some_and(|container| container.class_name == "CATPrtCont")
     });
     Ok(match (part_graphs.next(), part_graphs.next()) {
-        (Some(graph), None) => ModelingGraphScope::Scoped(resource::copy_retained_str(
-            ctx,
-            &graph.id,
-            "catia_modeling_scope_graph",
-        )?),
+        (Some(graph), None) => ModelingGraphScope::Scoped(
+            ctx.copy_retained_text(&graph.id, "catia_modeling_scope_graph")?,
+        ),
         _ => ModelingGraphScope::Unresolved,
     })
 }

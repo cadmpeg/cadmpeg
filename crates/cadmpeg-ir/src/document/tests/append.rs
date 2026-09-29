@@ -27,7 +27,7 @@ fn staged_document() -> CadIr {
     for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
         ir.model.features.push(Feature {
             id: format!("test:append:feature#{key}").try_into().unwrap(),
-            ordinal: ordinal as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: None,
             dependencies: crate::features::DistinctMembers::default(),

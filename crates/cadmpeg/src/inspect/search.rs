@@ -46,7 +46,7 @@ pub(super) fn parse_pattern(text: &str) -> Result<Pattern, String> {
 
 fn hex_digit(c: char, text: &str) -> Result<u8, String> {
     c.to_digit(16)
-        .map(|value| value as u8)
+        .and_then(|value| u8::try_from(value).ok())
         .ok_or_else(|| format!("pattern `{text}`: `{c}` is not a hexadecimal digit or `?`"))
 }
 
@@ -113,7 +113,7 @@ pub(super) fn find_all(
             break;
         }
         if matches_at(haystack, candidate, pattern.bytes()) {
-            hits.push(candidate as u64);
+            hits.push(cadmpeg_core::decode::u64_from_index(candidate));
             if limit.is_some_and(|max| hits.len() >= max.get()) {
                 break;
             }
@@ -210,10 +210,10 @@ fn ascii_runs(bytes: &[u8], min_len: usize) -> Vec<FoundString> {
             if run.is_empty() {
                 start = index;
             }
-            run.push(*byte as char);
+            run.push(char::from(*byte));
         } else if long_enough(&run, min_len) {
             out.push(FoundString {
-                offset: start as u64,
+                offset: cadmpeg_core::decode::u64_from_index(start),
                 encoding: StringEncoding::Ascii,
                 text: std::mem::take(&mut run),
             });
@@ -223,7 +223,7 @@ fn ascii_runs(bytes: &[u8], min_len: usize) -> Vec<FoundString> {
     }
     if long_enough(&run, min_len) {
         out.push(FoundString {
-            offset: start as u64,
+            offset: cadmpeg_core::decode::u64_from_index(start),
             encoding: StringEncoding::Ascii,
             text: run,
         });
@@ -241,13 +241,13 @@ fn utf16le_runs(bytes: &[u8], min_len: usize) -> Vec<FoundString> {
             if run.is_empty() {
                 start = index;
             }
-            run.push(bytes[index] as char);
+            run.push(char::from(bytes[index]));
             index += 2;
             continue;
         }
         if long_enough(&run, min_len) {
             out.push(FoundString {
-                offset: start as u64,
+                offset: cadmpeg_core::decode::u64_from_index(start),
                 encoding: StringEncoding::Utf16le,
                 text: std::mem::take(&mut run),
             });
@@ -258,7 +258,7 @@ fn utf16le_runs(bytes: &[u8], min_len: usize) -> Vec<FoundString> {
     }
     if long_enough(&run, min_len) {
         out.push(FoundString {
-            offset: start as u64,
+            offset: cadmpeg_core::decode::u64_from_index(start),
             encoding: StringEncoding::Utf16le,
             text: run,
         });

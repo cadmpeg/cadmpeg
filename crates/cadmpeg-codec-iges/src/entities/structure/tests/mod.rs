@@ -531,7 +531,7 @@ fn decode_reports_an_unresolvable_required_trailing_back_pointer() {
     assert_eq!(loss.code, IgesLossCode::PointerUnresolved.kind());
     assert_eq!(
         loss.provenance.as_ref().unwrap().offset,
-        pointer_offset as u64
+        cadmpeg_core::decode::u64_from_index(pointer_offset)
     );
 }
 

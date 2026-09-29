@@ -1685,7 +1685,7 @@ fn resolve_identity(
     let object_visible = attributes.is_none_or(|value| value.visible);
     let visible = object_visible && layer.is_none_or(|value| value.visible);
     let name = attributes.map_or(Ok(String::new()), |value| {
-        crate::wire::copy_retained_string(ctx, &value.name, "Rhino identity object name")
+        ctx.copy_retained_text(&value.name, "Rhino identity object name")
     })?;
     let object_mode = attributes.map_or(0, |value| value.object_mode);
     let definition_member = object_mode & 0x0f == IDEF_OBJECT_MODE;
@@ -1753,11 +1753,7 @@ fn resolve_identity(
         .map(|value| {
             Ok::<LayerRef, cadmpeg_core::CodecError>(LayerRef {
                 id: value.id,
-                name: crate::wire::copy_retained_string(
-                    ctx,
-                    &value.name,
-                    "Rhino identity layer name",
-                )?,
+                name: ctx.copy_retained_text(&value.name, "Rhino identity layer name")?,
             })
         })
         .transpose()?;

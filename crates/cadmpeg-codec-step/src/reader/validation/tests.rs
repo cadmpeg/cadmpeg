@@ -158,7 +158,7 @@ fn validation_property_description_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
 
     assert!(matches!(
-        validation_limit_result(Some("geometric validation property".len() as u64), None),
+        validation_limit_result(Some(cadmpeg_core::decode::u64_from_index("geometric validation property".len())), None),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_string_text"

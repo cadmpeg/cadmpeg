@@ -986,7 +986,10 @@ fn property_fields_valid(
         }),
         13 => {
             matches!(record.integer(1), Some(2 | 3))
-                && end == record.integer(1).unwrap_or_default() as usize + 2
+                && record
+                    .integer(1)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .is_some_and(|value| end == value + 2)
                 && record.number(2).is_some()
                 && record.string(3).is_some()
                 && (record.integer(1) == Some(2) || record.string(4).is_some())
@@ -1154,7 +1157,10 @@ fn property_fields_valid(
             }),
         36 => {
             matches!(record.integer(1), Some(1 | 2))
-                && end == record.integer(1).unwrap_or_default() as usize + 2
+                && record
+                    .integer(1)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .is_some_and(|value| end == value + 2)
                 && integer_range(2, 0..=2)
                 && (record.integer(1) == Some(1) || integer_range(3, 0..=2))
         }
@@ -2831,7 +2837,10 @@ pub(super) fn project(
                 Some(TokenValue::Integer(value)) => {
                     usize::try_from(*value).ok().and_then(|count| {
                         (entry.form == 0
-                            || count <= record.parameter_end().saturating_sub(cursor + 3))
+                            || cursor
+                                .checked_add(3)
+                                .and_then(|start| record.parameter_end().checked_sub(start))
+                                .is_some_and(|available| count <= available))
                         .then_some(count)
                     })
                 }
@@ -2917,8 +2926,10 @@ pub(super) fn project(
         let row_count = declared_row_count
             .zip(values_per_row)
             .and_then(|(rows, width)| {
-                let available = record.parameter_end().saturating_sub(value_start);
-                (width == 0 || rows <= available / width).then_some(rows)
+                record
+                    .parameter_end()
+                    .checked_sub(value_start)
+                    .and_then(|available| (width == 0 || rows <= available / width).then_some(rows))
             });
         let mut cursor = value_start;
         let mut values_valid = shape.is_some() && row_count.is_some();

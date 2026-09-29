@@ -339,18 +339,14 @@ fn v1_string(
     let count = v1_count(reader, label, 1 << 20)?;
     let source = reader.take(count).map_err(|error| malformed(&error))?;
     ctx.charge_collection_items(
-        u64::try_from(count).map_err(|_| {
-            CodecError::NotImplemented("Rhino V1 text exceeds address space".to_string())
-        })?,
+        cadmpeg_core::decode::u64_from_index(count),
         "Rhino V1 source text",
     )?;
     let text_bytes = count.checked_mul(3).ok_or_else(|| {
         CodecError::NotImplemented("Rhino V1 text exceeds address space".to_string())
     })?;
     ctx.charge_retained(
-        u64::try_from(text_bytes).map_err(|_| {
-            CodecError::NotImplemented("Rhino V1 text exceeds address space".to_string())
-        })?,
+        cadmpeg_core::decode::u64_from_index(text_bytes),
         "Rhino V1 decoded text",
     )?;
     let bytes = ctx.copy_retained(source, "Rhino V1 source text")?;
@@ -682,13 +678,11 @@ fn admit_v1_values<T>(
     count: usize,
     operation: &'static str,
 ) -> Result<u64, CodecError> {
-    let count = u64::try_from(count).map_err(|_| {
-        CodecError::NotImplemented("Rhino V1 collection exceeds address space".to_string())
-    })?;
+    let count = cadmpeg_core::decode::u64_from_index(count);
     let bytes = count
-        .checked_mul(u64::try_from(std::mem::size_of::<T>()).map_err(|_| {
-            CodecError::NotImplemented("Rhino V1 collection exceeds address space".to_string())
-        })?)
+        .checked_mul(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<T>(),
+        ))
         .ok_or_else(|| {
             CodecError::NotImplemented("Rhino V1 collection exceeds address space".to_string())
         })?;
@@ -705,14 +699,12 @@ fn v1_values<T>(
     let bytes = admit_v1_values::<T>(ctx, count, operation)?;
     let mut values = Vec::new();
     values.try_reserve_exact(count).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: ctx.policy().limits.max_retained_bytes,
-            used: 0,
-            additional: bytes,
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            ctx.policy().limits.max_retained_bytes,
+            bytes,
             operation,
-        })
+        ))
     })?;
     Ok(values)
 }
@@ -723,9 +715,7 @@ fn admit_v1_temporary_items<T>(
     count: usize,
     operation: &'static str,
 ) -> Result<u64, CodecError> {
-    let count_u64 = u64::try_from(count).map_err(|_| {
-        CodecError::NotImplemented("Rhino V1 workspace exceeds address space".to_string())
-    })?;
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     let bytes = v1_temporary_bytes::<T>(count)?;
     ctx.charge_collection_items(count_u64, operation)?;
     workspace.grow(bytes)?;
@@ -744,7 +734,7 @@ fn reserve_v1_temporary_bytes<T>(
 fn v1_temporary_bytes<T>(count: usize) -> Result<u64, CodecError> {
     let bytes = count
         .checked_mul(std::mem::size_of::<T>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
         .ok_or_else(|| {
             CodecError::NotImplemented("Rhino V1 workspace exceeds address space".to_string())
         })?;
@@ -760,14 +750,12 @@ fn v1_temporary_values<T>(
     let bytes = admit_v1_temporary_items::<T>(ctx, workspace, count, operation)?;
     let mut values = Vec::new();
     values.try_reserve_exact(count).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: ctx.policy().limits.max_materialized_bytes,
-            used: 0,
-            additional: bytes,
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            ctx.policy().limits.max_materialized_bytes,
+            bytes,
             operation,
-        })
+        ))
     })?;
     Ok(values)
 }
@@ -1547,8 +1535,7 @@ fn v1_direct_record(
             "rhino:legacy:v1-record#{:08x}-{:016x}",
             chunk.typecode, chunk.header_start
         ),
-        source_offset: u64::try_from(chunk.header_start)
-            .map_err(|_| CodecError::Malformed("V1 direct record offset overflow".to_string()))?,
+        source_offset: cadmpeg_core::decode::u64_from_index(chunk.header_start),
         typecode: chunk.typecode,
         document_scale: document_scale.positive(),
         payload,
@@ -2181,15 +2168,11 @@ fn append_legacy_brep(
         .ok_or_else(|| {
             CodecError::NotImplemented("Rhino V1 Brep model exceeds address space".to_string())
         })?;
-    let entity_count = u64::try_from(entity_count).map_err(|_| {
-        CodecError::NotImplemented("Rhino V1 Brep model exceeds address space".to_string())
-    })?;
+    let entity_count = cadmpeg_core::decode::u64_from_index(entity_count);
     ctx.charge_entities(entity_count, "Rhino V1 Brep topology")?;
     ctx.charge_collection_items(entity_count, "Rhino V1 Brep model collections")?;
     ctx.charge_retained(
-        u64::try_from(retained_bytes).map_err(|_| {
-            CodecError::NotImplemented("Rhino V1 Brep model exceeds address space".to_string())
-        })?,
+        cadmpeg_core::decode::u64_from_index(retained_bytes),
         "Rhino V1 Brep topology storage",
     )?;
     admit_v1_temporary_items::<cadmpeg_ir::ids::CoedgeId>(
@@ -2371,14 +2354,14 @@ fn append_legacy_brep(
                     "Rhino V1 pcurve knots",
                 )?;
                 let pcurve_knots = trim.pcurve.knots().try_clone().map_err(|_| {
-                    CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-                        dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                        reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-                        limit: ctx.policy().limits.max_retained_bytes,
-                        used: 0,
-                        additional: pcurve_knot_bytes,
-                        operation: "Rhino V1 pcurve knots",
-                    })
+                    CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                            ctx.policy().limits.max_retained_bytes,
+                            pcurve_knot_bytes,
+                            "Rhino V1 pcurve knots",
+                        ),
+                    )
                 })?;
                 let mut pcurve_points = v1_values::<cadmpeg_ir::units::FinitePoint2>(
                     ctx,
@@ -2569,11 +2552,9 @@ fn append_legacy_brep(
     let mut coedge_positions = BTreeMap::new();
     for (index, coedge) in model.coedges.iter().enumerate() {
         ctx.charge_collection_items(1, "Rhino V1 Brep radial positions")?;
-        let id = cadmpeg_ir::ids::CoedgeId::try_from(crate::wire::copy_retained_string(
-            ctx,
-            coedge.id.as_str(),
-            "Rhino V1 Brep radial position ID",
-        )?)
+        let id = cadmpeg_ir::ids::CoedgeId::try_from(
+            ctx.copy_retained_text(coedge.id.as_str(), "Rhino V1 Brep radial position ID")?,
+        )
         .map_err(|error| CodecError::malformed(error.to_string()))?;
         coedge_positions.insert(id, index);
     }
@@ -2969,12 +2950,10 @@ fn evaluate_nurbs(
     let count = degree.checked_add(1).ok_or_else(|| {
         CodecError::NotImplemented("Rhino V1 curve degree exceeds address space".to_string())
     })?;
-    let count_u64 = u64::try_from(count).map_err(|_| {
-        CodecError::NotImplemented("Rhino V1 curve degree exceeds address space".to_string())
-    })?;
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     let bytes = count
         .checked_mul(std::mem::size_of::<[f64; 4]>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
         .ok_or_else(|| {
             CodecError::NotImplemented("Rhino V1 curve workspace exceeds address space".to_string())
         })?;
@@ -2988,14 +2967,12 @@ fn evaluate_nurbs(
     let _workspace = ctx.reserve_scoped(bytes, "Rhino V1 curve evaluation")?;
     let mut values = Vec::new();
     values.try_reserve_exact(count).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: ctx.policy().limits.max_materialized_bytes,
-            used: 0,
-            additional: bytes,
-            operation: "Rhino V1 curve evaluation",
-        })
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            ctx.policy().limits.max_materialized_bytes,
+            bytes,
+            "Rhino V1 curve evaluation",
+        ))
     })?;
     let poles = curve.pole_rows();
     for j in 0..count {
@@ -3151,11 +3128,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 + std::mem::size_of::<Region>()
                 + std::mem::size_of::<Body>();
             ctx.charge_retained(
-                u64::try_from(model_bytes).map_err(|_| {
-                    CodecError::NotImplemented(
-                        "Rhino V1 point model exceeds address space".to_string(),
-                    )
-                })?,
+                cadmpeg_core::decode::u64_from_index(model_bytes),
                 "Rhino V1 point topology storage",
             )?;
             let suffix = format!("legacy-{decoded:06}");
@@ -3231,11 +3204,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 Ok(record) => {
                     ctx.charge_entities(1, "Rhino V1 direct record")?;
                     ctx.charge_retained(
-                        u64::try_from(std::mem::size_of::<V1DirectRecord>()).map_err(|_| {
-                            CodecError::NotImplemented(
-                                "Rhino V1 direct record exceeds address space".to_string(),
-                            )
-                        })?,
+                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<V1DirectRecord>()),
                         "Rhino V1 direct record storage",
                     )?;
                     reserve_collection(ctx, &mut direct_records, 1, "Rhino V1 direct records")?;
@@ -3290,11 +3259,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             + std::mem::size_of::<Region>()
                             + std::mem::size_of::<Body>();
                         ctx.charge_retained(
-                            u64::try_from(topology_bytes).map_err(|_| {
-                                CodecError::NotImplemented(
-                                    "Rhino V1 curve topology exceeds address space".to_string(),
-                                )
-                            })?,
+                            cadmpeg_core::decode::u64_from_index(topology_bytes),
                             "Rhino V1 curve topology storage",
                         )?;
                         let suffix = format!("legacy-{decoded_curves:06}");

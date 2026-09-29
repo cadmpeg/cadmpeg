@@ -1747,8 +1747,7 @@ fn annotate(
     exactness: Exactness,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let id = crate::resource::format_retained(ctx, format_args!("{id}"), "catia_b5_annotation_id")?;
-    let exactness_id =
-        crate::resource::copy_retained_str(ctx, &id, "catia_b5_annotation_exactness_id")?;
+    let exactness_id = ctx.copy_retained_text(&id, "catia_b5_annotation_exactness_id")?;
     let stream_name = crate::resource::format_retained(
         ctx,
         format_args!("catia:{stream}"),
@@ -1757,11 +1756,9 @@ fn annotate(
     let stream_name = cadmpeg_ir::StreamName::try_from(stream_name)
         .map_err(cadmpeg_core::CodecError::malformed)?;
     let stream_bytes =
-        u64::try_from(std::mem::size_of::<cadmpeg_ir::StreamName>()).map_err(|_| {
-            ctx.refuse_codec_limit("catia_b5_annotation_stream_handle", u64::MAX, u64::MAX)
-        })?;
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::StreamName>());
     ctx.charge_retained(stream_bytes, "catia_b5_annotation_stream_handle")?;
-    let tag = crate::resource::copy_retained_str(ctx, tag, "catia_b5_annotation_tag")?;
+    let tag = ctx.copy_retained_text(tag, "catia_b5_annotation_tag")?;
     ctx.charge_collection_items(1, "catia_b5_annotation_provenance")?;
     if exactness != Exactness::ByteExact {
         ctx.charge_collection_items(1, "catia_b5_annotation_exactness")?;

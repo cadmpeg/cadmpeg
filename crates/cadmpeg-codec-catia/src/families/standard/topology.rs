@@ -1372,9 +1372,7 @@ pub(crate) fn incidence_cycles(
             } else {
                 left
             };
-            let scan_len = u64::try_from(unseen.len()).map_err(|_| {
-                ctx.refuse_codec_limit("catia_incidence_unseen_scan", u64::MAX, u64::MAX)
-            })?;
+            let scan_len = cadmpeg_core::decode::u64_from_index(unseen.len());
             ctx.charge_work(scan_len, "catia_incidence_unseen_scan")?;
             let Some(index) = unseen.iter().position(|(edge, _)| *edge == next.edge) else {
                 return Ok(None);

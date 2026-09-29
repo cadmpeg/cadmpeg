@@ -388,7 +388,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
     });
     ir.model
         .add_procedural_surface(
-            &surface_id.clone(),
+            &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#budgeted-sweep-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::LinearSweep(
@@ -1158,7 +1158,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
     ];
     ir.model
         .add_procedural_surface(
-            &subset_id.clone(),
+            &subset_id,
             procedural_surface! {
                 id: subset_construction,
                 definition: ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[0.0, 1.0], [0.0, 1.0]], Some(false), Some(true), None).unwrap()),
@@ -1169,7 +1169,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         .expect("subset surface exists and has no procedural construction");
     ir.model
         .add_procedural_surface(
-            &offset_id.clone(),
+            &offset_id,
             procedural_surface! {
                 id: offset_construction,
                 definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(subset_id, 2.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {}, cache: None }).unwrap()),
@@ -1218,7 +1218,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
     ];
     ir.model
         .add_procedural_surface(
-            &bounded_id.clone(),
+            &bounded_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#curve-bounded-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::CurveBounded {
@@ -1279,7 +1279,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
     });
     ir.model
         .add_procedural_surface(
-            &surface_id.clone(),
+            &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#sweep-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::LinearSweep(
@@ -1422,7 +1422,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
     });
     ir.model
         .add_procedural_surface(
-            &surface_id.clone(),
+            &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::AxisRevolution(
@@ -1483,7 +1483,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
     });
     ir.model
         .add_procedural_surface(
-            &surface_id.clone(),
+            &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::PI], Some([10.0, 14.0]), None, false, crate::geometry::CacheContract::from_form(None)).unwrap()),
@@ -1530,7 +1530,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
         source_object: None,
     });
     ir.model.add_procedural_surface(
-        &surface_id.clone(),
+        &surface_id,
         procedural_surface! {
             id: ProceduralSurfaceId::mint("test:model:entity#wide-angle-construction").expect("valid identity"),
             definition: ProceduralSurfaceDefinition::Revolution(
@@ -1624,7 +1624,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     });
     ir.model
         .add_procedural_surface(
-            &surface_id.clone(),
+            &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
@@ -1943,46 +1943,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
     assert!(nurbs_curve_speed_bound(&curve).is_some_and(|bound| bound.get() >= 2.0));
 }
 
-#[test]
-fn bounded_nurbs_interval_search_keeps_a_fixed_working_set() {
-    let boundaries = (0..=10_000)
-        .map(crate::scalar::FiniteReal::from_index)
-        .collect::<Vec<_>>();
-    let seed = crate::scalar::FiniteReal::new(5_000.5).expect("finite seed");
-    let intervals = super::bounded_nearest_intervals(&boundaries, seed)
-        .expect("resource allocation did not fail");
-    assert_eq!(intervals.len(), 512);
-    assert!(intervals
-        .iter()
-        .any(|interval| interval.map(crate::scalar::FiniteReal::get) == [5_000.0, 5_001.0]));
-}
-
-#[test]
-fn bounded_nurbs_containment_search_keeps_the_final_valid_spans() {
-    let boundaries = [0.0, 1.0, 1.0, 2.0, 3.0];
-    assert_eq!(
-        super::bounded_tail_intervals(&boundaries).expect("resource allocation did not fail"),
-        (vec![[0.0, 1.0], [1.0, 2.0], [2.0, 3.0]], false)
-    );
-
-    let many_boundaries = (0..=10_000).map(f64::from).collect::<Vec<_>>();
-    let (intervals, truncated) =
-        super::bounded_tail_intervals(&many_boundaries).expect("resource allocation did not fail");
-    assert_eq!(intervals.len(), 512);
-    assert!(truncated);
-}
-
-#[test]
-fn bounded_nurbs_boundary_witness_preserves_seed_priority() {
-    let boundaries = [0, 1, 2].map(crate::scalar::FiniteReal::from_index);
-    let seed = crate::scalar::FiniteReal::new(1.4).expect("finite seed");
-
-    assert_eq!(
-        super::nearest_boundary_witness(&boundaries, seed, 0.0, |_| Ok(Some(0.0)))
-            .expect("resource allocation did not fail"),
-        super::BoundaryWitness::Found(crate::scalar::FiniteReal::ONE)
-    );
-}
+mod bounded_nurbs;
 
 mod periodic_and_analytic;
 

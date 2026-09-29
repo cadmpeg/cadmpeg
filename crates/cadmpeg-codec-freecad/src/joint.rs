@@ -5,10 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
-use crate::resource::{
-    collection_allocation_failed, collection_vec, materialized_bytes, reserve_vec_items,
-    retained_string,
-};
+use crate::resource::{collection_vec, materialized_bytes, reserve_vec_items};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
@@ -25,9 +22,16 @@ pub(crate) fn transfer(
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
             ctx.charge_collection_items(1, "fcstd joint owner index")?;
-            by_owner
-                .try_reserve(1)
-                .map_err(|_| collection_allocation_failed(ctx, 1, "fcstd joint owner index"))?;
+            by_owner.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "fcstd joint owner index",
+                    ),
+                )
+            })?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
@@ -148,7 +152,7 @@ pub(crate) fn transfer(
             if let Some(value) = scalar_parameter(ctx, property)? {
                 ctx.charge_collection_items(1, "fcstd joint parameters")?;
                 parameters.insert(
-                    retained_string(ctx, &property.name, "fcstd joint parameter name")?,
+                    ctx.copy_retained_text(&property.name, "fcstd joint parameter name")?,
                     value,
                 );
             }
@@ -157,7 +161,7 @@ pub(crate) fn transfer(
         output.push(JointRecord::try_new(
             ctx,
             crate::native::native_id_charged(ctx, "joint", &object.name)?,
-            retained_string(ctx, &object.id, "fcstd joint object")?,
+            ctx.copy_retained_text(&object.id, "fcstd joint object")?,
             body,
             parameters,
         )?);
@@ -177,7 +181,14 @@ pub(crate) fn transfer_neutral(
     let mut occurrence_by_native = HashMap::new();
     ctx.charge_collection_items(count as u64, "fcstd joint occurrence index")?;
     occurrence_by_native.try_reserve(count).map_err(|_| {
-        collection_allocation_failed(ctx, count as u64, "fcstd joint occurrence index")
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                ctx.policy().limits.max_collection_items,
+                count as u64,
+                "fcstd joint occurrence index",
+            ),
+        )
     })?;
     for occurrence in occurrences {
         if let Some(native) = occurrence.native_ref.as_deref() {
@@ -230,7 +241,7 @@ pub(crate) fn transfer_neutral(
             let Some(name) = reference.object() else {
                 return Ok(None);
             };
-            let object = retained_string(ctx, name, "fcstd joint operand object")?;
+            let object = ctx.copy_retained_text(name, "fcstd joint operand object")?;
             let mut subelements = collection_vec(
                 ctx,
                 reference.subelements().len(),
@@ -241,11 +252,7 @@ pub(crate) fn transfer_neutral(
                 .iter()
                 .filter(|name| !name.is_empty())
             {
-                subelements.push(retained_string(
-                    ctx,
-                    name,
-                    "fcstd joint operand subelement",
-                )?);
+                subelements.push(ctx.copy_retained_text(name, "fcstd joint operand subelement")?);
             }
             if let Some(document) = reference.document() {
                 let document = crate::product::external_document_reference_charged(
@@ -257,8 +264,7 @@ pub(crate) fn transfer_neutral(
             }
             Ok(Some(match occurrence_by_native.get(name).copied() {
                 Some(occurrence) => {
-                    let identity = cadmpeg_ir::ids::OccurrenceId::mint(retained_string(
-                        ctx,
+                    let identity = cadmpeg_ir::ids::OccurrenceId::mint(ctx.copy_retained_text(
                         occurrence.as_str(),
                         "fcstd joint occurrence identity",
                     )?)
@@ -356,11 +362,8 @@ pub(crate) fn transfer_neutral(
             }
         };
         joint.suppressed = bool_value("Suppressed").is_some_and(|value| value);
-        joint.native_ref = Some(retained_string(
-            ctx,
-            &record.id,
-            "fcstd joint native reference",
-        )?);
+        joint.native_ref =
+            Some(ctx.copy_retained_text(&record.id, "fcstd joint native reference")?);
         reserve_vec_items(ctx, &mut output, 1, "fcstd neutral joints")?;
         output.push(joint);
     }
@@ -428,7 +431,7 @@ fn joint_kind(
             distance2,
         },
         _ => PairedJointKind::Native {
-            name: retained_string(ctx, kind.as_str(), "fcstd native joint kind")?,
+            name: ctx.copy_retained_text(kind.as_str(), "fcstd native joint kind")?,
             angle,
             translation_offset: None,
             distance,
@@ -609,7 +612,7 @@ fn enumeration_value(
         None
     };
     match selected {
-        Some(value) => retained_string(ctx, value, "fcstd joint enumeration value"),
+        Some(value) => ctx.copy_retained_text(value, "fcstd joint enumeration value"),
         None => crate::resource::retained_format(
             ctx,
             format_args!("{index}"),
@@ -682,8 +685,7 @@ fn scalar_parameter(
             "fcstd joint diagnostic",
         ));
     }
-    Ok(Some(retained_string(
-        ctx,
+    Ok(Some(ctx.copy_retained_text(
         value,
         "fcstd joint scalar parameter",
     )?))

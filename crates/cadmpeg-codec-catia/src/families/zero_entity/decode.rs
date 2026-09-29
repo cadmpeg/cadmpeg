@@ -1031,7 +1031,7 @@ fn transfer_closed_wire_loops(
         let Some(root) = ownership_root else {
             return Ok(counts);
         };
-        let identity = root.body_record_ordinal();
+        let identity = root.body_record_ordinal()?;
         let body_id = crate::resource::compose_u32_id(
             admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "owned-wire-body"),
@@ -2247,7 +2247,7 @@ mod tests {
         });
         ir.model
             .add_procedural_curve(
-                &curve_id.clone(),
+                &curve_id,
                 ProceduralCurve::new(construction_id.clone(), definition.clone()),
             )
             .unwrap();

@@ -293,9 +293,7 @@ impl SegmentMetaState<'_> {
         };
         declaration
             .map(|declaration| {
-                let bytes = u64::try_from(declaration.marker.len()).map_err(|_| {
-                    ctx.refuse_codec_limit("Inventor dialect marker length", u64::MAX - 1, u64::MAX)
-                })?;
+                let bytes = cadmpeg_core::decode::u64_from_index(declaration.marker.len());
                 ctx.charge_retained(bytes, "retain Inventor dialect declaration marker")?;
                 Ok(declaration.clone())
             })
@@ -401,9 +399,7 @@ impl DatabaseDescriptor {
                 Ok(Some(DatabaseHeader::unframed_detail(*schema, detail)))
             }
             DatabaseState::Unreadable(detail) => {
-                let bytes = u64::try_from(detail.len()).map_err(|_| {
-                    ctx.refuse_codec_limit("Inventor database issue length", u64::MAX - 1, u64::MAX)
-                })?;
+                let bytes = cadmpeg_core::decode::u64_from_index(detail.len());
                 ctx.charge_retained(bytes, "retain Inventor database issue detail")?;
                 Ok(Some(detail.clone()))
             }

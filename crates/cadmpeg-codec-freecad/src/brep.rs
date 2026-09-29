@@ -29,8 +29,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::native::{self, EntryRecord, PropertyRecord};
 use crate::resource::{
-    collection_vec, optional_collection_vec, reserve_vec_items, retained_format, retained_string,
-    retained_strings,
+    collection_vec, optional_collection_vec, reserve_vec_items, retained_format, retained_strings,
 };
 
 /// Exact-shape side-entry form.
@@ -2342,8 +2341,8 @@ pub(crate) fn parse_payloads(
         reserve_vec_items(ctx, &mut payloads, 1, "FreeCAD shape payload records")?;
         payloads.push(ShapePayloadRecord {
             id: crate::native::native_child_id_charged(ctx, "shape-payload", &property.id, &name)?,
-            property: retained_string(ctx, &property.id, "FreeCAD shape payload property")?,
-            entry: retained_string(ctx, &entry.id, "FreeCAD shape payload entry")?,
+            property: ctx.copy_retained_text(&property.id, "FreeCAD shape payload property")?,
+            entry: ctx.copy_retained_text(&entry.id, "FreeCAD shape payload entry")?,
             payload,
         });
     }
@@ -2388,7 +2387,7 @@ fn direct_shape_entry(
     }
     part.attribute("file")
         .filter(|file| !file.is_empty())
-        .map(|file| retained_string(ctx, file, "FreeCAD shape entry name"))
+        .map(|file| ctx.copy_retained_text(file, "FreeCAD shape entry name"))
         .transpose()
 }
 
@@ -2423,7 +2422,7 @@ pub(crate) fn carrier_census(
                 &payload.id,
                 "families",
             )?,
-            payload: retained_string(ctx, &payload.id, "FreeCAD carrier census payload")?,
+            payload: ctx.copy_retained_text(&payload.id, "FreeCAD carrier census payload")?,
             form: match payload.payload.form() {
                 ShapePayloadForm::Text => crate::native::CarrierCensusForm::Text,
                 ShapePayloadForm::Binary => crate::native::CarrierCensusForm::Binary,
@@ -4952,7 +4951,9 @@ fn parse_edge_representation(
                 let continuity = joined_continuity.map_or_else(
                     || {
                         let token = cursor.next("edge continuity")?;
-                        retained_string(cursor.ctx, token, "FreeCAD B-rep edge continuity")
+                        cursor
+                            .ctx
+                            .copy_retained_text(token, "FreeCAD B-rep edge continuity")
                     },
                     Ok,
                 )?;
@@ -4993,11 +4994,9 @@ fn parse_edge_representation(
         }
         4 => {
             let continuity_token = cursor.next("edge continuity")?;
-            let continuity = retained_string(
-                cursor.ctx,
-                continuity_token,
-                "FreeCAD B-rep edge continuity",
-            )?;
+            let continuity = cursor
+                .ctx
+                .copy_retained_text(continuity_token, "FreeCAD B-rep edge continuity")?;
             let first_surface =
                 parse_reference(cursor, "edge regularity surface", counts["Surfaces"], false)?;
             let location = parse_reference(
@@ -5206,7 +5205,11 @@ fn parse_reference_suffix(
     Ok((
         value,
         (!suffix.is_empty())
-            .then(|| retained_string(cursor.ctx, suffix, "FreeCAD B-rep reference suffix"))
+            .then(|| {
+                cursor
+                    .ctx
+                    .copy_retained_text(suffix, "FreeCAD B-rep reference suffix")
+            })
             .transpose()?,
     ))
 }
@@ -5823,10 +5826,24 @@ fn clamped_bezier_knots(
     degree: usize,
 ) -> Result<Vec<FiniteReal>, CodecError> {
     let half = degree.checked_add(1).ok_or_else(|| {
-        crate::resource::collection_allocation_failed(ctx, u64::MAX, "FreeCAD Bezier knots")
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                ctx.policy().limits.max_collection_items,
+                u64::MAX,
+                "FreeCAD Bezier knots",
+            ),
+        )
     })?;
     let count = half.checked_mul(2).ok_or_else(|| {
-        crate::resource::collection_allocation_failed(ctx, u64::MAX, "FreeCAD Bezier knots")
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                ctx.policy().limits.max_collection_items,
+                u64::MAX,
+                "FreeCAD Bezier knots",
+            ),
+        )
     })?;
     let mut knots = collection_vec(ctx, count, "FreeCAD Bezier knots")?;
     knots.extend(std::iter::repeat_n(FiniteReal::ZERO, half));
@@ -6000,8 +6017,7 @@ pub(crate) fn clone_source_association(
 ) -> Result<SourceObjectAssociation, CodecError> {
     Ok(SourceObjectAssociation {
         format: source.format,
-        object_id: cadmpeg_core::text::NonBlankString::new(retained_string(
-            ctx,
+        object_id: cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(
             source.object_id.as_str(),
             "FreeCAD geometry source association",
         )?)
@@ -6009,14 +6025,14 @@ pub(crate) fn clone_source_association(
         name: source
             .name
             .as_deref()
-            .map(|name| retained_string(ctx, name, "FreeCAD geometry source name"))
+            .map(|name| ctx.copy_retained_text(name, "FreeCAD geometry source name"))
             .transpose()?,
         color: source.color,
         visible: source.visible,
         layer: source
             .layer
             .as_deref()
-            .map(|layer| retained_string(ctx, layer, "FreeCAD geometry source layer"))
+            .map(|layer| ctx.copy_retained_text(layer, "FreeCAD geometry source layer"))
             .transpose()?,
         instance_path: retained_strings(
             ctx,
@@ -6061,11 +6077,9 @@ pub(crate) fn transfer_text_curves(
             });
         let association = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_core::text::NonBlankString::new(retained_string(
-                ctx,
-                object_id,
-                "FreeCAD curve source object",
-            )?)
+            object_id: cadmpeg_core::text::NonBlankString::new(
+                ctx.copy_retained_text(object_id, "FreeCAD curve source object")?,
+            )
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,
@@ -6371,11 +6385,9 @@ pub(crate) fn transfer_text_surfaces(
             });
         let association = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_core::text::NonBlankString::new(retained_string(
-                ctx,
-                object_id,
-                "FreeCAD surface source object",
-            )?)
+            object_id: cadmpeg_core::text::NonBlankString::new(
+                ctx.copy_retained_text(object_id, "FreeCAD surface source object")?,
+            )
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,

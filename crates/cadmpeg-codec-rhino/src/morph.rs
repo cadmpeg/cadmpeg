@@ -793,7 +793,7 @@ pub(crate) fn project(
             surface_properties(ctx, &surface_prefix, surface, &mut properties)?;
         }
     }
-    let key = crate::wire::copy_retained_string(ctx, key, "Rhino morph feature key")?;
+    let key = ctx.copy_retained_text(key, "Rhino morph feature key")?;
     let key = cadmpeg_ir::ids::IdentityKey::try_new(key)
         .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
     let feature_id = FeatureId::compose(

@@ -530,7 +530,10 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
         Some("iges")
     );
     assert_eq!(provenance.tag.as_deref(), Some("directory_entry:D1"));
-    assert_eq!(bytes[provenance.offset as usize + 72], b'D');
+    assert_eq!(
+        bytes[usize::try_from(provenance.offset).expect("test offset fits memory") + 72],
+        b'D'
+    );
     let transfer = &result.report().transfer_ledger.entries[0];
     assert_eq!(transfer.source, "D1");
     assert_eq!(

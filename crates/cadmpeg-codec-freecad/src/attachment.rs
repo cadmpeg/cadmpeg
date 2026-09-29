@@ -9,7 +9,7 @@ use cadmpeg_core::CodecError;
 use crate::native::{
     sole_named_property, AttachmentRecord, LinkTarget, ObjectRecord, PropertyRecord,
 };
-use crate::resource::{reserve_vec_items, retained_format, retained_string};
+use crate::resource::{reserve_vec_items, retained_format};
 
 const MAP_MODE_NAMES: &[&str] = &[
     "Deactivated",
@@ -134,10 +134,13 @@ pub(crate) fn transfer(
         if !by_owner.contains_key(owner) {
             ctx.charge_collection_items(1, "FreeCAD attachment owner lookup")?;
             by_owner.try_reserve(1).map_err(|_| {
-                crate::resource::collection_allocation_failed(
-                    ctx,
-                    1,
-                    "FreeCAD attachment owner lookup",
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "FreeCAD attachment owner lookup",
+                    ),
                 )
             })?;
         }
@@ -165,7 +168,7 @@ pub(crate) fn transfer(
         }
         let record = AttachmentRecord::try_new(
             crate::native::native_id_charged(ctx, "attachment", &object.name)?,
-            retained_string(ctx, &object.id, "FreeCAD attachment object")?,
+            ctx.copy_retained_text(&object.id, "FreeCAD attachment object")?,
             support
                 .map(|property| support_links(ctx, property))
                 .transpose()?

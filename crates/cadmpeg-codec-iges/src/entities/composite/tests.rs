@@ -1344,8 +1344,12 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
         ir.model.points.extend([
             Point::new(
                 start_point.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(index as f64, 0.0, 0.0))
-                    .expect("a finite position is a point"),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    cadmpeg_core::convert::f64_from_index(index).expect("test index is exact"),
+                    0.0,
+                    0.0,
+                ))
+                .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
@@ -1371,7 +1375,10 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
             id: EdgeId::mint(format!("test:model:edge#edge-{index}")).expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_id.clone()),
-                Some([index as f64, end]),
+                Some([
+                    cadmpeg_core::convert::f64_from_index(index).expect("test index is exact"),
+                    end,
+                ]),
             )
             .unwrap(),
             start: start_vertex,

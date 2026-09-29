@@ -10,7 +10,7 @@ use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
-use cadmpeg_core::decode::{index_from_u32, refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::{index_from_u32, refuse_local_limit, u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
@@ -523,7 +523,9 @@ pub(super) fn declared_affine_progression(values: &[f64], uncertainties: &[f64])
         let first_interval = DeclaredInterval::around(values[first], uncertainties[first]);
         for second in first + 1..values.len() {
             let second_interval = DeclaredInterval::around(values[second], uncertainties[second]);
-            let span = (second - first) as f64;
+            let Some(span) = cadmpeg_core::convert::f64_from_index(second - first) else {
+                return false;
+            };
             let pair_lower = (second_interval.lower - first_interval.upper) / span;
             let pair_upper = (second_interval.upper - first_interval.lower) / span;
             if !pair_lower.is_finite() || !pair_upper.is_finite() {
@@ -908,10 +910,17 @@ pub(crate) fn enforce_transform_depth(
         let mut depth = 0_usize;
         loop {
             if depth >= depth_limit {
+                let requested = depth.checked_add(1).map(u64_from_index).ok_or_else(|| {
+                    refuse_local_limit(
+                        "iges_transform_depth",
+                        cadmpeg_core::decode::u64_from_index(depth_limit),
+                        u64::MAX,
+                    )
+                })?;
                 return Err(refuse_local_limit(
                     "iges_transform_depth",
-                    depth_limit as u64,
-                    depth.saturating_add(1) as u64,
+                    cadmpeg_core::decode::u64_from_index(depth_limit),
+                    requested,
                 ));
             }
             if let Some(ctx) = ctx {

@@ -557,7 +557,9 @@ fn bernstein_binomial(n: usize, k: usize) -> Option<f64> {
     }
     let k = k.min(n - k);
     let value = (1..=k).try_fold(1.0, |value, factor| {
-        let value = value * (n - k + factor) as f64 / factor as f64;
+        let numerator = cadmpeg_core::convert::f64_from_index(n - k + factor)?;
+        let denominator = cadmpeg_core::convert::f64_from_index(factor)?;
+        let value = value * numerator / denominator;
         value.is_finite().then_some(value)
     })?;
     Some(value)
@@ -575,16 +577,22 @@ fn homogeneous_product_control(
     let scalar_degree = scalar_controls.len().checked_sub(1)?;
     let degree = vector_degree.checked_add(scalar_degree)?;
     let denominator = bernstein_binomial(degree, index)?;
-    let lower = index.saturating_sub(scalar_degree);
     let upper = index.min(vector_degree);
     let mut control = [0.0; 4];
-    for (offset, vector_control) in vector_controls[lower..=upper].iter().enumerate() {
-        let vector_index = lower + offset;
-        let scalar_index = index - vector_index;
+    for (vector_index, vector_control) in vector_controls.iter().enumerate() {
+        if vector_index > upper {
+            break;
+        }
+        let Some(scalar_index) = index.checked_sub(vector_index) else {
+            continue;
+        };
+        let Some(scalar_control) = scalar_controls.get(scalar_index) else {
+            continue;
+        };
         let coefficient = bernstein_binomial(vector_degree, vector_index)?
             * bernstein_binomial(scalar_degree, scalar_index)?
             / denominator;
-        let scalar = scalar_controls[scalar_index][3];
+        let scalar = scalar_control[3];
         for axis in 0..4 {
             control[axis] += coefficient * vector_control[axis] * scalar;
         }
@@ -902,13 +910,13 @@ fn admit_surface_pole_count(
         return Err(match ctx {
             Some(ctx) => ctx.refuse_codec_limit(
                 "iges_surface_poles",
-                MAX_SURFACE_POLES as u64,
-                pole_count as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
+                cadmpeg_core::decode::u64_from_index(pole_count),
             ),
             None => refuse_local_limit(
                 "iges_surface_poles",
-                MAX_SURFACE_POLES as u64,
-                pole_count as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
+                cadmpeg_core::decode::u64_from_index(pole_count),
             ),
         });
     }
@@ -1191,8 +1199,13 @@ fn angular_basis(
     }
     let sweep = sweep.min(std::f64::consts::TAU);
     let end = start + sweep;
-    let segment_count = super::curve_conversion::quarter_turn_spans(sweep);
-    let segment_angle = sweep / segment_count as f64;
+    let Some(segment_count) = super::curve_conversion::quarter_turn_spans(sweep) else {
+        return Ok(None);
+    };
+    let Some(segment_count_real) = cadmpeg_core::convert::f64_from_index(segment_count) else {
+        return Ok(None);
+    };
+    let segment_angle = sweep / segment_count_real;
     let mut knots =
         reserve_optional_vec(ctx, segment_count * 2 + 4, "iges revolution angular knots")?;
     knots.extend([start; 3]);
@@ -1203,7 +1216,10 @@ fn angular_basis(
     )?;
     controls.push((start, 1.0));
     for segment in 0..segment_count {
-        let segment_start = start + segment as f64 * segment_angle;
+        let Some(segment_real) = cadmpeg_core::convert::f64_from_index(segment) else {
+            return Ok(None);
+        };
+        let segment_start = start + segment_real * segment_angle;
         let midpoint = segment_start + segment_angle / 2.0;
         let segment_end = segment_start + segment_angle;
         controls.push((midpoint, (segment_angle / 2.0).cos()));
@@ -2146,13 +2162,14 @@ pub(super) fn project(
             .map_or(cached_interval, |geometry| {
                 source_parameter_interval(geometry, cached_interval)
             });
+        let mut directrix = directrix;
         let placed_directrix = if entry.transform == 0 {
             directrix
         } else {
             match directrix
-                .try_map_owned_control_points(|point| transform.apply_point(point.get()).ok_or(()))
+                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
             {
-                Ok(placed) => placed,
+                Ok(()) => directrix,
                 Err(()) => {
                     super::push_optional_attributed_loss(
                         ctx,
@@ -2733,15 +2750,15 @@ pub(super) fn project(
         let Some(surface_pole_count) = generatrix_count.checked_mul(angular_controls.len()) else {
             return Err(refuse_local_limit(
                 "iges_revolution_poles",
-                MAX_SURFACE_POLES as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
                 u64::MAX,
             ));
         };
         if surface_pole_count > MAX_SURFACE_POLES {
             return Err(refuse_local_limit(
                 "iges_revolution_poles",
-                MAX_SURFACE_POLES as u64,
-                surface_pole_count as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
+                cadmpeg_core::decode::u64_from_index(surface_pole_count),
             ));
         }
         let mut control_points =
@@ -2854,8 +2871,9 @@ pub(super) fn project(
         } else if let Some(orientation) = similarity_orientation(transform) {
             // This arm is the transformed route, so the generatrix is placed
             // here rather than carried past the untransformed one.
-            let Ok(placed_generatrix) = generatrix
-                .try_map_owned_control_points(|point| transform.apply_point(point.get()).ok_or(()))
+            let mut placed_generatrix = generatrix;
+            let Ok(()) = placed_generatrix
+                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
             else {
                 super::push_optional_attributed_loss(
                     ctx,
@@ -3007,7 +3025,8 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let [u_degree_usize, v_degree_usize] = [u_degree, v_degree].map(|degree| degree as usize);
+        let [u_degree_usize, v_degree_usize] =
+            [u_degree, v_degree].map(cadmpeg_core::decode::index_from_u32);
         if k1 < u_degree_usize || k2 < v_degree_usize {
             super::push_optional_entity_loss(
                 ctx,
@@ -3033,14 +3052,16 @@ pub(super) fn project(
             None => {
                 return Err(refuse_local_limit(
                     "iges_surface_poles",
-                    MAX_SURFACE_POLES as u64,
+                    cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
                     u64::MAX,
                 ));
             }
-            Some(requested) if requested > MAX_SURFACE_POLES as u64 => {
+            Some(requested)
+                if requested > cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES) =>
+            {
                 return Err(refuse_local_limit(
                     "iges_surface_poles",
-                    MAX_SURFACE_POLES as u64,
+                    cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
                     requested,
                 ));
             }
@@ -3086,8 +3107,8 @@ pub(super) fn project(
         if pole_count > MAX_SURFACE_POLES {
             return Err(refuse_local_limit(
                 "iges_surface_poles",
-                MAX_SURFACE_POLES as u64,
-                pole_count as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
+                cadmpeg_core::decode::u64_from_index(pole_count),
             ));
         }
         let Some(u_knot_count) = u_count

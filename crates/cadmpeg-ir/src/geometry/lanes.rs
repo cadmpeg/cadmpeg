@@ -900,6 +900,8 @@ impl LoftSubdataTable {
     fn admit(self) -> Option<LoftSubdataTable<FiniteReal>> {
         Some(LoftSubdataTable {
             type_code: self.type_code,
+            row_count: self.row_count,
+            column_count: self.column_count,
             rows: self
                 .rows
                 .into_iter()
@@ -915,6 +917,8 @@ impl LoftSubdataTable<FiniteReal> {
     pub fn to_raw(&self) -> LoftSubdataTable {
         LoftSubdataTable {
             type_code: self.type_code,
+            row_count: self.row_count,
+            column_count: self.column_count,
             rows: self.rows.iter().map(LoftSubdataRow::to_raw).collect(),
         }
     }

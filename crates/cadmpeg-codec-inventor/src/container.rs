@@ -205,14 +205,10 @@ fn admit_container_entries(
     ctx: &DecodeContext<'_>,
     snapshot: &CompoundSnapshot<'_>,
 ) -> Result<(), CodecError> {
-    let count = u64::try_from(snapshot.entries().len()).map_err(|_| {
-        ctx.refuse_codec_limit("Inventor summary entry count", u64::MAX - 1, u64::MAX)
-    })?;
+    let count = cadmpeg_core::decode::u64_from_index(snapshot.entries().len());
     ctx.charge_collection_items(count, "collect Inventor container summary entries")?;
     for entry in snapshot.entries() {
-        let path_len = u64::try_from(entry.path().len()).map_err(|_| {
-            ctx.refuse_codec_limit("Inventor summary path length", u64::MAX - 1, u64::MAX)
-        })?;
+        let path_len = cadmpeg_core::decode::u64_from_index(entry.path().len());
         ctx.charge_retained(path_len, "retain Inventor summary entry path")?;
         ctx.charge_collection_items(1, "collect Inventor summary directory attribute")?;
         ctx.charge_retained(12, "retain Inventor summary directory key")?;
@@ -226,13 +222,7 @@ fn admit_container_entries(
                 ctx.charge_collection_items(1, "collect Inventor summary allocation attribute")?;
                 ctx.charge_retained(10, "retain Inventor summary allocation key")?;
                 ctx.charge_retained(
-                    u64::try_from(allocation.label().len()).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "Inventor allocation label length",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?,
+                    cadmpeg_core::decode::u64_from_index(allocation.label().len()),
                     "retain Inventor summary allocation label",
                 )?;
             }
@@ -274,13 +264,7 @@ fn insert_attribute(
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "collect Inventor summary attribute")?;
     ctx.charge_retained(
-        u64::try_from(key.len()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "Inventor summary attribute key length",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?,
+        cadmpeg_core::decode::u64_from_index(key.len()),
         "retain Inventor summary attribute key",
     )?;
     admit_formatted(ctx, value, "retain Inventor summary attribute value")?;

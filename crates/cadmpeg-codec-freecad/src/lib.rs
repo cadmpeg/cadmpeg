@@ -307,10 +307,13 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     product_by_object
         .try_reserve(product_nodes.len())
         .map_err(|_| {
-            resource::collection_allocation_failed(
-                ctx,
-                product_nodes.len() as u64,
-                "fcstd product validation index",
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    ctx.policy().limits.max_collection_items,
+                    product_nodes.len() as u64,
+                    "fcstd product validation index",
+                ),
             )
         })?;
     for node in &product_nodes {
@@ -1250,7 +1253,7 @@ fn push_semantic_loss(
 ) -> Result<(), CodecError> {
     let message = resource::retained_join(ctx, message_parts, "", operation)?;
     let tag = tag
-        .map(|tag| resource::retained_string(ctx, tag, operation))
+        .map(|tag| ctx.copy_retained_text(tag, operation))
         .transpose()?;
     resource::reserve_vec_items(ctx, losses, 1, "FCStd semantic loss output")?;
     losses.push(
