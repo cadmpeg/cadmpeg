@@ -288,7 +288,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     });
 
     let expected = 2_000_001.0 * WRITER_ENDPOINT_RELATIVE_TOLERANCE;
-    assert!((generated_minimum_resolution(&ir) - expected).abs() <= f64::EPSILON * 64.0);
+    assert!((generated_minimum_resolution(&ir).expect("evaluation resources") - expected).abs() <= f64::EPSILON * 64.0);
 }
 
 #[test]
