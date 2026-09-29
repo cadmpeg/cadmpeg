@@ -6,6 +6,7 @@
     clippy::uninlined_format_args
 )]
 
+mod body_selection;
 mod coil;
 mod dispatcher;
 mod extrude;
