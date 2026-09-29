@@ -2593,10 +2593,7 @@ fn close_radial_rings(ctx: &DecodeContext<'_>, coedges: &mut [Coedge]) -> Result
     let mut by_edge: HashMap<EdgeId, Vec<usize>> = HashMap::new();
     for (index, coedge) in coedges.iter().enumerate() {
         if !by_edge.contains_key(&coedge.edge) {
-            let key = EdgeId::mint(
-                ctx.copy_retained_text(coedge.edge.as_str(), "FreeCAD radial edge identity")?,
-            )
-            .map_err(CodecError::malformed)?;
+            let key = coedge.edge.try_clone_for_decode(ctx, "FreeCAD radial edge identity")?;
             ctx.insert_hash_map(&mut by_edge, key, Vec::new(), "FreeCAD radial edge index")?;
         }
         if let Some(indices) = by_edge.get_mut(&coedge.edge) {
@@ -2606,16 +2603,8 @@ fn close_radial_rings(ctx: &DecodeContext<'_>, coedges: &mut [Coedge]) -> Result
     }
     for indices in by_edge.values() {
         if let [first, second] = indices.as_slice() {
-            coedges[*first].radial_next = CoedgeId::mint(ctx.copy_retained_text(
-                coedges[*second].id.as_str(),
-                "FreeCAD radial coedge identity",
-            )?)
-            .map_err(CodecError::malformed)?;
-            coedges[*second].radial_next = CoedgeId::mint(ctx.copy_retained_text(
-                coedges[*first].id.as_str(),
-                "FreeCAD radial coedge identity",
-            )?)
-            .map_err(CodecError::malformed)?;
+            coedges[*first].radial_next = coedges[*second].id.try_clone_for_decode(ctx, "FreeCAD radial coedge identity")?;
+            coedges[*second].radial_next = coedges[*first].id.try_clone_for_decode(ctx, "FreeCAD radial coedge identity")?;
         }
     }
     Ok(())

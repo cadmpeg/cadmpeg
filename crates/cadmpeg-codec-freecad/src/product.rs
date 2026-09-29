@@ -464,12 +464,9 @@ pub(crate) fn transfer_neutral(
                 parent: parent
                     .as_ref()
                     .map(|occurrence| {
-                        OccurrenceId::mint(ctx.copy_retained_text(
-                            occurrence.as_str(),
-                            "fcstd product parent identity",
-                        )?)
+                        occurrence.try_clone_for_decode(ctx, "fcstd product parent identity")
                         .map(|occurrence| OccurrenceParent::Occurrence { occurrence })
-                        .map_err(CodecError::malformed)
+
                     })
                     .transpose()?
                     .unwrap_or(OccurrenceParent::Root {}),
@@ -572,10 +569,7 @@ pub(crate) fn transfer_neutral(
         }) {
             ctx.reserve_vec(&mut definition_bodies, 1, "fcstd product definition bodies")?;
             definition_bodies.push(
-                cadmpeg_ir::ids::BodyId::mint(
-                    ctx.copy_retained_text(body.id.as_str(), "fcstd product body identity")?,
-                )
-                .map_err(CodecError::malformed)?,
+                body.id.try_clone_for_decode(ctx, "fcstd product body identity")?,
             );
         }
         definitions.push(ProductDefinition {
