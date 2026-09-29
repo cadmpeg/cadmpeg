@@ -298,13 +298,14 @@ pub(super) fn attach(
         &annotation_stream,
     )?;
     let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
+        ctx,
         ir,
         &model.parasolid.parasolid_topology_attribute_list_references,
         &model.parasolid.parasolid_topology_attribute_class_uses,
         &model.parasolid.parasolid_attribute_definitions,
         &model.parasolid.parasolid_attribute_field_uses,
         &model.parasolid.parasolid_attribute_field_names,
-    );
+    )?;
     attach_parasolid_topology_string_attributes(
         ir,
         &ParasolidStringAttributeSources {
@@ -4895,7 +4896,7 @@ struct ParasolidStringAttributeSources<'a> {
 fn attach_parasolid_topology_string_attributes(
     ir: &mut CadIr,
     sources: &ParasolidStringAttributeSources<'_>,
-    attribute_index: &ParasolidTopologyAttributeIndex<'_>,
+    attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let strings_by_id = sources
@@ -4988,52 +4989,60 @@ struct ParasolidAttributeNameIndex<'a> {
 
 impl<'a> ParasolidAttributeNameIndex<'a> {
     fn new(
+        ctx: &DecodeContext<'_>,
+        reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
         class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
         definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
         field_uses: &'a [crate::native::parasolid::ParasolidAttributeFieldUse],
         field_names: &'a [crate::native::parasolid::ParasolidAttributeFieldNames],
-    ) -> Self {
+    ) -> Result<Self, CodecError> {
         let mut classes_by_entity = BTreeMap::new();
         for class_use in class_uses {
             insert_sole(
+                ctx,
+                reservation,
                 &mut classes_by_entity,
                 (
                     class_use.topology_attribute_reference.as_str(),
                     class_use.entity_51_record.as_str(),
                 ),
                 class_use,
-            );
+            )?;
         }
 
         let mut fields_by_value_use = BTreeMap::new();
         for field_use in field_uses {
             insert_sole(
+                ctx,
+                reservation,
                 &mut fields_by_value_use,
                 field_use.value_use.as_str(),
                 field_use,
-            );
+            )?;
         }
 
         let mut definitions_by_id = BTreeMap::new();
         for definition in definitions {
-            insert_sole(&mut definitions_by_id, definition.id.as_str(), definition);
+            insert_sole(ctx, reservation, &mut definitions_by_id, definition.id.as_str(), definition)?;
         }
 
         let mut field_names_by_definition = BTreeMap::new();
         for names in field_names {
             insert_sole(
+                ctx,
+                reservation,
                 &mut field_names_by_definition,
                 names.attribute_definition.as_str(),
                 names,
-            );
+            )?;
         }
 
-        Self {
+        Ok(Self {
             classes_by_entity,
             fields_by_value_use,
             definitions_by_id,
             field_names_by_definition,
-        }
+        })
     }
 
     fn field_name(
@@ -5086,15 +5095,25 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
 }
 
 /// Records `value` as the sole value for `key`, or `None` once the key repeats.
-fn insert_sole<'a, K: Ord, V>(values: &mut BTreeMap<K, Option<&'a V>>, key: K, value: &'a V) {
+fn insert_sole<'a, K: Ord, V>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    values: &mut BTreeMap<K, Option<&'a V>>,
+    key: K,
+    value: &'a V,
+) -> Result<(), CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(values.len()), "NX Parasolid attribute name lookup")?;
     match values.entry(key) {
         Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, "NX Parasolid attribute name index")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(K, Option<&V>)>() * 4))?;
             entry.insert(Some(value));
         }
         Entry::Occupied(mut entry) => {
             entry.insert(None);
         }
     }
+    Ok(())
 }
 
 fn parasolid_topology_attribute_class_names<'a>(
@@ -5179,14 +5198,16 @@ struct ParasolidTopologyAttributeContext<'a> {
     target: AttributeTarget,
 }
 
-struct ParasolidTopologyAttributeIndex<'a> {
+struct ParasolidTopologyAttributeIndex<'a, 'ctx> {
     class_names: BTreeMap<&'a str, &'a str>,
     attribute_names: ParasolidAttributeNameIndex<'a>,
     contexts: Vec<ParasolidTopologyAttributeContext<'a>>,
+    _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
-impl<'a> ParasolidTopologyAttributeIndex<'a> {
+impl<'a, 'ctx> ParasolidTopologyAttributeIndex<'a, 'ctx> {
     fn new(
+        ctx: &'ctx DecodeContext<'_>,
         ir: &CadIr,
         topology_references:
             &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
@@ -5194,17 +5215,22 @@ impl<'a> ParasolidTopologyAttributeIndex<'a> {
         definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
         field_uses: &'a [crate::native::parasolid::ParasolidAttributeFieldUse],
         field_names: &'a [crate::native::parasolid::ParasolidAttributeFieldNames],
-    ) -> Self {
-        Self {
+    ) -> Result<Self, CodecError> {
+        let mut reservation = ctx.reserve_scoped(0, "NX Parasolid attribute indexes")?;
+        let attribute_names = ParasolidAttributeNameIndex::new(
+            ctx,
+            &mut reservation,
+            class_uses,
+            definitions,
+            field_uses,
+            field_names,
+        )?;
+        Ok(Self {
             class_names: parasolid_topology_attribute_class_names(class_uses, definitions),
-            attribute_names: ParasolidAttributeNameIndex::new(
-                class_uses,
-                definitions,
-                field_uses,
-                field_names,
-            ),
+            attribute_names,
             contexts: parasolid_topology_attribute_contexts(ir, topology_references, class_uses),
-        }
+            _reservation: reservation,
+        })
     }
 }
 
@@ -5294,7 +5320,7 @@ fn entity_suffix_key(entity: &str) -> Option<cadmpeg_ir::ids::IdentityKey> {
 fn attach_parasolid_topology_numeric_attributes(
     ir: &mut CadIr,
     sources: &ParasolidNumericAttributeSources<'_>,
-    attribute_index: &ParasolidTopologyAttributeIndex<'_>,
+    attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let integers_by_id = sources
@@ -5413,7 +5439,7 @@ struct ParasolidStructuredAttributeSources<'a> {
 fn attach_parasolid_topology_structured_attributes(
     ir: &mut CadIr,
     sources: &ParasolidStructuredAttributeSources<'_>,
-    attribute_index: &ParasolidTopologyAttributeIndex<'_>,
+    attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let vectors_by_id = sources
