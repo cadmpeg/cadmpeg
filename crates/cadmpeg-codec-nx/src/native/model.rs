@@ -1375,19 +1375,21 @@ impl NativeModel {
             &data_block_target_index_rows,
         )?;
         let feature_datum_csys_column_row_uses = feature_datum_csys_column_row_uses(
+            ctx,
             &feature_datum_csys_constructions,
             &data_block_index_rows,
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
             &data_block_column_index_tables,
-        );
+        )?;
         let feature_input_column_row_uses = feature_input_column_row_uses(
+            ctx,
             &feature_input_blocks,
             &data_block_index_rows,
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
             &data_block_column_index_tables,
-        );
+        )?;
         let feature_input_column_targets = feature_input_column_targets(
             &feature_input_blocks,
             &feature_input_column_row_uses,

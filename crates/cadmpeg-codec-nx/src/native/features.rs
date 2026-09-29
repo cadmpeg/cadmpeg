@@ -5475,164 +5475,190 @@ pub(super) fn feature_input_block_identity_groups(
     Ok(output)
 }
 
-type ColumnTableByRow<'a> = BTreeMap<&'a str, Option<&'a str>>;
-type ColumnSlotsByBlock<'a> =
-    BTreeMap<&'a str, Vec<(&'a str, ColumnIndexRowKind, ColumnRowSlot, u64)>>;
-
-fn column_relations_by_block<'a>(
+fn visit_column_slots<'a>(
+    ctx: &DecodeContext<'_>,
     index_rows: &'a [DataBlockIndexRow],
     linked_rows: &'a [DataBlockLinkedIndexRow],
     target_rows: &'a [DataBlockTargetIndexRow],
-    tables: &'a [DataBlockColumnIndexTable],
-) -> (ColumnTableByRow<'a>, ColumnSlotsByBlock<'a>) {
-    let mut table_by_row = ColumnTableByRow::new();
-    for table in tables {
-        for row in std::iter::once(table.opening_linked_row.as_str())
-            .chain(table.rows.target_rows().iter().map(String::as_str))
-            .chain(table.rows.linked_rows().iter().map(String::as_str))
-        {
-            table_by_row
-                .entry(row)
-                .and_modify(|value| *value = None)
-                .or_insert(Some(table.id.as_str()));
-        }
-    }
-    let mut slots_by_block = ColumnSlotsByBlock::new();
+    mut visit: impl FnMut(&'a str, &'a str, ColumnIndexRowKind, ColumnRowSlot, u64)
+        -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
     for row in index_rows {
         for (slot, token) in ColumnRowSlot::ALL.into_iter().zip(row.frame.indices()) {
-            slots_by_block.entry(token.target).or_default().push((
-                row.id.as_str(),
-                ColumnIndexRowKind::Index,
-                slot,
-                token.offset,
-            ));
+            ctx.charge_work(1, "scan NX column row slots")?;
+            visit(token.target, &row.id, ColumnIndexRowKind::Index, slot, token.offset)?;
         }
     }
     for row in linked_rows {
-        for (slot, token) in ColumnRowSlot::ALL
-            .into_iter()
-            .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices()))
-        {
-            slots_by_block.entry(token.target).or_default().push((
-                row.id.as_str(),
-                ColumnIndexRowKind::LinkedIndex,
-                slot,
-                token.offset,
-            ));
+        for (slot, token) in ColumnRowSlot::ALL.into_iter()
+            .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices())) {
+            ctx.charge_work(1, "scan NX column row slots")?;
+            visit(token.target, &row.id, ColumnIndexRowKind::LinkedIndex, slot, token.offset)?;
         }
     }
     for row in target_rows {
-        for (slot, token) in ColumnRowSlot::ALL
-            .into_iter()
-            .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices()))
-        {
-            slots_by_block.entry(token.target).or_default().push((
-                row.id.as_str(),
-                ColumnIndexRowKind::TargetIndex,
-                slot,
-                token.offset,
-            ));
+        for (slot, token) in ColumnRowSlot::ALL.into_iter()
+            .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices())) {
+            ctx.charge_work(1, "scan NX column row slots")?;
+            visit(token.target, &row.id, ColumnIndexRowKind::TargetIndex, slot, token.offset)?;
         }
     }
-    (table_by_row, slots_by_block)
+    Ok(())
+}
+
+fn unique_column_table<'a>(
+    ctx: &DecodeContext<'_>,
+    row: &str,
+    tables: &'a [DataBlockColumnIndexTable],
+) -> Result<Option<&'a str>, CodecError> {
+    let mut unique = None;
+    for table in tables {
+        for candidate in std::iter::once(table.opening_linked_row.as_str())
+            .chain(table.rows.target_rows().iter().map(String::as_str))
+            .chain(table.rows.linked_rows().iter().map(String::as_str)) {
+            ctx.charge_work(1, "resolve NX column row table")?;
+            if candidate != row { continue; }
+            if unique.is_some() { return Ok(None); }
+            unique = Some(table.id.as_str());
+        }
+    }
+    Ok(unique)
+}
+
+fn format_column_relation_id(
+    ctx: &DecodeContext<'_>,
+    prefix: &'static str,
+    key: &str,
+    construction_slot: Option<DatumCsysSlot>,
+    row_kind: ColumnIndexRowKind,
+    ordinal: usize,
+) -> Result<String, CodecError> {
+    let mut value = ordinal;
+    let mut digits = 1usize;
+    while value >= 10 { value /= 10; digits += 1; }
+    let kind = row_kind.id_component();
+    let length = prefix.len().checked_add(key.len())
+        .and_then(|length| length.checked_add(kind.len()))
+        .and_then(|length| length.checked_add(digits.max(10)))
+        .and_then(|length| length.checked_add(if construction_slot.is_some() { 13 } else { 2 }))
+        .ok_or_else(|| ctx.refuse_codec_limit("format NX column relation identity", 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length),
+        "NX column relation identity")?;
+    let mut id = String::new();
+    id.try_reserve_exact(length).map_err(|_| ctx.refuse_codec_limit(
+        "allocate NX column relation identity", 0, 1))?;
+    if let Some(slot) = construction_slot {
+        write!(&mut id, "{prefix}{key}-{slot:010}-{kind}-{ordinal:010}")
+            .map_err(|_| ctx.refuse_codec_limit("format NX column relation identity", 0, 1))?;
+    } else {
+        write!(&mut id, "{prefix}{key}-{kind}-{ordinal:010}")
+            .map_err(|_| ctx.refuse_codec_limit("format NX column relation identity", 0, 1))?;
+    }
+    Ok(id)
 }
 
 /// Join feature inputs to every column-row slot addressing the same block.
 pub(super) fn feature_input_column_row_uses(
+    ctx: &DecodeContext<'_>,
     inputs: &[FeatureInputBlock],
     index_rows: &[DataBlockIndexRow],
     linked_rows: &[DataBlockLinkedIndexRow],
     target_rows: &[DataBlockTargetIndexRow],
     tables: &[DataBlockColumnIndexTable],
-) -> Vec<FeatureInputColumnRowUse> {
-    let (table_by_row, slots_by_block) =
-        column_relations_by_block(index_rows, linked_rows, target_rows, tables);
-    inputs
-        .iter()
-        .flat_map(|input| {
-            slots_by_block
-                .get(input.data_block.as_str())
-                .into_iter()
-                .flatten()
-                .enumerate()
-                .map(
-                    |(ordinal, (row, row_kind, slot, source_offset))| FeatureInputColumnRowUse {
-                        id: format!(
-                            "nx:feature-history:input-column-row-use#{}-{}-{ordinal:010}",
-                            input.id.rsplit_once('#').map_or("unknown", |(_, key)| key),
-                            row_kind.id_component(),
-                        ),
-                        input_block: input.id.clone(),
-                        operation_label: input.operation_label.clone(),
-                        input_slot: input.input_slot,
-                        row_kind: *row_kind,
-                        column_row: (*row).to_string(),
-                        column_table: table_by_row
-                            .get(row)
-                            .and_then(|table| *table)
-                            .map(str::to_string),
-                        row_slot: *slot,
-                        data_block: input.data_block.clone(),
-                        source_offset: *source_offset,
-                    },
-                )
-                .collect::<Vec<_>>()
-        })
-        .collect()
+) -> Result<Vec<FeatureInputColumnRowUse>, CodecError> {
+    let mut output = Vec::new();
+    for input in inputs {
+        let mut ordinal = 0usize;
+        visit_column_slots(ctx, index_rows, linked_rows, target_rows,
+            |data_block, row, row_kind, slot, source_offset| {
+                if data_block != input.data_block { return Ok(()); }
+                let table = unique_column_table(ctx, row, tables)?;
+                ctx.charge_collection_items(1, "NX input column row uses")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<FeatureInputColumnRowUse>()),
+                    "NX input column row uses")?;
+                output.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX input column row uses", 0, 1))?;
+                output.push(FeatureInputColumnRowUse {
+                    id: format_column_relation_id(ctx,
+                        "nx:feature-history:input-column-row-use#",
+                        input.id.rsplit_once('#').map_or("unknown", |(_, key)| key),
+                        None, row_kind, ordinal)?,
+                    input_block: copy_operation_text(ctx, &input.id,
+                        "NX input column row input identity")?,
+                    operation_label: copy_operation_text(ctx, &input.operation_label,
+                        "NX input column row operation label")?,
+                    input_slot: input.input_slot,
+                    row_kind,
+                    column_row: copy_operation_text(ctx, row, "NX input column row identity")?,
+                    column_table: table.map(|id| copy_operation_text(ctx, id,
+                        "NX input column table identity")).transpose()?,
+                    row_slot: slot,
+                    data_block: copy_operation_text(ctx, &input.data_block,
+                        "NX input column data block")?,
+                    source_offset,
+                });
+                ordinal = ordinal.checked_add(1).ok_or_else(||
+                    ctx.refuse_codec_limit("count NX input column row uses", 0, 1))?;
+                Ok(())
+            })?;
+    }
+    Ok(output)
 }
 
 /// Join every datum-CSYS construction lane to column-row slots addressing the
 /// same block. The relation assigns no geometric role to either lane.
 pub(super) fn feature_datum_csys_column_row_uses(
+    ctx: &DecodeContext<'_>,
     constructions: &[FeatureDatumCsysConstruction],
     index_rows: &[DataBlockIndexRow],
     linked_rows: &[DataBlockLinkedIndexRow],
     target_rows: &[DataBlockTargetIndexRow],
     tables: &[DataBlockColumnIndexTable],
-) -> Vec<FeatureDatumCsysColumnRowUse> {
-    let (table_by_row, slots_by_block) =
-        column_relations_by_block(index_rows, linked_rows, target_rows, tables);
-    let table_by_row = &table_by_row;
-    let slots_by_block = &slots_by_block;
-    constructions
-        .iter()
-        .flat_map(|construction| {
-            DatumCsysSlot::ALL.into_iter().zip(construction.frame.references())
-                .flat_map(|(construction_slot, (_, data_block, source_offset))| {
-                    slots_by_block
-                        .get(data_block.as_str())
-                        .into_iter()
-                        .flatten()
-                        .enumerate()
-                        .map(move |(ordinal, (row, row_kind, row_slot, row_source_offset))| {
-                            FeatureDatumCsysColumnRowUse {
-                                id: format!(
-                                    "nx:feature-history:datum-csys-column-row-use#{}-{construction_slot:010}-{}-{ordinal:010}",
-                                    construction
-                                        .id
-                                        .rsplit_once('#')
-                                        .map_or("unknown", |(_, key)| key),
-                                    row_kind.id_component(),
-                                ),
-                                construction: construction.id.clone(),
-                                operation_label: construction.operation_label.clone(),
-                                construction_slot,
-                                row_kind: *row_kind,
-                                column_row: (*row).to_string(),
-                                column_table: table_by_row
-                                    .get(row)
-                                    .and_then(|table| *table)
-                                    .map(str::to_string),
-                                row_slot: *row_slot,
-                                data_block: data_block.clone(),
-                                construction_source_offset: source_offset,
-                                row_source_offset: *row_source_offset,
-                            }
-                        })
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
+) -> Result<Vec<FeatureDatumCsysColumnRowUse>, CodecError> {
+    let mut output = Vec::new();
+    for construction in constructions {
+        for (construction_slot, (_, data_block, source_offset)) in
+            DatumCsysSlot::ALL.into_iter().zip(construction.frame.references()) {
+            let mut ordinal = 0usize;
+            visit_column_slots(ctx, index_rows, linked_rows, target_rows,
+                |target, row, row_kind, row_slot, row_source_offset| {
+                    if target != data_block { return Ok(()); }
+                    let table = unique_column_table(ctx, row, tables)?;
+                    ctx.charge_collection_items(1, "NX datum CSYS column row uses")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<FeatureDatumCsysColumnRowUse>()),
+                        "NX datum CSYS column row uses")?;
+                    output.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "allocate NX datum CSYS column row uses", 0, 1))?;
+                    output.push(FeatureDatumCsysColumnRowUse {
+                        id: format_column_relation_id(ctx,
+                            "nx:feature-history:datum-csys-column-row-use#",
+                            construction.id.rsplit_once('#').map_or("unknown", |(_, key)| key),
+                            Some(construction_slot), row_kind, ordinal)?,
+                        construction: copy_operation_text(ctx, &construction.id,
+                            "NX datum CSYS column construction identity")?,
+                        operation_label: copy_operation_text(ctx, &construction.operation_label,
+                            "NX datum CSYS column operation label")?,
+                        construction_slot,
+                        row_kind,
+                        column_row: copy_operation_text(ctx, row,
+                            "NX datum CSYS column row identity")?,
+                        column_table: table.map(|id| copy_operation_text(ctx, id,
+                            "NX datum CSYS column table identity")).transpose()?,
+                        row_slot,
+                        data_block: copy_operation_text(ctx, data_block,
+                            "NX datum CSYS column data block")?,
+                        construction_source_offset: source_offset,
+                        row_source_offset,
+                    });
+                    ordinal = ordinal.checked_add(1).ok_or_else(||
+                        ctx.refuse_codec_limit("count NX datum CSYS column row uses", 0, 1))?;
+                    Ok(())
+                })?;
+        }
+    }
+    Ok(output)
 }
 
 /// Retain inputs having exactly one slot-zero use in one complete column table.
