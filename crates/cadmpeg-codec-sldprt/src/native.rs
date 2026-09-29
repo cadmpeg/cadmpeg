@@ -1386,7 +1386,7 @@ impl SldprtNative {
             }),
             "validate SLDPRT history lanes",
         )?;
-        bind_history_classes_charged(ctx, &mut expected_histories, &history_lanes)?;
+        crate::resolved_features::classes::bind_history_classes(ctx, &mut expected_histories, &history_lanes)?;
         if self
             .feature_histories
             .iter()
@@ -1401,32 +1401,6 @@ impl SldprtNative {
         SLDPRT_CATALOGUE.emit_all(ctx, self, namespace)?;
         Ok(())
     }
-}
-
-fn bind_history_classes_charged(
-    ctx: &DecodeContext<'_>,
-    histories: &mut [FeatureHistory],
-    lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let source_items = lanes.iter().try_fold(0usize, |count, lane| {
-        count
-            .checked_add(lane.names.len())
-            .and_then(|count| count.checked_add(lane.classes.len()))
-    });
-    let source_items = source_items.ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "validate SLDPRT history class candidates",
-            u64::MAX - 1,
-            u64::MAX,
-        )
-    })?;
-    let _reservation = admit_validation_candidates(
-        ctx,
-        source_items,
-        "validate SLDPRT history class candidates",
-    )?;
-    crate::resolved_features::classes::bind_history_classes(histories, lanes);
-    Ok(())
 }
 
 fn resolved_scalar_operand_markers<'a>(
