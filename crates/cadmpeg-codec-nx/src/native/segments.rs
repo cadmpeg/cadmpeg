@@ -379,7 +379,7 @@ fn terminal_feature_body_indices(
         return Ok(None);
     }
     let chronological_labels =
-        crate::native::features::feature_operation_chronological_labels(labels);
+        crate::native::features::feature_operation_chronological_labels(ctx, labels)?;
     let positions = chronological_labels
         .iter()
         .enumerate()
