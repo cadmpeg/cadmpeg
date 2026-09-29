@@ -117,10 +117,11 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
         .filter(|lane| !is_supplemental_config_lane(lane))
         .cloned()
         .collect::<Vec<_>>();
-    crate::resolved_features::classes::bind_history_classes(
-        &mut expected_histories,
-        &history_lanes,
-    );
+    if let Err(error) = crate::resolved_features::classes::bind_history_classes(
+        &ctx, &mut expected_histories, &history_lanes,
+    ) {
+        return invalid_namespace(error);
+    }
     for (history, expected_history) in native.feature_histories.iter().zip(&expected_histories) {
         for (feature, expected_feature) in history.features.iter().zip(&expected_history.features) {
             if feature.input_class != expected_feature.input_class {

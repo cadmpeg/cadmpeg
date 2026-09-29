@@ -784,7 +784,7 @@ fn native_history_class_validation_limit_refuses_before_lookup_maps() {
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut histories = native.feature_histories.clone();
     let error =
-        super::bind_history_classes_charged(&limited, &mut histories, &native.feature_input_lanes)
+        crate::resolved_features::classes::bind_history_classes(&limited, &mut histories, &native.feature_input_lanes)
             .unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
@@ -794,7 +794,7 @@ fn native_history_class_validation_limit_refuses_before_lookup_maps() {
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    super::bind_history_classes_charged(&service, &mut histories, &native.feature_input_lanes)
+    crate::resolved_features::classes::bind_history_classes(&service, &mut histories, &native.feature_input_lanes)
         .unwrap();
 }
 

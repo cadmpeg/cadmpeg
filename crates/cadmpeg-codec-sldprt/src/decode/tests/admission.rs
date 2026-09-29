@@ -1393,3 +1393,62 @@ fn metadata_parameter_expression_refuses_nesting_limit() {
                 && limit.operation == "parse SLDPRT parameter unary"
     ));
 }
+
+fn class_binding_source() -> Vec<u8> {
+    let mut source = crate::test_support::history::sldprt_with_body_and_resolved_features(
+        &triangle_body(), &[0, 1],
+    );
+    source.extend(make_block(0x43, "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="Sketch" id="10"/></Keywords>"#));
+    source
+}
+
+#[test]
+fn metadata_class_binding_refuses_collection_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = collection_refusal_with_options(
+        &class_binding_source(), options, "validate SLDPRT history class candidates",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn geometry_class_binding_refuses_collection_limit() {
+    let refusal = collection_refusal_at(
+        &class_binding_source(), "validate SLDPRT history class candidates",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn metadata_class_binding_refuses_retained_limit() {
+    let mut options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&class_binding_source(), &mut options, "bind SLDPRT history classes");
+    assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "bind SLDPRT history classes"));
+}
+
+#[test]
+fn geometry_class_binding_refuses_retained_limit() {
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&class_binding_source(), &mut options, "bind SLDPRT history classes");
+    assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "bind SLDPRT history classes"));
+}
+
+#[test]
+fn metadata_class_binding_refuses_work_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = work_refusal_with_options(&class_binding_source(), options, "bind SLDPRT history classes");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}
+
+#[test]
+fn geometry_class_binding_refuses_work_limit() {
+    let refusal = work_refusal_with_options(&class_binding_source(), DecodeOptions::default(), "bind SLDPRT history classes");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}

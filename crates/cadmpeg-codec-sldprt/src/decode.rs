@@ -2679,7 +2679,7 @@ fn build_geometry_ir(
     let mut lanes = crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations)?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
-    crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
+    crate::resolved_features::classes::bind_history_classes(ctx, &mut histories, &lanes)?;
     crate::resolved_features::bindings::bind_scalar_operands(&histories, &mut lanes);
     crate::resolved_features::bindings::bind_scalar_operands(
         &histories,
@@ -3959,7 +3959,7 @@ fn build_metadata_ir(
     let mut lanes = crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations)?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
-    crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
+    crate::resolved_features::classes::bind_history_classes(ctx, &mut histories, &lanes)?;
     crate::resolved_features::bindings::bind_scalar_operands(&histories, &mut lanes);
     crate::resolved_features::bindings::bind_scalar_operands(
         &histories,
