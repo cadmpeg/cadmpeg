@@ -1205,7 +1205,7 @@ pub(crate) fn project_profiled_hole_constructions(
         let history = &histories[history_index];
         ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
         let Some(native) = history.features.iter().find(|candidate| candidate.id == native_id) else { continue; };
-        let position = hole_position_feature(native, histories, lanes).map(|feature| feature.id.as_str());
+        let position = hole_position_feature(ctx, native, histories, lanes)?.map(|feature| feature.id.as_str());
         let mut direct = None;
         if let Some(children) = native.properties.get("DissectableChildren") {
             ctx.charge_work(u64_from_index(children.len()), OPERATION)?;
@@ -1327,7 +1327,7 @@ pub(crate) fn project_hole_position_sketches(
             else {
                 break 'feature_edit;
             };
-            let position_feature = match hole_position_feature(native, histories, lanes) {
+            let position_feature = match hole_position_feature(ctx, native, histories, lanes)? {
                 Some(position) => Some(position),
                 None => direct_hole_position_feature(ctx, native, histories, |id| model_sketch_features.get(id).map(|(_, sketch)| sketch), sketch_entities)?,
             };
@@ -1545,31 +1545,42 @@ fn paired_object_locus_markers<'a>(
 }
 
 fn hole_position_feature<'a>(
+    ctx: &DecodeContext<'_>,
     hole: &crate::records::Feature,
     histories: &'a [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Option<&'a crate::records::Feature> {
-    let mut sources = lanes
-        .iter()
-        .filter_map(|lane| hole_position_sketch_source(hole, lane));
-    let source = sources.next()?;
-    if sources.any(|candidate| candidate != source) {
-        return None;
+) -> Result<Option<&'a crate::records::Feature>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT hole position source";
+    let mut source = None;
+    for lane in lanes {
+        ctx.charge_work(u64_from_index(lane.names.len()).checked_add(128)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        for name in &lane.names { ctx.charge_work(u64_from_index(name.value.len()), OPERATION)?; }
+        let Some(candidate) = hole_position_sketch_source(hole, lane) else { continue; };
+        if source.is_some_and(|source| source != candidate) { return Ok(None); }
+        source = Some(candidate);
     }
-    let mut position_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter(|candidate| {
-            classify(candidate) == Some(FeatureClass::Sketch)
-                && lanes.iter().any(|lane| {
-                    candidate.source_value().or_else(|| {
-                        feature_object_name(candidate, lane)
-                            .and_then(|name| name.object_id.and_then(ObjectId::value))
-                    }) == Some(source)
-                })
-        });
-    let position = position_features.next()?;
-    position_features.next().is_none().then_some(position)
+    let Some(source) = source else { return Ok(None); };
+    let mut position = None;
+    for candidate in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, OPERATION)?;
+        if classify(candidate) != Some(FeatureClass::Sketch) { continue; }
+        let mut matches = false;
+        for lane in lanes {
+            ctx.charge_work(u64_from_index(lane.names.len()).checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            if candidate.source_value().or_else(|| feature_object_name(candidate, lane)
+                .and_then(|name| name.object_id.and_then(ObjectId::value))) == Some(source) {
+                matches = true;
+                break;
+            }
+        }
+        if matches {
+            if position.is_some() { return Ok(None); }
+            position = Some(candidate);
+        }
+    }
+    Ok(position)
 }
 
 /// Whether a hole has a configuration-local position source in the supplied
@@ -1641,7 +1652,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
         else {
             continue;
         };
-        let Some(position_feature) = hole_position_feature(native, histories, lanes) else {
+        let Some(position_feature) = hole_position_feature(ctx, native, histories, lanes)? else {
             continue;
         };
         ctx.charge_work(u64_from_index(features.len()), "find SLDPRT spatial position sketch")?;
@@ -3008,7 +3019,7 @@ pub(crate) fn project_hole_axes(
     for hole in native_features.values() {
         ctx.charge_work(1, INDEX_OPERATION)?;
         if classify(hole) != Some(FeatureClass::Hole) { continue; }
-        let position = match hole_position_feature(hole, histories, lanes) {
+        let position = match hole_position_feature(ctx, hole, histories, lanes)? {
             Some(position) => Some(position),
             None => direct_hole_position_feature(ctx, hole, histories, |id| model_sketches.get(id), sketch_entities)?,
         };
@@ -3520,12 +3531,13 @@ pub(crate) fn project_topological_hole_constructions(
                         candidates.push((*radius, *span));
                     }
                 }
-                ctx.charge_work(u64_from_index(candidates.len()), "sort SLDPRT matching hole bores")?;
-                candidates.sort_by(|left, right| {
+                charge_hole_sort_work(ctx, candidates.len(), "sort SLDPRT matching hole bores")?;
+                candidates.sort_unstable_by(|left, right| {
                     left.0
                         .total_cmp(&right.0)
                         .then_with(|| left.1.total_cmp(&right.1))
                 });
+                ctx.charge_work(u64_from_index(candidates.len()), "deduplicate SLDPRT matching hole bores")?;
                 candidates.dedup_by(|left, right| {
                     (left.0 - right.0).abs() <= EPS_HOLE_GEOMETRY
                         && (left.1 - right.1).abs() <= EPS_HOLE_GEOMETRY
@@ -3590,198 +3602,140 @@ pub(crate) fn project_topological_hole_constructions(
 }
 
 pub(crate) fn project_bore_backed_position_sketches(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     entities: &mut Vec<SketchEntity>,
     surfaces: &[Surface],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "project SLDPRT bore backed position sketches";
     struct Projection {
-        feature: cadmpeg_ir::features::FeatureId,
+        feature: usize,
         sketch: Sketch,
         entities: Vec<SketchEntity>,
     }
-
-    let native_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
-    let model_features = features
-        .iter()
-        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature.id.clone())))
-        .collect::<HashMap<_, _>>();
+    let copy_text = |text: &str| -> Result<String, CodecError> {
+        ctx.charge_work(u64_from_index(text.len()), OPERATION)?;
+        ctx.format_retained(format_args!("{text}"), OPERATION)
+    };
+    let mut native_features = HashMap::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, OPERATION)?;
+        if !native_features.contains_key(feature.id.as_str()) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            native_features.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        native_features.insert(feature.id.as_str(), feature);
+    }
+    let mut model_features = HashMap::new();
+    for feature in features.iter() {
+        ctx.charge_work(1, OPERATION)?;
+        let Some(native) = feature.native_ref.as_deref() else { continue; };
+        if !model_features.contains_key(native) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            model_features.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        model_features.insert(native, &feature.id);
+    }
     let mut projections = Vec::new();
     for hole in features.iter() {
-        let FeatureDefinition::Operation(FeatureOperation::Hole {
-            placements: Some(placements),
-            ..
-        }) = hole.evaluation.definition()
-        else {
-            continue;
-        };
-        let axes = placements
-            .iter()
-            .filter_map(|placement| match placement {
-                HolePlacement::Axis { origin, axis } => Some((*origin, *axis)),
-                HolePlacement::Directed { .. } => None,
-            })
-            .collect::<Vec<_>>();
-        if axes.len() != placements.len() || axes.is_empty() {
-            continue;
-        }
-        let Some(native_hole) = hole
-            .native_ref
-            .as_deref()
-            .and_then(|native| native_features.get(native).copied())
-        else {
-            continue;
-        };
-        let Some(position) = hole_position_feature(native_hole, histories, lanes) else {
-            continue;
-        };
-        let Some(position_feature) = model_features.get(position.id.as_str()) else {
-            continue;
-        };
-        let Some(model_position) = features
-            .iter()
-            .find(|feature| feature.id == *position_feature)
-        else {
-            continue;
-        };
-        if !matches!(
-            model_position.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
-                    | cadmpeg_ir::features::SketchFeatureBinding::Planar(None)
-            })
-        ) {
-            continue;
-        }
-        let canonical = canonical_axis((axes[0].1).get());
-        if !axes
-            .iter()
-            .all(|(_, axis)| canonical_axis(axis.get()).dot(canonical) >= 1.0 - EPS_HOLE_GEOMETRY)
-        {
-            continue;
-        }
-        let mut frames = surfaces
-            .iter()
-            .filter_map(|surface| match surface.geometry {
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
-                    if {
-                        let origin = plane_surface.origin().get();
-                        let normal = *plane_surface.frame().axis().as_raw();
-                        normal.dot(canonical).abs() >= 1.0 - EPS_HOLE_GEOMETRY
-                            && axes.iter().all(|(point, _)| {
-                                Vector3::new(
-                                    point.x - origin.x,
-                                    point.y - origin.y,
-                                    point.z - origin.z,
-                                )
-                                .dot(normal)
-                                .abs()
-                                    <= EPS_HOLE_POSITION
-                            })
-                    } =>
-                {
-                    let origin = plane_surface.origin().get();
-                    let normal = *plane_surface.frame().axis().as_raw();
-                    let u_axis = *plane_surface.frame().reference().as_raw();
-                    Some((origin, normal, u_axis))
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        frames.sort_by_key(reference_plane_frame_key);
-        frames.dedup_by_key(|frame| reference_plane_frame_key(frame));
-        let [(origin, normal, u_axis)] = frames.as_slice() else {
-            continue;
-        };
-        let mut owning_lanes = lanes
-            .iter()
-            .filter(|lane| {
-                hole_position_sketch_source(native_hole, lane) == position.source_value()
-            })
-            .collect::<Vec<_>>();
-        owning_lanes.sort_by_key(|lane| lane.id.as_str());
-        owning_lanes.dedup_by_key(|lane| lane.id.as_str());
-        let [lane] = owning_lanes.as_slice() else {
-            continue;
-        };
-        let lane_key = lane
-            .id
-            .rsplit_once('#')
-            .map_or(lane.id.as_str(), |(_, key)| key);
-        let Ok(sketch_id) = SketchId::mint(format!(
-            "sldprt:model:sketch#bore:{lane_key}:{}",
-            position.ordinal
-        )) else {
-            continue;
-        };
-        let v_axis = normal.cross(*u_axis);
-        let Some(projected_entities) = axes
-            .iter()
-            .enumerate()
-            .map(|(ordinal, (point, _))| {
-                let delta =
-                    Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
-                Some(SketchEntity::new(
-                    SketchEntityId::mint(format!("{}:entity:{ordinal}", sketch_id.as_str()))
-                        .ok()?,
-                    sketch_id.clone(),
-                    SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                        position: Point2::new(delta.dot(*u_axis), delta.dot(v_axis)),
-                    })
-                    .ok()?,
-                ))
-            })
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
-        projections.push(Projection {
-            feature: position_feature.clone(),
-            sketch: Sketch {
-                id: sketch_id,
-                name: model_position.name.clone(),
-                configuration: lane.configuration.clone(),
-                visible: None,
-                placement: match cadmpeg_ir::sketches::SketchPlacement::try_resolved(
-                    *origin, *normal, *u_axis,
-                ) {
-                    Ok(placement) => placement,
-                    Err(_) => continue,
-                },
-                profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-                native_ref: Some(lane.id.clone()),
-            },
-            entities: projected_entities,
+        ctx.charge_work(1, OPERATION)?;
+        let FeatureDefinition::Operation(FeatureOperation::Hole { placements: Some(placements), .. }) = hole.evaluation.definition() else { continue; };
+        ctx.charge_work(u64_from_index(placements.len()), OPERATION)?;
+        let axes = placements.iter().filter_map(|placement| match placement {
+            HolePlacement::Axis { origin, axis } => Some((*origin, *axis)),
+            HolePlacement::Directed { .. } => None,
         });
-    }
-    for projection in projections {
-        let Some(feature) = features
-            .iter_mut()
-            .find(|feature| feature.id == projection.feature)
-        else {
-            continue;
-        };
-        let mut definition = feature.evaluation.definition().clone();
-        let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch, .. }) = &mut definition
-        else {
-            continue;
-        };
-        if sketch.id().is_some() {
-            continue;
+        let Some((_, first_axis)) = axes.clone().next() else { continue; };
+        if axes.clone().count() != placements.len() { continue; }
+        let Some(native_hole) = hole.native_ref.as_deref().and_then(|native| native_features.get(native).copied()) else { continue; };
+        let Some(position) = hole_position_feature(ctx, native_hole, histories, lanes)? else { continue; };
+        let Some(position_feature) = model_features.get(position.id.as_str()) else { continue; };
+        ctx.charge_work(u64_from_index(features.len()), OPERATION)?;
+        let Some(feature_index) = features.iter().position(|feature| &feature.id == *position_feature) else { continue; };
+        let model_position = &features[feature_index];
+        if !matches!(model_position.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved | cadmpeg_ir::features::SketchFeatureBinding::Planar(None)
+        })) { continue; }
+        let canonical = canonical_axis(first_axis.get());
+        ctx.charge_work(u64_from_index(placements.len()), OPERATION)?;
+        if !axes.clone().all(|(_, axis)| canonical_axis(axis.get()).dot(canonical) >= 1.0 - EPS_HOLE_GEOMETRY) { continue; }
+        ctx.charge_work(u64_from_index(surfaces.len()).checked_mul(u64_from_index(placements.len()).checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        let mut frames = surfaces.iter().filter_map(|surface| match surface.geometry {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) if {
+                let origin = plane.origin().get();
+                let normal = *plane.frame().axis().as_raw();
+                normal.dot(canonical).abs() >= 1.0 - EPS_HOLE_GEOMETRY && axes.clone().all(|(point, _)| {
+                    Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z).dot(normal).abs() <= EPS_HOLE_POSITION
+                })
+            } => Some((plane.origin().get(), *plane.frame().axis().as_raw(), *plane.frame().reference().as_raw())),
+            _ => None,
+        });
+        let Some(frame) = frames.next() else { continue; };
+        if frames.any(|candidate| reference_plane_frame_key(&candidate) != reference_plane_frame_key(&frame)) { continue; }
+        let (origin, normal, u_axis) = frame;
+        for lane in lanes {
+            ctx.charge_work(u64_from_index(lane.names.len()).checked_add(128)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            for name in &lane.names { ctx.charge_work(u64_from_index(name.value.len()), OPERATION)?; }
         }
-        *sketch =
-            cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(projection.sketch.id.clone()));
+        let mut owning_lanes = lanes.iter().filter(|lane| hole_position_sketch_source(native_hole, lane) == position.source_value());
+        let Some(lane) = owning_lanes.next() else { continue; };
+        if owning_lanes.any(|candidate| candidate.id != lane.id) { continue; }
+        ctx.charge_work(u64_from_index(lane.id.len()), OPERATION)?;
+        let lane_key = lane.id.rsplit_once('#').map_or(lane.id.as_str(), |(_, key)| key);
+        let Ok(sketch_id) = SketchId::mint(ctx.format_retained(format_args!("sldprt:model:sketch#bore:{lane_key}:{}", position.ordinal), OPERATION)?) else { continue; };
+        let v_axis = normal.cross(u_axis);
+        let mut projected_entities = Vec::new();
+        let mut admitted_geometry = true;
+        for (ordinal, (point, _)) in axes.enumerate() {
+            ctx.charge_work(u64_from_index(sketch_id.as_str().len()), OPERATION)?;
+            let Ok(entity_id) = SketchEntityId::mint(ctx.format_retained(format_args!("{}:entity:{ordinal}", sketch_id.as_str()), OPERATION)?) else {
+                admitted_geometry = false; break;
+            };
+            let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
+            let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point { position: Point2::new(delta.dot(u_axis), delta.dot(v_axis)) }) else {
+                admitted_geometry = false; break;
+            };
+            let sketch_ref = SketchId::mint(copy_text(sketch_id.as_str())?)
+                .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
+            ctx.reserve_collection_vec(&mut projected_entities, 1, OPERATION)?;
+            projected_entities.push(SketchEntity::new(entity_id, sketch_ref, geometry));
+        }
+        if !admitted_geometry { continue; }
+        let Ok(placement) = cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, normal, u_axis) else { continue; };
+        let name = model_position.name.as_deref().map(copy_text).transpose()?;
+        let configuration = lane.configuration.as_deref().map(copy_text).transpose()?;
+        let native_ref = Some(copy_text(&lane.id)?);
+        ctx.reserve_collection_vec(&mut projections, 1, OPERATION)?;
+        projections.push(Projection { feature: feature_index, sketch: Sketch {
+            id: sketch_id, name, configuration, visible: None, placement,
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(), native_ref,
+        }, entities: projected_entities });
+    }
+    drop(model_features);
+    for projection in projections {
+        ctx.charge_work(1, OPERATION)?;
+        let feature = &mut features[projection.feature];
+        let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch, .. }) = feature.evaluation.definition() else { continue; };
+        if sketch.id().is_some() { continue; }
+        let sketch_id = SketchId::mint(copy_text(projection.sketch.id.as_str())?)
+            .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
+        ctx.reserve_collection_vec(entities, projection.entities.len(), OPERATION)?;
+        ctx.reserve_collection_vec(sketches, 1, OPERATION)?;
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch, .. }) = definition {
+                *sketch = cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id));
+            }
+        });
         entities.extend(projection.entities);
         sketches.push(projection.sketch);
-
-        feature.evaluation.set_definition(definition);
     }
+    Ok(())
 }
 
 fn marker_pattern_bore_axes(

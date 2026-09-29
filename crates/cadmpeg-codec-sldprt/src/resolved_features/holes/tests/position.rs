@@ -570,6 +570,8 @@ fn an_absent_object_name_trailer_sources_no_hole_position() {
 
 #[test]
 fn embedded_position_sketch_name_resolves_its_typed_source() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let history = native_history();
     let mut lane = lane();
     lane.native_payload.resize(200, 0);
@@ -647,10 +649,11 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
         .copy_from_slice(&[0, 0xc0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     assert_eq!(
         hole_position_feature(
+            &ctx,
             &legacy_history.features[0],
             std::slice::from_ref(&legacy_history),
             &[lane],
-        )
+        ).unwrap()
         .map(|feature| feature.id.as_str()),
         Some("native-position")
     );
