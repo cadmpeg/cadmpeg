@@ -224,8 +224,11 @@ pub fn boundaries_within_resolution(
         let product_degree = degree.checked_mul(2)?;
         let binomial = |n: usize, k: usize| {
             let k = k.min(n - k);
-            (1..=k).fold(1.0, |value, factor| {
-                value * (n - k + factor) as f64 / factor as f64
+            (1..=k).try_fold(1.0, |value, factor| {
+                Some(
+                    value * cadmpeg_core::convert::f64_from_index(n - k + factor)?
+                        / cadmpeg_core::convert::f64_from_index(factor)?,
+                )
             })
         };
         let first_weight = first
@@ -258,8 +261,8 @@ pub fn boundaries_within_resolution(
                 let Some(second_control) = second.get(second_index) else {
                     continue;
                 };
-                let coefficient = binomial(degree, first_index) * binomial(degree, second_index)
-                    / binomial(product_degree, index);
+                let coefficient = binomial(degree, first_index)? * binomial(degree, second_index)?
+                    / binomial(product_degree, index)?;
                 if !coefficient.is_finite() {
                     return None;
                 }

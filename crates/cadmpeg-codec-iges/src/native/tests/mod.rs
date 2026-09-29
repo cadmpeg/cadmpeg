@@ -196,7 +196,8 @@ fn native_ambiguity_and_entity_slots_refuse_after_input_indexes() {
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = (scan.lines.len() + 3) as u64;
+        policy.limits.max_collection_items =
+            cadmpeg_core::decode::u64_from_index(scan.lines.len() + 3);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = super::store(
             &mut cadmpeg_ir::CadIr::empty(),
@@ -274,7 +275,7 @@ fn native_required_back_pointer_member_refuses_node_limit() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = (scan.lines.len() + 6) as u64;
+    policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(scan.lines.len() + 6);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::store(
         &mut cadmpeg_ir::CadIr::empty(),
@@ -338,9 +339,12 @@ fn native_input_card_and_lookup_indexes_refuse_collection_limits() {
     };
     for (cap, operation) in [
         (0, "iges native card slots"),
-        (scan.lines.len() as u64, "iges native parameter index"),
         (
-            (scan.lines.len() + assembly.records.len()) as u64,
+            cadmpeg_core::decode::u64_from_index(scan.lines.len()),
+            "iges native parameter index",
+        ),
+        (
+            cadmpeg_core::decode::u64_from_index(scan.lines.len() + assembly.records.len()),
             "iges native directory index",
         ),
     ] {

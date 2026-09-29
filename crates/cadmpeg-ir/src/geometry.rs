@@ -44,9 +44,16 @@ pub(super) fn copy_decode_slice<T: Copy>(
 ) -> Result<Vec<T>, CodecError> {
     charge_decode_copy::<T>(values.len(), ctx, operation)?;
     let mut copied = Vec::new();
-    copied
-        .try_reserve_exact(values.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(values.len())))?;
+    copied.try_reserve_exact(values.len()).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                u64_from_index(values.len()),
+                operation,
+            ),
+        )
+    })?;
     copied.extend_from_slice(values);
     Ok(copied)
 }
@@ -440,7 +447,14 @@ impl SolvedCurveGeometry {
                 charge_decode_copy::<CompositeCurveSegment>(segments.len(), ctx, operation)?;
                 let mut copied = Vec::new();
                 copied.try_reserve_exact(segments.len()).map_err(|_| {
-                    ctx.refuse_codec_limit(operation, 0, u64_from_index(segments.len()))
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                            0,
+                            u64_from_index(segments.len()),
+                            operation,
+                        ),
+                    )
                 })?;
                 for segment in segments {
                     copied.push(segment.clone());
@@ -3753,6 +3767,8 @@ pub enum LoftSubdata<R = f64> {
 pub struct LoftSubdataTable<R = f64> {
     type_code: i64,
     rows: Vec<LoftSubdataRow<R>>,
+    row_count: i64,
+    column_count: i64,
 }
 
 #[derive(Deserialize)]
@@ -3791,18 +3807,18 @@ pub struct RaggedLoftTable;
 impl<R> LoftSubdataTable<R> {
     /// Admit a table whose rows share one column width.
     pub fn new(type_code: i64, rows: Vec<LoftSubdataRow<R>>) -> Result<Self, RaggedLoftTable> {
-        if rows.len() > i64::MAX as usize
-            || rows
-                .first()
-                .is_some_and(|row| row.columns.len() > i64::MAX as usize)
-        {
-            return Err(RaggedLoftTable);
-        }
+        let row_count = i64::try_from(rows.len()).map_err(|_| RaggedLoftTable)?;
         let column_count = rows.first().map_or(0, |row| row.columns.len());
+        let column_count_i64 = i64::try_from(column_count).map_err(|_| RaggedLoftTable)?;
         if rows.iter().any(|row| row.columns.len() != column_count) {
             return Err(RaggedLoftTable);
         }
-        Ok(Self { type_code, rows })
+        Ok(Self {
+            type_code,
+            rows,
+            row_count,
+            column_count: column_count_i64,
+        })
     }
 }
 
@@ -3843,7 +3859,7 @@ impl<R> LoftSubdata<R> {
     pub fn row_count(&self) -> i64 {
         match self {
             Self::Type211 { dimensions, .. } => dimensions[0],
-            Self::Table(table) => table.rows.len() as i64,
+            Self::Table(table) => table.row_count,
         }
     }
 
@@ -3852,7 +3868,7 @@ impl<R> LoftSubdata<R> {
     pub fn column_count(&self) -> i64 {
         match self {
             Self::Type211 { dimensions, .. } => dimensions[1],
-            Self::Table(table) => table.rows.first().map_or(0, |row| row.columns.len() as i64),
+            Self::Table(table) => table.column_count,
         }
     }
 
@@ -4822,7 +4838,12 @@ pub enum VariableBlendBareCrossSection {
 impl VariableBlendBareCrossSection {
     /// Numeric selector stored in the native variable-blend record.
     pub const fn native_selector(self) -> i64 {
-        self as i64
+        match self {
+            Self::Selector2 => 2,
+            Self::Selector4 => 4,
+            Self::Selector5 => 5,
+            Self::Selector6 => 6,
+        }
     }
 }
 
@@ -6244,10 +6265,16 @@ pub enum SkinSurfaceLayout<R = f64, V = Vector3> {
 
 impl<R, V> SkinSurfaceLayout<R, V> {
     /// Native inner count, derived from the profile list in the expanded form.
-    pub fn inner_count(&self) -> i64 {
+    pub fn inner_count(&self) -> Result<i64, cadmpeg_core::CodecError> {
         match self {
-            Self::Profiles { profiles, .. } => profiles.len() as i64,
-            Self::Compact { inner_count, .. } => *inner_count,
+            Self::Profiles { profiles, .. } => i64::try_from(profiles.len()).map_err(|_| {
+                cadmpeg_core::decode::refuse_local_limit(
+                    "skin surface profile count",
+                    9_223_372_036_854_775_807,
+                    cadmpeg_core::decode::u64_from_index(profiles.len()),
+                )
+            }),
+            Self::Compact { inner_count, .. } => Ok(*inner_count),
         }
     }
 }

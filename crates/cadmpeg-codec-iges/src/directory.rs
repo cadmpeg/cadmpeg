@@ -38,7 +38,23 @@ pub(crate) enum DirectoryFieldSlot {
 
 impl DirectoryFieldSlot {
     pub(crate) const fn slot(self) -> usize {
-        self as usize
+        match self {
+            Self::EntityType => 0,
+            Self::Structure => 1,
+            Self::LineFont => 2,
+            Self::Level => 3,
+            Self::View => 4,
+            Self::Transform => 5,
+            Self::LabelDisplay => 6,
+            Self::Status => 7,
+            Self::LineWeight => 8,
+            Self::Color => 9,
+            Self::Form => 10,
+            Self::ReservedFirst => 11,
+            Self::ReservedSecond => 12,
+            Self::Label => 13,
+            Self::Subscript => 14,
+        }
     }
 }
 
@@ -344,7 +360,7 @@ impl QuarantinedDirectoryRecord {
         )?;
         let code = IgesLossCode::DirectoryRecordQuarantined;
         ctx.charge_retained(
-            4 + code.code().len() as u64,
+            4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
             "iges directory quarantine loss kind",
         )?;
         ctx.charge_retained(4, "iges directory quarantine loss source format")?;
@@ -502,10 +518,13 @@ fn quarantine(
     }
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(bytes_len).map_err(|_| {
-        refuse_local_limit(
-            "iges quarantined directory bytes",
-            u64_from_index(bytes_len),
-            u64_from_index(bytes_len),
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("iges quarantined directory bytes"),
+                u64_from_index(bytes_len),
+                u64_from_index(bytes_len),
+                "iges quarantined directory bytes",
+            ),
         )
     })?;
     for line in std::iter::once(first.1).chain(rest.iter().map(|(_, line)| *line)) {
@@ -532,10 +551,13 @@ pub(crate) fn parse(
     };
     if ctx.is_none() {
         lines.try_reserve_exact(line_count).map_err(|_| {
-            refuse_local_limit(
-                "iges directory lines",
-                u64_from_index(line_count),
-                u64_from_index(line_count),
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("iges directory lines"),
+                    u64_from_index(line_count),
+                    u64_from_index(line_count),
+                    "iges directory lines",
+                ),
             )
         })?;
     }

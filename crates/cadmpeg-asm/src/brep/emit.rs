@@ -103,7 +103,7 @@ where
     T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>,
 {
     crate::decode_alloc::reserve_vec_slot(ctx, sources, operation)?;
-    let copied = crate::decode_alloc::copy_string(ctx, id, operation)?;
+    let copied = ctx.copy_retained_text(id, operation)?;
     sources.push((
         record_index,
         T::try_from(copied).map_err(cadmpeg_core::CodecError::malformed)?,
@@ -4956,11 +4956,8 @@ pub(super) fn emit_edges(
                         edge: EdgeId::from(id(format, i)),
                         record_index: r.index as u32,
                         sense: sense_at(r, 9),
-                        continuity: crate::decode_alloc::copy_string(
-                            ctx,
-                            continuity,
-                            "ASM edge continuity text",
-                        )?,
+                        continuity: ctx
+                            .copy_retained_text(continuity, "ASM edge continuity text")?,
                     }
                 );
             }
@@ -5368,11 +5365,7 @@ pub(super) fn emit_containers(
                                 .rsplit('/')
                                 .next()
                                 .map(|name| {
-                                    crate::decode_alloc::copy_string(
-                                        ctx,
-                                        name,
-                                        "ASM body source stream",
-                                    )
+                                    ctx.copy_retained_text(name, "ASM body source stream")
                                 })
                                 .transpose()?,
                             asm_body_key: (*key >= 0).then_some(*key as u64),
@@ -5603,9 +5596,16 @@ pub(super) fn emit_passthrough_unknowns(
             })?;
             let retained = ctx.copy_retained(retained, "retain ASM unknown record")?;
             ctx.charge_collection_items(1, "retain ASM unknown record")?;
-            out.unknowns
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("retain ASM unknown record", 0, 1))?;
+            out.unknowns.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec("retain ASM unknown record"),
+                        0,
+                        1,
+                        "retain ASM unknown record",
+                    ),
+                )
+            })?;
             out.unknowns.push(UnknownRecord::retained(
                 unknown_record_id(ctx, r, format)?,
                 r.offset as u64,

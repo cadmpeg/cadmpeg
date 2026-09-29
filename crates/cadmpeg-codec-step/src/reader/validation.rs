@@ -346,9 +346,16 @@ fn push_validation_loss(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "step_validation_losses")?;
-    losses
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("step_validation_losses", 0, 1))?;
+    losses.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("step_validation_losses"),
+                0,
+                1,
+                "step_validation_losses",
+            ),
+        )
+    })?;
     losses.push(code.note(message));
     Ok(())
 }
@@ -360,9 +367,16 @@ fn push_validation_note(
 ) -> Result<(), CodecError> {
     let note = crate::decode_alloc::charged_format(ctx, "step_validation_note_text", arguments)?;
     ctx.charge_collection_items(1, "step_validation_notes")?;
-    notes
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("step_validation_notes", 0, 1))?;
+    notes.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("step_validation_notes"),
+                0,
+                1,
+                "step_validation_notes",
+            ),
+        )
+    })?;
     notes.push(note);
     Ok(())
 }
@@ -460,9 +474,11 @@ fn mesh_properties(
         .iter()
         .filter(|mesh| mesh.body.as_ref() == Some(body));
     let Some(origin) = meshes.clone().find_map(|mesh| {
-        mesh.triangles()
-            .first()
-            .and_then(|triangle| mesh.vertices().get(triangle[0] as usize).copied())
+        mesh.triangles().first().and_then(|triangle| {
+            mesh.vertices()
+                .get(cadmpeg_core::decode::index_from_u32(triangle[0]))
+                .copied()
+        })
     }) else {
         return Ok(None);
     };
@@ -489,7 +505,11 @@ fn mesh_properties(
         let mut edge_uses = BTreeMap::<(u32, u32), usize>::new();
         for triangle in mesh.triangles() {
             ctx.charge_work(1, "step_validation_mesh_triangles")?;
-            let [a, b, c] = triangle.map(|index| mesh.vertices().get(index as usize).copied());
+            let [a, b, c] = triangle.map(|index| {
+                mesh.vertices()
+                    .get(cadmpeg_core::decode::index_from_u32(index))
+                    .copied()
+            });
             let (Some(a), Some(b), Some(c)) = (a, b, c) else {
                 return Ok(None);
             };
@@ -555,7 +575,10 @@ fn mesh_properties(
     if triangles == 0 || area == 0.0 {
         return Ok(None);
     }
-    let volume_epsilon = f64::EPSILON * coordinate_scale.powi(3) * (triangles as f64).max(1.0);
+    let Some(triangle_count) = cadmpeg_core::convert::f64_from_index(triangles) else {
+        return Ok(None);
+    };
+    let volume_epsilon = f64::EPSILON * coordinate_scale.powi(3) * triangle_count.max(1.0);
     let centroid = if watertight && signed_volume.abs() > volume_epsilon {
         Point3::new(
             volume_centroid[0] / signed_volume,
@@ -648,9 +671,16 @@ fn insert_hash(
 ) -> Result<(), CodecError> {
     if !values.contains(&id) {
         ctx.charge_collection_items(1, operation)?;
-        values
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(values.len() + 1)))?;
+        values.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    u64_from_index(values.len() + 1),
+                    operation,
+                ),
+            )
+        })?;
         values.insert(id);
     }
     Ok(())

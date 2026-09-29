@@ -426,15 +426,17 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
         homogeneous_curve_boundary_matches(None, &first, &scaled, [0.0, 1.0], 0.0).unwrap(),
         Some(true)
     );
-
-    let mut scaled_index = 0usize;
     scaled
-        .edit_control_points(|point| {
-            if scaled_index == 1 {
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 1 {
                 point.x = 1.1;
             }
-            scaled_index += 1;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     assert_eq!(
@@ -623,11 +625,11 @@ fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
     for (index, (a, b)) in pairs.into_iter().enumerate() {
         assert_eq!(a.controls.len(), 2);
         assert_eq!(b.controls.len(), 2);
-        for (pole, expected) in a
-            .controls
-            .iter()
-            .zip([0.5 * index as f64, 0.5 * (index + 1) as f64])
-        {
+        for (pole, expected) in a.controls.iter().zip([
+            0.5 * cadmpeg_core::convert::f64_from_index(index).expect("test index is exact"),
+            0.5 * cadmpeg_core::convert::f64_from_index(index + 1)
+                .expect("test next index is exact"),
+        ]) {
             assert!((pole[0] / pole[3] - expected).abs() < 16. * f64::EPSILON);
         }
     }

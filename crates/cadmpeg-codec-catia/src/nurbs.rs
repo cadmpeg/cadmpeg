@@ -370,8 +370,7 @@ pub(crate) fn reverse_nurbs_curve(
     range: [f64; 2],
 ) -> Result<Result<NurbsCurve, NurbsError>, cadmpeg_core::CodecError> {
     if !range.into_iter().all(f64::is_finite) || range[0] > range[1] {
-        let message = crate::resource::copy_retained_str(
-            ctx,
+        let message = ctx.copy_retained_text(
             "reversal range must be finite and ordered",
             "catia_reverse_curve_range_error",
         )?;
@@ -710,7 +709,7 @@ pub(crate) fn circular_helix_cache(
         .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_samples", u64::MAX, u64::MAX))?;
     let sample_bytes = sample_count
         .checked_mul(std::mem::size_of::<(f64, Point3)>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_samples", u64::MAX, u64::MAX))?;
     let _samples_reservation = ctx.reserve_scoped(sample_bytes, "catia_helix_samples")?;
     let mut samples = Vec::new();
@@ -742,7 +741,7 @@ pub(crate) fn circular_helix_cache(
         .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_knots", u64::MAX, u64::MAX))?;
     let knot_bytes = knot_count
         .checked_mul(std::mem::size_of::<f64>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_knots", u64::MAX, u64::MAX))?;
     ctx.charge_retained(knot_bytes, "catia_helix_knots")?;
     let mut knots = Vec::new();
@@ -752,7 +751,7 @@ pub(crate) fn circular_helix_cache(
     knots.push(angle_range[1]);
     let control_bytes = sample_count
         .checked_mul(std::mem::size_of::<Point3>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_controls", u64::MAX, u64::MAX))?;
     ctx.charge_retained(control_bytes, "catia_helix_controls")?;
     let mut controls = Vec::new();

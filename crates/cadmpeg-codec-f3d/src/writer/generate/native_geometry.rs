@@ -2613,7 +2613,7 @@ fn encode_native_skin_surface(
     native_enum(bytes, construction.surface_direction);
     native_i64(bytes, construction.count);
     native_f64(bytes, construction.parameter);
-    native_i64(bytes, construction.layout.inner_count());
+    native_i64(bytes, construction.layout.inner_count()?);
     match &construction.layout {
         SkinSurfaceLayout::Profiles {
             profiles,

@@ -53,9 +53,16 @@ fn push_topology_vec<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    values.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        )
+    })?;
     values.push(value);
     Ok(())
 }
@@ -78,9 +85,16 @@ fn append_topology_vec<T>(
 ) -> Result<(), CodecError> {
     let count = source.len();
     ctx.charge_collection_items(u64_from_index(count), operation)?;
-    target
-        .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(count)))?;
+    target.try_reserve(count).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                u64_from_index(count),
+                operation,
+            ),
+        )
+    })?;
     target.append(source);
     Ok(())
 }
@@ -120,9 +134,16 @@ fn insert_topology_hash_set<T: Eq + Hash>(
 ) -> Result<(), CodecError> {
     if !values.contains(&value) {
         ctx.charge_collection_items(1, operation)?;
-        values
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        values.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            )
+        })?;
     }
     values.insert(value);
     Ok(())
@@ -147,17 +168,8 @@ fn copy_topology_id<T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<T, CodecError> {
-    let bytes = ctx.copy_retained(identity.as_bytes(), operation)?;
-    let text = String::from_utf8(bytes).map_err(CodecError::malformed)?;
+    let text = ctx.copy_retained_text(identity, operation)?;
     T::try_from(text).map_err(CodecError::malformed)
-}
-
-fn copy_topology_body_id(
-    body: &BodyId,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<BodyId, CodecError> {
-    copy_topology_id(body.as_str(), ctx, operation)
 }
 
 fn copy_topology_body_ids(
@@ -168,10 +180,17 @@ fn copy_topology_body_ids(
     let mut copies = Vec::new();
     for body in bodies {
         ctx.charge_collection_items(1, operation)?;
-        copies
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-        copies.push(copy_topology_body_id(body, ctx, operation)?);
+        copies.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            )
+        })?;
+        copies.push(body.try_clone_for_decode(ctx, operation)?);
     }
     Ok(copies)
 }
@@ -187,7 +206,7 @@ fn push_topology_body_group(
     if !groups.contains_key(&key) {
         ctx.charge_collection_items(1, group_operation)?;
     }
-    let copy = copy_topology_body_id(body, ctx, member_operation)?;
+    let copy = body.try_clone_for_decode(ctx, member_operation)?;
     push_topology_vec(groups.entry(key).or_default(), copy, ctx, member_operation)
 }
 
@@ -206,7 +225,7 @@ fn insert_topology_body_group(
         ctx.charge_collection_items(1, group_operation)?;
     }
     ctx.charge_collection_items(1, member_operation)?;
-    let copy = copy_topology_body_id(body, ctx, member_operation)?;
+    let copy = body.try_clone_for_decode(ctx, member_operation)?;
     groups.entry(key).or_default().insert(copy);
     Ok(())
 }
@@ -304,8 +323,22 @@ fn admitted_body_clone<'a>(
     values.try_reserve_exact(bodies.len()).map_err(|_| {
         let requested = u64_from_index(bodies.len());
         match ctx {
-            Some(ctx) => ctx.refuse_codec_limit(operation, 0, requested),
-            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, requested),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    requested,
+                    operation,
+                ),
+            ),
+            None => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    requested,
+                    operation,
+                ),
+            ),
         }
     })?;
     values.extend_from_slice(bodies);
@@ -476,17 +509,27 @@ pub(super) fn representation_bodies<'a>(
     bodies.try_reserve_exact(body_ids.len()).map_err(|_| {
         ctx.map_or_else(
             || {
-                cadmpeg_core::decode::refuse_local_limit(
-                    "step_representation_body_output",
-                    0,
-                    u64_from_index(body_ids.len()),
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "step_representation_body_output",
+                        ),
+                        0,
+                        u64_from_index(body_ids.len()),
+                        "step_representation_body_output",
+                    ),
                 )
             },
-            |ctx| {
-                ctx.refuse_codec_limit(
-                    "step_representation_body_output",
-                    0,
-                    u64_from_index(body_ids.len()),
+            |_ctx| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "step_representation_body_output",
+                        ),
+                        0,
+                        u64_from_index(body_ids.len()),
+                        "step_representation_body_output",
+                    ),
                 )
             },
         )
@@ -644,7 +687,7 @@ pub(super) fn decode(
                 .with_provenance(
                     cadmpeg_ir::SourceProvenance::root(
                         crate::dialect::FORMAT,
-                        record.span.start as u64,
+                        u64_from_index(record.span.start),
                     )
                     .with_tag("oriented_shell"),
                 ),
@@ -1005,7 +1048,9 @@ pub(super) fn decode(
                 }
                 push_topology_vec(
                     &mut body_ids,
-                    copy_topology_body_id(&built.body_id, ctx, "step_topology_built_bodies")?,
+                    built
+                        .body_id
+                        .try_clone_for_decode(ctx, "step_topology_built_bodies")?,
                     ctx,
                     "step_topology_built_bodies",
                 )?;
@@ -1347,7 +1392,7 @@ impl BuildOutcome {
         }
     }
 
-    fn fail(&mut self, failure: Option<BuildFailure>) {
+    fn fail(&mut self, failure: Option<BuildFailure>) -> Result<(), CodecError> {
         match self {
             Self::Built(built) => {
                 *self = Self::Partial {
@@ -1359,12 +1404,19 @@ impl BuildOutcome {
                 };
             }
             Self::Partial { failures, .. } => {
-                failures.count = failures.count.saturating_add(1);
+                failures.count = failures.count.checked_add(1).ok_or_else(|| {
+                    cadmpeg_core::decode::refuse_local_limit(
+                        "step topology failures",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?;
                 if failures.first.is_none() {
                     failures.first = failure;
                 }
             }
         }
+        Ok(())
     }
 
     fn into_parts(self) -> (Vec<Built>, Option<BuildFailures>) {
@@ -1535,7 +1587,7 @@ fn build_wire(
             ctx,
         ) {
             Ok(Some(value)) => outcome.push(value, ctx)?,
-            Ok(None) => outcome.fail(None),
+            Ok(None) => outcome.fail(None)?,
             Err(error) => return Err(error),
         }
     }
@@ -1717,11 +1769,11 @@ fn build_wire_set(
             shells: one_topology_vec(shell_value, ctx, "step_wire_shells")?,
             region: Region {
                 id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
-                body: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
+                body: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
                 shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
             },
             body: Body {
-                id: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
+                id: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
                 kind: BodyKind::Wire,
                 regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
                 transform: None,
@@ -1801,7 +1853,7 @@ fn build_shell_wire(
             ctx,
         ) {
             Ok(Some(value)) => outcome.push(value, ctx)?,
-            Ok(None) => outcome.fail(None),
+            Ok(None) => outcome.fail(None)?,
             Err(error) => return Err(error),
         }
     }
@@ -2052,11 +2104,11 @@ fn build_shell_wire_set(
             shells: one_topology_vec(shell_value, ctx, "step_wire_shells")?,
             region: Region {
                 id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
-                body: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
+                body: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
                 shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
             },
             body: Body {
-                id: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
+                id: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
                 kind: BodyKind::Wire,
                 regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
                 transform: None,
@@ -3076,7 +3128,7 @@ fn build(
                     outcome.fail(Some(BuildFailure {
                         record_id: shell_reference,
                         carrier_kind: CarrierKind::ShellCarrier,
-                    }));
+                    }))?;
                     continue;
                 }
             }
@@ -3114,7 +3166,7 @@ fn build(
             &mut failure,
         ) {
             Ok(value) => outcome.push(value, ctx)?,
-            Err(BuildError::Absent) => outcome.fail(failure),
+            Err(BuildError::Absent) => outcome.fail(failure)?,
             Err(BuildError::Resource(error)) => return Err(error),
         }
     }
@@ -3316,7 +3368,7 @@ fn build_one(
                     note.with_provenance(
                         cadmpeg_ir::SourceProvenance::root(
                             crate::dialect::FORMAT,
-                            fr.span.start as u64,
+                            u64_from_index(fr.span.start),
                         )
                         .with_tag("face"),
                     ),
@@ -4013,7 +4065,7 @@ fn build_one(
                 note.with_provenance(
                     cadmpeg_ir::SourceProvenance::root(
                         crate::dialect::FORMAT,
-                        sr.span.start as u64,
+                        u64_from_index(sr.span.start),
                     )
                     .with_tag(shell_type.to_ascii_lowercase()),
                 ),
@@ -4426,9 +4478,16 @@ fn push_connected_face_item<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64_from_index(values.len()), 1))?;
+    values.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                u64_from_index(values.len()),
+                1,
+                operation,
+            ),
+        )
+    })?;
     values.push(value);
     Ok(())
 }
@@ -4686,7 +4745,9 @@ fn implicit_face_plane(
             .then_with(|| left.y.total_cmp(&right.y))
             .then_with(|| left.z.total_cmp(&right.z))
     });
-    let point_count = points.len() as f64;
+    let Some(point_count) = cadmpeg_core::convert::f64_from_index(points.len()) else {
+        return Ok(None);
+    };
     let origin = Point3::new(
         points.iter().map(|point| point.x).sum::<f64>() / point_count,
         points.iter().map(|point| point.y).sum::<f64>() / point_count,
@@ -4702,7 +4763,9 @@ fn implicit_face_plane(
     }
     let mut loop_normals = Vec::new();
     for loop_points in &loops {
-        let loop_count = loop_points.len() as f64;
+        let Some(loop_count) = cadmpeg_core::convert::f64_from_index(loop_points.len()) else {
+            return Ok(None);
+        };
         let loop_origin = Point3::new(
             loop_points.iter().map(|point| point.x).sum::<f64>() / loop_count,
             loop_points.iter().map(|point| point.y).sum::<f64>() / loop_count,
@@ -5047,7 +5110,10 @@ fn pcurve_locus_witness(
     for step in 0..PCURVE_LOCUS_SAMPLE_COUNT {
         push_topology_vec(
             &mut fractions,
-            step as f64 / (PCURVE_LOCUS_SAMPLE_COUNT - 1) as f64,
+            cadmpeg_core::convert::f64_from_index(step)
+                .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_locus_fractions", 0, 1))?
+                / cadmpeg_core::convert::f64_from_index(PCURVE_LOCUS_SAMPLE_COUNT - 1)
+                    .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_locus_fractions", 0, 1))?,
             ctx,
             "step_pcurve_locus_fractions",
         )?;
@@ -5534,7 +5600,10 @@ fn pcurve_selection_seeds(
         }
         push_topology_vec(&mut seeds, end, ctx, "step_pcurve_selection_seeds")?;
         for step in 0..=PCURVE_ENDPOINT_GRID_DIVISIONS {
-            let fraction = step as f64 / PCURVE_ENDPOINT_GRID_DIVISIONS as f64;
+            let fraction = cadmpeg_core::convert::f64_from_index(step)
+                .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_selection_seeds", 0, 1))?
+                / cadmpeg_core::convert::f64_from_index(PCURVE_ENDPOINT_GRID_DIVISIONS)
+                    .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_selection_seeds", 0, 1))?;
             if let Some(seed) = at_fraction(fraction) {
                 push_topology_vec(&mut seeds, seed, ctx, "step_pcurve_selection_seeds")?;
             }

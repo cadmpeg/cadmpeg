@@ -152,7 +152,7 @@ fn type213_form0_follows_string_count() {
             1.into(),
             0.into(),
             TokenValue::String(Vec::new()),
-            TokenValue::Integer(text.len() as i64),
+            TokenValue::Integer(i64::try_from(text.len()).expect("test text length fits i64")),
             1.into(),
             1.into(),
             1.into(),

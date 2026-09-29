@@ -867,13 +867,13 @@ impl<'a> Builder<'a> {
         let emitted: BTreeSet<&str> = self.face_step_refs.keys().map(String::as_str).collect();
         let mut unstyled_targets = face_colors
             .keys()
-            .filter(|id| !emitted.contains(**id as &str))
+            .filter(|id| !emitted.contains(*id))
             .map(|id| (*id).to_string())
             .collect::<BTreeSet<_>>();
         unstyled_targets.extend(
             body_colors
                 .keys()
-                .filter(|id| !styled_bodies.contains(**id as &str))
+                .filter(|id| !styled_bodies.contains(*id))
                 .map(|id| (*id).to_string()),
         );
         unstyled_targets.extend(direct_unstyled);
@@ -1982,10 +1982,9 @@ impl<'a> Builder<'a> {
             let mesh_normals = mesh.vertex_normals();
             if mesh_vertices.is_empty()
                 || mesh_triangles.is_empty()
-                || mesh_triangles
-                    .iter()
-                    .flatten()
-                    .any(|index| *index as usize >= mesh_vertices.len())
+                || mesh_triangles.iter().flatten().any(|index| {
+                    cadmpeg_core::decode::index_from_u32(*index) >= mesh_vertices.len()
+                })
                 || (!mesh_normals.is_empty() && mesh_normals.len() != mesh_vertices.len())
             {
                 self.loss(
@@ -4417,25 +4416,26 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let unwritten_pmi = self.ir.model.pmi.len().saturating_sub(self.written_pmi);
-        if unwritten_pmi > 0 {
-            // Naming the target that would carry these is only honest when the
-            // schema gate is why they were dropped. A target that supports
-            // semantic PMI and still left annotations unwritten dropped them for
-            // some other reason, and pointing at another target would misdirect.
-            if !self.schema.supports_semantic_pmi() {
-                return self.loss(
+        if let Some(unwritten_pmi) = self.ir.model.pmi.len().checked_sub(self.written_pmi) {
+            if unwritten_pmi > 0 {
+                // Naming the target that would carry these is only honest when the
+                // schema gate is why they were dropped. A target that supports
+                // semantic PMI and still left annotations unwritten dropped them for
+                // some other reason, and pointing at another target would misdirect.
+                if !self.schema.supports_semantic_pmi() {
+                    return self.loss(
                     StepLossCode::PmiAnnotationNotWritten,
                     format!(
                         "{unwritten_pmi} PMI annotation(s) were not written to STEP; {} does not carry semantic PMI, which requires an AP242 edition target",
                         self.schema.file_schema()
                     ),
                 );
+                }
+                self.loss(
+                    StepLossCode::PmiAnnotationNotWritten,
+                    format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
+                );
             }
-            self.loss(
-                StepLossCode::PmiAnnotationNotWritten,
-                format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
-            );
         }
         // STEP-native source associations identify records already represented
         // by the writer's own STEP graph. They are not lossy foreign-source

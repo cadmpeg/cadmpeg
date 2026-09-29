@@ -25,8 +25,7 @@ fn charge_collection_items(
     count: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let count =
-        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let count = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count, operation)
 }
 
@@ -1089,14 +1088,10 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
-    let trim_count = u64::try_from(trims.len()).map_err(|_| {
-        ctx.refuse_codec_limit("catia repeated edge face handles", u64::MAX, u64::MAX)
-    })?;
+    let trim_count = cadmpeg_core::decode::u64_from_index(trims.len());
     ctx.charge_collection_items(trim_count, "catia repeated edge face handles")?;
     for trim in &trims {
-        let handle_count = u64::try_from(trim.packet.handles().len()).map_err(|_| {
-            ctx.refuse_codec_limit("catia repeated edge face handle set", u64::MAX, u64::MAX)
-        })?;
+        let handle_count = cadmpeg_core::decode::u64_from_index(trim.packet.handles().len());
         ctx.charge_collection_items(handle_count, "catia repeated edge face handle set")?;
     }
     let mut face_handles = Vec::new();
@@ -2571,7 +2566,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                         .4
                         .len()
                         .checked_mul(std::mem::size_of::<usize>())
-                        .and_then(|bytes| u64::try_from(bytes).ok())
+                        .map(cadmpeg_core::decode::u64_from_index)
                         .ok_or_else(|| {
                             self.ctx.refuse_codec_limit(
                                 "catia_gap_dead_state_points",
@@ -2793,16 +2788,10 @@ fn standard_mesh_missing_edge_assignment_domains(
                                             if let Some(points) = transitions[edge].get(point) {
                                                 for &point in points.iter() {
                                                     if !next.contains(&point) {
-                                                        let bytes = u64::try_from(
-                                                            std::mem::size_of::<usize>(),
-                                                        )
-                                                        .map_err(|_| {
-                                                            self.ctx.refuse_codec_limit(
-                                                                "catia_gap_transition_points",
-                                                                u64::MAX,
-                                                                u64::MAX,
-                                                            )
-                                                        })?;
+                                                        let bytes =
+                                                            cadmpeg_core::decode::u64_from_index(
+                                                                std::mem::size_of::<usize>(),
+                                                            );
                                                         self.ctx.charge_retained(
                                                             bytes,
                                                             "catia_gap_transition_points",
@@ -2819,14 +2808,10 @@ fn standard_mesh_missing_edge_assignment_domains(
                                         }
                                     }
                                     let bytes =
-                                        u64::try_from(std::mem::size_of::<HashSet<usize>>())
-                                            .map_err(|_| {
-                                                self.ctx.refuse_codec_limit(
-                                                    "catia_gap_transition_set",
-                                                    u64::MAX,
-                                                    u64::MAX,
-                                                )
-                                            })?;
+                                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                                            HashSet<usize>,
+                                        >(
+                                        ));
                                     self.ctx
                                         .charge_retained(bytes, "catia_gap_transition_set")?;
                                     Some(Arc::new(next))
@@ -3279,7 +3264,7 @@ fn standard_mesh_missing_edge_assignment_domains(
             .len()
             .checked_mul(std::mem::size_of::<usize>())
             .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<usize>>()))
-            .and_then(|bytes| u64::try_from(bytes).ok())
+            .map(cadmpeg_core::decode::u64_from_index)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         ctx.charge_retained(bytes, operation)
     };

@@ -23,7 +23,7 @@ use crate::parameter::{
     OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, ResolvedGroups, TextNodeLayout,
     Token, TokenValue, TrailingPointerAnalysis,
 };
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -2453,7 +2453,7 @@ pub(crate) fn store(
         sequences,
         boundary_vertex_derivations,
     } = inputs;
-    charge_native_entities(ctx, scan.lines.len() as u64)?;
+    charge_native_entities(ctx, cadmpeg_core::decode::u64_from_index(scan.lines.len()))?;
     let NativeInputIndexes {
         quarantined_directory_records,
         quarantined_parameter_records,
@@ -2666,7 +2666,7 @@ pub(crate) fn store(
             ambiguity,
         });
     }
-    charge_native_entities(ctx, directory.len() as u64)?;
+    charge_native_entities(ctx, cadmpeg_core::decode::u64_from_index(directory.len()))?;
     let mut entities =
         collect_result_vec(ctx, directory.len(), "iges native entity slots", |index| {
             let entry = &directory[index];
@@ -5343,7 +5343,10 @@ pub(crate) fn store(
                             .iter()
                             .flatten()
                             .try_fold(0_usize, |total, count| total.checked_add(*count))
-                            .is_some_and(|total| total <= end.saturating_sub(first_list_index));
+                            .is_some_and(|total| {
+                                end.checked_sub(first_list_index)
+                                    .is_some_and(|available| total <= available)
+                            });
                     let counts = if complete {
                         count_options.map(Option::unwrap_or_default)
                     } else {
@@ -5675,9 +5678,11 @@ pub(crate) fn store(
                         Some(0)
                     } else {
                         match record.value(cursor + 2) {
-                            Some(TokenValue::Omitted) => {
-                                (stride <= end.saturating_sub(cursor + 3)).then_some(1)
-                            }
+                            Some(TokenValue::Omitted) => cursor
+                                .checked_add(3)
+                                .and_then(|start| end.checked_sub(start))
+                                .filter(|available| stride <= *available)
+                                .map(|_| 1),
                             Some(TokenValue::Integer(_)) => {
                                 record.count_with_stride_before(cursor + 2, stride, end)
                             }
@@ -6050,7 +6055,10 @@ pub(crate) fn store(
                                     let dependent_value_count = valid
                                         .then(|| dependent_count.checked_mul(point_count))
                                         .flatten()
-                                        .filter(|count| *count <= end.saturating_sub(cursor));
+                                        .filter(|count| {
+                                            end.checked_sub(cursor)
+                                                .is_some_and(|available| *count <= available)
+                                        });
                                     match dependent_value_count {
                                         Some(count) => (
                                             independent_variables,
@@ -7286,7 +7294,10 @@ pub(crate) fn store(
         quarantined_parameter_records.len(),
     ]
     .into_iter()
-    .fold(0_u64, |total, count| total.saturating_add(count as u64));
+    .try_fold(0_u64, |total, count| {
+        total.checked_add(u64_from_index(count))
+    })
+    .ok_or_else(|| ctx.refuse_codec_limit("iges_native_entities", u64::MAX, u64::MAX))?;
     ctx.charge_entities(native_entity_count, "iges_native_entities")?;
     let namespace = ir.native.namespace_mut("iges");
     namespace.set_arena_from(ctx, "cards", cards)?;

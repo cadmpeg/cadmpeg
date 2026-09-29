@@ -60,17 +60,21 @@ pub(crate) enum Value {
     Typed(String, Box<Value>),
 }
 
-fn copy_parser_text(
+pub(crate) fn copy_unmetered_text(
     value: &str,
-    budget: Option<&DecodeContext<'_>>,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let mut copied = String::new();
-    copied
-        .try_reserve_exact(value.len())
-        .map_err(|_| parser_copy_refusal(budget, operation, value.len()))?;
-    copied.push_str(value);
-    Ok(copied)
+    let mut copy = String::new();
+    copy.try_reserve_exact(value.len()).map_err(|_| {
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::Codec(operation),
+            0,
+            cadmpeg_core::decode::u64_from_index(value.len()),
+            operation,
+        ))
+    })?;
+    copy.push_str(value);
+    Ok(copy)
 }
 
 fn copy_parser_bytes(
@@ -82,22 +86,16 @@ fn copy_parser_bytes(
         ctx.charge_collection_items(u64_from_index(value.len()), operation)?;
     }
     let mut copied = Vec::new();
-    copied
-        .try_reserve_exact(value.len())
-        .map_err(|_| parser_copy_refusal(budget, operation, value.len()))?;
+    copied.try_reserve_exact(value.len()).map_err(|_| {
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::Codec(operation),
+            0,
+            u64_from_index(value.len()),
+            operation,
+        ))
+    })?;
     copied.extend_from_slice(value);
     Ok(copied)
-}
-
-fn parser_copy_refusal(
-    budget: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-    requested: usize,
-) -> CodecError {
-    budget.map_or_else(
-        || cadmpeg_core::decode::refuse_local_limit(operation, 0, u64_from_index(requested)),
-        |ctx| ctx.refuse_codec_limit(operation, 0, u64_from_index(requested)),
-    )
 }
 
 fn try_clone_value(
@@ -111,18 +109,26 @@ fn try_clone_value(
     Ok(match value {
         Value::Reference(id) => Value::Reference(*id),
         Value::ExternalReference(id) => Value::ExternalReference(*id),
-        Value::ConstantEntity(text) => {
-            Value::ConstantEntity(copy_parser_text(text, budget, operation)?)
-        }
-        Value::ExpressValueConstant(text) => {
-            Value::ExpressValueConstant(copy_parser_text(text, budget, operation)?)
-        }
+        Value::ConstantEntity(text) => Value::ConstantEntity(match budget {
+            Some(ctx) => ctx.copy_retained_text(text, operation),
+            None => crate::parse::copy_unmetered_text(text, operation),
+        }?),
+        Value::ExpressValueConstant(text) => Value::ExpressValueConstant(match budget {
+            Some(ctx) => ctx.copy_retained_text(text, operation),
+            None => crate::parse::copy_unmetered_text(text, operation),
+        }?),
         Value::Integer(value) => Value::Integer(*value),
         Value::Real(value) => Value::Real(*value),
-        Value::Enumeration(text) => Value::Enumeration(copy_parser_text(text, budget, operation)?),
+        Value::Enumeration(text) => Value::Enumeration(match budget {
+            Some(ctx) => ctx.copy_retained_text(text, operation),
+            None => crate::parse::copy_unmetered_text(text, operation),
+        }?),
         Value::String(bytes) => Value::String(copy_parser_bytes(bytes, budget, operation)?),
         Value::Binary(binary) => Value::Binary(binary.try_clone_for_decode(budget, operation)?),
-        Value::Resource(text) => Value::Resource(copy_parser_text(text, budget, operation)?),
+        Value::Resource(text) => Value::Resource(match budget {
+            Some(ctx) => ctx.copy_retained_text(text, operation),
+            None => crate::parse::copy_unmetered_text(text, operation),
+        }?),
         Value::Omitted => Value::Omitted,
         Value::Derived => Value::Derived,
         Value::List(values) => {
@@ -130,9 +136,14 @@ fn try_clone_value(
                 ctx.charge_collection_items(u64_from_index(values.len()), operation)?;
             }
             let mut copied = Vec::new();
-            copied
-                .try_reserve_exact(values.len())
-                .map_err(|_| parser_copy_refusal(budget, operation, values.len()))?;
+            copied.try_reserve_exact(values.len()).map_err(|_| {
+                CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    u64_from_index(values.len()),
+                    operation,
+                ))
+            })?;
             for value in values {
                 copied.push(try_clone_value(value, budget, operation)?);
             }
@@ -143,7 +154,10 @@ fn try_clone_value(
                 ctx.charge_collection_items(1, operation)?;
             }
             Value::Typed(
-                copy_parser_text(name, budget, operation)?,
+                match budget {
+                    Some(ctx) => ctx.copy_retained_text(name, operation),
+                    None => crate::parse::copy_unmetered_text(name, operation),
+                }?,
                 Box::new(try_clone_value(nested, budget, operation)?),
             )
         }
@@ -160,7 +174,7 @@ pub(crate) struct PartialRecord {
 }
 
 pub(crate) mod partials {
-    use super::{DecodeContext, ParseError, PartialRecord};
+    use super::{CodecError, DecodeContext, ParseError, PartialRecord};
 
     /// The nonempty partial population of one entity instance.
     #[derive(Debug, Clone, PartialEq)]
@@ -192,7 +206,7 @@ pub(crate) mod partials {
         }
 
         /// Compact retained storage and report its allocation charge.
-        pub(super) fn compact_storage(&mut self) -> u64 {
+        pub(super) fn compact_storage(&mut self) -> Result<u64, CodecError> {
             super::compact_vec(&mut self.0)
         }
 
@@ -661,8 +675,22 @@ fn push_charged<T>(
     }
     values.try_reserve(1).map_err(|_| {
         ParseError::Resource(match budget {
-            Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            ),
+            None => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            ),
         })
     })?;
     values.push(value);
@@ -1051,7 +1079,7 @@ impl Parser<'_, '_, '_> {
             while !self.peek_name("ENDSEC") {
                 let (id, record) = self.record()?;
                 self.charge_retained(
-                    btree_node_storage::<u64, RawRecord>(),
+                    btree_node_storage::<u64, RawRecord>()?,
                     "step_parse_record_table_storage",
                 )?;
                 if records.contains_key(&id) {
@@ -1140,22 +1168,30 @@ impl Parser<'_, '_, '_> {
             for anchor in &anchors {
                 self.charge_string_storage(&anchor.name, "step_anchor_binding_storage")?;
                 self.charge_retained(
-                    value_storage_bytes(&anchor.value),
+                    value_storage_bytes(&anchor.value)?,
                     "step_anchor_binding_value_copy",
                 )?;
                 if let Some(ctx) = self.budget {
                     ctx.charge_collection_items(1, "step_anchor_binding_items")?;
                 }
                 self.charge_retained(
-                    btree_node_storage::<String, Value>(),
+                    btree_node_storage::<String, Value>()?,
                     "step_anchor_binding_storage",
                 )?;
             }
             let mut anchor_bindings = BTreeMap::new();
             for anchor in &anchors {
                 anchor_bindings.insert(
-                    copy_parser_text(&anchor.name, self.budget, "step_anchor_binding_name_copy")
-                        .map_err(ParseError::Resource)?,
+                    match self.budget {
+                        Some(ctx) => {
+                            ctx.copy_retained_text(&anchor.name, "step_anchor_binding_name_copy")
+                        }
+                        None => crate::parse::copy_unmetered_text(
+                            &anchor.name,
+                            "step_anchor_binding_name_copy",
+                        ),
+                    }
+                    .map_err(ParseError::Resource)?,
                     try_clone_value(&anchor.value, self.budget, "step_anchor_binding_value_copy")
                         .map_err(ParseError::Resource)?,
                 );
@@ -1231,7 +1267,9 @@ impl Parser<'_, '_, '_> {
                     .insert(0, Value::String(Vec::new()));
                 record.partials[0].parameters.shrink_to_fit();
                 match &mut self.omitted_entity_names {
-                    Some((_, count)) => *count = count.saturating_add(1),
+                    Some((_, count)) => {
+                        *count = count.checked_add(1).ok_or_else(storage_overflow)?;
+                    }
                     None => {
                         self.omitted_entity_names = Some((record.span.start, NonZeroUsize::MIN));
                     }
@@ -1325,11 +1363,11 @@ impl Parser<'_, '_, '_> {
             )?;
         }
         for capacity in [
-            compact_vec(&mut header),
-            compact_vec(&mut anchors),
-            compact_vec(&mut reference_entries),
-            compact_vec(&mut data),
-            compact_vec(&mut signatures),
+            compact_vec(&mut header)?,
+            compact_vec(&mut anchors)?,
+            compact_vec(&mut reference_entries)?,
+            compact_vec(&mut data)?,
+            compact_vec(&mut signatures)?,
         ] {
             self.charge_retained(capacity, "step_parse_exchange_storage")?;
         }
@@ -1411,7 +1449,7 @@ impl Parser<'_, '_, '_> {
             let first = self.partial()?;
             partials::RecordPartials::single_charged(first, self.budget)?
         };
-        self.charge_retained(partials.compact_storage(), "step_parse_record_storage")?;
+        self.charge_retained(partials.compact_storage()?, "step_parse_record_storage")?;
         self.punct(&TokenKind::Semicolon)?;
         Ok((
             id,
@@ -1514,7 +1552,7 @@ impl Parser<'_, '_, '_> {
             if self.budget.is_some() && matches!(&value, Value::Binary(_) | Value::Resource(_)) {
                 u64_from_index(size_of::<Value>())
             } else {
-                value_node_storage_bytes(&value)
+                value_node_storage_bytes(&value)?
             };
         self.charge_retained(value_bytes, "step_parse_value_storage")?;
         Ok(value)
@@ -1608,7 +1646,7 @@ impl Parser<'_, '_, '_> {
         operation: &'static str,
     ) -> Result<(), ParseError> {
         self.charge_retained(
-            allocation_bytes(values.capacity(), size_of::<Value>()),
+            allocation_bytes(values.capacity(), size_of::<Value>())?,
             operation,
         )
     }
@@ -1625,7 +1663,7 @@ impl Parser<'_, '_, '_> {
         operation: &'static str,
     ) -> Result<(), ParseError> {
         self.charge_retained(
-            allocation_bytes(values.capacity(), size_of::<T>()),
+            allocation_bytes(values.capacity(), size_of::<T>())?,
             operation,
         )
     }
@@ -1648,23 +1686,29 @@ impl Parser<'_, '_, '_> {
     }
 }
 
-fn allocation_bytes(capacity: usize, element_size: usize) -> u64 {
-    u64_from_index(capacity).saturating_mul(u64_from_index(element_size))
+fn storage_overflow() -> CodecError {
+    cadmpeg_core::decode::refuse_local_limit("step allocation bytes", u64::MAX, u64::MAX)
 }
 
-fn compact_vec<T>(values: &mut Vec<T>) -> u64 {
+fn allocation_bytes(capacity: usize, element_size: usize) -> Result<u64, CodecError> {
+    u64_from_index(capacity)
+        .checked_mul(u64_from_index(element_size))
+        .ok_or_else(storage_overflow)
+}
+
+fn compact_vec<T>(values: &mut Vec<T>) -> Result<u64, CodecError> {
     values.shrink_to_fit();
     allocation_bytes(values.capacity(), size_of::<T>())
 }
 
-fn btree_node_storage<K, V>() -> u64 {
-    allocation_bytes(
-        1,
-        size_of::<(K, V)>().saturating_add(3 * size_of::<usize>()),
-    )
+fn btree_node_storage<K, V>() -> Result<u64, CodecError> {
+    let size = size_of::<(K, V)>()
+        .checked_add(3 * size_of::<usize>())
+        .ok_or_else(storage_overflow)?;
+    allocation_bytes(1, size)
 }
 
-fn value_node_storage_bytes(value: &Value) -> u64 {
+fn value_node_storage_bytes(value: &Value) -> Result<u64, CodecError> {
     let dynamic = match value {
         Value::ConstantEntity(value)
         | Value::ExpressValueConstant(value)
@@ -1672,8 +1716,14 @@ fn value_node_storage_bytes(value: &Value) -> u64 {
         | Value::Resource(value) => value.capacity(),
         Value::String(value) => value.capacity(),
         Value::Binary(value) => value.data().len(),
-        Value::List(values) => values.capacity().saturating_mul(size_of::<Value>()),
-        Value::Typed(name, _) => name.capacity().saturating_add(size_of::<Value>()),
+        Value::List(values) => values
+            .capacity()
+            .checked_mul(size_of::<Value>())
+            .ok_or_else(storage_overflow)?,
+        Value::Typed(name, _) => name
+            .capacity()
+            .checked_add(size_of::<Value>())
+            .ok_or_else(storage_overflow)?,
         Value::Reference(_)
         | Value::ExternalReference(_)
         | Value::Integer(_)
@@ -1681,18 +1731,23 @@ fn value_node_storage_bytes(value: &Value) -> u64 {
         | Value::Omitted
         | Value::Derived => 0,
     };
-    u64_from_index(size_of::<Value>()).saturating_add(u64_from_index(dynamic))
+    u64_from_index(size_of::<Value>())
+        .checked_add(u64_from_index(dynamic))
+        .ok_or_else(storage_overflow)
 }
 
-fn value_storage_bytes(value: &Value) -> u64 {
-    value_node_storage_bytes(value).saturating_add(match value {
-        Value::List(values) => values
-            .iter()
-            .map(value_storage_bytes)
-            .fold(0, u64::saturating_add),
-        Value::Typed(_, value) => value_storage_bytes(value),
+fn value_storage_bytes(value: &Value) -> Result<u64, CodecError> {
+    let children = match value {
+        Value::List(values) => values.iter().try_fold(0_u64, |total, value| {
+            let size = value_storage_bytes(value)?;
+            total.checked_add(size).ok_or_else(storage_overflow)
+        })?,
+        Value::Typed(_, value) => value_storage_bytes(value)?,
         _ => 0,
-    })
+    };
+    value_node_storage_bytes(value)?
+        .checked_add(children)
+        .ok_or_else(storage_overflow)
 }
 
 /// Validate the three required header records, and admit the `FILE_SCHEMA`
@@ -2011,7 +2066,15 @@ fn validate_header_sections(
                 }
                 let section_copy = section
                     .as_deref()
-                    .map(|value| copy_parser_text(value, budget, "step_section_language_name_copy"))
+                    .map(|value| match budget {
+                        Some(ctx) => {
+                            ctx.copy_retained_text(value, "step_section_language_name_copy")
+                        }
+                        None => crate::parse::copy_unmetered_text(
+                            value,
+                            "step_section_language_name_copy",
+                        ),
+                    })
                     .transpose()
                     .map_err(ValidationError::Resource)?;
                 if !language_sections.insert(section_copy) {
@@ -2041,7 +2104,15 @@ fn validate_header_sections(
                 }
                 let section_copy = section
                     .as_deref()
-                    .map(|value| copy_parser_text(value, budget, "step_section_context_name_copy"))
+                    .map(|value| match budget {
+                        Some(ctx) => {
+                            ctx.copy_retained_text(value, "step_section_context_name_copy")
+                        }
+                        None => crate::parse::copy_unmetered_text(
+                            value,
+                            "step_section_context_name_copy",
+                        ),
+                    })
                     .transpose()
                     .map_err(ValidationError::Resource)?;
                 if !context_sections.insert(section_copy) {
@@ -2587,6 +2658,12 @@ impl From<&str> for ResolveError {
     }
 }
 
+impl From<CodecError> for ResolveError {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
+}
+
 fn collection_cap(budget: Option<&DecodeContext<'_>>, format_cap: usize) -> usize {
     budget
         .and_then(|ctx| usize::try_from(ctx.policy().limits.max_collection_items).ok())
@@ -2648,7 +2725,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     }
 
     fn charge_storage(&self, value: &Value) -> Result<(), ResolveError> {
-        self.charge_storage_bytes(value_storage_bytes(value))
+        self.charge_storage_bytes(value_storage_bytes(value)?)
     }
 
     fn charge_storage_bytes(&self, bytes: u64) -> Result<(), ResolveError> {
@@ -2735,7 +2812,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         .map_err(ResolveError::Resource)?;
                     context
                         .charge_retained(
-                            btree_node_storage::<&str, (Value, usize)>(),
+                            btree_node_storage::<&str, (Value, usize)>()?,
                             "step_anchor_memo_storage",
                         )
                         .map_err(ResolveError::Resource)?;
@@ -2764,7 +2841,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 }
                 self.charge_storage_bytes(
                     u64_from_index(size_of::<Value>())
-                        .checked_add(allocation_bytes(values.len(), size_of::<Value>()))
+                        .checked_add(allocation_bytes(values.len(), size_of::<Value>())?)
                         .ok_or("anchor list storage exceeds u64")?,
                 )?;
                 let mut nodes = 1usize;
@@ -2772,10 +2849,26 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 let mut resolved = Vec::new();
                 resolved.try_reserve_exact(values.len()).map_err(|_| {
                     ResolveError::Resource(match self.budget {
-                        Some(ctx) => ctx.refuse_codec_limit("step_anchor_list_items", 0, 1),
-                        None => {
-                            cadmpeg_core::decode::refuse_local_limit("step_anchor_list_items", 0, 1)
-                        }
+                        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                cadmpeg_core::decode::ResourceDimension::Codec(
+                                    "step_anchor_list_items",
+                                ),
+                                0,
+                                1,
+                                "step_anchor_list_items",
+                            ),
+                        ),
+                        None => cadmpeg_core::CodecError::ResourceLimit(
+                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                cadmpeg_core::decode::ResourceDimension::Codec(
+                                    "step_anchor_list_items",
+                                ),
+                                0,
+                                1,
+                                "step_anchor_list_items",
+                            ),
+                        ),
                     })
                 })?;
                 for value in values {
@@ -2799,13 +2892,18 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 let (value, nodes, expanded_nodes) =
                     self.resolve(value, stack, budget, depth + 1)?;
                 self.charge_storage_bytes(
-                    allocation_bytes(2, size_of::<Value>())
+                    allocation_bytes(2, size_of::<Value>())?
                         .checked_add(u64_from_index(name.len()))
                         .ok_or("anchor typed storage exceeds u64")?,
                 )?;
                 let value = Value::Typed(
-                    copy_parser_text(name, self.budget, "step_anchor_typed_name_copy")
-                        .map_err(ResolveError::Resource)?,
+                    match self.budget {
+                        Some(ctx) => ctx.copy_retained_text(name, "step_anchor_typed_name_copy"),
+                        None => {
+                            crate::parse::copy_unmetered_text(name, "step_anchor_typed_name_copy")
+                        }
+                    }
+                    .map_err(ResolveError::Resource)?,
                     Box::new(value),
                 );
                 Ok((value, nodes + 1, expanded_nodes))
@@ -2848,7 +2946,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                     "step_reference_binding_items",
                 )
                 .map_err(ResolveError::Resource)?;
-            let bytes = btree_node_storage::<ReferenceName, &str>()
+            let bytes = btree_node_storage::<ReferenceName, &str>()?
                 .checked_mul(u64_from_index(references.len()))
                 .ok_or("reference binding storage exceeds u64")?;
             context
@@ -2883,7 +2981,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     }
 
     fn clone_leaf(&self, value: &Value) -> Result<Value, ResolveError> {
-        self.admit_copy(1, value_node_storage_bytes(value))?;
+        self.admit_copy(1, value_node_storage_bytes(value)?)?;
         try_clone_value(value, self.budget, "step_reference_leaf_copy")
             .map_err(ResolveError::Resource)
     }
@@ -2914,17 +3012,31 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                         .map_err(ResolveError::Resource)?;
                 }
                 let bytes = u64_from_index(size_of::<Value>())
-                    .checked_add(allocation_bytes(values.len(), size_of::<Value>()))
+                    .checked_add(allocation_bytes(values.len(), size_of::<Value>())?)
                     .ok_or("reference list storage exceeds u64")?;
                 self.admit_copy(1, bytes)?;
                 let mut resolved = Vec::new();
                 resolved.try_reserve_exact(values.len()).map_err(|_| {
                     ResolveError::Resource(match self.budget {
-                        Some(ctx) => ctx.refuse_codec_limit("step_reference_list_items", 0, 1),
-                        None => cadmpeg_core::decode::refuse_local_limit(
-                            "step_reference_list_items",
-                            0,
-                            1,
+                        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                cadmpeg_core::decode::ResourceDimension::Codec(
+                                    "step_reference_list_items",
+                                ),
+                                0,
+                                1,
+                                "step_reference_list_items",
+                            ),
+                        ),
+                        None => cadmpeg_core::CodecError::ResourceLimit(
+                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                cadmpeg_core::decode::ResourceDimension::Codec(
+                                    "step_reference_list_items",
+                                ),
+                                0,
+                                1,
+                                "step_reference_list_items",
+                            ),
                         ),
                     })
                 })?;
@@ -2935,13 +3047,19 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             }
             Value::Typed(name, value) => {
                 let resolved = self.resolve_value(value, depth + 1)?;
-                let bytes = allocation_bytes(2, size_of::<Value>())
+                let bytes = allocation_bytes(2, size_of::<Value>())?
                     .checked_add(u64_from_index(name.len()))
                     .ok_or("reference typed storage exceeds u64")?;
                 self.admit_copy(1, bytes)?;
                 Ok(Value::Typed(
-                    copy_parser_text(name, self.budget, "step_reference_typed_name_copy")
-                        .map_err(ResolveError::Resource)?,
+                    match self.budget {
+                        Some(ctx) => ctx.copy_retained_text(name, "step_reference_typed_name_copy"),
+                        None => crate::parse::copy_unmetered_text(
+                            name,
+                            "step_reference_typed_name_copy",
+                        ),
+                    }
+                    .map_err(ResolveError::Resource)?,
                     Box::new(resolved),
                 ))
             }
@@ -3036,9 +3154,11 @@ fn resolve_local_references(
         let bytes = anchors.iter().try_fold(0u64, |total, anchor| {
             total
                 .checked_add(u64_from_index(anchor.name.len()))
-                .and_then(|total| total.checked_add(value_storage_bytes(&anchor.value)))
-                .and_then(|total| total.checked_add(btree_node_storage::<String, Value>()))
-                .ok_or("reference anchor copy storage exceeds u64")
+                .ok_or_else(storage_overflow)?
+                .checked_add(value_storage_bytes(&anchor.value)?)
+                .ok_or_else(storage_overflow)?
+                .checked_add(btree_node_storage::<String, Value>()?)
+                .ok_or_else(storage_overflow)
         })?;
         context
             .charge_retained(bytes, "step_reference_anchor_copy_storage")
@@ -3047,8 +3167,16 @@ fn resolve_local_references(
     let mut anchor_bindings = BTreeMap::new();
     for anchor in anchors.iter() {
         anchor_bindings.insert(
-            copy_parser_text(&anchor.name, budget, "step_reference_anchor_name_copy")
-                .map_err(ResolveError::Resource)?,
+            match budget {
+                Some(ctx) => {
+                    ctx.copy_retained_text(&anchor.name, "step_reference_anchor_name_copy")
+                }
+                None => crate::parse::copy_unmetered_text(
+                    &anchor.name,
+                    "step_reference_anchor_name_copy",
+                ),
+            }
+            .map_err(ResolveError::Resource)?,
             try_clone_value(&anchor.value, budget, "step_reference_anchor_value_copy")
                 .map_err(ResolveError::Resource)?,
         );

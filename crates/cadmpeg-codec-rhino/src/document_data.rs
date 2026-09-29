@@ -234,8 +234,7 @@ fn annotation_settings(
     }
     let dimension_scale = annotation_scale(&mut reader)?;
     let value = AnnotationSettingsRecord {
-        id: crate::wire::copy_retained_string(
-            ctx,
+        id: ctx.copy_retained_text(
             "rhino:document:annotation_settings#current",
             "Rhino annotation settings ID",
         )?,
@@ -300,8 +299,7 @@ fn grid_defaults(
         ));
     }
     let value = GridDefaultsRecord {
-        id: crate::wire::copy_retained_string(
-            ctx,
+        id: ctx.copy_retained_text(
             "rhino:document:grid_defaults#current",
             "Rhino grid defaults ID",
         )?,
@@ -452,8 +450,7 @@ fn render_settings(
     };
     reader.skip_remaining()?;
     Ok(RenderSettingsRecord {
-        id: crate::wire::copy_retained_string(
-            ctx,
+        id: ctx.copy_retained_text(
             "rhino:document:render_settings#current",
             "Rhino render settings ID",
         )?,
@@ -621,23 +618,12 @@ pub(crate) fn install(
     )?;
     if let Some(value) = &properties.revision_history {
         revisions.push(RevisionRecord {
-            id: crate::wire::copy_retained_string(
-                ctx,
-                "rhino:document:revision#current",
-                "Rhino revision ID",
-            )?,
+            id: ctx.copy_retained_text("rhino:document:revision#current", "Rhino revision ID")?,
             source_offset: value.source.range.start as u64,
-            created_by: crate::wire::copy_retained_string(
-                ctx,
-                &value.created_by,
-                "Rhino revision creator",
-            )?,
+            created_by: ctx.copy_retained_text(&value.created_by, "Rhino revision creator")?,
             created_utc_fields: value.created.fields,
-            last_edited_by: crate::wire::copy_retained_string(
-                ctx,
-                &value.last_edited_by,
-                "Rhino revision editor",
-            )?,
+            last_edited_by: ctx
+                .copy_retained_text(&value.last_edited_by, "Rhino revision editor")?,
             last_edited_utc_fields: value.last_edited.fields,
             revision_count: value.revision_count,
         });
@@ -649,14 +635,10 @@ pub(crate) fn install(
     )?;
     if let Some(value) = &properties.notes {
         notes.push(NotesRecord {
-            id: crate::wire::copy_retained_string(
-                ctx,
-                "rhino:document:notes#current",
-                "Rhino notes ID",
-            )?,
+            id: ctx.copy_retained_text("rhino:document:notes#current", "Rhino notes ID")?,
             source_offset: value.source.range.start as u64,
             html: value.html,
-            text: crate::wire::copy_retained_string(ctx, &value.text, "Rhino notes text")?,
+            text: ctx.copy_retained_text(&value.text, "Rhino notes text")?,
             visible: value.visible,
             window_rectangle: value.rectangle,
             locked: value.locked,
@@ -669,25 +651,17 @@ pub(crate) fn install(
     )?;
     if let Some(value) = &properties.application {
         applications.push(ApplicationRecord {
-            id: crate::wire::copy_retained_string(
-                ctx,
-                "rhino:document:application#writer",
-                "Rhino application ID",
-            )?,
+            id: ctx
+                .copy_retained_text("rhino:document:application#writer", "Rhino application ID")?,
             source_offset: value.source.range.start as u64,
-            name: crate::wire::copy_retained_string(ctx, &value.name, "Rhino application name")?,
-            url: crate::wire::copy_retained_string(ctx, &value.url, "Rhino application URL")?,
-            details: crate::wire::copy_retained_string(
-                ctx,
-                &value.details,
-                "Rhino application details",
-            )?,
+            name: ctx.copy_retained_text(&value.name, "Rhino application name")?,
+            url: ctx.copy_retained_text(&value.url, "Rhino application URL")?,
+            details: ctx.copy_retained_text(&value.details, "Rhino application details")?,
         });
     }
     let settings = &scan.metadata.settings;
     let document_settings = [DocumentSettingsRecord {
-        id: crate::wire::copy_retained_string(
-            ctx,
+        id: ctx.copy_retained_text(
             "rhino:document:settings#current",
             "Rhino document settings ID",
         )?,
@@ -695,12 +669,12 @@ pub(crate) fn install(
         archive_file_name: properties
             .as_file_name
             .as_deref()
-            .map(|value| crate::wire::copy_retained_string(ctx, value, "Rhino archive file name"))
+            .map(|value| ctx.copy_retained_text(value, "Rhino archive file name"))
             .transpose()?,
         model_url: settings
             .model_url
             .as_deref()
-            .map(|value| crate::wire::copy_retained_string(ctx, value, "Rhino model URL"))
+            .map(|value| ctx.copy_retained_text(value, "Rhino model URL"))
             .transpose()?,
         current_layer_index: settings.current_layer,
         current_material_index: settings.current_material.map(|selection| selection.value),

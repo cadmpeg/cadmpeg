@@ -8,7 +8,7 @@ use std::fmt;
 use std::hash::Hash;
 
 use cadmpeg_core::decode::{
-    u64_from_index, BoundedCount, DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit,
+    u64_from_index, BoundedCount, DecodeContext, ResourceDimension, ResourceLimit,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
@@ -36,14 +36,12 @@ pub(crate) fn reserve_collection<T>(
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(u64_from_index(additional), operation)?;
     values.try_reserve(additional).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit {
-            dimension: ResourceDimension::CollectionItems,
-            reason: ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: u64_from_index(additional),
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+            ResourceDimension::CollectionItems,
+            u64::MAX,
+            u64_from_index(additional),
             operation,
-        })
+        ))
     })
 }
 
@@ -56,14 +54,12 @@ pub(crate) fn reserve_hash_map<K: Eq + Hash, V>(
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(u64_from_index(additional), operation)?;
     values.try_reserve(additional).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit {
-            dimension: ResourceDimension::CollectionItems,
-            reason: ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: u64_from_index(additional),
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+            ResourceDimension::CollectionItems,
+            u64::MAX,
+            u64_from_index(additional),
             operation,
-        })
+        ))
     })
 }
 
@@ -76,14 +72,12 @@ pub(crate) fn reserve_hash_set<T: Eq + Hash>(
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(u64_from_index(additional), operation)?;
     values.try_reserve(additional).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit {
-            dimension: ResourceDimension::CollectionItems,
-            reason: ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: u64_from_index(additional),
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+            ResourceDimension::CollectionItems,
+            u64::MAX,
+            u64_from_index(additional),
             operation,
-        })
+        ))
     })
 }
 
@@ -107,26 +101,14 @@ pub(crate) fn admitted_retained_string(
     ctx.charge_retained(u64_from_index(length), operation)?;
     let mut value = String::new();
     value.try_reserve_exact(length).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit {
-            dimension: ResourceDimension::RetainedBytes,
-            reason: ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: u64_from_index(length),
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+            ResourceDimension::RetainedBytes,
+            u64::MAX,
+            u64_from_index(length),
             operation,
-        })
+        ))
     })?;
     Ok(value)
-}
-
-/// Copies UTF-8 text into session-retained storage.
-pub(crate) fn copy_retained_string(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
-        .map_err(|error| CodecError::malformed(error.to_string()))
 }
 
 /// Formats retained text after measuring and charging its exact byte length.
@@ -193,14 +175,12 @@ pub(crate) fn admitted_json(
     ctx.charge_retained(u64_from_index(count.0), operation)?;
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(count.0).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit {
-            dimension: ResourceDimension::RetainedBytes,
-            reason: ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: u64_from_index(count.0),
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+            ResourceDimension::RetainedBytes,
+            u64::MAX,
+            u64_from_index(count.0),
             operation,
-        })
+        ))
     })?;
     serde_json::to_writer(&mut bytes, value)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
@@ -233,7 +213,12 @@ pub(crate) fn admitted_canonical_json(
     let _temporary = ctx.reserve_scoped(u64_from_index(count.0), operation)?;
     let mut raw = Vec::new();
     raw.try_reserve_exact(count.0).map_err(|_| {
-        allocation_failure(ResourceDimension::MaterializedBytes, count.0, operation)
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+            ResourceDimension::MaterializedBytes,
+            u64::MAX,
+            u64_from_index(count.0),
+            operation,
+        ))
     })?;
     serde_json::to_writer(&mut raw, value)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
@@ -255,21 +240,6 @@ pub(crate) fn admitted_canonical_json(
         .end()
         .map_err(|error| CodecError::malformed(error.to_string()))?;
     admitted_json(ctx, &canonical, operation)
-}
-
-fn allocation_failure(
-    dimension: ResourceDimension,
-    amount: usize,
-    operation: &'static str,
-) -> CodecError {
-    CodecError::ResourceLimit(ResourceLimit {
-        dimension,
-        reason: ResourceFailure::AllocationFailed,
-        limit: u64::MAX,
-        used: 0,
-        additional: u64_from_index(amount),
-        operation,
-    })
 }
 
 #[derive(Clone, Copy)]
@@ -318,11 +288,13 @@ impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
     fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
         let mut copy = String::new();
         copy.try_reserve_exact(value.len()).map_err(|_| {
-            self.0.fail(allocation_failure(
-                ResourceDimension::MaterializedBytes,
-                value.len(),
-                self.0.operation,
-            ))
+            self.0
+                .fail(CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+                    ResourceDimension::MaterializedBytes,
+                    u64::MAX,
+                    u64_from_index(value.len()),
+                    self.0.operation,
+                )))
         })?;
         copy.push_str(value);
         Ok(serde_json::Value::String(copy))
@@ -375,11 +347,13 @@ impl serde::de::Visitor<'_> for CanonicalKeyVisitor<'_, '_> {
     fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
         let mut copy = String::new();
         copy.try_reserve_exact(value.len()).map_err(|_| {
-            self.0.fail(allocation_failure(
-                ResourceDimension::MaterializedBytes,
-                value.len(),
-                self.0.operation,
-            ))
+            self.0
+                .fail(CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+                    ResourceDimension::MaterializedBytes,
+                    u64::MAX,
+                    u64_from_index(value.len()),
+                    self.0.operation,
+                )))
         })?;
         copy.push_str(value);
         Ok(copy)
@@ -407,14 +381,12 @@ impl<T> ExactVec<T> {
         ctx.charge_collection_items(u64_from_index(capacity), operation)?;
         let mut values = Vec::new();
         values.try_reserve_exact(capacity).map_err(|_| {
-            CodecError::ResourceLimit(ResourceLimit {
-                dimension: ResourceDimension::CollectionItems,
-                reason: ResourceFailure::AllocationFailed,
-                limit: u64::MAX,
-                used: 0,
-                additional: u64_from_index(capacity),
+            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+                ResourceDimension::CollectionItems,
+                u64::MAX,
+                u64_from_index(capacity),
                 operation,
-            })
+            ))
         })?;
         Ok(Self { values, capacity })
     }

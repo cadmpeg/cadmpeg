@@ -554,9 +554,9 @@ impl FaceLoops {
     }
 
     /// Ordered loop ids: outer first when the face states one.
-    pub fn iter(&self) -> impl Iterator<Item = &LoopId> + '_ {
+    pub fn iter(&self) -> Box<dyn Iterator<Item = &LoopId> + '_> {
         match self {
-            Self::Unspecified { loops } => Box::new(loops.iter()) as Box<dyn Iterator<Item = _>>,
+            Self::Unspecified { loops } => Box::new(loops.iter()),
             Self::Classified { outer, inner } => {
                 Box::new(std::iter::once(outer).chain(inner.iter()))
             }
@@ -829,9 +829,16 @@ impl LoopRing {
         let count = u64_from_index(coedges.len());
         ctx.charge_collection_items(count, "loop ring members")?;
         let mut members = HashSet::new();
-        members
-            .try_reserve(coedges.len())
-            .map_err(|_| ctx.refuse_codec_limit("loop ring members", 0, count))?;
+        members.try_reserve(coedges.len()).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("loop ring members"),
+                    0,
+                    count,
+                    "loop ring members",
+                ),
+            )
+        })?;
         members.extend(coedges.iter());
         if members.len() != coedges.len() {
             return Ok(Err(LoopRingError(

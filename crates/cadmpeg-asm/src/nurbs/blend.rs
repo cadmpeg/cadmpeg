@@ -666,11 +666,9 @@ fn rolling_ball_third_side(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedRollingBallThirdSide, cadmpeg_core::CodecError>> {
-    let label = propagate_resource!(crate::decode_alloc::copy_string(
-        ctx,
-        cur.take_str()?,
-        "ASM rolling ball third-side label"
-    ));
+    let label = propagate_resource!(
+        ctx.copy_retained_text(cur.take_str()?, "ASM rolling ball third-side label")
+    );
     let surface = propagate_resource!(embedded_surface(ctx, cur)?);
     let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
     cur.set_pos(curve_end);
@@ -766,10 +764,9 @@ fn variable_blend_value(
             let terminal = if matches!(cur.peek(), Some(Token::Double(_))) {
                 VariableBlendTerminal::Double(cur.take_f64()?)
             } else {
-                VariableBlendTerminal::Text(propagate_resource!(crate::decode_alloc::copy_string(
-                    ctx,
+                VariableBlendTerminal::Text(propagate_resource!(ctx.copy_retained_text(
                     blend_value_name(cur)?,
-                    "ASM variable blend terminal text",
+                    "ASM variable blend terminal text"
                 )))
             };
             VariableBlendValuePayload::Functional {
@@ -817,10 +814,15 @@ fn variable_blend_value(
             }
             let mut points = Vec::new();
             if points.try_reserve(count).is_err() {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "reserve variable blend interpolation points",
-                    count as u64,
-                    count as u64,
+                return Some(Err(cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "reserve variable blend interpolation points",
+                        ),
+                        cadmpeg_core::decode::u64_from_index(count),
+                        cadmpeg_core::decode::u64_from_index(count),
+                        "reserve variable blend interpolation points",
+                    ),
                 )));
             }
             for _ in 0..count {

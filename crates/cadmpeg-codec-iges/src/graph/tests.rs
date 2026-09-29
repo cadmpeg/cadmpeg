@@ -401,8 +401,10 @@ fn graph_losses_admit_indexes_notes_and_provenance_text() {
     )]);
     let source = point_file();
     let scan = crate::card::scan(&source).unwrap();
-    let directory_count = scan.section(crate::card::Section::Directory).count() as u64;
-    let parameter_count = scan.section(crate::card::Section::Parameter).count() as u64;
+    let directory_count =
+        cadmpeg_core::decode::u64_from_index(scan.section(crate::card::Section::Directory).count());
+    let parameter_count =
+        cadmpeg_core::decode::u64_from_index(scan.section(crate::card::Section::Parameter).count());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -413,7 +415,7 @@ fn graph_losses_admit_indexes_notes_and_provenance_text() {
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.used == 0
-                && limit.additional == scan.lines.len() as u64 * 2
+                && limit.additional == cadmpeg_core::decode::u64_from_index(scan.lines.len()) * 2
                 && limit.operation == "iges graph loss offset scans"
     ));
 

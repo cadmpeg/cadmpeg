@@ -877,7 +877,7 @@ mod consolidated_revolution_binding_tests {
         }
         ir.model
             .add_procedural_curve(
-                &curve_id.clone(),
+                &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint(
                         "catia:test:proceduralcurve#seam-construction".to_string(),
@@ -1527,13 +1527,7 @@ fn emit_standard_extrusion_definition(
                 "catia_extrusion_directrix_owner_id",
             )?;
             ctx.charge_retained(
-                u64::try_from(procedure_id.as_str().len()).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "catia_extrusion_directrix_construction_id",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?,
+                cadmpeg_core::decode::u64_from_index(procedure_id.as_str().len()),
                 "catia_extrusion_directrix_construction_id",
             )?;
             let procedure = ProceduralCurve::new(
@@ -1667,13 +1661,7 @@ fn emit_standard_extrusion_definition(
                 "catia_extrusion_offset_procedures",
             )?;
             ctx.charge_retained(
-                u64::try_from(procedure_id.as_str().len()).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "catia_extrusion_offset_construction_id",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?,
+                cadmpeg_core::decode::u64_from_index(procedure_id.as_str().len()),
                 "catia_extrusion_offset_construction_id",
             )?;
             let owner = crate::resource::copy_id(
@@ -2198,7 +2186,7 @@ fn rescope_standard_id(
             format_args!("catia:standard:{scope}/{rest}"),
             "catia_standard_population_identity",
         ),
-        None => crate::resource::copy_retained_str(ctx, text, "catia_standard_population_identity"),
+        None => ctx.copy_retained_text(text, "catia_standard_population_identity"),
     }
 }
 
@@ -2226,10 +2214,7 @@ impl EntityRewrite for StandardPopulationScope<'_, '_> {
         }
         let mut size = CountBytes(0);
         serde_json::to_writer(&mut size, &entity).map_err(CodecError::malformed)?;
-        let bytes = u64::try_from(size.0).map_err(|_| {
-            self.ctx
-                .refuse_codec_limit("catia_standard_population_rewrite", u64::MAX, u64::MAX)
-        })?;
+        let bytes = cadmpeg_core::decode::u64_from_index(size.0);
         self.ctx
             .charge_collection_items(bytes, "catia_standard_population_rewrite")?;
         let retained = bytes.checked_mul(4).ok_or_else(|| {
@@ -2285,11 +2270,7 @@ fn merge_standard_population_annotations(
                 format_args!("catia:standard:{scope}/{rest}"),
                 "catia_standard_population_annotation_id",
             ),
-            None => crate::resource::copy_retained_str(
-                ctx,
-                id,
-                "catia_standard_population_annotation_id",
-            ),
+            None => ctx.copy_retained_text(id, "catia_standard_population_annotation_id"),
         },
         "catia_standard_population_annotation_remap",
     )? {
@@ -2805,8 +2786,7 @@ fn try_decode_standard_population(
                         "catia_standard_annotation_surface_id")),
                     "MainDataStream+SurfacicReps",
                     *pos,
-                    admitted!(crate::resource::copy_retained_str(ctx,
-                        "surfacic_reps_freeform_alias", "catia_standard_surface_annotation_tag")),
+                    admitted!(ctx.copy_retained_text("surfacic_reps_freeform_alias", "catia_standard_surface_annotation_tag")),
                     if freeform_procedural_surfaces.contains_key(tag)
                         || e5_freeform_tags.contains(tag)
                     {
@@ -2868,9 +2848,7 @@ fn try_decode_standard_population(
                 let (annotation_stream, annotation_offset, annotation_tag) =
                     if let Some(source_pos) = refined_analytic_surfaces.get(&i) {
                         ("consolidated_b2_03", *source_pos,
-                            admitted!(crate::resource::copy_retained_str(ctx,
-                                "consolidated_exact_analytic_surface",
-                                "catia_standard_surface_annotation_tag")))
+                            admitted!(ctx.copy_retained_text("consolidated_exact_analytic_surface", "catia_standard_surface_annotation_tag")))
                     } else {
                         ("MainDataStream+SurfacicReps", prefix.pos,
                             admitted!(crate::resource::format_retained(ctx,
@@ -3430,16 +3408,26 @@ fn try_decode_standard_population(
     }
     let annotations = annotations.build();
 
+    let (Some(face_local_freeform), Some(unbound_revolution), Some(withheld_face_rows)) = (
+        unresolved_freeform_record_count
+            .checked_sub(bound_revolution_face_surface_count)
+            .and_then(|count| count.checked_sub(consolidated_curve_bindings.standard_face_surfaces)),
+        revolution_record_count.checked_sub(resolved_revolution_count),
+        scan.census.fbb_face_rows.checked_sub(face_count),
+    ) else {
+        return Some(Err(cadmpeg_core::CodecError::malformed(
+            "CATIA geometry report counts are inconsistent",
+        )));
+    };
+
     let mut report = match build_geometry_report(ctx,
 &ir,
 scan,
 &typed,
 (plane_faces, analytic_record_count),
 &crate::assemble::GeometryReportCounts {
-            face_local_freeform: unresolved_freeform_record_count
-                .saturating_sub(bound_revolution_face_surface_count)
-                .saturating_sub(consolidated_curve_bindings.standard_face_surfaces),
-            unbound_revolution: revolution_record_count.saturating_sub(resolved_revolution_count),
+            face_local_freeform,
+            unbound_revolution,
             admitted_standard_face_rows: face_count,
         },
 topology_failure.map(StandardTopologyFailure::message)) {
@@ -3473,7 +3461,7 @@ topology_failure.map(StandardTopologyFailure::message)) {
     );
     report.coverage.record(
         crate::coverage::STANDARD_FBB_WITHHELD_FACE_ROW_COUNT,
-        scan.census.fbb_face_rows.saturating_sub(face_count),
+        withheld_face_rows,
     );
     report.coverage.record(
         crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT,
@@ -8225,7 +8213,8 @@ fn resolve_standard_endpoint_pairs(
         };
         let relation_count = points
             .len()
-            .checked_mul(points.len().saturating_sub(1))
+            .checked_sub(1)
+            .and_then(|other| points.len().checked_mul(other))
             .and_then(|value| value.checked_div(2));
         if relation_count.is_none_or(|count| count > MAX_PAIR_RELATIONS_PER_EDGE) {
             continue;
@@ -8321,7 +8310,8 @@ fn resolve_standard_endpoint_pairs(
         let points = &candidates[edge];
         let relation_count = points
             .len()
-            .checked_mul(points.len().saturating_sub(1))
+            .checked_sub(1)
+            .and_then(|other| points.len().checked_mul(other))
             .and_then(|value| value.checked_div(2));
         let Some(relation_count) = relation_count.filter(|count| {
             *count <= MAX_PAIR_RELATIONS_PER_EDGE && *count <= fallback_relation_budget

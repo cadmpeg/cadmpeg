@@ -365,11 +365,11 @@ pub(super) fn project(
         };
         if let Some(observed) = u64::try_from(raw_segment_count)
             .ok()
-            .filter(|count| *count > MAX_SPLINE_SEGMENTS as u64)
+            .filter(|count| *count > cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SEGMENTS))
         {
             return Err(refuse_local_limit(
                 "iges_spline_segments",
-                MAX_SPLINE_SEGMENTS as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SEGMENTS),
                 observed,
             ));
         }
@@ -831,14 +831,17 @@ pub(super) fn project(
                 None => {
                     return Err(refuse_local_limit(
                         "iges_spline_surface_poles",
-                        MAX_SPLINE_SURFACE_POLES as u64,
+                        cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
                         u64::MAX,
                     ));
                 }
-                Some(requested) if requested > MAX_SPLINE_SURFACE_POLES as u64 => {
+                Some(requested)
+                    if requested
+                        > cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES) =>
+                {
                     return Err(refuse_local_limit(
                         "iges_spline_surface_poles",
-                        MAX_SPLINE_SURFACE_POLES as u64,
+                        cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
                         requested,
                     ));
                 }
@@ -875,15 +878,15 @@ pub(super) fn project(
         let Some(pole_count) = u_count.checked_mul(v_count) else {
             return Err(refuse_local_limit(
                 "iges_spline_surface_poles",
-                MAX_SPLINE_SURFACE_POLES as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
                 u64::MAX,
             ));
         };
         if pole_count > MAX_SPLINE_SURFACE_POLES {
             return Err(refuse_local_limit(
                 "iges_spline_surface_poles",
-                MAX_SPLINE_SURFACE_POLES as u64,
-                pole_count as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_SPLINE_SURFACE_POLES),
+                cadmpeg_core::decode::u64_from_index(pole_count),
             ));
         }
         let Some(u_breakpoint_count) = u_segments.checked_add(1) else {

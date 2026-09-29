@@ -38,7 +38,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
         }
         ir.model
             .add_procedural_curve(
-                &subset.clone(),
+                &subset,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint("test:model:procedural-curve#subset").unwrap(),
                     ProceduralCurveDefinition::Subset(
@@ -108,7 +108,7 @@ fn subset_curve_over_wide_interval_maps_finite_local_parameter() {
     }
     ir.model
         .add_procedural_curve(
-            &subset.clone(),
+            &subset,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:procedural-curve#wide-subset").unwrap(),
                 ProceduralCurveDefinition::Subset(

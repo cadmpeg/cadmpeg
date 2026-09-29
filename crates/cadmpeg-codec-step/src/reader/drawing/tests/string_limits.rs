@@ -90,7 +90,11 @@ fn drawing_decode_propagates_string_refusal() {
     let (source, exchange) = exchange("#1=DRAWING_DEFINITION('Main','detail');");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        crate::ids::drawing(crate::ids::kind!("drawing_definition"), 1)
+            .as_str()
+            .len(),
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("root fits retained policy");
     assert!(matches!(
@@ -111,7 +115,8 @@ fn drawing_decode_propagates_string_refusal() {
 fn drawing_sheet_usage_sequence_propagates_string_refusal() {
     let (source, exchange) = exchange("#1=DRAWING_DEFINITION('','');#2=DRAWING_REVISION('',#1,'');#3=REPRESENTATION_CONTEXT('','');#4=PRESENTATION_VIEW('',(),#3);#5=DRAWING_SHEET_REVISION('',(),#3,#2);#6=DRAWING_SHEET_REVISION_USAGE(#5,#2,'sequence');");
     let arena = DecodeArena::new();
-    let refused = (0..512).any(|limit| {
+    let bound = cadmpeg_core::decode::u64_from_index(source.len()) * 16;
+    let refused = (0..bound).any(|limit| {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)

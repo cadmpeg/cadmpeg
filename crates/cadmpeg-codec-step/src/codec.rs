@@ -116,9 +116,16 @@ fn push_entry(
     entry: ContainerEntry,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "step_inspect_entries")?;
-    entries
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("step_inspect_entries", 0, 1))?;
+    entries.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("step_inspect_entries"),
+                0,
+                1,
+                "step_inspect_entries",
+            ),
+        )
+    })?;
     entries.push(entry);
     Ok(())
 }
@@ -141,9 +148,16 @@ fn append_notes(
 ) -> Result<(), CodecError> {
     for note in additional {
         ctx.charge_collection_items(1, "step_codec_notes")?;
-        notes
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("step_codec_notes", 0, 1))?;
+        notes.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("step_codec_notes"),
+                    0,
+                    1,
+                    "step_codec_notes",
+                ),
+            )
+        })?;
         notes.push(note);
     }
     Ok(())
@@ -337,7 +351,10 @@ fn inspect_parsed_exchange(
                     format!("SIGNATURE[{index}]")
                 },
                 role: ContainerRole::Signature,
-                storage: EntryStorage::verbatim(VerbatimLabel::None, signature.len() as u64),
+                storage: EntryStorage::verbatim(
+                    VerbatimLabel::None,
+                    cadmpeg_core::decode::u64_from_index(signature.len()),
+                ),
                 attributes: BTreeMap::default(),
             },
         )?;

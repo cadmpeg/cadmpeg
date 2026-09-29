@@ -193,15 +193,16 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
     );
     let mut approximate = exact_circle_directrix();
     approximate
-        .edit_control_points({
-            let mut visited = 0;
-            move |point| {
-                if visited == 3 {
-                    point.x += 1.0e-5;
-                }
-                visited += 1;
-                Ok(())
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 3 {
+                point.x += 1.0e-5;
             }
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     assert!(rational_four_arc_circle(&resource_ctx, &approximate).is_none());
@@ -314,15 +315,16 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)))
     ));
     elevated
-        .edit_control_points({
-            let mut visited = 0;
-            move |point| {
-                if visited == 5 {
-                    point.x += 1.0e-5;
-                }
-                visited += 1;
-                Ok(())
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 5 {
+                point.x += 1.0e-5;
             }
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     assert!(rational_four_arc_circle(&resource_ctx, &elevated).is_none());
@@ -407,15 +409,16 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
         unreachable!()
     };
     spine
-        .edit_control_points({
-            let mut visited = 0;
-            move |point| {
-                if visited == 1 {
-                    point.x = 2.1;
-                }
-                visited += 1;
-                Ok(())
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 1 {
+                point.x = 2.1;
             }
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     assert!(analytic_procedural_surface(&resource_ctx, &definition).is_none());
@@ -432,11 +435,16 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
     .expect("test decode context");
     let mut circle = exact_circle_directrix();
     circle
-        .edit_control_points(|point| {
+        .try_map_control_points(|_, point| {
+            let mut point = point.get();
             point.x -= 2.0;
             point.y -= 3.0;
             point.z -= 3.0;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     let mut definition = nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {

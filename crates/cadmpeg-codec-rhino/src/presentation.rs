@@ -535,8 +535,7 @@ impl DimensionControlEntries {
         match self.0.binary_search_by(|(key, _)| key.as_str().cmp(name)) {
             Ok(index) => self.0[index].1 = value()?,
             Err(index) => {
-                let key =
-                    crate::wire::copy_retained_string(ctx, name, "Rhino dimension control key")?;
+                let key = ctx.copy_retained_text(name, "Rhino dimension control key")?;
                 crate::wire::reserve_collection(ctx, &mut self.0, 1, "Rhino dimension controls")?;
                 self.0.insert(index, (key, value()?));
             }
@@ -1395,10 +1394,8 @@ fn object_attributes_presentation(
         source_offset,
         losses,
     )?;
-    let name =
-        crate::wire::copy_retained_string(ctx, &attributes.name, "Rhino projected object name")?;
-    let url =
-        crate::wire::copy_retained_string(ctx, &attributes.url, "Rhino projected object URL")?;
+    let name = ctx.copy_retained_text(&attributes.name, "Rhino projected object name")?;
+    let url = ctx.copy_retained_text(&attributes.url, "Rhino projected object URL")?;
     let mut group_indexes = crate::wire::admitted_collection(
         ctx,
         attributes.groups.len(),
@@ -1868,7 +1865,7 @@ fn wide_string(
             let text = std::str::from_utf8(bytes).map_err(|_| {
                 FramingError::structural(value.position(), "wide string is not UTF-8")
             })?;
-            crate::wire::copy_retained_string(ctx, text, "Rhino wide string")?
+            ctx.copy_retained_text(text, "Rhino wide string")?
         }
         _ => {
             return Err(FramingError::structural(
@@ -4942,7 +4939,7 @@ fn parse_text_style(
         let postscript_name = if named_description
             && (apple_runtime || writer_version.is_some_and(|version| version > 201_802_230))
         {
-            crate::wire::copy_retained_string(ctx, &description, "Rhino legacy PostScript name")?
+            ctx.copy_retained_text(&description, "Rhino legacy PostScript name")?
         } else {
             if named_description && !apple_runtime && writer_version.is_none() {
                 crate::chunks::reserve_admitted_vec(
@@ -4963,11 +4960,8 @@ fn parse_text_style(
         let mut font = FontRecord {
             windows_logfont_name,
             postscript_name,
-            obsolete_description: crate::wire::copy_retained_string(
-                ctx,
-                &description,
-                "Rhino legacy font description",
-            )?,
+            obsolete_description: ctx
+                .copy_retained_text(&description, "Rhino legacy font description")?,
             ..FontRecord::default()
         };
         if packed & 0x0f >= 1 {
@@ -5008,7 +5002,7 @@ fn parse_text_style(
                     )
                 })
                 .transpose()?,
-            name: crate::wire::copy_retained_string(ctx, &description, "Rhino text style name")?,
+            name: ctx.copy_retained_text(&description, "Rhino text style name")?,
             font_description: description,
             font,
         });
@@ -5872,20 +5866,12 @@ pub(crate) fn install(
                 })
                 .transpose()?,
             hierarchy: LayerHierarchySlot(layer.hierarchy),
-            name: crate::wire::copy_retained_string(
-                ctx,
-                &layer.name,
-                "Rhino layer presentation name",
-            )?,
+            name: ctx.copy_retained_text(&layer.name, "Rhino layer presentation name")?,
             description: layer
                 .description
                 .as_deref()
                 .map(|description| {
-                    crate::wire::copy_retained_string(
-                        ctx,
-                        description,
-                        "Rhino layer presentation description",
-                    )
+                    ctx.copy_retained_text(description, "Rhino layer presentation description")
                 })
                 .transpose()?,
             iges_level: layer.iges_level,

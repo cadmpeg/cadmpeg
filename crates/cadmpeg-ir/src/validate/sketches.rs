@@ -68,7 +68,7 @@ fn spatial_oriented_endpoints(
             (at(start_angle.get()), at(end_angle.get()))
         }
         SpatialSketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let start = curve.knots()[curve.degree() as usize];
+            let start = curve.knots()[cadmpeg_core::decode::index_from_u32(curve.degree())];
             let end = curve.knots()[curve.pole_count()];
             let Some(start_point) =
                 crate::eval::finite_or_refusal(crate::eval::nurbs_curve_point_at(curve, start))?

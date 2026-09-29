@@ -138,9 +138,18 @@ fn has_forbidden_form_63_duplicate(
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
             if !exact_points.contains_key(&exact_key(point)) {
                 ctx.charge_collection_items(1, "iges copious exact-point index")?;
-                exact_points
-                    .try_reserve(1)
-                    .map_err(|_| refuse_local_limit("iges copious exact-point index", 1, 1))?;
+                exact_points.try_reserve(1).map_err(|_| {
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(
+                                "iges copious exact-point index",
+                            ),
+                            1,
+                            1,
+                            "iges copious exact-point index",
+                        ),
+                    )
+                })?;
             }
             if let Some(previous) = exact_points.insert(exact_key(point), index) {
                 if !allowed_endpoint_pair(previous, index) {
@@ -151,8 +160,7 @@ fn has_forbidden_form_63_duplicate(
         }
         let cell_index = |value: f64| {
             let index = (value / cell_size).floor();
-            (index.is_finite() && index >= i128::MIN as f64 && index <= i128::MAX as f64)
-                .then_some(index as i128)
+            cadmpeg_core::convert::truncate_f64_to_i128(index)
         };
         let Some((x, y, z)) = cell_index(point.x)
             .zip(cell_index(point.y))
@@ -162,9 +170,18 @@ fn has_forbidden_form_63_duplicate(
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
             if !exact_points.contains_key(&exact_key(point)) {
                 ctx.charge_collection_items(1, "iges copious exact-point index")?;
-                exact_points
-                    .try_reserve(1)
-                    .map_err(|_| refuse_local_limit("iges copious exact-point index", 1, 1))?;
+                exact_points.try_reserve(1).map_err(|_| {
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(
+                                "iges copious exact-point index",
+                            ),
+                            1,
+                            1,
+                            "iges copious exact-point index",
+                        ),
+                    )
+                })?;
             }
             if let Some(previous) = exact_points.insert(exact_key(point), index) {
                 if !allowed_endpoint_pair(previous, index) {
@@ -197,9 +214,18 @@ fn has_forbidden_form_63_duplicate(
         }
         if !cells.contains_key(&(x, y, z)) {
             ctx.charge_collection_items(1, "iges copious proximity cells")?;
-            cells
-                .try_reserve(1)
-                .map_err(|_| refuse_local_limit("iges copious proximity cells", 1, 1))?;
+            cells.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "iges copious proximity cells",
+                        ),
+                        1,
+                        1,
+                        "iges copious proximity cells",
+                    ),
+                )
+            })?;
         }
         cells.entry((x, y, z)).or_insert((index, point));
     }
@@ -296,11 +322,11 @@ pub(super) fn project(
         };
         if let Some(observed) = u64::try_from(raw_tuple_count)
             .ok()
-            .filter(|count| *count > MAX_COPIOUS_TUPLES as u64)
+            .filter(|count| *count > cadmpeg_core::decode::u64_from_index(MAX_COPIOUS_TUPLES))
         {
             return Err(refuse_local_limit(
                 "iges_copious_tuples",
-                MAX_COPIOUS_TUPLES as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_COPIOUS_TUPLES),
                 observed,
             ));
         }
@@ -602,14 +628,19 @@ pub(super) fn project(
         } else {
             None
         };
-        let parameter_end = (points.len() - 1) as f64;
+        let parameter_end = cadmpeg_core::convert::f64_from_index(points.len() - 1)
+            .ok_or_else(|| ctx.refuse_codec_limit("iges copious knots", 0, 1))?;
         let knot_count = points
             .len()
             .checked_add(2)
             .ok_or_else(|| refuse_local_limit("iges copious knots", u64::MAX, 1))?;
         let mut knots = reserve_vec(ctx, knot_count, "iges copious knots")?;
         knots.extend([0.0, 0.0]);
-        knots.extend((1..points.len() - 1).map(|value| value as f64));
+        for value in 1..points.len() - 1 {
+            let knot = cadmpeg_core::convert::f64_from_index(value)
+                .ok_or_else(|| ctx.refuse_codec_limit("iges copious knots", 0, 1))?;
+            knots.push(knot);
+        }
         knots.extend([parameter_end, parameter_end]);
         let start = positions[0];
         let end = positions[positions.len() - 1];

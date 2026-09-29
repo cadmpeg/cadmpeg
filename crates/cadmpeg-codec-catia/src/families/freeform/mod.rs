@@ -5480,7 +5480,7 @@ mod tests {
             });
         }
         let _attached = ir.model.add_procedural_curve(
-            &curve_id.clone(),
+            &curve_id,
             ProceduralCurve::new(
                 ProceduralCurveId::mint(
                     "catia:test:proceduralcurve#standard-intersection".to_string(),
