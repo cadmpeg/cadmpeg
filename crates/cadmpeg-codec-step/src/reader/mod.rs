@@ -596,11 +596,11 @@ fn decode_exchange_mode(
             let mut links = Vec::new();
             for id in source.links {
                 if let Some(unknown_id) = opaque_ids.get(&id) {
-                    push_opaque_link(&mut links, unknown_id.as_str(), session.ctx)?;
+                    (session.ctx).push_formatted_retained(&mut links, format_args!("{}", unknown_id.as_str()), "step_opaque_links", "step_opaque_link_text")?;
                 }
                 if let Some(targets) = source_targets.get(&id) {
                     for target in targets {
-                        push_opaque_link(&mut links, target, session.ctx)?;
+                        (session.ctx).push_formatted_retained(&mut links, format_args!("{}", target), "step_opaque_links", "step_opaque_link_text")?;
                     }
                 }
             }
@@ -1108,17 +1108,6 @@ fn count_unknown_kind(
         ctx.charge_collection_items(1, "step_opaque_kind_counts")?;
     }
     *counts.entry(kind).or_default() += 1;
-    Ok(())
-}
-
-fn push_opaque_link(
-    links: &mut Vec<String>,
-    identity: &str,
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    let copy = ctx.format_retained(format_args!("{identity}"), "step_opaque_link_text")?;
-    ctx.reserve_vec(links, 1, "step_opaque_links")?;
-    links.push(copy);
     Ok(())
 }
 

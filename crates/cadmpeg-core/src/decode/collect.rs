@@ -123,6 +123,19 @@ impl DecodeContext<'_> {
         self.reserve_vec(values, count, operation)
     }
 
+    /// Appends one item with scoped storage and a charged collection slot.
+    pub fn push_scoped_vec<T>(
+        &self,
+        reservation: &mut ScopedReservation<'_>,
+        values: &mut Vec<T>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.reserve_scoped_vec(reservation, values, 1, operation)?;
+        values.push(value);
+        Ok(())
+    }
+
     /// Reserves temporary vector storage and returns its live byte reservation.
     pub fn reserve_temporary_vec<T>(
         &self,
@@ -987,6 +1000,58 @@ impl DecodeContext<'_> {
         }
         self.charge_collection_items(1, operation)?;
         Ok(values.insert(value))
+    }
+
+    /// Collects distinct ordered values after admitting each new entry.
+    pub fn collect_btree_set<T: Ord>(
+        &self,
+        values: impl IntoIterator<Item = T>,
+        operation: &'static str,
+    ) -> Result<BTreeSet<T>, CodecError> {
+        let mut out = BTreeSet::new();
+        for value in values {
+            self.insert_btree_set(&mut out, value, operation)?;
+        }
+        Ok(out)
+    }
+
+    /// Appends an ordered group member after admitting its group and slot.
+    pub fn push_btree_group<K: Ord, V>(
+        &self,
+        groups: &mut BTreeMap<K, Vec<V>>,
+        key: K,
+        value: V,
+        group_operation: &'static str,
+        item_operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if let Some(values) = groups.get_mut(&key) {
+            return self.push_vec(values, value, item_operation);
+        }
+        self.admit_btree_entry(groups, &key, group_operation)?;
+        let mut values = self.collection_vec(1, item_operation)?;
+        values.push(value);
+        groups.insert(key, values);
+        Ok(())
+    }
+
+    /// Inserts an ordered group member after admitting its group and value.
+    pub fn insert_btree_group_set<K: Ord, V: Ord>(
+        &self,
+        groups: &mut BTreeMap<K, BTreeSet<V>>,
+        key: K,
+        value: V,
+        group_operation: &'static str,
+        item_operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if let Some(values) = groups.get_mut(&key) {
+            self.insert_btree_set(values, value, item_operation)?;
+            return Ok(());
+        }
+        self.admit_btree_entry(groups, &key, group_operation)?;
+        let mut values = BTreeSet::new();
+        self.insert_btree_set(&mut values, value, item_operation)?;
+        groups.insert(key, values);
+        Ok(())
     }
 
     /// Extends retained bytes after charging both their slots and storage.
@@ -2724,6 +2789,89 @@ mod tests {
         ctx.append_formatted_retained(&mut output, format_args!("{}", 123),
             "test formatted append").expect("service profile admits text");
         assert_eq!(output, "prefix:123");
+    }
+
+    #[test]
+    fn push_scoped_vec_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, 1);
+        let mut values = Vec::<u16>::new();
+        let mut storage = ctx.reserve_scoped(0, "test scoped push").expect("test reservation");
+        let error = ctx.push_scoped_vec(&mut storage, &mut values, 7, "test scoped push").expect_err("one below required storage");
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes));
+        assert!(values.is_empty());
+        assert_eq!(values.capacity(), 0);
+    }
+
+    #[test]
+    fn push_scoped_vec_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
+        let mut values = Vec::<u16>::new();
+        let mut storage = ctx.reserve_scoped(0, "test scoped push").expect("test reservation");
+        ctx.push_scoped_vec(&mut storage, &mut values, 7, "test scoped push").expect("service admission");
+        assert_eq!(values, [7]);
+    }
+
+    #[test]
+    fn collect_btree_set_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, 0);
+
+        let error = ctx.collect_btree_set([7u16], "test ordered set").expect_err("one below required storage");
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems));
+
+    }
+
+    #[test]
+    fn collect_btree_set_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
+
+        let result = ctx.collect_btree_set([7u16, 9, 7], "test ordered set").expect("service admission");
+        assert_eq!(result, BTreeSet::from([7, 9]));
+    }
+
+    #[test]
+    fn push_btree_group_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, 1);
+        let mut values = BTreeMap::<u8, Vec<u16>>::new();
+        let error = ctx.push_btree_group(&mut values, 1, 7, "test group", "test member").expect_err("one below required storage");
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems));
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn push_btree_group_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
+        let mut values = BTreeMap::<u8, Vec<u16>>::new();
+        ctx.push_btree_group(&mut values, 1, 7, "test group", "test member").expect("service admission");
+        assert_eq!(values[&1], [7]);
+        ctx.push_btree_group(&mut values, 1, 9, "test group", "test member").expect("second member");
+        assert_eq!(values[&1], [7, 9]);
+    }
+
+    #[test]
+    fn insert_btree_group_set_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, 1);
+        let mut values = BTreeMap::<u8, BTreeSet<u16>>::new();
+        let error = ctx.insert_btree_group_set(&mut values, 1, 7, "test group", "test member").expect_err("one below required storage");
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems));
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn insert_btree_group_set_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("test context");
+        let mut values = BTreeMap::<u8, BTreeSet<u16>>::new();
+        ctx.insert_btree_group_set(&mut values, 1, 7, "test group", "test member").expect("service admission");
+        assert_eq!(values[&1], BTreeSet::from([7]));
+        ctx.insert_btree_group_set(&mut values, 1, 7, "test group", "test member").expect("duplicate member");
+        assert_eq!(values[&1], BTreeSet::from([7]));
     }
 
 }

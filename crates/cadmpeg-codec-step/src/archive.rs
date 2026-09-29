@@ -110,7 +110,7 @@ fn resolve_uri<'a>(
     let mut component_bytes = ctx.reserve_scoped(0, "step_zip_uri_components_temp")?;
     if let Some((directory, _)) = base_member.rsplit_once('/') {
         for component in directory.split('/') {
-            push_component(ctx, &mut component_bytes, &mut components, component)?;
+            ctx.push_scoped_vec(&mut component_bytes, &mut components, component, "step_zip_uri_components")?;
         }
     }
     if path.is_empty() {
@@ -136,7 +136,7 @@ fn resolve_uri<'a>(
                     )));
                 }
             }
-            component => push_component(ctx, &mut component_bytes, &mut components, component)?,
+            component => ctx.push_scoped_vec(&mut component_bytes, &mut components, component, "step_zip_uri_components")?,
         }
     }
     if components.is_empty() {
@@ -165,17 +165,6 @@ fn resolve_uri<'a>(
         query,
         fragment,
     })
-}
-
-fn push_component<'a>(
-    ctx: &DecodeContext<'_>,
-    bytes: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    components: &mut Vec<&'a str>,
-    component: &'a str,
-) -> Result<(), CodecError> {
-    ctx.reserve_scoped_vec(bytes, components, 1, "step_zip_uri_components")?;
-    components.push(component);
-    Ok(())
 }
 
 /// Resolves all root-file resource bindings and checks internal members.

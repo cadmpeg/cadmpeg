@@ -105,11 +105,7 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
-            insert_note(
-                &mut notes,
-                document_note(identifier, name, &source, ctx)?,
-                ctx,
-            )?;
+            ctx.insert_btree_set(&mut notes, document_note(identifier, name, &source, ctx)?, "step_dependency_note_set")?;
             ctx.insert_hash_set(&mut typed, id, "step_dependency_claims")?;
             ctx.insert_hash_set(&mut typed, document_id, "step_dependency_claims")?;
             if let Some(kind) = kind {
@@ -130,11 +126,7 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
-            insert_note(
-                &mut notes,
-                ctx.join_retained(&["external source ", source, " item ", &item], "", "step_dependency_note_text")?,
-                ctx,
-            )?;
+            ctx.insert_btree_set(&mut notes, ctx.join_retained(&["external source ", source, " item ", &item], "", "step_dependency_note_text")?, "step_dependency_note_set")?;
             ctx.insert_hash_set(&mut typed, id, "step_dependency_claims")?;
             ctx.insert_hash_set(&mut typed, source_id, "step_dependency_claims")?;
         }
@@ -148,18 +140,6 @@ pub(super) fn decode(
         notes: ordered_notes,
         losses,
     })
-}
-
-fn insert_note(
-    notes: &mut BTreeSet<String>,
-    note: String,
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    if !notes.contains(&note) {
-        ctx.charge_collection_items(1, "step_dependency_note_set")?;
-        notes.insert(note);
-    }
-    Ok(())
 }
 
 fn document_parameters(record: &RawRecord) -> Option<&[Value]> {
