@@ -112,8 +112,6 @@ pub enum LegacyExtensionFlags {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "layout", rename_all = "snake_case", deny_unknown_fields)]
-// Variant payloads retain the native layout as one value without separate heap ownership.
-#[allow(clippy::large_enum_variant)]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
 pub enum OffsetExtension<R = f64> {
     /// Pre-revision conditional flag sequence.
@@ -131,7 +129,7 @@ pub enum OffsetExtension<R = f64> {
     /// Revision-gated fields with the required four-boolean carrier run.
     Revision {
         /// Revision-gated form whose carrier run is exactly four booleans.
-        form: RevisionSurfaceForm<[bool; 4], R>,
+        form: Box<RevisionSurfaceForm<[bool; 4], R>>,
     },
 }
 
@@ -874,8 +872,6 @@ pub enum SplineSurfaceParameters<R = f64> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "layout", rename_all = "snake_case", deny_unknown_fields)]
-// Variant payloads retain the native layout as one value without separate heap ownership.
-#[allow(clippy::large_enum_variant)]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
 pub enum ExactSpline<R = f64> {
     /// Legacy solved-cache layout with ordered U/V ranges.
@@ -899,7 +895,7 @@ pub enum ExactSpline<R = f64> {
         /// Native ASM extension enum following the intervals.
         extension: i64,
         /// Required revision-gated form.
-        form: RevisionSurfaceForm<Vec<bool>, R>,
+        form: Box<RevisionSurfaceForm<Vec<bool>, R>>,
     },
 }
 
@@ -7199,8 +7195,6 @@ pub enum SpringPcurve<R = f64> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-// Variant payloads retain the native layout as one value without separate heap ownership.
-#[allow(clippy::large_enum_variant)]
 #[cfg_attr(
     feature = "schema",
     schemars(bound = "R: JsonSchema + Serialize, I: JsonSchema + Serialize")
@@ -7211,7 +7205,7 @@ pub enum SpringLayout<R = f64, I = [f64; 2]> {
         /// Two ordered support slots.
         supports: [SpringSupport<R>; 2],
         /// First pcurve or its null replacement range.
-        first_pcurve: SpringPcurve<R>,
+        first_pcurve: Box<SpringPcurve<R>>,
         /// Nullable second pcurve slot.
         #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         second_pcurve: Option<PcurveGeometry>,

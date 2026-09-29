@@ -561,7 +561,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         },
     ]);
     let _attached = ir.model.add_procedural_surface(
-        sweep.clone(),
+        &sweep.clone(),
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
                 .expect("identity grammar"),
@@ -576,7 +576,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         ),
     );
     let _attached = ir.model.add_procedural_surface(
-        revolution.clone(),
+        &revolution.clone(),
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#revolution-construction")
                 .expect("identity grammar"),
@@ -732,7 +732,7 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_surface(
-        surface.clone(),
+        &surface.clone(),
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
                 .expect("identity grammar"),
@@ -790,7 +790,7 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_surface(
-        surface_id.clone(),
+        &surface_id.clone(),
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#construction")
                 .expect("identity grammar"),

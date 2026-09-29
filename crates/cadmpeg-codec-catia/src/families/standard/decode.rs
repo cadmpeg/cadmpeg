@@ -877,7 +877,7 @@ mod consolidated_revolution_binding_tests {
         }
         ir.model
             .add_procedural_curve(
-                curve_id.clone(),
+                &curve_id.clone(),
                 ProceduralCurve::new(
                     ProceduralCurveId::mint(
                         "catia:test:proceduralcurve#seam-construction".to_string(),

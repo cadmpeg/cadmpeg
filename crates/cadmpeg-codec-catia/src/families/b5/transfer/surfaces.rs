@@ -930,7 +930,7 @@ pub(super) fn emit_surfaces(
                     "catia_b5_emit_procedural_surfaces",
                 )?;
                 let _attached = ir.model.add_procedural_surface(
-                    id,
+                    &id,
                     cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                         directrix_id,
                         (revolution.axis_origin, revolution.axis_direction),
@@ -982,7 +982,7 @@ pub(super) fn emit_surfaces(
                     "catia_b5_emit_procedural_surfaces",
                 )?;
                 let _attached = ir.model.add_procedural_surface(
-                    id,
+                    &id,
                     ProceduralSurface::new(procedural_id, definition, None),
                 );
             }
@@ -1023,7 +1023,7 @@ pub(super) fn emit_surfaces(
             "catia_b5_emit_procedural_surfaces",
         )?;
         let _attached = ir.model.add_procedural_surface(
-            crate::resource::copy_id(
+            &crate::resource::copy_id(
                 admission.context(),
                 surface.as_str(),
                 SurfaceId::mint,
@@ -1303,7 +1303,7 @@ fn emit_extrusion_procedure(
         "catia_b5_emit_procedural_surfaces",
     )?;
     let _attached = ir.model.add_procedural_surface(
-        surface_id,
+        &surface_id,
         ProceduralSurface::new(
             procedure_id,
             ProceduralSurfaceDefinition::Extrusion(

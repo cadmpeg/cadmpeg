@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{keep_faces_and_carriers, walk_reachable_topology};
+use super::{keep_faces_and_carriers, walk_reachable_topology, TopologyContext};
 use crate::brep::{AsmBrep, Carriers, DecodePurpose, Reachable};
 use crate::kernel_header::RefWidth;
 use crate::nurbs;
@@ -280,15 +280,11 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
             let mut reach = Reachable::default();
             let format = crate::asm_format!("f3d");
             keep_faces_and_carriers(
-                &asm_decode_ctx,
+                TopologyContext { ctx: &asm_decode_ctx, by_index: &by_index, token_table: &table, purpose: DecodePurpose::Model, format },
                 &mut out,
                 &records,
-                &by_index,
-                &table,
                 &mut carriers,
                 &mut reach,
-                DecodePurpose::Model,
-                format,
             )
             .expect("generated identities are valid");
             assert_eq!(out.stats.nurbs_surfaces, 1);
@@ -346,14 +342,10 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
     };
     let mut out = AsmBrep::default();
     walk_reachable_topology(
-        &asm_decode_ctx,
+        TopologyContext { ctx: &asm_decode_ctx, by_index: &by_index, token_table: &table, purpose: DecodePurpose::History, format: crate::asm_format!("f3d") },
         &mut out,
-        &by_index,
-        &table,
         &mut carriers,
         &mut reach,
-        DecodePurpose::History,
-        crate::asm_format!("f3d"),
     )
     .expect("history topology is within resource limits");
     super::super::emit::emit_coedges(
@@ -425,14 +417,10 @@ fn model_pcurve_parameter_range_refuses_collection_limit() {
             ..Reachable::default()
         };
         walk_reachable_topology(
-            ctx,
+            TopologyContext { ctx, by_index: &by_index, token_table: &table, purpose: DecodePurpose::Model, format: crate::asm_format!("f3d") },
             &mut out,
-            &by_index,
-            &table,
             &mut carriers,
             &mut reach,
-            DecodePurpose::Model,
-            crate::asm_format!("f3d"),
         )
         .expect_err("parameter-range map exceeds collection limit")
     });

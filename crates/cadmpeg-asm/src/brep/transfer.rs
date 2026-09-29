@@ -117,12 +117,12 @@ pub fn transfer_into_ir<'ir>(
     crate::decode_alloc::extend_vec(ctx, &mut ir.model.pcurves, pcurves, "ASM transfer pcurves")?;
     for (owner, procedural) in procedural_surfaces {
         ir.model
-            .add_procedural_surface(owner, procedural)
+            .add_procedural_surface(&owner, procedural)
             .map_err(|error| CodecError::malformed(error.to_string()))?;
     }
     for (owner, procedural) in procedural_curves {
         ir.model
-            .add_procedural_curve(owner, procedural)
+            .add_procedural_curve(&owner, procedural)
             .map_err(|error| CodecError::malformed(error.to_string()))?;
     }
     crate::decode_alloc::extend_vec(

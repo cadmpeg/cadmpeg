@@ -1990,7 +1990,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             if has_procedural_construction {
                 ir.model
                     .add_procedural_surface(
-                        copied_identity(
+                        &copied_identity(
                             self.ctx,
                             id.as_str(),
                             "FreeCAD procedural surface owner identity",

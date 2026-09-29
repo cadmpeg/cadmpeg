@@ -311,7 +311,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     let construction = ProceduralCurveId::mint("test:model:entity#nx:test:closed-intersection")
         .expect("identity grammar");
     let _attached = ir.model.add_procedural_curve(
-        sphere_circle.clone(),
+        &sphere_circle.clone(),
         ProceduralCurve::new(
             construction,
             ProceduralCurveDefinition::TolerantIntersection {
@@ -1470,7 +1470,7 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
         None,
     );
     ir.model
-        .add_procedural_surface(cache.clone(), procedural)
+        .add_procedural_surface(&cache.clone(), procedural)
         .unwrap();
 
     assert_eq!(surface_offset_lineage(&ir, &cache, 0), Some((support, 4.0)));
@@ -1517,7 +1517,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         },
     );
     ir.model
-        .add_procedural_curve(curve_id.clone(), procedural)
+        .add_procedural_curve(&curve_id.clone(), procedural)
         .unwrap();
 
     let start_point = PointId::mint("nx:test:point#0").expect("identity grammar");

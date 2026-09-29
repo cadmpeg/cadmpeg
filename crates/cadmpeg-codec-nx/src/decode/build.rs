@@ -651,7 +651,7 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx offset constructions", 0, 1))?;
             let _attached = ir.model.add_procedural_surface(
-                copy_typed_id(ctx, surface_id.as_str(), "nx offset construction owner")?,
+                &copy_typed_id(ctx, surface_id.as_str(), "nx offset construction owner")?,
                 procedural,
             );
 
@@ -727,7 +727,7 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx blend constructions", 0, 1))?;
             let attached = ir.model.add_procedural_surface(
-                copy_typed_id(ctx, surface_id.as_str(), "nx blend construction owner")?,
+                &copy_typed_id(ctx, surface_id.as_str(), "nx blend construction owner")?,
                 ProceduralSurface::new(
                     procedural_id,
                     ProceduralSurfaceDefinition::Blend(
@@ -1213,7 +1213,7 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx intersection constructions", 0, 1))?;
             let _attached = ir.model.add_procedural_curve(
-                copy_typed_id(ctx, curve_id.as_str(), "nx intersection owner identity")?,
+                &copy_typed_id(ctx, curve_id.as_str(), "nx intersection owner identity")?,
                 procedural,
             );
 

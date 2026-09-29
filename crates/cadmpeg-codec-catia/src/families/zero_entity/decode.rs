@@ -2247,7 +2247,7 @@ mod tests {
         });
         ir.model
             .add_procedural_curve(
-                curve_id.clone(),
+                &curve_id.clone(),
                 ProceduralCurve::new(construction_id.clone(), definition.clone()),
             )
             .unwrap();

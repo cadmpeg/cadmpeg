@@ -250,7 +250,7 @@ fn revision_exact_definition() -> ProceduralSurfaceDefinition {
         crate::geometry::surface_payloads::ExactSurfacePayload::try_new(ExactSpline::Revision {
             intervals: [[None, None], [None, None]],
             extension: 0,
-            form: RevisionSurfaceForm {
+            form: Box::new(RevisionSurfaceForm {
                 revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
                 support_bounds: [None; 4],
                 reference_endpoints: [None; 2],
@@ -262,7 +262,7 @@ fn revision_exact_definition() -> ProceduralSurfaceDefinition {
                 discontinuities: std::array::from_fn(|_| Vec::new()),
                 tail_flag: false,
                 trailing_flags: Vec::new(),
-            },
+            }),
         })
         .expect("exact spline surface payload"),
     )

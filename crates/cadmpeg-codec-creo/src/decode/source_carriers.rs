@@ -439,7 +439,7 @@ impl SourceUnitCarriers {
             crate::decode::build::units::scale_procedural_surface(&mut procedural, scale)?;
         }
         ir.model
-            .add_procedural_surface(owner, procedural)
+            .add_procedural_surface(&owner, procedural)
             .map_err(CodecError::malformed)?;
         Ok(())
     }
@@ -454,7 +454,7 @@ impl SourceUnitCarriers {
             crate::decode::build::units::scale_procedural_curve(&mut procedural, scale)?;
         }
         ir.model
-            .add_procedural_curve(owner, procedural)
+            .add_procedural_curve(&owner, procedural)
             .map_err(CodecError::malformed)?;
         Ok(())
     }

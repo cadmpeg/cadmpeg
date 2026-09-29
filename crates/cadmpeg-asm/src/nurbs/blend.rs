@@ -1646,7 +1646,7 @@ fn revision_vertex_blend_boundary(
             }
         }
         "pcurve" => {
-            let (surface, support_bounds) =
+            let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds { surface, bounds: support_bounds } =
                 match optional_embedded_surface_with_bounds(ctx, cur, table)? {
                     Ok(surface) => surface,
                     Err(error) => return Some(Err(error)),
