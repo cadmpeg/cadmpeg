@@ -52,12 +52,12 @@ fn directory_entity_refuses_entity_limit_before_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let bytes = point_file();
-    let scan = crate::card::scan(&bytes).unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let result = super::parse(&scan, GlobalTable::V5Later, Some(&ctx));
+    let result = super::parse(&scan, GlobalTable::V5Later, &ctx);
     assert!(matches!(
         result,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -69,7 +69,7 @@ fn directory_entity_refuses_entity_limit_before_storage() {
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    assert!(super::parse(&scan, GlobalTable::V5Later, Some(&ctx)).is_ok());
+    assert!(super::parse(&scan, GlobalTable::V5Later, &ctx).is_ok());
 }
 
 #[test]

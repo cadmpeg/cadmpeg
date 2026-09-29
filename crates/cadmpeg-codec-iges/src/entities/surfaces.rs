@@ -16,8 +16,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::bezier::{
-    boundaries_within_resolution, homogeneous_spans, homogeneous_spans_with_charge,
-    positive_controls, HomogeneousBezierSpan,
+    boundaries_within_resolution, homogeneous_spans_with_charge, positive_controls,
+    HomogeneousBezierSpan,
 };
 use cadmpeg_ir::geometry::{
     nurbs::{
@@ -45,25 +45,15 @@ trait SurfaceGridWeight {
     fn admit(
         self,
         index: usize,
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
     ) -> Result<Result<NonZeroReal, NurbsError>, CodecError>;
-}
-
-fn surface_grid_error_field(
-    ctx: Option<&DecodeContext<'_>>,
-    field: &'static str,
-) -> Result<String, CodecError> {
-    match ctx {
-        Some(ctx) => ctx.format_retained(format_args!("{field}"), "iges surface grid error field"),
-        None => Ok(field.to_owned()),
-    }
 }
 
 impl SurfaceGridWeight for NonZeroReal {
     fn admit(
         self,
         _index: usize,
-        _ctx: Option<&DecodeContext<'_>>,
+        _ctx: &DecodeContext<'_>,
     ) -> Result<Result<NonZeroReal, NurbsError>, CodecError> {
         Ok(Ok(self))
     }
@@ -73,12 +63,15 @@ impl SurfaceGridWeight for f64 {
     fn admit(
         self,
         index: usize,
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
     ) -> Result<Result<NonZeroReal, NurbsError>, CodecError> {
         match NonZeroReal::new(self) {
             Some(value) => Ok(Ok(value)),
             None => Ok(Err(NurbsError::UnusableWeight {
-                field: surface_grid_error_field(ctx, "pole grid row")?,
+                field: ctx.format_retained(
+                    format_args!("pole grid row"),
+                    "iges surface grid error field",
+                )?,
                 index,
                 weight: self,
             })),
@@ -87,7 +80,7 @@ impl SurfaceGridWeight for f64 {
 }
 
 fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     rows: Vec<Vec<FinitePoint3>>,
     weights: Option<Vec<Vec<W>>>,
     outer_operation: &'static str,
@@ -98,29 +91,25 @@ fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
     };
     if rows.len() != weights.len() {
         return Ok(Err(NurbsError::WeightLaneLength {
-            field: surface_grid_error_field(ctx, "pole grid")?,
+            field: ctx
+                .format_retained(format_args!("pole grid"), "iges surface grid error field")?,
             poles: rows.len(),
             weights: weights.len(),
         }));
     }
-    let mut paired = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        rows.len(),
-        outer_operation,
-    )?;
+    let mut paired = ctx.collection_vec(rows.len(), outer_operation)?;
     for (row, weight_row) in rows.into_iter().zip(weights) {
         if row.len() != weight_row.len() {
             return Ok(Err(NurbsError::WeightLaneLength {
-                field: surface_grid_error_field(ctx, "pole grid row")?,
+                field: ctx.format_retained(
+                    format_args!("pole grid row"),
+                    "iges surface grid error field",
+                )?,
                 poles: row.len(),
                 weights: weight_row.len(),
             }));
         }
-        let mut paired_row = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            row.len(),
-            inner_operation,
-        )?;
+        let mut paired_row = ctx.collection_vec(row.len(), inner_operation)?;
         for (index, (point, weight)) in row.into_iter().zip(weight_row).enumerate() {
             let weight = match weight.admit(index, ctx)? {
                 Ok(weight) => weight,
@@ -235,7 +224,7 @@ fn similarity_orientation(transform: cadmpeg_ir::transform::Transform) -> Option
 fn bounded_nurbs(
     ir: &CadIr,
     curve_id: &CurveId,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     index: &CompositeIndex,
 ) -> Result<Option<(NurbsCurve, [f64; 2])>, super::composite::CompositeCurveError> {
     super::composite::bounded_nurbs_for_curve(ir, curve_id, ctx, Some(index))
@@ -272,7 +261,7 @@ fn interval_certified_linear_bezier(
     geometry: &NurbsCurve,
     record: &ParameterRecord,
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     if record.integer(0) != Some(126) {
         return Ok(false);
@@ -341,38 +330,14 @@ fn interval_certified_linear_bezier(
     };
     let precision = global.real_precision();
     let mut coordinate_values = [
-        cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            control_count,
-            "iges ruled linear x values",
-        )?,
-        cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            control_count,
-            "iges ruled linear y values",
-        )?,
-        cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            control_count,
-            "iges ruled linear z values",
-        )?,
+        ctx.collection_vec(control_count, "iges ruled linear x values")?,
+        ctx.collection_vec(control_count, "iges ruled linear y values")?,
+        ctx.collection_vec(control_count, "iges ruled linear z values")?,
     ];
     let mut coordinate_uncertainties = [
-        cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            control_count,
-            "iges ruled linear x uncertainties",
-        )?,
-        cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            control_count,
-            "iges ruled linear y uncertainties",
-        )?,
-        cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            control_count,
-            "iges ruled linear z uncertainties",
-        )?,
+        ctx.collection_vec(control_count, "iges ruled linear x uncertainties")?,
+        ctx.collection_vec(control_count, "iges ruled linear y uncertainties")?,
+        ctx.collection_vec(control_count, "iges ruled linear z uncertainties")?,
     ];
     for control_index in 0..control_count {
         for coordinate in 0..3 {
@@ -405,7 +370,7 @@ fn equal_arc_length_parameterization(
     second_interval: [f64; 2],
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let [first_sequence, second_sequence] = sequences;
     // A normalized parameter is an arc-length parameter only for a constant-
@@ -461,7 +426,7 @@ fn bounded_evaluable_curve<'a>(
     curve_id: &CurveId,
     tolerance: f64,
     index: &CompositeIndex,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<(&'a CurveGeometry, [f64; 2])>, CodecError> {
     let Some(curve) = index.curve_by_id(ir, curve_id) else {
         return Ok(None);
@@ -526,7 +491,7 @@ fn curve_geometry<'a>(ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a CurveGeom
 }
 
 fn homogeneous_bezier_spans(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
 ) -> Result<Option<Vec<HomogeneousBezierSpan>>, CodecError> {
     let Ok(degree) = usize::try_from(curve.degree()) else {
@@ -542,11 +507,7 @@ fn homogeneous_bezier_spans(
         }) {
             return Ok(None);
         }
-        let mut weights = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            count,
-            "iges_surface_closure_weights",
-        )?;
+        let mut weights = ctx.collection_vec(count, "iges_surface_closure_weights")?;
         for index in 0..count {
             let weight = curve
                 .pole_rows()
@@ -558,11 +519,7 @@ fn homogeneous_bezier_spans(
     } else {
         None
     };
-    let mut points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        count,
-        "iges_surface_closure_points",
-    )?;
+    let mut points = ctx.collection_vec(count, "iges_surface_closure_points")?;
     for index in 0..count {
         points.push(
             curve
@@ -571,20 +528,13 @@ fn homogeneous_bezier_spans(
                 .ok_or_else(|| CodecError::malformed("surface closure pole is missing"))?,
         );
     }
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(u64_from_index(count), "iges_surface_closure_controls")?;
-    }
+    ctx.charge_collection_items(u64_from_index(count), "iges_surface_closure_controls")?;
     let Some(controls) = positive_controls(&points, weights.as_deref())? else {
         return Ok(None);
     };
-    match ctx {
-        Some(ctx) => {
-            homogeneous_spans_with_charge(degree, curve.knots(), controls, |count, operation| {
-                ctx.charge_collection_items(u64_from_index(count), operation)
-            })
-        }
-        None => Ok(homogeneous_spans(degree, curve.knots(), controls)?),
-    }
+    homogeneous_spans_with_charge(degree, curve.knots(), controls, |count, operation| {
+        ctx.charge_collection_items(u64_from_index(count), operation)
+    })
 }
 
 fn bernstein_binomial(n: usize, k: usize) -> Option<f64> {
@@ -656,7 +606,7 @@ fn span_fraction(value: f64, domain: [f64; 2]) -> Option<f64> {
 fn split_homogeneous_bezier_span(
     span: &HomogeneousBezierSpan,
     cut: f64,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<(HomogeneousBezierSpan, HomogeneousBezierSpan)>, CodecError> {
     if !cut.is_finite() || cut <= span.domain[0] || cut >= span.domain[1] {
         return Ok(None);
@@ -670,27 +620,17 @@ fn split_homogeneous_bezier_span(
     let Some(degree) = span.controls.len().checked_sub(1) else {
         return Ok(None);
     };
-    let mut levels = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        degree + 1,
-        "iges span split levels",
-    )?;
-    let mut first_level = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        span.controls.len(),
-        "iges span split first controls",
-    )?;
+    let mut levels = ctx.collection_vec(degree + 1, "iges span split levels")?;
+    let mut first_level =
+        ctx.collection_vec(span.controls.len(), "iges span split first controls")?;
     first_level.extend_from_slice(&span.controls);
     levels.push(first_level);
     for _ in 1..=degree {
         let Some(previous) = levels.last() else {
             return Ok(None);
         };
-        let mut current = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            previous.len() - 1,
-            "iges span split level controls",
-        )?;
+        let mut current =
+            ctx.collection_vec(previous.len() - 1, "iges span split level controls")?;
         current.extend(previous.windows(2).map(|pair| {
             std::array::from_fn(|axis| {
                 (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
@@ -701,17 +641,9 @@ fn split_homogeneous_bezier_span(
         }
         levels.push(current);
     }
-    let mut left = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        degree + 1,
-        "iges span split left controls",
-    )?;
+    let mut left = ctx.collection_vec(degree + 1, "iges span split left controls")?;
     left.extend((0..=degree).map(|level| levels[level][0]));
-    let mut right = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        degree + 1,
-        "iges span split right controls",
-    )?;
+    let mut right = ctx.collection_vec(degree + 1, "iges span split right controls")?;
     right.extend((0..=degree).map(|index| levels[degree - index][index]));
     Ok(Some((
         HomogeneousBezierSpan {
@@ -733,16 +665,12 @@ fn homogeneous_span_domain(spans: &[HomogeneousBezierSpan]) -> Option<[f64; 2]> 
 fn normalized_span_boundaries(
     spans: &[HomogeneousBezierSpan],
     domain: [f64; 2],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<f64>>, CodecError> {
     let Some(capacity) = spans.len().checked_mul(2) else {
         return Ok(None);
     };
-    let mut boundaries = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        capacity,
-        "iges span normalized boundaries",
-    )?;
+    let mut boundaries = ctx.collection_vec(capacity, "iges span normalized boundaries")?;
     for span in spans {
         for value in span.domain {
             let Some(normalized) = span_fraction(value, domain) else {
@@ -763,7 +691,7 @@ fn partition_homogeneous_spans(
     spans: &[HomogeneousBezierSpan],
     domain: [f64; 2],
     boundaries: &[f64],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<HomogeneousBezierSpan>>, CodecError> {
     let mut partitioned = Vec::new();
     for span in spans {
@@ -784,11 +712,8 @@ fn partition_homogeneous_spans(
         {
             return Ok(None);
         }
-        let mut controls = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            span.controls.len(),
-            "iges span partition controls",
-        )?;
+        let mut controls =
+            ctx.collection_vec(span.controls.len(), "iges span partition controls")?;
         controls.extend_from_slice(&span.controls);
         let mut current = HomogeneousBezierSpan {
             domain: span.domain,
@@ -807,28 +732,18 @@ fn partition_homogeneous_spans(
             let Some((left, right)) = split_homogeneous_bezier_span(&current, cut, ctx)? else {
                 return Ok(None);
             };
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
-                &mut partitioned,
-                1,
-                "iges span partition slots",
-            )?;
+            ctx.reserve_vec(&mut partitioned, 1, "iges span partition slots")?;
             partitioned.push(left);
             current = right;
         }
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
-            &mut partitioned,
-            1,
-            "iges span partition slots",
-        )?;
+        ctx.reserve_vec(&mut partitioned, 1, "iges span partition slots")?;
         partitioned.push(current);
     }
     Ok(Some(partitioned))
 }
 
 fn aligned_homogeneous_spans(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     first: &NurbsCurve,
     second: &NurbsCurve,
 ) -> Result<Option<Vec<(HomogeneousBezierSpan, HomogeneousBezierSpan)>>, CodecError> {
@@ -851,8 +766,7 @@ fn aligned_homogeneous_spans(
     else {
         return Ok(None);
     };
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-        ctx,
+    ctx.reserve_vec(
         &mut boundaries,
         second_boundaries.len(),
         "iges span combined boundaries",
@@ -873,11 +787,7 @@ fn aligned_homogeneous_spans(
     if first_spans.len() != second_spans.len() {
         return Ok(None);
     }
-    let mut pairs = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        first_spans.len(),
-        "iges span aligned pairs",
-    )?;
+    let mut pairs = ctx.collection_vec(first_spans.len(), "iges span aligned pairs")?;
     pairs.extend(first_spans.into_iter().zip(second_spans));
     Ok(Some(pairs))
 }
@@ -885,7 +795,7 @@ fn aligned_homogeneous_spans(
 fn projectively_shared_weights(
     first: &NurbsCurve,
     second: &NurbsCurve,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<NonZeroReal>>, CodecError> {
     let count = first.pole_count();
     if count == 0 || count != second.pole_count() {
@@ -903,11 +813,7 @@ fn projectively_shared_weights(
     {
         return Ok(None);
     }
-    let mut weights = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        count,
-        "iges ruled shared weights",
-    )?;
+    let mut weights = ctx.collection_vec(count, "iges ruled shared weights")?;
     for index in 0..count {
         let weight = NonZeroReal::new(weight_at(first, index))
             .ok_or_else(|| CodecError::malformed("ruled rail weight is zero"))?;
@@ -920,13 +826,10 @@ fn same_basis_ruled_surface(
     first: &NurbsCurve,
     second: &NurbsCurve,
     weights: &[NonZeroReal],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<NurbsSurface, CodecError> {
-    let mut pole_rows = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        first.pole_count(),
-        "iges ruled same-basis pole rows",
-    )?;
+    let mut pole_rows =
+        ctx.collection_vec(first.pole_count(), "iges ruled same-basis pole rows")?;
     for index in 0..first.pole_count() {
         let first_point = first
             .pole_rows()
@@ -936,28 +839,16 @@ fn same_basis_ruled_surface(
             .pole_rows()
             .point_at(index)
             .ok_or_else(|| CodecError::malformed("ruled second rail pole is missing"))?;
-        let mut row = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            2,
-            "iges ruled same-basis pole row controls",
-        )?;
+        let mut row = ctx.collection_vec(2, "iges ruled same-basis pole row controls")?;
         row.extend([first_point, second_point]);
         pole_rows.push(row);
     }
     let weight_rows = if weights.iter().all(|weight| weight.get() == 1.0) {
         None
     } else {
-        let mut rows = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            weights.len(),
-            "iges ruled same-basis weight rows",
-        )?;
+        let mut rows = ctx.collection_vec(weights.len(), "iges ruled same-basis weight rows")?;
         for weight in weights {
-            let mut row = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
-                2,
-                "iges ruled same-basis weight row controls",
-            )?;
+            let mut row = ctx.collection_vec(2, "iges ruled same-basis weight row controls")?;
             row.extend([*weight, *weight]);
             rows.push(row);
         }
@@ -971,17 +862,9 @@ fn same_basis_ruled_surface(
         "iges ruled same-basis weighted row controls",
     )?
     .map_err(CodecError::malformed)?;
-    let mut u_knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        first.knots().len(),
-        "iges ruled same-basis u knots",
-    )?;
+    let mut u_knots = ctx.collection_vec(first.knots().len(), "iges ruled same-basis u knots")?;
     u_knots.extend_from_slice(first.knots());
-    let mut v_knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        4,
-        "iges ruled same-basis v knots",
-    )?;
+    let mut v_knots = ctx.collection_vec(4, "iges ruled same-basis v knots")?;
     v_knots.extend([0.0, 0.0, 1.0, 1.0]);
     NurbsSurface::new(
         NurbsSurfaceAxis::new(
@@ -1002,22 +885,15 @@ fn same_basis_ruled_surface(
 /// budget refusal, and without one it is the same local limit error every other
 /// pole-count site in this file returns.
 fn admit_surface_pole_count(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     pole_count: usize,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if pole_count > MAX_SURFACE_POLES {
-        return Err(match ctx {
-            Some(ctx) => ctx.refuse_codec_limit(
-                "iges_surface_poles",
-                cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
-                cadmpeg_core::decode::u64_from_index(pole_count),
-            ),
-            None => refuse_local_limit(
-                "iges_surface_poles",
-                cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
-                cadmpeg_core::decode::u64_from_index(pole_count),
-            ),
-        });
+        return Err(ctx.refuse_codec_limit(
+            "iges_surface_poles",
+            cadmpeg_core::decode::u64_from_index(MAX_SURFACE_POLES),
+            cadmpeg_core::decode::u64_from_index(pole_count),
+        ));
     }
     Ok(())
 }
@@ -1025,7 +901,7 @@ fn admit_surface_pole_count(
 fn ruled_surface_carrier(
     first: &NurbsCurve,
     second: &NurbsCurve,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<NurbsSurface>, cadmpeg_core::CodecError> {
     if first.degree() == second.degree()
         && first.knots() == second.knots()
@@ -1043,32 +919,21 @@ fn ruled_surface_carrier(
     let Some((degree, u_knots, control_points, weights)) = lanes else {
         return Ok(None);
     };
-    let mut pole_rows = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
+    let mut pole_rows = ctx.collection_vec(
         control_points.len().div_ceil(2),
         "iges ruled span pole rows",
     )?;
     for points in control_points.chunks(2) {
-        let mut row = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            points.len(),
-            "iges ruled span pole row controls",
-        )?;
+        let mut row = ctx.collection_vec(points.len(), "iges ruled span pole row controls")?;
         row.extend_from_slice(points);
         pole_rows.push(row);
     }
     let weight_rows = if let Some(weights) = weights {
-        let mut rows = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            weights.len().div_ceil(2),
-            "iges ruled span weight rows",
-        )?;
+        let mut rows =
+            ctx.collection_vec(weights.len().div_ceil(2), "iges ruled span weight rows")?;
         for weights in weights.chunks(2) {
-            let mut row = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
-                weights.len(),
-                "iges ruled span weight row controls",
-            )?;
+            let mut row =
+                ctx.collection_vec(weights.len(), "iges ruled span weight row controls")?;
             row.extend(weights.iter().copied().map(NonZeroReal::from));
             rows.push(row);
         }
@@ -1076,11 +941,7 @@ fn ruled_surface_carrier(
     } else {
         None
     };
-    let mut v_knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        4,
-        "iges ruled span v knots",
-    )?;
+    let mut v_knots = ctx.collection_vec(4, "iges ruled span v knots")?;
     v_knots.extend([0.0, 0.0, 1.0, 1.0]);
     let poles = pair_admitted_surface_poles(
         ctx,
@@ -1110,7 +971,7 @@ type RuledSpanLanes = (u32, Vec<f64>, Vec<FinitePoint3>, Option<Vec<PositiveReal
 fn ruled_surface_span_lanes(
     first: &NurbsCurve,
     second: &NurbsCurve,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<RuledSpanLanes>, CodecError> {
     let (Ok(first_degree), Ok(second_degree)) = (
         usize::try_from(first.degree()),
@@ -1138,11 +999,7 @@ fn ruled_surface_span_lanes(
         return Ok(None);
     };
     admit_surface_pole_count(ctx, pole_count)?;
-    let mut homogeneous = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        pole_count,
-        "iges ruled homogeneous controls",
-    )?;
+    let mut homogeneous = ctx.collection_vec(pole_count, "iges ruled homogeneous controls")?;
     let Some(knot_count) = u_count
         .checked_add(degree)
         .and_then(|count| count.checked_add(1))
@@ -1154,11 +1011,7 @@ fn ruled_surface_span_lanes(
     else {
         return Ok(None);
     };
-    let mut u_knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        knot_count,
-        "iges ruled homogeneous knots",
-    )?;
+    let mut u_knots = ctx.collection_vec(knot_count, "iges ruled homogeneous knots")?;
     for (span_index, (first_span, second_span)) in spans.iter().enumerate() {
         if first_span.controls.len() != first_control_count
             || second_span.controls.len() != second_control_count
@@ -1193,16 +1046,8 @@ fn ruled_surface_span_lanes(
     if homogeneous.len() != pole_count || u_knots.len() != u_count + degree + 1 {
         return Ok(None);
     }
-    let mut control_points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        pole_count,
-        "iges ruled surface controls",
-    )?;
-    let mut weights = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        pole_count,
-        "iges ruled surface weights",
-    )?;
+    let mut control_points = ctx.collection_vec(pole_count, "iges ruled surface controls")?;
+    let mut weights = ctx.collection_vec(pole_count, "iges ruled surface weights")?;
     for control in homogeneous {
         let weight = control[3];
         let Some(weight) = PositiveReal::new(weight) else {
@@ -1231,7 +1076,7 @@ fn ruled_surface_span_lanes(
 }
 
 fn homogeneous_curve_boundary_matches(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     first: &NurbsCurve,
     second: &NurbsCurve,
     range: [f64; 2],
@@ -1277,7 +1122,7 @@ fn homogeneous_curve_boundary_matches(
 }
 
 fn surface_boundary_is_closed(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
     fixed_axis: SurfaceParameterAxis,
     fixed_range: [f64; 2],
@@ -1314,7 +1159,7 @@ struct AngularBasis {
 fn angular_basis(
     start: f64,
     end: f64,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<AngularBasis>, CodecError> {
     let sweep = end - start;
     if !sweep.is_finite()
@@ -1332,17 +1177,10 @@ fn angular_basis(
         return Ok(None);
     };
     let segment_angle = sweep / segment_count_real;
-    let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        segment_count * 2 + 4,
-        "iges revolution angular knots",
-    )?;
+    let mut knots = ctx.collection_vec(segment_count * 2 + 4, "iges revolution angular knots")?;
     knots.extend([start; 3]);
-    let mut controls = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-        ctx,
-        segment_count * 2 + 1,
-        "iges revolution angular controls",
-    )?;
+    let mut controls =
+        ctx.collection_vec(segment_count * 2 + 1, "iges revolution angular controls")?;
     controls.push((start, 1.0));
     for segment in 0..segment_count {
         let Some(segment_real) = cadmpeg_core::convert::f64_from_index(segment) else {
@@ -1440,7 +1278,7 @@ fn offset_indicator_parameters(bounds: Option<cadmpeg_ir::geometry::RecordBounds
 fn indicator_normal(
     ir: &CadIr,
     surface: &SurfaceId,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vector3>, CodecError> {
     let procedural = ir
         .model
@@ -1452,10 +1290,7 @@ fn indicator_normal(
     let parameters = parameters.unwrap_or([0.0, 0.0]);
     let partials = match procedural {
         Some(_) => {
-            let index = match ctx {
-                Some(ctx) => cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?,
-                None => cadmpeg_ir::index::ModelIndex::new_model_only(ir),
-            };
+            let index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
             finite_or_refusal(cadmpeg_ir::eval::model_surface_partials_by_id(
                 &index,
                 surface,
@@ -1525,13 +1360,12 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut records,
             record.directory_sequence,
             record,
@@ -1540,8 +1374,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
@@ -1558,7 +1391,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1573,7 +1406,7 @@ pub(super) fn project(
             record.number(4),
         ];
         let [Some(a), Some(b), Some(c), Some(d)] = coefficients else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1582,7 +1415,7 @@ pub(super) fn project(
             continue;
         };
         let [Some(a), Some(b), Some(c), Some(d)] = [a, b, c, d].map(FiniteReal::new) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1593,7 +1426,7 @@ pub(super) fn project(
         let finite_coefficients = [a, b, c, d];
         let [a, b, c, d] = finite_coefficients.map(FiniteReal::get);
         let Some(boundary) = record.integer(5) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1606,13 +1439,13 @@ pub(super) fn project(
             .filter(|sequence| sequence % 2 == 1)
             .filter(|sequence| entries.contains_key(sequence));
         if (entry.form == 0 && boundary != 0) || (entry.form != 0 && boundary_sequence.is_none()) {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane form and boundary pointer are inconsistent or the boundary target is missing"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane form and boundary pointer are inconsistent or the boundary target is missing"))?;
             continue;
         }
         let local_normal = Vector3::new(a, b, c);
         let normal_squared = a * a + b * b + c * c;
         if !normal_squared.is_finite() || normal_squared <= 0.0 {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1621,7 +1454,7 @@ pub(super) fn project(
             continue;
         }
         let Some(local_normal_unit) = UnitVector3::normalized_by_reciprocal(local_normal) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1648,12 +1481,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    format_args!("{message}"),
-                )?;
+                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
@@ -1661,7 +1489,7 @@ pub(super) fn project(
             .apply_vector(*local_u.as_raw())
             .and_then(|axis| UnitVector3::normalized_by_reciprocal(axis.get()))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1673,7 +1501,7 @@ pub(super) fn project(
             .apply_vector(local_v)
             .and_then(|axis| UnitVector3::normalized_by_reciprocal(axis.get()))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1684,7 +1512,7 @@ pub(super) fn project(
         let Some(normal) =
             UnitVector3::normalized_by_reciprocal(u_axis.as_raw().cross(*v_axis.as_raw()))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1703,13 +1531,12 @@ pub(super) fn project(
             entry.sequence,
             ctx,
         )?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.surfaces,
             1,
             "iges plane neutral surface slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+        ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -1717,8 +1544,7 @@ pub(super) fn project(
             )),
             source_object: Some(source_object(entry, ctx)?),
         });
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
+        ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges surfaces decoded sequences",
@@ -1730,7 +1556,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 118 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1742,7 +1568,7 @@ pub(super) fn project(
             .integer(1)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1754,7 +1580,7 @@ pub(super) fn project(
             .integer(2)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1764,7 +1590,7 @@ pub(super) fn project(
         };
         let (Some(direction_flag), Some(developable_flag)) = (record.integer(3), record.integer(4))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1773,7 +1599,7 @@ pub(super) fn project(
             continue;
         };
         if !matches!(direction_flag, 0 | 1) || !matches!(developable_flag, 0 | 1) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1782,7 +1608,7 @@ pub(super) fn project(
             continue;
         }
         if entry.transform != 0 {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1829,7 +1655,7 @@ pub(super) fn project(
             (Ok(first), Ok(second)) => (first, second),
             (Err(error), _) | (_, Err(error)) => {
                 let error = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -1839,7 +1665,7 @@ pub(super) fn project(
             }
         };
         let (Some((first, first_interval)), Some((mut second, second_interval))) = rails else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1861,7 +1687,7 @@ pub(super) fn project(
                 ctx,
             )?
         {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -1883,7 +1709,7 @@ pub(super) fn project(
                 })
                 .is_err()
             {
-                super::push_optional_attributed_loss(
+                super::push_attributed_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -1896,7 +1722,7 @@ pub(super) fn project(
         let surface = match ruled_surface_carrier(&first, &second, ctx) {
             Ok(Some(surface)) => surface,
             Ok(None) => {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -1905,7 +1731,7 @@ pub(super) fn project(
                 continue;
             }
             Err(error) => {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -1917,25 +1743,23 @@ pub(super) fn project(
         let surface_id =
             crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.surfaces,
             1,
             "iges ruled neutral surface slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+        ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.try_clone_for_decode(ctx, "iges surface identity copy")?,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry, ctx)?),
         });
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.procedural_surfaces,
             1,
             "iges procedural surface slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+        ctx.charge_entities(1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
             &surface_id,
             ProceduralSurface::new(
@@ -1965,7 +1789,7 @@ pub(super) fn project(
                 ),
             ),
         );
-        super::push_optional_attributed_loss(
+        super::push_attributed_loss(
             ctx,
             &mut losses,
             entry,
@@ -1975,8 +1799,7 @@ pub(super) fn project(
                 "Type 118 developability is retained only in the native entity record"
             ),
         )?;
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
+        ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges surfaces decoded sequences",
@@ -1989,7 +1812,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2001,7 +1824,7 @@ pub(super) fn project(
             .integer(1)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2010,7 +1833,7 @@ pub(super) fn project(
             continue;
         };
         let Some(directrix_entry) = entries.get(&directrix_sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2023,7 +1846,7 @@ pub(super) fn project(
             directrix_entry.form,
             global.global_table(),
         ) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2036,7 +1859,7 @@ pub(super) fn project(
         }
         let coordinates = [record.number(2), record.number(3), record.number(4)];
         let [Some(x), Some(y), Some(z)] = coordinates else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2056,18 +1879,13 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    format_args!("{message}"),
-                )?;
+                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
         let Some(directrix_id) = curve_carrier_id(directrix_sequence, &entries, &records, ctx)?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2079,7 +1897,7 @@ pub(super) fn project(
             Ok(carrier) => carrier,
             Err(error) => {
                 let error = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2097,7 +1915,7 @@ pub(super) fn project(
                 ctx,
             )?
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2117,7 +1935,7 @@ pub(super) fn project(
                 carrier_interval[0],
             ))?
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2126,7 +1944,7 @@ pub(super) fn project(
                 continue;
             };
             let Some(start) = transform.apply_point(start.get()) else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2137,7 +1955,7 @@ pub(super) fn project(
             let Some(target) =
                 transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2151,7 +1969,7 @@ pub(super) fn project(
                     length.is_finite() && length > 0.0
                 })
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2160,25 +1978,22 @@ pub(super) fn project(
                 continue;
             };
             let placed_solved = (entry.transform != 0)
-                .then(|| super::geometry_copy::copy_solved_curve(directrix_solved, ctx))
+                .then(|| directrix_solved.try_clone_for_decode(ctx, "iges solved curve copy"))
                 .transpose()?;
             let procedural_directrix = if let Some(placed_solved) = placed_solved {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "iges exact placed curve box")?;
-                }
+                ctx.charge_collection_items(1, "iges exact placed curve box")?;
                 let placed_id = crate::ids::curve_admitted(
                     &crate::ids::Stem::directory(entry.sequence)
                         .tail(crate::ids::Word::PlacedDirectrix),
                     ctx,
                 )?;
                 sequences.record_curve(&placed_id, entry.sequence, ctx)?;
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                    ctx,
+                ctx.reserve_vec(
                     &mut ir.model.curves,
                     1,
                     "iges tabulated exact placed directrix slots",
                 )?;
-                crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+                ctx.charge_entities(1, "iges_geometry_surfaces")?;
                 ir.model.curves.push(Curve {
                     id: placed_id.try_clone_for_decode(ctx, "iges surface identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -2201,13 +2016,12 @@ pub(super) fn project(
                 ctx,
             )?;
             sequences.record_surface(&surface_id, entry.sequence, ctx)?;
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
+            ctx.reserve_vec(
                 &mut ir.model.surfaces,
                 1,
                 "iges tabulated exact neutral surface slots",
             )?;
-            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+            ctx.charge_entities(1, "iges_geometry_surfaces")?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.try_clone_for_decode(ctx, "iges surface identity copy")?,
                 geometry: SurfaceGeometry::Procedural {
@@ -2233,13 +2047,12 @@ pub(super) fn project(
                     "record bounds must be finite",
                 ))
             })?;
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
+            ctx.reserve_vec(
                 &mut ir.model.procedural_surfaces,
                 1,
                 "iges procedural surface slots",
             )?;
-            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+            ctx.charge_entities(1, "iges_geometry_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
                 &surface_id,
                 ProceduralSurface::new(
@@ -2256,8 +2069,7 @@ pub(super) fn project(
                     Some(bounds),
                 ),
             );
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                ctx,
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges surfaces decoded sequences",
@@ -2285,7 +2097,7 @@ pub(super) fn project(
             {
                 Ok(()) => directrix,
                 Err(()) => {
-                    super::push_optional_attributed_loss(
+                    super::push_attributed_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2301,7 +2113,7 @@ pub(super) fn project(
             cached_interval[0],
         ))?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2311,7 +2123,7 @@ pub(super) fn project(
         };
         let Some(target) = transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2325,7 +2137,7 @@ pub(super) fn project(
                 length.is_finite() && length > 0.0
             })
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2335,7 +2147,7 @@ pub(super) fn project(
         };
         let pole_count = placed_directrix.pole_count();
         let Ok(_) = u32::try_from(pole_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2343,22 +2155,14 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut pole_rows = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            pole_count,
-            "iges tabulated pole rows",
-        )?;
+        let mut pole_rows = ctx.collection_vec(pole_count, "iges tabulated pole rows")?;
         let mut finite_poles = true;
         for index in 0..pole_count {
             let point = placed_directrix
                 .pole_rows()
                 .point_at(index)
                 .ok_or_else(|| CodecError::malformed("tabulated directrix pole is missing"))?;
-            let mut row = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
-                2,
-                "iges tabulated pole row controls",
-            )?;
+            let mut row = ctx.collection_vec(2, "iges tabulated pole row controls")?;
             let Some(translated) = FinitePoint3::new(point.get().translated(direction.get(), 1.0))
             else {
                 finite_poles = false;
@@ -2368,7 +2172,7 @@ pub(super) fn project(
             pole_rows.push(row);
         }
         if !finite_poles {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2380,11 +2184,7 @@ pub(super) fn project(
             continue;
         }
         let weights = if placed_directrix.pole_rows().weight_at(0).is_some() {
-            let mut rows = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
-                pole_count,
-                "iges tabulated weight rows",
-            )?;
+            let mut rows = ctx.collection_vec(pole_count, "iges tabulated weight rows")?;
             for index in 0..pole_count {
                 let weight = placed_directrix
                     .pole_rows()
@@ -2393,11 +2193,7 @@ pub(super) fn project(
                     .ok_or_else(|| {
                         CodecError::malformed("tabulated directrix weight is missing")
                     })?;
-                let mut row = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                    ctx,
-                    2,
-                    "iges tabulated weight row controls",
-                )?;
+                let mut row = ctx.collection_vec(2, "iges tabulated weight row controls")?;
                 row.extend([weight, weight]);
                 rows.push(row);
             }
@@ -2418,17 +2214,10 @@ pub(super) fn project(
         };
         let surface_id =
             crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
-        let mut u_knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            placed_directrix.knots().len(),
-            "iges tabulated u knots",
-        )?;
+        let mut u_knots =
+            ctx.collection_vec(placed_directrix.knots().len(), "iges tabulated u knots")?;
         u_knots.extend_from_slice(placed_directrix.knots());
-        let mut v_knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            4,
-            "iges tabulated v knots",
-        )?;
+        let mut v_knots = ctx.collection_vec(4, "iges tabulated v knots")?;
         v_knots.extend([0.0, 0.0, 1.0, 1.0]);
         let paired = pair_admitted_surface_poles(
             ctx,
@@ -2451,7 +2240,7 @@ pub(super) fn project(
         }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2463,13 +2252,12 @@ pub(super) fn project(
             }
         };
         if entry.transform != 0 {
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
+            ctx.reserve_vec(
                 &mut ir.model.curves,
                 1,
                 "iges tabulated placed directrix slots",
             )?;
-            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+            ctx.charge_entities(1, "iges_geometry_surfaces")?;
             ir.model.curves.push(Curve {
                 id: procedural_directrix.try_clone_for_decode(ctx, "iges surface identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_directrix)),
@@ -2477,13 +2265,12 @@ pub(super) fn project(
             });
         }
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.surfaces,
             1,
             "iges tabulated neutral surface slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+        ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.try_clone_for_decode(ctx, "iges surface identity copy")?,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
@@ -2505,13 +2292,12 @@ pub(super) fn project(
                 "record bounds must be finite",
             ))
         })?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.procedural_surfaces,
             1,
             "iges procedural surface slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+        ctx.charge_entities(1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
             &surface_id,
             ProceduralSurface::new(
@@ -2531,8 +2317,7 @@ pub(super) fn project(
                 Some(bounds),
             ),
         );
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
+        ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges surfaces decoded sequences",
@@ -2545,7 +2330,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2557,7 +2342,7 @@ pub(super) fn project(
             .integer(1)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2569,7 +2354,7 @@ pub(super) fn project(
             .integer(2)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2578,7 +2363,7 @@ pub(super) fn project(
             continue;
         };
         let (Some(start_angle), Some(end_angle)) = (record.number(3), record.number(4)) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2591,7 +2376,7 @@ pub(super) fn project(
             controls: angular_controls,
         }) = angular_basis(start_angle, end_angle, ctx)?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2611,18 +2396,13 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    format_args!("{message}"),
-                )?;
+                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
         let axis_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(axis_sequence), ctx)?;
         let Some(axis_curve) = ir.model.curves.iter().find(|curve| curve.id == axis_id) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2631,7 +2411,7 @@ pub(super) fn project(
             continue;
         };
         let Some(SolvedCurveGeometry::Line(line_curve)) = axis_curve.geometry.solved() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2644,7 +2424,7 @@ pub(super) fn project(
         let axis_direction = *admitted_axis.1.as_raw();
         let Some(generatrix_id) = curve_carrier_id(generatrix_sequence, &entries, &records, ctx)?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2656,7 +2436,7 @@ pub(super) fn project(
             Ok(carrier) => carrier,
             Err(error) => {
                 let error = error.non_resource()?;
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2674,7 +2454,7 @@ pub(super) fn project(
                 ctx,
             )?
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2693,14 +2473,12 @@ pub(super) fn project(
                 generatrix_id.try_clone_for_decode(ctx, "iges surface identity copy")?;
             let mut procedural_axis = admitted_axis;
             let placed_solved = (entry.transform != 0)
-                .then(|| super::geometry_copy::copy_solved_curve(directrix_solved, ctx))
+                .then(|| directrix_solved.try_clone_for_decode(ctx, "iges solved curve copy"))
                 .transpose()?;
             if let Some(placed_solved) = placed_solved {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "iges exact placed curve box")?;
-                }
+                ctx.charge_collection_items(1, "iges exact placed curve box")?;
                 let Some(orientation) = similarity_orientation(transform) else {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2717,13 +2495,12 @@ pub(super) fn project(
                     ctx,
                 )?;
                 sequences.record_curve(&procedural_directrix, entry.sequence, ctx)?;
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                    ctx,
+                ctx.reserve_vec(
                     &mut ir.model.curves,
                     1,
                     "iges revolution exact placed generatrix slots",
                 )?;
-                crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+                ctx.charge_entities(1, "iges_geometry_surfaces")?;
                 ir.model.curves.push(Curve {
                     id: procedural_directrix
                         .try_clone_for_decode(ctx, "iges surface identity copy")?,
@@ -2749,7 +2526,7 @@ pub(super) fn project(
                     .and_then(|direction| unit_vector(direction.get()))
                     .and_then(|direction| UnitVector3::new(direction.scale(orientation)))
                 else {
-                    super::push_optional_entity_loss(
+                    super::push_entity_loss(
                         ctx,
                         &mut losses,
                         entry,
@@ -2766,13 +2543,12 @@ pub(super) fn project(
                 ctx,
             )?;
             sequences.record_surface(&surface_id, entry.sequence, ctx)?;
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
+            ctx.reserve_vec(
                 &mut ir.model.surfaces,
                 1,
                 "iges revolution exact neutral surface slots",
             )?;
-            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+            ctx.charge_entities(1, "iges_geometry_surfaces")?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.try_clone_for_decode(ctx, "iges surface identity copy")?,
                 geometry: SurfaceGeometry::Procedural {
@@ -2782,13 +2558,12 @@ pub(super) fn project(
                 },
                 source_object: Some(source_object(entry, ctx)?),
             });
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
+            ctx.reserve_vec(
                 &mut ir.model.procedural_surfaces,
                 1,
                 "iges procedural surface slots",
             )?;
-            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+            ctx.charge_entities(1, "iges_geometry_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
                 &surface_id,
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
@@ -2821,8 +2596,7 @@ pub(super) fn project(
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                ctx,
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges surfaces decoded sequences",
@@ -2843,7 +2617,7 @@ pub(super) fn project(
             });
         let generatrix_count = generatrix.pole_count();
         let Ok(_) = u32::try_from(generatrix_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2852,7 +2626,7 @@ pub(super) fn project(
             continue;
         };
         let Ok(_) = u32::try_from(angular_controls.len()) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2874,16 +2648,10 @@ pub(super) fn project(
                 cadmpeg_core::decode::u64_from_index(surface_pole_count),
             ));
         }
-        let mut control_points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            surface_pole_count,
-            "iges revolution surface controls",
-        )?;
-        let mut weights = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            surface_pole_count,
-            "iges revolution surface weights",
-        )?;
+        let mut control_points =
+            ctx.collection_vec(surface_pole_count, "iges revolution surface controls")?;
+        let mut weights =
+            ctx.collection_vec(surface_pole_count, "iges revolution surface weights")?;
         for u_index in 0..generatrix_count {
             let point = generatrix
                 .pole_rows()
@@ -2906,37 +2674,20 @@ pub(super) fn project(
                 weights.push(u_weight * angular_weight);
             }
         }
-        let mut u_knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            generatrix.knots().len(),
-            "iges revolution surface u knots",
-        )?;
+        let mut u_knots =
+            ctx.collection_vec(generatrix.knots().len(), "iges revolution surface u knots")?;
         u_knots.extend_from_slice(generatrix.knots());
-        let mut pole_rows = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            generatrix_count,
-            "iges revolution pole rows",
-        )?;
+        let mut pole_rows = ctx.collection_vec(generatrix_count, "iges revolution pole rows")?;
         for points in control_points.chunks(angular_controls.len()) {
-            let mut row = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
-                points.len(),
-                "iges revolution pole row controls",
-            )?;
+            let mut row = ctx.collection_vec(points.len(), "iges revolution pole row controls")?;
             row.extend_from_slice(points);
             pole_rows.push(row);
         }
-        let mut weight_rows = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            generatrix_count,
-            "iges revolution weight rows",
-        )?;
+        let mut weight_rows =
+            ctx.collection_vec(generatrix_count, "iges revolution weight rows")?;
         for weights in weights.chunks(angular_controls.len()) {
-            let mut row = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
-                weights.len(),
-                "iges revolution weight row controls",
-            )?;
+            let mut row =
+                ctx.collection_vec(weights.len(), "iges revolution weight row controls")?;
             row.extend_from_slice(weights);
             weight_rows.push(row);
         }
@@ -2966,7 +2717,7 @@ pub(super) fn project(
         }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -2978,13 +2729,12 @@ pub(super) fn project(
             }
         };
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.surfaces,
             1,
             "iges revolution neutral surface slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+        ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.try_clone_for_decode(ctx, "iges surface identity copy")?,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
@@ -3002,7 +2752,7 @@ pub(super) fn project(
             let Ok(()) = placed_generatrix
                 .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
             else {
-                super::push_optional_attributed_loss(
+                super::push_attributed_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3017,13 +2767,12 @@ pub(super) fn project(
                 ctx,
             )?;
             sequences.record_curve(&procedural_directrix, entry.sequence, ctx)?;
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
+            ctx.reserve_vec(
                 &mut ir.model.curves,
                 1,
                 "iges revolution placed generatrix slots",
             )?;
-            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+            ctx.charge_entities(1, "iges_geometry_surfaces")?;
             ir.model.curves.push(Curve {
                 id: procedural_directrix.try_clone_for_decode(ctx, "iges surface identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_generatrix)),
@@ -3039,7 +2788,7 @@ pub(super) fn project(
                 .and_then(|direction| unit_vector(direction.get()))
                 .and_then(|direction| UnitVector3::new(direction.scale(orientation)))
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3053,13 +2802,12 @@ pub(super) fn project(
             false
         };
         if procedural_is_exact {
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                ctx,
+            ctx.reserve_vec(
                 &mut ir.model.procedural_surfaces,
                 1,
                 "iges procedural surface slots",
             )?;
-            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+            ctx.charge_entities(1, "iges_geometry_surfaces")?;
             let (admitted_payload, bounds) =
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                     procedural_directrix,
@@ -3095,8 +2843,7 @@ pub(super) fn project(
             );
             let _attached = ir.model.add_procedural_surface(&surface_id, procedural);
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
+        ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges surfaces decoded sequences",
@@ -3109,7 +2856,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3120,7 +2867,7 @@ pub(super) fn project(
         let indices = [record.integer(1), record.integer(2)];
         let degrees = [record.integer(3), record.integer(4)];
         let [Some(raw_k1), Some(raw_k2)] = indices else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3129,7 +2876,7 @@ pub(super) fn project(
             continue;
         };
         let [Some(k1), Some(k2)] = [raw_k1, raw_k2].map(|value| usize::try_from(value).ok()) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3140,7 +2887,7 @@ pub(super) fn project(
         let [Some(u_degree), Some(v_degree)] =
             degrees.map(|value| value.and_then(|v| u32::try_from(v).ok()))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3151,7 +2898,7 @@ pub(super) fn project(
         let [u_degree_usize, v_degree_usize] =
             [u_degree, v_degree].map(cadmpeg_core::decode::index_from_u32);
         if k1 < u_degree_usize || k2 < v_degree_usize {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3192,7 +2939,7 @@ pub(super) fn project(
         }
         let flags: [Option<i64>; 5] = std::array::from_fn(|offset| record.integer(5 + offset));
         if flags.iter().any(|flag| !matches!(flag, Some(0 | 1))) {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3201,7 +2948,7 @@ pub(super) fn project(
             continue;
         }
         let (Some(u_count), Some(v_count)) = (k1.checked_add(1), k2.checked_add(1)) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3210,7 +2957,7 @@ pub(super) fn project(
             continue;
         };
         let (Ok(_), Ok(_)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3219,7 +2966,7 @@ pub(super) fn project(
             continue;
         };
         let Some(pole_count) = u_count.checked_mul(v_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3238,7 +2985,7 @@ pub(super) fn project(
             .checked_add(u_degree_usize)
             .and_then(|value| value.checked_add(1))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3250,7 +2997,7 @@ pub(super) fn project(
             .checked_add(v_degree_usize)
             .and_then(|value| value.checked_add(1))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3260,7 +3007,7 @@ pub(super) fn project(
         };
         let u_knot_start = 10_usize;
         let Some(v_knot_start) = u_knot_start.checked_add(u_knot_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3269,7 +3016,7 @@ pub(super) fn project(
             continue;
         };
         let Some(weight_start) = v_knot_start.checked_add(v_knot_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3278,7 +3025,7 @@ pub(super) fn project(
             continue;
         };
         let Some(pole_start) = weight_start.checked_add(pole_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3287,7 +3034,7 @@ pub(super) fn project(
             continue;
         };
         let Some(pole_value_count) = pole_count.checked_mul(3) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3296,7 +3043,7 @@ pub(super) fn project(
             continue;
         };
         let Some(range_start) = pole_start.checked_add(pole_value_count) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3311,9 +3058,7 @@ pub(super) fn project(
             let Some(end) = start.checked_add(count) else {
                 return Ok(None);
             };
-            let mut values = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx, count, operation,
-            )?;
+            let mut values = ctx.collection_vec(count, operation)?;
             for index in start..end {
                 let Some(value) = record.number(index).and_then(FiniteReal::new) else {
                     return Ok(None);
@@ -3328,7 +3073,7 @@ pub(super) fn project(
             "iges NURBS surface source u knots",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3342,7 +3087,7 @@ pub(super) fn project(
             "iges NURBS surface source v knots",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3352,22 +3097,16 @@ pub(super) fn project(
         };
         let u_domain = [finite_u_knots[u_degree_usize], finite_u_knots[u_count]];
         let v_domain = [finite_v_knots[v_degree_usize], finite_v_knots[v_count]];
-        let mut raw_u_knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            finite_u_knots.len(),
-            "iges NURBS surface admitted u knots",
-        )?;
+        let mut raw_u_knots =
+            ctx.collection_vec(finite_u_knots.len(), "iges NURBS surface admitted u knots")?;
         raw_u_knots.extend(finite_u_knots.into_iter().map(FiniteReal::get));
-        let mut raw_v_knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            finite_v_knots.len(),
-            "iges NURBS surface admitted v knots",
-        )?;
+        let mut raw_v_knots =
+            ctx.collection_vec(finite_v_knots.len(), "iges NURBS surface admitted v knots")?;
         raw_v_knots.extend(finite_v_knots.into_iter().map(FiniteReal::get));
         let (Ok(u_knots), Ok(v_knots)) =
             (KnotVector::new(raw_u_knots), KnotVector::new(raw_v_knots))
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3381,7 +3120,7 @@ pub(super) fn project(
             "iges NURBS surface source weights",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3389,11 +3128,8 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut positive_weights = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            native_weights.len(),
-            "iges NURBS surface positive weights",
-        )?;
+        let mut positive_weights =
+            ctx.collection_vec(native_weights.len(), "iges NURBS surface positive weights")?;
         let mut valid_weights = true;
         for weight in native_weights {
             let Some(weight) = PositiveReal::try_from(weight).ok() else {
@@ -3403,7 +3139,7 @@ pub(super) fn project(
             positive_weights.push(weight);
         }
         if !valid_weights {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3432,7 +3168,7 @@ pub(super) fn project(
         });
         let polynomial = flags[2] == Some(1);
         if polynomial && !equal_weights {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3441,7 +3177,7 @@ pub(super) fn project(
             continue;
         }
         if !polynomial && equal_weights {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3458,7 +3194,7 @@ pub(super) fn project(
             "iges NURBS surface source poles",
         )?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3468,7 +3204,7 @@ pub(super) fn project(
         };
         let Some(ranges) = collect_numbers(range_start, 4, "iges NURBS surface source ranges")?
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3501,7 +3237,7 @@ pub(super) fn project(
             })
         };
         let Some(u_range) = clamp_range(range_start, [ranges[0], ranges[1]], u_domain) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3513,7 +3249,7 @@ pub(super) fn project(
             continue;
         };
         let Some(v_range) = clamp_range(range_start + 2, [ranges[2], ranges[3]], v_domain) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3536,30 +3272,16 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    format_args!("{message}"),
-                )?;
+                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
-        let mut control_points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            pole_count,
-            "iges NURBS surface placed controls",
-        )?;
+        let mut control_points =
+            ctx.collection_vec(pole_count, "iges NURBS surface placed controls")?;
         let mut weights = if polynomial {
             None
         } else {
-            Some(
-                cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                    ctx,
-                    pole_count,
-                    "iges NURBS surface neutral weights",
-                )?,
-            )
+            Some(ctx.collection_vec(pole_count, "iges NURBS surface neutral weights")?)
         };
         for u in 0..u_count {
             for v in 0..v_count {
@@ -3581,32 +3303,18 @@ pub(super) fn project(
                 }
             }
         }
-        let mut pole_rows = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-            ctx,
-            u_count,
-            "iges NURBS surface pole rows",
-        )?;
+        let mut pole_rows = ctx.collection_vec(u_count, "iges NURBS surface pole rows")?;
         for points in control_points.chunks(v_count) {
-            let mut row = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
-                points.len(),
-                "iges NURBS surface pole row controls",
-            )?;
+            let mut row =
+                ctx.collection_vec(points.len(), "iges NURBS surface pole row controls")?;
             row.extend_from_slice(points);
             pole_rows.push(row);
         }
         let weight_rows = if let Some(values) = weights {
-            let mut rows = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
-                u_count,
-                "iges NURBS surface weight rows",
-            )?;
+            let mut rows = ctx.collection_vec(u_count, "iges NURBS surface weight rows")?;
             for values in values.chunks(v_count) {
-                let mut row = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                    ctx,
-                    values.len(),
-                    "iges NURBS surface weight row controls",
-                )?;
+                let mut row =
+                    ctx.collection_vec(values.len(), "iges NURBS surface weight row controls")?;
                 row.extend_from_slice(values);
                 rows.push(row);
             }
@@ -3631,7 +3339,7 @@ pub(super) fn project(
         }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3665,7 +3373,7 @@ pub(super) fn project(
                 global.minimum_resolution_mm(),
             )?
             else {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3674,7 +3382,7 @@ pub(super) fn project(
                 continue 'surface;
             };
             if actual != declared {
-                super::push_optional_entity_loss(
+                super::push_entity_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -3686,13 +3394,12 @@ pub(super) fn project(
         let surface_id =
             crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.surfaces,
             1,
             "iges NURBS surface neutral slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+        ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.try_clone_for_decode(ctx, "iges surface identity copy")?,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
@@ -3700,13 +3407,12 @@ pub(super) fn project(
         });
         let [u_lower, u_upper] = u_range.finite_endpoints();
         let [v_lower, v_upper] = v_range.finite_endpoints();
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.procedural_surfaces,
             1,
             "iges procedural surface slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+        ctx.charge_entities(1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
             &surface_id,
             ProceduralSurface::new(
@@ -3721,8 +3427,7 @@ pub(super) fn project(
                 ])),
             ),
         );
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
+        ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges surfaces decoded sequences",
@@ -3739,7 +3444,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3749,7 +3454,7 @@ pub(super) fn project(
         };
         let components = [record.number(1), record.number(2), record.number(3)];
         let [Some(x), Some(y), Some(z)] = components else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3760,7 +3465,7 @@ pub(super) fn project(
         let indicator = Vector3::new(x, y, z);
         let Some(indicator) = declared_unit_vector(record, 1, indicator, global.real_precision())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3772,7 +3477,7 @@ pub(super) fn project(
             .number(4)
             .filter(|value| value.is_finite() && *value != 0.0)
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3784,7 +3489,7 @@ pub(super) fn project(
             .integer(5)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3793,7 +3498,7 @@ pub(super) fn project(
             continue;
         };
         if entry.transform != 0 {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3812,7 +3517,7 @@ pub(super) fn project(
             .iter()
             .find(|surface| surface.id == support_id)
         else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3822,7 +3527,7 @@ pub(super) fn project(
         };
         let distance = distance * factor;
         let Some(normal) = indicator_normal(ir, &support_id, ctx)? else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3834,7 +3539,7 @@ pub(super) fn project(
             continue;
         };
         let Some(orientation) = indicator_orientation(record, indicator, normal, global) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3847,7 +3552,7 @@ pub(super) fn project(
         };
         let signed_distance = distance * orientation;
         let Some(geometry) = offset_analytic(&support.geometry, signed_distance) else {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3878,7 +3583,7 @@ pub(super) fn project(
             | SurfaceGeometry::Procedural { .. } => false,
         };
         if !regular {
-            super::push_optional_entity_loss(
+            super::push_entity_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -3889,25 +3594,23 @@ pub(super) fn project(
         let surface_id =
             crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.surfaces,
             1,
             "iges offset neutral surface slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+        ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.try_clone_for_decode(ctx, "iges surface identity copy")?,
             geometry,
             source_object: Some(source_object(entry, ctx)?),
         });
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.procedural_surfaces,
             1,
             "iges procedural surface slots",
         )?;
-        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
+        ctx.charge_entities(1, "iges_geometry_surfaces")?;
         let admitted_payload =
             cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
                 support_id,
@@ -3930,8 +3633,7 @@ pub(super) fn project(
             None,
         );
         let _attached = ir.model.add_procedural_surface(&surface_id, procedural);
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
+        ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges surfaces decoded sequences",

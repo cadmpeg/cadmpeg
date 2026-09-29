@@ -396,53 +396,57 @@ fn decode_enforces_type128_closure_flags_in_iges_4_and_5_0() {
 
 #[test]
 fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
-    let first = NurbsCurve::from_lanes(
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-        Some(vec![1.0, 1.0]),
-        false,
-    )
-    .expect("valid rational boundary");
-    let mut scaled = first.clone();
-    let scaled_poles = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
-        scaled.pole_rows().raw_points(),
-        Some(vec![2.0; scaled.pole_count()]),
-    )
-    .unwrap();
-    {
-        let replacement = scaled_poles;
-        edit::replace(&mut scaled, |previous| {
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
-                previous.degree(),
-                previous.knots().to_vec(),
-                replacement,
-                previous.periodic(),
-            )
-        })
-    }
-    .unwrap();
-    assert_eq!(
-        homogeneous_curve_boundary_matches(None, &first, &scaled, [0.0, 1.0], 0.0).unwrap(),
-        Some(true)
-    );
-    scaled
-        .try_map_control_points(|index, point| {
-            let mut point = point.get();
-            if index == 1 {
-                point.x = 1.1;
-            }
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let first = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            Some(vec![1.0, 1.0]),
+            false,
+        )
+        .expect("valid rational boundary");
+        let mut scaled = first.clone();
+        let scaled_poles = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
+            scaled.pole_rows().raw_points(),
+            Some(vec![2.0; scaled.pole_count()]),
+        )
+        .unwrap();
+        {
+            let replacement = scaled_poles;
+            edit::replace(&mut scaled, |previous| {
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+                    previous.degree(),
+                    previous.knots().to_vec(),
+                    replacement,
+                    previous.periodic(),
                 )
             })
-        })
+        }
         .unwrap();
-    assert_eq!(
-        homogeneous_curve_boundary_matches(None, &first, &scaled, [0.0, 1.0], 0.0).unwrap(),
-        Some(false)
-    );
+        assert_eq!(
+            homogeneous_curve_boundary_matches(decode_ctx, &first, &scaled, [0.0, 1.0], 0.0)
+                .unwrap(),
+            Some(true)
+        );
+        scaled
+            .try_map_control_points(|index, point| {
+                let mut point = point.get();
+                if index == 1 {
+                    point.x = 1.1;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
+            .unwrap();
+        assert_eq!(
+            homogeneous_curve_boundary_matches(decode_ctx, &first, &scaled, [0.0, 1.0], 0.0)
+                .unwrap(),
+            Some(false)
+        );
+    });
 }
 
 #[test]
@@ -503,25 +507,27 @@ fn decode_applies_rational_surface_weight_declaration_in_iges_4_and_5_0() {
 
 #[test]
 fn a_ruled_weight_lane_shorter_than_its_pole_lane_reaches_the_codec_error() {
-    let rail = NurbsCurve::from_lanes(
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        None,
-        false,
-    )
-    .expect("valid rail");
-    let weight = cadmpeg_ir::scalar::NonZeroReal::try_from(0.5).expect("nonzero weight");
-    let error = super::super::same_basis_ruled_surface(&rail, &rail, &[weight], None)
-        .expect_err("a weight lane one shorter than the pole lane is refused");
-    let reported = error;
-    let CodecError::Malformed(message) = &reported else {
-        panic!("expected a malformed refusal, got {reported:?}");
-    };
-    assert!(
-        message.contains("pole(s) against"),
-        "the refusal states both lane counts: {message}"
-    );
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let rail = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid rail");
+        let weight = cadmpeg_ir::scalar::NonZeroReal::try_from(0.5).expect("nonzero weight");
+        let error = super::super::same_basis_ruled_surface(&rail, &rail, &[weight], decode_ctx)
+            .expect_err("a weight lane one shorter than the pole lane is refused");
+        let reported = error;
+        let CodecError::Malformed(message) = &reported else {
+            panic!("expected a malformed refusal, got {reported:?}");
+        };
+        assert!(
+            message.contains("pole(s) against"),
+            "the refusal states both lane counts: {message}"
+        );
+    });
 }
 
 #[test]
@@ -551,86 +557,90 @@ fn numerical_audit_similarity_orientation_survives_uniform_scale() {
 
 #[test]
 fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
-    let knots = vec![0., 0., 0., 1., 1., 1., 2., 2., 2.];
-    let first = (0..6)
-        .map(|i| Point3::new(f64::from(i), 0., 0.))
-        .collect::<Vec<_>>();
-    let mut second = first.clone();
-    second[5].y = 4.;
-    let a = NurbsCurve::from_lanes(2, knots.clone(), first, None, false).unwrap();
-    let b = NurbsCurve::from_lanes(2, knots, second, None, false).unwrap();
-    assert_eq!(
-        homogeneous_curve_boundary_matches(None, &a, &b, [0., 2.], 0.).unwrap(),
-        Some(false)
-    );
-    for weight in [1., 1e-200, 1e200] {
-        let a = NurbsCurve::from_lanes(
-            1,
-            vec![0., 0., 1., 1.],
-            vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
-            Some(vec![weight; 2]),
-            false,
-        )
-        .unwrap();
-        let b = NurbsCurve::from_lanes(
-            1,
-            vec![0., 0., 1., 1.],
-            vec![Point3::new(0., 2., 0.), Point3::new(1., 2., 0.)],
-            Some(vec![weight; 2]),
-            false,
-        )
-        .unwrap();
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let knots = vec![0., 0., 0., 1., 1., 1., 2., 2., 2.];
+        let first = (0..6)
+            .map(|i| Point3::new(f64::from(i), 0., 0.))
+            .collect::<Vec<_>>();
+        let mut second = first.clone();
+        second[5].y = 4.;
+        let a = NurbsCurve::from_lanes(2, knots.clone(), first, None, false).unwrap();
+        let b = NurbsCurve::from_lanes(2, knots, second, None, false).unwrap();
         assert_eq!(
-            homogeneous_curve_boundary_matches(None, &a, &b, [0., 1.], 0.001).unwrap(),
+            homogeneous_curve_boundary_matches(decode_ctx, &a, &b, [0., 2.], 0.).unwrap(),
             Some(false)
         );
-        assert_eq!(
-            homogeneous_curve_boundary_matches(None, &a, &a, [0., 1.], 0.).unwrap(),
-            Some(true)
-        );
-    }
+        for weight in [1., 1e-200, 1e200] {
+            let a = NurbsCurve::from_lanes(
+                1,
+                vec![0., 0., 1., 1.],
+                vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+                Some(vec![weight; 2]),
+                false,
+            )
+            .unwrap();
+            let b = NurbsCurve::from_lanes(
+                1,
+                vec![0., 0., 1., 1.],
+                vec![Point3::new(0., 2., 0.), Point3::new(1., 2., 0.)],
+                Some(vec![weight; 2]),
+                false,
+            )
+            .unwrap();
+            assert_eq!(
+                homogeneous_curve_boundary_matches(decode_ctx, &a, &b, [0., 1.], 0.001).unwrap(),
+                Some(false)
+            );
+            assert_eq!(
+                homogeneous_curve_boundary_matches(decode_ctx, &a, &a, [0., 1.], 0.).unwrap(),
+                Some(true)
+            );
+        }
+    });
 }
 
 #[test]
 fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
-    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-    use cadmpeg_ir::math::Point3;
-    let line = |domain: [f64; 2], y| {
-        NurbsCurve::from_lanes(
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+        use cadmpeg_ir::math::Point3;
+        let line = |domain: [f64; 2], y| {
+            NurbsCurve::from_lanes(
+                1,
+                vec![domain[0], domain[0], domain[1], domain[1]],
+                vec![Point3::new(0., y, 0.), Point3::new(1., y, 0.)],
+                None,
+                false,
+            )
+            .unwrap()
+        };
+        let first = line([-1e308, 1e308], 0.);
+        let second = NurbsCurve::from_lanes(
             1,
-            vec![domain[0], domain[0], domain[1], domain[1]],
-            vec![Point3::new(0., y, 0.), Point3::new(1., y, 0.)],
+            vec![0., 0., 0.5, 1., 1.],
+            vec![
+                Point3::new(0., 1., 0.),
+                Point3::new(0.5, 1., 0.),
+                Point3::new(1., 1., 0.),
+            ],
             None,
             false,
         )
-        .unwrap()
-    };
-    let first = line([-1e308, 1e308], 0.);
-    let second = NurbsCurve::from_lanes(
-        1,
-        vec![0., 0., 0.5, 1., 1.],
-        vec![
-            Point3::new(0., 1., 0.),
-            Point3::new(0.5, 1., 0.),
-            Point3::new(1., 1., 0.),
-        ],
-        None,
-        false,
-    )
-    .unwrap();
-    let pairs = super::super::aligned_homogeneous_spans(None, &first, &second)
-        .unwrap()
         .unwrap();
-    assert_eq!(pairs.len(), 2);
-    for (index, (a, b)) in pairs.into_iter().enumerate() {
-        assert_eq!(a.controls.len(), 2);
-        assert_eq!(b.controls.len(), 2);
-        for (pole, expected) in a.controls.iter().zip([
-            0.5 * cadmpeg_core::convert::f64_from_index(index).expect("test index is exact"),
-            0.5 * cadmpeg_core::convert::f64_from_index(index + 1)
-                .expect("test next index is exact"),
-        ]) {
-            assert!((pole[0] / pole[3] - expected).abs() < 16. * f64::EPSILON);
+        let pairs = super::super::aligned_homogeneous_spans(decode_ctx, &first, &second)
+            .unwrap()
+            .unwrap();
+        assert_eq!(pairs.len(), 2);
+        for (index, (a, b)) in pairs.into_iter().enumerate() {
+            assert_eq!(a.controls.len(), 2);
+            assert_eq!(b.controls.len(), 2);
+            for (pole, expected) in a.controls.iter().zip([
+                0.5 * cadmpeg_core::convert::f64_from_index(index).expect("test index is exact"),
+                0.5 * cadmpeg_core::convert::f64_from_index(index + 1)
+                    .expect("test next index is exact"),
+            ]) {
+                assert!((pole[0] / pole[3] - expected).abs() < 16. * f64::EPSILON);
+            }
         }
-    }
+    });
 }

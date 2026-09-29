@@ -1457,7 +1457,7 @@ fn gui_state(
         })
         .collect::<Result<_, CodecError>>()?;
     let xml = crate::native::RetainedXml::from_source(
-        Some(ctx),
+        ctx,
         &text[node.range()],
         cadmpeg_core::decode::u64_from_index(node.range().start),
         "FCStd GUI state XML",
@@ -1647,7 +1647,7 @@ fn append_native_provider(
             values,
             side_entries,
             xml: crate::native::RetainedXml::from_source(
-                Some(ctx),
+                ctx,
                 &text[property.range()],
                 cadmpeg_core::decode::u64_from_index(property.range().start),
                 "FCStd GUI property XML",
@@ -1667,7 +1667,7 @@ fn validate_gui_property(
         return validate_visual_layer_list(ctx, property, property_name);
     }
     if is_gui_link_type(type_name) {
-        return crate::persistence::validate_link_property(property, type_name);
+        return crate::persistence::validate_link_property(ctx, property, type_name);
     }
     match type_name {
         "Mesh::PropertyMeshKernel" => {

@@ -61,7 +61,7 @@ fn global_layout_card_refuses_retained_limit_before_allocation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 71;
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let result = crate::global::layout_global_cards(bytes, Some(&ctx));
+    let result = crate::global::layout_global_cards(bytes, &ctx);
     assert!(matches!(
         result,
         Err(CodecError::ResourceLimit(limit))
@@ -74,7 +74,7 @@ fn global_layout_card_refuses_retained_limit_before_allocation() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        crate::global::layout_global_cards(bytes, Some(&ctx))
+        crate::global::layout_global_cards(bytes, &ctx)
             .unwrap()
             .len(),
         1
@@ -196,7 +196,7 @@ fn global_field_source_locations_follow_72_byte_card_boundaries() {
     let second = [b'B'; CARD_DATA_COLUMNS];
     let bytes = fixed_ascii_with_global_cards(&[&first, &second]);
     assert_eq!(
-        crate::card::scan(&bytes)
+        crate::test_support::scan(&bytes)
             .unwrap()
             .section(crate::card::Section::Global)
             .count(),
@@ -220,7 +220,7 @@ fn global_field_source_locations_follow_72_byte_card_boundaries() {
 fn global_stream_refuses_retained_limit_before_copy() {
     let global = format!("{};", valid_global_fields().join(","));
     let bytes = fixed_ascii_with_global(global.as_bytes());
-    let scan = crate::card::scan(&bytes).unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
     let card_bytes = scan.section(crate::card::Section::Global).count() * CARD_DATA_COLUMNS;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -241,7 +241,7 @@ fn global_stream_refuses_retained_limit_before_copy() {
 fn global_fields_refuse_collection_limit_before_values() {
     let global = format!("{};", valid_global_fields().join(","));
     let bytes = fixed_ascii_with_global(global.as_bytes());
-    let scan = crate::card::scan(&bytes).unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 25;
@@ -259,7 +259,7 @@ fn global_excess_fields_are_counted_without_retaining_values() {
     fields.extend(std::iter::repeat_n(String::new(), 1_000));
     let global = format!("{};", fields.join(","));
     let bytes = fixed_ascii_with_global(global.as_bytes());
-    let scan = crate::card::scan(&bytes).unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 26;
@@ -313,7 +313,7 @@ fn global_hollerith_header_split_across_cards_is_a_field_defect() {
     );
     let bytes = fixed_ascii_with_global_chunks(&[b"1H,,1H;,7", tail.as_bytes()]);
     let (parsed, losses) =
-        crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
+        crate::test_support::parse_global(&crate::test_support::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product(), None);
     assert_eq!(parsed.native_file_name(), Some("part.igs"));
@@ -334,7 +334,7 @@ fn global_numeric_field_and_delimiter_must_share_a_card() {
     global.extend_from_slice(b"1,;");
     let cards = global.chunks(CARD_DATA_COLUMNS).collect::<Vec<_>>();
     let (parsed, losses) = crate::test_support::parse_global(
-        &crate::card::scan(&fixed_ascii_with_global_cards(&cards)).unwrap(),
+        &crate::test_support::scan(&fixed_ascii_with_global_cards(&cards)).unwrap(),
     )
     .unwrap();
 
@@ -357,7 +357,7 @@ fn global_card_padding_is_ignored_outside_hollerith_values() {
         b"7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
     ]);
     let (parsed, _) =
-        crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
+        crate::test_support::parse_global(&crate::test_support::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product(), Some("product"));
     assert_eq!(parsed.native_file_name(), Some("part.igs"));
@@ -370,7 +370,7 @@ fn global_card_padding_does_not_remove_hollerith_payload_spaces() {
         b",8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
     ]);
     let (parsed, _) =
-        crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
+        crate::test_support::parse_global(&crate::test_support::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product(), Some("ab "));
 }
@@ -506,7 +506,7 @@ fn omitted_delimiter_fields_select_the_specification_defaults() {
         b",1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;".as_slice(),
     ] {
         let (parsed, losses) =
-            crate::test_support::parse_global(&crate::card::scan(&fixed_ascii_with_global(global)).unwrap())
+            crate::test_support::parse_global(&crate::test_support::scan(&fixed_ascii_with_global(global)).unwrap())
                 .unwrap();
 
         assert_eq!(parsed.parameter_delimiter, b',');

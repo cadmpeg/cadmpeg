@@ -244,6 +244,7 @@ fn push_encoded_segment(output: &mut String, key: &str) {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn native_child_id(kind: &str, parent: &str, child: &str) -> String {
     let parent_key = id_key(parent);
     format!(
@@ -1362,15 +1363,12 @@ impl RetainedXml {
         Self::try_new(text, start, end)
     }
     pub(crate) fn from_source(
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
         text: &str,
         start: u64,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let copy = match ctx {
-            Some(ctx) => ctx.copy_retained_text(text, operation),
-            None => Ok((text).to_owned()),
-        }?;
+        let copy = ctx.copy_retained_text(text, operation)?;
         Self::from_text(copy, start).map_err(CodecError::Malformed)
     }
     pub(crate) fn text(&self) -> &str {

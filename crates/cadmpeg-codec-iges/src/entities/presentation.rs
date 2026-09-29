@@ -168,11 +168,7 @@ fn appearance(
             1,
             "iges neutral appearance slots",
         )?;
-        crate::decode_resource::admit_optional_entities(
-            Some(ctx),
-            1,
-            "iges_geometry_presentation",
-        )?;
+        ctx.charge_entities(1, "iges_geometry_presentation")?;
         ir.model.appearances.push(Appearance {
             id,
             name,
@@ -264,8 +260,7 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut records,
             record.directory_sequence,
             record,
@@ -274,8 +269,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
@@ -295,8 +289,7 @@ pub(super) fn project(
             .copied()
             .and_then(|record| text_font_definition(entry, record, &entries, global.global_table()))
         {
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                Some(ctx),
+            ctx.insert_btree_map(
                 &mut text_fonts,
                 entry.sequence,
                 font,
@@ -310,20 +303,18 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
-        let cyclic =
-            super::directed_cycle(entry.sequence, &mut visited_fonts, Some(ctx), |sequence| {
-                text_fonts
-                    .get(&sequence)
-                    .and_then(|font| font.supersedes)
-                    .into_iter()
-            })?;
+        let cyclic = super::directed_cycle(entry.sequence, &mut visited_fonts, ctx, |sequence| {
+            text_fonts
+                .get(&sequence)
+                .and_then(|font| font.supersedes)
+                .into_iter()
+        })?;
         let target_valid = text_fonts.get(&entry.sequence).is_some_and(|font| {
             font.supersedes
                 .is_none_or(|target| text_fonts.contains_key(&target))
         });
         if target_valid && !cyclic {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges presentation decoded sequences",
@@ -362,8 +353,7 @@ pub(super) fn project(
                 .is_some_and(vertical_text_flag_valid)
             && (8..=10).all(|index| record.number_or(index, 0.0).is_some());
         if directory_valid && fields_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges presentation decoded sequences",
@@ -389,8 +379,7 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
-                if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                    Some(ctx),
+                if !ctx.insert_btree_set(
                     &mut levels,
                     level,
                     "iges presentation definition levels",
@@ -404,8 +393,7 @@ pub(super) fn project(
             false
         };
         if levels_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges presentation decoded sequences",
@@ -474,8 +462,7 @@ pub(super) fn project(
             })
         };
         if valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges presentation decoded sequences",
@@ -560,8 +547,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut defined,
             entry.sequence,
             color,
@@ -577,8 +563,7 @@ pub(super) fn project(
             color,
             ctx,
         )?;
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            Some(ctx),
+        ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges presentation decoded sequences",
@@ -690,12 +675,12 @@ pub(super) fn project(
         let body = &mut ir.model.bodies[index];
         let body_id = body
             .id
-            .try_clone_for_decode(Some(ctx), "iges appearance body ID copy")?;
+            .try_clone_for_decode(ctx, "iges appearance body ID copy")?;
         body.color = Some(color);
         body.visible = Some(visible);
         appearance(
             ir,
-            appearance_id.try_clone_for_decode(Some(ctx), "iges appearance ID copy")?,
+            appearance_id.try_clone_for_decode(ctx, "iges appearance ID copy")?,
             None,
             color,
             ctx,
@@ -705,11 +690,7 @@ pub(super) fn project(
             1,
             "iges appearance binding slots",
         )?;
-        crate::decode_resource::admit_optional_entities(
-            Some(ctx),
-            1,
-            "iges_geometry_presentation",
-        )?;
+        ctx.charge_entities(1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::appearance_binding_admitted(
                 &crate::ids::Stem::word_directory(crate::ids::Word::Body, sequence),
@@ -791,11 +772,11 @@ pub(super) fn project(
         let face = &mut ir.model.faces[index];
         let face_id = face
             .id
-            .try_clone_for_decode(Some(ctx), "iges appearance face ID copy")?;
+            .try_clone_for_decode(ctx, "iges appearance face ID copy")?;
         face.color = Some(color);
         appearance(
             ir,
-            appearance_id.try_clone_for_decode(Some(ctx), "iges appearance ID copy")?,
+            appearance_id.try_clone_for_decode(ctx, "iges appearance ID copy")?,
             None,
             color,
             ctx,
@@ -805,11 +786,7 @@ pub(super) fn project(
             1,
             "iges appearance binding slots",
         )?;
-        crate::decode_resource::admit_optional_entities(
-            Some(ctx),
-            1,
-            "iges_geometry_presentation",
-        )?;
+        ctx.charge_entities(1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::appearance_binding_admitted(
                 &crate::ids::Stem::word_directory(crate::ids::Word::Face, sequence),
