@@ -384,14 +384,18 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
     }
     for record_index in scope.reference_members().values() {
         for (start, paired_at) in records.frames(*record_index) {
-            if let Some((axis, selection_record_index)) = exact_legacy_circular_pattern_axis(
-                bytes,
+            let candidate = match exact_legacy_circular_pattern_axis(
+                ctx, bytes,
                 records,
                 start,
                 paired_at,
                 *record_index,
                 scope,
             ) {
+                Ok(candidate) => candidate,
+                Err(error) => return Some(Err(error)),
+            };
+            if let Some((axis, selection_record_index)) = candidate {
                 if let Err(error) = ctx.charge_collection_items(1, "f3d circular pattern axis candidates") {
                     return Some(Err(error));
                 }
@@ -406,11 +410,12 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             }
         }
     }
+    let axis_index = select_circular_pattern_axis(&axis_candidates)?;
     let CircularPatternAxisCandidate {
         axis,
         axis_record_index,
         selection_record_index,
-    } = select_circular_pattern_axis(&axis_candidates)?;
+    } = axis_candidates.into_iter().nth(axis_index)?;
     let owner_count_candidates = parameter_owners.iter().filter_map(|owner| {
         if native_stream(owner.id()) != native_stream(&scope.id)
             || owner.scope_record_index() != scope.record_index
@@ -514,9 +519,9 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         angle: *angle,
         angle_record_index: *angle_record_index,
         angle_offset: *angle_offset,
-        axis: axis.clone(),
-        axis_record_index: *axis_record_index,
-        selection_record_index: *selection_record_index,
+        axis,
+        axis_record_index,
+        selection_record_index,
     }))
     })();
     parsed.transpose()
@@ -532,14 +537,14 @@ struct CircularPatternAxisCandidate {
 /// Select one circular-pattern axis, preferring the explicit solved carrier.
 fn select_circular_pattern_axis(
     candidates: &[CircularPatternAxisCandidate],
-) -> Option<&CircularPatternAxisCandidate> {
-    let mut inline = candidates.iter().filter(|candidate| {
+) -> Option<usize> {
+    let mut inline = candidates.iter().enumerate().filter(|(_, candidate)| {
         matches!(candidate.axis, patterns::DesignCircularPatternAxis::Inline { .. })
     });
     match (inline.next(), inline.next()) {
-        (Some(candidate), None) => Some(candidate),
+        (Some((index, _)), None) => Some(index),
         (None, None) => match candidates {
-            [candidate] => Some(candidate),
+            [_] => Some(0),
             _ => None,
         },
         _ => None,
@@ -547,13 +552,15 @@ fn select_circular_pattern_axis(
 }
 
 fn exact_legacy_circular_pattern_axis(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     start: usize,
     paired_at: usize,
     record_index: u32,
     scope: &DesignParameterScope,
-) -> Option<(patterns::DesignCircularPatternAxis, u32)> {
+) -> Result<Option<(patterns::DesignCircularPatternAxis, u32)>, CodecError> {
+    let parsed = (|| {
     use patterns::DesignCircularPatternAxis;
 
     let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
@@ -571,7 +578,7 @@ fn exact_legacy_circular_pattern_axis(
             View::u32_le_at(bytes, start + 21),
         ) {
             (Some(129), Some(1)) => (
-                vec![start + 26, start + 56],
+                [Some(start + 26), Some(start + 56)],
                 start + 40,
                 start + 51,
                 start + 55,
@@ -579,7 +586,7 @@ fn exact_legacy_circular_pattern_axis(
                 start + 77,
             ),
             (Some(118), Some(0)) => (
-                vec![start + 45],
+                [Some(start + 45), None],
                 start + 29,
                 start + 40,
                 start + 44,
@@ -588,8 +595,8 @@ fn exact_legacy_circular_pattern_axis(
             ),
             _ => return None,
         };
-    let first_identity_at = identity_offsets.first().copied()?.checked_sub(1)?;
-    if (identity_offsets.len() == 2
+    let first_identity_at = identity_offsets.first().copied().flatten()?.checked_sub(1)?;
+    if (identity_offsets[1].is_some()
         && (marked_record_reference(bytes, first_identity_at).is_none()
             || bytes.get(first_identity_at + 5..first_identity_at + 11) != Some(&[0; 6])
             || View::u32_le_at(bytes, start + 36) != Some(1)))
@@ -634,38 +641,37 @@ fn exact_legacy_circular_pattern_axis(
     {
         return None;
     }
-    let wrappers = identity_offsets
-        .iter()
-        .map(|offset| {
-            let record_index = View::u32_le_at(bytes, *offset)?;
-            let (identity, identity_offset) =
-                exact_pattern_identity_wrapper(bytes, records, record_index)?;
-            Some((
-                identity,
-                patterns::DesignPatternAxisWrapper {
-                    record_index,
-                    identity_offset,
-                },
-            ))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let persistent_identity = wrappers.first()?.0;
-    if wrappers
-        .iter()
-        .any(|(identity, _)| *identity != persistent_identity)
-    {
+    let mut wrappers = [None, None];
+    for (slot, offset) in wrappers.iter_mut().zip(identity_offsets.into_iter().flatten()) {
+        let record_index = View::u32_le_at(bytes, offset)?;
+        let (identity, identity_offset) = exact_pattern_identity_wrapper(bytes, records, record_index)?;
+        *slot = Some((identity, patterns::DesignPatternAxisWrapper { record_index, identity_offset }));
+    }
+    let persistent_identity = wrappers.first()?.as_ref()?.0;
+    if wrappers.iter().flatten().any(|(identity, _)| *identity != persistent_identity) {
         return None;
     }
-    Some((
+    let count = wrappers.iter().flatten().count();
+    if let Err(error) = ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count),
+        "f3d circular pattern historical axis wrappers") {
+        return Some(Err(error));
+    }
+    let mut retained_wrappers = Vec::new();
+    if retained_wrappers.try_reserve_exact(count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d circular pattern historical axis wrappers allocation", 0, 1)));
+    }
+    for (_, wrapper) in wrappers.into_iter().flatten() {
+        retained_wrappers.push(wrapper);
+    }
+    Some(Ok((
         DesignCircularPatternAxis::HistoricalEdge {
-            wrappers: wrappers.into_iter().map(|(_, wrapper)| wrapper).collect(),
-            persistent_identity,
-            resolved: None,
+            wrappers: retained_wrappers, persistent_identity, resolved: None,
         },
         selection_record_index,
-    ))
+    )))
+    })();
+    parsed.transpose()
 }
-
 fn exact_pattern_identity_wrapper(
     bytes: &[u8],
     records: &IndexedRecordOffsets,

@@ -23,7 +23,8 @@ use crate::records::feature::assembly::DesignAssemblyOperandFrame;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 pub(super) fn exact_legacy_class_388_scope(
     bytes: &[u8],
@@ -221,9 +222,10 @@ fn exact_legacy_class_383_operand_path(
     let second_face_record_index = member(spec.second_face_ordinal)?;
     let second_face_identity_record_index = member(spec.second_face_identity_ordinal)?;
     let carrier_record_index = member(spec.carrier_ordinal)?;
-    let placement_owners = (0..4)
-        .map(|ordinal| member(spec.placement_owner_start.checked_add(ordinal)?))
-        .collect::<Option<Vec<_>>>()?;
+    let [Some(a), Some(b), Some(c), Some(d)] = [0, 1, 2, 3].map(|ordinal| {
+        member(spec.placement_owner_start.checked_add(ordinal)?)
+    }) else { return None; };
+    let placement_owners = [a, b, c, d];
     let (leading_at, leading_paired_at) = exact_legacy_class_383_record_frame(
         bytes,
         records,
@@ -506,10 +508,12 @@ struct LegacyClass412Path {
 }
 
 pub(super) fn exact_legacy_class_388_operand_paths(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<[DesignAssemblyOperandPath; 2]> {
+) -> Result<Option<[DesignAssemblyOperandPath; 2]>, CodecError> {
+    let parsed = (|| {
     if !matches!(
         crate::design::assembly::AssemblyScopeGeneration::new(
             scope.frame_length(),
@@ -530,28 +534,32 @@ pub(super) fn exact_legacy_class_388_operand_paths(
         class_388_assemble::OPERAND_PATH_LOCATOR_REFERENCES,
         class_388_assemble::OPERAND_PATH_LOCATOR_REFERENCES + 11,
     ];
-    let paths = locator_offsets.map(|relative_offset| {
+    let mut paths = [None, None];
+    for (slot, relative_offset) in paths.iter_mut().zip(locator_offsets) {
         let locator_reference_at = scope_at.checked_add(relative_offset)?;
         let (locator_record_index, locator_reference_offset) =
             exact_same_segment_record_reference(bytes, locator_reference_at)?;
-        let mut candidates = records
-            .offsets(locator_record_index)
-            .iter()
-            .copied()
+        let mut candidate = None;
+        for locator_at in records.offsets(locator_record_index).iter().copied()
             .filter(|locator_at| *locator_at >= search_start)
-            .filter_map(|locator_at| {
-                exact_legacy_class_388_operand_path_envelope(
-                    bytes,
-                    records,
-                    scope,
-                    locator_record_index,
-                    locator_reference_offset,
-                    locator_at,
-                )
-            });
-        let candidate = candidates.next()?;
-        candidates.next().is_none().then_some(candidate)
-    });
+        {
+            if let Err(error) = ctx.charge_work(1, "f3d legacy path candidate") {
+                return Some(Err(error));
+            }
+            let path = match exact_legacy_class_388_operand_path_envelope(
+                ctx, bytes, records, scope, locator_record_index,
+                locator_reference_offset, locator_at,
+            ) {
+                Ok(path) => path,
+                Err(error) => return Some(Err(error)),
+            };
+            if let Some(path) = path {
+                if candidate.is_some() { return None; }
+                candidate = Some(path);
+            }
+        }
+        *slot = candidate;
+    }
     let [Some(first), Some(second)] = paths else {
         return None;
     };
@@ -569,17 +577,21 @@ pub(super) fn exact_legacy_class_388_operand_paths(
     {
         return None;
     }
-    Some([first, second])
+    Some(Ok([first, second]))
+    })();
+    parsed.transpose()
 }
 
 fn exact_legacy_class_388_operand_path_envelope(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     locator_record_index: u32,
     locator_reference_offset: u64,
     locator_at: usize,
-) -> Option<DesignAssemblyOperandPath> {
+) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
+    let parsed = (|| {
     let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
     if locator_class_tag != "451"
         || next_indexed_record_offset(bytes, locator_at.checked_add(1)?)?
@@ -667,7 +679,10 @@ fn exact_legacy_class_388_operand_path_envelope(
         return None;
     }
     let mut path_at = next_indexed_record_offset(bytes, locator_end)?;
-    let mut path_records = Vec::with_capacity(path_count as usize);
+    if let Err(error) = ctx.charge_work(u64::from(path_count), "f3d legacy path records") {
+        return Some(Err(error));
+    }
+    let mut path_records = [None, None];
     let mut final_path_reference_offset = None;
     for ordinal in 0..path_count {
         let path_record_index = locator_record_index.checked_add(ordinal)?.checked_add(1)?;
@@ -676,7 +691,7 @@ fn exact_legacy_class_388_operand_path_envelope(
         }
         let path_end = next_indexed_record_offset(bytes, path_at.checked_add(1)?)?;
         let path = exact_legacy_class_412_path(bytes, path_at, path_record_index, path_end)?;
-        path_records.push(path);
+        path_records[usize::try_from(ordinal).ok()?] = Some(path);
         let (referenced_path_record_index, reference_offset) = exact_same_segment_record_reference(
             bytes,
             wrapper_at
@@ -695,12 +710,19 @@ fn exact_legacy_class_388_operand_path_envelope(
             path_at = path_end;
         }
     }
-    let final_path = path_records.pop()?;
-    let occurrence_guids = path_records
-        .iter()
-        .map(|path| path.occurrence_guid.clone())
-        .chain(std::iter::once(final_path.occurrence_guid.clone()))
-        .collect::<Vec<_>>();
+    let final_index = usize::try_from(path_count).ok()?.checked_sub(1)?;
+    let final_path = path_records[final_index].take()?;
+    if let Err(error) = ctx.charge_collection_items(u64::from(path_count), "f3d legacy occurrence GUIDs") {
+        return Some(Err(error));
+    }
+    let mut occurrence_guids = Vec::new();
+    if occurrence_guids.try_reserve_exact(usize::try_from(path_count).ok()?).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d legacy occurrence GUIDs allocation", 0, 1)));
+    }
+    for path in path_records.into_iter().flatten() {
+        occurrence_guids.push(path.occurrence_guid);
+    }
+    occurrence_guids.push(final_path.occurrence_guid);
     DesignAssemblyOperandPath::try_new(
         DesignAssemblyOperandPathLink {
             locator_reference_offset,
@@ -720,7 +742,9 @@ fn exact_legacy_class_388_operand_path_envelope(
         occurrence_guids,
         final_path.identity_guids,
     )
-    .ok()
+    .ok().map(Ok)
+    })();
+    parsed.transpose()
 }
 
 fn exact_legacy_class_412_path(
@@ -791,3 +815,6 @@ fn exact_legacy_class_412_path(
         identity_guids,
     })
 }
+
+#[cfg(test)]
+mod tests;

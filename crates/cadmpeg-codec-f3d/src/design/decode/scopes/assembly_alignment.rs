@@ -251,7 +251,11 @@ pub(super) fn exact_assembly_alignment(
                     paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
                 })
             } else if legacy_class_388 {
-                exact_legacy_class_388_operand_paths(bytes, records, scope).map(|paths| {
+                let paths = match exact_legacy_class_388_operand_paths(ctx, bytes, records, scope) {
+                    Ok(paths) => paths,
+                    Err(error) => return Some(Err(error)),
+                };
+                paths.map(|paths| {
                     paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
                 })
             } else if crate::design::assembly::variable_reference_assembly_generation(

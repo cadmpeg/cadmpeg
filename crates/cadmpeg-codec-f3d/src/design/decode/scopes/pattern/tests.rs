@@ -104,7 +104,7 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
         selection_record_index: 11,
     }];
     assert_eq!(
-        select_circular_pattern_axis(&historical_only).map(|candidate| (
+        select_circular_pattern_axis(&historical_only).map(|index| &historical_only[index]).map(|candidate| (
             candidate.axis_record_index,
             candidate.selection_record_index
         )),
@@ -124,7 +124,7 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
         },
     ];
     assert_eq!(
-        select_circular_pattern_axis(&mixed).map(|candidate| (
+        select_circular_pattern_axis(&mixed).map(|index| &mixed[index]).map(|candidate| (
             candidate.axis_record_index,
             candidate.selection_record_index
         )),
@@ -1371,4 +1371,65 @@ fn rectangular_pattern_instance_collections_refuse_collection_limit() {
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == operation));
     }
+}
+
+#[test]
+fn circular_pattern_historical_wrappers_refuse_collection_limit() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScopeDraft};
+    let scope = DesignParameterScope::try_new(DesignParameterScopeDraft {
+        id: "f3d:Design/BulkStream.dat:design-parameter-scope#1".into(),
+        byte_offset: 0, class_tag: "291".to_owned().try_into().unwrap(), record_index: 1,
+        frame_length: 329, kind_offset: 0, feature_ordinal: std::num::NonZeroU32::MIN,
+        feature_ordinal_offset: 0, history_state_id: None, previous_history_state_id: None,
+        previous_history_state_id_offset: None, reference_count_offset: 9,
+        reference_members: crate::records::identity::ReferenceRun::from_columns(
+            vec![20], vec![0], "reference_members").unwrap(),
+        payload: DesignFeatureKind::CPattern.try_into().unwrap(),
+        unclosed_construction_operand_groups: Vec::new(),
+        paired_class_tag: "258".to_owned().try_into().unwrap(), paired_byte_offset: 329,
+    }.with_fixture_layout()).unwrap();
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"308", 50);
+    bytes.resize(129, 0);
+    for at in [21, 36, 51] { bytes[at..at + 4].copy_from_slice(&1u32.to_le_bytes()); }
+    for (at, index) in [(25, 80u32), (40, 20), (55, 80), (66, 1), (93, 52), (106, 51), (118, 1)] {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&index.to_le_bytes());
+    }
+    for at in [77, 89] { bytes[at..at + 4].copy_from_slice(&7u32.to_le_bytes()); }
+    bytes[81..89].copy_from_slice(&0.5f64.to_le_bytes());
+    indexed_header(&mut bytes, *b"258", 50);
+    indexed_header(&mut bytes, *b"308", 80);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&40u64.to_le_bytes());
+    lp_utf16(&mut bytes, "384d79a0-c23e-42aa-b993-74df1f8dfcae");
+    lp_utf16(&mut bytes, "352c47d7-42ba-443e-9de1-ae0e37cc129d");
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    push_marked_reference(&mut bytes, 81);
+    indexed_header(&mut bytes, *b"305", 81);
+    bytes.extend_from_slice(&[0; 10]);
+    push_marked_reference(&mut bytes, 82);
+    indexed_header(&mut bytes, *b"300", 82);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&503u64.to_le_bytes());
+    indexed_header(&mut bytes, *b"308", 83);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(super::exact_legacy_circular_pattern_axis(
+        &ctx, &bytes, &records, 0, 129, 50, &scope),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == "f3d circular pattern historical axis wrappers"));
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        let (axis, selection) = super::exact_legacy_circular_pattern_axis(
+            ctx, &bytes, &records, 0, 129, 50, &scope).unwrap().unwrap();
+        assert_eq!(selection, 20);
+        assert!(matches!(axis, crate::records::feature::patterns::DesignCircularPatternAxis::HistoricalEdge {
+            wrappers, persistent_identity: 503, resolved: None,
+        } if wrappers.len() == 2 && wrappers[0] == wrappers[1]));
+    });
 }
