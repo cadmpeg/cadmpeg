@@ -2,6 +2,7 @@
 //! Resource admission for native validation copies.
 
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use crate::records::charged_clone::CloneCharged;
 use cadmpeg_ir::NativeConvertError;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -75,13 +76,20 @@ pub(super) fn invalid_owner(
     Ok(NativeConvertError::InvalidOwner(text))
 }
 
-struct SerializedByteCount {
+struct SerializedByteCount<'ctx, 'arena> {
+    ctx: &'ctx DecodeContext<'arena>,
+    operation: &'static str,
+    refusal: Option<cadmpeg_core::CodecError>,
     bytes: u64,
     overflowed: bool,
 }
 
-impl std::io::Write for SerializedByteCount {
+impl std::io::Write for SerializedByteCount<'_, '_> {
     fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        if let Err(refusal) = self.ctx.charge_work(cadmpeg_core::decode::u64_from_index(buffer.len()), self.operation) {
+            self.refusal = Some(refusal);
+            return Err(std::io::Error::other("native copy work limit exceeded"));
+        }
         let next = u64::try_from(buffer.len())
             .ok()
             .and_then(|length| self.bytes.checked_add(length));
@@ -116,10 +124,16 @@ fn count_copy<'a, T: Serialize + 'a>(
         operation,
     )?;
     let mut counter = SerializedByteCount {
+        ctx,
+        operation,
+        refusal: None,
         bytes: 0,
         overflowed: false,
     };
     let counted = records.try_for_each(|record| serde_json::to_writer(&mut counter, record));
+    if let Some(refusal) = counter.refusal {
+        return Err(refusal.into());
+    }
     if counter.overflowed {
         return Err(ctx
             .refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
@@ -139,7 +153,7 @@ pub(super) fn admit_retained_clones<'a, T: Serialize + 'a>(
     Ok(())
 }
 
-pub(super) fn collect_retained_clones<'a, T: Clone + Serialize + 'a>(
+pub(super) fn collect_retained_clones<'a, T: CloneCharged + Serialize + 'a>(
     ctx: &DecodeContext<'_>,
     records: impl Iterator<Item = &'a T> + Clone,
     operation: &'static str,
@@ -150,7 +164,9 @@ pub(super) fn collect_retained_clones<'a, T: Clone + Serialize + 'a>(
     result
         .try_reserve(count)
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    result.extend(records.cloned());
+    for record in records {
+        result.push(record.clone_charged(ctx, operation)?);
+    }
     Ok(result)
 }
 
@@ -163,7 +179,7 @@ pub(super) fn admit_temporary_clones<'a, 'ctx, T: Serialize + 'a>(
     Ok(ctx.reserve_scoped(bytes, operation)?)
 }
 
-pub(crate) fn collect_temporary_clones<'a, 'ctx, T: Clone + Serialize + 'a>(
+pub(crate) fn collect_temporary_clones<'a, 'ctx, T: CloneCharged + Serialize + 'a>(
     ctx: &'ctx DecodeContext<'_>,
     records: impl Iterator<Item = &'a T> + Clone,
     operation: &'static str,
@@ -174,7 +190,9 @@ pub(crate) fn collect_temporary_clones<'a, 'ctx, T: Clone + Serialize + 'a>(
     result
         .try_reserve(count)
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    result.extend(records.cloned());
+    for record in records {
+        result.push(record.clone_charged(ctx, operation)?);
+    }
     Ok((result, reservation))
 }
 

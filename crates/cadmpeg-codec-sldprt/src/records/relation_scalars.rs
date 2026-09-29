@@ -2,6 +2,7 @@
 //! Relation scalar membership and selected parameter/display roles.
 
 use super::{FeatureInputScalar, FeatureInputScalarRole};
+use super::charged_clone::CloneCharged;
 use serde::{ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -9,6 +10,16 @@ pub(crate) struct RelationScalars {
     refs: Vec<String>,
     parameter: Option<usize>,
     display: Option<usize>,
+}
+
+impl CloneCharged for RelationScalars {
+    fn clone_charged(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            refs: self.refs.clone_charged(ctx, operation)?,
+            parameter: self.parameter,
+            display: self.display,
+        })
+    }
 }
 
 impl RelationScalars {
