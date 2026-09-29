@@ -5266,13 +5266,17 @@ impl ExpressionValue for DimensionProbeValue {
                 value.text_value().zip(expected.text_value()).map(|(value, expected)| f64::from(value == expected)),
                 constraints,
             ))),
-            (CreoMathFunction::StringPattern, [value, pattern]) => Ok(Some(Self::numeric_result(
-                SymbolicRelationDimension::default(),
-                value.text_value().zip(pattern.text_value())
-                    .and_then(|(value, pattern)| relation_string_pattern(value, pattern))
-                    .map(f64::from),
-                constraints,
-            ))),
+            (CreoMathFunction::StringPattern, [value, pattern]) => {
+                let value = match value.text_value().zip(pattern.text_value()) {
+                    Some((value, pattern)) => {
+                        relation_string_pattern_admitted(ctx, value, pattern)?.map(f64::from)
+                    }
+                    None => None,
+                };
+                Ok(Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(), value, constraints,
+                )))
+            }
             _ => Self::numeric_function_checked(name, arguments, constraints, ctx),
         }
     }
@@ -5513,6 +5517,16 @@ impl ExpressionValue for CurveExpressionValue {
                 key.make_ascii_lowercase();
                 Ok(symbols.contains(&key).then_some(Number(1.0)))
             }
+            (CreoMathFunction::Search, [String(value), String(needle)]) => {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(value.len()),
+                    "creo relation text search work",
+                )?;
+                let position = value
+                    .find(needle)
+                    .map_or(0, |byte| value[..byte].chars().count() + 1);
+                Ok(Some(Number(position as f64)))
+            }
             (CreoMathFunction::Extract, [String(value), Number(position), Number(length)]) => {
                 if !position.is_finite()
                     || !length.is_finite()
@@ -5555,6 +5569,38 @@ impl ExpressionValue for CurveExpressionValue {
                     "creo relation conditional string",
                 )?)))
             }
+            (CreoMathFunction::StringLength, [String(value)]) => {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(value.len()),
+                    "creo relation text length work",
+                )?;
+                Ok(Some(Number(value.chars().count() as f64)))
+            }
+            (CreoMathFunction::StringStarts, [String(value), String(prefix)]) => {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(prefix.len()),
+                    "creo relation text prefix work",
+                )?;
+                Ok(Some(Number(f64::from(value.starts_with(prefix)))))
+            }
+            (CreoMathFunction::StringEnds, [String(value), String(suffix)]) => {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(value.len()),
+                    "creo relation text suffix work",
+                )?;
+                Ok(Some(Number(f64::from(value.ends_with(suffix)))))
+            }
+            (CreoMathFunction::StringMatch, [String(value), String(expected)]) => {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(value.len()),
+                    "creo relation text match work",
+                )?;
+                Ok(Some(Number(f64::from(value == expected))))
+            }
+            (CreoMathFunction::StringPattern, [String(value), String(pattern)]) => Ok(
+                relation_string_pattern_admitted(ctx, value, pattern)?
+                    .map(|matched| Number(f64::from(matched))),
+            ),
             _ => Ok(Self::function(name, scope, arguments, context)),
         }
     }
@@ -6190,7 +6236,7 @@ fn evaluate_creo_relation_function(
     arguments: &[CurveExpressionValue],
     context: RelationEvaluationContext<'_>,
 ) -> Option<CurveExpressionValue> {
-    use CurveExpressionValue::{Angle, Length, Number, Quantity, String};
+    use CurveExpressionValue::{Angle, Number, String};
     let value = match (name, arguments) {
         (CreoMathFunction::Itos, [argument]) => {
             let (value, _) = quantity_parts_ref(argument)?;
@@ -6396,14 +6442,15 @@ fn evaluate_creo_relation_function(
             Number(f64::from((left - right).abs() <= tolerance))
         }
         _ => {
-            let numbers = arguments
-                .iter()
-                .map(|argument| match argument {
-                    Number(value) => Some(*value),
-                    Length(_) | Angle(_) | Quantity(_) | String(_) => None,
-                })
-                .collect::<Option<Vec<_>>>()?;
-            Number(evaluate_creo_math_function(name, &numbers)?)
+            let mut numbers = [0.0; 3];
+            for (index, argument) in arguments.iter().enumerate() {
+                let slot = numbers.get_mut(index)?;
+                let Number(value) = argument else {
+                    return None;
+                };
+                *slot = *value;
+            }
+            Number(evaluate_creo_math_function(name, &numbers[..arguments.len()])?)
         }
     };
     value.finite().then_some(value)
@@ -6416,6 +6463,39 @@ fn relation_string_pattern(value: &str, pattern: &str) -> Option<bool> {
         .build()
         .ok()
         .map(|pattern| pattern.is_match(value))
+}
+
+const RELATION_REGEX_SIZE_LIMIT: usize = 1 << 20;
+
+fn relation_string_pattern_admitted(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &str,
+    pattern: &str,
+) -> Result<Option<bool>, cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(pattern.len()),
+        "creo relation regex compile work",
+    )?;
+    let (expression, _source_reservation) = ctx.format_scoped(
+        format_args!(r"\A(?:{pattern})\z"),
+        "creo relation regex source text",
+    )?;
+    let _compiler_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(RELATION_REGEX_SIZE_LIMIT),
+        "creo relation regex compiler scratch",
+    )?;
+    let compiled = regex::RegexBuilder::new(&expression)
+        .size_limit(RELATION_REGEX_SIZE_LIMIT)
+        .dfa_size_limit(RELATION_REGEX_SIZE_LIMIT)
+        .build();
+    let Ok(compiled) = compiled else {
+        return Ok(None);
+    };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(value.len()),
+        "creo relation regex match work",
+    )?;
+    Ok(Some(compiled.is_match(value)))
 }
 
 const MAX_RELATION_STRING_PRECISION: usize = 128;
