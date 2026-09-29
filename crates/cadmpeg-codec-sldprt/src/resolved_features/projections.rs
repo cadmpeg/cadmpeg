@@ -1406,10 +1406,12 @@ pub(crate) fn project_compact_surface_selections(
                         ) {
                             break 'feature_edit;
                         }
+                        const OPERATION: &str = "project SLDPRT SplitFace selections";
                         let native = compact_surface_selection_set_value(ctx, feature_selections)?;
                         let mut faces = Vec::new();
                         let mut complete = true;
                         for selection in feature_selections {
+                            ctx.charge_work(1, OPERATION)?;
                             let generated = selection
                                 .terminal_feature_ref
                                 .as_ref()
@@ -1417,14 +1419,25 @@ pub(crate) fn project_compact_surface_selections(
                                 .zip(selection.components.last())
                                 .and_then(|(producer, component)| Some((producer, component.local_id?)));
                             if let Some((producer, local_id)) = generated {
+                                let producer_text = ctx.format_retained(
+                                    format_args!("{}", producer.as_str()), OPERATION,
+                                )?;
+                                let producer_id = cadmpeg_ir::features::FeatureId::mint(producer_text)
+                                    .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
+                                let local_id_text = ctx.format_retained(
+                                    format_args!("{local_id}"), OPERATION,
+                                )?;
                                 let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(
-                                    producer.clone(),
-                                    local_id.to_string(),
+                                    producer_id,
+                                    local_id_text,
                                 ) else {
                                     complete = false;
                                     continue;
                                 };
+                                ctx.charge_work(u64::try_from(faces.len())
+                                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
                                 if !faces.contains(&face) {
+                                    ctx.reserve_collection_vec(&mut faces, 1, OPERATION)?;
                                     faces.push(face);
                                 }
                             } else {
@@ -1437,12 +1450,18 @@ pub(crate) fn project_compact_surface_selections(
                                 .filter(|producer| *producer != feature_id)
                             {
                                 if !dependencies.contains(producer) {
-                                    dependencies.insert(producer.clone());
+                                    let dependency_text = ctx.format_retained(
+                                        format_args!("{}", producer.as_str()), OPERATION,
+                                    )?;
+                                    let dependency = cadmpeg_ir::features::FeatureId::mint(dependency_text)
+                                        .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
+                                    dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
                                 }
                             }
                         }
                         *targets = if complete && !faces.is_empty() {
-                            cadmpeg_ir::features::FaceSelection::generated(faces, native.clone())
+                            let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
+                            cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
                                 .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
                         } else {
                             cadmpeg_ir::features::FaceSelection::Native(native)
