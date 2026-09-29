@@ -227,7 +227,7 @@ fn procedural_curve_stores_hold_their_admitted_construction_records() {
                 SpringSupport::Surface(surface()),
                 SpringSupport::Ranges([[0.0, 1.0], [0.0, 1.0]]),
             ],
-        first_pcurve: Box::new(SpringPcurve::Range(range)),
+            first_pcurve: Box::new(SpringPcurve::Range(range)),
             second_pcurve: None,
             parameter_range,
             discontinuities: [vec![discontinuity], Vec::new(), Vec::new()],

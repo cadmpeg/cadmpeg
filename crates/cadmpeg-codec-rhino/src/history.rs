@@ -1658,7 +1658,11 @@ fn extended_geometry_json(
                 expand,
                 data,
                 value.class_data_range.clone(),
-                crate::extrusion::ExtrusionFormat { archive: archive, writer_version: writer_version, scale: scale },
+                crate::extrusion::ExtrusionFormat {
+                    archive,
+                    writer_version,
+                    scale,
+                },
                 &value.userdata,
                 &mut budget,
             ),

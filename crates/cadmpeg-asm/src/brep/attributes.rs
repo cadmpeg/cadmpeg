@@ -403,7 +403,10 @@ pub fn attribute_chain_color_carrier<'a>(
 }
 
 /// The first well-formed exact direct color on `entity`'s attribute chain.
-pub fn attribute_chain_color(entity: &Record, by_index: &HashMap<i64, &Record, RandomState>) -> Option<Color> {
+pub fn attribute_chain_color(
+    entity: &Record,
+    by_index: &HashMap<i64, &Record, RandomState>,
+) -> Option<Color> {
     attribute_chain_color_carrier(entity, by_index.len(), |index| {
         by_index.get(&index).copied()
     })

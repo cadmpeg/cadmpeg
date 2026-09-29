@@ -199,27 +199,27 @@ struct MaterialFresnelSlot(Option<MaterialFresnelSettings>);
 
 impl Serialize for MaterialFresnelSlot {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-    use serde::ser::SerializeMap;
+        use serde::ser::SerializeMap;
 
-    let settings = self.0.as_ref();
-    let mut fields = serializer.serialize_map(Some(4))?;
-    fields.serialize_entry(
-        "fresnel_reflections",
-        &settings.as_ref().is_some_and(|value| value.reflections),
-    )?;
-    fields.serialize_entry(
-        "reflection_glossiness",
-        &settings.as_ref().map(|value| value.reflection_glossiness),
-    )?;
-    fields.serialize_entry(
-        "refraction_glossiness",
-        &settings.as_ref().map(|value| value.refraction_glossiness),
-    )?;
-    fields.serialize_entry(
-        "fresnel_index_of_refraction",
-        &settings.as_ref().map(|value| value.index_of_refraction),
-    )?;
-    fields.end()
+        let settings = self.0.as_ref();
+        let mut fields = serializer.serialize_map(Some(4))?;
+        fields.serialize_entry(
+            "fresnel_reflections",
+            &settings.as_ref().is_some_and(|value| value.reflections),
+        )?;
+        fields.serialize_entry(
+            "reflection_glossiness",
+            &settings.as_ref().map(|value| value.reflection_glossiness),
+        )?;
+        fields.serialize_entry(
+            "refraction_glossiness",
+            &settings.as_ref().map(|value| value.refraction_glossiness),
+        )?;
+        fields.serialize_entry(
+            "fresnel_index_of_refraction",
+            &settings.as_ref().map(|value| value.index_of_refraction),
+        )?;
+        fields.end()
     }
 }
 
@@ -806,20 +806,20 @@ struct RenderingMaterialBackFaceSlot(Option<RenderingMaterialBackFace>);
 
 impl Serialize for RenderingMaterialBackFaceSlot {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-    use serde::ser::SerializeStruct;
-    let back_face = self.0.as_ref();
-    let mut fields = serializer.serialize_struct("RenderingMaterialBackFace", 2)?;
-    fields.serialize_field(
-        "back_material_uuid",
-        &back_face
-            .as_ref()
-            .and_then(|value| value.back_material_uuid.as_ref()),
-    )?;
-    fields.serialize_field(
-        "material_source",
-        &back_face.as_ref().map(|value| value.material_source),
-    )?;
-    fields.end()
+        use serde::ser::SerializeStruct;
+        let back_face = self.0.as_ref();
+        let mut fields = serializer.serialize_struct("RenderingMaterialBackFace", 2)?;
+        fields.serialize_field(
+            "back_material_uuid",
+            &back_face
+                .as_ref()
+                .and_then(|value| value.back_material_uuid.as_ref()),
+        )?;
+        fields.serialize_field(
+            "material_source",
+            &back_face.as_ref().map(|value| value.material_source),
+        )?;
+        fields.end()
     }
 }
 
@@ -1121,19 +1121,19 @@ struct LayerHierarchySlot(Option<settings::LayerHierarchy>);
 
 impl Serialize for LayerHierarchySlot {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-    use serde::ser::SerializeStruct;
+        use serde::ser::SerializeStruct;
 
-    let hierarchy = self.0.as_ref();
-    let mut record = serializer.serialize_struct("LayerHierarchy", 2)?;
-    record.serialize_field(
-        "parent_uuid",
-        &hierarchy
-            .map(|value| value.parent_id)
-            .filter(|id| !id.is_nil())
-            .map(|id| id.to_string()),
-    )?;
-    record.serialize_field("expanded", &hierarchy.map(|value| value.expanded))?;
-    record.end()
+        let hierarchy = self.0.as_ref();
+        let mut record = serializer.serialize_struct("LayerHierarchy", 2)?;
+        record.serialize_field(
+            "parent_uuid",
+            &hierarchy
+                .map(|value| value.parent_id)
+                .filter(|id| !id.is_nil())
+                .map(|id| id.to_string()),
+        )?;
+        record.serialize_field("expanded", &hierarchy.map(|value| value.expanded))?;
+        record.end()
     }
 }
 
@@ -1142,13 +1142,13 @@ struct LayerPlotSlot(Option<settings::LayerPlot>);
 
 impl Serialize for LayerPlotSlot {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-    use serde::ser::SerializeStruct;
+        use serde::ser::SerializeStruct;
 
-    let plot = self.0.as_ref();
-    let mut record = serializer.serialize_struct("LayerPlot", 2)?;
-    record.serialize_field("plot_color", &plot.map(|value| value.color))?;
-    record.serialize_field("plot_weight_mm", &plot.map(|value| value.weight_mm))?;
-    record.end()
+        let plot = self.0.as_ref();
+        let mut record = serializer.serialize_struct("LayerPlot", 2)?;
+        record.serialize_field("plot_color", &plot.map(|value| value.color))?;
+        record.serialize_field("plot_weight_mm", &plot.map(|value| value.weight_mm))?;
+        record.end()
     }
 }
 
@@ -1349,6 +1349,7 @@ fn first_user_string_records(
     Ok((geometry, attributes))
 }
 
+#[derive(Clone, Copy)]
 struct ObjectPresentationSource {
     archive: ArchiveVersion,
     offset: usize,

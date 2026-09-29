@@ -872,7 +872,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             };
             source_carriers.admit_procedural_surface(
                 ir,
-                surface_id,
+                &surface_id,
                 cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                     curve_id,
                     Some([lower_knot, upper_knot]),

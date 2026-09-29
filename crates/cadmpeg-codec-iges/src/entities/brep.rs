@@ -302,6 +302,7 @@ fn surface_point_or_refusal(
 /// One resolved pcurve use: its geometry and the parameter range it covers.
 type ResolvedPcurveUses = Vec<(PcurveGeometry, [f64; 2])>;
 
+#[derive(Clone, Copy)]
 struct PcurveEndpointCheck {
     start: Point3,
     end: Point3,
@@ -316,7 +317,11 @@ fn resolve_pcurve_uses<'a>(
     ctx: &DecodeContext<'_>,
     model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
 ) -> Result<Option<ResolvedPcurveUses>, super::composite::CompositeCurveError> {
-    let PcurveEndpointCheck { start: expected_start, end: expected_end, tolerance } = endpoints;
+    let PcurveEndpointCheck {
+        start: expected_start,
+        end: expected_end,
+        tolerance,
+    } = endpoints;
     if uses.is_empty() {
         return Ok(Some(Vec::new()));
     }
@@ -1221,11 +1226,22 @@ pub(super) fn project(
                                 })
                             };
                             let expected = vertex_lists[vertex_list][*vertex_index];
-                            let Some(resolved) = (match resolve_pcurve_uses(ir, pcurves, &SurfaceSupport {
+                            let Some(resolved) = (match resolve_pcurve_uses(
+                                ir,
+                                pcurves,
+                                &SurfaceSupport {
                                     id: &surface_id,
                                     geometry: support_geometry,
                                     factor,
-                                }, PcurveEndpointCheck { start: expected, end: expected, tolerance: tolerance }, ctx, &mut model_index) {
+                                },
+                                PcurveEndpointCheck {
+                                    start: expected,
+                                    end: expected,
+                                    tolerance,
+                                },
+                                ctx,
+                                &mut model_index,
+                            ) {
                                 Ok(resolved) => resolved,
                                 Err(error) => {
                                     let error = error.non_resource()?;
@@ -1318,11 +1334,22 @@ pub(super) fn project(
                         } else {
                             (natural_end, natural_start)
                         };
-                        let Some(resolved) = (match resolve_pcurve_uses(ir, pcurves, &SurfaceSupport {
+                        let Some(resolved) = (match resolve_pcurve_uses(
+                            ir,
+                            pcurves,
+                            &SurfaceSupport {
                                 id: &surface_id,
                                 geometry: support_geometry,
                                 factor,
-                            }, PcurveEndpointCheck { start: expected_start, end: expected_end, tolerance: tolerance }, ctx, &mut model_index) {
+                            },
+                            PcurveEndpointCheck {
+                                start: expected_start,
+                                end: expected_end,
+                                tolerance,
+                            },
+                            ctx,
+                            &mut model_index,
+                        ) {
                             Ok(resolved) => resolved,
                             Err(error) => {
                                 let error = error.non_resource()?;
@@ -1622,7 +1649,8 @@ pub(super) fn project(
                             ctx,
                             coedge_ids,
                             vertex_uses,
-                        )? else {
+                        )?
+                        else {
                             super::push_optional_entity_loss(
                                 Some(ctx),
                                 &mut losses,

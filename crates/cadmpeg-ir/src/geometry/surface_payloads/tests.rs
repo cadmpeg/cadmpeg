@@ -141,7 +141,9 @@ fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
         },
         cache: None,
     });
-    let revision = offset(OffsetExtension::Revision { form: Box::new(form.clone()) });
+    let revision = offset(OffsetExtension::Revision {
+        form: Box::new(form.clone()),
+    });
 
     let legacy_wire = serde_json::to_value(&legacy).unwrap();
     assert_eq!(
@@ -979,7 +981,7 @@ fn the_revision_gated_surface_admissions_refuse_every_non_finite_form_scalar() {
             None,
             false,
             OffsetExtension::Revision {
-            form: Box::new(offset_form(fields)),
+                form: Box::new(offset_form(fields)),
             },
         )
     };

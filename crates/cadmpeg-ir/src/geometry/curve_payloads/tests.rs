@@ -138,7 +138,7 @@ fn spring_payload_checks_inline_ranges_and_the_shared_context() {
         SpringCurvePayload::try_new(
             SpringLayout::ContextFirst {
                 supports: std::array::from_fn(|_| SpringSupport::Ranges([range, [0.0, 1.0]])),
-            first_pcurve: Box::new(SpringPcurve::Range(range)),
+                first_pcurve: Box::new(SpringPcurve::Range(range)),
                 second_pcurve: None,
                 parameter_range: shared,
                 discontinuities: std::array::from_fn(|_| Vec::new()),

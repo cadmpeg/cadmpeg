@@ -93,7 +93,13 @@ pub(super) fn keep_faces_and_carriers(
     carriers: &mut Carriers,
     reach: &mut Reachable,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let TopologyContext { ctx, by_index, token_table, purpose, format } = inputs;
+    let TopologyContext {
+        ctx,
+        by_index,
+        token_table,
+        purpose,
+        format,
+    } = inputs;
     let Carriers {
         surface_geo,
         procedural_surface_defs,
@@ -333,7 +339,13 @@ pub(super) fn walk_reachable_topology(
     carriers: &mut Carriers,
     reach: &mut Reachable,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let TopologyContext { ctx, by_index, token_table, purpose, format } = inputs;
+    let TopologyContext {
+        ctx,
+        by_index,
+        token_table,
+        purpose,
+        format,
+    } = inputs;
     let Carriers {
         curve_geo,
         procedural_curve_defs,
@@ -683,7 +695,12 @@ pub(super) fn collect_wire_topology(
     carriers: &mut Carriers,
     reach: &mut Reachable,
 ) -> Result<WireShellTopology, cadmpeg_core::CodecError> {
-    let TopologyContext { ctx, by_index, format, .. } = inputs;
+    let TopologyContext {
+        ctx,
+        by_index,
+        format,
+        ..
+    } = inputs;
     let mut wire_edges_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut free_vertices_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut saved_free_edges = Vec::new();
@@ -865,7 +882,13 @@ fn keep_wire_edge(
     carriers: &mut Carriers,
     reach: &mut Reachable,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let TopologyContext { ctx, by_index, token_table, purpose, format } = inputs;
+    let TopologyContext {
+        ctx,
+        by_index,
+        token_table,
+        purpose,
+        format,
+    } = inputs;
     let Carriers {
         curve_geo,
         procedural_curve_defs,

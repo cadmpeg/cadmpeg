@@ -1426,7 +1426,9 @@ fn embedded_spring(
         };
         let direction = cur.take_enum()?;
         return Some(Ok(EmbeddedSpring {
-            layout: EmbeddedSpringLayout::CacheFirst { context: Box::new(context) },
+            layout: EmbeddedSpringLayout::CacheFirst {
+                context: Box::new(context),
+            },
             direction,
         }));
     }
@@ -2420,21 +2422,25 @@ fn cache_first_curve_context(
         Ok(present) => present,
         Err(error) => return Some(Err(error)),
     };
-    let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds { surface: first_surface, bounds: first_bounds } =
-        match optional_embedded_surface_with_bounds(ctx, cur, table)? {
-            Ok(surface) => surface,
-            Err(error) => return Some(Err(error)),
-        };
+    let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
+        surface: first_surface,
+        bounds: first_bounds,
+    } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+        Ok(surface) => surface,
+        Err(error) => return Some(Err(error)),
+    };
     let second_surface_start = cur.pos();
     let second_support_present = match support_slot_present(ctx, cur, table) {
         Ok(present) => present,
         Err(error) => return Some(Err(error)),
     };
-    let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds { surface: second_surface, bounds: second_bounds } =
-        match optional_embedded_surface_with_bounds(ctx, cur, table)? {
-            Ok(surface) => surface,
-            Err(error) => return Some(Err(error)),
-        };
+    let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
+        surface: second_surface,
+        bounds: second_bounds,
+    } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+        Ok(surface) => surface,
+        Err(error) => return Some(Err(error)),
+    };
     let mut pcurves = [
         propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value(),
         propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value(),
@@ -3531,7 +3537,10 @@ pub(super) fn optional_embedded_surface_with_bounds(
     let saved = cur.pos();
     let kind = cur.take_ident();
     if kind == Some("null_surface") {
-        return Some(Ok(EmbeddedSurfaceWithBounds { surface: None, bounds: [None; 4] }));
+        return Some(Ok(EmbeddedSurfaceWithBounds {
+            surface: None,
+            bounds: [None; 4],
+        }));
     }
     if kind == Some("spline") {
         if matches!(cur.peek(), Some(Token::True | Token::False)) {

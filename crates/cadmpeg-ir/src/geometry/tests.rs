@@ -460,7 +460,7 @@ fn ranged_spring_definition() -> crate::geometry::ProceduralCurveDefinition {
                     crate::geometry::SpringSupport::Ranges([[0.0, 1.0], [2.0, 3.0]]),
                     crate::geometry::SpringSupport::Ranges([[4.0, 5.0], [6.0, 7.0]]),
                 ],
-            first_pcurve: Box::new(crate::geometry::SpringPcurve::Range([8.0, 9.0])),
+                first_pcurve: Box::new(crate::geometry::SpringPcurve::Range([8.0, 9.0])),
                 second_pcurve: None,
                 parameter_range: [-1.0, 2.0],
                 discontinuities: [Vec::new(), Vec::new(), Vec::new()],

@@ -344,8 +344,7 @@ pub(super) fn project(
             continue;
         };
         let components = [record.number(10), record.number(11), record.number(12)];
-        let [Some(x_component), Some(y_component), Some(z_component)] = components
-        else {
+        let [Some(x_component), Some(y_component), Some(z_component)] = components else {
             super::push_optional_entity_loss(
                 ctx,
                 &mut losses,
@@ -354,7 +353,11 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(mut normal) = UnitVector3::normalized_by_reciprocal(Vector3::new(x_component, y_component, z_component)) else {
+        let Some(mut normal) = UnitVector3::normalized_by_reciprocal(Vector3::new(
+            x_component,
+            y_component,
+            z_component,
+        )) else {
             super::push_optional_entity_loss(
                 ctx,
                 &mut losses,
@@ -363,8 +366,13 @@ pub(super) fn project(
             )?;
             continue;
         };
-        if declared_unit_vector(record, 10, Vector3::new(x_component, y_component, z_component), global.real_precision())
-            .is_none()
+        if declared_unit_vector(
+            record,
+            10,
+            Vector3::new(x_component, y_component, z_component),
+            global.real_precision(),
+        )
+        .is_none()
         {
             super::push_optional_entity_loss(
                 ctx,

@@ -1940,23 +1940,23 @@ struct NativeParameterRecordSlot(Option<NativeParameterRecord>);
 
 impl Serialize for NativeParameterRecordSlot {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-    #[derive(Serialize)]
-    struct Wire<'a> {
-        parameter_line_start: Option<u32>,
-        parameter_line_end: Option<u32>,
-        parameter_bytes: &'a [u8],
-        parameters: &'a [Token],
-        comment: &'a [u8],
-    }
-    let record = self.0.as_ref();
-    Wire {
-        parameter_line_start: record.map(|record| record.lines.start),
-        parameter_line_end: record.map(|record| record.lines.end),
-        parameter_bytes: record.map_or(&[], |record| record.bytes.as_slice()),
-        parameters: record.map_or(&[], |record| record.parameters.as_slice()),
-        comment: record.map_or(&[], |record| record.comment.as_slice()),
-    }
-    .serialize(serializer)
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            parameter_line_start: Option<u32>,
+            parameter_line_end: Option<u32>,
+            parameter_bytes: &'a [u8],
+            parameters: &'a [Token],
+            comment: &'a [u8],
+        }
+        let record = self.0.as_ref();
+        Wire {
+            parameter_line_start: record.map(|record| record.lines.start),
+            parameter_line_end: record.map(|record| record.lines.end),
+            parameter_bytes: record.map_or(&[], |record| record.bytes.as_slice()),
+            parameters: record.map_or(&[], |record| record.parameters.as_slice()),
+            comment: record.map_or(&[], |record| record.comment.as_slice()),
+        }
+        .serialize(serializer)
     }
 }
 
@@ -2423,6 +2423,7 @@ fn index_native_inputs<'a>(
     })
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct NativeStoreInputs<'a, 'b> {
     pub(crate) scan: &'a CardScan<'b>,
     pub(crate) directory: &'a [DirectoryEntry],
@@ -2442,7 +2443,16 @@ pub(crate) fn store(
     limits: ProductOccurrenceLimits,
     ctx: &DecodeContext<'_>,
 ) -> Result<NativeStoreResult, CodecError> {
-    let NativeStoreInputs { scan, directory, parameters, trailing_pointer_analysis, quarantine, structure_admitted, sequences, boundary_vertex_derivations } = inputs;
+    let NativeStoreInputs {
+        scan,
+        directory,
+        parameters,
+        trailing_pointer_analysis,
+        quarantine,
+        structure_admitted,
+        sequences,
+        boundary_vertex_derivations,
+    } = inputs;
     charge_native_entities(ctx, scan.lines.len() as u64)?;
     let NativeInputIndexes {
         quarantined_directory_records,

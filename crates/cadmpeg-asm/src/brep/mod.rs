@@ -307,7 +307,11 @@ pub fn collect_entity_adjacency(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &Value,
     owned: &HashSet<String, std::collections::hash_map::RandomState>,
-    out: &mut HashMap<String, HashSet<String, std::collections::hash_map::RandomState>, std::collections::hash_map::RandomState>,
+    out: &mut HashMap<
+        String,
+        HashSet<String, std::collections::hash_map::RandomState>,
+        std::collections::hash_map::RandomState,
+    >,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let Value::Map(fields) = value else {
         return Ok(());
@@ -401,7 +405,10 @@ pub fn collect_references(
 
 /// Retain only entities with a reachable `id` in the top-level sequences of a
 /// serialized value tree.
-pub fn retain_root_entities(value: &mut Value, reachable: &HashSet<String, std::collections::hash_map::RandomState>) {
+pub fn retain_root_entities(
+    value: &mut Value,
+    reachable: &HashSet<String, std::collections::hash_map::RandomState>,
+) {
     let Value::Map(fields) = value else {
         return;
     };
@@ -653,7 +660,13 @@ pub fn decode_with_header(
     let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(ctx, records)?;
     let mut reach = Reachable::default();
 
-    let topology_context = TopologyContext { ctx, by_index: &by_index, token_table: &token_table, purpose, format };
+    let topology_context = TopologyContext {
+        ctx,
+        by_index: &by_index,
+        token_table: &token_table,
+        purpose,
+        format,
+    };
     keep_faces_and_carriers(
         topology_context,
         &mut out,
@@ -661,12 +674,7 @@ pub fn decode_with_header(
         &mut carriers,
         &mut reach,
     )?;
-    walk_reachable_topology(
-        topology_context,
-        &mut out,
-        &mut carriers,
-        &mut reach,
-    )?;
+    walk_reachable_topology(topology_context, &mut out, &mut carriers, &mut reach)?;
     let wire = collect_wire_topology(
         topology_context,
         &mut out,
@@ -731,7 +739,15 @@ pub fn decode_with_header(
     emit_containers(
         ctx,
         &mut out,
-        ContainerInputs { records, by_index: &by_index, reach: &reach, wire: &wire, stream, header_scale, format },
+        ContainerInputs {
+            records,
+            by_index: &by_index,
+            reach: &reach,
+            wire: &wire,
+            stream,
+            header_scale,
+            format,
+        },
     )?;
     let emitted_attributes = emit_attributes(ctx, &mut out, records, &by_index, &reach, format)?;
     if purpose == DecodePurpose::Model {

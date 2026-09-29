@@ -868,7 +868,7 @@ pub(super) fn emit_surfaces(
                     ir,
                     annotations,
                     &surface_ids,
-                    id,
+                    &id,
                     object_id,
                     *extrusion,
                     admission,
@@ -1058,7 +1058,7 @@ fn emit_extrusion_procedure(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     surface_ids: &HashMap<u32, SurfaceId>,
-    surface_id: SurfaceId,
+    surface_id: &SurfaceId,
     surface_object_id: u32,
     extrusion: super::ResolvedExtrusionSurface,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
@@ -1303,7 +1303,7 @@ fn emit_extrusion_procedure(
         "catia_b5_emit_procedural_surfaces",
     )?;
     let _attached = ir.model.add_procedural_surface(
-        &surface_id,
+        surface_id,
         ProceduralSurface::new(
             procedure_id,
             ProceduralSurfaceDefinition::Extrusion(
@@ -1516,7 +1516,7 @@ mod tests {
                 &mut ir,
                 &mut AnnotationBuilder::new(),
                 &support_ids,
-                surface_id,
+                &surface_id,
                 30,
                 extrusion,
                 &mut admission,
