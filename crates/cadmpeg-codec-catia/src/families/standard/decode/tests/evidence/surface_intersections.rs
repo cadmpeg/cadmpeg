@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::families::standard::decode::build_standard_edge_curve;
-use crate::families::standard::decode::ensure_native_edge_support_surface;
-use crate::families::standard::decode::standard_spline_line;
+use crate::families::standard::decode::edge_geometry::build_standard_edge_curve;
+use crate::families::standard::decode::edge_geometry::ensure_native_edge_support_surface;
+use crate::families::standard::decode::edge_geometry::standard_spline_line;
 use crate::families::standard::decode::StandardEdgeSupport;
 use crate::families::standard::decode::CYLINDER_PLANE_CONIC_TOLERANCE;
 use crate::families::standard::decode::PERPENDICULAR_CYLINDER_CONIC_TOLERANCE;
@@ -804,7 +804,7 @@ fn numerical_ranges_standard_line_rejects_cylinder_chord_mismatch() {
         (Point3::new(0.1, 0., 1.), true),
     ] {
         let result = crate::test_support::with_service_context(|ctx| {
-            crate::families::standard::decode::standard_pcurve_geometry(
+            crate::families::standard::decode::edge_geometry::standard_pcurve_geometry(
                 ctx,
                 &surface,
                 &support,

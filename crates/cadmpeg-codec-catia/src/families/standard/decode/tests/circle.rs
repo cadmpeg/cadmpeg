@@ -1,5 +1,5 @@
-use crate::families::standard::decode::build_standard_edge_curve;
-use crate::families::standard::decode::standard_pcurve_geometry as charged_standard_pcurve_geometry;
+use crate::families::standard::decode::edge_geometry::build_standard_edge_curve;
+use crate::families::standard::decode::edge_geometry::standard_pcurve_geometry as charged_standard_pcurve_geometry;
 use crate::families::standard::records::StandardCurveSupport;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::Curve;
@@ -42,7 +42,7 @@ fn standard_attached_circle_axes_refuse_before_vector_growth() {
     let bindings = [(surface_id, false, 0)];
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        super::super::attach_standard_circles(
+        crate::families::standard::decode::edge_geometry::attach_standard_circles(
             &mut ir,
             &mut AnnotationBuilder::new(),
             &bindings,
@@ -55,7 +55,7 @@ fn standard_attached_circle_axes_refuse_before_vector_growth() {
     let mut limited_ir = ir;
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        super::super::attach_standard_circles(
+        crate::families::standard::decode::edge_geometry::attach_standard_circles(
             &mut limited_ir,
             &mut AnnotationBuilder::new(),
             &bindings,
@@ -290,9 +290,8 @@ fn unknown_standard_circle_carrier_does_not_create_a_sphere_pcurve() {
 
 #[test]
 fn analytic_membership_preserves_radial_distance_at_large_axial_offsets() {
-    use crate::families::standard::decode::{
-        circle_axis_from_carrier, point_on_surface_if_supported,
-    };
+    use crate::families::standard::decode::edge_geometry::circle_axis_from_carrier;
+    use crate::families::standard::decode::point_on_surface_if_supported;
     use cadmpeg_ir::geometry::analytic::{CylinderSurface, SphereSurface};
     let origin = Point3::new(0.0, 0.0, 0.0);
     let axis = Vector3::new(0.0, 0.0, 1.0);
@@ -319,7 +318,7 @@ fn analytic_membership_preserves_radial_distance_at_large_axial_offsets() {
 
 #[test]
 fn sphere_section_axis_preserves_a_subnormal_center_offset() {
-    use crate::families::standard::decode::circle_axis_from_carrier;
+    use crate::families::standard::decode::edge_geometry::circle_axis_from_carrier;
     let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -357,17 +356,19 @@ fn analytic_curve_angles_preserve_extreme_radii() {
             )),
         ] {
             assert_eq!(
-                super::super::standard_analytic_curve_angle(
+                crate::families::standard::decode::edge_geometry::standard_analytic_curve_angle(
                     &geometry,
                     Point3::new(radius, 0.0, 0.0)
                 ),
                 Some(0.0)
             );
-            assert!(super::super::standard_analytic_curve_angle(
-                &geometry,
-                Point3::new(2.0 * radius, 0.0, 0.0)
-            )
-            .is_none());
+            assert!(
+                crate::families::standard::decode::edge_geometry::standard_analytic_curve_angle(
+                    &geometry,
+                    Point3::new(2.0 * radius, 0.0, 0.0)
+                )
+                .is_none()
+            );
         }
     }
 }
@@ -384,7 +385,8 @@ fn numerical_seventh_short_witnessed_arc_retains_its_sweep() {
         .expect("valid test circle"),
     ));
     let point = |angle: f64| Point3::new(angle.cos(), angle.sin(), 0.0);
-    let range = crate::families::standard::decode::standard_analytic_curve_parameter_range;
+    let range =
+        crate::families::standard::decode::edge_geometry::standard_analytic_curve_parameter_range;
     let actual = range(&geometry, point(0.0), point(0.001), Some(point(0.0005)))
         .expect("a witnessed short arc has a parameter range");
     assert_eq!(actual[0], 0.0);

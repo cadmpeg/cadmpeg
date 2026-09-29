@@ -905,14 +905,14 @@ fn native_fixed_owner_packets_refuse_collection_limit() {
     let bytes = crate::test_support::test_b2::b2_owner_packet_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::consolidated_owner_packets(ctx, &bytes, &records)
+        super::super::projection::consolidated_owner_packets(ctx, &bytes, &records)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_fixed_owner_packets")
     );
     let packets = crate::test_support::with_service_context(|ctx| {
-        super::super::consolidated_owner_packets(ctx, &bytes, &records)
+        super::super::projection::consolidated_owner_packets(ctx, &bytes, &records)
     })
     .expect("service context admits the fixed owner packet");
     assert_eq!(packets.len(), 1);
@@ -933,7 +933,7 @@ fn native_owner_indexes_and_nested_identity_targets_refuse_collection_limits() {
         let records = crate::wire::records::consolidated_records(&bytes);
         for limit in 0..256 {
             let result = crate::test_support::with_collection_limit(limit, |ctx| {
-                super::super::consolidated_owner_packets(ctx, &bytes, &records)
+                super::super::projection::consolidated_owner_packets(ctx, &bytes, &records)
             });
             if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
                 refused.insert(error.operation);

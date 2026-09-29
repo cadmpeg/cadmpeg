@@ -117,17 +117,17 @@ fn native_graph_projection_refuses_caller_limits() {
             .expect("service profile admits object graph parsing")
             .expect("fixture has an object graph");
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::native_object_graph(ctx, parsed.clone(), Vec::new(), None, None)
+        super::super::projection::native_object_graph(ctx, parsed.clone(), Vec::new(), None, None)
     });
     assert!(matches!(retained, Err(CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_graph_id"));
     let collection = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::native_object_graph(ctx, parsed.clone(), Vec::new(), None, None)
+        super::super::projection::native_object_graph(ctx, parsed.clone(), Vec::new(), None, None)
     });
     assert!(matches!(collection, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
     let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::native_object_graph(ctx, parsed, Vec::new(), None, None)
+        super::super::projection::native_object_graph(ctx, parsed, Vec::new(), None, None)
     })
     .expect("service profile admits native graph projection");
     assert!(!admitted.0.records.is_empty());

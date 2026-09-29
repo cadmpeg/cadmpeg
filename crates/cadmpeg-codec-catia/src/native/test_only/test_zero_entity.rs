@@ -1,9 +1,10 @@
+use crate::native::projection::{zero_entity_record, zero_entity_vertex_owner};
 use crate::native::{
     zero_entity_endpoint_locus_candidates, zero_entity_endpoint_pair_candidates,
-    zero_entity_record, zero_entity_vertex_owner, CatiaZeroEntityEdgeStride,
-    CatiaZeroEntityEndpointLocusCandidate, CatiaZeroEntityEndpointPairCandidate,
-    CatiaZeroEntityOrientedUsePair, CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord,
-    CatiaZeroEntitySupportRun, CatiaZeroEntityVertexIncidence,
+    CatiaZeroEntityEdgeStride, CatiaZeroEntityEndpointLocusCandidate,
+    CatiaZeroEntityEndpointPairCandidate, CatiaZeroEntityOrientedUsePair,
+    CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord, CatiaZeroEntitySupportRun,
+    CatiaZeroEntityVertexIncidence,
 };
 use std::collections::HashSet;
 
