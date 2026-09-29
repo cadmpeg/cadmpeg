@@ -17,7 +17,7 @@ fn persistence_invalid_xml_diagnostic_refuses_at_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .expect("source bytes are within policy");
-    let error = super::parse_with_context(bytes, "4", Some(&ctx))
+    let error = super::parse_with_context(bytes, "4", &ctx)
         .err()
         .expect("invalid XML diagnostic must be admitted");
     assert!(
@@ -26,10 +26,6 @@ fn persistence_invalid_xml_diagnostic_refuses_at_retained_limit() {
             && failure.operation == "FCStd persistence diagnostic"),
         "{error:?}"
     );
-    let unmetered = super::parse_with_context(bytes, "4", None)
-        .err()
-        .expect("invalid XML remains malformed");
-    assert!(matches!(unmetered, cadmpeg_core::CodecError::Malformed(_)));
 }
 
 #[test]
@@ -51,7 +47,7 @@ fn persistence_object_data_name_refuses_at_matching_retained_limit() {
     crate::test_support::assert_retained_refusal_at(
         document.as_bytes(),
         "FCStd object data name",
-        |ctx| super::parse_with_context(document.as_bytes(), "4", Some(ctx)),
+        |ctx| super::parse_with_context(document.as_bytes(), "4", ctx),
     );
 }
 
@@ -64,11 +60,13 @@ fn persistence_property_identity_refuses_at_retained_limit() {
     policy.limits.max_retained_bytes = expected.len() as u64 - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::property_id(Some(&ctx), owner, "Shape"),
+    assert!(matches!(super::property_id(&ctx, owner, "Shape"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD native child identity"));
     assert_eq!(
-        super::property_id(None, owner, "Shape").expect("writer ID"),
+        crate::test_support::with_service_context(&[], |ctx| {
+            super::property_id(ctx, owner, "Shape").expect("admitted ID")
+        }),
         expected
     );
 }
@@ -83,11 +81,13 @@ fn persistence_extension_identity_refuses_at_retained_limit() {
     policy.limits.max_retained_bytes = ("2".len() + child.len() + expected.len()) as u64 - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::extension_id(Some(&ctx), owner, "Proxy", 2),
+    assert!(matches!(super::extension_id(&ctx, owner, "Proxy", 2),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD native child identity"));
     assert_eq!(
-        super::extension_id(None, owner, "Proxy", 2).expect("writer ID"),
+        crate::test_support::with_service_context(&[], |ctx| {
+            super::extension_id(ctx, owner, "Proxy", 2).expect("admitted ID")
+        }),
         expected
     );
 }
@@ -99,7 +99,7 @@ fn persistence_extension_order_refuses_at_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    let error = super::extension_id(Some(&ctx), "fcstd:native:object#Body", "Proxy", 2)
+    let error = super::extension_id(&ctx, "fcstd:native:object#Body", "Proxy", 2)
         .expect_err("extension order text must be admitted");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
@@ -118,7 +118,7 @@ fn parse_with_retained_limit(document: &str, limit: u64) -> cadmpeg_core::CodecE
         &service_policy,
     )
     .expect("service persistence context");
-    super::parse_with_context(document.as_bytes(), "4", Some(&service_ctx))
+    super::parse_with_context(document.as_bytes(), "4", &service_ctx)
         .expect("service profile admits the persistence fixture");
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -127,7 +127,7 @@ fn parse_with_retained_limit(document: &str, limit: u64) -> cadmpeg_core::CodecE
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
             .expect("persistence test context");
-    super::parse_with_context(document.as_bytes(), "4", Some(&ctx))
+    super::parse_with_context(document.as_bytes(), "4", &ctx)
         .err()
         .expect("retained copy must be refused")
 }
@@ -147,7 +147,7 @@ fn assert_persistence_diagnostic_refusal(document: &str, expected: &str) {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &service)
             .expect("source bytes are within policy");
-    let admitted = super::parse_with_context(document.as_bytes(), "4", Some(&ctx))
+    let admitted = super::parse_with_context(document.as_bytes(), "4", &ctx)
         .err()
         .expect("fixture must be malformed");
     assert!(
@@ -166,7 +166,7 @@ fn assert_persistence_diagnostic_refusal(document: &str, expected: &str) {
             &policy,
         )
         .expect("source bytes are within policy");
-        let error = super::parse_with_context(document.as_bytes(), "4", Some(&ctx))
+        let error = super::parse_with_context(document.as_bytes(), "4", &ctx)
             .err()
             .expect("diagnostic must refuse below its retained need");
         let cadmpeg_core::CodecError::ResourceLimit(failure) = error else {
@@ -186,7 +186,7 @@ fn assert_persistence_diagnostic_refusal(document: &str, expected: &str) {
             )
             .expect("source bytes are within policy");
             assert_retained_operation(
-                &super::parse_with_context(document.as_bytes(), "4", Some(&ctx))
+                &super::parse_with_context(document.as_bytes(), "4", &ctx)
                     .err()
                     .expect("one byte below diagnostic need must refuse"),
                 "FCStd persistence diagnostic",
@@ -260,7 +260,7 @@ fn parse_with_item_limit(document: &str, limit: u64) -> cadmpeg_core::CodecError
         &service_policy,
     )
     .expect("service persistence context");
-    super::parse_with_context(document.as_bytes(), "4", Some(&service_ctx))
+    super::parse_with_context(document.as_bytes(), "4", &service_ctx)
         .expect("service profile admits the persistence fixture");
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -269,7 +269,7 @@ fn parse_with_item_limit(document: &str, limit: u64) -> cadmpeg_core::CodecError
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
             .expect("persistence item context");
-    super::parse_with_context(document.as_bytes(), "4", Some(&ctx))
+    super::parse_with_context(document.as_bytes(), "4", &ctx)
         .err()
         .expect("collection must be refused")
 }
@@ -342,7 +342,7 @@ fn extension_owner_refuses_at_matching_retained_limit() {
     crate::test_support::assert_retained_refusal_at(
         document.as_bytes(),
         "FCStd extension owner",
-        |ctx| super::parse_with_context(document.as_bytes(), "4", Some(ctx)),
+        |ctx| super::parse_with_context(document.as_bytes(), "4", ctx),
     );
 }
 
@@ -355,7 +355,7 @@ fn assert_link_collection_at_operation(xml: &str, type_name: &str, operation: &s
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
                 .expect("link XML fits input policy");
-        let result = super::parse_link_targets(document.root_element(), type_name, Some(&ctx));
+        let result = super::parse_link_targets(document.root_element(), type_name, &ctx);
         if matches!(result,
             Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
                 if refusal.operation == operation
@@ -475,7 +475,7 @@ fn x63_object_xml_copy_is_charged_before_allocation() {
     crate::test_support::assert_retained_refusal_at(
         document.as_bytes(),
         "FCStd object XML",
-        |ctx| super::parse_with_context(document.as_bytes(), "4", Some(ctx)),
+        |ctx| super::parse_with_context(document.as_bytes(), "4", ctx),
     );
 }
 
@@ -538,7 +538,7 @@ fn x63_extension_xml_copy_is_charged_after_its_object_copy() {
     crate::test_support::assert_retained_refusal_at(
         document.as_bytes(),
         "FCStd extension XML",
-        |ctx| super::parse_with_context(document.as_bytes(), "4", Some(ctx)),
+        |ctx| super::parse_with_context(document.as_bytes(), "4", ctx),
     );
 }
 
@@ -548,13 +548,13 @@ fn x63_transient_and_persisted_property_xml_copies_are_charged() {
     crate::test_support::assert_retained_refusal_at(
         transient.as_bytes(),
         "FCStd transient property XML",
-        |ctx| super::parse_with_context(transient.as_bytes(), "4", Some(ctx)),
+        |ctx| super::parse_with_context(transient.as_bytes(), "4", ctx),
     );
     let persisted = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="T"/></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     crate::test_support::assert_retained_refusal_at(
         persisted.as_bytes(),
         "FCStd persisted property XML",
-        |ctx| super::parse_with_context(persisted.as_bytes(), "4", Some(ctx)),
+        |ctx| super::parse_with_context(persisted.as_bytes(), "4", ctx),
     );
 }
 
@@ -597,7 +597,7 @@ fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::Co
             }
             error => error,
         })?;
-    super::parse_with_context(document.as_bytes(), &schema_version, None)
+    super::parse_with_context(document.as_bytes(), &schema_version, &ctx)
 }
 
 #[test]
@@ -1217,7 +1217,9 @@ fn unknown_property_runtime_names_do_not_select_a_family_by_substring() {
 fn empty_and_absent_xlink_file_attributes_decode_to_one_typed_value() {
     let link = |markup: &str| {
         let parsed = roxmltree::Document::parse(markup).expect("parse XLink markup");
-        super::xlink(parsed.root_element(), None).expect("decode XLink")
+        crate::test_support::with_service_context(markup.as_bytes(), |ctx| {
+            super::xlink(parsed.root_element(), ctx).expect("decode XLink")
+        })
     };
     let empty = link(r#"<XLink file="" name="Body"/>"#);
     let absent = link(r#"<XLink name="Body"/>"#);
@@ -1234,7 +1236,9 @@ fn both_xlink_list_property_types_use_xlink_sub_list_carriers() {
             r#"<Property name="References" type="{type_name}"><XLinkSubList count="2"><XLink name="Local"/><XLink file="parts.FCStd" name="Remote" sub="Face1"/></XLinkSubList></Property>"#
         );
         let xml = roxmltree::Document::parse(&markup).unwrap();
-        let links = super::parse_link_targets(xml.root_element(), type_name, None).unwrap();
+        let links = crate::test_support::with_service_context(markup.as_bytes(), |ctx| {
+            super::parse_link_targets(xml.root_element(), type_name, ctx).unwrap()
+        });
         assert_eq!(links.len(), 2);
         let first = links[0].as_ref().expect("first link");
         let second = links[1].as_ref().expect("second link");
@@ -1245,6 +1249,8 @@ fn both_xlink_list_property_types_use_xlink_sub_list_carriers() {
         assert_eq!(second.subelements(), ["Face1"]);
         let invalid = markup.replace("XLinkSubList", "XLinkList");
         let xml = roxmltree::Document::parse(&invalid).unwrap();
-        assert!(super::parse_link_targets(xml.root_element(), type_name, None).is_err());
+        assert!(crate::test_support::with_service_context(invalid.as_bytes(), |ctx| {
+            super::parse_link_targets(xml.root_element(), type_name, ctx).is_err()
+        }));
     }
 }
