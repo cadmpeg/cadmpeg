@@ -697,7 +697,7 @@ fn decode_exchange_mode(
                 Vec::new(),
             ));
         }
-        source_fidelity.attach_native_unknown_records(&mut session.ir, "step", opaque)?;
+        source_fidelity.attach_native_unknown_records(&mut session.ir, "step", opaque, session.ctx)?;
     }
     session.source_attributes.insert(
         cadmpeg_core::nonblank_literal!("bytes_structural"),

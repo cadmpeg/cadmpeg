@@ -3779,7 +3779,7 @@ fn decode_result(
         resource::push(ctx, &mut body.losses, loss, "catia_decode_dialect_loss")?;
     }
     let mut source_fidelity = SourceFidelity::with_annotations(annotations);
-    source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns)?;
+    source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns, ctx)?;
     Ok(Decoded {
         ir,
         body,

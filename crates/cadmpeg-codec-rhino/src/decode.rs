@@ -2877,7 +2877,7 @@ impl<'a> DecodeContext<'a> {
         crate::wire::reserve_collection(ctx, &mut notes, 1, "Rhino final decode notes")?;
         notes.push(note);
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(self.annotations);
-        source_fidelity.attach_native_unknown_records(&mut self.ir, "rhino", self.unknowns)?;
+        source_fidelity.attach_native_unknown_records(&mut self.ir, "rhino", self.unknowns, ctx)?;
         source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;
         let primary = crate::container::dialect_match(self.scan);
         // Charged from the admission the source records, so the document-level
