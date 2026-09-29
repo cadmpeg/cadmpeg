@@ -772,6 +772,12 @@ fn radial_group_parameter_refuses_retained_limit() {
 }
 
 #[test]
+fn radial_group_locus_entity_refuses_collection_limit() {
+    assert_exact_group_variant_refusal("radial-call", "f3d radial group locus entity",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
 fn projected_group_parameter_refuses_retained_limit() {
     assert_exact_group_variant_refusal("linear", "f3d projected group parameter id",
         ResourceDimension::RetainedBytes);
