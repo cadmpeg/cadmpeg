@@ -1646,3 +1646,42 @@ fn governed_dimension_companion_refuses_collection_limit() {
 fn container_only_dimension_companion_refuses_collection_limit() {
     assert_companion_refusal(2, "f3d container-only dimension companion");
 }
+
+#[test]
+fn parameterized_offset_companion_refuses_collection_limit() {
+    let mut fixture = fixture();
+    let curves = native_fallback_curves(&mut fixture);
+    let second = SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#offset-result").unwrap(),
+        fixture.entity.sketch.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 1.0), end: Point2::new(1.0, 1.0),
+        }).unwrap(),
+    ).with_native_ref(Some(curves[1].id.clone()));
+    let entities = [fixture.entity.clone(), second];
+    let mut group = native_fallback_group();
+    group.state = 0x20;
+    group.loci[0].returned.value = 30;
+    let mut result = group.loci[0].clone();
+    result.geometry_record_index = 31;
+    result.returned.value = 31;
+    result.role = 0;
+    group.loci.push(result);
+    let mut inputs = fixture.inputs();
+    inputs.curves = &curves;
+    inputs.entities = &entities;
+    inputs.groups = std::slice::from_ref(&group);
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d parameterized offset companion" => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            result => panic!("expected offset companion refusal: {result:?}"),
+        }
+    }
+    panic!("no offset companion refusal");
+}
