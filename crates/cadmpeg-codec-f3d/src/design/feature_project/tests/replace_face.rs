@@ -203,6 +203,23 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             && native.as_str() == target_group.id
             && replacement_native.as_str() == replacement_group.id)));
 
+    let reversed = project_replace_face(
+        &scope,
+        &[target_group.clone(), replacement_group.clone()],
+        std::slice::from_ref(&target),
+        std::slice::from_ref(&replacement),
+    );
+    assert!(matches!(
+        reversed,
+        Some(FeatureDefinition::Operation(FeatureOperation::ReplaceFace { .. }))
+    ));
+    assert!(project_replace_face(
+        &scope,
+        &[replacement_group.clone(), target_group.clone(), target_group.clone()],
+        std::slice::from_ref(&target),
+        std::slice::from_ref(&replacement),
+    ).is_none());
+
     let mut invalid_scope = scope;
     invalid_scope
         .try_edit(|draft| {
