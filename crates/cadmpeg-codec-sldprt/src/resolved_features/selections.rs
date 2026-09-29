@@ -24,6 +24,7 @@ use crate::classification::{
     classify_type_token, native_object_class, FeatureClass, NativeClassKind,
 };
 use crate::records::operand_tag::NativeOperandTag;
+use crate::records::charged_clone::CloneCharged;
 use crate::records::{
     FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputEdgeSelection,
     FeatureInputLane, FeatureInputOperandKind, FeatureInputSurfaceSelection, SketchInputKind,
@@ -292,10 +293,11 @@ pub(crate) fn compact_edge_reference_list_for_feature(
 }
 
 pub(super) fn compact_edge_selections(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> Vec<FeatureInputEdgeSelection> {
-    let history_features = history_features_with_object_sources(histories, lane);
+) -> Result<Vec<FeatureInputEdgeSelection>, CodecError> {
+    let history_features = history_features_with_object_sources(ctx, histories, lane)?;
     let mut objects = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -416,7 +418,7 @@ pub(super) fn compact_edge_selections(
             result.push(selection);
         }
     }
-    result
+    Ok(result)
 }
 
 fn fillet_edge_roster_end(lane: &FeatureInputLane, start: usize, end: usize) -> Option<usize> {
@@ -492,7 +494,7 @@ pub(super) fn compact_surface_selections(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Result<Vec<FeatureInputSurfaceSelection>, CodecError> {
-    let history_features = history_features_with_object_sources(histories, lane);
+    let history_features = history_features_with_object_sources(ctx, histories, lane)?;
     let mut classes = lane
         .classes
         .iter()
@@ -1035,37 +1037,60 @@ fn compact_surface_selection_candidates_for_class(
 }
 
 fn history_features_with_object_sources(
+    ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> Vec<crate::records::Feature> {
-    let mut features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .cloned()
-        .collect::<Vec<_>>();
-    enrich_feature_object_sources(&mut features, std::slice::from_ref(lane));
-    features
+) -> Result<Vec<crate::records::Feature>, CodecError> {
+    const OPERATION: &str = "clone SLDPRT selection history features";
+    let mut features = Vec::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, OPERATION)?;
+        ctx.reserve_collection_vec(&mut features, 1, OPERATION)?;
+        features.push(feature.clone_charged(ctx, OPERATION)?);
+    }
+    enrich_feature_object_sources(ctx, &mut features, std::slice::from_ref(lane))?;
+    Ok(features)
 }
 
 /// Bind flat idless history records to identities from unique feature-input
 /// object names without changing records that already carry source identity.
 pub(crate) fn enrich_feature_object_sources(
+    ctx: &DecodeContext<'_>,
     features: &mut [crate::records::Feature],
     lanes: &[FeatureInputLane],
-) {
-    for feature in features
-        .iter_mut()
-        .filter(|feature| feature.source_id.is_none())
-    {
-        let mut sources = lanes
-            .iter()
-            .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value());
-        if let Some(source) = sources.next() {
-            if sources.all(|candidate| candidate == source) {
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "resolve SLDPRT selection feature object sources";
+    for feature in features {
+        ctx.charge_work(1, OPERATION)?;
+        if feature.source_id.is_some() { continue; }
+        let mut source = None;
+        let mut ambiguous = false;
+        for lane in lanes {
+            ctx.charge_work(1, OPERATION)?;
+            for name in &lane.names {
+                let work = name.value.len().checked_add(feature.name.len())
+                    .and_then(|size| size.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(u64_from_index(work), OPERATION)?;
+            }
+            let Some(candidate) = feature_object_name(feature, lane)
+                .and_then(|name| name.object_id).and_then(ObjectId::value) else { continue; };
+            match source {
+                Some(previous) if previous != candidate => {
+                    ambiguous = true;
+                    break;
+                }
+                None => source = Some(candidate),
+                _ => {}
+            }
+        }
+        if !ambiguous {
+            if let Some(source) = source {
                 feature.source_id = FeatureSource::from_value(source);
             }
         }
     }
+    Ok(())
 }
 
 fn cosmetic_thread_cylinder_references(

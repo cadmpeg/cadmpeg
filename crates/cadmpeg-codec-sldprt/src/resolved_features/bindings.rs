@@ -1175,7 +1175,7 @@ pub(crate) fn finalize_lane_bindings(
         relation_bindings_scoped(ctx, &lane.id, &lane.classes, &lane.scalars, &intervals)?;
     lane.relation_instances = relation_instances(ctx, histories, lane)?;
     lane.body_selections = compact_body_selections(ctx, histories, lane)?;
-    lane.edge_selections = compact_edge_selections(histories, lane);
+    lane.edge_selections = compact_edge_selections(ctx, histories, lane)?;
     lane.surface_selections = compact_surface_selections(ctx, histories, lane)?;
     lane.generated_surface_identities = generated_surface_identities(ctx, lane)?;
     Ok(())
