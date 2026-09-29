@@ -2719,15 +2719,20 @@ pub(crate) fn project_spatial_dimension_constraints(
         }
     }
     let mut source_parameters = HashSet::new();
-    let mut projected = source_constraints
-        .into_iter()
-        .filter_map(|constraint| {
-            let sketch = spatial_by_planar_id.get(&constraint.sketch)?.clone();
-            source_parameters.extend(
-                constraint_parameters(constraint.definition.kind())
-                    .into_iter()
-                    .cloned(),
-            );
+    let mut projected = Vec::new();
+    for constraint in source_constraints {
+        let projected_constraint = (|| -> Result<Option<SpatialSketchConstraint>, CodecError> {
+            let Some(sketch) = spatial_by_planar_id.get(&constraint.sketch) else {
+                return Ok(None);
+            };
+            let sketch = copy_spatial_sketch_id(ctx, sketch,
+                "f3d projected spatial sketch id")?;
+            for parameter in constraint_parameters(constraint.definition.kind()) {
+                let id = copy_dimension_parameter_id(ctx, parameter,
+                    "f3d spatial source parameter id")?;
+                insert_dimension_set(ctx, &mut source_parameters, id,
+                    "f3d spatial source parameter index")?;
+            }
             let definition = match constraint.definition.into_kind() {
                 SketchConstraintDefinitionInput::Native {
                     native_kind,
@@ -2867,19 +2872,23 @@ pub(crate) fn project_spatial_dimension_constraints(
                         },
                     )
                 }
-                _ => return None,
+                _ => return Ok(None),
             };
-            Some(SpatialSketchConstraint {
+            let Some(definition) = cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
+                definition,
+            ).ok() else { return Ok(None); };
+            Ok(Some(SpatialSketchConstraint {
                 id: constraint.id,
                 sketch,
-                definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
-                    definition,
-                )
-                .ok()?,
+                definition,
                 native_ref: constraint.native_ref,
-            })
-        })
-        .collect::<Vec<_>>();
+            }))
+        })()?;
+        if let Some(projected_constraint) = projected_constraint {
+            push_dimension_item(ctx, &mut projected, projected_constraint,
+                "f3d projected spatial dimension output")?;
+        }
+    }
 
     let retained_parameter_ids = projected
         .iter()
