@@ -78,6 +78,7 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
         let admitted = poles.map(|pole| crate::features::FinitePoint3::new(pole).unwrap());
         assert_eq!(
             nurbs_curve_derivative(
+                &super::super::admitted::Scratch::default(),
                 1,
                 &knots,
                 &admitted,
@@ -91,6 +92,7 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
         );
         assert_eq!(
             nurbs_curve_derivative(
+                &super::super::admitted::Scratch::default(),
                 1,
                 &knots,
                 &admitted,
@@ -294,7 +296,7 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
             )
             .unwrap(),
         );
-        let result = pcurve_uv_differential(&curve, crate::scalar::FiniteReal::HALF).unwrap();
+        let result = pcurve_uv_differential(&super::super::admitted::Scratch::default(), &curve, crate::scalar::FiniteReal::HALF).unwrap();
         assert!((result.point.unwrap().u - 0.5).abs() <= 8.0 * f64::EPSILON);
         assert!((result.tangent.unwrap().u - 1.0).abs() <= 8.0 * f64::EPSILON);
         assert!(result.acceleration.unwrap().u.abs() <= 8.0 * f64::EPSILON);
@@ -302,7 +304,7 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
     let curve = PcurveGeometry::SphericalGreatCircle(
         SphericalGreatCirclePcurve::try_new(0.0, 1.0, 0.0, 1e200).unwrap(),
     );
-    let result = pcurve_uv_differential(&curve, crate::scalar::FiniteReal::HALF).unwrap();
+    let result = pcurve_uv_differential(&super::super::admitted::Scratch::default(), &curve, crate::scalar::FiniteReal::HALF).unwrap();
     let (sin, cos) = 0.5_f64.sin_cos();
     let expected_first = -sin / (1e200 * cos * cos);
     let expected_second = -(1.0 + sin * sin) / (1e200 * cos * cos * cos);

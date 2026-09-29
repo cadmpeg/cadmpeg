@@ -157,9 +157,9 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
 fn low_degree_second_derivative_basis_borrows_zeros() {
     use std::borrow::Cow;
 
-    let constant = super::super::bspline_basis_second_derivative(&[], 0, 0, 0.0)
+    let constant = super::super::bspline_basis_second_derivative(&super::super::admitted::Scratch::default(), &[], 0, 0, 0.0)
         .expect("degree-zero second derivative");
-    let linear = super::super::bspline_basis_second_derivative(&[], 1, 0, 0.0)
+    let linear = super::super::bspline_basis_second_derivative(&super::super::admitted::Scratch::default(), &[], 1, 0, 0.0)
         .expect("degree-one second derivative");
     assert!(matches!(constant, Cow::Borrowed(_)));
     assert!(matches!(linear, Cow::Borrowed(_)));
