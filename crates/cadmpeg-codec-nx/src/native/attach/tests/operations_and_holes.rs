@@ -1164,6 +1164,9 @@ fn nx_container_record_is_not_a_modeling_feature() {
 
 #[test]
 fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let dimensions = [10.0, 20.0, 30.0];
     for axis in 0..3 {
@@ -1207,7 +1210,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     }
     let output = ir.model.bodies[0].id.clone();
     let placement = |ir: &CadIr, dimensions, outputs: &[BodyId]| {
-        block_placement(ir, dimensions, outputs).map(|(_, transform)| transform)
+        block_placement(&ctx, ir, dimensions, outputs).unwrap().map(|(_, transform)| transform)
     };
 
     assert_eq!(
@@ -1215,7 +1218,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         Some(cadmpeg_ir::transform::Transform::identity())
     );
     assert_eq!(
-        block_placement(&ir, dimensions, &[]),
+        block_placement(&ctx, &ir, dimensions, &[]).unwrap(),
         Some((output.clone(), cadmpeg_ir::transform::Transform::identity()))
     );
     assert_eq!(
@@ -1377,8 +1380,70 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     );
 }
 
+fn primitive_faces_with_limit(
+    sphere: bool,
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    match dimension {
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+        _ => return Err(cadmpeg_core::CodecError::InvalidInput("unsupported primitive face test limit".to_string())),
+    }
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let body = ir.model.bodies[0].id.clone();
+    if sphere {
+        drop(sphere_body_projection(&ctx, &ir, std::slice::from_ref(&body))?);
+    } else {
+        drop(block_placement(&ctx, &ir, [1.0, 1.0, 1.0], std::slice::from_ref(&body))?);
+    }
+    Ok(())
+}
+
+#[test]
+fn block_faces_refuse_collection_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::CollectionItems;
+    assert!(matches!(primitive_faces_with_limit(false, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+}
+
+#[test]
+fn block_faces_refuse_scoped_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::MaterializedBytes;
+    assert!(matches!(primitive_faces_with_limit(false, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+}
+
+#[test]
+fn block_faces_refuse_work_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::WorkUnits;
+    assert!(matches!(primitive_faces_with_limit(false, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+}
+
+#[test]
+fn sphere_faces_refuse_collection_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::CollectionItems;
+    assert!(matches!(primitive_faces_with_limit(true, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+}
+
+#[test]
+fn sphere_faces_refuse_scoped_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::MaterializedBytes;
+    assert!(matches!(primitive_faces_with_limit(true, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+}
+
+#[test]
+fn sphere_faces_refuse_work_limit() {
+    let dimension = cadmpeg_core::decode::ResourceDimension::WorkUnits;
+    assert!(matches!(primitive_faces_with_limit(true, dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+}
+
 #[test]
 fn nx_sphere_projection_requires_one_complete_spherical_body() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     let face = ir.model.faces[0].id.clone();
@@ -1405,7 +1470,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     ));
 
     assert_eq!(
-        sphere_body_projection(&ir, &[]),
+        sphere_body_projection(&ctx, &ir, &[]).unwrap(),
         Some((
             body.clone(),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
@@ -1415,7 +1480,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         ))
     );
     assert_eq!(
-        sphere_body_projection(&ir, std::slice::from_ref(&body)),
+        sphere_body_projection(&ctx, &ir, std::slice::from_ref(&body)).unwrap(),
         Some((
             body.clone(),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
@@ -1464,14 +1529,16 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     ir.model.faces.push(second_face);
     ir.model.surfaces.push(second_surface);
 
-    assert!(sphere_body_projection(&ir, &[]).is_none());
+    assert!(sphere_body_projection(&ctx, &ir, &[]).unwrap().is_none());
     assert!(sphere_body_projection(
+        &ctx,
         &ir,
         &[
             body,
             BodyId::mint("test:model:entity#second-body").expect("identity grammar")
         ]
     )
+    .unwrap()
     .is_none());
 }
 

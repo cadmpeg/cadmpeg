@@ -599,7 +599,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
     ir.model = model;
     let operations = vec![operation.clone()];
     let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
-    let body_faces = connected_solid_body_faces(&ir, &body).expect("solid body faces");
+    let body_faces = connected_solid_body_faces(&default_ctx, &ir, &body).unwrap().expect("solid body faces");
     assert_eq!(body_faces.len(), 3);
     let cylinders = cylindrical_face_witnesses(&default_ctx, &ir, &body_faces).unwrap().unwrap();
     assert_eq!(cylinders.len(), 2);

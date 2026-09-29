@@ -3739,17 +3739,24 @@ fn attach_feature_operations(
                         .each_ref()
                         .map(|dimension| dimension.value.get())
                 });
-        let block_projection = (label.value == "BLOCK")
-            .then(|| block_placement(ir, block_dimension_values?, &outputs))
-            .flatten();
+        let block_projection = if label.value == "BLOCK" {
+            match block_dimension_values {
+                Some(dimensions) => block_placement(ctx, ir, dimensions, &outputs)?,
+                None => None,
+            }
+        } else {
+            None
+        };
         if outputs.is_empty() {
             if let Some((body, _)) = &block_projection {
                 outputs.push(body.clone());
             }
         }
-        let sphere_projection = (label.value == "SPHERE")
-            .then(|| sphere_body_projection(ir, &outputs))
-            .flatten();
+        let sphere_projection = if label.value == "SPHERE" {
+            sphere_body_projection(ctx, ir, &outputs)?
+        } else {
+            None
+        };
         let inferred_sphere_outputs = outputs
             .is_empty()
             .then(|| {
@@ -5889,37 +5896,66 @@ fn body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
     Some(faces)
 }
 
-fn connected_solid_body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
-    let body = ir.model.bodies.iter().find(|body| body.id == *body_id)?;
+struct ScopedFaces<'a, 'ctx> {
+    faces: Vec<&'a Face>,
+    _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'a, 'ctx> std::ops::Deref for ScopedFaces<'a, 'ctx> {
+    type Target = [&'a Face];
+
+    fn deref(&self) -> &Self::Target {
+        &self.faces
+    }
+}
+
+fn connected_solid_body_faces<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    ir: &'a CadIr,
+    body_id: &BodyId,
+) -> Result<Option<ScopedFaces<'a, 'ctx>>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()), "NX connected solid body lookup")?;
+    let Some(body) = ir.model.bodies.iter().find(|body| body.id == *body_id) else {
+        return Ok(None);
+    };
     if body.kind != cadmpeg_ir::topology::BodyKind::Solid {
-        return None;
+        return Ok(None);
     }
     let [region_id] = body.regions.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    let region = ir
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.regions.len()), "NX connected solid region lookup")?;
+    let Some(region) = ir
         .model
         .regions
         .iter()
-        .find(|region| region.id == *region_id && region.body == body.id)?;
-    let [shell_id] = region.shells.as_slice() else {
-        return None;
+        .find(|region| region.id == *region_id && region.body == body.id) else {
+        return Ok(None);
     };
-    let shell = ir
+    let [shell_id] = region.shells.as_slice() else {
+        return Ok(None);
+    };
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.shells.len()), "NX connected solid shell lookup")?;
+    let Some(shell) = ir
         .model
         .shells
         .iter()
-        .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
-    shell
-        .faces()
-        .iter()
-        .map(|face_id| {
-            ir.model
-                .faces
-                .iter()
-                .find(|face| face.id == *face_id && face.shell == shell.id)
-        })
-        .collect()
+        .find(|shell| shell.id == *shell_id && shell.region == region.id) else {
+        return Ok(None);
+    };
+    let mut faces = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX connected solid faces")?;
+    for face_id in shell.faces() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.faces.len()), "NX connected solid face lookup")?;
+        let Some(face) = ir.model.faces.iter().find(|face| face.id == *face_id && face.shell == shell.id) else {
+            return Ok(None);
+        };
+        ctx.charge_collection_items(1, "NX connected solid faces")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&Face>()))?;
+        reserve_attach_vec(ctx, &mut faces, 1, "NX connected solid faces")?;
+        faces.push(face);
+    }
+    Ok(Some(ScopedFaces { faces, _reservation: reservation }))
 }
 
 fn connected_solid_body_exists(
@@ -6457,10 +6493,11 @@ fn simple_hole_native_properties(
 }
 
 fn block_placement(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     dimensions: [f64; 3],
     outputs: &[BodyId],
-) -> Option<(BodyId, Transform)> {
+) -> Result<Option<(BodyId, Transform)>, CodecError> {
     struct PlaneBand {
         normal: Vector3,
         offsets: Vec<f64>,
@@ -6493,26 +6530,30 @@ fn block_placement(
         .iter()
         .any(|dimension| *dimension <= linear_tolerance)
     {
-        return None;
+        return Ok(None);
     }
     let body = match outputs {
         [body] => body,
         [] => {
-            let candidates = ir
-                .model
-                .bodies
-                .iter()
-                .filter(|body| connected_solid_body_faces(ir, &body.id).is_some())
-                .map(|body| &body.id)
-                .collect::<Vec<_>>();
-            let [body] = candidates.as_slice() else {
-                return None;
+            let mut unique = None;
+            for candidate in &ir.model.bodies {
+                if connected_solid_body_faces(ctx, ir, &candidate.id)?.is_some() {
+                    if unique.replace(&candidate.id).is_some() {
+                        return Ok(None);
+                    }
+                }
+            }
+            let Some(body) = unique else {
+                return Ok(None);
             };
-            *body
+            body
         }
-        _ => return None,
+        _ => return Ok(None),
     };
-    let faces = connected_solid_body_faces(ir, body)?;
+    let Some(faces) = connected_solid_body_faces(ctx, ir, body)? else {
+        return Ok(None);
+    };
+    Ok((|| {
     let surface_geometry = ir
         .model
         .surfaces
@@ -6520,7 +6561,7 @@ fn block_placement(
         .map(|surface| (&surface.id, &surface.geometry))
         .collect::<BTreeMap<_, _>>();
     let mut bands = Vec::<PlaneBand>::new();
-    for face in faces {
+    for face in faces.iter().copied() {
         let geometry = surface_geometry.get(&face.surface).copied()?;
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = geometry else {
             continue;
@@ -6637,6 +6678,7 @@ fn block_placement(
             [x_axis.z, y_axis.z, z_axis.z, origin.z],
         ])?,
     ))
+    })())
 }
 
 /// Return the complete primitive witness for an NX `SPHERE` operation.
@@ -6647,44 +6689,47 @@ fn block_placement(
 /// one face whose surface is a finite positive-radius sphere. With no native
 /// output relation, the candidate must also be unique across the model.
 fn sphere_body_projection(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     outputs: &[BodyId],
-) -> Option<(
+) -> Result<Option<(
     BodyId,
     cadmpeg_ir::features::FinitePoint3,
     cadmpeg_ir::scalar::PositiveLength,
-)> {
+)>, CodecError> {
     let body = match outputs {
         [body] => body.clone(),
         [] => {
-            let candidates = ir
-                .model
-                .bodies
-                .iter()
-                .filter_map(|body| {
-                    let faces = connected_solid_body_faces(ir, &body.id)?;
-                    let [face] = faces.as_slice() else {
-                        return None;
-                    };
-                    let surface = ir.model.surfaces.iter().find(|surface| {
-                        surface.id == face.surface
-                            && matches!(
-                                surface.geometry.solved(),
-                                Some(SolvedSurfaceGeometry::Sphere(_))
-                            )
-                    })?;
-                    Some((body.id.clone(), surface.id.clone()))
-                })
-                .collect::<Vec<_>>();
-            let [(body, _)] = candidates.as_slice() else {
-                return None;
+            let mut unique = None;
+            for candidate in &ir.model.bodies {
+                let Some(faces) = connected_solid_body_faces(ctx, ir, &candidate.id)? else {
+                    continue;
+                };
+                let [face] = &faces[..] else {
+                    continue;
+                };
+                if !ir.model.surfaces.iter().any(|surface| {
+                    surface.id == face.surface
+                        && matches!(surface.geometry.solved(), Some(SolvedSurfaceGeometry::Sphere(_)))
+                }) {
+                    continue;
+                }
+                if unique.replace(&candidate.id).is_some() {
+                    return Ok(None);
+                }
+            }
+            let Some(body) = unique else {
+                return Ok(None);
             };
             body.clone()
         }
-        _ => return None,
+        _ => return Ok(None),
     };
-    let faces = connected_solid_body_faces(ir, &body)?;
-    let [face] = faces.as_slice() else {
+    let Some(faces) = connected_solid_body_faces(ctx, ir, &body)? else {
+        return Ok(None);
+    };
+    Ok((|| {
+    let [face] = &faces[..] else {
         return None;
     };
     let surface = ir
@@ -6698,6 +6743,7 @@ fn sphere_body_projection(
     let center = sphere_surface.center();
     let radius = cadmpeg_ir::scalar::PositiveLength::try_from(sphere_surface.radius()).ok()?;
     Some((body, center, radius))
+    })())
 }
 
 struct NewBodyEvidence<'a> {
@@ -7716,7 +7762,7 @@ fn hole_body_projection(
     let mut projected_outputs = BTreeMap::new();
     let mut diameters = BTreeMap::new();
     for (body, operations) in operations_by_body {
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+        let Some(body_faces) = connected_solid_body_faces(ctx, ir, &body)? else {
             return Ok(None);
         };
         let Some(bores) = through_bore_cylinders(ctx, ir, &body_faces)? else {
@@ -7772,7 +7818,7 @@ fn counterbore_body_projection(
             // geometry to history order.
             return Ok(None);
         };
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+        let Some(body_faces) = connected_solid_body_faces(ctx, ir, &body)? else {
             return Ok(None);
         };
         let Some(witnesses) = counterbore_cylinders(ctx, ir, &body_faces)? else {
@@ -7824,7 +7870,7 @@ fn blind_hole_body_projection(
         let [operation] = operations.as_slice() else {
             return Ok(None);
         };
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+        let Some(body_faces) = connected_solid_body_faces(ctx, ir, &body)? else {
             return Ok(None);
         };
         let Some(witnesses) = blind_bore_cylinders(ctx, ir, &body_faces)? else {
@@ -7907,7 +7953,7 @@ fn counterbore_axis_placements_for_operations(
         let [operation] = operations.as_slice() else {
             return Ok(BTreeMap::new());
         };
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+        let Some(body_faces) = connected_solid_body_faces(ctx, ir, &body)? else {
             return Ok(BTreeMap::new());
         };
         let Some(witnesses) = counterbore_cylinders(ctx, ir, &body_faces)? else {
@@ -7952,7 +7998,7 @@ fn blind_hole_axis_placements_for_operations(
         let [operation] = operations.as_slice() else {
             return Ok(BTreeMap::new());
         };
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+        let Some(body_faces) = connected_solid_body_faces(ctx, ir, &body)? else {
             return Ok(BTreeMap::new());
         };
         let Some(witnesses) = blind_bore_cylinders(ctx, ir, &body_faces)? else {
@@ -7980,7 +8026,7 @@ fn blind_hole_axis_placements_for_operations(
 }
 
 fn hole_axis_placements_for_body(ctx: &DecodeContext<'_>, ir: &CadIr, body: &BodyId) -> Result<Vec<HolePlacement>, CodecError> {
-    let Some(body_faces) = connected_solid_body_faces(ir, body) else {
+    let Some(body_faces) = connected_solid_body_faces(ctx, ir, body)? else {
         return Ok(Vec::new());
     };
     let Some(bores) = through_bore_cylinders(ctx, ir, &body_faces)? else {
@@ -8763,7 +8809,7 @@ fn simple_hole_chamfers(
     let angular_tolerance = ir.tolerances.angular.get();
     let mut treatments = BTreeMap::new();
     for (body, operations) in operations_by_body {
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+        let Some(body_faces) = connected_solid_body_faces(ctx, ir, &body)? else {
             return Ok(BTreeMap::new());
         };
         let Some(bores) = through_bore_cylinders(ctx, ir, &body_faces)? else {
@@ -8788,7 +8834,8 @@ fn simple_hole_chamfers(
         let mut included_angles = Vec::new();
         let mut geometry_reservation = ctx.reserve_scoped(0, "NX chamfer cone geometry")?;
         for face in body_faces
-            .into_iter()
+            .faces
+            .iter()
             .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
         {
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()), "NX chamfer cone surface scan")?;
