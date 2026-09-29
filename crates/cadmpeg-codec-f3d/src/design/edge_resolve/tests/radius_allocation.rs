@@ -26,7 +26,7 @@ fn assert_radius_refusal(operation: &'static str, identity_route: bool) {
         };
         match result {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected radius refusal at {operation}: {other:?}"),
         }
     }

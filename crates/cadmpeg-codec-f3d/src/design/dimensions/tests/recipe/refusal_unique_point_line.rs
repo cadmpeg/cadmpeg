@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{Point2, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+use super::{
+    Point2, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId,
+};
 use cadmpeg_core::decode::ResourceDimension;
 const EPS_REFUSAL_LINEAR: f64 = 1.0e-6;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let line = |name: &str, start, end| {
         SketchEntity::new(
@@ -160,26 +162,41 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     );
     let mut point_entities = entities.clone();
     point_entities.push(point);
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| crate::design::dimensions::unique_point_line_dimension_definition(Some(ctx),
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        crate::design::dimensions::unique_point_line_dimension_definition(
+            Some(ctx),
             &point_entities,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
             EPS_REFUSAL_LINEAR,
-        ).transpose().map(|_| ()));
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn unique_point_line_point_id_refuses_retained_limit() {
-    fixture("f3d unique point line point id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d unique point line point id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn unique_point_line_line_id_refuses_retained_limit() {
-    fixture("f3d unique point line line id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d unique point line line id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn unique_point_line_parameter_id_refuses_retained_limit() {
-    fixture("f3d unique point line parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d unique point line parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }

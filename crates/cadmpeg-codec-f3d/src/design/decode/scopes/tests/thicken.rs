@@ -77,7 +77,11 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap();
     assert_eq!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope),
+        exact_direct_face_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope
+        ),
         None
     );
 }

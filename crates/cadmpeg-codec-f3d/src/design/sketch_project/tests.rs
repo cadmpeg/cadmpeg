@@ -13,13 +13,13 @@ use crate::design::geometry::point_on_sketch_entity;
 use crate::design::geometry::sketch_entity_endpoints;
 use crate::ids::neutral_sketch_curve_id;
 use crate::records::sketch_geometry::SketchCurveGeometry;
-use crate::records::sketch_geometry::SketchSurface;
-use crate::records::sketch_relations::SketchConstraintKind;
 use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::sketch_geometry::SketchPoint;
+use crate::records::sketch_geometry::SketchSurface;
 use crate::records::sketch_geometry::SketchText;
 use crate::records::sketch_placement::DesignSketchPlacement;
 use crate::records::sketch_placement::DesignSketchVisibility;
+use crate::records::sketch_relations::SketchConstraintKind;
 use crate::records::sketch_relations::SketchRelation;
 use crate::records::sketch_relations::SketchRelationMember;
 use crate::records::sketch_relations::SketchRelationReturnMember;
@@ -548,10 +548,14 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         .iter()
         .find(|entity| entity.native_ref.as_deref() == Some("f3d:native:curve#218"))
         .expect("non-clamped NURBS projects");
-    let endpoints = sketch_entity_endpoints(nurbs, None).unwrap().expect("non-clamped NURBS endpoints");
+    let endpoints = sketch_entity_endpoints(nurbs, None)
+        .unwrap()
+        .expect("non-clamped NURBS endpoints");
     assert_eq!(endpoints, [Point2::new(1.0, 0.0), Point2::new(3.0, 2.0)]);
-    assert!(point_on_sketch_entity(None, Point2::new(2.0, 1.0), nurbs, EPS_CONTAINMENT_DISTANCE)
-        .expect("resource allocation did not fail"));
+    assert!(
+        point_on_sketch_entity(None, Point2::new(2.0, 1.0), nurbs, EPS_CONTAINMENT_DISTANCE)
+            .expect("resource allocation did not fail")
+    );
     assert!(
         point_lies_on_sketch_geometry(None, Point2::new(2.0, 1.0), &nurbs.geometry)
             .expect("resource allocation did not fail")
@@ -713,7 +717,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             spline_group,
         ],
         &entities,
-    ).unwrap();
+    )
+    .unwrap();
     assert!(matches!(
         constraints[0].definition.kind(),
         SketchConstraintDefinitionInput::Horizontal { .. }
@@ -797,8 +802,11 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point], None).unwrap(),
         Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::U
     ));
-    assert!(exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point], None)
-        .unwrap().is_none());
+    assert!(
+        exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point], None)
+            .unwrap()
+            .is_none()
+    );
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Midpoint, &[line, point], None).unwrap(),
         Some(SketchConstraintDefinitionInput::Midpoint { .. })
@@ -808,7 +816,9 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchConstraintKind::Curvature,
         SketchConstraintKind::Equal,
     ] {
-        assert!(exact_atomic_constraint(kind, &[line, point], None).unwrap().is_none());
+        assert!(exact_atomic_constraint(kind, &[line, point], None)
+            .unwrap()
+            .is_none());
     }
     let other_line = SketchEntity::new(
         SketchEntityId::mint("generated:test:line#other").unwrap(),
@@ -824,7 +834,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         Some(SketchConstraintDefinitionInput::Tangent { .. })
     ));
     assert!(matches!(
-        exact_atomic_constraint(SketchConstraintKind::Curvature, &[line, &other_line], None).unwrap(),
+        exact_atomic_constraint(SketchConstraintKind::Curvature, &[line, &other_line], None)
+            .unwrap(),
         Some(SketchConstraintDefinitionInput::Curvature { .. })
     ));
     assert!(matches!(
@@ -840,7 +851,9 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchConstraintKind::Curvature,
         SketchConstraintKind::Equal,
     ] {
-        assert!(exact_atomic_constraint(kind, &[line, line], None).unwrap().is_none());
+        assert!(exact_atomic_constraint(kind, &[line, line], None)
+            .unwrap()
+            .is_none());
     }
 }
 
@@ -1215,7 +1228,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         &curves,
         &surfaces,
         &entities,
-    ).unwrap();
+    )
+    .unwrap();
     assert!(matches!(
         constraints.first().map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::SplineGroup { entities }) if entities == &[
             crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0),
@@ -1308,9 +1322,16 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
     let (planar, planar_entities) =
         project_sketch_design(None, &placements, &[], &[], &[], &[], EPS_POINT_PROJECTION)
             .expect("sketch lanes pair");
-    let (spatial, spatial_entities) =
-        project_spatial_sketch_design(None, &placements, &[], &[], &[surface], &[], EPS_POINT_PROJECTION)
-            .expect("valid spatial surface fixture");
+    let (spatial, spatial_entities) = project_spatial_sketch_design(
+        None,
+        &placements,
+        &[],
+        &[],
+        &[surface],
+        &[],
+        EPS_POINT_PROJECTION,
+    )
+    .expect("valid spatial surface fixture");
     assert_eq!(planar.len(), 1);
     assert!(planar_entities.is_empty());
     assert_eq!(spatial.len(), 1);

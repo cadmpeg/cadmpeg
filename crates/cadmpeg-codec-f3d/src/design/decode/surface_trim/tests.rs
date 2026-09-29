@@ -74,7 +74,10 @@ fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
 fn surface_trim_output_refuses_identifier_and_collection_limits() {
     const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let (bytes, mut scope) = surface_trim_selection_and_cell_table();
-    scope.id = format!("{}:design-parameter-scope#800", crate::ids::native_scope(ENTRY));
+    scope.id = format!(
+        "{}:design-parameter-scope#800",
+        crate::ids::native_scope(ENTRY)
+    );
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
@@ -86,7 +89,8 @@ fn surface_trim_output_refuses_identifier_and_collection_limits() {
             &cadmpeg_test_support::service_decode_context(),
             scan,
             &[scope.clone()],
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(operations.len(), 1);
         assert_eq!(
             operations[0].id,
@@ -98,9 +102,24 @@ fn surface_trim_output_refuses_identifier_and_collection_limits() {
         );
         let scope_len = crate::ids::native_scope(ENTRY).len() as u64;
         for (items, retained, dimension, operation) in [
-            (27, u64::MAX, ResourceDimension::CollectionItems, "f3d surface-trim operations"),
-            (u64::MAX, scope_len, ResourceDimension::RetainedBytes, "f3d native stream key"),
-            (u64::MAX, scope_len * 2, ResourceDimension::RetainedBytes, "f3d surface-trim operation identifier"),
+            (
+                27,
+                u64::MAX,
+                ResourceDimension::CollectionItems,
+                "f3d surface-trim operations",
+            ),
+            (
+                u64::MAX,
+                scope_len + 2 * 36,
+                ResourceDimension::RetainedBytes,
+                "f3d native stream key",
+            ),
+            (
+                u64::MAX,
+                scope_len * 2 + 2 * 36,
+                ResourceDimension::RetainedBytes,
+                "f3d surface-trim operation identifier",
+            ),
         ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
@@ -108,11 +127,14 @@ fn surface_trim_output_refuses_identifier_and_collection_limits() {
             policy.limits.max_retained_bytes = retained;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = super::decode_surface_trim_operations(&ctx, scan, &[scope.clone()]);
-            assert!(matches!(
-                &result,
-                Err(CodecError::ResourceLimit(failure))
-                    if failure.dimension == dimension && failure.operation == operation
-            ), "item limit {items}, retained limit {retained}: {result:?}");
+            assert!(
+                matches!(
+                    &result,
+                    Err(CodecError::ResourceLimit(failure))
+                        if failure.dimension == dimension && failure.operation == operation
+                ),
+                "item limit {items}, retained limit {retained}: {result:?}"
+            );
         }
     });
 }
@@ -122,10 +144,14 @@ fn surface_trim_decodes_selection_chain_and_cell_table() {
     let (bytes, scope) = surface_trim_selection_and_cell_table();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
-    let operation =
-        exact_surface_trim_operation(&ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
-            .unwrap()
-            .expect("exact SurfaceTrim cell carrier");
+    let operation = exact_surface_trim_operation(
+        &ctx,
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .unwrap()
+    .expect("exact SurfaceTrim cell carrier");
 
     assert_eq!(operation.selection_record_index, 811);
     assert_eq!(operation.selection_next_record_index, 815);
@@ -176,11 +202,14 @@ fn surface_trim_rejects_cell_ordinal_outside_partition() {
         "first cell ordinal"
     );
     bytes[ordinal..ordinal + 8].copy_from_slice(&6u64.to_le_bytes());
-    assert!(
-        exact_surface_trim_operation(&ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
-            .unwrap()
-            .is_none()
-    );
+    assert!(exact_surface_trim_operation(
+        &ctx,
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope
+    )
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -194,11 +223,14 @@ fn surface_trim_rejects_nonzero_cell_table_tail() {
         .expect("cell table header");
     let tail_zero = table_start + 67;
     bytes[tail_zero] = 1;
-    assert!(
-        exact_surface_trim_operation(&ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
-            .unwrap()
-            .is_none()
-    );
+    assert!(exact_surface_trim_operation(
+        &ctx,
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope
+    )
+    .unwrap()
+    .is_none());
 }
 
 fn surface_trim_refusal(maximum: u64) -> CodecError {
@@ -207,8 +239,13 @@ fn surface_trim_refusal(maximum: u64) -> CodecError {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = maximum;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    exact_surface_trim_operation(&ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
-        .expect_err("two cell entries exceed the selected collection limit")
+    exact_surface_trim_operation(
+        &ctx,
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .expect_err("two cell entries exceed the selected collection limit")
 }
 
 #[test]

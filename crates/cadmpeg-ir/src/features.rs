@@ -6476,7 +6476,10 @@ impl<T: PartialEq> DistinctMembers<T> {
 
 impl<T> DistinctMembers<T> {
     /// Reserve capacity before adding members under a caller resource policy.
-    pub fn try_reserve(&mut self, additional: usize) -> Result<(), std::collections::TryReserveError> {
+    pub fn try_reserve(
+        &mut self,
+        additional: usize,
+    ) -> Result<(), std::collections::TryReserveError> {
         self.0.try_reserve(additional)
     }
 
@@ -6567,11 +6570,12 @@ impl<T: Eq + std::hash::Hash> SelectionMembers<T> {
         if value.is_empty() {
             return Ok(Err(BodySelectionError::Empty));
         }
-        let count = u64::try_from(value.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        let count =
+            u64::try_from(value.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
         ctx.charge_collection_items(count, operation)?;
         let mut unique = HashSet::new();
-        unique.try_reserve(value.len())
+        unique
+            .try_reserve(value.len())
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
         for member in &value {
             if !unique.insert(member) {
@@ -6653,11 +6657,12 @@ impl NativeSelections {
         if value.iter().any(|name| name.trim().is_empty()) {
             return Ok(Err(BodySelectionError::BlankNativeMember));
         }
-        let count = u64::try_from(value.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        let count =
+            u64::try_from(value.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
         ctx.charge_collection_items(count, operation)?;
         let mut unique = HashSet::new();
-        unique.try_reserve(value.len())
+        unique
+            .try_reserve(value.len())
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
         for name in &value {
             if !unique.insert(name) {

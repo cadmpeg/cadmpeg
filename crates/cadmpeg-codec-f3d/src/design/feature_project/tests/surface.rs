@@ -67,10 +67,14 @@ fn surface_extend_boundary_id_refuses_retained_limit() {
         scope.payload_mut()
     {
         *slot = Some(DesignSurfaceExtendOperation {
-            distance: crate::test_support::real(0.04), distance_offset: 40,
-            distance_record_index: 400, method: DesignSurfaceExtendMethod::Perpendicular,
-            method_offset: 102, boundary_record_index: 500,
-            boundary_reference_record_index: 900, boundary_reference_offset: 106,
+            distance: crate::test_support::real(0.04),
+            distance_offset: 40,
+            distance_record_index: 400,
+            method: DesignSurfaceExtendMethod::Perpendicular,
+            method_offset: 102,
+            boundary_record_index: 500,
+            boundary_reference_record_index: 900,
+            boundary_reference_offset: 106,
             edge_record_indices: vec![503, 507],
             tolerance: cadmpeg_ir::scalar::PositiveReal::new(f64::EPSILON).unwrap(),
             tolerance_offset: 139,
@@ -85,7 +89,8 @@ fn surface_extend_boundary_id_refuses_retained_limit() {
         if matches!(super::project_single_scope_with_context(&ctx, &scope),
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d surface extend boundary id"
-                    && failure.dimension == ResourceDimension::RetainedBytes) {
+                    && failure.dimension == ResourceDimension::RetainedBytes)
+        {
             found = true;
             break;
         }
@@ -95,11 +100,11 @@ fn surface_extend_boundary_id_refuses_retained_limit() {
 
 #[test]
 fn surface_offset_boundary_id_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
     use crate::records::feature::surface_ops::{
         DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport,
     };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
 
     let scope = DesignParameterScope::empty(
         "f3d:test:surface-offset#1",

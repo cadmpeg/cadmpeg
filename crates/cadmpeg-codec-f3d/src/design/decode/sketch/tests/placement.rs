@@ -31,7 +31,8 @@ fn tested_parse_sketch_member_run(
     entity_suffix: u64,
 ) -> Vec<crate::records::identity::Located<u32>> {
     crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::parse_sketch_member_run(ctx, bytes, from, entity_suffix).unwrap()
+        crate::design::decode::sketch::parse_sketch_member_run(ctx, bytes, from, entity_suffix)
+            .unwrap()
     })
 }
 
@@ -41,7 +42,13 @@ fn tested_parse_legacy_sketch_member_run(
     entity_suffix: u32,
 ) -> Option<Vec<crate::records::identity::Located<u32>>> {
     crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::parse_legacy_sketch_member_run(ctx, bytes, primary_at, entity_suffix).unwrap()
+        crate::design::decode::sketch::parse_legacy_sketch_member_run(
+            ctx,
+            bytes,
+            primary_at,
+            entity_suffix,
+        )
+        .unwrap()
     })
 }
 
@@ -52,7 +59,14 @@ fn tested_parse_legacy_sketch_container_members(
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
 ) -> Option<Vec<crate::records::identity::Located<u32>>> {
     crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::parse_legacy_sketch_container_members(ctx, bytes, primary_at, entity_suffix, records).unwrap()
+        crate::design::decode::sketch::parse_legacy_sketch_container_members(
+            ctx,
+            bytes,
+            primary_at,
+            entity_suffix,
+            records,
+        )
+        .unwrap()
     })
 }
 
@@ -63,15 +77,18 @@ fn candidates(
     record_index: u32,
 ) -> Vec<DesignSketchPlacement> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-    crate::design::test_support::with_test_decode_context(|ctx| parse_sketch_placement_candidates(
-        ctx,
-        bytes,
-        scope_record_index,
-        &crate::records::identity::DesignEntityId::try_from(entity_id.to_owned())
-            .expect("valid entity ID"),
-        record_index,
-        &records,
-    ).unwrap())
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_sketch_placement_candidates(
+            ctx,
+            bytes,
+            scope_record_index,
+            &crate::records::identity::DesignEntityId::try_from(entity_id.to_owned())
+                .expect("valid entity ID"),
+            record_index,
+            &records,
+        )
+        .unwrap()
+    })
 }
 
 #[test]
@@ -443,8 +460,13 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let placement = crate::design::test_support::with_test_decode_context(|ctx| {
         crate::design::decode::sketch::parse_member_run_head_placement(
-            ctx, &bytes, entity.byte_offset, &entity.entity_id, &records,
-        ).unwrap()
+            ctx,
+            &bytes,
+            entity.byte_offset,
+            &entity.entity_id,
+            &records,
+        )
+        .unwrap()
     })
     .expect("feature-owned sketch placement");
     assert_eq!(placement.record_index, 200);
@@ -457,9 +479,7 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     assert!(placement.member_run_head());
     assert_eq!(placement.scope_record_index, None);
     assert_eq!(
-        tested_parse_legacy_sketch_container_members(
-            &bytes, 0, 100, &records,
-        ),
+        tested_parse_legacy_sketch_container_members(&bytes, 0, 100, &records,),
         Some(Vec::new())
     );
 
@@ -477,8 +497,13 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let compact = crate::design::test_support::with_test_decode_context(|ctx| {
         crate::design::decode::sketch::parse_member_run_head_placement(
-            ctx, &bytes, entity.byte_offset, &entity.entity_id, &records,
-        ).unwrap()
+            ctx,
+            &bytes,
+            entity.byte_offset,
+            &entity.entity_id,
+            &records,
+        )
+        .unwrap()
     })
     .expect("compact identity sketch placement");
     assert_eq!(compact.frame_length(), 34);
@@ -513,8 +538,8 @@ fn legacy_sketch_pair_decodes_its_complete_member_run() {
         bytes.extend_from_slice(&[0; 6]);
     }
 
-    let members = tested_parse_legacy_sketch_member_run(&bytes, 0, 100)
-        .expect("legacy sketch member run");
+    let members =
+        tested_parse_legacy_sketch_member_run(&bytes, 0, 100).expect("legacy sketch member run");
     assert_eq!(
         members.iter().map(|row| row.value).collect::<Vec<_>>(),
         [300, 301]
@@ -555,9 +580,11 @@ fn legacy_sketch_member_run_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::design::decode::sketch::parse_legacy_sketch_member_run(&ctx, &bytes, 0, 100)
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d legacy sketch member run"));
+            && failure.operation == "f3d legacy sketch member run")
+    );
 }
 
 #[test]
@@ -582,9 +609,11 @@ fn legacy_line_orthogonalizes_its_auxiliary_normal() {
     }
     let SketchCurveGeometry::Line {
         direction, normal, ..
-    } = crate::design::test_support::with_test_decode_context(|ctx| crate::design::decode::sketch::decode_line(ctx, &bytes, 0))
-        .expect("line parse")
-        .expect("legacy line")
+    } = crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_line(ctx, &bytes, 0)
+    })
+    .expect("line parse")
+    .expect("legacy line")
     else {
         panic!("expected line");
     };
@@ -595,9 +624,11 @@ fn legacy_line_orthogonalizes_its_auxiliary_normal() {
 
     bytes[133 + 7 * 8..133 + 8 * 8].copy_from_slice(&1.0f64.to_le_bytes());
     let SketchCurveGeometry::Line { direction, .. } =
-        crate::design::test_support::with_test_decode_context(|ctx| crate::design::decode::sketch::decode_line(ctx, &bytes, 0))
-            .expect("line parse")
-            .expect("reverse-parameterized line")
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            crate::design::decode::sketch::decode_line(ctx, &bytes, 0)
+        })
+        .expect("line parse")
+        .expect("reverse-parameterized line")
     else {
         panic!("expected line");
     };
@@ -606,9 +637,11 @@ fn legacy_line_orthogonalizes_its_auxiliary_normal() {
     bytes[133 + 6 * 8..133 + 7 * 8].copy_from_slice(&0.6f64.to_le_bytes());
     bytes[133 + 7 * 8..133 + 8 * 8].copy_from_slice(&0.8f64.to_le_bytes());
     let SketchCurveGeometry::Line { direction, .. } =
-        crate::design::test_support::with_test_decode_context(|ctx| crate::design::decode::sketch::decode_line(ctx, &bytes, 0))
-            .expect("line parse")
-            .expect("line with stale auxiliary direction")
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            crate::design::decode::sketch::decode_line(ctx, &bytes, 0)
+        })
+        .expect("line parse")
+        .expect("line with stale auxiliary direction")
     else {
         panic!("expected line");
     };
@@ -629,9 +662,11 @@ fn spatial_line_with_parallel_auxiliary_normal_retains_its_endpoints() {
         end,
         direction,
         normal,
-    } = crate::design::test_support::with_test_decode_context(|ctx| crate::design::decode::sketch::decode_line(ctx, &bytes, 0))
-        .expect("line parse")
-        .expect("spatial line")
+    } = crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_line(ctx, &bytes, 0)
+    })
+    .expect("line parse")
+    .expect("spatial line")
     else {
         panic!("expected line");
     };
@@ -657,9 +692,11 @@ fn compact_planar_line_uses_its_implicit_normal() {
         end,
         direction,
         normal,
-    } = crate::design::test_support::with_test_decode_context(|ctx| crate::design::decode::sketch::decode_compact_planar_line(ctx, &bytes, 0))
-        .expect("line parse")
-        .expect("compact planar line")
+    } = crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_compact_planar_line(ctx, &bytes, 0)
+    })
+    .expect("line parse")
+    .expect("compact planar line")
     else {
         panic!("expected line");
     };
@@ -726,10 +763,11 @@ fn text_frame_line_decodes_after_point_references() {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
 
-    let (geometry, end) =
-        crate::design::test_support::with_test_decode_context(|ctx| crate::design::decode::sketch::decode_text_frame_line(ctx, &bytes, 52, 2403, 0))
-            .expect("line parse")
-            .expect("text-frame boundary line");
+    let (geometry, end) = crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_text_frame_line(ctx, &bytes, 52, 2403, 0)
+    })
+    .expect("line parse")
+    .expect("text-frame boundary line");
     assert_eq!(end, bytes.len());
     assert!(matches!(
         geometry,
@@ -808,21 +846,21 @@ fn modern_sketch_nurbs_collections_refuse_collection_limit() {
         let error = crate::design::decode::sketch::decode_sketch_nurbs(&ctx, &bytes, 17)
             .transpose()
             .expect_err("collection limit must refuse modern NURBS");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == operation));
+                && failure.operation == operation)
+        );
     }
 }
 
 #[test]
 fn modern_sketch_nurbs_reports_fit_tolerance_scale_overflow_at_source() {
     let mut bytes = modern_sketch_nurbs_payload();
-    assert!(
-        tested_decode_sketch_nurbs(&bytes, 17)
-            .transpose()
-            .unwrap()
-            .is_some()
-    );
+    assert!(tested_decode_sketch_nurbs(&bytes, 17)
+        .transpose()
+        .unwrap()
+        .is_some());
     bytes[133 + 94..133 + 102].copy_from_slice(&1.0e308f64.to_le_bytes());
     let error = tested_decode_sketch_nurbs(&bytes, 17)
         .transpose()
@@ -835,12 +873,10 @@ fn modern_sketch_nurbs_reports_fit_tolerance_scale_overflow_at_source() {
 #[test]
 fn modern_sketch_nurbs_reports_control_point_scale_overflow_at_source() {
     let mut bytes = modern_sketch_nurbs_payload();
-    assert!(
-        tested_decode_sketch_nurbs(&bytes, 17)
-            .transpose()
-            .unwrap()
-            .is_some()
-    );
+    assert!(tested_decode_sketch_nurbs(&bytes, 17)
+        .transpose()
+        .unwrap()
+        .is_some());
     let first_coordinate = 133 + 114 + 4 * 8 + 12 + 12;
     bytes[first_coordinate..first_coordinate + 8].copy_from_slice(&1.0e308f64.to_le_bytes());
     let error = tested_decode_sketch_nurbs(&bytes, 17)
@@ -919,9 +955,11 @@ fn legacy_sketch_nurbs_collections_refuse_collection_limit() {
         let error = crate::design::decode::sketch::decode_legacy_sketch_nurbs(&ctx, &bytes, 0)
             .transpose()
             .expect_err("collection limit must refuse legacy NURBS");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == operation));
+                && failure.operation == operation)
+        );
     }
 }
 
@@ -947,25 +985,21 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
 
     let mut invalid = bytes.clone();
     invalid[133 + 114..133 + 122].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert!(
-        tested_decode_legacy_sketch_nurbs(&invalid, 0)
-            .transpose()
-            .unwrap()
-            .is_none()
-    );
+    assert!(tested_decode_legacy_sketch_nurbs(&invalid, 0)
+        .transpose()
+        .unwrap()
+        .is_none());
     for (offset, value) in [
         (133 + 42, 1.0e308_f64),
         (133 + 114 + 6 * 8 + 12 + 3 * 8 + 12, 1.0e308),
     ] {
         let mut invalid = bytes.clone();
         invalid[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-        assert!(
-            tested_decode_legacy_sketch_nurbs(&invalid, 17)
-                .transpose()
-                .unwrap_err()
-                .to_string()
-                .contains("byte 17")
-        );
+        assert!(tested_decode_legacy_sketch_nurbs(&invalid, 17)
+            .transpose()
+            .unwrap_err()
+            .to_string()
+            .contains("byte 17"));
     }
 
     push_marked_reference(&mut bytes, 201);
@@ -1011,13 +1045,15 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
             bulk_offset: 141,
         }],
     };
-    let curves = crate::design::test_support::with_test_decode_context(|ctx| crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
-        ctx,
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-    )
-    ).expect("primary NURBS frame with a nested subtype header");
+    let curves = crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+            ctx,
+            &bytes,
+            &meta,
+            "Design/BulkStream.dat",
+        )
+    })
+    .expect("primary NURBS frame with a nested subtype header");
     let [curve] = curves.as_slice() else {
         panic!("one indexed NURBS curve");
     };
@@ -1088,27 +1124,26 @@ fn sketch_graph_header(suffix: u64, members: Vec<u32>) -> DesignEntityHeader {
 }
 
 fn sketch_graph_point(record_index: u32) -> SketchPoint {
-        SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
-            id: format!("f3d:native:sketch-point#{record_index}"),
-            record_index,
-            owner_reference: None,
-            class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
-                .unwrap(),
-            byte_offset: u64::from(record_index),
-            coordinate_offset: 141,
-            companion: crate::records::sketch_geometry::SketchPointCompanion {
-                incident_curves: Vec::new(),
-            },
-            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
-                u64::from(record_index),
-                crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
-                Some(2),
-                0.0,
-            ),
-            paired_reference: 0,
-            coordinates: Point2::new(0.0, 0.0),
-        })
-        .unwrap()
+    SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+        id: format!("f3d:native:sketch-point#{record_index}"),
+        record_index,
+        owner_reference: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        byte_offset: u64::from(record_index),
+        coordinate_offset: 141,
+        companion: crate::records::sketch_geometry::SketchPointCompanion {
+            incident_curves: Vec::new(),
+        },
+        record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
+            u64::from(record_index),
+            crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
+            Some(2),
+            0.0,
+        ),
+        paired_reference: 0,
+        coordinates: Point2::new(0.0, 0.0),
+    })
+    .unwrap()
 }
 
 fn sketch_graph_relation() -> crate::records::sketch_relations::SketchRelation {
@@ -1126,11 +1161,16 @@ fn sketch_graph_relation() -> crate::records::sketch_relations::SketchRelation {
         owner_entity_id: None,
         auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
         rectangular_counted_reference_count: None,
-        members: vec![SketchRelationMember::from_index(20)].try_into().unwrap(),
+        members: vec![SketchRelationMember::from_index(20)]
+            .try_into()
+            .unwrap(),
         owner_reference_offset: 0,
-        definition: crate::records::sketch_relations::SketchRelationDefinition::new(0, None).unwrap(),
+        definition: crate::records::sketch_relations::SketchRelationDefinition::new(0, None)
+            .unwrap(),
         entity_genesis: None,
-        return_members: vec![SketchRelationReturnMember::from_index(20)].try_into().unwrap(),
+        return_members: vec![SketchRelationReturnMember::from_index(20)]
+            .try_into()
+            .unwrap(),
         raw_bytes: vec![0; 160],
     })
     .unwrap()
@@ -1162,13 +1202,23 @@ fn sketch_graph_collections_and_text_refuse_limits() {
             &mut relations,
         )
         .expect_err("collection limit must refuse sketch graph");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == operation));
+                && failure.operation == operation)
+        );
     }
     for (limit, dimension, operation) in [
-        (4, ResourceDimension::RetainedBytes, "f3d sketch relation owner text"),
-        (5, ResourceDimension::MaterializedBytes, "f3d sketch relation scope text"),
+        (
+            4,
+            ResourceDimension::RetainedBytes,
+            "f3d sketch relation owner text",
+        ),
+        (
+            5,
+            ResourceDimension::MaterializedBytes,
+            "f3d sketch relation scope text",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -1189,8 +1239,10 @@ fn sketch_graph_collections_and_text_refuse_limits() {
             &mut relations,
         )
         .expect_err("text limit must refuse sketch graph");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-            if failure.dimension == dimension && failure.operation == operation));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == dimension && failure.operation == operation)
+        );
     }
 }
 
@@ -1223,10 +1275,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
             .map(|(value, offset)| crate::records::identity::Located { value, offset })
             .collect::<Vec<_>>()
     );
-    assert_eq!(
-        tested_parse_sketch_member_run(&bytes, 0, 101),
-        vec![]
-    );
+    assert_eq!(tested_parse_sketch_member_run(&bytes, 0, 101), vec![]);
     assert_eq!(
         tested_parse_sketch_member_run(&bytes, paired_at + 1, 100),
         vec![]
@@ -1234,7 +1283,11 @@ fn sketch_member_run_backfills_relation_free_owners() {
 
     // Relation-free geometry named by the container's member run binds to
     // that sketch; records the run does not name stay unowned.
-    let mut points = [sketch_graph_point(20), sketch_graph_point(21), sketch_graph_point(22)];
+    let mut points = [
+        sketch_graph_point(20),
+        sketch_graph_point(21),
+        sketch_graph_point(22),
+    ];
     tested_bind_sketch_graph(
         &[sketch_graph_header(100, vec![20, 21, 99])],
         &mut points,
@@ -1250,7 +1303,10 @@ fn sketch_member_run_backfills_relation_free_owners() {
     // Two sketches claiming one record is a structural conflict.
     let mut points = [sketch_graph_point(20)];
     assert!(tested_bind_sketch_graph(
-        &[sketch_graph_header(100, vec![20]), sketch_graph_header(101, vec![20])],
+        &[
+            sketch_graph_header(100, vec![20]),
+            sketch_graph_header(101, vec![20])
+        ],
         &mut points,
         &mut [],
         &mut [],
@@ -1281,9 +1337,11 @@ fn sketch_member_run_refuses_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::design::decode::sketch::parse_sketch_member_run(&ctx, &bytes, 0, 100)
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+    let error =
+        crate::design::decode::sketch::parse_sketch_member_run(&ctx, &bytes, 0, 100).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d sketch member run"));
+            && failure.operation == "f3d sketch member run")
+    );
 }

@@ -797,9 +797,10 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
                 && *actual == parameter
     ));
     entities.push(point("synthetic:test:id#ambiguous", 10.0, 8.0));
-    let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(None,
-        &entities, &sketch, 2.0, &parameter, 0.0,
-    ).unwrap();
+    let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
+        None, &entities, &sketch, 2.0, &parameter, 0.0,
+    )
+    .unwrap();
     assert_eq!(candidates.len(), 2);
     assert_eq!(
         crate::design::dimensions::recipe_dimension_candidate_entities(None, &candidates).unwrap(),
@@ -990,26 +991,32 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
         Point2::new(3.0, 4.0),
     ));
     assert!(
-        crate::design::dimensions::unique_parallel_line_dimension_definition(None,
+        crate::design::dimensions::unique_parallel_line_dimension_definition(
+            None,
             &entities,
             &sketch,
             &parameter,
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
                 .expect("identity grammar"),
             0.0,
-        ).transpose().unwrap()
+        )
+        .transpose()
+        .unwrap()
         .is_none()
     );
     point_entities.push(entities.last().expect("third line").clone());
     assert!(
-        crate::design::dimensions::unique_point_line_dimension_definition(None,
+        crate::design::dimensions::unique_point_line_dimension_definition(
+            None,
             &point_entities,
             &sketch,
             &parameter,
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
                 .expect("identity grammar"),
             1.0e-6,
-        ).transpose().unwrap()
+        )
+        .transpose()
+        .unwrap()
         .is_none()
     );
 }
@@ -1045,9 +1052,10 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
         point("synthetic:test:id#off-carrier-horizontal", 2.0, 3.0),
         point("synthetic:test:id#off-carrier-vertical", 4.0, 2.0),
     ];
-    let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(None,
-        &entities, &sketch, 2.0, &parameter, 0.0,
-    ).unwrap();
+    let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
+        None, &entities, &sketch, 2.0, &parameter, 0.0,
+    )
+    .unwrap();
     assert!(candidates.len() > 2);
     assert!(matches!(
         crate::design::dimensions::recipe_extension_point_dimension(None,
@@ -1075,14 +1083,18 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
             .unwrap(),
         ),
     ]);
-    let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(None,
-        &ambiguous, &sketch, 2.0, &parameter, 0.0,
-    ).unwrap();
-    assert!(crate::design::dimensions::recipe_extension_point_dimension(None,
+    let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
+        None, &ambiguous, &sketch, 2.0, &parameter, 0.0,
+    )
+    .unwrap();
+    assert!(crate::design::dimensions::recipe_extension_point_dimension(
+        None,
         &candidates,
         &ambiguous,
         &sketch,
-    ).transpose().unwrap()
+    )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -1138,14 +1150,17 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
         circle("synthetic:test:id#outer-b", Point2::new(20.0, 0.0), 8.0),
         circle("synthetic:test:id#inner-b", Point2::new(20.0, 0.0), 6.0),
     ];
-    let definition = crate::design::dimensions::concentric_circle_dimension_definition(None,
+    let definition = crate::design::dimensions::concentric_circle_dimension_definition(
+        None,
         &circles,
         &sketch,
         &parameter,
         &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
             .expect("identity grammar"),
         0.0,
-    ).transpose().unwrap()
+    )
+    .transpose()
+    .unwrap()
     .expect("two disjoint concentric pairs");
     assert!(matches!(
         definition,
@@ -1178,14 +1193,17 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
         1.0,
     ));
     assert!(
-        crate::design::dimensions::concentric_circle_dimension_definition(None,
+        crate::design::dimensions::concentric_circle_dimension_definition(
+            None,
             &circles,
             &sketch,
             &parameter,
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
                 .expect("identity grammar"),
             0.0,
-        ).transpose().unwrap()
+        )
+        .transpose()
+        .unwrap()
         .is_none()
     );
 }
@@ -1236,8 +1254,14 @@ fn assert_expression_audit_limit(operation: &'static str) {
 
     let parameter = |stream: &str, record_index, expression: &str, name: &str| {
         let mut parameter = parse_design_parameter_record(&parameter_record(
-            None, expression, "User Parameter", Some("mm"), name, 1.0,
-        )).expect("generated parameter");
+            None,
+            expression,
+            "User Parameter",
+            Some("mm"),
+            name,
+            1.0,
+        ))
+        .expect("generated parameter");
         parameter.id = format!("f3d:{stream}:parameter#{record_index}");
         parameter.record_index = record_index;
         parameter.source_ordinal = record_index;

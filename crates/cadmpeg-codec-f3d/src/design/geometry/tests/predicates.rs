@@ -36,7 +36,10 @@ fn analytic_intersection_storage_has_fixed_capacity_and_preserves_cardinality() 
     };
     for (height, expected) in [(2., 0), (1., 1), (0., 2)] {
         let points: [Option<Point2>; 2] = line_arc_intersection_points(
-            (Point2::new(-2., height), Point2::new(2., height)), &circle).unwrap();
+            (Point2::new(-2., height), Point2::new(2., height)),
+            &circle,
+        )
+        .unwrap();
         assert_eq!(points.into_iter().flatten().count(), expected);
     }
 }

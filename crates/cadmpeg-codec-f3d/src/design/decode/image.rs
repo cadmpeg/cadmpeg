@@ -14,10 +14,9 @@ pub(super) fn copy_asset_id_charged(
     ctx: &DecodeContext<'_>,
     id: &cadmpeg_ir::assets::AssetId,
 ) -> Result<cadmpeg_ir::assets::AssetId, CodecError> {
-    let copied = String::from_utf8(ctx.copy_retained(
-        id.as_str().as_bytes(),
-        "f3d image feature asset identifier",
-    )?)
+    let copied = String::from_utf8(
+        ctx.copy_retained(id.as_str().as_bytes(), "f3d image feature asset identifier")?,
+    )
     .map_err(|_| CodecError::malformed("F3D asset identifier must be UTF-8"))?;
     cadmpeg_ir::assets::AssetId::mint(copied)
         .map_err(|error| crate::design::text::malformed_design(Some(ctx), format_args!("{error}")))
@@ -38,9 +37,9 @@ pub(super) fn neutral_asset_id_charged(
             Some(bytes)
         }
         .ok_or_else(|| ctx.refuse_codec_limit("f3d asset identifier length", 0, 1))?;
-        encoded_len = encoded_len.checked_add(width).ok_or_else(|| {
-            ctx.refuse_codec_limit("f3d asset identifier length", 0, 1)
-        })?;
+        encoded_len = encoded_len
+            .checked_add(width)
+            .ok_or_else(|| ctx.refuse_codec_limit("f3d asset identifier length", 0, 1))?;
     }
     let mut digits = 1usize;
     let mut remaining = encoded_len;
@@ -48,7 +47,8 @@ pub(super) fn neutral_asset_id_charged(
         remaining /= 10;
         digits += 1;
     }
-    let capacity = PREFIX.len()
+    let capacity = PREFIX
+        .len()
         .checked_add(digits)
         .and_then(|length| length.checked_add(1))
         .and_then(|length| length.checked_add(encoded_len))
@@ -59,9 +59,8 @@ pub(super) fn neutral_asset_id_charged(
         "f3d asset identifier",
     )?;
     let mut id = String::new();
-    id.try_reserve_exact(capacity).map_err(|_| {
-        ctx.refuse_codec_limit("f3d asset identifier allocation", 0, 1)
-    })?;
+    id.try_reserve_exact(capacity)
+        .map_err(|_| ctx.refuse_codec_limit("f3d asset identifier allocation", 0, 1))?;
     id.push_str(PREFIX);
     write!(&mut id, "{encoded_len}:")
         .map_err(|_| CodecError::malformed("F3D asset identifier formatting failed"))?;
@@ -106,15 +105,10 @@ pub(super) fn embedded_image_asset(
             }
         })
         .map(str::to_owned);
-    let data = ctx.copy_retained(
-        scan.entry_bytes(&entry.name)?,
-        "f3d embedded image data",
-    )?;
-    let name = String::from_utf8(ctx.copy_retained(
-        asset_name.as_bytes(),
-        "f3d embedded image name",
-    )?)
-    .map_err(|_| CodecError::Malformed("asset name must be UTF-8".into()))?;
+    let data = ctx.copy_retained(scan.entry_bytes(&entry.name)?, "f3d embedded image data")?;
+    let name =
+        String::from_utf8(ctx.copy_retained(asset_name.as_bytes(), "f3d embedded image name")?)
+            .map_err(|_| CodecError::Malformed("asset name must be UTF-8".into()))?;
     let native_ref = native_scope_charged(ctx, &entry.name)?;
     Ok(Some(
         Asset::try_new(
@@ -123,9 +117,7 @@ pub(super) fn embedded_image_asset(
             media_type,
             AssetContent::Embedded {
                 data: cadmpeg_ir::assets::AssetData::new(data)
-                    .ok_or_else(|| {
-                    CodecError::Malformed("asset data must not be empty".into())
-                })?,
+                    .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
             },
             Some(native_ref),
         )
@@ -198,10 +190,7 @@ mod tests {
             for (limit, operation) in [
                 (0, "f3d embedded image data"),
                 (DATA.len() as u64, "f3d embedded image name"),
-                (
-                    (DATA.len() + NAME.len()) as u64,
-                    "f3d native stream key",
-                ),
+                ((DATA.len() + NAME.len()) as u64, "f3d native stream key"),
             ] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();
@@ -215,7 +204,9 @@ mod tests {
                 ));
             }
             crate::design::test_support::with_test_decode_context(|ctx| {
-                assert!(super::embedded_image_asset(ctx, scan, NAME).unwrap().is_some());
+                assert!(super::embedded_image_asset(ctx, scan, NAME)
+                    .unwrap()
+                    .is_some());
             });
         });
     }
@@ -267,7 +258,10 @@ mod tests {
         with_scan(&archive, |scan| {
             for (dimension, operation) in [
                 (ResourceDimension::RetainedBytes, "f3d native stream key"),
-                (ResourceDimension::CollectionItems, "f3d scoped image records"),
+                (
+                    ResourceDimension::CollectionItems,
+                    "f3d scoped image records",
+                ),
             ] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();
@@ -288,8 +282,12 @@ mod tests {
             }
             crate::design::test_support::with_test_decode_context(|ctx| {
                 let images = super::decode_scoped_images(
-                    ctx, scan, std::slice::from_ref(&scope), &kind,
-                    |_, _, _, _| Ok(Some(17_u32)), |_| "image",
+                    ctx,
+                    scan,
+                    std::slice::from_ref(&scope),
+                    &kind,
+                    |_, _, _, _| Ok(Some(17_u32)),
+                    |_| "image",
                 )
                 .unwrap();
                 assert_eq!(images, [17]);
@@ -303,8 +301,7 @@ mod tests {
             let expected = crate::ids::neutral_asset_id(entry);
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
-            policy.limits.max_retained_bytes =
-                u64::try_from(expected.as_str().len() - 1).unwrap();
+            policy.limits.max_retained_bytes = u64::try_from(expected.as_str().len() - 1).unwrap();
             let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let refusal = super::neutral_asset_id_charged(&limited, entry);
             assert!(matches!(

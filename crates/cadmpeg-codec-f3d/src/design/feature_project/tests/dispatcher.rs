@@ -166,7 +166,8 @@ fn scale_center_id_refuses_retained_limit() {
         crate::records::feature::scope::DesignFeatureKind::Scale,
         1,
     );
-    if let crate::records::feature::scope::DesignScopePayloadMut::Scale(slot) = scope.payload_mut() {
+    if let crate::records::feature::scope::DesignScopePayloadMut::Scale(slot) = scope.payload_mut()
+    {
         *slot = Some(DesignScaleOperation {
             body_group_record_index: 5,
             center_record_index: 6,
@@ -184,7 +185,8 @@ fn scale_center_id_refuses_retained_limit() {
         if matches!(super::project_single_scope_with_context(&ctx, &scope),
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d Scale center id"
-                    && failure.dimension == ResourceDimension::RetainedBytes) {
+                    && failure.dimension == ResourceDimension::RetainedBytes)
+        {
             found = true;
             break;
         }
@@ -521,10 +523,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     };
     let feature_key = point.id.key();
     let prefix = crate::ids::history_input_prefix(&feature_key, 4);
-    assert_eq!(
-        state,
-        &crate::ids::feature_input_topology_id(&point.id, 4)
-    );
+    assert_eq!(state, &crate::ids::feature_input_topology_id(&point.id, 4));
     assert_eq!(vertex, &crate::ids::history_input_vertex_id(&prefix, 43));
     assert_eq!(native.as_str(), &recipe_id);
     assert_eq!(point.dependencies.as_slice(), [predecessor.id.clone()]);
@@ -956,7 +955,8 @@ fn loft_path_preserves_complete_historical_edge_selection() {
             "group",
             EdgeSelection::historical(state.clone(), vec![edge.clone()], "selection".into())
                 .unwrap(),
-        ).unwrap(),
+        )
+        .unwrap(),
         PathRef::historical_edges(state.clone(), vec![edge.clone()], "selection".into()).unwrap()
     );
     assert_eq!(
@@ -970,7 +970,8 @@ fn loft_path_preserves_complete_historical_edge_selection() {
                 "selection".into()
             )
             .unwrap(),
-        ).unwrap(),
+        )
+        .unwrap(),
         PathRef::Native("group".into())
     );
 }
@@ -1106,8 +1107,8 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
             crate::design::feature_project::bind_form_cages(
                 ctx,
                 scan,
-            std::slice::from_ref(&scope),
-            &mut features,
+                std::slice::from_ref(&scope),
+                &mut features,
                 &cages,
             )
         })
@@ -1152,7 +1153,8 @@ fn thread_face_group_fixture() -> (DesignParameterScope, DesignConstructionOpera
         "paired_byte_offset": 325,
         "next_record_index": 151,
         "next_byte_offset": 0
-    })).expect("Thread face group");
+    }))
+    .expect("Thread face group");
     (scope, group)
 }
 
@@ -1256,10 +1258,9 @@ fn merged_historical_edge_refuses_collection_limit() {
         crate::records::feature::scope::DesignFeatureKind::Thread,
         100,
     );
-    let state = FeatureInputTopologyId::mint("f3d:history-input:state#100")
-        .expect("identity grammar");
-    let edge = HistoricalEdgeId::mint("f3d:history-input:edge#100:1")
-        .expect("identity grammar");
+    let state =
+        FeatureInputTopologyId::mint("f3d:history-input:state#100").expect("identity grammar");
+    let edge = HistoricalEdgeId::mint("f3d:history-input:edge#100:1").expect("identity grammar");
     let selection = EdgeSelection::historical(state, vec![edge], scope.id.clone())
         .expect("historical edge selection");
     let arena = DecodeArena::new();
@@ -1386,8 +1387,8 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
             crate::design::feature_project::bind_form_cages(
                 ctx,
                 scan,
-            std::slice::from_ref(&scope),
-            &mut features,
+                std::slice::from_ref(&scope),
+                &mut features,
                 &cages,
             )
         })

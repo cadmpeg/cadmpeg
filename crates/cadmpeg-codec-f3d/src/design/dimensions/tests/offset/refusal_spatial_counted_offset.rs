@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{spatial_counted_offset_dimension_definition, ParameterId, Point3, Vector3, Angle, Length, SketchNativeOperand, SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile, SpatialSketchGeometryDefinition, HashMap};
+use super::{
+    spatial_counted_offset_dimension_definition, Angle, HashMap, Length, ParameterId, Point3,
+    SketchNativeOperand, SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId,
+    SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
+    SpatialSketchId, SpatialSketchProfile, Vector3,
+};
 use cadmpeg_core::decode::ResourceDimension;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let stream = "f3d:synthetic";
     let sketch_id = SpatialSketchId::mint("synthetic:test:spatial-sketch#offset").unwrap();
     let entity = |record_index, geometry| {
@@ -158,62 +162,96 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         .collect::<HashMap<_, _>>();
     let parameter = ParameterId::mint("synthetic:test:parameter#offset").expect("identity grammar");
 
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| spatial_counted_offset_dimension_definition(
-Some(ctx),
-("Linear Dimension-1", Some(0x20), &operands),
-(&parameter, 3.0, -3.0),
-&sketch_id,
-std::slice::from_ref(&sketch),
-&by_record,
-).transpose().map(|_| ()));
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        spatial_counted_offset_dimension_definition(
+            Some(ctx),
+            ("Linear Dimension-1", Some(0x20), &operands),
+            (&parameter, 3.0, -3.0),
+            &sketch_id,
+            std::slice::from_ref(&sketch),
+            &by_record,
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn spatial_offset_role_refuses_collection_limit() {
-    fixture("f3d spatial offset role", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d spatial offset role",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn spatial_offset_result_record_refuses_collection_limit() {
-    fixture("f3d spatial offset result record", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d spatial offset result record",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn spatial_offset_result_identity_refuses_collection_limit() {
-    fixture("f3d spatial offset result identity", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d spatial offset result identity",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn spatial_offset_used_source_refuses_collection_limit() {
-    fixture("f3d spatial offset used source", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d spatial offset used source",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn spatial_offset_used_result_refuses_collection_limit() {
-    fixture("f3d spatial offset used result", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d spatial offset used result",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn spatial_counted_offset_source_id_refuses_retained_limit() {
-    fixture("f3d spatial counted offset source id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d spatial counted offset source id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn spatial_offset_source_member_refuses_collection_limit() {
-    fixture("f3d spatial offset source member", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d spatial offset source member",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn spatial_counted_offset_result_id_refuses_retained_limit() {
-    fixture("f3d spatial counted offset result id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d spatial counted offset result id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn spatial_offset_result_member_refuses_collection_limit() {
-    fixture("f3d spatial offset result member", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d spatial offset result member",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn spatial_counted_offset_parameter_id_refuses_retained_limit() {
-    fixture("f3d spatial counted offset parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d spatial counted offset parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }

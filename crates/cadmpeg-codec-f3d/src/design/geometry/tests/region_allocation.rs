@@ -24,16 +24,23 @@ macro_rules! region_item_refusal {
 }
 
 region_item_refusal!(boundary_refuses_limit, "f3d profile boundaries");
-region_item_refusal!(containment_cell_refuses_limit, "f3d profile containment cell");
+region_item_refusal!(
+    containment_cell_refuses_limit,
+    "f3d profile containment cell"
+);
 region_item_refusal!(containment_row_refuses_limit, "f3d profile containment row");
 region_item_refusal!(projected_point_refuses_limit, "f3d profile projected point");
 region_item_refusal!(incidence_row_refuses_limit, "f3d profile incidence row");
 region_item_refusal!(closure_match_refuses_limit, "f3d profile closure match");
 region_item_refusal!(hole_index_refuses_limit, "f3d profile hole index");
-region_item_refusal!(containing_boundary_refuses_limit,
-    "f3d profile containing boundary");
-region_item_refusal!(independent_boundary_refuses_limit,
-    "f3d independent profile boundaries");
+region_item_refusal!(
+    containing_boundary_refuses_limit,
+    "f3d profile containing boundary"
+);
+region_item_refusal!(
+    independent_boundary_refuses_limit,
+    "f3d independent profile boundaries"
+);
 
 #[test]
 fn incident_boundary_refuses_limit() {
@@ -69,11 +76,13 @@ fn circular_region_keeps_admitted_selection() {
     let sketch_id = SketchId::mint("synthetic:test:id#region").unwrap();
     let entity_id = SketchEntityId::mint("synthetic:test:id#region-circle").unwrap();
     let entity = SketchEntity::new(
-        entity_id.clone(), sketch_id.clone(),
+        entity_id.clone(),
+        sketch_id.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length::new(2.0).unwrap(),
-        }).unwrap(),
+        })
+        .unwrap(),
     );
     let sketch = Sketch {
         id: sketch_id,
@@ -84,21 +93,36 @@ fn circular_region_keeps_admitted_selection() {
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
-        ).unwrap(),
-        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![
-            SketchEntityUse { entity: entity_id, reversed: false },
-        ]]).unwrap(),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
+            entity: entity_id,
+            reversed: false,
+        }]])
+        .unwrap(),
         native_ref: None,
     };
     let entities = [entity];
     let points = [Point3::new(0.5, 0.0, 0.0)];
-    let expected = super::region_containing_points(&sketch, &entities, &points,
-        REGION_LIMIT_TEST_TOLERANCE, None).unwrap();
+    let expected = super::region_containing_points(
+        &sketch,
+        &entities,
+        &points,
+        REGION_LIMIT_TEST_TOLERANCE,
+        None,
+    )
+    .unwrap();
     assert!(expected.is_some());
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let actual = super::region_containing_points(&sketch, &entities, &points,
-        REGION_LIMIT_TEST_TOLERANCE, Some(&ctx)).unwrap();
+    let actual = super::region_containing_points(
+        &sketch,
+        &entities,
+        &points,
+        REGION_LIMIT_TEST_TOLERANCE,
+        Some(&ctx),
+    )
+    .unwrap();
     assert_eq!(actual, expected);
 }

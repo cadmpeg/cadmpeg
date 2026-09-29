@@ -85,12 +85,15 @@ fn counted_offset_return_run_pairs_sources_and_results() {
     );
 
     let entities = HashMap::from([(1, &bottom), (2, &top), (3, &inset_top), (4, &inset_bottom)]);
-    let definition = exact_counted_offset(None,
+    let definition = exact_counted_offset(
+        None,
         &offset_loci(&[(1, 3, 1), (2, 2, 4), (3, 0, 2), (4, 0, 3)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
-    ).transpose().unwrap()
+    )
+    .transpose()
+    .unwrap()
     .expect("counted offset graph");
     let crate::design::dimensions::CountedOffset { pairs, distance } = definition;
     assert_eq!(&pairs[0].source, bottom.id());
@@ -136,12 +139,15 @@ fn counted_offset_accepts_primary_to_generated_identity_partition() {
     ));
 
     let ambiguous_ids = HashMap::from([(1, 0), (2, 0)]);
-    assert!(exact_counted_offset(None,
+    assert!(exact_counted_offset(
+        None,
         &offset_loci(&[(1, 4, 1), (2, 1, 2)]),
         &entities,
         &ambiguous_ids,
         1.0e-6,
-    ).transpose().unwrap()
+    )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -229,12 +235,15 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     })
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &skewed)]);
-    assert!(exact_counted_offset(None,
+    assert!(exact_counted_offset(
+        None,
         &offset_loci(&[(1, 3, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
-    ).transpose().unwrap()
+    )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -264,12 +273,15 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &result)]);
 
-    let definition = exact_counted_offset(None,
+    let definition = exact_counted_offset(
+        None,
         &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
-    ).transpose().unwrap()
+    )
+    .transpose()
+    .unwrap()
     .expect("concentric arc offset");
     assert!(matches!(
         definition,
@@ -292,12 +304,15 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
     })
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &mismatched)]);
-    assert!(exact_counted_offset(None,
+    assert!(exact_counted_offset(
+        None,
         &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         1.0e-6,
-    ).transpose().unwrap()
+    )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -360,12 +375,15 @@ fn counted_offset_accepts_concentric_full_circles() {
     })
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &displaced)]);
-    assert!(exact_counted_offset(None,
+    assert!(exact_counted_offset(
+        None,
         &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
         &entities,
         &HashMap::new(),
         TEST_LINEAR_TOLERANCE,
-    ).transpose().unwrap()
+    )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -526,13 +544,15 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     let parameter = ParameterId::mint("synthetic:test:parameter#offset").expect("identity grammar");
 
     let definition = spatial_counted_offset_dimension_definition(
-None,
-("Linear Dimension-1", Some(0x20), &operands),
-(&parameter, 3.0, -3.0),
-&sketch_id,
-std::slice::from_ref(&sketch),
-&by_record,
-).transpose().unwrap()
+        None,
+        ("Linear Dimension-1", Some(0x20), &operands),
+        (&parameter, 3.0, -3.0),
+        &sketch_id,
+        std::slice::from_ref(&sketch),
+        &by_record,
+    )
+    .transpose()
+    .unwrap()
     .expect("counted spatial offset");
     assert!(matches!(
         definition,
@@ -551,22 +571,26 @@ std::slice::from_ref(&sketch),
             && actual_parameter == parameter) && actual_distance.get() == 3.0
     ));
     assert!(spatial_counted_offset_dimension_definition(
-None,
-("Linear Dimension-1", Some(0), &operands),
-(&parameter, 3.0, -3.0),
-&sketch_id,
-std::slice::from_ref(&sketch),
-&by_record,
-).transpose().unwrap()
+        None,
+        ("Linear Dimension-1", Some(0), &operands),
+        (&parameter, 3.0, -3.0),
+        &sketch_id,
+        std::slice::from_ref(&sketch),
+        &by_record,
+    )
+    .transpose()
+    .unwrap()
     .is_none());
     assert!(spatial_counted_offset_dimension_definition(
-None,
-("Linear Dimension-1", Some(0x20), &operands),
-(&parameter, 3.0, -2.0),
-&sketch_id,
-std::slice::from_ref(&sketch),
-&by_record,
-).transpose().unwrap()
+        None,
+        ("Linear Dimension-1", Some(0x20), &operands),
+        (&parameter, 3.0, -2.0),
+        &sketch_id,
+        std::slice::from_ref(&sketch),
+        &by_record,
+    )
+    .transpose()
+    .unwrap()
     .is_none());
     let outside_source = entity(
         99,
@@ -582,35 +606,41 @@ std::slice::from_ref(&sketch),
     non_permutation[first_return].object_index = Some(99);
     non_permutation[first_return].native_ref = outside_source.native_ref.clone();
     assert!(spatial_counted_offset_dimension_definition(
-None,
-("Linear Dimension-1", Some(0x20), &non_permutation),
-(&parameter, 3.0, -3.0),
-&sketch_id,
-std::slice::from_ref(&sketch),
-&by_record,
-).transpose().unwrap()
+        None,
+        ("Linear Dimension-1", Some(0x20), &non_permutation),
+        (&parameter, 3.0, -3.0),
+        &sketch_id,
+        std::slice::from_ref(&sketch),
+        &by_record,
+    )
+    .transpose()
+    .unwrap()
     .is_none());
     let mut wrong_operand_kind = operands.clone();
     wrong_operand_kind[0].native_kind = cadmpeg_core::text::NonBlankString::new("point").unwrap();
     assert!(spatial_counted_offset_dimension_definition(
-None,
-("Linear Dimension-1", Some(0x20), &wrong_operand_kind),
-(&parameter, 3.0, -3.0),
-&sketch_id,
-std::slice::from_ref(&sketch),
-&by_record,
-).transpose().unwrap()
+        None,
+        ("Linear Dimension-1", Some(0x20), &wrong_operand_kind),
+        (&parameter, 3.0, -3.0),
+        &sketch_id,
+        std::slice::from_ref(&sketch),
+        &by_record,
+    )
+    .transpose()
+    .unwrap()
     .is_none());
     let mut ambiguous_sketch = sketch.clone();
     ambiguous_sketch.profiles.push(sketch.profiles[0].clone());
     assert!(spatial_counted_offset_dimension_definition(
-None,
-("Linear Dimension-1", Some(0x20), &operands),
-(&parameter, 3.0, -3.0),
-&sketch_id,
-std::slice::from_ref(&ambiguous_sketch),
-&by_record,
-).transpose().unwrap()
+        None,
+        ("Linear Dimension-1", Some(0x20), &operands),
+        (&parameter, 3.0, -3.0),
+        &sketch_id,
+        std::slice::from_ref(&ambiguous_sketch),
+        &by_record,
+    )
+    .transpose()
+    .unwrap()
     .is_none());
 }
 
@@ -892,9 +922,8 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &policy,
-    ).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     bind_dimension_loci(
         &ctx,
         &[placement("A", 100), placement("B", 200)],
@@ -963,8 +992,10 @@ fn dimension_placement_scope_refuses_collection_limit() {
 
     let placement = DesignSketchPlacement {
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
-            0, crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
-        ).unwrap(),
+            0,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
         id: "f3d:test:placement#1".into(),
         scope_record_index: Some(10),
         entity_id: "0_100".to_owned().try_into().unwrap(),
@@ -1008,7 +1039,8 @@ fn dimension_companion_scope_refuses_collection_limit() {
             variant: Some(0),
             companion_record_index: 12,
         },
-    ).unwrap();
+    )
+    .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;

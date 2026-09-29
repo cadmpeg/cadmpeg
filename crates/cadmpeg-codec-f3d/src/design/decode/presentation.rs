@@ -8,10 +8,10 @@ use cadmpeg_core::CodecError;
 
 use crate::bytes::{is_guid_prefix, lp_utf16_bytes, take_reference};
 use crate::design::decode::meta::typed_primary_frames;
-use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::design::decode::sketch::{
     parse_genesis_entity_header, parse_settled_entity_header, NamedEntityHeader,
 };
+use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::design::presentation::{
     is_physical_material_token, APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_BASE_TYPE_GUID,
     BODY_PRESENTATION_MATERIAL_ENVELOPE_ID, BODY_PRESENTATION_TYPE_GUID,
@@ -89,32 +89,43 @@ pub(super) fn browser_node_records(
                 .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| base.eq_ignore_ascii_case(BROWSER_NODE_BASE_TYPE_GUID))
         {
-            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
-                "F3D Design browser-node entity {} has incompatible registration metadata",
-                frame.entity_id
-            )));
+            return Err(crate::design::text::malformed_design(
+                Some(ctx),
+                format_args!(
+                    "F3D Design browser-node entity {} has incompatible registration metadata",
+                    frame.entity_id
+                ),
+            ));
         }
         let record = &bytes[frame.start..frame.end];
         let record_index = View::u32_le_at(record, 7).ok_or_else(|| {
-            crate::design::text::malformed_design(Some(ctx), format_args!(
-                "F3D Design browser-node entity {} has a truncated record index",
-                frame.entity_id
-            ))
+            crate::design::text::malformed_design(
+                Some(ctx),
+                format_args!(
+                    "F3D Design browser-node entity {} has a truncated record index",
+                    frame.entity_id
+                ),
+            )
         })?;
         if u64::from(record_index) != frame.entity_id || record.get(11..21) != Some(&[0; 10]) {
-            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
-                "F3D Design browser-node entity {} has an invalid header",
-                frame.entity_id
-            )));
+            return Err(crate::design::text::malformed_design(
+                Some(ctx),
+                format_args!(
+                    "F3D Design browser-node entity {} has an invalid header",
+                    frame.entity_id
+                ),
+            ));
         }
         let Some((guid, after_guid)) =
-            lp_utf16_bounded_charged(ctx, record, 21, GUID_LEN..=GUID_LEN)?.filter(|(guid, after)| {
-                is_guid_prefix(guid)
-                    && after
-                        .checked_add(11)
-                        .is_some_and(|record_end| record_end <= record.len())
-                    && record.get(*after + 1..*after + 3) == Some(&[0x01, 0x01])
-            })
+            lp_utf16_bounded_charged(ctx, record, 21, GUID_LEN..=GUID_LEN)?.filter(
+                |(guid, after)| {
+                    is_guid_prefix(guid)
+                        && after
+                            .checked_add(11)
+                            .is_some_and(|record_end| record_end <= record.len())
+                        && record.get(*after + 1..*after + 3) == Some(&[0x01, 0x01])
+                },
+            )
         else {
             continue;
         };
@@ -122,18 +133,20 @@ pub(super) fn browser_node_records(
             CodecError::Malformed("F3D Design browser-node flag is truncated".into())
         })?
         else {
-            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
-                "F3D Design browser-node entity {} has an invalid hidden flag",
-                frame.entity_id
-            )));
+            return Err(crate::design::text::malformed_design(
+                Some(ctx),
+                format_args!(
+                    "F3D Design browser-node entity {} has an invalid hidden flag",
+                    frame.entity_id
+                ),
+            ));
         };
         let entity_suffix = View::u64_le_at(record, after_guid + 3).ok_or_else(|| {
             CodecError::Malformed("F3D Design browser-node suffix is truncated".into())
         })?;
         ctx.charge_collection_items(1, "f3d browser node records")?;
-        out.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("f3d browser node records allocation", 0, 1)
-        })?;
+        out.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("f3d browser node records allocation", 0, 1))?;
         out.push(BrowserNodeRecord {
             record_index,
             guid,
@@ -173,10 +186,13 @@ pub(crate) fn body_presentations(
                 .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| base.eq_ignore_ascii_case(BODY_PRESENTATION_BASE_TYPE_GUID))
         {
-            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
-                "F3D Design body-presentation entity {} has incompatible registration metadata",
-                frame.entity_id
-            )));
+            return Err(crate::design::text::malformed_design(
+                Some(ctx),
+                format_args!(
+                    "F3D Design body-presentation entity {} has incompatible registration metadata",
+                    frame.entity_id
+                ),
+            ));
         }
         let framed_bytes = &bytes[..frame.end];
         let named_header = match parse_settled_entity_header(ctx, framed_bytes, frame.start)? {
@@ -215,16 +231,22 @@ pub(crate) fn body_presentations(
         } else {
             let entity_suffix =
                 View::u64_le_at(framed_bytes, frame.start + 7).ok_or_else(|| {
-                    crate::design::text::malformed_design(Some(ctx), format_args!(
-                        "F3D Design bare body-presentation entity {} has a truncated head",
-                        frame.entity_id
-                    ))
+                    crate::design::text::malformed_design(
+                        Some(ctx),
+                        format_args!(
+                            "F3D Design bare body-presentation entity {} has a truncated head",
+                            frame.entity_id
+                        ),
+                    )
                 })?;
             if entity_suffix == 0 || entity_suffix != frame.entity_id {
-                return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
+                return Err(crate::design::text::malformed_design(
+                    Some(ctx),
+                    format_args!(
                     "F3D Design bare body-presentation entity {} has head entity {entity_suffix}",
                     frame.entity_id
-                )));
+                ),
+                ));
             }
             let Some(material) = bare_presentation_material(
                 ctx,
@@ -232,7 +254,8 @@ pub(crate) fn body_presentations(
                 frame.start + 15,
                 frame.end,
                 entity_suffix,
-            )? else {
+            )?
+            else {
                 continue;
             };
             (entity_suffix, BodyPresentationOwner::Bare, Some(material))
@@ -271,7 +294,8 @@ fn copy_browser_node(
     let guid = String::from_utf8(ctx.copy_retained(
         node.guid.as_bytes(),
         "f3d body presentation browser node GUID",
-    )?).map_err(|_| CodecError::Malformed("F3D browser node GUID is invalid UTF-8".into()))?;
+    )?)
+    .map_err(|_| CodecError::Malformed("F3D browser node GUID is invalid UTF-8".into()))?;
     Ok(BrowserNodeRecord {
         record_index: node.record_index,
         guid,
@@ -289,15 +313,19 @@ fn entity_types<'a>(
     for design_type in &meta.types {
         for &entity_id in design_type.entities.values() {
             if out.contains_key(&entity_id) {
-                return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
-                    "F3D Design entity {entity_id} has multiple registered types"
-                )));
+                return Err(crate::design::text::malformed_design(
+                    Some(ctx),
+                    format_args!("F3D Design entity {entity_id} has multiple registered types"),
+                ));
             }
             ctx.charge_collection_items(1, "f3d presentation entity types")?;
             out.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("f3d presentation entity types allocation", 0, 1)
             })?;
-            out.insert(entity_id, (design_type.type_guid.as_str(), design_type.version));
+            out.insert(
+                entity_id,
+                (design_type.type_guid.as_str(), design_type.version),
+            );
         }
     }
     Ok(out)
@@ -320,7 +348,8 @@ fn presentation_material(
     let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]);
     let mut candidate = None;
     for physical_at in find_all(bytes, start, end, &physical_marker) {
-        let Some((physical_guid_at, physical_guid)) = preceding_lp_utf16(ctx, bytes, start, physical_at)?
+        let Some((physical_guid_at, physical_guid)) =
+            preceding_lp_utf16(ctx, bytes, start, physical_at)?
         else {
             continue;
         };
@@ -343,7 +372,9 @@ fn presentation_material(
         let Some(token_at) = skip_zeros(bytes, physical_at + physical_marker.len(), end) else {
             continue;
         };
-        let Some((physical_token, after_token)) = lp_utf16_bounded_charged(ctx, bytes, token_at, 1..=256)? else {
+        let Some((physical_token, after_token)) =
+            lp_utf16_bounded_charged(ctx, bytes, token_at, 1..=256)?
+        else {
             continue;
         };
         if !is_physical_material_token(&physical_token) || after_token > end {
@@ -375,13 +406,16 @@ fn presentation_material(
         {
             continue;
         }
-        let Some((_, after_name)) = lp_utf16_bounded_charged(ctx, bytes, reference_at, 0..=256)? else {
+        let Some((_, after_name)) = lp_utf16_bounded_charged(ctx, bytes, reference_at, 0..=256)?
+        else {
             continue;
         };
         let Some(visual_at) = record_tail_visual_offset(bytes, after_name, end) else {
             continue;
         };
-        let Some((visual_guid, after_visual)) = lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256)? else {
+        let Some((visual_guid, after_visual)) =
+            lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256)?
+        else {
             continue;
         };
         let Ok(visual_guid) = crate::records::references::DesignVisualToken::try_from(visual_guid)
@@ -463,7 +497,9 @@ fn bare_presentation_material(
         let Some(token_at) = skip_zeros(bytes, marker_at + marker.len(), end) else {
             continue;
         };
-        let Some((physical_token, after_token)) = lp_utf16_bounded_charged(ctx, bytes, token_at, 1..=256)? else {
+        let Some((physical_token, after_token)) =
+            lp_utf16_bounded_charged(ctx, bytes, token_at, 1..=256)?
+        else {
             continue;
         };
         if !is_physical_material_token(&physical_token) {
@@ -500,7 +536,8 @@ fn bare_presentation_material(
             }
         }
         let mut visual_offsets = [Some(node_reference_at), after_name]
-            .into_iter().flatten()
+            .into_iter()
+            .flatten()
             .filter_map(|name_end| record_tail_visual_offset(bytes, name_end, end));
         let Some(visual_at) = visual_offsets.next() else {
             continue;
@@ -508,7 +545,9 @@ fn bare_presentation_material(
         if visual_offsets.any(|offset| offset != visual_at) {
             continue;
         }
-        let Some((visual_guid, after_visual)) = lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256)? else {
+        let Some((visual_guid, after_visual)) =
+            lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256)?
+        else {
             continue;
         };
         let Ok(visual_guid) = crate::records::references::DesignVisualToken::try_from(visual_guid)
@@ -628,11 +667,17 @@ fn preceding_lp_utf16(
         }
         let scan_start = end.saturating_sub(4 + 256 * 2).max(start);
         for at in scan_start..end {
-            let Some(count) = View::u32_le_at(bytes, at).and_then(|count| usize::try_from(count).ok()) else {
+            let Some(count) =
+                View::u32_le_at(bytes, at).and_then(|count| usize::try_from(count).ok())
+            else {
                 continue;
             };
             if !(1..=256).contains(&count)
-                || at.checked_add(4).and_then(|start| count.checked_mul(2).and_then(|bytes| start.checked_add(bytes))) != Some(end)
+                || at.checked_add(4).and_then(|start| {
+                    count
+                        .checked_mul(2)
+                        .and_then(|bytes| start.checked_add(bytes))
+                }) != Some(end)
             {
                 continue;
             }
@@ -676,7 +721,8 @@ mod tests {
     ) -> Option<super::PresentationMaterial> {
         crate::design::test_support::with_test_decode_context(|ctx| {
             bare_presentation_material_with_context(ctx, bytes, start, end, entity_suffix)
-        }).unwrap()
+        })
+        .unwrap()
     }
 
     fn body_presentations(
@@ -709,21 +755,28 @@ mod tests {
         policy.limits.max_retained_bytes = u64::try_from(text.len() - 1).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = crate::design::decode::text::lp_utf16_bounded_charged(&ctx, &bytes, 0, 1..=256)
-            .err().unwrap();
+            .err()
+            .unwrap();
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "f3d Design UTF-16 text"
         ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let decoded = crate::design::decode::text::lp_utf16_bounded_charged(&ctx, &bytes, 0, 1..=256)
-            .unwrap().unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let decoded =
+            crate::design::decode::text::lp_utf16_bounded_charged(&ctx, &bytes, 0, 1..=256)
+                .unwrap()
+                .unwrap();
         assert_eq!(decoded.0, text);
         assert_eq!(decoded.1, bytes.len());
 
         let invalid = [1, 0, 0, 0, 0, 0xd8];
-        assert!(crate::design::decode::text::lp_utf16_bounded_charged(&ctx, &invalid, 0, 1..=256)
-            .unwrap().is_none());
+        assert!(
+            crate::design::decode::text::lp_utf16_bounded_charged(&ctx, &invalid, 0, 1..=256)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -752,7 +805,9 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 5;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = browser_node_records_with_context(&ctx, &bytes, &meta).err().unwrap();
+        let error = browser_node_records_with_context(&ctx, &bytes, &meta)
+            .err()
+            .unwrap();
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -936,7 +991,9 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 23;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = body_presentations_with_context(&ctx, &bytes, &meta).err().unwrap();
+        let error = body_presentations_with_context(&ctx, &bytes, &meta)
+            .err()
+            .unwrap();
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -954,7 +1011,10 @@ mod tests {
         ));
         let presentations = body_presentations(&bytes, &meta).unwrap();
         assert_eq!(presentations.len(), 1);
-        assert_eq!(presentations[0].browser_node.as_ref().unwrap().guid, node_guid);
+        assert_eq!(
+            presentations[0].browser_node.as_ref().unwrap().guid,
+            node_guid
+        );
     }
 
     #[test]

@@ -11,23 +11,39 @@ use crate::history_records::{
     AsmHistoricalTransition, AsmHistory,
 };
 use crate::ids::neutral_spatial_sketch_curve_id;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityUse, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition, SpatialSketchProfile,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
 
 #[test]
 fn spatial_profile_polygon_points_refuse_collection_limit() {
-    let sketch_id = cadmpeg_ir::sketches::SpatialSketchId::mint(
-        "synthetic:test:id#spatial-polygon-allocation").unwrap();
+    let sketch_id =
+        cadmpeg_ir::sketches::SpatialSketchId::mint("synthetic:test:id#spatial-polygon-allocation")
+            .unwrap();
     let entities = [
-        spatial_line(&sketch_id, 100, Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)),
-        spatial_line(&sketch_id, 101, Point3::new(2.0, 0.0, 0.0), Point3::new(0.0, 2.0, 0.0)),
-        spatial_line(&sketch_id, 102, Point3::new(0.0, 2.0, 0.0), Point3::new(0.0, 0.0, 0.0)),
+        spatial_line(
+            &sketch_id,
+            100,
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+        ),
+        spatial_line(
+            &sketch_id,
+            101,
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+        ),
+        spatial_line(
+            &sketch_id,
+            102,
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+        ),
     ];
     let sketch = SpatialSketch {
         id: sketch_id.clone(),
@@ -194,7 +210,8 @@ fn spatial_transition_does_not_select_a_translated_equal_length_profile() {
     };
 
     assert_eq!(
-        transition_spatial_profile_selection(&sketch, &entities, &[history], 2, 1, 1.0e-6, None).unwrap(),
+        transition_spatial_profile_selection(&sketch, &entities, &[history], 2, 1, 1.0e-6, None)
+            .unwrap(),
         None
     );
 }
@@ -264,7 +281,8 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
     ];
 
     assert_eq!(
-        spatial_polyline_profile_containing_points(&sketch, &entities, &points, 1.0e-6, None).unwrap(),
+        spatial_polyline_profile_containing_points(&sketch, &entities, &points, 1.0e-6, None)
+            .unwrap(),
         None
     );
     let polyline_only = SpatialSketch {
@@ -272,7 +290,14 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
         ..sketch
     };
     assert_eq!(
-        spatial_polyline_profile_containing_points(&polyline_only, &entities, &points, 1.0e-6, None).unwrap(),
+        spatial_polyline_profile_containing_points(
+            &polyline_only,
+            &entities,
+            &points,
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(0)
     );
 }

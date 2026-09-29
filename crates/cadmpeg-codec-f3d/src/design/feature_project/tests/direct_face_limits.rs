@@ -3,7 +3,9 @@
 use crate::records::feature::direct_face::{
     DesignOffsetFacesOperation, DesignShellOperation, DesignThickenOperation,
 };
-use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut};
+use crate::records::feature::scope::{
+    DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
+};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -12,23 +14,29 @@ use cadmpeg_core::CodecError;
 fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty("f3d:test:scope#12", kind, 12);
     match scope.payload_mut() {
-        DesignScopePayloadMut::OffsetFaces(slot) => *slot = Some(DesignOffsetFacesOperation {
-            distance: cadmpeg_ir::scalar::FiniteReal::new(0.25).unwrap(),
-            distance_record_index: 300,
-            distance_offset: 0,
-        }),
-        DesignScopePayloadMut::Thicken(slot) => *slot = Some(DesignThickenOperation {
-            signed_thickness: cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
-            thickness_record_index: 300,
-            thickness_offset: 0,
-        }),
-        DesignScopePayloadMut::Shell(slot) => *slot = Some(DesignShellOperation {
-            thickness: cadmpeg_ir::scalar::PositiveReal::new(0.5).unwrap(),
-            thickness_record_index: 300,
-            thickness_offset: 0,
-            outward: true,
-            outward_offset: 0,
-        }),
+        DesignScopePayloadMut::OffsetFaces(slot) => {
+            *slot = Some(DesignOffsetFacesOperation {
+                distance: cadmpeg_ir::scalar::FiniteReal::new(0.25).unwrap(),
+                distance_record_index: 300,
+                distance_offset: 0,
+            })
+        }
+        DesignScopePayloadMut::Thicken(slot) => {
+            *slot = Some(DesignThickenOperation {
+                signed_thickness: cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
+                thickness_record_index: 300,
+                thickness_offset: 0,
+            })
+        }
+        DesignScopePayloadMut::Shell(slot) => {
+            *slot = Some(DesignShellOperation {
+                thickness: cadmpeg_ir::scalar::PositiveReal::new(0.5).unwrap(),
+                thickness_record_index: 300,
+                thickness_offset: 0,
+                outward: true,
+                outward_offset: 0,
+            })
+        }
         _ => panic!("unsupported direct-face scope fixture"),
     }
     scope
@@ -56,21 +64,26 @@ fn group(role: DesignOperandRole) -> DesignConstructionOperandGroup {
         "role_offset": 1054,
         "paired_class_tag": "259",
         "paired_byte_offset": 1125
-    })).unwrap()
+    }))
+    .unwrap()
 }
 
 fn assert_retained_refusal(
     operation: &'static str,
-    project: impl for<'a> Fn(Option<&'a DecodeContext<'a>>) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError>,
+    project: impl for<'a> Fn(
+        Option<&'a DecodeContext<'a>>,
+    ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError>,
 ) {
     assert!(project(None).unwrap().is_some());
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(project(Some(&ctx)), Err(CodecError::ResourceLimit(failure))
+    assert!(
+        matches!(project(Some(&ctx)), Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::RetainedBytes
-            && failure.operation == operation));
+            && failure.operation == operation)
+    );
 }
 
 #[test]
@@ -109,7 +122,11 @@ fn shell_native_body_group_id_refuses_retained_limit() {
     });
 }
 
-fn direct_face_operand(index: u32, ordinal: u32, slots: Vec<i64>) -> crate::records::topology::face::DesignFaceOperand {
+fn direct_face_operand(
+    index: u32,
+    ordinal: u32,
+    slots: Vec<i64>,
+) -> crate::records::topology::face::DesignFaceOperand {
     use crate::records::recipes::ConstructionRecipeKind;
     use crate::records::topology::face::{DesignFaceOperand, DesignFaceOperandDraft};
     DesignFaceOperand::try_new(DesignFaceOperandDraft {
@@ -142,7 +159,8 @@ fn direct_face_operand(index: u32, ordinal: u32, slots: Vec<i64>) -> crate::reco
         resolved_active_face: None,
         next_record_index: index + 4,
         next_byte_offset: 1411,
-    }).unwrap()
+    })
+    .unwrap()
 }
 
 fn assert_direct_face_refusal(
@@ -153,10 +171,12 @@ fn assert_direct_face_refusal(
 ) {
     let mut scope = scope(DesignFeatureKind::OffsetFaces);
     if historical {
-        scope.try_edit(|draft| {
-            draft.previous_history_state_id = Some(7);
-            draft.layout_fixture_tail();
-        }).unwrap();
+        scope
+            .try_edit(|draft| {
+                draft.previous_history_state_id = Some(7);
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
     }
     let mut operands = vec![direct_face_operand(101, 0, vec![42])];
     if partial {
@@ -173,7 +193,8 @@ fn assert_direct_face_refusal(
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = super::super::direct_face_selection(Some(&ctx), &scope, &operands);
         if matches!(result, Err(CodecError::ResourceLimit(ref failure))
-            if failure.operation == operation && failure.dimension == dimension) {
+            if failure.operation == operation && failure.dimension == dimension)
+        {
             return;
         }
     }
@@ -182,50 +203,100 @@ fn assert_direct_face_refusal(
 
 #[test]
 fn direct_face_operand_refuses_collection_limit() {
-    assert_direct_face_refusal("f3d direct face operand", ResourceDimension::CollectionItems, false, true);
+    assert_direct_face_refusal(
+        "f3d direct face operand",
+        ResourceDimension::CollectionItems,
+        false,
+        true,
+    );
 }
 
 #[test]
 fn direct_face_member_refuses_collection_limit() {
-    assert_direct_face_refusal("f3d direct face member", ResourceDimension::CollectionItems, false, true);
+    assert_direct_face_refusal(
+        "f3d direct face member",
+        ResourceDimension::CollectionItems,
+        false,
+        true,
+    );
 }
 
 #[test]
 fn direct_historical_face_id_refuses_retained_limit() {
-    assert_direct_face_refusal("f3d direct historical face id", ResourceDimension::RetainedBytes, false, true);
+    assert_direct_face_refusal(
+        "f3d direct historical face id",
+        ResourceDimension::RetainedBytes,
+        false,
+        true,
+    );
 }
 
 #[test]
 fn direct_historical_face_refuses_collection_limit() {
-    assert_direct_face_refusal("f3d direct historical face", ResourceDimension::CollectionItems, false, true);
+    assert_direct_face_refusal(
+        "f3d direct historical face",
+        ResourceDimension::CollectionItems,
+        false,
+        true,
+    );
 }
 
 #[test]
 fn direct_historical_native_id_refuses_retained_limit() {
-    assert_direct_face_refusal("f3d direct historical native id", ResourceDimension::RetainedBytes, false, true);
+    assert_direct_face_refusal(
+        "f3d direct historical native id",
+        ResourceDimension::RetainedBytes,
+        false,
+        true,
+    );
 }
 
 #[test]
 fn direct_unresolved_face_id_refuses_retained_limit() {
-    assert_direct_face_refusal("f3d direct unresolved face id", ResourceDimension::RetainedBytes, true, true);
+    assert_direct_face_refusal(
+        "f3d direct unresolved face id",
+        ResourceDimension::RetainedBytes,
+        true,
+        true,
+    );
 }
 
 #[test]
 fn direct_unresolved_face_refuses_collection_limit() {
-    assert_direct_face_refusal("f3d direct unresolved face", ResourceDimension::CollectionItems, true, true);
+    assert_direct_face_refusal(
+        "f3d direct unresolved face",
+        ResourceDimension::CollectionItems,
+        true,
+        true,
+    );
 }
 
 #[test]
 fn direct_partial_historical_face_refuses_collection_limit() {
-    assert_direct_face_refusal("f3d direct partial historical face", ResourceDimension::CollectionItems, true, true);
+    assert_direct_face_refusal(
+        "f3d direct partial historical face",
+        ResourceDimension::CollectionItems,
+        true,
+        true,
+    );
 }
 
 #[test]
 fn direct_partial_native_id_refuses_retained_limit() {
-    assert_direct_face_refusal("f3d direct partial native id", ResourceDimension::RetainedBytes, true, true);
+    assert_direct_face_refusal(
+        "f3d direct partial native id",
+        ResourceDimension::RetainedBytes,
+        true,
+        true,
+    );
 }
 
 #[test]
 fn direct_native_id_refuses_retained_limit() {
-    assert_direct_face_refusal("f3d direct native id", ResourceDimension::RetainedBytes, false, false);
+    assert_direct_face_refusal(
+        "f3d direct native id",
+        ResourceDimension::RetainedBytes,
+        false,
+        false,
+    );
 }

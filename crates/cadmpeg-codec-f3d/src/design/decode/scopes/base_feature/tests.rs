@@ -44,18 +44,25 @@ fn result_body_frame() -> (Vec<u8>, DesignParameterScope) {
         bytes[cursor + 1..cursor + 5].copy_from_slice(&(401 + ordinal as u32).to_le_bytes());
         cursor += 11;
     }
-    let mut scope = DesignParameterScope::empty("f3d:scope#base-feature-result", DesignFeatureKind::BaseFeature, 70);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-result",
+        DesignFeatureKind::BaseFeature,
+        70,
+    );
     scope.class_tag = DesignClassTag::try_from("409".to_owned()).unwrap();
     scope.paired_class_tag = DesignClassTag::try_from("262".to_owned()).unwrap();
-    scope.try_edit(|draft| {
-        draft.frame_length = frame_length as u64;
-        draft.kind_offset = (frame_length - 102) as u64;
-        draft.paired_byte_offset = frame_length as u64;
-        draft.reference_members = ReferenceRun::unlocated(vec![301]);
-        draft.reference_count_offset = draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-        draft.layout_fixture_references();
-        draft.layout_fixture_tail();
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = frame_length as u64;
+            draft.kind_offset = (frame_length - 102) as u64;
+            draft.paired_byte_offset = frame_length as u64;
+            draft.reference_members = ReferenceRun::unlocated(vec![301]);
+            draft.reference_count_offset =
+                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     (bytes, scope)
 }
 
@@ -73,12 +80,15 @@ fn base_feature_result_runs_refuse_each_collection_limit() {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = exact_base_feature_construction(&ctx, &bytes, &scope);
-        assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation
-        ), "limit {limit}: {operation}");
+        assert!(
+            matches!(
+                result,
+                Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
+            ),
+            "limit {limit}: {operation}"
+        );
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -150,20 +160,27 @@ fn snapshot_frame() -> (Vec<u8>, DesignParameterScope) {
     cursor += 4;
     assert_eq!(cursor, 401);
 
-    let mut scope = DesignParameterScope::empty("f3d:scope#base-feature-snapshot", DesignFeatureKind::BaseFeature, 70);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-snapshot",
+        DesignFeatureKind::BaseFeature,
+        70,
+    );
     scope.class_tag = DesignClassTag::try_from("314".to_owned()).unwrap();
     scope.paired_class_tag = DesignClassTag::try_from("259".to_owned()).unwrap();
-    scope.try_edit(|draft| {
-        draft.frame_length = 485;
-        draft.paired_byte_offset = 485;
-        draft.kind_offset = 373;
-        draft.feature_ordinal_offset = 397;
-        draft.history_state_id = Some(7);
-        draft.previous_history_state_id = None;
-        draft.previous_history_state_id_offset = None;
-        draft.reference_count_offset = 350;
-        draft.reference_members = ReferenceRun::from_columns(vec![301], vec![355], "reference_members").unwrap();
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 485;
+            draft.paired_byte_offset = 485;
+            draft.kind_offset = 373;
+            draft.feature_ordinal_offset = 397;
+            draft.history_state_id = Some(7);
+            draft.previous_history_state_id = None;
+            draft.previous_history_state_id_offset = None;
+            draft.reference_count_offset = 350;
+            draft.reference_members =
+                ReferenceRun::from_columns(vec![301], vec![355], "reference_members").unwrap();
+        })
+        .unwrap();
     (bytes, scope)
 }
 

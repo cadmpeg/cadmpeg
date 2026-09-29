@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{exact_counted_dimension_relation, Point2, Angle, Length, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+use super::{
+    exact_counted_dimension_relation, Angle, Length, Point2, SketchEntity, SketchEntityId,
+    SketchGeometry, SketchGeometryDefinition, SketchId,
+};
 use cadmpeg_core::decode::ResourceDimension;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let entity = |id: &str, geometry: SketchGeometry| {
         SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
@@ -29,15 +31,23 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         })
         .unwrap(),
     );
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| exact_counted_dimension_relation(Some(ctx), &[&circle, &arc]).map(|_| ()));
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        exact_counted_dimension_relation(Some(ctx), &[&circle, &arc]).map(|_| ())
+    });
 }
 
 #[test]
 fn exact_centered_entity_relation_first_id_refuses_retained_limit() {
-    fixture("f3d exact centered entity relation first id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d exact centered entity relation first id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn exact_centered_entity_relation_second_id_refuses_retained_limit() {
-    fixture("f3d exact centered entity relation second id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d exact centered entity relation second id",
+        ResourceDimension::RetainedBytes,
+    );
 }

@@ -159,8 +159,12 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
-        .expect("class-322/261 WorkPlane frame");
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .expect("class-322/261 WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
@@ -217,8 +221,12 @@ fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
-        .expect("class-350 WorkPlane frame");
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .expect("class-350 WorkPlane frame");
     for (actual_row, expected_row) in decoded.transform.iter().zip(transform.iter()) {
         for (actual, expected) in actual_row.iter().zip(expected_row.iter()) {
             assert!((actual - expected).abs() < EPS_WORK_PLANE_CLASS_350_TEST_VALUE);
@@ -262,8 +270,12 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
-        .expect("class-400 WorkPlane frame");
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .expect("class-400 WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, 49);
     assert_eq!(decoded.reference, None);
@@ -428,9 +440,12 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let construction =
-            exact_work_axis_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
-                .expect("direct WorkAxis carrier");
+        let construction = exact_work_axis_construction(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+        )
+        .expect("direct WorkAxis carrier");
         assert_eq!(construction.origin_offset, 25);
         assert_eq!(construction.displacement_offset, 49);
         assert!(matches!(

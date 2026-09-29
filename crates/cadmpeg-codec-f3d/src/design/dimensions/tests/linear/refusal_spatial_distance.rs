@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{project_dimension_constraints,neutral_sketch_id,neutral_spatial_sketch_id,DesignDimensionLocus,DesignDimensionLocusGroup,DesignDimensionLocusPair,DesignParameterCompanion,SketchPoint,DesignSketchPlacement,Point2,Point3,SketchConstraintDefinitionInput,SketchEntity,SketchEntityId,SketchGeometry,SketchGeometryDefinition,SpatialSketch};
+use super::{
+    neutral_sketch_id, neutral_spatial_sketch_id, project_dimension_constraints,
+    DesignDimensionLocus, DesignDimensionLocusGroup, DesignDimensionLocusPair,
+    DesignParameterCompanion, DesignSketchPlacement, Point2, Point3,
+    SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchPoint, SpatialSketch,
+};
 use cadmpeg_core::decode::ResourceDimension;
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
@@ -264,34 +269,59 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         std::slice::from_ref(&spatial_sketch),
     )
     .is_empty());
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| crate::design::dimensions::project_spatial_dimension_constraints(Some(ctx),
-        &crate::design::dimensions::DimensionConstraintInputs {
-            placements: std::slice::from_ref(&placement),
-            parameters: std::slice::from_ref(&parameter),
-            owners: std::slice::from_ref(&owner),
-            pairs: std::slice::from_ref(&pair),
-            groups: std::slice::from_ref(&group),
-            annotation_frames: &[],
-            null_pairs: &[],
-            companions: std::slice::from_ref(&companion),
-            recipe_records: &[],
-            points: &points,
-            curves: &[],
-            entities: &[],
-        },
-        std::slice::from_ref(&spatial_sketch),
-        &spatial_entities,
-    0.0).map(|_| ()));
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        crate::design::dimensions::project_spatial_dimension_constraints(
+            Some(ctx),
+            &crate::design::dimensions::DimensionConstraintInputs {
+                placements: std::slice::from_ref(&placement),
+                parameters: std::slice::from_ref(&parameter),
+                owners: std::slice::from_ref(&owner),
+                pairs: std::slice::from_ref(&pair),
+                groups: std::slice::from_ref(&group),
+                annotation_frames: &[],
+                null_pairs: &[],
+                companions: std::slice::from_ref(&companion),
+                recipe_records: &[],
+                points: &points,
+                curves: &[],
+                entities: &[],
+            },
+            std::slice::from_ref(&spatial_sketch),
+            &spatial_entities,
+            0.0,
+        )
+        .map(|_| ())
+    });
 }
 
 #[test]
-fn spatial_distance_locus_refuses_collection_limit() { fixture("f3d spatial distance locus", ResourceDimension::CollectionItems); }
+fn spatial_distance_locus_refuses_collection_limit() {
+    fixture(
+        "f3d spatial distance locus",
+        ResourceDimension::CollectionItems,
+    );
+}
 
 #[test]
-fn spatial_distance_first_id_refuses_retained_limit() { fixture("f3d spatial distance first id", ResourceDimension::RetainedBytes); }
+fn spatial_distance_first_id_refuses_retained_limit() {
+    fixture(
+        "f3d spatial distance first id",
+        ResourceDimension::RetainedBytes,
+    );
+}
 
 #[test]
-fn spatial_distance_second_id_refuses_retained_limit() { fixture("f3d spatial distance second id", ResourceDimension::RetainedBytes); }
+fn spatial_distance_second_id_refuses_retained_limit() {
+    fixture(
+        "f3d spatial distance second id",
+        ResourceDimension::RetainedBytes,
+    );
+}
 
 #[test]
-fn spatial_distance_parameter_id_refuses_retained_limit() { fixture("f3d spatial distance parameter id", ResourceDimension::RetainedBytes); }
+fn spatial_distance_parameter_id_refuses_retained_limit() {
+    fixture(
+        "f3d spatial distance parameter id",
+        ResourceDimension::RetainedBytes,
+    );
+}

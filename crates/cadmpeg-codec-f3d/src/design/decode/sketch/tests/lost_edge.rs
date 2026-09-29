@@ -26,16 +26,14 @@ fn lost_edge_reference_output_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut references = Vec::new();
-    let error = decode_lost_edge_references_from_stream(
-        &ctx,
-        "BulkStream.dat",
-        &bytes,
-        &mut references,
-    )
-    .expect_err("collection limit must refuse lost edge reference");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+    let error =
+        decode_lost_edge_references_from_stream(&ctx, "BulkStream.dat", &bytes, &mut references)
+            .expect_err("collection limit must refuse lost edge reference");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d lost edge reference output"));
+            && failure.operation == "f3d lost edge reference output")
+    );
 }
 
 #[test]
@@ -46,16 +44,14 @@ fn lost_edge_reference_id_refuses_retained_limit() {
     policy.limits.max_retained_bytes = crate::ids::native_scope("BulkStream.dat").len() as u64;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut references = Vec::new();
-    let error = decode_lost_edge_references_from_stream(
-        &ctx,
-        "BulkStream.dat",
-        &bytes,
-        &mut references,
-    )
-    .expect_err("retained limit must refuse lost edge ID");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+    let error =
+        decode_lost_edge_references_from_stream(&ctx, "BulkStream.dat", &bytes, &mut references)
+            .expect_err("retained limit must refuse lost edge ID");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::RetainedBytes
-            && failure.operation == "f3d lost edge reference ID"));
+            && failure.operation == "f3d lost edge reference ID")
+    );
 }
 
 #[test]
@@ -68,7 +64,10 @@ fn lost_edge_reference_scan_preserves_record_fields() {
     decode_lost_edge_references_from_stream(&ctx, "BulkStream.dat", &bytes, &mut references)
         .expect("valid lost edge record");
     assert_eq!(references.len(), 1);
-    assert_eq!(references[0].id, crate::ids::native_lost_edge_reference_id("BulkStream.dat", 0));
+    assert_eq!(
+        references[0].id,
+        crate::ids::native_lost_edge_reference_id("BulkStream.dat", 0)
+    );
     assert_eq!(references[0].record_index, 41);
     assert_eq!(references[0].next_record_index, 42);
 }

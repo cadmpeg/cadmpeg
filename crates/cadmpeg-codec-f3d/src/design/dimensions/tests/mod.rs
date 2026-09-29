@@ -6,10 +6,10 @@
     clippy::uninlined_format_args
 )]
 
-mod linear;
 mod atomic_limits;
 mod frame_relations;
 mod limits;
+mod linear;
 mod offset;
 mod offset_binding;
 mod owner_scoped;
@@ -35,7 +35,8 @@ fn project_spatial_dimension_constraints(
         spatial_sketches,
         spatial_entities,
         1.0e-6,
-    ).expect("resource allocation did not fail")
+    )
+    .expect("resource allocation did not fail")
 }
 
 mod numerical_ranges;
@@ -62,13 +63,16 @@ fn assert_dimension_refusal(
     for limit in 0..4096 {
         match invoke(limit) {
             Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation && failure.dimension == dimension => {
+                if failure.operation == operation && failure.dimension == dimension =>
+            {
                 let below = failure.used.checked_add(failure.additional).unwrap() - 1;
-                assert!(matches!(invoke(below), Err(CodecError::ResourceLimit(failure))
-                    if failure.operation == operation && failure.dimension == dimension));
+                assert!(
+                    matches!(invoke(below), Err(CodecError::ResourceLimit(failure))
+                    if failure.operation == operation && failure.dimension == dimension)
+                );
                 return;
             }
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             result => panic!("missing {operation} refusal: {result:?}"),
         }
     }

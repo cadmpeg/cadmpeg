@@ -146,18 +146,27 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&cadmpeg_test_support::service_decode_context(), &bytes, 38, ThreadPrefix::Standard, vec![988]).unwrap(),
+        parse_thread_payload(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            38,
+            ThreadPrefix::Standard,
+            vec![988],
+        )
+        .unwrap(),
         &expected,
     );
     let mut invalid_standard_pitch_marker = bytes.clone();
     invalid_standard_pitch_marker[129] = 0;
     assert_eq!(
-        parse_thread_payload(&cadmpeg_test_support::service_decode_context(),
+        parse_thread_payload(
+            &cadmpeg_test_support::service_decode_context(),
             &invalid_standard_pitch_marker,
             38,
             ThreadPrefix::Standard,
             vec![988],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 
@@ -180,13 +189,27 @@ fn thread_scope_decodes_standard_size_and_face_group() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_thread_construction(exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap(), &expected);
+    assert_thread_construction(
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scope,
+        )
+        .unwrap(),
+        &expected,
+    );
 
     let mut owner_marked = bytes;
     owner_marked.splice(20..20, [1, 0, 0, 0]);
-    let shifted_expected =
-        parse_thread_payload(&cadmpeg_test_support::service_decode_context(), &owner_marked, 42, ThreadPrefix::Standard, vec![988]).unwrap()
-            .expect("owner-marked standard Thread payload");
+    let shifted_expected = parse_thread_payload(
+        &cadmpeg_test_support::service_decode_context(),
+        &owner_marked,
+        42,
+        ThreadPrefix::Standard,
+        vec![988],
+    )
+    .unwrap()
+    .expect("owner-marked standard Thread payload");
     assert_eq!(shifted_expected.designation_offset, 42);
     scope
         .try_edit(|draft| {
@@ -196,17 +219,34 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         })
         .unwrap();
     assert_thread_construction(
-        exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &owner_marked, &scope).unwrap(),
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &owner_marked,
+            &scope,
+        )
+        .unwrap(),
         &shifted_expected,
     );
     let mut invalid_owner_marker = owner_marked.clone();
     invalid_owner_marker[20..24].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &invalid_owner_marker, &scope).unwrap(),
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &invalid_owner_marker,
+            &scope
+        )
+        .unwrap(),
         None
     );
     assert_eq!(
-        parse_thread_payload(&cadmpeg_test_support::service_decode_context(), &owner_marked, 42, ThreadPrefix::Compact, vec![988]).unwrap(),
+        parse_thread_payload(
+            &cadmpeg_test_support::service_decode_context(),
+            &owner_marked,
+            42,
+            ThreadPrefix::Compact,
+            vec![988]
+        )
+        .unwrap(),
         None
     );
 }
@@ -248,7 +288,14 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
         .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&cadmpeg_test_support::service_decode_context(), &bytes, 38, ThreadPrefix::Standard, vec![988]).unwrap(),
+        parse_thread_payload(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            38,
+            ThreadPrefix::Standard,
+            vec![988],
+        )
+        .unwrap(),
         &expected,
     );
 
@@ -271,13 +318,29 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_thread_construction(exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap(), &expected);
+    assert_thread_construction(
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scope,
+        )
+        .unwrap(),
+        &expected,
+    );
 
     scope.class_tag =
         crate::records::references::DesignClassTag::try_from("335".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
-    assert_eq!(exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap(), None);
+    assert_eq!(
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scope
+        )
+        .unwrap(),
+        None
+    );
 }
 
 fn assert_thread_construction(
@@ -349,7 +412,14 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&cadmpeg_test_support::service_decode_context(), &bytes, 38, ThreadPrefix::Compact, vec![988]).unwrap(),
+        parse_thread_payload(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            38,
+            ThreadPrefix::Compact,
+            vec![988],
+        )
+        .unwrap(),
         &expected,
     );
     let mut referenced = bytes.clone();
@@ -362,7 +432,14 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         offset: (after_profile + 39) as u64,
     }));
     assert_thread_construction(
-        parse_thread_payload(&cadmpeg_test_support::service_decode_context(), &referenced, 38, ThreadPrefix::Compact, vec![988]).unwrap(),
+        parse_thread_payload(
+            &cadmpeg_test_support::service_decode_context(),
+            &referenced,
+            38,
+            ThreadPrefix::Compact,
+            vec![988],
+        )
+        .unwrap(),
         &referenced_expected,
     );
 
@@ -387,7 +464,15 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         crate::records::references::DesignClassTag::try_from("904".to_owned()).unwrap();
     let mut plural_expected = expected.clone();
     plural_expected.face_group_record_indices.push(992);
-    assert_thread_construction(exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap(), &plural_expected);
+    assert_thread_construction(
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scope,
+        )
+        .unwrap(),
+        &plural_expected,
+    );
 
     let mut owner_marked = bytes;
     owner_marked.splice(20..20, [1, 0, 0, 0]);
@@ -400,13 +485,23 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         })
         .unwrap();
     assert_thread_construction(
-        exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &owner_marked, &scope).unwrap(),
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &owner_marked,
+            &scope,
+        )
+        .unwrap(),
         &plural_expected,
     );
     let mut invalid_owner_separator = owner_marked.clone();
     invalid_owner_separator[24] = 1;
     assert_eq!(
-        exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &invalid_owner_separator, &scope).unwrap(),
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &invalid_owner_separator,
+            &scope
+        )
+        .unwrap(),
         None
     );
 
@@ -423,7 +518,15 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_eq!(exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &owner_marked, &scope).unwrap(), None);
+    assert_eq!(
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &owner_marked,
+            &scope
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -463,7 +566,14 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
         .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&cadmpeg_test_support::service_decode_context(), &bytes, 38, ThreadPrefix::Compact, vec![988]).unwrap(),
+        parse_thread_payload(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            38,
+            ThreadPrefix::Compact,
+            vec![988],
+        )
+        .unwrap(),
         &expected,
     );
 
@@ -486,13 +596,29 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_thread_construction(exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap(), &expected);
+    assert_thread_construction(
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scope,
+        )
+        .unwrap(),
+        &expected,
+    );
 
     scope.class_tag =
         crate::records::references::DesignClassTag::try_from("334".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
-    assert_eq!(exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap(), None);
+    assert_eq!(
+        exact_thread_construction(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &scope
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -524,13 +650,15 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
+    let scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("localized Sketch scope");
     assert_eq!(
         scope.kind(),

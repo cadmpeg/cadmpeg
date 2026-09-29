@@ -42,11 +42,14 @@ fn numerical_0922_extension_requires_incidence() {
         second: SketchLocus::Entity(detached.id().clone()),
         parameter: ParameterId::mint("f3d:test:parameter#1").unwrap(),
     };
-    let result = recipe_extension_point_dimension(None,
+    let result = recipe_extension_point_dimension(
+        None,
         &[candidate],
         &[line, endpoint, detached],
         &SketchId::mint("f3d:test:sketch#1").unwrap(),
-    ).transpose().unwrap();
+    )
+    .transpose()
+    .unwrap();
     println!(
         "Fusion short-line detached point 100 chord lengths off carrier selected={}",
         result.is_some()
@@ -70,7 +73,8 @@ fn numerical_0922_long_lines_keep_perpendicular_relation() {
                 end: Point2::new(0., length),
             },
         );
-        let r = exact_counted_dimension_relation(None, &[&a, &b]).expect("resource allocation did not fail");
+        let r = exact_counted_dimension_relation(None, &[&a, &b])
+            .expect("resource allocation did not fail");
         println!("Fusion perpendicular lines length{length:e}: {r:?}");
         assert!(matches!(
             r,
@@ -104,6 +108,8 @@ fn numerical_audit_midpoint_preserves_finite_large_origin() {
             })
             .unwrap(),
         );
-        assert!(super::midpoint_constraint(&[&line, &point], None).unwrap().is_some());
+        assert!(super::midpoint_constraint(&[&line, &point], None)
+            .unwrap()
+            .is_some());
     }
 }

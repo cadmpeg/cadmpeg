@@ -18,7 +18,14 @@ fn tested_circular_pattern_construction_with_owners(
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
 ) -> Option<DesignCircularPatternConstruction> {
     crate::design::test_support::with_test_decode_context(|ctx| {
-        super::exact_circular_pattern_construction_with_owners(ctx, bytes, records, scope, parameter_owners).unwrap()
+        super::exact_circular_pattern_construction_with_owners(
+            ctx,
+            bytes,
+            records,
+            scope,
+            parameter_owners,
+        )
+        .unwrap()
     })
 }
 
@@ -29,7 +36,8 @@ fn tested_rectangular_pattern_construction(
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
 ) -> Option<crate::records::feature::patterns::DesignRectangularPatternConstruction> {
     crate::design::test_support::with_test_decode_context(|ctx| {
-        super::exact_rectangular_pattern_construction(ctx, bytes, records, scope, parameter_owners).unwrap()
+        super::exact_rectangular_pattern_construction(ctx, bytes, records, scope, parameter_owners)
+            .unwrap()
     })
 }
 
@@ -40,7 +48,8 @@ fn tested_rectangular_pattern_instances(
     construction: &crate::records::feature::patterns::DesignRectangularPatternConstruction,
 ) -> Option<crate::records::feature::patterns::DesignRectangularPatternInstances> {
     crate::design::test_support::with_test_decode_context(|ctx| {
-        super::exact_rectangular_pattern_instances(ctx, bytes, records, scope, construction).unwrap()
+        super::exact_rectangular_pattern_instances(ctx, bytes, records, scope, construction)
+            .unwrap()
     })
 }
 
@@ -66,12 +75,20 @@ fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {
     indexed_header(&mut bytes, *b"308", record_index + 3);
 
     assert_eq!(
-        exact_pattern_identity_wrapper(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), record_index,),
+        exact_pattern_identity_wrapper(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            record_index,
+        ),
         Some((503, identity_offset as u64))
     );
     bytes[identity_offset - 1] = 1;
     assert_eq!(
-        exact_pattern_identity_wrapper(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), record_index,),
+        exact_pattern_identity_wrapper(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            record_index,
+        ),
         None
     );
 }
@@ -104,10 +121,12 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
         selection_record_index: 11,
     }];
     assert_eq!(
-        select_circular_pattern_axis(&historical_only).map(|index| &historical_only[index]).map(|candidate| (
-            candidate.axis_record_index,
-            candidate.selection_record_index
-        )),
+        select_circular_pattern_axis(&historical_only)
+            .map(|index| &historical_only[index])
+            .map(|candidate| (
+                candidate.axis_record_index,
+                candidate.selection_record_index
+            )),
         Some((10, 11))
     );
 
@@ -124,10 +143,12 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
         },
     ];
     assert_eq!(
-        select_circular_pattern_axis(&mixed).map(|index| &mixed[index]).map(|candidate| (
-            candidate.axis_record_index,
-            candidate.selection_record_index
-        )),
+        select_circular_pattern_axis(&mixed)
+            .map(|index| &mixed[index])
+            .map(|candidate| (
+                candidate.axis_record_index,
+                candidate.selection_record_index
+            )),
         Some((20, 21))
     );
 
@@ -211,11 +232,18 @@ fn circular_pattern_candidates_refuse_collection_limit() {
             policy.limits.max_collection_items = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let error = super::exact_circular_pattern_construction_with_owners(
-                &ctx, bytes, &records, scope, &[],
-            ).unwrap_err();
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+                &ctx,
+                bytes,
+                &records,
+                scope,
+                &[],
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
                 if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation));
+                    && failure.operation == operation)
+            );
         }
     };
     run_pattern_constructions_fixture(Some(probe));
@@ -642,13 +670,16 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &rectangular_owners,
-    ).unwrap())
+    let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .expect("exact assembly scalar lanes");
     assert_eq!(alignment.angle(), 3.0);
     assert_eq!(alignment.offset(), [1.0, 10.0, 0.0]);
@@ -688,14 +719,17 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &placement_and_alignment_owners,
-    ).unwrap())
-    .is_none());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &placement_and_alignment_owners,
+        )
+        .unwrap())
+        .is_none()
+    );
     scope
         .try_edit(|draft| {
             draft.frame_length = 732;
@@ -703,13 +737,16 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &placement_and_alignment_owners,
-    ).unwrap())
+    let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &placement_and_alignment_owners,
+        )
+        .unwrap()
+    })
     .expect("assembly alignment after four placement lanes");
     assert_eq!(alignment.angle(), 0.25);
     assert_eq!(alignment.offset(), [4.0, 5.0, 6.0]);
@@ -728,13 +765,16 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let datum_envelope_alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &placement_and_alignment_owners,
-    ).unwrap())
+    let datum_envelope_alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &placement_and_alignment_owners,
+        )
+        .unwrap()
+    })
     .expect("JointOrigin datum-envelope alignment after four placement lanes");
     assert_eq!(datum_envelope_alignment.angle(), 0.25);
     assert_eq!(datum_envelope_alignment.offset(), [4.0, 5.0, 6.0]);
@@ -760,14 +800,17 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &short_axial_owners,
-    ).unwrap())
-    .is_none());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &short_axial_owners,
+        )
+        .unwrap())
+        .is_none()
+    );
     scope
         .try_edit(|draft| {
             draft.frame_length = 705;
@@ -775,13 +818,16 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let short_axial_alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &short_axial_owners,
-    ).unwrap())
+    let short_axial_alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &short_axial_owners,
+        )
+        .unwrap()
+    })
     .expect("six-owner alignment belongs to the 705-byte axial frame");
     assert_eq!(short_axial_alignment.angle(), 0.5);
     assert_eq!(short_axial_alignment.offset(), [0.0, 0.0, 2.0]);
@@ -799,14 +845,17 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &legacy_alignment_owners,
-    ).unwrap())
-    .is_none());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &legacy_alignment_owners,
+        )
+        .unwrap())
+        .is_none()
+    );
     scope
         .try_edit(|draft| {
             draft.frame_length = 772;
@@ -814,13 +863,16 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &legacy_alignment_owners,
-    ).unwrap())
+    let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &legacy_alignment_owners,
+        )
+        .unwrap()
+    })
     .expect("legacy assembly axial alignment lanes");
     assert_eq!(alignment.angle(), 0.5);
     assert_eq!(alignment.offset(), [0.0, 0.0, 2.0]);
@@ -861,13 +913,16 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap();
-    let frames = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &assembly_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
-        &scope,
-        &rectangular_owners,
-    ).unwrap())
+    let frames = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &assembly_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_frames())
     .expect("exact assembly operand frames");
     assert_eq!(
@@ -912,13 +967,16 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .with_fixture_layout(),
     )
     .unwrap();
-    let legacy_frames = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &legacy_assembly_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&legacy_assembly_bytes),
-        &legacy_assembly_scope,
-        &rectangular_owners,
-    ).unwrap())
+    let legacy_frames = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &legacy_assembly_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&legacy_assembly_bytes),
+            &legacy_assembly_scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_frames())
     .expect("compact assembly operand frames");
     assert_eq!(legacy_frames[0].reference_offset, 25);
@@ -937,14 +995,17 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .with_fixture_layout(),
     )
     .unwrap();
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &dynamic_standard_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&dynamic_standard_bytes),
-        &dynamic_standard_scope,
-        &rectangular_owners,
-    ).unwrap())
-    .is_some_and(|alignment| alignment.operand_frames().is_some()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &dynamic_standard_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&dynamic_standard_bytes),
+            &dynamic_standard_scope,
+            &rectangular_owners,
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_frames().is_some())
+    );
 
     let mut dynamic_compact_bytes = legacy_assembly_bytes.clone();
     dynamic_compact_bytes[637..640].copy_from_slice(b"262");
@@ -959,14 +1020,17 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .with_fixture_layout(),
     )
     .unwrap();
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &dynamic_compact_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&dynamic_compact_bytes),
-        &dynamic_compact_scope,
-        &rectangular_owners,
-    ).unwrap())
-    .is_some_and(|alignment| alignment.operand_frames().is_some()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &dynamic_compact_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&dynamic_compact_bytes),
+            &dynamic_compact_scope,
+            &rectangular_owners,
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_frames().is_some())
+    );
 
     let mut axial_assembly_bytes = vec![0_u8; 772];
     axial_assembly_bytes[..11].copy_from_slice(&assembly_bytes[..11]);
@@ -998,13 +1062,16 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .with_fixture_layout(),
     )
     .unwrap();
-    let axial_alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &axial_assembly_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&axial_assembly_bytes),
-        &axial_assembly_scope,
-        &legacy_alignment_owners,
-    ).unwrap())
+    let axial_alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &axial_assembly_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&axial_assembly_bytes),
+            &axial_assembly_scope,
+            &legacy_alignment_owners,
+        )
+        .unwrap()
+    })
     .expect("legacy assembly alignment and operand frames");
     assert_eq!(axial_alignment.angle(), 0.5);
     assert_eq!(axial_alignment.offset(), [0.0, 0.0, 2.0]);
@@ -1034,13 +1101,16 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .with_fixture_layout(),
     )
     .unwrap();
-    let short_axial_alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &short_axial_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&short_axial_bytes),
-        &short_axial_scope,
-        &short_axial_owners,
-    ).unwrap())
+    let short_axial_alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &short_axial_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&short_axial_bytes),
+            &short_axial_scope,
+            &short_axial_owners,
+        )
+        .unwrap()
+    })
     .expect("short axial assembly alignment and operand frames");
     assert_eq!(short_axial_alignment.angle(), 0.5);
     assert_eq!(short_axial_alignment.offset(), [0.0, 0.0, 2.0]);
@@ -1090,7 +1160,8 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         *slot = Some(axial_alignment.clone());
     }
     let mut linked_scopes = [linked_assembly, first_joint_origin, second_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&ctx, &axial_assembly_bytes, &mut linked_scopes).unwrap();
+    bind_joint_origin_frames_from_assemblies(&ctx, &axial_assembly_bytes, &mut linked_scopes)
+        .unwrap();
     assert_eq!(linked_scopes[1].joint_origin_transform_offset(), Some(39));
     assert_eq!(
         linked_scopes[1].joint_origin_transform(),
@@ -1161,7 +1232,8 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         })
         .unwrap();
     let mut single_frame_scopes = [single_frame_assembly, single_frame_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&ctx, &single_frame_bytes, &mut single_frame_scopes).unwrap();
+    bind_joint_origin_frames_from_assemblies(&ctx, &single_frame_bytes, &mut single_frame_scopes)
+        .unwrap();
     assert_eq!(
         single_frame_scopes[1].joint_origin_transform_offset(),
         Some(36)
@@ -1190,7 +1262,8 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
     transform[2][3] += 1.0;
     frame.joint_origin_transform = transform.try_into().unwrap();
     let mut conflicting_scopes = [conflicting_assembly, conflicting_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&ctx, &single_frame_bytes, &mut conflicting_scopes).unwrap();
+    bind_joint_origin_frames_from_assemblies(&ctx, &single_frame_bytes, &mut conflicting_scopes)
+        .unwrap();
     assert_eq!(
         conflicting_scopes[0].assembly_alignment().and_then(
             crate::records::feature::assembly::DesignAssemblyAlignment::joint_origin_scope_record_index
@@ -1206,7 +1279,12 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         *slot = None;
     }
     let mut invalid_single_frame_scopes = [single_frame_scopes[0].clone(), invalid_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&ctx, &single_frame_bytes, &mut invalid_single_frame_scopes).unwrap();
+    bind_joint_origin_frames_from_assemblies(
+        &ctx,
+        &single_frame_bytes,
+        &mut invalid_single_frame_scopes,
+    )
+    .unwrap();
     assert_eq!(
         invalid_single_frame_scopes[1].joint_origin_transform(),
         None
@@ -1228,14 +1306,17 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .unwrap();
     compact_scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap();
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &compact_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
-        &compact_scope,
-        &rectangular_owners,
-    ).unwrap())
-    .is_some_and(|alignment| alignment.operand_frames().is_some()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &compact_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
+            &compact_scope,
+            &rectangular_owners,
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_frames().is_some())
+    );
 }
 
 #[test]
@@ -1321,15 +1402,17 @@ fn rectangular_pattern_instance_collections_refuse_collection_limit() {
         crate::records::feature::scope::DesignFeatureKind::RPattern,
         0,
     );
-    scope.try_edit(|draft| {
-        draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
-            100, 50, 51, 52, 53, 110, 120, 130, 140,
-        ]);
-        draft.layout_fixture_references();
-        draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-        draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-        draft.layout_fixture_tail();
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                100, 50, 51, 52, 53, 110, 120, 130, 140,
+            ]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let mut bytes = Vec::new();
     append_transform_record(&mut bytes, 100, [0., 0., 0.]);
     for index in 50..=53 {
@@ -1340,17 +1423,19 @@ fn rectangular_pattern_instance_collections_refuse_collection_limit() {
     append_transform_record(&mut bytes, 130, [0., 0., 1e200]);
     append_header(&mut bytes, 140);
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let construction = crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(
-        crate::records::feature::patterns::DesignRectangularPatternConstructionWire {
-            u_count: 3,
-            v_count: 1,
-            u_extent: 1e200,
-            v_extent: 0.,
-            owner_record_indices: [50, 51, 52, 53],
-            value_offsets: [501, 502, 503, 504],
-            instances: None,
-        },
-    ).unwrap();
+    let construction =
+        crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(
+            crate::records::feature::patterns::DesignRectangularPatternConstructionWire {
+                u_count: 3,
+                v_count: 1,
+                u_extent: 1e200,
+                v_extent: 0.,
+                owner_record_indices: [50, 51, 52, 53],
+                value_offsets: [501, 502, 503, 504],
+                instances: None,
+            },
+        )
+        .unwrap();
     for (limit, operation) in [
         (2, "f3d rectangular pattern record indices"),
         (11, "f3d rectangular pattern reference starts"),
@@ -1365,38 +1450,73 @@ fn rectangular_pattern_instance_collections_refuse_collection_limit() {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::exact_rectangular_pattern_instances(
-            &ctx, &bytes, &records, &scope, &construction,
-        ).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            &ctx,
+            &bytes,
+            &records,
+            &scope,
+            &construction,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == operation));
+                && failure.operation == operation)
+        );
     }
 }
 
 #[test]
 fn circular_pattern_historical_wrappers_refuse_collection_limit() {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScopeDraft};
-    let scope = DesignParameterScope::try_new(DesignParameterScopeDraft {
-        id: "f3d:Design/BulkStream.dat:design-parameter-scope#1".into(),
-        byte_offset: 0, class_tag: "291".to_owned().try_into().unwrap(), record_index: 1,
-        frame_length: 329, kind_offset: 0, feature_ordinal: std::num::NonZeroU32::MIN,
-        feature_ordinal_offset: 0, history_state_id: None, previous_history_state_id: None,
-        previous_history_state_id_offset: None, reference_count_offset: 9,
-        reference_members: crate::records::identity::ReferenceRun::from_columns(
-            vec![20], vec![0], "reference_members").unwrap(),
-        payload: DesignFeatureKind::CPattern.try_into().unwrap(),
-        unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "258".to_owned().try_into().unwrap(), paired_byte_offset: 329,
-    }.with_fixture_layout()).unwrap();
+    let scope = DesignParameterScope::try_new(
+        DesignParameterScopeDraft {
+            id: "f3d:Design/BulkStream.dat:design-parameter-scope#1".into(),
+            byte_offset: 0,
+            class_tag: "291".to_owned().try_into().unwrap(),
+            record_index: 1,
+            frame_length: 329,
+            kind_offset: 0,
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: None,
+            reference_count_offset: 9,
+            reference_members: crate::records::identity::ReferenceRun::from_columns(
+                vec![20],
+                vec![0],
+                "reference_members",
+            )
+            .unwrap(),
+            payload: DesignFeatureKind::CPattern.try_into().unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: "258".to_owned().try_into().unwrap(),
+            paired_byte_offset: 329,
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
     let mut bytes = Vec::new();
     indexed_header(&mut bytes, *b"308", 50);
     bytes.resize(129, 0);
-    for at in [21, 36, 51] { bytes[at..at + 4].copy_from_slice(&1u32.to_le_bytes()); }
-    for (at, index) in [(25, 80u32), (40, 20), (55, 80), (66, 1), (93, 52), (106, 51), (118, 1)] {
+    for at in [21, 36, 51] {
+        bytes[at..at + 4].copy_from_slice(&1u32.to_le_bytes());
+    }
+    for (at, index) in [
+        (25, 80u32),
+        (40, 20),
+        (55, 80),
+        (66, 1),
+        (93, 52),
+        (106, 51),
+        (118, 1),
+    ] {
         bytes[at] = 1;
         bytes[at + 1..at + 5].copy_from_slice(&index.to_le_bytes());
     }
-    for at in [77, 89] { bytes[at..at + 4].copy_from_slice(&7u32.to_le_bytes()); }
+    for at in [77, 89] {
+        bytes[at..at + 4].copy_from_slice(&7u32.to_le_bytes());
+    }
     bytes[81..89].copy_from_slice(&0.5f64.to_le_bytes());
     indexed_header(&mut bytes, *b"258", 50);
     indexed_header(&mut bytes, *b"308", 80);
@@ -1425,11 +1545,15 @@ fn circular_pattern_historical_wrappers_refuse_collection_limit() {
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && failure.operation == "f3d circular pattern historical axis wrappers"));
     crate::design::test_support::with_test_decode_context(|ctx| {
-        let (axis, selection) = super::exact_legacy_circular_pattern_axis(
-            ctx, &bytes, &records, 0, 129, 50, &scope).unwrap().unwrap();
+        let (axis, selection) =
+            super::exact_legacy_circular_pattern_axis(ctx, &bytes, &records, 0, 129, 50, &scope)
+                .unwrap()
+                .unwrap();
         assert_eq!(selection, 20);
-        assert!(matches!(axis, crate::records::feature::patterns::DesignCircularPatternAxis::HistoricalEdge {
+        assert!(
+            matches!(axis, crate::records::feature::patterns::DesignCircularPatternAxis::HistoricalEdge {
             wrappers, persistent_identity: 503, resolved: None,
-        } if wrappers.len() == 2 && wrappers[0] == wrappers[1]));
+        } if wrappers.len() == 2 && wrappers[0] == wrappers[1])
+        );
     });
 }

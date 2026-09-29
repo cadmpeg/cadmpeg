@@ -1256,7 +1256,10 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         })
         .unwrap();
     let companion = DesignParameterCompanion::unbound(
-        format!("{}:design-parameter-companion#1200", crate::ids::native_scope(DESIGN_STREAM)),
+        format!(
+            "{}:design-parameter-companion#1200",
+            crate::ids::native_scope(DESIGN_STREAM)
+        ),
         1_200,
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap(),
         102,

@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
+use super::EPS_EXACT_FIXTURE;
 use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
 use crate::records::feature::assembly::DesignAssemblyLimitKind;
-use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::scope::DesignFeatureKind;
+use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::ReferenceRun;
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::parameters::DesignParameterOwnerWire;
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use crate::test_support::indexed_header;
-use super::EPS_EXACT_FIXTURE;
 
 #[test]
 fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projection() {
@@ -168,13 +168,16 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
                 1_006,
             ),
         ];
-        let alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &scope,
-            &owners,
-        ).unwrap())
+        let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+            exact_assembly_alignment(
+                ctx,
+                &bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                &scope,
+                &owners,
+            )
+            .unwrap()
+        })
         .expect("exact 421-byte As-built alignment");
         assert!((alignment.angle() - 0.25).abs() <= EPS_EXACT_FIXTURE);
         for (actual, expected) in alignment.offset().into_iter().zip([1.0, 2.0, 3.0]) {

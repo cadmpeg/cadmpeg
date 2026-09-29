@@ -4,23 +4,31 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
-use cadmpeg_ir::sketches::{SpatialSketchEntity, SpatialSketchEntityId,
-    SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchId};
+use cadmpeg_ir::sketches::{
+    SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
+    SpatialSketchGeometryDefinition, SpatialSketchId,
+};
 
 const EPS_PROFILE_CLOSE: f64 = 1.0e-6;
 
 fn fixture() -> (SpatialSketchId, Vec<SpatialSketchEntity>) {
     let sketch = SpatialSketchId::mint("synthetic:test:spatial-profile#sketch").unwrap();
-    let points = [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0),
-        Point3::new(0.0, 2.0, 0.0)];
+    let points = [
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ];
     let mut entities = Vec::new();
     for index in 0..3 {
         entities.push(SpatialSketchEntity::new(
-            SpatialSketchEntityId::mint(format!("synthetic:test:spatial-profile#line-{index}")).unwrap(),
+            SpatialSketchEntityId::mint(format!("synthetic:test:spatial-profile#line-{index}"))
+                .unwrap(),
             sketch.clone(),
             SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
-                start: points[index], end: points[(index + 1) % 3],
-            }).unwrap(),
+                start: points[index],
+                end: points[(index + 1) % 3],
+            })
+            .unwrap(),
         ));
     }
     entities.push(SpatialSketchEntity::new(
@@ -31,7 +39,8 @@ fn fixture() -> (SpatialSketchId, Vec<SpatialSketchEntity>) {
             normal: Vector3::new(0.0, 0.0, 1.0),
             reference_direction: Vector3::new(1.0, 0.0, 0.0),
             radius: Length::new(1.0).unwrap(),
-        }).unwrap(),
+        })
+        .unwrap(),
     ));
     (sketch, entities)
 }
@@ -39,7 +48,8 @@ fn fixture() -> (SpatialSketchId, Vec<SpatialSketchEntity>) {
 #[test]
 fn spatial_profile_closed_loop_and_circle_keep_order() {
     let (sketch, entities) = fixture();
-    let profiles = closed_spatial_sketch_profiles(None, &sketch, &entities, EPS_PROFILE_CLOSE).unwrap();
+    let profiles =
+        closed_spatial_sketch_profiles(None, &sketch, &entities, EPS_PROFILE_CLOSE).unwrap();
     assert_eq!(profiles.len(), 2);
     assert_eq!(profiles[0].boundary().len(), 1);
     assert_eq!(profiles[1].boundary().len(), 3);
@@ -57,11 +67,15 @@ fn assert_limit(operation: &'static str, dimension: ResourceDimension) {
             _ => panic!("unsupported test dimension"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = closed_spatial_sketch_profiles(Some(&ctx), &sketch, &entities, EPS_PROFILE_CLOSE);
+        let result =
+            closed_spatial_sketch_profiles(Some(&ctx), &sketch, &entities, EPS_PROFILE_CLOSE);
         match result {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation
-                && failure.dimension == dimension => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation && failure.dimension == dimension =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -71,37 +85,58 @@ fn assert_limit(operation: &'static str, dimension: ResourceDimension) {
 
 #[test]
 fn spatial_profile_circle_id_refuses_retained_limit() {
-    assert_limit("f3d spatial profile circle id", ResourceDimension::RetainedBytes);
+    assert_limit(
+        "f3d spatial profile circle id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn spatial_profile_boundary_id_refuses_retained_limit() {
-    assert_limit("f3d spatial profile boundary id", ResourceDimension::RetainedBytes);
+    assert_limit(
+        "f3d spatial profile boundary id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn spatial_profile_edge_refuses_collection_limit() {
-    assert_limit("f3d spatial profile edge", ResourceDimension::CollectionItems);
+    assert_limit(
+        "f3d spatial profile edge",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn spatial_profile_unused_edge_refuses_collection_limit() {
-    assert_limit("f3d spatial profile unused edge", ResourceDimension::CollectionItems);
+    assert_limit(
+        "f3d spatial profile unused edge",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn spatial_profile_use_refuses_collection_limit() {
-    assert_limit("f3d spatial profile use", ResourceDimension::CollectionItems);
+    assert_limit(
+        "f3d spatial profile use",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn spatial_profile_candidate_scan_refuses_work_limit() {
-    assert_limit("f3d spatial profile candidate scan", ResourceDimension::WorkUnits);
+    assert_limit(
+        "f3d spatial profile candidate scan",
+        ResourceDimension::WorkUnits,
+    );
 }
 
 #[test]
 fn spatial_profile_boundary_use_refuses_collection_limit() {
-    assert_limit("f3d spatial profile boundary use", ResourceDimension::CollectionItems);
+    assert_limit(
+        "f3d spatial profile boundary use",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
@@ -111,5 +146,8 @@ fn spatial_profile_output_refuses_collection_limit() {
 
 #[test]
 fn spatial_profile_uniqueness_refuses_collection_limit() {
-    assert_limit("f3d spatial profile boundary uniqueness", ResourceDimension::CollectionItems);
+    assert_limit(
+        "f3d spatial profile boundary uniqueness",
+        ResourceDimension::CollectionItems,
+    );
 }

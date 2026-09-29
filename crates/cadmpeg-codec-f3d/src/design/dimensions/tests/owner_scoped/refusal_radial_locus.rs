@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{radial_locus_dimension_definition, Point2, Length, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+use super::{
+    radial_locus_dimension_definition, Length, Point2, SketchEntity, SketchEntityId,
+    SketchGeometry, SketchGeometryDefinition, SketchId,
+};
 use cadmpeg_core::decode::ResourceDimension;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let sketch = SketchId::mint("f3d:model:sketch#radial-loci").unwrap();
     let point = |id: &str, u, v| {
         SketchEntity::new(
@@ -42,42 +44,76 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         .expect("identity grammar");
 
     let repeated = circle("synthetic:test:id#repeated", 20.0, 3.0, 5.0);
-    let selected: Vec<_> = if operation == "f3d radial center parameter id" { vec![&center] } else if matches!(operation, "f3d radial locus member" | "f3d radial locus unique member" | "f3d radial locus repeated parameter id") { vec![&measured, &repeated] } else { vec![&measured, &annotation] };
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| radial_locus_dimension_definition(Some(ctx),
+    let selected: Vec<_> = if operation == "f3d radial center parameter id" {
+        vec![&center]
+    } else if matches!(
+        operation,
+        "f3d radial locus member"
+            | "f3d radial locus unique member"
+            | "f3d radial locus repeated parameter id"
+    ) {
+        vec![&measured, &repeated]
+    } else {
+        vec![&measured, &annotation]
+    };
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        radial_locus_dimension_definition(
+            Some(ctx),
             &selected,
             &all,
             "Radial Dimension-2",
             0.5,
             &parameter,
-        ).transpose().map(|_| ()));
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn radial_locus_parameter_id_refuses_retained_limit() {
-    fixture("f3d radial locus parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d radial locus parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn radial_locus_definition_refuses_collection_limit() {
-    fixture("f3d radial locus definition", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d radial locus definition",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn radial_locus_member_refuses_collection_limit() {
-    fixture("f3d radial locus member", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d radial locus member",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn radial_locus_unique_member_refuses_collection_limit() {
-    fixture("f3d radial locus unique member", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d radial locus unique member",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn radial_locus_repeated_parameter_id_refuses_retained_limit() {
-    fixture("f3d radial locus repeated parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d radial locus repeated parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn radial_center_parameter_id_refuses_retained_limit() {
-    fixture("f3d radial center parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d radial center parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }

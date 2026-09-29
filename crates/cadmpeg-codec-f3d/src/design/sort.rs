@@ -25,20 +25,25 @@ pub(super) fn sort_by<T>(
         values.sort_by(compare);
         return Ok(());
     };
-    if std::mem::size_of::<T>() == 0 { return Ok(()); }
+    if std::mem::size_of::<T>() == 0 {
+        return Ok(());
+    }
     let count = values.len();
     if count & VISITED != 0 {
         return Err(ctx.refuse_codec_limit("f3d stable sort permutation", 0, 1));
     }
-    let work = u64_from_index(count).checked_mul(u64::from(count.ilog2()) + 1)
+    let work = u64_from_index(count)
+        .checked_mul(u64::from(count.ilog2()) + 1)
         .ok_or_else(|| ctx.refuse_codec_limit("f3d stable sort work", 0, 1))?;
     ctx.charge_work(work, "f3d stable sort work")?;
     ctx.charge_collection_items(u64_from_index(count), "f3d stable sort permutation")?;
-    let bytes = count.checked_mul(std::mem::size_of::<usize>())
+    let bytes = count
+        .checked_mul(std::mem::size_of::<usize>())
         .ok_or_else(|| ctx.refuse_codec_limit("f3d stable sort scratch", 0, 1))?;
     let _scratch = ctx.reserve_scoped(u64_from_index(bytes), "f3d stable sort scratch")?;
     let mut permutation = Vec::new();
-    permutation.try_reserve_exact(count)
+    permutation
+        .try_reserve_exact(count)
         .map_err(|_| ctx.refuse_codec_limit("f3d stable sort permutation", 0, 1))?;
     permutation.extend(0..count);
     permutation.sort_unstable_by(|left, right| {
@@ -46,7 +51,9 @@ pub(super) fn sort_by<T>(
     });
     // Invert source indices into destination indices, marking each completed cycle.
     for start in 0..count {
-        if permutation[start] & VISITED != 0 { continue; }
+        if permutation[start] & VISITED != 0 {
+            continue;
+        }
         let mut previous = start;
         let mut current = permutation[start];
         while current != start {
@@ -57,7 +64,9 @@ pub(super) fn sort_by<T>(
         }
         permutation[start] = previous | VISITED;
     }
-    for destination in &mut permutation { *destination &= !VISITED; }
+    for destination in &mut permutation {
+        *destination &= !VISITED;
+    }
     for start in 0..count {
         while permutation[start] != start {
             let destination = permutation[start];

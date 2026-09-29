@@ -1052,9 +1052,11 @@ fn assembly_path_append_occurrences_refuse_collection_limit() {
     let error = continuation_path(30, 300)
         .try_append(continuation_path(31, 1000), &ctx)
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d assembly path appended occurrences"));
+            && failure.operation == "f3d assembly path appended occurrences")
+    );
 }
 
 #[test]
@@ -1068,9 +1070,11 @@ fn assembly_path_append_identities_refuse_collection_limit() {
     let error = continuation_path(30, 300)
         .try_append(continuation_path(31, 1000), &ctx)
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d assembly path appended identities"));
+            && failure.operation == "f3d assembly path appended identities")
+    );
 
     let arena = DecodeArena::new();
     policy.limits.max_collection_items = 5;

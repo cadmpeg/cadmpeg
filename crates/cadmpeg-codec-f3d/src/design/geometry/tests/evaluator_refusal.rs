@@ -156,7 +156,8 @@ fn coincident_nurbs_loci_propagate_endpoint_refusal() {
         sketch_id,
         SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        }).unwrap(),
+        })
+        .unwrap(),
     );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();

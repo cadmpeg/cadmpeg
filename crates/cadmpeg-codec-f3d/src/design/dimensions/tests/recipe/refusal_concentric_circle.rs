@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{Point2, Length, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+use super::{
+    Length, Point2, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
+    SketchId,
+};
 use cadmpeg_core::decode::ResourceDimension;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let parameter = crate::records::parameters::DesignParameter::try_from(
         crate::records::parameters::DesignParameterDraft {
@@ -54,29 +56,49 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         circle("synthetic:test:id#outer-b", Point2::new(20.0, 0.0), 8.0),
         circle("synthetic:test:id#inner-b", Point2::new(20.0, 0.0), 6.0),
     ];
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| crate::design::dimensions::concentric_circle_dimension_definition(Some(ctx),
-        if operation.starts_with("f3d concentric circle ") && operation != "f3d concentric circle candidate" { &circles[..2] } else { &circles },
-        &sketch,
-        &parameter,
-        &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
-            .expect("identity grammar"),
-        0.0,
-    ).transpose().map(|_| ()));
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        crate::design::dimensions::concentric_circle_dimension_definition(
+            Some(ctx),
+            if operation.starts_with("f3d concentric circle ")
+                && operation != "f3d concentric circle candidate"
+            {
+                &circles[..2]
+            } else {
+                &circles
+            },
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
+            0.0,
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn concentric_circle_candidate_refuses_collection_limit() {
-    fixture("f3d concentric circle candidate", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d concentric circle candidate",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn concentric_used_first_refuses_collection_limit() {
-    fixture("f3d concentric used first", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d concentric used first",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn concentric_used_second_refuses_collection_limit() {
-    fixture("f3d concentric used second", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d concentric used second",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
@@ -86,35 +108,56 @@ fn concentric_pair_refuses_collection_limit() {
 
 #[test]
 fn concentric_circle_first_id_refuses_retained_limit() {
-    fixture("f3d concentric circle first id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d concentric circle first id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn concentric_circle_second_id_refuses_retained_limit() {
-    fixture("f3d concentric circle second id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d concentric circle second id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn concentric_circle_parameter_id_refuses_retained_limit() {
-    fixture("f3d concentric circle parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d concentric circle parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn concentric_repeated_first_id_refuses_retained_limit() {
-    fixture("f3d concentric repeated first id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d concentric repeated first id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn concentric_repeated_second_id_refuses_retained_limit() {
-    fixture("f3d concentric repeated second id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d concentric repeated second id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn concentric_measurement_refuses_collection_limit() {
-    fixture("f3d concentric measurement", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d concentric measurement",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn concentric_repeated_parameter_id_refuses_retained_limit() {
-    fixture("f3d concentric repeated parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d concentric repeated parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }

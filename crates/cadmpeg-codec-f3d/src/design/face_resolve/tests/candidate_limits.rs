@@ -11,8 +11,18 @@ fn historical_referenced_face_candidates_refuse_limits() {
     operand.recipe_kind = ConstructionRecipeKind::Face;
     operand.recipe_references = vec![reference(10, "selected", 1)];
     for (retained, items, dimension, operation) in [
-        (0, 1, ResourceDimension::RetainedBytes, "f3d historical face candidate id"),
-        (100, 0, ResourceDimension::CollectionItems, "f3d historical face candidate"),
+        (
+            0,
+            1,
+            ResourceDimension::RetainedBytes,
+            "f3d historical face candidate id",
+        ),
+        (
+            100,
+            0,
+            ResourceDimension::CollectionItems,
+            "f3d historical face candidate",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -31,8 +41,18 @@ fn historical_referenced_face_candidates_refuse_limits() {
 fn historical_fallback_face_candidates_refuse_limits() {
     let operand = stable_bounded_face_operand();
     for (retained, items, dimension, operation) in [
-        (0, 1, ResourceDimension::RetainedBytes, "f3d historical fallback face id"),
-        (100, 0, ResourceDimension::CollectionItems, "f3d historical fallback face"),
+        (
+            0,
+            1,
+            ResourceDimension::RetainedBytes,
+            "f3d historical fallback face id",
+        ),
+        (
+            100,
+            0,
+            ResourceDimension::CollectionItems,
+            "f3d historical fallback face",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -55,8 +75,18 @@ fn nested_bounded_face_candidates_refuse_limits() {
     operand.alternate_selector_candidate_faces.clear();
     operand.recipe_references = vec![reference(10, "selected", 1)];
     for (retained, items, dimension, operation) in [
-        (0, 1, ResourceDimension::RetainedBytes, "f3d nested bounded face candidate id"),
-        (100, 0, ResourceDimension::CollectionItems, "f3d nested bounded face candidate"),
+        (
+            0,
+            1,
+            ResourceDimension::RetainedBytes,
+            "f3d nested bounded face candidate id",
+        ),
+        (
+            100,
+            0,
+            ResourceDimension::CollectionItems,
+            "f3d nested bounded face candidate",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();

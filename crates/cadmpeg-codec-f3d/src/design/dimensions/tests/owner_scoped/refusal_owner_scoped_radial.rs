@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{edit, parse_design_parameter_record, owner_scoped_radial_dimension_definition, radial_dimension_definition, parameter_record, Point2, Length, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+use super::{
+    edit, owner_scoped_radial_dimension_definition, parameter_record,
+    parse_design_parameter_record, radial_dimension_definition, Length, Point2,
+    SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId,
+};
 use cadmpeg_core::decode::ResourceDimension;
 const EPS_REFUSAL_LINEAR: f64 = 1.0e-6;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let entity = SketchEntity::new(
         SketchEntityId::mint("f3d:model:sketch-entity#circle").unwrap(),
         SketchId::mint("f3d:model:sketch#radial").unwrap(),
@@ -50,12 +54,15 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         Some(SketchConstraintDefinitionInput::Diameter { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &diameter_parameter
     ));
-    assert!(radial_dimension_definition(None,
+    assert!(radial_dimension_definition(
+        None,
         &entity,
         "Diameter Dimension-2",
         0.5,
         diameter_parameter.clone(),
-    ).transpose().unwrap()
+    )
+    .transpose()
+    .unwrap()
     .is_none());
     let parameter = parse_design_parameter_record(&parameter_record(
         Some(1),
@@ -103,31 +110,48 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         definition.try_into()
     })
     .unwrap();
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| owner_scoped_radial_dimension_definition(Some(ctx),
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        owner_scoped_radial_dimension_definition(
+            Some(ctx),
             &[entity.clone(), duplicate.clone()],
             &entity.sketch,
             &parameter,
             &diameter_parameter,
             EPS_REFUSAL_LINEAR,
-        ).transpose().map(|_| ()));
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn owner_scoped_radial_parameter_id_refuses_retained_limit() {
-    fixture("f3d owner scoped radial parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d owner scoped radial parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn owner_radial_definition_refuses_collection_limit() {
-    fixture("f3d owner radial definition", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d owner radial definition",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn owner_radial_member_refuses_collection_limit() {
-    fixture("f3d owner radial member", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d owner radial member",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn owner_scoped_radial_repeated_parameter_id_refuses_retained_limit() {
-    fixture("f3d owner scoped radial repeated parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d owner scoped radial repeated parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }

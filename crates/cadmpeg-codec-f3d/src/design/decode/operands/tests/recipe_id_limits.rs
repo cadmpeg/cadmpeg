@@ -14,8 +14,11 @@ fn recipe_operand_ids_refuse_retained_limit() {
     }
     let mut bytes = Vec::new();
     for (tag, index) in [
-        (b"306", 100), (b"259", 100), (b"408", 101),
-        (b"414", 102), (b"423", 103),
+        (b"306", 100),
+        (b"259", 100),
+        (b"408", 101),
+        (b"414", 102),
+        (b"423", 103),
     ] {
         indexed(&mut bytes, tag, index);
     }
@@ -55,14 +58,23 @@ fn recipe_operand_ids_refuse_retained_limit() {
         policy.limits.max_retained_bytes = u64::try_from(limit).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = crate::design::decode::operands::parse_edge_operand(
-            &ctx, &bytes, &records, &scope, 0, &header,
-            std::slice::from_ref(&recipe), None,
+            &ctx,
+            &bytes,
+            &records,
+            &scope,
+            0,
+            &header,
+            std::slice::from_ref(&recipe),
+            None,
         );
-        assert!(matches!(&result,
-            Some(Err(CodecError::ResourceLimit(failure)))
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation
-        ), "operation {operation}: {result:?}");
+        assert!(
+            matches!(&result,
+                Some(Err(CodecError::ResourceLimit(failure)))
+                    if failure.dimension == ResourceDimension::RetainedBytes
+                        && failure.operation == operation
+            ),
+            "operation {operation}: {result:?}"
+        );
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();

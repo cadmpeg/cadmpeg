@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{parse_design_parameter_record, owner_scoped_angular_dimension_definition, parameter_record, Point2, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+use super::{
+    owner_scoped_angular_dimension_definition, parameter_record, parse_design_parameter_record,
+    Point2, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+};
 use cadmpeg_core::decode::ResourceDimension;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let sketch = SketchId::mint("f3d:model:sketch#angular").unwrap();
     let line = |name: &str, angle: f64| {
         SketchEntity::new(
@@ -31,25 +33,39 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     let parameter_id = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#angle")
         .expect("identity grammar");
 
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| owner_scoped_angular_dimension_definition(Some(ctx),
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        owner_scoped_angular_dimension_definition(
+            Some(ctx),
             &[horizontal.clone(), sloped.clone(), vertical.clone()],
             &sketch,
             &parameter,
             &parameter_id,
-        ).transpose().map(|_| ()));
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn owner_scoped_angular_first_id_refuses_retained_limit() {
-    fixture("f3d owner scoped angular first id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d owner scoped angular first id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn owner_scoped_angular_second_id_refuses_retained_limit() {
-    fixture("f3d owner scoped angular second id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d owner scoped angular second id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn owner_scoped_angular_parameter_id_refuses_retained_limit() {
-    fixture("f3d owner scoped angular parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d owner scoped angular parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }

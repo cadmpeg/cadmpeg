@@ -3,8 +3,8 @@ use crate::design::feature_project::bind_sketch_feature_geometry;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    PlanarProfileRef, SheetMetalThicknessSide, SketchFeatureBinding,
+    Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation, PlanarProfileRef,
+    SheetMetalThicknessSide, SketchFeatureBinding,
 };
 use cadmpeg_ir::sketches::SketchId;
 use std::collections::BTreeMap;
@@ -25,16 +25,22 @@ fn fixture() -> Vec<Feature> {
         native_ref: None,
     };
     vec![
-        feature("synthetic:test:id#f3d:feature:sketch", 0,
+        feature(
+            "synthetic:test:id#f3d:feature:sketch",
+            0,
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-            })),
-        feature("synthetic:test:id#f3d:feature:flange", 1,
+            }),
+        ),
+        feature(
+            "synthetic:test:id#f3d:feature:flange",
+            1,
             FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
                 profile: PlanarProfileRef::Sketch(sketch_id),
                 thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
                 side: SheetMetalThicknessSide::Forward,
-            })),
+            }),
+        ),
     ]
 }
 
@@ -43,17 +49,27 @@ fn assert_refusal(operation: &'static str, retained: bool) {
     for limit in 0..max_limit {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        if retained { policy.limits.max_retained_bytes = limit; }
-        else { policy.limits.max_collection_items = limit; }
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut features = fixture();
-        let result = bind_sketch_feature_geometry(Some(&ctx), &mut features,
-            &[], &[], &[], &[]);
+        let result = bind_sketch_feature_geometry(Some(&ctx), &mut features, &[], &[], &[], &[]);
         match result {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation
-                && failure.dimension == (if retained { ResourceDimension::RetainedBytes }
-                    else { ResourceDimension::CollectionItems }) => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension
+                        == (if retained {
+                            ResourceDimension::RetainedBytes
+                        } else {
+                            ResourceDimension::CollectionItems
+                        }) =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -93,8 +109,12 @@ fn spatial_fixture() -> (
     cadmpeg_ir::sketches::SpatialSketch,
 ) {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-    use crate::records::sketch_placement::{DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement};
-    use cadmpeg_ir::features::{BooleanOp, ExtrudeExtent, ExtrudeSide, LinearTermination, ProfileRef};
+    use crate::records::sketch_placement::{
+        DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement,
+    };
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeExtent, ExtrudeSide, LinearTermination, ProfileRef,
+    };
     use cadmpeg_ir::math::{Point3, Vector3};
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#11",
@@ -105,11 +125,13 @@ fn spatial_fixture() -> (
         frame: DesignSketchFrame::new(0, DesignSketchFrameForm::ScopeCompact).unwrap(),
         id: "f3d:Design/BulkStream.dat:placement#7".to_owned(),
         scope_record_index: Some(11),
-        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_7".to_owned()).unwrap(),
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_7".to_owned())
+            .unwrap(),
         visibility: None,
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         record_index: 7,
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("260".to_owned())
+            .unwrap(),
     };
     let spatial_sketch = cadmpeg_ir::sketches::SpatialSketch {
         id: crate::ids::neutral_spatial_sketch_id(&placement),
@@ -123,10 +145,12 @@ fn spatial_fixture() -> (
             vec![cadmpeg_ir::sketches::SpatialSketchEntityUse {
                 entity: cadmpeg_ir::sketches::SpatialSketchEntityId::mint(
                     "synthetic:test:spatial-entity#profile",
-                ).unwrap(),
+                )
+                .unwrap(),
                 reversed: false,
             }],
-        ).unwrap()],
+        )
+        .unwrap()],
         native_ref: Some(placement.id.clone()),
     };
     let feature = Feature {
@@ -142,12 +166,16 @@ fn spatial_fixture() -> (
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
-                    crate::ids::neutral_sketch_id(&placement))),
+                    crate::ids::neutral_sketch_id(&placement),
+                )),
                 direction: Default::default(),
                 start: Default::default(),
-                extent: ExtrudeExtent::OneSided { side: ExtrudeSide {
-                    termination: LinearTermination::ThroughAll {}, draft: None,
-                } },
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::ThroughAll {},
+                        draft: None,
+                    },
+                },
                 op: BooleanOp::NewBody,
                 solid: Some(true),
                 face_maker: None,
@@ -166,18 +194,34 @@ fn assert_spatial_refusal(operation: &'static str, retained: bool) {
     for limit in 0..max_limit {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        if retained { policy.limits.max_retained_bytes = limit; }
-        else { policy.limits.max_collection_items = limit; }
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let (mut features, scope, placement, spatial) = spatial_fixture();
-        let result = bind_sketch_feature_geometry(Some(&ctx), &mut features,
-            std::slice::from_ref(&scope), std::slice::from_ref(&placement),
-            &[], std::slice::from_ref(&spatial));
+        let result = bind_sketch_feature_geometry(
+            Some(&ctx),
+            &mut features,
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&placement),
+            &[],
+            std::slice::from_ref(&spatial),
+        );
         match result {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation
-                && failure.dimension == (if retained { ResourceDimension::RetainedBytes }
-                    else { ResourceDimension::CollectionItems }) => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension
+                        == (if retained {
+                            ResourceDimension::RetainedBytes
+                        } else {
+                            ResourceDimension::CollectionItems
+                        }) =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
             Ok(_) => panic!("expected {operation} refusal, got success"),
             Err(error) => panic!("expected {operation} refusal: {error}"),
         }
@@ -204,12 +248,25 @@ fn extrude_spatial_selection_ref_refuses_retained_limit() {
     policy.limits.max_retained_bytes = expected.len() as u64 - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::design::feature_project::copy_feature_record_ref(
-        Some(&ctx), stream, 42, ":design-record-header#", "f3d extrude spatial selection ref",
-    ).unwrap_err();
+        Some(&ctx),
+        stream,
+        42,
+        ":design-record-header#",
+        "f3d extrude spatial selection ref",
+    )
+    .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::RetainedBytes
             && failure.operation == "f3d extrude spatial selection ref"));
-    assert_eq!(crate::design::feature_project::copy_feature_record_ref(
-        None, stream, 42, ":design-record-header#", "f3d extrude spatial selection ref",
-    ).unwrap(), expected);
+    assert_eq!(
+        crate::design::feature_project::copy_feature_record_ref(
+            None,
+            stream,
+            42,
+            ":design-record-header#",
+            "f3d extrude spatial selection ref",
+        )
+        .unwrap(),
+        expected
+    );
 }

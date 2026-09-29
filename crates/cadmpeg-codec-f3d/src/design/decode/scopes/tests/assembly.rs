@@ -3,12 +3,12 @@
 use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
 use crate::design::test_support::assembly_operand_frame_fixture;
 use crate::records::feature::assembly::DesignAssemblyAlignment;
+use crate::records::feature::assembly::DesignAssemblyAlignmentForm;
 use crate::records::feature::assembly::DesignAssemblyOperandFrame;
 use crate::records::feature::assembly_features::DesignComponentInsertConstruction;
-use crate::records::feature::scope::DesignParameterScope;
-use crate::records::feature::assembly::DesignAssemblyAlignmentForm;
 use crate::records::feature::assembly_features::DesignComponentInsertMatrix;
 use crate::records::feature::scope::DesignFeatureKind;
+use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::scope::DesignScopePayloadMut;
 use crate::records::identity::Located;
 use crate::records::identity::ReferenceRun;
@@ -171,13 +171,16 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     identity_path_bytes.extend_from_slice(&3_u32.to_le_bytes());
     identity_path_bytes.extend_from_slice(b"396");
     identity_path_bytes.extend_from_slice(&70_u32.to_le_bytes());
-    let identity_paths = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &identity_path_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&identity_path_bytes),
-        &scope,
-        &rectangular_owners,
-    ).unwrap())
+    let identity_paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &identity_path_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&identity_path_bytes),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("identity-qualified assembly occurrence paths");
     assert_eq!(identity_paths[0].class_tag().as_str(), "390");
@@ -193,13 +196,16 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     for path_at in [first_identity_path_at, second_identity_path_at] {
         identity_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"386");
     }
-    let compact_identity_paths = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &identity_path_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&identity_path_bytes),
-        &scope,
-        &rectangular_owners,
-    ).unwrap())
+    let compact_identity_paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &identity_path_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&identity_path_bytes),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("compact identity-qualified assembly occurrence paths");
     assert!(compact_identity_paths
@@ -208,13 +214,16 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     for path_at in [first_identity_path_at, second_identity_path_at] {
         identity_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"329");
     }
-    let extended_class_329_paths = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &identity_path_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&identity_path_bytes),
-        &scope,
-        &rectangular_owners,
-    ).unwrap())
+    let extended_class_329_paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &identity_path_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&identity_path_bytes),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("identity-qualified class-329 assembly occurrence paths");
     assert!(extended_class_329_paths.iter().all(|path| {
@@ -236,14 +245,19 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     let mut malformed_class_329_identity = identity_path_bytes.clone();
     malformed_class_329_identity[first_identity_length_at..first_identity_length_at + 4]
         .copy_from_slice(&35_u32.to_le_bytes());
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &malformed_class_329_identity,
-        &crate::design::test_support::indexed_record_offsets_for_test(&malformed_class_329_identity),
-        &scope,
-        &rectangular_owners,
-    ).unwrap())
-    .is_some_and(|alignment| alignment.operand_paths().is_none()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &malformed_class_329_identity,
+            &crate::design::test_support::indexed_record_offsets_for_test(
+                &malformed_class_329_identity
+            ),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_paths().is_none())
+    );
 
     let first_locator_at = assembly_bytes.len();
     push_path_locator(&mut assembly_bytes, 64, 66);
@@ -266,13 +280,16 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     assembly_bytes.extend_from_slice(&3_u32.to_le_bytes());
     assembly_bytes.extend_from_slice(b"396");
     assembly_bytes.extend_from_slice(&70_u32.to_le_bytes());
-    let paths = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &assembly_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
-        &scope,
-        &rectangular_owners,
-    ).unwrap())
+    let paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &assembly_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("exact assembly occurrence paths");
     assert_eq!(paths[0].link().locator_record_index, 64);
@@ -305,65 +322,84 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     let mut reversed_path_assignment = assembly_bytes.clone();
     reversed_path_assignment[367..371].copy_from_slice(&67_u32.to_le_bytes());
     reversed_path_assignment[378..382].copy_from_slice(&64_u32.to_le_bytes());
-    let reversed_paths = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &reversed_path_assignment,
-        &crate::design::test_support::indexed_record_offsets_for_test(&reversed_path_assignment),
-        &scope,
-        &rectangular_owners,
-    ).unwrap())
+    let reversed_paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &reversed_path_assignment,
+            &crate::design::test_support::indexed_record_offsets_for_test(
+                &reversed_path_assignment,
+            ),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("scope locator order assigns paths to operand frames");
     assert_eq!(reversed_paths.map(|path| path.record_index), [68, 65]);
 
     let mut duplicate_path_assignment = assembly_bytes.clone();
     duplicate_path_assignment[378..382].copy_from_slice(&64_u32.to_le_bytes());
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &duplicate_path_assignment,
-        &crate::design::test_support::indexed_record_offsets_for_test(&duplicate_path_assignment),
-        &scope,
-        &rectangular_owners,
-    ).unwrap())
-    .is_some_and(|alignment| alignment.operand_paths().is_none()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &duplicate_path_assignment,
+            &crate::design::test_support::indexed_record_offsets_for_test(
+                &duplicate_path_assignment
+            ),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_paths().is_none())
+    );
 
     for locator_zero_at in [first_locator_at + 32, first_locator_at + 161] {
         let mut invalid_locator = assembly_bytes.clone();
         invalid_locator[locator_zero_at] = 1;
-        assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-            &invalid_locator,
-            &crate::design::test_support::indexed_record_offsets_for_test(&invalid_locator),
-            &scope,
-            &rectangular_owners,
-        ).unwrap())
-        .is_some_and(|alignment| alignment.operand_paths().is_none()));
+        assert!(
+            crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+                ctx,
+                &invalid_locator,
+                &crate::design::test_support::indexed_record_offsets_for_test(&invalid_locator),
+                &scope,
+                &rectangular_owners,
+            )
+            .unwrap())
+            .is_some_and(|alignment| alignment.operand_paths().is_none())
+        );
     }
     let first_wrapper_at =
         usize::try_from(paths[0].link().wrapper_byte_offset).expect("wrapper offset fits usize");
     for (relative_offset, value) in [(21, 0), (22, 2), (26, 0)] {
         let mut invalid_wrapper = assembly_bytes.clone();
         invalid_wrapper[first_wrapper_at + relative_offset] = value;
-        assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-            &invalid_wrapper,
-            &crate::design::test_support::indexed_record_offsets_for_test(&invalid_wrapper),
-            &scope,
-            &rectangular_owners,
-        ).unwrap())
-        .is_some_and(|alignment| alignment.operand_paths().is_none()));
+        assert!(
+            crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+                ctx,
+                &invalid_wrapper,
+                &crate::design::test_support::indexed_record_offsets_for_test(&invalid_wrapper),
+                &scope,
+                &rectangular_owners,
+            )
+            .unwrap())
+            .is_some_and(|alignment| alignment.operand_paths().is_none())
+        );
     }
     let first_wrapper_end = first_wrapper_at + 37;
     let mut extended_wrapper = assembly_bytes.clone();
     extended_wrapper.insert(first_wrapper_end, 0);
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &extended_wrapper,
-        &crate::design::test_support::indexed_record_offsets_for_test(&extended_wrapper),
-        &scope,
-        &rectangular_owners,
-    ).unwrap())
-    .is_some_and(|alignment| alignment.operand_paths().is_none()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &extended_wrapper,
+            &crate::design::test_support::indexed_record_offsets_for_test(&extended_wrapper),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_paths().is_none())
+    );
 
     let push_class_294_path =
         |bytes: &mut Vec<u8>, record_index: u32, occurrence: &str, identities: &[&str; 4]| {
@@ -414,13 +450,16 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     class_294_path_bytes.extend_from_slice(&3_u32.to_le_bytes());
     class_294_path_bytes.extend_from_slice(b"396");
     class_294_path_bytes.extend_from_slice(&70_u32.to_le_bytes());
-    let class_294_paths = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &class_294_path_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&class_294_path_bytes),
-        &scope,
-        &rectangular_owners,
-    ).unwrap())
+    let class_294_paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &class_294_path_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&class_294_path_bytes),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("class-294 identity-qualified assembly occurrence paths");
     assert!(class_294_paths.iter().all(|path| {
@@ -435,13 +474,16 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     for path_at in [first_class_294_path_at, second_class_294_path_at] {
         class_294_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"299");
     }
-    let class_299_paths = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &class_294_path_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&class_294_path_bytes),
-        &scope,
-        &rectangular_owners,
-    ).unwrap())
+    let class_299_paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &class_294_path_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&class_294_path_bytes),
+            &scope,
+            &rectangular_owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("class-299 identity-qualified assembly occurrence paths");
     assert!(class_299_paths.iter().all(|path| {
@@ -455,24 +497,30 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     }));
 
     assembly_bytes[25] = 0;
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &assembly_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
-        &scope,
-        &rectangular_owners
-    ).unwrap())
-    .and_then(|alignment| alignment.operand_frames())
-    .is_some());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &assembly_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
+            &scope,
+            &rectangular_owners
+        )
+        .unwrap())
+        .and_then(|alignment| alignment.operand_frames())
+        .is_some()
+    );
     assembly_bytes[25] = 2;
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &assembly_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
-        &scope,
-        &rectangular_owners
-    ).unwrap())
-    .is_some_and(|alignment| alignment.operand_frames().is_none()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &assembly_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
+            &scope,
+            &rectangular_owners
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_frames().is_none())
+    );
 
     scope
         .try_edit(|draft| {
@@ -489,12 +537,13 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         .unwrap();
     assert_eq!(
         crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
+            ctx,
             &assembly_bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
             &scope,
             &rectangular_owners
-        ).unwrap()),
+        )
+        .unwrap()),
         None
     );
 }
@@ -566,13 +615,16 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
             .copied()
             .collect::<Vec<_>>(),
     );
-    let alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &owners,
-    ).unwrap())
+    let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .expect("legacy class-383 alignment");
 
     assert_eq!(alignment.angle(), 0.25);
@@ -631,13 +683,16 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
             + crate::layout::assembly_class_383_258_frame_378_carrier::SCOPE_REFERENCE
             + 8]
         .copy_from_slice(&999_u64.to_le_bytes());
-    let malformed_alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &malformed,
-        &crate::design::test_support::indexed_record_offsets_for_test(&malformed),
-        &scope,
-        &owners,
-    ).unwrap())
+    let malformed_alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &malformed,
+            &crate::design::test_support::indexed_record_offsets_for_test(&malformed),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .expect("alignment scalar grammar remains exact");
     assert!(malformed_alignment.operand_paths().is_none());
 }
@@ -754,13 +809,16 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     }
     bytes[891..895].copy_from_slice(&scope.feature_ordinal.get().to_le_bytes());
 
-    let alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &owners,
-    ).unwrap())
+    let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .expect("legacy class-388 alignment");
     assert_eq!(alignment.angle(), 0.25);
     assert_eq!(alignment.offset(), [1.0, 2.0, 3.0]);
@@ -882,13 +940,16 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     path_bytes.extend_from_slice(&3_u32.to_le_bytes());
     path_bytes.extend_from_slice(b"396");
     path_bytes.extend_from_slice(&5_200_u32.to_le_bytes());
-    let paths = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &path_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&path_bytes),
-        &scope,
-        &owners,
-    ).unwrap())
+    let paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &path_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&path_bytes),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("legacy class-388 occurrence paths");
     assert_eq!(paths[0].link().locator_record_index, 5_001);
@@ -920,35 +981,44 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     let mut malformed_wrapper = path_bytes.clone();
     malformed_wrapper[first_wrapper_at + 22..first_wrapper_at + 26]
         .copy_from_slice(&3_u32.to_le_bytes());
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &malformed_wrapper,
-        &crate::design::test_support::indexed_record_offsets_for_test(&malformed_wrapper),
-        &scope,
-        &owners,
-    ).unwrap())
-    .is_some_and(|alignment| alignment.operand_paths().is_none()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &malformed_wrapper,
+            &crate::design::test_support::indexed_record_offsets_for_test(&malformed_wrapper),
+            &scope,
+            &owners,
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_paths().is_none())
+    );
     let mut malformed_path = path_bytes.clone();
     malformed_path[first_path_at + 417] = 1;
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &malformed_path,
-        &crate::design::test_support::indexed_record_offsets_for_test(&malformed_path),
-        &scope,
-        &owners,
-    ).unwrap())
-    .is_some_and(|alignment| alignment.operand_paths().is_none()));
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &malformed_path,
+            &crate::design::test_support::indexed_record_offsets_for_test(&malformed_path),
+            &scope,
+            &owners,
+        )
+        .unwrap())
+        .is_some_and(|alignment| alignment.operand_paths().is_none())
+    );
 
     let mut malformed = bytes;
     malformed[25] = 0;
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &malformed,
-        &crate::design::test_support::indexed_record_offsets_for_test(&malformed),
-        &scope,
-        &owners,
-    ).unwrap())
-    .is_none());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &malformed,
+            &crate::design::test_support::indexed_record_offsets_for_test(&malformed),
+            &scope,
+            &owners,
+        )
+        .unwrap())
+        .is_none()
+    );
 }
 
 #[test]
@@ -1038,13 +1108,16 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     bytes.extend_from_slice(b"396");
     bytes.extend_from_slice(&90_u32.to_le_bytes());
 
-    let alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &owners,
-    ).unwrap())
+    let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .expect("exact As-built alignment");
     assert_eq!(alignment.angle(), 0.25);
     assert_eq!(alignment.offset(), [1.0, 2.0, 3.0]);
@@ -1093,26 +1166,32 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     let mut invalid_transform = bytes.clone();
     invalid_transform[first_locator_at + 33..first_locator_at + 41]
         .copy_from_slice(&2.0_f64.to_le_bytes());
-    let incomplete = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &invalid_transform,
-        &crate::design::test_support::indexed_record_offsets_for_test(&invalid_transform),
-        &scope,
-        &owners,
-    ).unwrap())
+    let incomplete = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &invalid_transform,
+            &crate::design::test_support::indexed_record_offsets_for_test(&invalid_transform),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .expect("alignment scalars remain exact");
     assert_eq!(incomplete.operand_frames(), None);
     assert_eq!(incomplete.operand_paths(), None);
 
     let mut duplicate_reference = bytes;
     duplicate_reference[63..67].copy_from_slice(&64_u32.to_le_bytes());
-    let incomplete = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-        ctx,
-        &duplicate_reference,
-        &crate::design::test_support::indexed_record_offsets_for_test(&duplicate_reference),
-        &scope,
-        &owners,
-    ).unwrap())
+    let incomplete = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &duplicate_reference,
+            &crate::design::test_support::indexed_record_offsets_for_test(&duplicate_reference),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .expect("alignment scalars remain exact");
     assert_eq!(incomplete.operand_frames(), None);
     assert_eq!(incomplete.operand_paths(), None);

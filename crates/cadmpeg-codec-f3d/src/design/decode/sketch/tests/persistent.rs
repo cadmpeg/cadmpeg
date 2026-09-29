@@ -41,9 +41,11 @@ fn persistent_reference_collections_refuse_collection_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = scan_references(&ctx, &bytes)
             .expect_err("collection limit must refuse persistent references");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == operation));
+                && failure.operation == operation)
+        );
     }
 }
 
@@ -56,9 +58,11 @@ fn persistent_reference_id_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = scan_references(&ctx, &bytes)
         .expect_err("retained limit must refuse persistent reference ID");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::RetainedBytes
-            && failure.operation == "f3d persistent reference ID"));
+            && failure.operation == "f3d persistent reference ID")
+    );
 }
 
 #[test]
@@ -71,5 +75,8 @@ fn persistent_reference_scan_preserves_byte_order_after_kind_scan() {
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].value, 71);
     assert_eq!(references[1].value, 29);
-    assert_eq!(references[0].id, crate::ids::native_persistent_reference_id("BulkStream.dat", 0));
+    assert_eq!(
+        references[0].id,
+        crate::ids::native_persistent_reference_id("BulkStream.dat", 0)
+    );
 }

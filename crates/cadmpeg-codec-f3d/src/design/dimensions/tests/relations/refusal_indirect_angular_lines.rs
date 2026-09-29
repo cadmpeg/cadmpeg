@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{indirect_angular_lines, Point2, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, HashMap};
+use super::{
+    indirect_angular_lines, HashMap, Point2, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId,
+};
 use cadmpeg_core::decode::ResourceDimension;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let entity = |id: &str, geometry: SketchGeometry| {
         cadmpeg_ir::sketches::SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
@@ -49,20 +51,30 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         (("native", 4), &horizontal),
     ]);
 
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| indirect_angular_lines(Some(ctx),
-        "native",
-        &[&point, &explicit],
-        std::f64::consts::FRAC_PI_4,
-        &projected,
-    ).map(|_| ()));
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        indirect_angular_lines(
+            Some(ctx),
+            "native",
+            &[&point, &explicit],
+            std::f64::consts::FRAC_PI_4,
+            &projected,
+        )
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn indirect_angular_first_id_refuses_retained_limit() {
-    fixture("f3d indirect angular first id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d indirect angular first id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn indirect_angular_second_id_refuses_retained_limit() {
-    fixture("f3d indirect angular second id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d indirect angular second id",
+        ResourceDimension::RetainedBytes,
+    );
 }

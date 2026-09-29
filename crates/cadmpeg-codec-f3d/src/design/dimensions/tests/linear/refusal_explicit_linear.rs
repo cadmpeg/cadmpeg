@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{parse_design_parameter_record, parameter_record, Point2, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+use super::{
+    parameter_record, parse_design_parameter_record, Point2, SketchConstraintDefinitionInput,
+    SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+};
 use cadmpeg_core::decode::ResourceDimension;
 const EPS_REFUSAL_LINEAR: f64 = 1.0e-6;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let sketch = SketchId::mint("generated:test:sketch#presentation").unwrap();
     let entity = |record_index: u32, geometry: SketchGeometry| {
         SketchEntity::new(
@@ -166,7 +168,8 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     ))
     .expect("synthetic ambiguous tangent dimension");
     assert!(
-        crate::design::dimensions::presentation_dimension_definition(None,
+        crate::design::dimensions::presentation_dimension_definition(
+            None,
             "stream",
             &frame(vec![operand(782), operand(796)]),
             &projected,
@@ -174,7 +177,9 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
             &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16_ambiguous")
                 .expect("identity grammar"),
             EPS_REFUSAL_LINEAR,
-        ).transpose().unwrap()
+        )
+        .transpose()
+        .unwrap()
         .is_none()
     );
 
@@ -187,28 +192,42 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         0.381,
     ))
     .expect("synthetic point distance dimension");
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| crate::design::dimensions::presentation_dimension_definition(Some(ctx),
-        "stream",
-        &frame(vec![operand(1061), operand(1075)]),
-        &projected,
-        &point_distance,
-        &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d32")
-            .expect("identity grammar"),
-        EPS_REFUSAL_LINEAR,
-    ).transpose().map(|_| ()));
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        crate::design::dimensions::presentation_dimension_definition(
+            Some(ctx),
+            "stream",
+            &frame(vec![operand(1061), operand(1075)]),
+            &projected,
+            &point_distance,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d32")
+                .expect("identity grammar"),
+            EPS_REFUSAL_LINEAR,
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn explicit_linear_parameter_id_refuses_retained_limit() {
-    fixture("f3d explicit linear parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d explicit linear parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn explicit_linear_first_id_refuses_retained_limit() {
-    fixture("f3d explicit linear first id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d explicit linear first id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn explicit_linear_second_id_refuses_retained_limit() {
-    fixture("f3d explicit linear second id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d explicit linear second id",
+        ResourceDimension::RetainedBytes,
+    );
 }

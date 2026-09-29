@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{Point2, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+use super::{
+    Point2, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId,
+};
 use cadmpeg_core::decode::ResourceDimension;
 const EPS_REFUSAL_LINEAR: f64 = 1.0e-6;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let line = |name: &str, start, end| {
         SketchEntity::new(
@@ -131,28 +133,43 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         Point2::new(22.0, 3.0),
         Point2::new(22.0, 4.0),
     ));
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| crate::design::dimensions::owner_scoped_parallel_line_set_dimension_definition(Some(ctx),
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        crate::design::dimensions::owner_scoped_parallel_line_set_dimension_definition(
+            Some(ctx),
             &fragmented_entities,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
             EPS_REFUSAL_LINEAR,
-        ).transpose().map(|_| ()));
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn parallel_line_set_candidate_refuses_collection_limit() {
-    fixture("f3d parallel line set candidate", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d parallel line set candidate",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn parallel_line_carrier_candidate_refuses_collection_limit() {
-    fixture("f3d parallel line carrier candidate", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d parallel line carrier candidate",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn planar_carrier_member_refuses_collection_limit() {
-    fixture("f3d planar carrier member", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d planar carrier member",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
@@ -162,11 +179,21 @@ fn planar_carrier_refuses_collection_limit() {
 
 #[test]
 fn owner_scoped_parallel_line_set_parameter_id_refuses_retained_limit() {
-    fixture("f3d owner scoped parallel line set parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d owner scoped parallel line set parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
-fn planar_carrier_output_id_retained_refuses_limit() { fixture("f3d atomic member entity id", ResourceDimension::RetainedBytes); }
+fn planar_carrier_output_id_retained_refuses_limit() {
+    fixture(
+        "f3d atomic member entity id",
+        ResourceDimension::RetainedBytes,
+    );
+}
 
 #[test]
-fn planar_carrier_output_member_collection_refuses_limit() { fixture("f3d atomic member", ResourceDimension::CollectionItems); }
+fn planar_carrier_output_member_collection_refuses_limit() {
+    fixture("f3d atomic member", ResourceDimension::CollectionItems);
+}

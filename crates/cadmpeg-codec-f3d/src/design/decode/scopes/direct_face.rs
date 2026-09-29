@@ -7,8 +7,8 @@ use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use super::thicken_shell::exact_legacy_thicken_class_347;
 use super::thicken_shell::exact_shell_class_369_261;
-use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::records::feature::body_ops::DesignScaleOperation;
@@ -293,93 +293,96 @@ pub(super) fn exact_scale_operation(
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Result<Option<DesignScaleOperation>, cadmpeg_core::CodecError> {
     (|| {
-    if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Scale) {
-        return None;
-    }
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    let (body_group_record_index, center_record_index, uniform_factor_offset, center) =
-        if parameter_scope_payload_length(scope) == Some(303)
-            && scope.reference_members().len() == 5
-        {
-            let [factor_record_index, body_group_record_index, _, _, center_record_index] =
-                scope.reference_members().values_array()?;
-            if View::u32_le_at(bytes, start + 20)? != 1
-                || bytes.get(start + 24) != Some(&0)
-                || marked_record_reference(bytes, start + 33)? != *center_record_index
-                || marked_record_reference(bytes, start + 44)? != *factor_record_index
-                || View::u32_le_at(bytes, start + 55)? != 1
-                || bytes.get(start + 59) != Some(&0)
-                || View::u32_le_at(bytes, start + 60)? != 1
-                || View::u32_le_at(bytes, start + 64)? != 1
-                || marked_record_reference(bytes, start + 68)? != *body_group_record_index
-            {
-                return None;
-            }
-            let center = match exact_point_data_construction(
-                ctx,
-                bytes,
-                records,
-                std::slice::from_ref(center_record_index),
-                stream_types,
-            ) {
-                Ok(point) => point.map(|point| (point.position, point.position_offset)),
-                Err(error) => return Some(Err(error)),
-            };
-            (
-                *body_group_record_index,
-                *center_record_index,
-                start + 25,
-                center,
-            )
-        } else if scope.kind() == scope::DesignFeatureKind::Scale
-            && matches!(scope.reference_members().len(), 5 | 6)
-            && scope.frame_length()
-                == 307 + u64::try_from(scope.reference_members().len().saturating_sub(5)).ok()? * 11
-        {
-            let mut references = scope.reference_members().values();
-            let factor_record_index = references.next()?;
-            let body_group_record_index = references.next()?;
-            let center_record_index = references.next_back()?;
-            if bytes.get(start + 16..start + 21)? != [0; 5]
-                || marked_record_reference(bytes, start + 29)? != *center_record_index
-                || marked_record_reference(bytes, start + 40)? != *factor_record_index
-                || View::u32_le_at(bytes, start + 51)? != 1
-                || bytes.get(start + 55) != Some(&0)
-                || View::u32_le_at(bytes, start + 56)? != 1
-                || View::u32_le_at(bytes, start + 60)? != 1
-                || marked_record_reference(bytes, start + 64)? != *body_group_record_index
-            {
-                return None;
-            }
-            let point = match exact_point_data_construction(
-                ctx,
-                bytes,
-                records,
-                std::slice::from_ref(center_record_index),
-                stream_types,
-            ) {
-                Ok(Some(point)) => point,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-            (
-                *body_group_record_index,
-                *center_record_index,
-                start + 21,
-                Some((point.position, point.position_offset)),
-            )
-        } else {
+        if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Scale) {
             return None;
-        };
-    let uniform_factor =
-        cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, uniform_factor_offset)?)?;
-    Some(Ok(DesignScaleOperation {
-        body_group_record_index,
-        center_record_index,
-        center_position: center
-            .map(|(value, offset)| crate::records::identity::Located { value, offset }),
-        uniform_factor,
-        uniform_factor_offset: uniform_factor_offset as u64,
-    }))
-    })().transpose()
+        }
+        let start = usize::try_from(scope.byte_offset()).ok()?;
+        let (body_group_record_index, center_record_index, uniform_factor_offset, center) =
+            if parameter_scope_payload_length(scope) == Some(303)
+                && scope.reference_members().len() == 5
+            {
+                let [factor_record_index, body_group_record_index, _, _, center_record_index] =
+                    scope.reference_members().values_array()?;
+                if View::u32_le_at(bytes, start + 20)? != 1
+                    || bytes.get(start + 24) != Some(&0)
+                    || marked_record_reference(bytes, start + 33)? != *center_record_index
+                    || marked_record_reference(bytes, start + 44)? != *factor_record_index
+                    || View::u32_le_at(bytes, start + 55)? != 1
+                    || bytes.get(start + 59) != Some(&0)
+                    || View::u32_le_at(bytes, start + 60)? != 1
+                    || View::u32_le_at(bytes, start + 64)? != 1
+                    || marked_record_reference(bytes, start + 68)? != *body_group_record_index
+                {
+                    return None;
+                }
+                let center = match exact_point_data_construction(
+                    ctx,
+                    bytes,
+                    records,
+                    std::slice::from_ref(center_record_index),
+                    stream_types,
+                ) {
+                    Ok(point) => point.map(|point| (point.position, point.position_offset)),
+                    Err(error) => return Some(Err(error)),
+                };
+                (
+                    *body_group_record_index,
+                    *center_record_index,
+                    start + 25,
+                    center,
+                )
+            } else if scope.kind() == scope::DesignFeatureKind::Scale
+                && matches!(scope.reference_members().len(), 5 | 6)
+                && scope.frame_length()
+                    == 307
+                        + u64::try_from(scope.reference_members().len().saturating_sub(5)).ok()?
+                            * 11
+            {
+                let mut references = scope.reference_members().values();
+                let factor_record_index = references.next()?;
+                let body_group_record_index = references.next()?;
+                let center_record_index = references.next_back()?;
+                if bytes.get(start + 16..start + 21)? != [0; 5]
+                    || marked_record_reference(bytes, start + 29)? != *center_record_index
+                    || marked_record_reference(bytes, start + 40)? != *factor_record_index
+                    || View::u32_le_at(bytes, start + 51)? != 1
+                    || bytes.get(start + 55) != Some(&0)
+                    || View::u32_le_at(bytes, start + 56)? != 1
+                    || View::u32_le_at(bytes, start + 60)? != 1
+                    || marked_record_reference(bytes, start + 64)? != *body_group_record_index
+                {
+                    return None;
+                }
+                let point = match exact_point_data_construction(
+                    ctx,
+                    bytes,
+                    records,
+                    std::slice::from_ref(center_record_index),
+                    stream_types,
+                ) {
+                    Ok(Some(point)) => point,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+                (
+                    *body_group_record_index,
+                    *center_record_index,
+                    start + 21,
+                    Some((point.position, point.position_offset)),
+                )
+            } else {
+                return None;
+            };
+        let uniform_factor =
+            cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, uniform_factor_offset)?)?;
+        Some(Ok(DesignScaleOperation {
+            body_group_record_index,
+            center_record_index,
+            center_position: center
+                .map(|(value, offset)| crate::records::identity::Located { value, offset }),
+            uniform_factor,
+            uniform_factor_offset: uniform_factor_offset as u64,
+        }))
+    })()
+    .transpose()
 }

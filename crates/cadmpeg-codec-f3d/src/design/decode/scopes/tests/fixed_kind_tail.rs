@@ -16,7 +16,9 @@ use cadmpeg_ir::math::{Point3, Vector3};
 #[test]
 fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let (bytes, scope, transform) = fixed_kind_frames();
-    super::fixed_kind_tail_operations::fixed_kind_tail_operations(bytes, scope, transform, None, None);
+    super::fixed_kind_tail_operations::fixed_kind_tail_operations(
+        bytes, scope, transform, None, None,
+    );
 }
 
 #[test]
@@ -30,14 +32,22 @@ fn surface_boundary_edges_refuse_collection_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = crate::design::decode::scopes::surfaces::exact_surface_extend_operation(&ctx, bytes, &records, scope)
-            .unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        let error = crate::design::decode::scopes::surfaces::exact_surface_extend_operation(
+            &ctx, bytes, &records, scope,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == "f3d surface boundary edges"));
+                && failure.operation == "f3d surface boundary edges")
+        );
     };
     super::fixed_kind_tail_operations::fixed_kind_tail_operations(
-        bytes, scope, transform, Some(probe), None,
+        bytes,
+        scope,
+        transform,
+        Some(probe),
+        None,
     );
 }
 
@@ -49,23 +59,33 @@ fn surface_offset_face_groups_refuse_collection_limit() {
     let probe = |bytes: &[u8], scope: &DesignParameterScope| {
         let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
         for (limit, operation) in [
-            (0, "f3d surface offset covered reference"),
-            (1, "f3d surface offset covered reference"),
-            (2, "f3d surface offset face group"),
+            // The operand group first admits one member and one trailing
+            // reference; both auxiliary references are absent.
+            (2, "f3d surface offset covered reference"),
+            (3, "f3d surface offset covered reference"),
+            (4, "f3d surface offset face group"),
         ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
             policy.limits.max_collection_items = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let error = crate::design::decode::scopes::surfaces::exact_surface_offset_operation(&ctx, bytes, &records, scope)
-                .unwrap_err();
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            let error = crate::design::decode::scopes::surfaces::exact_surface_offset_operation(
+                &ctx, bytes, &records, scope,
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
                 if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation));
+                    && failure.operation == operation)
+            );
         }
     };
     super::fixed_kind_tail_operations::fixed_kind_tail_operations(
-        bytes, scope, transform, None, Some(probe),
+        bytes,
+        scope,
+        transform,
+        None,
+        Some(probe),
     );
 }
 
@@ -99,13 +119,15 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
+    let scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    ).unwrap()
+    )
+    .unwrap()
     .unwrap();
     assert_eq!(
         scope.kind(),
@@ -136,19 +158,23 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(scope.paired_class_tag.as_str(), "261");
     assert_eq!(scope.paired_byte_offset(), paired_at as u64);
     let discovered =
-        crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(&cadmpeg_test_support::service_decode_context(),
+        crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        ).unwrap()
+        )
+        .unwrap()
         .into_iter()
         .filter_map(|header| {
-            parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
+            parse_parameter_scope(
+                &cadmpeg_test_support::service_decode_context(),
                 &bytes,
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 header.record_index,
                 &header.class_tag,
                 header.byte_offset,
-            ).unwrap()
+            )
+            .unwrap()
         })
         .collect::<Vec<_>>();
     assert_eq!(discovered.len(), 1);
@@ -156,13 +182,15 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
 
     let mut compact_tail = bytes.clone();
     compact_tail.remove(paired_at - 1);
-    let compact = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
+    let compact = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &compact_tail,
         &crate::design::test_support::indexed_record_offsets_for_test(&compact_tail),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("scope with compact fixed tail");
     assert_eq!(
         compact.kind(),
@@ -186,13 +214,15 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         legacy.extend_from_slice(&3u32.to_le_bytes());
         legacy.extend_from_slice(b"261");
         legacy.extend_from_slice(&12u32.to_le_bytes());
-        let decoded = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
+        let decoded = parse_parameter_scope(
+            &cadmpeg_test_support::service_decode_context(),
             &legacy,
             &crate::design::test_support::indexed_record_offsets_for_test(&legacy),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
-        ).unwrap()
+        )
+        .unwrap()
         .expect("scope with legacy fixed tail");
         assert_eq!(
             decoded.kind(),
@@ -213,13 +243,15 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     extended_tail.extend_from_slice(&3u32.to_le_bytes());
     extended_tail.extend_from_slice(b"261");
     extended_tail.extend_from_slice(&12u32.to_le_bytes());
-    let extended = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
+    let extended = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &extended_tail,
         &crate::design::test_support::indexed_record_offsets_for_test(&extended_tail),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("scope with extended fixed tail");
     assert_eq!(extended.previous_history_state_id(), Some(3));
     assert_eq!(
@@ -235,13 +267,15 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         variant.extend_from_slice(&3u32.to_le_bytes());
         variant.extend_from_slice(b"261");
         variant.extend_from_slice(&12u32.to_le_bytes());
-        let decoded = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
+        let decoded = parse_parameter_scope(
+            &cadmpeg_test_support::service_decode_context(),
             &variant,
             &crate::design::test_support::indexed_record_offsets_for_test(&variant),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
-        ).unwrap()
+        )
+        .unwrap()
         .expect("scope with extended no-history fixed tail");
         assert_eq!(
             decoded.kind(),
@@ -271,13 +305,15 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     copy_scope.extend_from_slice(&3u32.to_le_bytes());
     copy_scope.extend_from_slice(b"259");
     copy_scope.extend_from_slice(&12u32.to_le_bytes());
-    let copy = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
+    let copy = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &copy_scope,
         &crate::design::test_support::indexed_record_offsets_for_test(&copy_scope),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("CopyPasteBodies scope with extended tail");
     assert_eq!(
         copy.kind(),
@@ -385,13 +421,15 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     generic_references[reference_count_at..reference_count_at + 4]
         .copy_from_slice(&2u32.to_le_bytes());
     generic_references.splice(reference_at + 10..reference_at + 10, generic_reference);
-    let generic_scope = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
+    let generic_scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &generic_references,
         &crate::design::test_support::indexed_record_offsets_for_test(&generic_references),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("generic-table Sketch scope");
     assert_eq!(
         generic_scope.kind(),
@@ -428,8 +466,12 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     work_plane.extend_from_slice(b"261");
     work_plane.extend_from_slice(&55u32.to_le_bytes());
     bytes.extend_from_slice(&work_plane);
-    let decoded = exact_work_plane_frame(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
-        .expect("exact WorkPlane frame");
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .expect("exact WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (work_plane_at + 76) as u64);
     assert_eq!(decoded.reference, Some((99, (work_plane_at + 58) as u64)));
@@ -493,9 +535,12 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded =
-        exact_work_plane_frame(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &direct_scope)
-            .expect("direct WorkPlane frame");
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &direct_scope,
+    )
+    .expect("direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (direct_at + 66) as u64);
     assert_eq!(decoded.reference, None);
@@ -688,9 +733,12 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded =
-        exact_work_plane_frame(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &compact_scope)
-            .expect("compact direct WorkPlane frame");
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &compact_scope,
+    )
+    .expect("compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, (compact_at + 49) as u64);
     assert_eq!(decoded.reference, None);

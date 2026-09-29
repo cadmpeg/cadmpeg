@@ -949,26 +949,35 @@ impl DesignWorkPointRule {
     ) -> Result<Self, String> {
         let form = match (reference_type, inputs.len()) {
             (5, 1) => {
-                let [input]: [DesignWorkPointInput; 1] = inputs.try_into()
+                let [input]: [DesignWorkPointInput; 1] = inputs
+                    .try_into()
                     .map_err(|_| "WorkPoint input arity changed")?;
                 DesignWorkPointRuleForm::CircleCenter { input }
             }
             (7, 2) => DesignWorkPointRuleForm::TwoEdgeIntersection {
-                inputs: inputs.try_into().map_err(|_| "WorkPoint input arity changed")?,
+                inputs: inputs
+                    .try_into()
+                    .map_err(|_| "WorkPoint input arity changed")?,
             },
             (8, 3) => DesignWorkPointRuleForm::ThreePlaneIntersection {
-                inputs: inputs.try_into().map_err(|_| "WorkPoint input arity changed")?,
+                inputs: inputs
+                    .try_into()
+                    .map_err(|_| "WorkPoint input arity changed")?,
             },
             (10, 1) => {
-                let [input]: [DesignWorkPointInput; 1] = inputs.try_into()
+                let [input]: [DesignWorkPointInput; 1] = inputs
+                    .try_into()
                     .map_err(|_| "WorkPoint input arity changed")?;
                 DesignWorkPointRuleForm::Vertex { input }
             }
             (14, 2) => DesignWorkPointRuleForm::EdgePlaneIntersection {
-                inputs: inputs.try_into().map_err(|_| "WorkPoint input arity changed")?,
+                inputs: inputs
+                    .try_into()
+                    .map_err(|_| "WorkPoint input arity changed")?,
             },
             (20, 1) => {
-                let [input]: [DesignWorkPointInput; 1] = inputs.try_into()
+                let [input]: [DesignWorkPointInput; 1] = inputs
+                    .try_into()
                     .map_err(|_| "WorkPoint input arity changed")?;
                 DesignWorkPointRuleForm::DistanceOnEdge { input }
             }

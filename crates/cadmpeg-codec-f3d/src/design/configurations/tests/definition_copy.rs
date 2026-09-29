@@ -7,13 +7,16 @@ use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKin
 fn suppressed_definition_kind_refuses_retained_limit() {
     let (mut configurations, mut feature) = super::suppression_limit_fixture();
     let kind = "source雪%";
-    feature.evaluation.set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
-        kind: NativeFeatureKind::Other(kind.to_owned()),
-        parameters: std::collections::BTreeMap::new(),
-    }));
+    feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: NativeFeatureKind::Other(kind.to_owned()),
+            parameters: std::collections::BTreeMap::new(),
+        }));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(feature.id.as_str().len() + kind.len() - 1).unwrap();
+    policy.limits.max_retained_bytes =
+        u64::try_from(feature.id.as_str().len() + kind.len() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(super::bind_configuration_suppressed_features(
         Some(&ctx), &mut configurations, std::slice::from_ref(&feature)),
@@ -27,15 +30,19 @@ fn suppressed_definition_parameter_value_refuses_retained_limit() {
     let (mut configurations, mut feature) = super::suppression_limit_fixture();
     let key = "distance";
     let value = "source雪%";
-    feature.evaluation.set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
-        kind: NativeFeatureKind::Fillet,
-        parameters: std::collections::BTreeMap::from([
-            (cadmpeg_core::text::NonBlankString::new(key.to_owned()).unwrap(), value.to_owned()),
-        ]),
-    }));
+    feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: NativeFeatureKind::Fillet,
+            parameters: std::collections::BTreeMap::from([(
+                cadmpeg_core::text::NonBlankString::new(key.to_owned()).unwrap(),
+                value.to_owned(),
+            )]),
+        }));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(feature.id.as_str().len() + key.len() + value.len() - 1).unwrap();
+    policy.limits.max_retained_bytes =
+        u64::try_from(feature.id.as_str().len() + key.len() + value.len() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(super::bind_configuration_suppressed_features(
         Some(&ctx), &mut configurations, std::slice::from_ref(&feature)),
@@ -47,12 +54,15 @@ fn suppressed_definition_parameter_value_refuses_retained_limit() {
 #[test]
 fn suppressed_definition_parameters_refuse_collection_limit() {
     let (mut configurations, mut feature) = super::suppression_limit_fixture();
-    feature.evaluation.set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
-        kind: NativeFeatureKind::Fillet,
-        parameters: std::collections::BTreeMap::from([
-            (cadmpeg_core::text::NonBlankString::new("distance".to_owned()).unwrap(), "value".to_owned()),
-        ]),
-    }));
+    feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: NativeFeatureKind::Fillet,
+            parameters: std::collections::BTreeMap::from([(
+                cadmpeg_core::text::NonBlankString::new("distance".to_owned()).unwrap(),
+                "value".to_owned(),
+            )]),
+        }));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     // One configuration feature state and one definition parameter need two items.

@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{radial_dimension_definition, Point2, Length, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+use super::{
+    radial_dimension_definition, Length, Point2, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId,
+};
 use cadmpeg_core::decode::ResourceDimension;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let entity = SketchEntity::new(
         SketchEntityId::mint("f3d:model:sketch-entity#circle").unwrap(),
         SketchId::mint("f3d:model:sketch#radial").unwrap(),
@@ -16,15 +18,23 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     let radius_parameter =
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#radius")
             .expect("identity grammar");
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| radial_dimension_definition(Some(ctx),
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        radial_dimension_definition(
+            Some(ctx),
             &entity,
             "Radius Dimension-2",
             0.5,
             radius_parameter.clone(),
-        ).transpose().map(|_| ()));
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn radial_at_tolerance_entity_id_refuses_retained_limit() {
-    fixture("f3d radial at tolerance entity id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d radial at tolerance entity id",
+        ResourceDimension::RetainedBytes,
+    );
 }

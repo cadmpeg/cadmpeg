@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::sketch::{
-    decode_circular_arc, decode_line, SketchCurveClass,
-    CURRENT_SKETCH_NURBS_TYPE, SKETCH_CIRCULAR_TYPES, SKETCH_LINE_TYPES,
-    SKETCH_TEXT_FRAME_LINE_TYPE_GUID,
+    decode_circular_arc, decode_line, SketchCurveClass, CURRENT_SKETCH_NURBS_TYPE,
+    SKETCH_CIRCULAR_TYPES, SKETCH_LINE_TYPES, SKETCH_TEXT_FRAME_LINE_TYPE_GUID,
 };
 use crate::records::sketch_geometry::SketchCurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -14,10 +13,18 @@ fn tested_decode_sketch_curve_geometry(
     record_index: u32,
     class: SketchCurveClass,
     record_at: usize,
-) -> Result<Option<crate::design::decode::sketch::DecodedSketchCurveGeometry>, cadmpeg_core::CodecError> {
+) -> Result<
+    Option<crate::design::decode::sketch::DecodedSketchCurveGeometry>,
+    cadmpeg_core::CodecError,
+> {
     crate::design::test_support::with_test_decode_context(|ctx| {
         crate::design::decode::sketch::decode_sketch_curve_geometry(
-            ctx, payload, geometry_shift, record_index, class, record_at,
+            ctx,
+            payload,
+            geometry_shift,
+            record_index,
+            class,
+            record_at,
         )
     })
 }
@@ -29,21 +36,27 @@ fn line_components_refuse_unrepresentable_scaled_endpoints() {
     values[6] = 1.0;
     values[11] = 1.0;
     values[0] = 1.0e308;
-    let error = crate::design::test_support::with_test_decode_context(|ctx| crate::design::decode::sketch::decode_line_components(ctx, 
-        &values,
-        Vector3::new(0.0, 0.0, 1.0),
-        17,
-    ))
+    let error = crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_line_components(
+            ctx,
+            &values,
+            Vector3::new(0.0, 0.0, 1.0),
+            17,
+        )
+    })
     .expect_err("scaled start must fit");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     assert!(error.to_string().contains("byte 17"));
     values[0] = 0.0;
     values[3] = 1.0e308;
-    let error = crate::design::test_support::with_test_decode_context(|ctx| crate::design::decode::sketch::decode_line_components(ctx, 
-        &values,
-        Vector3::new(0.0, 0.0, 1.0),
-        17,
-    ))
+    let error = crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_line_components(
+            ctx,
+            &values,
+            Vector3::new(0.0, 0.0, 1.0),
+            17,
+        )
+    })
     .expect_err("scaled end must fit");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     assert!(error.to_string().contains("byte 17"));
@@ -97,7 +110,10 @@ fn circular_arc_refuses_unrepresentable_scaled_center_at_source_record() {
         0.0,
         1.0,
     ]);
-    let error = crate::design::test_support::with_test_decode_context(|ctx| decode_circular_arc(ctx, &payload, 17)).expect_err("scaled center must fit");
+    let error = crate::design::test_support::with_test_decode_context(|ctx| {
+        decode_circular_arc(ctx, &payload, 17)
+    })
+    .expect_err("scaled center must fit");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     assert!(error.to_string().contains("byte 17"));
 }
@@ -118,10 +134,18 @@ fn stable_type_guid_selects_line_when_the_scalar_payload_also_accepts_as_an_arc(
         0.0,
         std::f64::consts::FRAC_1_SQRT_2,
     ]);
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| decode_line(ctx, &payload, 0)).expect("line parse").is_some());
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| decode_circular_arc(ctx, &payload, 0))
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| decode_line(ctx, &payload, 0))
+            .expect("line parse")
+            .is_some()
+    );
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| decode_circular_arc(
+            ctx, &payload, 0
+        ))
         .expect("arc parse")
-        .is_some());
+        .is_some()
+    );
 
     let line = tested_decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line, 0)
         .expect("line admission")
@@ -138,9 +162,10 @@ fn stable_type_guid_selects_line_when_the_scalar_payload_also_accepts_as_an_arc(
         .unwrap()
     );
 
-    let circular = tested_decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Circular, 0)
-        .expect("arc admission")
-        .expect("typed circular payload");
+    let circular =
+        tested_decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Circular, 0)
+            .expect("arc admission")
+            .expect("typed circular payload");
     assert!(matches!(circular.geometry, SketchCurveGeometry::Arc { .. }));
 }
 
@@ -218,44 +243,110 @@ fn curve_type_versions_select_only_their_settled_grammars() {
 
 #[test]
 fn line_start_overflow_diagnostic_refuses_retained_limit() {
-    assert_line_diagnostic_limit([f64::MAX, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
-        "F3D sketch line at byte 17 overflows millimetres");
+    assert_line_diagnostic_limit(
+        [
+            f64::MAX,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ],
+        "F3D sketch line at byte 17 overflows millimetres",
+    );
 }
 
 #[test]
 fn line_end_overflow_diagnostic_refuses_retained_limit() {
-    assert_line_diagnostic_limit([0.0, 0.0, 0.0, f64::MAX, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
-        "F3D sketch line at byte 17 overflows millimetres");
+    assert_line_diagnostic_limit(
+        [
+            0.0,
+            0.0,
+            0.0,
+            f64::MAX,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ],
+        "F3D sketch line at byte 17 overflows millimetres",
+    );
 }
 
 #[test]
 fn line_displacement_overflow_diagnostic_refuses_retained_limit() {
-    assert_line_diagnostic_limit([-1.0e307, 0.0, 0.0, 2.0e307, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
-        "F3D sketch line at byte 17 has an overflowing displacement");
+    assert_line_diagnostic_limit(
+        [
+            -1.0e307, 0.0, 0.0, 2.0e307, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ],
+        "F3D sketch line at byte 17 has an overflowing displacement",
+    );
 }
 
 fn assert_line_diagnostic_limit(values: [f64; 12], expected: &str) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(crate::design::decode::sketch::decode_line_components(&ctx, &values,
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(
+        matches!(crate::design::decode::sketch::decode_line_components(&ctx, &values,
         Vector3::new(0.0, 0.0, 1.0), 17), Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-        if failure.operation == "f3d Design diagnostic"));
+        if failure.operation == "f3d Design diagnostic")
+    );
     policy.limits.max_retained_bytes += 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(crate::design::decode::sketch::decode_line_components(&ctx, &values,
-        Vector3::new(0.0, 0.0, 1.0), 17), Err(cadmpeg_core::CodecError::Malformed(message)) if message == expected));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(
+        matches!(crate::design::decode::sketch::decode_line_components(&ctx, &values,
+        Vector3::new(0.0, 0.0, 1.0), 17), Err(cadmpeg_core::CodecError::Malformed(message)) if message == expected)
+    );
 }
 
 #[test]
 fn arc_center_overflow_diagnostic_refuses_retained_limit() {
-    assert_arc_diagnostic_limit([f64::MAX, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0]);
+    assert_arc_diagnostic_limit([
+        f64::MAX,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+    ]);
 }
 
 #[test]
 fn arc_radius_overflow_diagnostic_refuses_retained_limit() {
-    assert_arc_diagnostic_limit([0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, f64::MAX, 0.0, 1.0]);
+    assert_arc_diagnostic_limit([
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        f64::MAX,
+        0.0,
+        1.0,
+    ]);
 }
 
 fn assert_arc_diagnostic_limit(values: [f64; 12]) {
@@ -264,11 +355,13 @@ fn assert_arc_diagnostic_limit(values: [f64; 12]) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     assert!(matches!(decode_circular_arc(&ctx, &payload, 17),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure)) if failure.operation == "f3d Design diagnostic"));
     policy.limits.max_retained_bytes += 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     assert!(matches!(decode_circular_arc(&ctx, &payload, 17),
         Err(cadmpeg_core::CodecError::Malformed(message)) if message == expected));
 }

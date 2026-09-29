@@ -11,11 +11,11 @@ use crate::design::constraints::project_sketch_constraints;
 use crate::design::decode::operands::has_typed_edge_treatment_group;
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::sketch::bind_sketch_graph;
-use crate::ids::feature_input_topology_id;
 use crate::design::feature_project::project_parameter_design;
 use crate::design::sketch_project::project_sketch_design;
 use crate::design::test_support::parameter_record;
 use crate::design::{design_feature_family, is_localized_edge_treatment_kind, DesignFeatureFamily};
+use crate::ids::feature_input_topology_id;
 use crate::ids::{
     neutral_dimension_constraint_id, neutral_feature_id_parts, neutral_parameter_id_parts,
     neutral_sketch_curve_id, neutral_sketch_point_id,
@@ -321,14 +321,16 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let placements = [placement("A"), placement("B")];
     let mut points = [point("A"), point("B")];
     let mut relations = [relation("A"), relation("B")];
-    crate::design::test_support::with_test_decode_context(|ctx| bind_sketch_graph(
-        ctx,
-        &[header("A"), header("B")],
-        &mut points,
-        &mut [],
-        &mut [],
-        &mut relations,
-    ))
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        bind_sketch_graph(
+            ctx,
+            &[header("A"), header("B")],
+            &mut points,
+            &mut [],
+            &mut [],
+            &mut relations,
+        )
+    })
     .expect("stream-local sketch graphs bind independently");
     assert_eq!(
         relations[0]
@@ -348,22 +350,32 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let mut overflowing_header = header("A");
     overflowing_header.entity_id =
         crate::records::identity::DesignEntityId::from_parts("A", u64::from(u32::MAX) + 101);
-    assert!(crate::design::test_support::with_test_decode_context(|ctx| bind_sketch_graph(
-        ctx,
-        &[overflowing_header],
-        &mut [point("A")],
-        &mut [],
-        &mut [],
-        &mut [relation("A")],
-    ))
-    .is_err());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| bind_sketch_graph(
+            ctx,
+            &[overflowing_header],
+            &mut [point("A")],
+            &mut [],
+            &mut [],
+            &mut [relation("A")],
+        ))
+        .is_err()
+    );
 
     let (mut sketches, mut entities) =
         project_sketch_design(None, &placements, &points, &[], &[], &[], 1.0e-6)
             .expect("sketch lanes pair");
-    let mut constraints =
-        project_sketch_constraints(None, &placements, &[], &points, &[], &[], &relations, &entities)
-            .unwrap();
+    let mut constraints = project_sketch_constraints(
+        None,
+        &placements,
+        &[],
+        &points,
+        &[],
+        &[],
+        &relations,
+        &entities,
+    )
+    .unwrap();
     assert_eq!(sketches.len(), 2);
     assert_eq!(entities.len(), 2);
     assert_eq!(constraints.len(), 2);

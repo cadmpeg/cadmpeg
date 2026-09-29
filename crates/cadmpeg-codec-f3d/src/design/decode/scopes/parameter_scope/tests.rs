@@ -34,7 +34,14 @@ fn named_scope_tail_requires_one_repeated_binary_lane_value() {
     for lane_value in [0, 1] {
         let bytes = named_scope_tail(lane_value);
         assert_eq!(
-            named_parameter_scope_tail_is_valid(&cadmpeg_test_support::service_decode_context(), &bytes, 0, bytes.len(), bytes.len()).unwrap(),
+            named_parameter_scope_tail_is_valid(
+                &cadmpeg_test_support::service_decode_context(),
+                &bytes,
+                0,
+                bytes.len(),
+                bytes.len()
+            )
+            .unwrap(),
             Some(true)
         );
     }
@@ -43,18 +50,27 @@ fn named_scope_tail_requires_one_repeated_binary_lane_value() {
     let marker = mismatched.len() - 59;
     mismatched[marker + 34..marker + 42].copy_from_slice(&1u64.to_le_bytes());
     assert_eq!(
-        named_parameter_scope_tail_is_valid(&cadmpeg_test_support::service_decode_context(), &mismatched, 0, mismatched.len(), mismatched.len()).unwrap(),
+        named_parameter_scope_tail_is_valid(
+            &cadmpeg_test_support::service_decode_context(),
+            &mismatched,
+            0,
+            mismatched.len(),
+            mismatched.len()
+        )
+        .unwrap(),
         Some(false)
     );
 
     let outside_domain = named_scope_tail(2);
     assert_eq!(
-        named_parameter_scope_tail_is_valid(&cadmpeg_test_support::service_decode_context(),
+        named_parameter_scope_tail_is_valid(
+            &cadmpeg_test_support::service_decode_context(),
             &outside_domain,
             0,
             outside_domain.len(),
             outside_domain.len()
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(false)
     );
 }
@@ -97,7 +113,9 @@ fn sketch_scope_reference_offsets_refuse_second_unique_marker() {
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d Sketch scope reference offsets"
     ));
-    let admitted = first_marked_reference_offsets(&cadmpeg_test_support::service_decode_context(), &frame).unwrap();
+    let admitted =
+        first_marked_reference_offsets(&cadmpeg_test_support::service_decode_context(), &frame)
+            .unwrap();
     assert_eq!(admitted.get(&42), Some(&0));
     assert_eq!(admitted.get(&43), Some(&12));
 }
@@ -106,7 +124,8 @@ fn sketch_scope_reference_offsets_refuse_second_unique_marker() {
 fn sketch_scope_entity_id_copy_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let source = crate::records::identity::DesignEntityId::try_from("entity_42".to_owned()).unwrap();
+    let source =
+        crate::records::identity::DesignEntityId::try_from("entity_42".to_owned()).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = source.as_str().len() as u64 - 1;
@@ -118,6 +137,7 @@ fn sketch_scope_entity_id_copy_refuses_retained_limit() {
             if failure.dimension == ResourceDimension::RetainedBytes
                 && failure.operation == "f3d Sketch scope entity ID"
     ));
-    let copied = copy_sketch_entity_id(&cadmpeg_test_support::service_decode_context(), &source).unwrap();
+    let copied =
+        copy_sketch_entity_id(&cadmpeg_test_support::service_decode_context(), &source).unwrap();
     assert_eq!(copied, source);
 }

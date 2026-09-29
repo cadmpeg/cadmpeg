@@ -597,7 +597,10 @@ mod tests {
             1e308,
         )
         .unwrap();
-        assert_eq!(points.into_iter().flatten().collect::<Vec<_>>(), vec![Point2::new(0.0, 0.0)]);
+        assert_eq!(
+            points.into_iter().flatten().collect::<Vec<_>>(),
+            vec![Point2::new(0.0, 0.0)]
+        );
     }
 
     #[test]

@@ -3,7 +3,9 @@
 use super::*;
 use cadmpeg_core::CodecError;
 
-fn context(edge: i64) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
+fn context(
+    edge: i64,
+) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
     serde_json::from_value(serde_json::json!({
         "reference_ordinal": 0,
         "result_faces": [],
@@ -12,7 +14,8 @@ fn context(edge: i64) -> crate::records::topology::historical_context::DesignEdg
         "shared_edge_slots": [],
         "changed_shared_edge_slots": [],
         "changed_reference_edge_slots": [edge],
-    })).unwrap()
+    }))
+    .unwrap()
 }
 
 fn assert_reference_assignment_refusal(operation: &'static str, route: u8) {
@@ -28,13 +31,23 @@ fn assert_reference_assignment_refusal(operation: &'static str, route: u8) {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = match route {
-            0 => crate::design::edge_resolve::changed_reference_edge_group_candidates(&[&first, &second], Some(&ctx)),
-            1 => crate::design::edge_resolve::deleted_reference_edge_group_candidates(&[&first, &second], Some(&ctx)),
-            _ => crate::design::edge_resolve::unique_deleted_reference_assignment(&references, &deleted, Some(&ctx)),
+            0 => crate::design::edge_resolve::changed_reference_edge_group_candidates(
+                &[&first, &second],
+                Some(&ctx),
+            ),
+            1 => crate::design::edge_resolve::deleted_reference_edge_group_candidates(
+                &[&first, &second],
+                Some(&ctx),
+            ),
+            _ => crate::design::edge_resolve::unique_deleted_reference_assignment(
+                &references,
+                &deleted,
+                Some(&ctx),
+            ),
         };
         match result {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected reference assignment refusal at {operation}: {other:?}"),
         }
     }

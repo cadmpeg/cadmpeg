@@ -55,30 +55,32 @@ fn container_only_dimension_parameters(
     )?;
     let mut parameters = std::collections::HashSet::new();
     for owner in &native.design_parameter_owners {
-            let stream =
-                crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
-            if !container_only.contains(&(stream, owner.companion_record_index())) {
-                continue;
+        let stream = crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
+        if !container_only.contains(&(stream, owner.companion_record_index())) {
+            continue;
+        }
+        let mut matches = native.design_parameters.iter().filter(|parameter| {
+            crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM) == stream
+                && parameter.record_index == owner.parameter_record_index()
+                && parameter.kind() == crate::records::parameters::DesignParameterKind::Dimension
+        });
+        let Some(parameter) = matches.next() else {
+            continue;
+        };
+        if matches.next().is_some() {
+            continue;
+        }
+        let id = crate::ids::neutral_parameter_id(parameter);
+        if !parameters.contains(&id) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d container-only dimension parameter")?;
+                parameters.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d container-only dimension parameter", 0, 1)
+                })?;
             }
-            let mut matches = native.design_parameters.iter().filter(|parameter| {
-                crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM)
-                    == stream
-                    && parameter.record_index == owner.parameter_record_index()
-                    && parameter.kind()
-                        == crate::records::parameters::DesignParameterKind::Dimension
-            });
-            let Some(parameter) = matches.next() else { continue };
-            if matches.next().is_some() { continue }
-            let id = crate::ids::neutral_parameter_id(parameter);
-            if !parameters.contains(&id) {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "f3d container-only dimension parameter")?;
-                    parameters.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
-                        "f3d container-only dimension parameter", 0, 1))?;
-                }
-                // discarded-value: duplicate parameter owners share one identity.
-                let _ = parameters.insert(id);
-            }
+            // discarded-value: duplicate parameter owners share one identity.
+            let _ = parameters.insert(id);
+        }
     }
     Ok(parameters)
 }
@@ -2324,7 +2326,8 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.design_material_assignments =
             crate::materials::decode_design_assignments(ctx, scan)?;
         self.native.design_types = crate::design::decode::meta::decode_types(ctx, scan)?;
-        self.native.design_parameters = crate::design::decode::parameters::decode_parameters(ctx, scan)?;
+        self.native.design_parameters =
+            crate::design::decode::parameters::decode_parameters(ctx, scan)?;
         self.native.design_entity_headers =
             crate::design::decode::sketch::decode_entity_headers(ctx, scan)?;
         self.native.design_record_headers = crate::design::decode::sketch::decode_record_headers(
@@ -2342,7 +2345,8 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(ctx, scan)?;
         self.native.sketch_curve_identities =
             crate::design::decode::sketch::decode_sketch_curve_identities(ctx, scan)?;
-        self.native.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(ctx, scan)?;
+        self.native.sketch_surfaces =
+            crate::design::decode::sketch::decode_sketch_surfaces(ctx, scan)?;
         crate::design::decode::sketch::bind_sketch_graph(
             ctx,
             &self.native.design_entity_headers,
@@ -2431,7 +2435,8 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.native.sketch_points,
             &mut self.native.sketch_curve_identities,
         )?;
-        self.native.design_body_members = crate::design::decode::body::decode_body_members(ctx, scan)?;
+        self.native.design_body_members =
+            crate::design::decode::body::decode_body_members(ctx, scan)?;
         if matches!(path, SessionPath::Bodyless) {
             self.native.design_body_bindings =
                 crate::design::decode::body::decode_design_body_bindings(
@@ -3141,7 +3146,8 @@ fn decode_scanned_document<'a>(
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
         let mut decoded_brep_count = 0usize;
-        let all_body_visibility = crate::design::decode::body::decode_all_body_visibility(ctx, scan)?;
+        let all_body_visibility =
+            crate::design::decode::body::decode_all_body_visibility(ctx, scan)?;
         let mut selected_body_keys =
             std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();
         for binding in &unbound_body_bindings {
@@ -4381,10 +4387,16 @@ fn extend_related_design_records(
         crate::design::decode::meta::decode_feature_timelines(ctx, scan)?;
     native.design_component_naming_spaces =
         crate::design::decode::meta::decode_component_naming_spaces(ctx, scan)?;
-    native.design_canvas_images =
-        crate::design::decode::canvas::decode_canvas_images(ctx, scan, &native.design_parameter_scopes)?;
-    native.design_decal_images =
-        crate::design::decode::decal::decode_decal_images(ctx, scan, &native.design_parameter_scopes)?;
+    native.design_canvas_images = crate::design::decode::canvas::decode_canvas_images(
+        ctx,
+        scan,
+        &native.design_parameter_scopes,
+    )?;
+    native.design_decal_images = crate::design::decode::decal::decode_decal_images(
+        ctx,
+        scan,
+        &native.design_parameter_scopes,
+    )?;
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
         &mut native.design_parameter_scopes,
         &native.design_parameter_owners,
@@ -5186,7 +5198,10 @@ struct MetadataIr {
     unknowns: Vec<UnknownRecord>,
 }
 
-fn build_metadata_ir(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
+fn build_metadata_ir(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<MetadataIr, CodecError> {
     let mut ir = CadIr::empty();
     let mut unknowns = Vec::new();
 

@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{parse_design_parameter_record, owner_scoped_line_length_dimension_definition, parameter_record, Point2, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus};
+use super::{
+    owner_scoped_line_length_dimension_definition, parameter_record, parse_design_parameter_record,
+    Point2, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchLocus,
+};
 use cadmpeg_core::decode::ResourceDimension;
 const EPS_REFUSAL_LINEAR: f64 = 1.0e-6;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let sketch = SketchId::mint("f3d:model:sketch#line-length").unwrap();
     let line = |name: &str, v: f64, length: f64| {
         SketchEntity::new(
@@ -46,33 +49,58 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
             parameter: ref actual_parameter,
         }) if entity == first.id() && other == first.id() && actual_parameter == &parameter_id
     ));
-    let selected = if operation == "f3d owner scoped line length entity id" { vec![first.clone()] } else { vec![first.clone(), second.clone()] };
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| owner_scoped_line_length_dimension_definition(Some(ctx),
+    let selected = if operation == "f3d owner scoped line length entity id" {
+        vec![first.clone()]
+    } else {
+        vec![first.clone(), second.clone()]
+    };
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        owner_scoped_line_length_dimension_definition(
+            Some(ctx),
             &selected,
             &sketch,
             &parameter,
             &parameter_id,
             EPS_REFUSAL_LINEAR,
-        ).transpose().map(|_| ()));
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn line_length_candidate_refuses_collection_limit() {
-    fixture("f3d line length candidate", ResourceDimension::CollectionItems);
+    fixture(
+        "f3d line length candidate",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn owner_scoped_line_length_entity_id_refuses_retained_limit() {
-    fixture("f3d owner scoped line length entity id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d owner scoped line length entity id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn owner_scoped_line_length_parameter_id_refuses_retained_limit() {
-    fixture("f3d owner scoped line length parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d owner scoped line length parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
-fn repeated_length_output_id_retained_refuses_limit() { fixture("f3d atomic member entity id", ResourceDimension::RetainedBytes); }
+fn repeated_length_output_id_retained_refuses_limit() {
+    fixture(
+        "f3d atomic member entity id",
+        ResourceDimension::RetainedBytes,
+    );
+}
 
 #[test]
-fn repeated_length_output_member_collection_refuses_limit() { fixture("f3d atomic member", ResourceDimension::CollectionItems); }
+fn repeated_length_output_member_collection_refuses_limit() {
+    fixture("f3d atomic member", ResourceDimension::CollectionItems);
+}

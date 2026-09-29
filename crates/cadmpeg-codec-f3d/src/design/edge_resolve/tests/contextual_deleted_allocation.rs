@@ -3,17 +3,21 @@
 use super::*;
 use cadmpeg_core::CodecError;
 
-fn context(edge: i64) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
+fn context(
+    edge: i64,
+) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
     serde_json::from_value(serde_json::json!({
         "reference_ordinal": 0, "result_faces": [], "result_shared_edge_slots": [],
         "preceding_faces": [], "shared_edge_slots": [], "changed_shared_edge_slots": [],
         "changed_reference_edge_slots": [edge],
-    })).unwrap()
+    }))
+    .unwrap()
 }
 
 fn assert_contextual_refusal(operation: &'static str) {
     let structure = || crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
-        root: 2, sides: Vec::new(),
+        root: 2,
+        sides: Vec::new(),
     };
     let mut first = recipe_edge_operand(10, &[], &[]);
     first.preceding_boundary_edge_slots = vec![17, 18];
@@ -32,7 +36,7 @@ fn assert_contextual_refusal(operation: &'static str) {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match contextual_deleted_edge_group_candidates(&[&first, &second], Some(&ctx)) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected contextual deletion refusal at {operation}: {other:?}"),
         }
     }

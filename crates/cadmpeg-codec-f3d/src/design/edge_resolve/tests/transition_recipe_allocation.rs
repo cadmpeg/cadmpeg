@@ -14,16 +14,25 @@ fn assert_transition_recipe_refusal(operation: &'static str, through_group: bool
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = if through_group {
-            resolved_edge_treatment_group_with_corners(&selection_group,
+            resolved_edge_treatment_group_with_corners(
+                &selection_group,
                 std::slice::from_ref(&selection_group),
-                std::slice::from_ref(&operand), std::slice::from_ref(&persistent),
-                &[], &[], Some(7), &feature_id, None, Some(&ctx)).map(|_| true)
+                std::slice::from_ref(&operand),
+                std::slice::from_ref(&persistent),
+                &[],
+                &[],
+                Some(7),
+                &feature_id,
+                None,
+                Some(&ctx),
+            )
+            .map(|_| true)
         } else {
             transition_chain_is_supported_by_recipe(&[17], 1, &[&operand], Some(&ctx))
         };
         match result {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {},
+            Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected transition recipe refusal at {operation}: {other:?}"),
         }
     }

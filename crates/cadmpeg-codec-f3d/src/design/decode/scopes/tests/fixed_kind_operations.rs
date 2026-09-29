@@ -2,7 +2,8 @@
 
 use crate::design::decode::scopes::draft::exact_draft_operation_with_owners;
 use crate::design::decode::scopes::fixed_parameters::{
-    exact_fixed_chamfer_parameters, exact_fixed_fillet_parameters as exact_fixed_fillet_parameters_with_ctx,
+    exact_fixed_chamfer_parameters,
+    exact_fixed_fillet_parameters as exact_fixed_fillet_parameters_with_ctx,
 };
 use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
 use crate::records::feature::direct_face::DesignDraftOperation;
@@ -31,8 +32,8 @@ fn exact_fixed_fillet_parameters(
 ) -> Option<DesignFixedFilletParameters> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     exact_fixed_fillet_parameters_with_ctx(&ctx, bytes, records, scope).unwrap()
 }
 
@@ -66,14 +67,16 @@ fn fixed_fillet_refuses_scalar_group_and_intermediate_collection_limits() {
         crate::records::feature::scope::DesignFeatureKind::Fillet,
         42,
     );
-    scope.try_edit(|draft| {
-        draft.reference_members =
-            crate::records::identity::ReferenceRun::unlocated(vec![77, 78, 79, 87, 88]);
-        draft.frame_length = 200;
-        draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-        draft.layout_fixture_references();
-        draft.layout_fixture_tail();
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![77, 78, 79, 87, 88]);
+            draft.frame_length = 200;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     for (limit, operation) in [
         (0, "f3d fixed Fillet scalar lanes"),
@@ -315,7 +318,11 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     assert_eq!(
-        exact_fixed_fillet_parameters(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &fillet_scope),
+        exact_fixed_fillet_parameters(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &fillet_scope
+        ),
         Some(DesignFixedFilletParameters {
             groups: vec![
                 crate::records::feature::fixed_parameters::DesignFixedFilletGroup::try_new(
@@ -364,7 +371,11 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     assert_eq!(
-        exact_fixed_fillet_parameters(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &fillet_scope),
+        exact_fixed_fillet_parameters(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &fillet_scope
+        ),
         Some(DesignFixedFilletParameters {
             groups: vec![
                 crate::records::feature::fixed_parameters::DesignFixedFilletGroup::try_new(
@@ -412,9 +423,12 @@ fn fixed_kind_edge_and_revolve_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let fixed =
-        exact_fixed_fillet_parameters(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &fillet_scope)
-            .expect("two constant-radius Fillet scalar groups");
+    let fixed = exact_fixed_fillet_parameters(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &fillet_scope,
+    )
+    .expect("two constant-radius Fillet scalar groups");
     assert_eq!(fixed.groups.len(), 2);
     assert_eq!(
         fixed.groups[0]
@@ -948,7 +962,8 @@ fn fixed_kind_edge_and_revolve_operations(
             &[],
             &[],
             &[],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 
@@ -1082,7 +1097,8 @@ fn fixed_kind_edge_and_revolve_operations(
         &[],
         &[axis_placement],
         &[axis_curve],
-    ).unwrap();
+    )
+    .unwrap();
     assert!(matches!(
         projected,
         Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -1125,7 +1141,8 @@ fn fixed_kind_edge_and_revolve_operations(
             &[],
             &[],
         )
-        .unwrap().unwrap();
+        .unwrap()
+        .unwrap();
     assert!(matches!(
         historical_definition,
         FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -1246,7 +1263,8 @@ fn fixed_kind_edge_and_revolve_operations(
         &[],
         &[],
     )
-    .unwrap().expect("face-recipe axis retains a neutral Revolve before geometry binding");
+    .unwrap()
+    .expect("face-recipe axis retains a neutral Revolve before geometry binding");
     let mut face_axis_feature = cadmpeg_ir::features::Feature {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             face_axis_definition.clone(),

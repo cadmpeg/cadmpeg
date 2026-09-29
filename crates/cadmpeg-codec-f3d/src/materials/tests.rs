@@ -1358,7 +1358,8 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
         .count();
     assert_eq!(paired, 2);
 
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
     assert_eq!(result.ir().model.surfaces.len(), 2);
 }
@@ -1434,7 +1435,8 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     with_scan(&bytes, |scan| {
         let visibility = crate::design::test_support::with_test_decode_context(|ctx| {
             crate::design::decode::body::decode_all_body_visibility(ctx, scan)
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(
             visibility
                 .get(&("BREP.synthetic.smbh".into(), 3))
@@ -1507,7 +1509,11 @@ fn browser_body_appearance_joins_through_browser_node_guid() {
     }
 
     assert_eq!(
-        crate::materials::browser_body_appearances(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(),
+        crate::materials::browser_body_appearances(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes
+        )
+        .unwrap(),
         [
             (
                 37_251,

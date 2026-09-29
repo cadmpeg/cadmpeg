@@ -36,7 +36,9 @@ fn parse_construction_operand_group(
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test context");
-    crate::design::decode::operands::parse_construction_operand_group(&ctx, bytes, scope, ordinal, header)
+    crate::design::decode::operands::parse_construction_operand_group(
+        &ctx, bytes, scope, ordinal, header,
+    )
 }
 
 fn construction_group_parse_refuses_collection_limit(bytes: &[u8], operation: &str) {
@@ -81,7 +83,10 @@ fn construction_group_auxiliary_refuses_collection_limit() {
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&0u32.to_le_bytes());
     push_marked_reference(&mut bytes, 101);
-    construction_group_parse_refuses_collection_limit(&bytes, "f3d construction operand auxiliary record");
+    construction_group_parse_refuses_collection_limit(
+        &bytes,
+        "f3d construction operand auxiliary record",
+    );
 }
 
 #[test]
@@ -93,7 +98,10 @@ fn construction_group_trailing_refuses_collection_limit() {
     bytes.extend_from_slice(&[0; 2]);
     bytes.extend_from_slice(&1u32.to_le_bytes());
     push_marked_reference(&mut bytes, 101);
-    construction_group_parse_refuses_collection_limit(&bytes, "f3d construction operand trailing records");
+    construction_group_parse_refuses_collection_limit(
+        &bytes,
+        "f3d construction operand trailing records",
+    );
 }
 
 #[test]
@@ -197,23 +205,38 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .complete()
         .expect("counted Extrude operand group");
     let id_len = crate::ids::native_scope("Design/BulkStream.dat").len()
-        + ":design-construction-operand-group#".len() + 1;
+        + ":design-construction-operand-group#".len()
+        + 1;
     for (collection_limit, retained_limit, dimension, operation) in [
-        (0, u64::MAX, cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            "f3d construction operand group output"),
-        (u64::MAX, 0, cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            "f3d native stream key"),
-        (u64::MAX, u64::try_from(id_len - 1).unwrap(), cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            "f3d construction operand group ID"),
+        (
+            0,
+            u64::MAX,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "f3d construction operand group output",
+        ),
+        (
+            u64::MAX,
+            0,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d native stream key",
+        ),
+        (
+            u64::MAX,
+            u64::try_from(id_len - 1).unwrap(),
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d construction operand group ID",
+        ),
     ] {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_collection_items = collection_limit;
         policy.limits.max_retained_bytes = retained_limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let parsed = parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
-            .complete()
-            .expect("counted Extrude operand group");
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let parsed =
+            parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
+                .complete()
+                .expect("counted Extrude operand group");
         let mut out = Vec::new();
         assert!(matches!(
             crate::design::decode::operands::push_construction_operand_group(
@@ -227,7 +250,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut unclosed = Vec::new();
     assert!(matches!(
         crate::design::decode::operands::push_unclosed_construction_operand(&ctx, &mut unclosed, 100),
@@ -949,11 +973,13 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         )
         .unwrap();
     assert!(matches!(
-        project_split(None,
+        project_split(
+            None,
             &multiple_targets_scope,
             &[split_tool_group.clone(), multiple_targets],
             std::slice::from_ref(&split_tool)
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(FeatureDefinition::Operation(
             FeatureOperation::SplitBody { .. }
         ))
@@ -1062,19 +1088,23 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         }
         invalid_groups.push(vec![split_tool_group.clone(), target]);
     }
-    assert!(invalid_groups.iter().all(|groups| project_split(None,
+    assert!(invalid_groups.iter().all(|groups| project_split(
+        None,
         &split_body_scope,
         groups,
         std::slice::from_ref(&split_tool)
-    ).unwrap()
+    )
+    .unwrap()
     .is_none()));
     let mut nonterminal_tool = split_tool.clone();
     nonterminal_tool.recipe_program = vec![0, -1, 2];
-    assert!(project_split(None,
+    assert!(project_split(
+        None,
         &split_body_scope,
         &split_groups,
         std::slice::from_ref(&nonterminal_tool)
-    ).unwrap()
+    )
+    .unwrap()
     .is_none());
 
     let mut delete_scope = scope.clone();
@@ -1474,7 +1504,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             None,
             &remove_scope,
             std::slice::from_ref(&remove_group)
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::DeleteBody {
                 bodies: cadmpeg_ir::features::BodySelection::Native(remove_group.id.clone()),
@@ -1524,7 +1555,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             None,
             &stitch_scope,
             std::slice::from_ref(&stitch_group)
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::KnitSurface {
                 faces: cadmpeg_ir::features::FaceSelection::Native(stitch_scope.id),

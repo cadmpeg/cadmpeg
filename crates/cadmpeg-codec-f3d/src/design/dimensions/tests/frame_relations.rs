@@ -2,11 +2,11 @@
 
 #[test]
 fn dimension_frame_relation_index_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
     use crate::records::dimensions::{
         DesignDimensionAnnotationOperand, DesignDimensionLocusPair, DesignDimensionLocusPairDraft,
     };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
 
     let pair = DesignDimensionLocusPair::try_new(DesignDimensionLocusPairDraft {
         id: "f3d:test:dimension-pair#1".into(),
@@ -16,7 +16,10 @@ fn dimension_frame_relation_index_refuses_collection_limit() {
         class_tag: "277".to_owned().try_into().unwrap(),
         record_index: 13,
         frame_length: 100,
-        opaque_index: Some(crate::records::identity::Located { value: 0, offset: 35 }),
+        opaque_index: Some(crate::records::identity::Located {
+            value: 0,
+            offset: 35,
+        }),
         loci: [
             DesignDimensionAnnotationOperand {
                 geometry_record_index: std::num::NonZeroU32::new(20),
@@ -33,7 +36,8 @@ fn dimension_frame_relation_index_refuses_collection_limit() {
         ],
         paired_class_tag: "273".to_owned().try_into().unwrap(),
         paired_byte_offset: 100,
-    }).unwrap();
+    })
+    .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;

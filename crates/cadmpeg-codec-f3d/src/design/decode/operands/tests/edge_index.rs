@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::operands::{
-    decode_edge_operands, decode_edge_treatment_vertex_operands, decode_face_operands,
-    insert_edge_member_index, insert_face_seen,
-    bind_work_plane_constructions,
-    bind_work_point_input_carriers,
-    bind_vertex_recipe_candidates,
-    decode_edge_identity_operands,
+    bind_vertex_recipe_candidates, bind_work_plane_constructions, bind_work_point_input_carriers,
+    decode_edge_identity_operands, decode_edge_operands, decode_edge_treatment_vertex_operands,
+    decode_face_operands, insert_edge_member_index, insert_face_seen,
 };
 use crate::records::decal::DesignRecordHeader;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -15,27 +12,38 @@ fn fixture_scope(
     kind: crate::records::feature::scope::DesignFeatureKind,
 ) -> crate::records::feature::scope::DesignParameterScope {
     use crate::records::feature::scope::{DesignParameterScope, DesignParameterScopeDraft};
-    DesignParameterScope::try_new(DesignParameterScopeDraft {
-        id: "f3d:Design/BulkStream.dat:scope#12".to_owned(),
-        byte_offset: 1000,
-        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        record_index: 12,
-        frame_length: 200,
-        kind_offset: 1100,
-        feature_ordinal: std::num::NonZeroU32::MIN,
-        feature_ordinal_offset: 0,
-        history_state_id: None,
-        previous_history_state_id: None,
-        previous_history_state_id_offset: None,
-        reference_count_offset: 1080,
-        reference_members: crate::records::identity::ReferenceRun::from_columns(
-            vec![100], vec![1085], "reference_members",
-        ).unwrap(),
-        payload: kind.try_into().unwrap(),
-        unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap(),
-        paired_byte_offset: 1200,
-    }.with_fixture_layout()).unwrap()
+    DesignParameterScope::try_new(
+        DesignParameterScopeDraft {
+            id: "f3d:Design/BulkStream.dat:scope#12".to_owned(),
+            byte_offset: 1000,
+            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
+                .unwrap(),
+            record_index: 12,
+            frame_length: 200,
+            kind_offset: 1100,
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: None,
+            reference_count_offset: 1080,
+            reference_members: crate::records::identity::ReferenceRun::from_columns(
+                vec![100],
+                vec![1085],
+                "reference_members",
+            )
+            .unwrap(),
+            payload: kind.try_into().unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
+            paired_byte_offset: 1200,
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -47,7 +55,8 @@ fn edge_operand_header_and_offset_indices_refuse_collection_limits() {
         let header = DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:record#7".to_owned(),
             byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned())
+                .unwrap(),
             record_index: 7,
         };
         let arena = DecodeArena::new();
@@ -93,7 +102,8 @@ fn vertex_operand_header_index_refuses_collection_limit() {
         let header = DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:record#7".to_owned(),
             byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned())
+                .unwrap(),
             record_index: 7,
         };
         let arena = DecodeArena::new();
@@ -120,7 +130,8 @@ fn work_plane_header_index_refuses_collection_limit() {
         let header = DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:record#7".to_owned(),
             byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned())
+                .unwrap(),
             record_index: 7,
         };
         let arena = DecodeArena::new();
@@ -146,7 +157,8 @@ fn work_point_header_index_refuses_collection_limit() {
         let header = DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:record#7".to_owned(),
             byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned())
+                .unwrap(),
             record_index: 7,
         };
         let arena = DecodeArena::new();
@@ -210,7 +222,8 @@ fn edge_identity_header_index_refuses_collection_limit() {
         let header = DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:record#7".to_owned(),
             byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned())
+                .unwrap(),
             record_index: 7,
         };
         let arena = DecodeArena::new();
@@ -235,7 +248,8 @@ fn face_operand_header_and_scope_indices_refuse_collection_limits() {
         let header = DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:record#7".to_owned(),
             byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned())
+                .unwrap(),
             record_index: 7,
         };
         let scope = fixture_scope(crate::records::feature::scope::DesignFeatureKind::Extrude);

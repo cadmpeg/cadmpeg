@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{Point2, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+use super::{
+    Point2, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId,
+};
 use cadmpeg_core::decode::ResourceDimension;
 
 fn fixture(operation: &'static str, dimension: ResourceDimension) {
-
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let line = |name: &str, start, end| {
         SketchEntity::new(
@@ -98,26 +100,41 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         },
     )
     .unwrap();
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| crate::design::dimensions::unique_parallel_line_dimension_definition(Some(ctx),
+    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
+        crate::design::dimensions::unique_parallel_line_dimension_definition(
+            Some(ctx),
             &entities,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
             0.0,
-        ).transpose().map(|_| ()));
+        )
+        .transpose()
+        .map(|_| ())
+    });
 }
 
 #[test]
 fn unique_parallel_line_first_id_refuses_retained_limit() {
-    fixture("f3d unique parallel line first id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d unique parallel line first id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn unique_parallel_line_second_id_refuses_retained_limit() {
-    fixture("f3d unique parallel line second id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d unique parallel line second id",
+        ResourceDimension::RetainedBytes,
+    );
 }
 
 #[test]
 fn unique_parallel_line_parameter_id_refuses_retained_limit() {
-    fixture("f3d unique parallel line parameter id", ResourceDimension::RetainedBytes);
+    fixture(
+        "f3d unique parallel line parameter id",
+        ResourceDimension::RetainedBytes,
+    );
 }
