@@ -3796,7 +3796,7 @@ pub(super) fn project_offset_faces(
         (Some(distance), None) | (None, Some(distance)) => distance,
         _ => return Ok(None),
     };
-    let faces = if let Some(faces) = direct_face_selection(scope, operands) {
+    let faces = if let Some(faces) = direct_face_selection(ctx, scope, operands)? {
         faces
     } else {
         let group = or_none!(single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10));
@@ -3825,7 +3825,7 @@ pub(super) fn project_thicken(
     else {
         return Ok(None);
     };
-    let faces = if let Some(faces) = direct_face_selection(scope, operands) {
+    let faces = if let Some(faces) = direct_face_selection(ctx, scope, operands)? {
         faces
     } else {
         let mut candidates = groups.iter().filter(|group| {
@@ -3881,7 +3881,7 @@ pub(super) fn project_shell(
     let bodies = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)
         .map(|group| copy_feature_text(ctx, &group.id, "f3d Shell native body group id")
             .map(BodySelection::Native)).transpose()?;
-    let removed_faces = if let Some(faces) = direct_face_selection(scope, operands) {
+    let removed_faces = if let Some(faces) = direct_face_selection(ctx, scope, operands)? {
         faces
     } else if let Some(group) = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10) {
         FaceSelection::Native(copy_feature_text(ctx, &group.id,
@@ -4769,76 +4769,97 @@ fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::
 }
 
 pub(crate) fn direct_face_selection(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
     use cadmpeg_ir::features::FaceSelection;
 
-    let mut matching = operands
-        .iter()
-        .filter(|operand| {
+    let mut matching = Vec::new();
+    for operand in operands.iter().filter(|operand| {
             native_stream(&operand.id) == native_stream(&scope.id)
                 && operand.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
+        }) {
+        push_feature_item(ctx, &mut matching, operand, "f3d direct face operand")?;
+    }
     matching.sort_by_key(|operand| operand.scope_reference_ordinal);
     if matching.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let members = matching
-        .iter()
-        .map(|operand| (operand.id.as_str(), operand.resolved_face_slots.as_slice()))
-        .collect::<Vec<_>>();
+    let mut members = Vec::new();
+    for operand in &matching {
+        push_feature_item(ctx, &mut members,
+            (operand.id.as_str(), operand.resolved_face_slots.as_slice()),
+            "f3d direct face member")?;
+    }
     let feature_id = neutral_feature_id(scope);
     let feature_key = feature_id.key();
-    let historical_face = |previous_state_id, slot| {
-        ids::history_input_face_id(
+    let historical_face = |previous_state_id, slot| -> Result<_, CodecError> {
+        let face = ids::history_input_face_id(
             &ids::history_input_prefix(&feature_key, previous_state_id),
             slot,
-        )
+        );
+        if let Some(ctx) = ctx {
+            ctx.charge_retained(u64::try_from(face.as_str().len()).map_err(|_| {
+                ctx.refuse_codec_limit("f3d direct historical face id", 0, 1)
+            })?, "f3d direct historical face id")?;
+        }
+        Ok(face)
     };
     let faces = match scope.previous_history_state_id() {
         Some(previous_state_id) if members.iter().all(|(_, faces)| !faces.is_empty()) => {
             let mut resolved = Vec::new();
             for slot in members.iter().flat_map(|(_, faces)| faces.iter().copied()) {
-                let face = historical_face(previous_state_id, slot);
+                let face = historical_face(previous_state_id, slot)?;
                 if !resolved.contains(&face) {
-                    resolved.push(face);
+                    push_feature_item(ctx, &mut resolved, face,
+                        "f3d direct historical face")?;
                 }
             }
-            FaceSelection::historical(
+            match FaceSelection::historical(
                 feature_input_topology_id(&feature_id, previous_state_id),
                 resolved,
-                scope.id.clone(),
-            )
-            .unwrap_or_else(|_| FaceSelection::Native(scope.id.clone()))
+                copy_feature_text(ctx, &scope.id, "f3d direct historical native id")?,
+            ) {
+                Ok(selection) => selection,
+                Err(_) => FaceSelection::Native(copy_feature_text(ctx, &scope.id,
+                    "f3d direct historical fallback id")?),
+            }
         }
         Some(previous_state_id) if members.iter().any(|(_, faces)| !faces.is_empty()) => {
             let mut faces = Vec::new();
             let mut unresolved = Vec::new();
             for (identity, slots) in &members {
                 if slots.is_empty() {
-                    unresolved.push((*identity).to_owned());
+                    let identity = copy_feature_text(ctx, identity,
+                        "f3d direct unresolved face id")?;
+                    push_feature_item(ctx, &mut unresolved, identity,
+                        "f3d direct unresolved face")?;
                 } else {
                     for slot in *slots {
-                        let face = historical_face(previous_state_id, *slot);
+                        let face = historical_face(previous_state_id, *slot)?;
                         if !faces.contains(&face) {
-                            faces.push(face);
+                            push_feature_item(ctx, &mut faces, face,
+                                "f3d direct partial historical face")?;
                         }
                     }
                 }
             }
-            FaceSelection::historical_partial(
+            match FaceSelection::historical_partial(
                 feature_input_topology_id(&feature_id, previous_state_id),
                 faces,
                 unresolved,
-                scope.id.clone(),
-            )
-            .unwrap_or_else(|_| FaceSelection::Native(scope.id.clone()))
+                copy_feature_text(ctx, &scope.id, "f3d direct partial native id")?,
+            ) {
+                Ok(selection) => selection,
+                Err(_) => FaceSelection::Native(copy_feature_text(ctx, &scope.id,
+                    "f3d direct partial fallback id")?),
+            }
         }
-        _ => FaceSelection::Native(scope.id.clone()),
+        _ => FaceSelection::Native(copy_feature_text(ctx, &scope.id,
+            "f3d direct native id")?),
     };
-    Some(faces)
+    Ok(Some(faces))
 }
 
 fn distinct_form_cage_ids<T: Eq + Hash>(
@@ -8710,9 +8731,12 @@ pub(super) fn project_split(
             let Some(tool) = tool else {
                 return Ok(None);
             };
-            let mut tools = resolved_historical_face_operand(scope, tool)
-                .or_else(|| direct_face_selection(scope, face_operands))
-                .unwrap_or_else(|| FaceSelection::Native(String::new()));
+            let mut tools = if let Some(selection) = resolved_historical_face_operand(scope, tool) {
+                selection
+            } else {
+                direct_face_selection(ctx, scope, face_operands)?
+                    .unwrap_or_else(|| FaceSelection::Native(String::new()))
+            };
             match &mut tools {
                 FaceSelection::Resolved { native, .. } | FaceSelection::Native(native) => {
                     *native = copy_feature_text(ctx, &tool.id, "f3d SplitBody face tool id")?;
