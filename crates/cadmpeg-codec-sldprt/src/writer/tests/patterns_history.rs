@@ -1627,7 +1627,7 @@ fn semantic_writer_rejects_edited_feature_input_class_index() {
         native.feature_input_lanes[0].classes[0].name = "sgOtherHandle".into();
     });
     assert!(
-        crate::resolved_features::validate::validate_native(decoded.ir())
+        crate::resolved_features::validate::validate_native(&cadmpeg_test_support::service_decode_context(), decoded.ir()).unwrap()
             .iter()
             .any(|finding| finding.message.contains("class index does not match"))
     );
@@ -1706,7 +1706,7 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
             cadmpeg_ir::scalar::FiniteReal::new(0.050).expect("finite test scalar");
     });
     assert!(
-        crate::resolved_features::validate::validate_native(decoded.ir())
+        crate::resolved_features::validate::validate_native(&cadmpeg_test_support::service_decode_context(), decoded.ir()).unwrap()
             .iter()
             .any(|finding| finding.message.contains("scalar index does not match"))
     );

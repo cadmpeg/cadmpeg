@@ -52,7 +52,7 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
-    let native = crate::resolved_features::validate::validate_native(result.ir());
+    let native = crate::resolved_features::validate::validate_native(&cadmpeg_test_support::service_decode_context(), result.ir()).unwrap();
     assert!(native.is_empty(), "{native:#?}");
 }
 
