@@ -69,6 +69,34 @@ use cadmpeg_ir::sketches::SketchEntityId;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
 
+fn expected_segment_rows(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    definition_id: u32,
+    table: &crate::feature::definitions::FeatureSegmentTable,
+) -> Result<usize, cadmpeg_core::CodecError> {
+    let declared_count = usize::try_from(table.declared_count).or_else(|_| {
+        Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+            format_args!(
+                "feature {definition_id} states segment table count {}, which exceeds the addressable row range {}",
+                table.declared_count,
+                usize::MAX
+            ),
+            "creo segment table count error text",
+        )?))
+    })?;
+    let elided_prototype_rows = usize::from(table.has_elided_prototype);
+    declared_count.checked_sub(elided_prototype_rows).map_or_else(
+        || Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+            format_args!(
+                "feature {definition_id} states segment table count {declared_count} and \
+                 {elided_prototype_rows} elided prototype row(s), so the ordinary row count is below zero"
+            ),
+            "creo segment table underflow error text",
+        )?)),
+        Ok,
+    )
+}
+
 /// Transfer every sketch-design feature definition into model sketches.
 ///
 /// A saved section entity whose lanes the IR carrier refuses is omitted from
@@ -121,26 +149,7 @@ pub(in super::super) fn transfer_sketches(
             .is_some_and(crate::feature::definitions::FeatureSegmentTable::is_complete);
         if let Some(table) = &definition.segments {
             let decoded_rows = table.rows.len();
-            let declared_count = usize::try_from(table.declared_count).map_err(|_| {
-                cadmpeg_core::CodecError::malformed(format!(
-                    "feature {} states segment table count {}, which exceeds the addressable row \
-                     range {}",
-                    definition.identity.id(),
-                    table.declared_count,
-                    usize::MAX
-                ))
-            })?;
-            let elided_prototype_rows = usize::from(table.has_elided_prototype);
-            let expected_rows = declared_count
-                .checked_sub(elided_prototype_rows)
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed(format!(
-                        "feature {} states segment table count {declared_count} and \
-                         {elided_prototype_rows} elided prototype row(s), so the ordinary row \
-                         count is below zero",
-                        definition.identity.id()
-                    ))
-                })?;
+            let expected_rows = expected_segment_rows(ctx, definition.identity.id(), table)?;
             coverage.record_table_rows(decoded_rows, expected_rows);
             for segment in table.rows.ordinary() {
                 let family = match segment.kind {
