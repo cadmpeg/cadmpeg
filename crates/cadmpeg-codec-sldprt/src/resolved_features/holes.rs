@@ -2281,16 +2281,17 @@ pub(crate) fn project_hole_topology_axes(
     }
 
     let cylinders = cylindrical_bore_face_spans(ctx, topology)?;
-    project_flat_blind_topology_axes(features, &cylinders);
+    project_flat_blind_topology_axes(ctx, features, &cylinders)?;
     project_drilled_hole_topology_axes(ctx, features, &cylinders, topology)?;
     Ok(())
 }
 
 fn project_flat_blind_topology_axes(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     cylinders: &[(Point3, FeatureDirection3, f64, f64, bool)],
-) {
-    let unresolved = features
+) -> Result<(), CodecError> {
+    let candidates = features
         .iter()
         .enumerate()
         .filter(|(_, feature)| feature.suppressed != Some(true))
@@ -2318,8 +2319,12 @@ fn project_flat_blind_topology_axes(
                 _ => None,
             },
             _ => None,
-        })
-        .collect::<Vec<_>>();
+        });
+    let mut unresolved = Vec::new();
+    for candidate in candidates {
+        ctx.reserve_collection_vec(&mut unresolved, 1, "collect SLDPRT flat blind holes")?;
+        unresolved.push(candidate);
+    }
 
     for (index, diameter, length) in unresolved {
         if !hole_construction_is_unique(features, index) {
@@ -2339,6 +2344,7 @@ fn project_flat_blind_topology_axes(
         };
         set_hole_placements(&mut features[index], placements);
     }
+    Ok(())
 }
 
 fn project_drilled_hole_topology_axes(
@@ -2348,8 +2354,7 @@ fn project_drilled_hole_topology_axes(
     topology: &HoleTopology<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     expand_seeded_drilled_hole_topology_axes(ctx, features, cylinders, topology)?;
-    ctx.charge_collection_items(features.len() as u64, "SLDPRT unresolved drilled holes")?;
-    let unresolved = features
+    let candidates = features
         .iter()
         .enumerate()
         .filter(|(_, feature)| feature.suppressed != Some(true))
@@ -2386,8 +2391,12 @@ fn project_drilled_hole_topology_axes(
                 _ => None,
             },
             _ => None,
-        })
-        .collect::<Vec<_>>();
+        });
+    let mut unresolved = Vec::new();
+    for candidate in candidates {
+        ctx.reserve_collection_vec(&mut unresolved, 1, "collect SLDPRT unresolved drilled holes")?;
+        unresolved.push(candidate);
+    }
 
     for (index, diameter, length, drill_point_angle) in unresolved {
         if !hole_construction_is_unique(features, index) {
