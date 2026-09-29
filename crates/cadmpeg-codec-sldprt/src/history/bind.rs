@@ -12,75 +12,152 @@ use std::collections::{HashMap, HashSet};
 
 use crate::history::classify::is_history_metadata_record;
 
+struct SketchBinding {
+    index: usize,
+    feature_id: FeatureId,
+    native_ref: String,
+    sketch: cadmpeg_ir::sketches::SketchId,
+    has_profile: bool,
+}
+
+fn copy_binding_text(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let mut copy = String::new();
+    ctx.reserve_retained_string(&mut copy, value.len(), "retain SLDPRT sketch binding identity")?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
+fn copy_binding_feature_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &FeatureId,
+) -> Result<FeatureId, cadmpeg_core::CodecError> {
+    FeatureId::mint(copy_binding_text(ctx, value.as_str())?)
+        .map_err(cadmpeg_core::CodecError::malformed)
+}
+
+fn copy_binding_sketch_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &cadmpeg_ir::sketches::SketchId,
+) -> Result<cadmpeg_ir::sketches::SketchId, cadmpeg_core::CodecError> {
+    cadmpeg_ir::sketches::SketchId::mint(copy_binding_text(ctx, value.as_str())?)
+        .map_err(cadmpeg_core::CodecError::malformed)
+}
+
+fn push_sketch_binding(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bindings: &mut Vec<SketchBinding>,
+    index: usize,
+    feature_id: &FeatureId,
+    native_ref: &str,
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    has_profile: bool,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let feature_id = copy_binding_feature_id(ctx, feature_id)?;
+    let native_ref = copy_binding_text(ctx, native_ref)?;
+    let sketch = copy_binding_sketch_id(ctx, sketch)?;
+    ctx.reserve_collection_vec(bindings, 1, "collect SLDPRT sketch bindings")?;
+    bindings.push(SketchBinding {
+        index,
+        feature_id,
+        native_ref,
+        sketch,
+        has_profile,
+    });
+    Ok(())
+}
+
 pub(crate) fn bind_unique_sketch_feature(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[FeatureHistory],
-) {
-    let native_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
-    let feature_indices = features
-        .iter()
-        .enumerate()
-        .filter(|(_, feature)| {
-            matches!(
-                feature.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
-            )
-        })
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut native_features = HashMap::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, "index SLDPRT native sketch features")?;
+        if !native_features.contains_key(feature.id.as_str()) {
+            ctx.charge_collection_items(1, "index SLDPRT native sketch features")?;
+            native_features.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT native sketch features", u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        native_features.insert(feature.id.as_str(), feature);
+    }
+    let mut feature_indices = Vec::new();
+    for (index, feature) in features.iter().enumerate() {
+        ctx.charge_work(1, "collect SLDPRT sketch features")?;
+        if matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+        ) {
+            ctx.reserve_collection_vec(&mut feature_indices, 1, "collect SLDPRT sketch features")?;
+            feature_indices.push(index);
+        }
+    }
     let mut bindings = Vec::new();
     for index in &feature_indices {
         let Some(name) = features[*index].name.as_deref() else {
             continue;
         };
-        if feature_indices
-            .iter()
-            .filter(|other| features[**other].name.as_deref() == Some(name))
-            .count()
-            != 1
-        {
+        ctx.charge_work(
+            u64::try_from(feature_indices.len()).map_err(|_| {
+                ctx.refuse_codec_limit("match SLDPRT sketch feature names", u64::MAX - 1, u64::MAX)
+            })?,
+            "match SLDPRT sketch feature names",
+        )?;
+        if feature_indices.iter().filter(|other| features[**other].name.as_deref() == Some(name)).count() != 1 {
             continue;
         }
-        let matches = sketches
-            .iter()
-            .filter(|sketch| sketch.name.as_deref() == Some(name))
-            .collect::<Vec<_>>();
-        let [sketch] = matches.as_slice() else {
+        ctx.charge_work(
+            u64::try_from(sketches.len()).map_err(|_| {
+                ctx.refuse_codec_limit("match SLDPRT sketch names", u64::MAX - 1, u64::MAX)
+            })?,
+            "match SLDPRT sketch names",
+        )?;
+        let mut matches = sketches.iter().filter(|sketch| sketch.name.as_deref() == Some(name));
+        let Some(sketch) = matches.next() else {
             continue;
         };
-        if let Some(native_ref) = features[*index].native_ref.clone() {
-            bindings.push((
+        if matches.next().is_some() {
+            continue;
+        }
+        if let Some(native_ref) = features[*index].native_ref.as_deref() {
+            push_sketch_binding(
+                ctx,
+                &mut bindings,
                 *index,
-                features[*index].id.clone(),
+                &features[*index].id,
                 native_ref,
-                sketch.id.clone(),
+                &sketch.id,
                 !sketch.profiles.is_empty(),
-            ));
+            )?;
         }
     }
     if bindings.is_empty() {
         if let ([index], [sketch]) = (feature_indices.as_slice(), sketches) {
-            if let Some(native_ref) = features[*index].native_ref.clone() {
-                bindings.push((
+            if let Some(native_ref) = features[*index].native_ref.as_deref() {
+                push_sketch_binding(
+                    ctx,
+                    &mut bindings,
                     *index,
-                    features[*index].id.clone(),
+                    &features[*index].id,
                     native_ref,
-                    sketch.id.clone(),
+                    &sketch.id,
                     !sketch.profiles.is_empty(),
-                ));
+                )?;
             }
         }
     }
-    for (index, _, _, sketch, _) in &bindings {
-        features[*index]
+    for binding in &bindings {
+        features[binding.index]
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                    copy_binding_sketch_id(ctx, &binding.sketch)?,
+                )),
             }));
     }
     let mut aliases = Vec::new();
@@ -101,7 +178,13 @@ pub(crate) fn bind_unique_sketch_feature(
         else {
             continue;
         };
-        let candidates = feature_indices
+        ctx.charge_work(
+            u64::try_from(feature_indices.len()).map_err(|_| {
+                ctx.refuse_codec_limit("match SLDPRT sketch aliases", u64::MAX - 1, u64::MAX)
+            })?,
+            "match SLDPRT sketch aliases",
+        )?;
+        let mut candidates = feature_indices
             .iter()
             .filter(|base_index| {
                 let alias_native = features[*index]
@@ -125,54 +208,74 @@ pub(crate) fn bind_unique_sketch_feature(
                             && alias.parameters == base.parameters
                             && alias.content == base.content
                     })
-            })
-            .collect::<Vec<_>>();
-        let [base_index] = candidates.as_slice() else {
+            });
+        let Some(base_index) = candidates.next() else {
             continue;
         };
-        let base_index = **base_index;
-        let base_dependency = features[base_index].id.clone();
-        let Some(native_ref) = features[*index].native_ref.clone() else {
+        if candidates.next().is_some() {
+            continue;
+        }
+        let base_index = *base_index;
+        let base_dependency = copy_binding_feature_id(ctx, &features[base_index].id)?;
+        let Some(native_ref) = features[*index].native_ref.as_deref() else {
             continue;
         };
+        let native_ref = copy_binding_text(ctx, native_ref)?;
         if !features[*index].dependencies.contains(&base_dependency) {
             features[*index]
                 .dependencies
-                .insert(base_dependency.clone());
+                .try_insert_charged(
+                    copy_binding_feature_id(ctx, &base_dependency)?,
+                    ctx,
+                    "bind SLDPRT sketch alias dependency",
+                )?;
         }
-        let Some((_, _, _, sketch, has_profile)) = bindings
+        let Some(binding) = bindings
             .iter()
-            .find(|(bound_index, _, _, _, _)| *bound_index == base_index)
+            .find(|binding| binding.index == base_index)
         else {
             continue;
         };
-        aliases.push((
-            base_index,
-            base_dependency,
+        let sketch = copy_binding_sketch_id(ctx, &binding.sketch)?;
+        ctx.reserve_collection_vec(&mut aliases, 1, "collect SLDPRT sketch aliases")?;
+        aliases.push(SketchBinding {
+            index: base_index,
+            feature_id: base_dependency,
             native_ref,
-            sketch.clone(),
-            *has_profile,
-        ));
+            sketch,
+            has_profile: binding.has_profile,
+        });
     }
+    ctx.reserve_precharged_vec(&mut bindings, aliases.len(), "merge SLDPRT sketch aliases")?;
     bindings.extend(aliases);
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        {
-            for (_, dependency, native_ref, sketch, has_profile) in &bindings {
-                if bind_definition_sketch(
-                    &mut definition,
-                    native_ref,
-                    dependency,
-                    sketch,
-                    *has_profile,
-                ) && !feature.dependencies.contains(dependency)
-                {
-                    feature.dependencies.insert(dependency.clone());
+        let dependencies = &mut feature.dependencies;
+        let mut result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            result = (|| {
+                for binding in &bindings {
+                    if bind_definition_sketch(
+                        ctx,
+                        definition,
+                        &binding.native_ref,
+                        &binding.feature_id,
+                        &binding.sketch,
+                        binding.has_profile,
+                    )? && !dependencies.contains(&binding.feature_id)
+                    {
+                        dependencies.try_insert_charged(
+                            copy_binding_feature_id(ctx, &binding.feature_id)?,
+                            ctx,
+                            "bind SLDPRT sketch dependency",
+                        )?;
+                    }
                 }
-            }
-        }
-        feature.evaluation.set_definition(definition);
+                Ok::<_, cadmpeg_core::CodecError>(())
+            })();
+        });
+        result?;
     }
+    Ok(())
 }
 
 fn sketch_alias_base_name(name: &str) -> Option<&str> {
@@ -547,22 +650,23 @@ pub(crate) fn derive_feature_outputs(
 }
 
 pub(super) fn bind_definition_sketch(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &mut FeatureDefinition,
     native_ref: &str,
     feature_ref: &FeatureId,
     sketch: &cadmpeg_ir::sketches::SketchId,
     has_profile: bool,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let bind_profile = |profile: &mut ProfileRef| {
         if has_profile
             && (matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(owner)) if owner == native_ref)
                 || matches!(profile, ProfileRef::Planar(PlanarProfileRef::Native(value)) if value == native_ref)
                 || matches!(profile, ProfileRef::Planar(PlanarProfileRef::Feature(value)) if value == feature_ref))
         {
-            *profile = ProfileRef::Planar(PlanarProfileRef::Sketch(sketch.clone()));
-            true
+            *profile = ProfileRef::Planar(PlanarProfileRef::Sketch(copy_binding_sketch_id(ctx, sketch)?));
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     };
     let bind_planar_profile = |profile: &mut cadmpeg_ir::features::PlanarProfileRef| {
@@ -571,18 +675,18 @@ pub(super) fn bind_definition_sketch(
                 || matches!(profile, PlanarProfileRef::Native(value) if value == native_ref)
                 || matches!(profile, PlanarProfileRef::Feature(value) if value == feature_ref))
         {
-            *profile = sketch.clone().into();
-            true
+            *profile = copy_binding_sketch_id(ctx, sketch)?.into();
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     };
     let bind_path = |path: &mut PathRef| {
         if matches!(path, PathRef::Native(value) if value == native_ref) {
-            *path = PathRef::Sketch(sketch.clone());
-            true
+            *path = PathRef::Sketch(copy_binding_sketch_id(ctx, sketch)?);
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     };
     match definition {
@@ -595,15 +699,24 @@ pub(super) fn bind_definition_sketch(
         FeatureDefinition::Operation(FeatureOperation::Rib { construction, .. }) => construction
             .profile
             .as_mut()
-            .is_some_and(bind_planar_profile),
+            .map(bind_planar_profile)
+            .transpose()
+            .map(|bound| bound.unwrap_or(false)),
         FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) => {
-            construction.profile_mut().is_some_and(bind_planar_profile)
+            construction
+                .profile_mut()
+                .map(bind_planar_profile)
+                .transpose()
+                .map(|bound| bound.unwrap_or(false))
         }
         FeatureDefinition::Operation(FeatureOperation::Sweep { shape, path, .. }) => {
             let profile_bound = shape
                 .referenced_profile_mut()
-                .is_some_and(bind_planar_profile);
-            profile_bound | path.as_mut().is_some_and(bind_path)
+                .map(bind_planar_profile)
+                .transpose()?
+                .unwrap_or(false);
+            let path_bound = path.as_mut().map(bind_path).transpose()?.unwrap_or(false);
+            Ok(profile_bound | path_bound)
         }
         FeatureDefinition::Operation(FeatureOperation::TrimSurface { tool, .. }) => bind_path(tool),
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
@@ -614,7 +727,12 @@ pub(super) fn bind_definition_sketch(
             bind_path(source)
         }
         FeatureDefinition::Operation(FeatureOperation::CompositeCurve { segments, .. }) => {
-            segments.iter_mut().any(bind_path)
+            for segment in segments {
+                if bind_path(segment)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
         }
         FeatureDefinition::Operation(FeatureOperation::Loft {
             sections, guidance, ..
@@ -622,29 +740,29 @@ pub(super) fn bind_definition_sketch(
             let mut profile_bound = false;
             for section in sections {
                 if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
-                    profile_bound |= bind_profile(profile);
+                    profile_bound |= bind_profile(profile)?;
                 }
             }
             let mut guide_bound = false;
             match guidance {
                 cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
                     for path in guides {
-                        guide_bound |= bind_path(path);
+                        guide_bound |= bind_path(path)?;
                     }
                 }
                 cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
-                    guide_bound = bind_path(centerline);
+                    guide_bound = bind_path(centerline)?;
                 }
             }
-            profile_bound || guide_bound
+            Ok(profile_bound || guide_bound)
         }
-        _ => false,
+        _ => Ok(false),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{derive_feature_outputs, order_features_for_regeneration, order_model_features_for_regeneration};
+    use super::{bind_unique_sketch_feature, derive_feature_outputs, order_features_for_regeneration, order_model_features_for_regeneration};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::features::{
         DistinctMembers, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
@@ -774,6 +892,78 @@ mod tests {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "index SLDPRT body modifier ordinals"
+        ));
+    }
+
+    fn sketch_binding_error(
+        limits: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
+    ) -> cadmpeg_core::CodecError {
+        let mut neutral = ordering_feature();
+        neutral.name = Some("Sketch1".into());
+        neutral.native_ref = Some("native".into());
+        neutral.evaluation.set_definition(FeatureDefinition::Operation(
+            FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            },
+        ));
+        let mut features = [neutral];
+        let sketches = [cadmpeg_ir::sketches::Sketch {
+            id: cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch")
+                .unwrap_or_else(|error| panic!("invalid test ID: {error}")),
+            name: Some("Sketch1".into()),
+            configuration: None,
+            visible: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
+            profiles: Default::default(),
+            native_ref: None,
+        }];
+        let histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: Default::default(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![crate::history::tests::feature("native", None, 0)],
+        }];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        limits(&mut policy.limits);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .unwrap_or_else(|error| panic!("test context failed: {error}"));
+        bind_unique_sketch_feature(&ctx, &mut features, &sketches, &histories)
+            .expect_err("the sketch-binding route must refuse the selected limit")
+    }
+
+    #[test]
+    fn sketch_binding_refuses_collection_limit() {
+        let error = sketch_binding_error(|limits| limits.max_collection_items = 0);
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "index SLDPRT native sketch features"
+        ));
+    }
+
+    #[test]
+    fn sketch_binding_refuses_retained_limit() {
+        let error = sketch_binding_error(|limits| limits.max_retained_bytes = 0);
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain SLDPRT sketch binding identity"
+        ));
+    }
+
+    #[test]
+    fn sketch_binding_refuses_work_limit() {
+        let error = sketch_binding_error(|limits| limits.max_work_units = 0);
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "index SLDPRT native sketch features"
         ));
     }
 }

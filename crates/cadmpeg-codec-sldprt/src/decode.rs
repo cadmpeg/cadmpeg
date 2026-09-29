@@ -2788,7 +2788,7 @@ fn build_geometry_ir(
         &histories,
         &sketch_lanes,
     )?;
-    crate::history::bind::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories);
+    crate::history::bind::bind_unique_sketch_feature(ctx, &mut ir.model.features, &sketches, &histories)?;
     crate::resolved_features::component_paths::project_dissected_sketches(
         &mut ir.model.features,
         &sketches,
@@ -4097,10 +4097,11 @@ fn build_metadata_ir(
         &sketch_lanes,
     )?;
     crate::history::bind::bind_unique_sketch_feature(
+        ctx,
         &mut ir.model.features,
         &ir.model.sketches,
         &histories,
-    );
+    )?;
     crate::resolved_features::component_paths::project_dissected_sketches(
         &mut ir.model.features,
         &ir.model.sketches,

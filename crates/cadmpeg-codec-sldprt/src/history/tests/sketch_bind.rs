@@ -456,7 +456,12 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         ],
     };
 
-    crate::history::bind::bind_unique_sketch_feature(&mut features, &[sketch], &[history]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    crate::history::bind::bind_unique_sketch_feature(&ctx, &mut features, &[sketch], &[history])
+        .expect("bind sketch alias");
 
     assert!(matches!(
         features[1].evaluation.definition(),

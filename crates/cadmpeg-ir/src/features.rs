@@ -6421,6 +6421,21 @@ impl<T: PartialEq> DistinctMembers<T> {
         self.0.push(value);
         true
     }
+
+    /// Inserts a decoded member after charging and reserving its collection slot.
+    pub fn try_insert_charged(
+        &mut self,
+        value: T,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        if self.0.contains(&value) {
+            return Ok(false);
+        }
+        ctx.reserve_collection_vec(&mut self.0, 1, operation)?;
+        self.0.push(value);
+        Ok(true)
+    }
 }
 
 impl<T> DistinctMembers<T> {
