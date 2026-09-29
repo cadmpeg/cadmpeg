@@ -285,27 +285,22 @@ pub(crate) fn enrich_history_move_face_translations(
 
 /// Add non-copy translations carried by Move/Copy Body data children.
 pub(crate) fn enrich_history_move_body_translations(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), CodecError> {
     let mut candidates = BTreeMap::<(usize, usize), Vec<Option<FiniteVector3>>>::new();
     for lane in lanes {
-        let mut starts =
-            histories
-                .iter()
-                .enumerate()
-                .flat_map(|(history_index, history)| {
-                    history.features.iter().enumerate().filter_map(
-                        move |(feature_index, feature)| {
-                            Some((
-                                feature_object_name(feature, lane)?.offset,
-                                history_index,
-                                feature_index,
-                            ))
-                        },
-                    )
-                })
-                .collect::<Vec<_>>();
+        let mut starts = Vec::new();
+        for (history_index, history) in histories.iter().enumerate() {
+            for (feature_index, feature) in history.features.iter().enumerate() {
+                ctx.charge_work(1, "scan SLDPRT move-body feature starts")?;
+                if let Some(name) = feature_object_name(feature, lane) {
+                    ctx.reserve_collection_vec(&mut starts, 1, "collect SLDPRT move-body feature starts")?;
+                    starts.push((name.offset, history_index, feature_index));
+                }
+            }
+        }
         starts.sort_unstable_by_key(|entry| entry.0);
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
@@ -341,10 +336,13 @@ pub(crate) fn enrich_history_move_body_translations(
                 }
                 _ => None,
             };
-            candidates
-                .entry((history_index, feature_index))
-                .or_default()
-                .push(candidate);
+            let key = (history_index, feature_index);
+            if !candidates.contains_key(&key) {
+                ctx.charge_collection_items(1, "index SLDPRT move-body candidates")?;
+            }
+            let values = candidates.entry(key).or_default();
+            ctx.reserve_collection_vec(values, 1, "collect SLDPRT move-body candidates")?;
+            values.push(candidate);
         }
     }
     for ((history_index, feature_index), candidates) in candidates {
@@ -355,9 +353,11 @@ pub(crate) fn enrich_history_move_body_translations(
             continue;
         }
         let first = first.get();
-        histories[history_index].features[feature_index]
-            .properties
-            .insert(
+        let properties = &mut histories[history_index].features[feature_index].properties;
+        if !properties.contains_key("Translation") {
+            ctx.charge_collection_items(1, "insert SLDPRT move-body translation")?;
+        }
+        properties.insert(
                 cadmpeg_core::nonblank_literal!("Translation"),
                 format!(
                     "{}mm,{}mm,{}mm",
@@ -367,12 +367,13 @@ pub(crate) fn enrich_history_move_body_translations(
                 ),
             );
     }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        enrich_history_move_face_translations,
+        enrich_history_move_body_translations, enrich_history_move_face_translations,
         move_body_translation_record,
         MoveBodyTranslationRecord,
     };
@@ -429,6 +430,47 @@ mod tests {
                 content: Vec::new(),
             }],
         }
+    }
+
+    fn move_body_enrichment_input() -> (Vec<FeatureHistory>, FeatureInputLane) {
+        let mut histories = vec![move_face_history()];
+        let feature = &mut histories[0].features[0];
+        feature.name = "Move Body".into();
+        feature.kind = "Body-Move/Copy".into();
+        feature.input_class = Some("moMoveCopyBody_c".into());
+        let mut lane = line_reference_lane(&[], 0);
+        lane.names[0].value = "Move Body".into();
+        (histories, lane)
+    }
+
+    #[test]
+    fn move_body_enrichment_refuses_collection_limit() {
+        let (mut histories, lane) = move_body_enrichment_input();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload, &arena, &policy,
+        )
+        .expect("move-body input fits root policy");
+        let error = enrich_history_move_body_translations(&ctx, &mut histories, std::slice::from_ref(&lane))
+            .expect_err("one matching feature start requires collection admission");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn move_body_enrichment_refuses_work_limit() {
+        let (mut histories, lane) = move_body_enrichment_input();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload, &arena, &policy,
+        )
+        .expect("move-body input fits root policy");
+        let error = enrich_history_move_body_translations(&ctx, &mut histories, std::slice::from_ref(&lane))
+            .expect_err("one feature scan requires work admission");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     }
 
     fn line_reference_lane(directions: &[Vector3], direction_specs: usize) -> FeatureInputLane {
