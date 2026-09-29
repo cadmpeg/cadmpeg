@@ -7,10 +7,14 @@ use cadmpeg_ir::features::{BodySelection, BodyTrimSide, FeatureDefinition, Featu
 fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let project_trim = |bodies: &[(u32, String)], operands: &[&crate::native::features::FeatureOperationBodyOperand]| {
-        offset_store_trim_body_feature_definition(&ctx, bodies, operands).expect("resource admission")
-    };
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let project_trim =
+        |bodies: &[(u32, String)],
+         operands: &[&crate::native::features::FeatureOperationBodyOperand]| {
+            offset_store_trim_body_feature_definition(&ctx, bodies, operands)
+                .expect("resource admission")
+        };
     let body = (114, "nx:om-data-blocks-2:block#114".to_string());
     let operand = crate::native::features::FeatureOperationBodyOperand {
         id: "operand#0".to_string(),
@@ -39,10 +43,7 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
     let mut mixed_store_operand = operand.clone();
     mixed_store_operand.operand_data_block = Some("nx:om-data-blocks-3:block#113".to_string());
     assert_eq!(
-        project_trim(
-            std::slice::from_ref(&body),
-            &[&mixed_store_operand],
-        ),
+        project_trim(std::slice::from_ref(&body), &[&mixed_store_operand],),
         expected_target.clone()
     );
 
@@ -61,10 +62,7 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
     target_alias_operand.operand.atom = crate::om::compact::CompactIndexAtom::read(&[115]).unwrap();
     target_alias_operand.operand_data_block = Some(body.1.clone());
     assert_eq!(
-        project_trim(
-            std::slice::from_ref(&body),
-            &[&target_alias_operand],
-        ),
+        project_trim(std::slice::from_ref(&body), &[&target_alias_operand],),
         Some(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::local(vec![body.1], "nx:om-object-index#114".to_string()).unwrap(),

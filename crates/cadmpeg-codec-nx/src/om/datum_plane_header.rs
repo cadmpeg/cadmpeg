@@ -247,7 +247,7 @@ impl DatumPlaneFrame<()> {
                     descriptor: (descriptor.0, descriptor_block),
                     object: (object.0, object_block),
                 }
-            },
+            }
             DatumPlaneBranch::Double {
                 form,
                 objects: [first, second],
@@ -262,7 +262,7 @@ impl DatumPlaneFrame<()> {
                     form: *form,
                     objects: [(first.0, first_block), (second.0, second_block)],
                 }
-            },
+            }
         };
         Ok(Some(DatumPlaneFrame {
             origin: self.origin,
@@ -421,8 +421,10 @@ mod tests {
                 .resolve(|index| Ok::<_, ()>((index == 0).then_some("block")))
                 .unwrap()
                 .is_none());
-            let resolved = frame.resolve(|index| Ok::<_, ()>(Some(index.to_string())))
-                .unwrap().unwrap();
+            let resolved = frame
+                .resolve(|index| Ok::<_, ()>(Some(index.to_string())))
+                .unwrap()
+                .unwrap();
             assert_eq!(
                 resolved
                     .objects()

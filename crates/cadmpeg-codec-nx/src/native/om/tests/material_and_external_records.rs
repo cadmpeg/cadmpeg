@@ -4,8 +4,8 @@ use crate::test_support::test_bytes::zlib_compress;
 use crate::test_support::test_prt::assembly_with_external_paths;
 use crate::test_support::test_prt::prt_with_arrangements;
 use crate::test_support::test_prt::prt_with_indexed_om_section;
-use crate::test_support::test_prt::prt_with_size_framed_om_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
+use crate::test_support::test_prt::prt_with_size_framed_om_section;
 use crate::test_support::test_prt::prt_with_two_bodies_and_rmfastload;
 use crate::test_support::test_prt::rmfastload_prt;
 use crate::test_support::test_streams::partition_stream;
@@ -329,17 +329,15 @@ fn external_reference_extraction_refuses_record_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let file = assembly_with_external_paths();
-    let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(ctx, file)
-    })
-    .expect("external reference container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+            .expect("external reference container");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // Two strings enter both the parsed table and the container result before
     // extraction admits the two native records.
     policy.limits.max_collection_items = 5;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     let error = super::super::external_references(&ctx, &container)
         .expect_err("two native records exceed the remaining collection item");
     assert!(matches!(
@@ -364,8 +362,7 @@ fn native_external_record_result(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     super::super::external_reference_records(&ctx, &container)
 }
 
@@ -380,17 +377,23 @@ fn native_external_record_route_preserves_indexed_record() {
 fn native_external_record_route_refuses_collection_limit() {
     let error = native_external_record_result(|policy| policy.limits.max_collection_items = 10)
         .expect_err("native record exceeds the parsed collection budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "nx native external reference records"), "{error:?}");
+            && limit.operation == "nx native external reference records"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn native_external_record_route_refuses_retained_limit() {
     let error = native_external_record_result(|policy| policy.limits.max_retained_bytes = 0)
         .expect_err("indexed record exceeds the retained budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes),
+        "{error:?}"
+    );
 }
 
 fn native_external_indexed_result(
@@ -411,8 +414,7 @@ fn native_external_indexed_result(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     super::super::external_reference_indexed_records(&ctx, &container, &decoded)
 }
 
@@ -433,34 +435,46 @@ fn native_external_indexed_route_preserves_record_links() {
 fn native_external_indexed_route_refuses_collection_limit() {
     let error = native_external_indexed_result(|policy| policy.limits.max_collection_items = 9)
         .expect_err("native indexed record exceeds collection budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "nx native external reference indexed records"), "{error:?}");
+            && limit.operation == "nx native external reference indexed records"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn native_external_indexed_route_refuses_retained_limit() {
     let error = native_external_indexed_result(|policy| policy.limits.max_retained_bytes = 0)
         .expect_err("indexed record exceeds retained budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn native_external_indexed_route_refuses_scoped_limit() {
     let error = native_external_indexed_result(|policy| policy.limits.max_materialized_bytes = 0)
         .expect_err("decoded index exceeds scoped budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "nx external reference decoded index"), "{error:?}");
+            && limit.operation == "nx external reference decoded index"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn native_external_indexed_route_refuses_work_limit() {
     let error = native_external_indexed_result(|policy| policy.limits.max_work_units = 0)
         .expect_err("indexed scan exceeds work budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits),
+        "{error:?}"
+    );
 }
 
 fn native_external_empty_result(
@@ -482,8 +496,7 @@ fn native_external_empty_result(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     super::super::external_reference_empty_records(&ctx, &container, &indexed)
 }
 
@@ -491,7 +504,10 @@ fn native_external_empty_result(
 fn native_external_empty_route_preserves_record() {
     let records = native_external_empty_result(|_| {}).expect("native empty record");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].id, "nx:external-reference-empty-record:/Root/ExternalReferences#7");
+    assert_eq!(
+        records[0].id,
+        "nx:external-reference-empty-record:/Root/ExternalReferences#7"
+    );
     assert!(!records[0].closing_marker);
 }
 
@@ -499,18 +515,24 @@ fn native_external_empty_route_preserves_record() {
 fn native_external_empty_route_refuses_collection_limit() {
     let error = native_external_empty_result(|policy| policy.limits.max_collection_items = 0)
         .expect_err("native empty record exceeds collection budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "nx native external reference empty records"), "{error:?}");
+            && limit.operation == "nx native external reference empty records"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn native_external_empty_route_refuses_retained_limit() {
     let error = native_external_empty_result(|policy| policy.limits.max_retained_bytes = 0)
         .expect_err("native empty record exceeds retained budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "nx native external reference empty records"), "{error:?}");
+            && limit.operation == "nx native external reference empty records"),
+        "{error:?}"
+    );
 }
 
 fn native_external_tail_result(
@@ -531,8 +553,7 @@ fn native_external_tail_result(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     super::super::external_reference_tail_reference_pairs(&ctx, &container, &records)
 }
 
@@ -548,25 +569,34 @@ fn native_external_tail_route_preserves_pair() {
 fn native_external_tail_route_refuses_collection_limit() {
     let error = native_external_tail_result(|policy| policy.limits.max_collection_items = 1)
         .expect_err("native pair exceeds parsed collection budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "nx native external reference tail pairs"), "{error:?}");
+            && limit.operation == "nx native external reference tail pairs"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn native_external_tail_route_refuses_retained_limit() {
     let error = native_external_tail_result(|policy| policy.limits.max_retained_bytes = 0)
         .expect_err("external pair exceeds retained budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn native_external_tail_route_refuses_work_limit() {
     let error = native_external_tail_result(|policy| policy.limits.max_work_units = 0)
         .expect_err("external pair scan exceeds work budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits),
+        "{error:?}"
+    );
 }
 
 fn native_external_string_uses_result(
@@ -580,18 +610,18 @@ fn native_external_string_uses_result(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("indexed external-reference container");
-    let (records, references) = crate::test_support::with_decode_context(|ctx| -> Result<_, CodecError> {
-        Ok((
-            super::super::external_reference_records(ctx, &container)?,
-            super::super::external_references(ctx, &container)?,
-        ))
-    })
-    .expect("native external-reference inputs");
+    let (records, references) =
+        crate::test_support::with_decode_context(|ctx| -> Result<_, CodecError> {
+            Ok((
+                super::super::external_reference_records(ctx, &container)?,
+                super::super::external_references(ctx, &container)?,
+            ))
+        })
+        .expect("native external-reference inputs");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     super::super::external_reference_record_string_uses(&ctx, &records, &references)
 }
 
@@ -599,43 +629,61 @@ fn native_external_string_uses_result(
 fn native_external_string_uses_route_preserves_slots() {
     let uses = native_external_string_uses_result(|_| {}).expect("external string uses");
     assert_eq!(uses.len(), 4);
-    assert_eq!(uses.iter().map(|use_| use_.string_index).collect::<Vec<_>>(), [0, 1, 2, 3]);
+    assert_eq!(
+        uses.iter()
+            .map(|use_| use_.string_index)
+            .collect::<Vec<_>>(),
+        [0, 1, 2, 3]
+    );
 }
 
 #[test]
 fn native_external_string_uses_route_refuses_collection_limit() {
     let error = native_external_string_uses_result(|policy| policy.limits.max_collection_items = 0)
         .expect_err("slot index exceeds collection budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "nx external reference slot index"), "{error:?}");
+            && limit.operation == "nx external reference slot index"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn native_external_string_uses_route_refuses_retained_limit() {
     let error = native_external_string_uses_result(|policy| policy.limits.max_retained_bytes = 0)
         .expect_err("slot use exceeds retained budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "nx native external reference string uses"), "{error:?}");
+            && limit.operation == "nx native external reference string uses"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn native_external_string_uses_route_refuses_scoped_limit() {
-    let error = native_external_string_uses_result(|policy| policy.limits.max_materialized_bytes = 0)
-        .expect_err("slot index exceeds scoped budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    let error =
+        native_external_string_uses_result(|policy| policy.limits.max_materialized_bytes = 0)
+            .expect_err("slot index exceeds scoped budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "nx external reference slot index"), "{error:?}");
+            && limit.operation == "nx external reference slot index"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn native_external_string_uses_route_refuses_work_limit() {
     let error = native_external_string_uses_result(|policy| policy.limits.max_work_units = 0)
         .expect_err("slot index exceeds work budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "nx external reference slot index"), "{error:?}");
+            && limit.operation == "nx external reference slot index"),
+        "{error:?}"
+    );
 }
 
 fn native_external_children_result(
@@ -649,18 +697,19 @@ fn native_external_children_result(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("indexed external-reference container");
-    let (records, references, uses) = crate::test_support::with_decode_context(|ctx| -> Result<_, CodecError> {
-        let records = super::super::external_reference_records(ctx, &container)?;
-        let references = super::super::external_references(ctx, &container)?;
-        let uses = super::super::external_reference_record_string_uses(ctx, &records, &references)?;
-        Ok((records, references, uses))
-    })
-    .expect("complete external-reference child inputs");
+    let (records, references, uses) =
+        crate::test_support::with_decode_context(|ctx| -> Result<_, CodecError> {
+            let records = super::super::external_reference_records(ctx, &container)?;
+            let references = super::super::external_references(ctx, &container)?;
+            let uses =
+                super::super::external_reference_record_string_uses(ctx, &records, &references)?;
+            Ok((records, references, uses))
+        })
+        .expect("complete external-reference child inputs");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     super::super::external_reference_record_children(&ctx, &records, &references, &uses)
 }
 
@@ -668,43 +717,58 @@ fn native_external_children_result(
 fn native_external_children_route_preserves_child() {
     let children = native_external_children_result(|_| {}).expect("external child");
     assert_eq!(children.len(), 1);
-    assert_eq!(children[0].id, "nx:external-reference-record:/Root/ExternalReferences#6:child");
+    assert_eq!(
+        children[0].id,
+        "nx:external-reference-record:/Root/ExternalReferences#6:child"
+    );
 }
 
 #[test]
 fn native_external_children_route_refuses_collection_limit() {
     let error = native_external_children_result(|policy| policy.limits.max_collection_items = 0)
         .expect_err("child index exceeds collection budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "nx external reference child index"), "{error:?}");
+            && limit.operation == "nx external reference child index"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn native_external_children_route_refuses_retained_limit() {
     let error = native_external_children_result(|policy| policy.limits.max_retained_bytes = 0)
         .expect_err("child record exceeds retained budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "nx native external reference children"), "{error:?}");
+            && limit.operation == "nx native external reference children"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn native_external_children_route_refuses_scoped_limit() {
     let error = native_external_children_result(|policy| policy.limits.max_materialized_bytes = 0)
         .expect_err("child index exceeds scoped budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "nx external reference child index"), "{error:?}");
+            && limit.operation == "nx external reference child index"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn native_external_children_route_refuses_work_limit() {
     let error = native_external_children_result(|policy| policy.limits.max_work_units = 0)
         .expect_err("child index exceeds work budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "nx external reference child index"), "{error:?}");
+            && limit.operation == "nx external reference child index"),
+        "{error:?}"
+    );
 }
 
 fn active_configuration_join_result(
@@ -726,8 +790,7 @@ fn active_configuration_join_result(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     super::super::configuration_attribute_uses(&ctx, &configurations, &attributes)
 }
 
@@ -742,27 +805,36 @@ fn active_configuration_join_route_preserves_relation() {
 fn active_configuration_join_route_refuses_collection_limit() {
     let error = active_configuration_join_result(|policy| policy.limits.max_collection_items = 0)
         .expect_err("active relation exceeds collection budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "nx active configuration attribute uses"), "{error:?}");
+            && limit.operation == "nx active configuration attribute uses"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn active_configuration_join_route_refuses_retained_limit() {
     let error = active_configuration_join_result(|policy| policy.limits.max_retained_bytes = 0)
         .expect_err("active relation exceeds retained budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "nx active configuration attribute uses"), "{error:?}");
+            && limit.operation == "nx active configuration attribute uses"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn active_configuration_join_route_refuses_work_limit() {
     let error = active_configuration_join_result(|policy| policy.limits.max_work_units = 0)
         .expect_err("active relation exceeds work budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "nx active configuration join"), "{error:?}");
+            && limit.operation == "nx active configuration join"),
+        "{error:?}"
+    );
 }
 
 fn arrangement_configuration_result(
@@ -776,8 +848,7 @@ fn arrangement_configuration_result(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     super::super::configurations(&ctx, &container)
 }
 
@@ -793,36 +864,48 @@ fn arrangement_configuration_route_preserves_order() {
 fn arrangement_configuration_route_refuses_collection_limit() {
     let error = arrangement_configuration_result(|policy| policy.limits.max_collection_items = 0)
         .expect_err("arrangement names exceed collection budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "nx arrangement names"), "{error:?}");
+            && limit.operation == "nx arrangement names"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn arrangement_configuration_route_refuses_retained_limit() {
     let error = arrangement_configuration_result(|policy| policy.limits.max_retained_bytes = 0)
         .expect_err("arrangement records exceed retained budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "nx arrangement configurations"), "{error:?}");
+            && limit.operation == "nx arrangement configurations"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn arrangement_configuration_route_refuses_scoped_limit() {
     let error = arrangement_configuration_result(|policy| policy.limits.max_materialized_bytes = 0)
         .expect_err("arrangement names exceed scoped budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "nx arrangement names"), "{error:?}");
+            && limit.operation == "nx arrangement names"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn arrangement_configuration_route_refuses_work_limit() {
     let error = arrangement_configuration_result(|policy| policy.limits.max_work_units = 0)
         .expect_err("arrangement XML exceeds work budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "nx arrangement XML scan"), "{error:?}");
+            && limit.operation == "nx arrangement XML scan"),
+        "{error:?}"
+    );
 }
 
 fn part_attribute_result(
@@ -836,8 +919,7 @@ fn part_attribute_result(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     super::super::part_attributes(&ctx, &container)
 }
 
@@ -853,27 +935,36 @@ fn part_attribute_route_preserves_typed_value() {
 fn part_attribute_route_refuses_collection_limit() {
     let error = part_attribute_result(|policy| policy.limits.max_collection_items = 0)
         .expect_err("part attribute exceeds collection budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "nx native part attributes"), "{error:?}");
+            && limit.operation == "nx native part attributes"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn part_attribute_route_refuses_retained_limit() {
     let error = part_attribute_result(|policy| policy.limits.max_retained_bytes = 0)
         .expect_err("part attribute exceeds retained budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "nx native part attributes"), "{error:?}");
+            && limit.operation == "nx native part attributes"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn part_attribute_route_refuses_work_limit() {
     let error = part_attribute_result(|policy| policy.limits.max_work_units = 0)
         .expect_err("part attribute XML exceeds work budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "nx part attribute XML scan"), "{error:?}");
+            && limit.operation == "nx part attribute XML scan"),
+        "{error:?}"
+    );
 }
 
 fn class_definition_result(
@@ -887,8 +978,7 @@ fn class_definition_result(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     super::super::class_definitions(&ctx, &container)
 }
 
@@ -903,8 +993,7 @@ fn field_definition_result(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     super::super::field_definitions(&ctx, &container)
 }
 
@@ -919,32 +1008,44 @@ fn registry_class_route_preserves_definition() {
 fn registry_class_route_refuses_collection_limit() {
     let error = class_definition_result(|policy| policy.limits.max_collection_items = 0)
         .expect_err("class definition exceeds collection budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn registry_class_route_refuses_retained_limit() {
     let error = class_definition_result(|policy| policy.limits.max_retained_bytes = 0)
         .expect_err("class definition exceeds retained budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn registry_class_route_refuses_scoped_limit() {
     let error = class_definition_result(|policy| policy.limits.max_materialized_bytes = 0)
         .expect_err("class definition exceeds scoped budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::MaterializedBytes), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn registry_class_route_refuses_work_limit() {
     let error = class_definition_result(|policy| policy.limits.max_work_units = 0)
         .expect_err("class definition exceeds work budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -958,32 +1059,44 @@ fn registry_field_route_preserves_definitions() {
 fn registry_field_route_refuses_collection_limit() {
     let error = field_definition_result(|policy| policy.limits.max_collection_items = 0)
         .expect_err("field definitions exceed collection budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn registry_field_route_refuses_retained_limit() {
     let error = field_definition_result(|policy| policy.limits.max_retained_bytes = 0)
         .expect_err("field definitions exceed retained budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn registry_field_route_refuses_scoped_limit() {
     let error = field_definition_result(|policy| policy.limits.max_materialized_bytes = 0)
         .expect_err("field definitions exceed scoped budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::MaterializedBytes), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn registry_field_route_refuses_work_limit() {
     let error = field_definition_result(|policy| policy.limits.max_work_units = 0)
         .expect_err("field definitions exceed work budget");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -1031,7 +1144,9 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let handles = super::super::persistent_handles(&ctx, &[reference], &[control], &[external], &[tail_pair]).unwrap();
+    let handles =
+        super::super::persistent_handles(&ctx, &[reference], &[control], &[external], &[tail_pair])
+            .unwrap();
 
     assert_eq!(handles.len(), 2);
     assert_eq!(handles[0].records, ["nx:test:om-record#0"]);
@@ -1107,7 +1222,8 @@ fn nx_control_handle_pairs_require_maximal_runs_of_exactly_two() {
     ];
     let pairs = crate::test_support::with_decode_context(|ctx| {
         super::super::data_block_control_handle_pairs(ctx, &references)
-    }).unwrap();
+    })
+    .unwrap();
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].id, "nx:om-data-block-control:handle-pair#10");
     assert_eq!(pairs[0].first_reference, "reference#0");
@@ -1128,8 +1244,7 @@ fn control_handle_pair_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> Cod
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     super::super::data_block_control_handle_pairs(&ctx, &references).unwrap_err()
 }
 
@@ -1461,7 +1576,8 @@ fn decode_selects_dominant_rmfastload_body() {
             .map(String::as_str),
         Some("rmfastload_object_id_membership")
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.findings.is_empty(),
         "findings: {:?}",
@@ -1590,7 +1706,9 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         crate::om::discriminators::IndexRowMode::Form07,
         150,
     );
-    assert!(data_block_column_index_tables(&ctx, &linked_rows, &gap).unwrap().is_empty());
+    assert!(data_block_column_index_tables(&ctx, &linked_rows, &gap)
+        .unwrap()
+        .is_empty());
     let mut incomplete_mode = target_rows.clone();
     incomplete_mode[2] = target(
         "target-60",
@@ -1598,7 +1716,11 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         crate::om::discriminators::IndexRowMode::Form07,
         175,
     );
-    assert!(data_block_column_index_tables(&ctx, &linked_rows, &incomplete_mode).unwrap().is_empty());
+    assert!(
+        data_block_column_index_tables(&ctx, &linked_rows, &incomplete_mode)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 fn column_index_table_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
@@ -1688,8 +1810,7 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     };
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
 
     let references = (0..4)
         .map(|ordinal| ExternalReference {
@@ -1710,8 +1831,9 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
         source_entry: "stream".into(),
         source_offset: 20,
     };
-    let uses = external_reference_record_string_uses(&ctx, std::slice::from_ref(&record), &references)
-        .expect("complete string use lane");
+    let uses =
+        external_reference_record_string_uses(&ctx, std::slice::from_ref(&record), &references)
+            .expect("complete string use lane");
     assert_eq!(uses.len(), 4);
     assert_eq!(uses[0].id, "nx:external-reference:record-string-use#7-0");
     assert_eq!(
@@ -1730,9 +1852,12 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     assert_eq!(uses[1].source_offset, 31);
     let mut child_references = references.clone();
     child_references[0].path = "child.prt".into();
-    let child_uses =
-        external_reference_record_string_uses(&ctx, std::slice::from_ref(&record), &child_references)
-            .expect("complete child string use lane");
+    let child_uses = external_reference_record_string_uses(
+        &ctx,
+        std::slice::from_ref(&record),
+        &child_references,
+    )
+    .expect("complete child string use lane");
     let children = external_reference_record_children(
         &ctx,
         std::slice::from_ref(&record),
@@ -1744,20 +1869,27 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     assert_eq!(children[0].external_record, record.id);
     assert_eq!(children[0].name_reference, "reference#0");
     assert_eq!(children[0].directory_reference, "reference#1");
-    assert!(
-        external_reference_record_children(&ctx, std::slice::from_ref(&record), &references, &uses)
-            .expect("non-child record")
-            .is_empty()
-    );
+    assert!(external_reference_record_children(
+        &ctx,
+        std::slice::from_ref(&record),
+        &references,
+        &uses
+    )
+    .expect("non-child record")
+    .is_empty());
 
     let mut out_of_range = record.clone();
     out_of_range.id_slots[2] = 4;
-    assert!(external_reference_record_string_uses(&ctx, &[out_of_range], &references)
-        .expect("unresolved slot")
-        .is_empty());
+    assert!(
+        external_reference_record_string_uses(&ctx, &[out_of_range], &references)
+            .expect("unresolved slot")
+            .is_empty()
+    );
     let mut duplicate = references.clone();
     duplicate.push(references[0].clone());
-    assert!(external_reference_record_string_uses(&ctx, &[record], &duplicate)
-        .expect("duplicate slot")
-        .is_empty());
+    assert!(
+        external_reference_record_string_uses(&ctx, &[record], &duplicate)
+            .expect("duplicate slot")
+            .is_empty()
+    );
 }

@@ -116,8 +116,10 @@ fn graph_index_refuses_scoped_limit() {
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = DisplayJtGraph::from_wire_with_context(&ctx, raw).unwrap_err();
-    assert!(matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
-        CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes));
+    assert!(
+        matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+        CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes)
+    );
 }
 
 #[test]
@@ -128,9 +130,11 @@ fn graph_index_refuses_work_limit() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = DisplayJtGraph::from_wire_with_context(&ctx, raw).unwrap_err();
-    assert!(matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+    assert!(
+        matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
         CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits
-        && limit.operation == "index DisplayJT graph records"));
+        && limit.operation == "index DisplayJT graph records")
+    );
 }
 
 #[test]
@@ -143,17 +147,21 @@ fn graph_rejection_identity_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = DisplayJtGraph::from_wire_with_context(&ctx, raw).unwrap_err();
-    assert!(matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+    assert!(
+        matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
         CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "retain DisplayJT graph rejection"));
+            && limit.operation == "retain DisplayJT graph rejection")
+    );
 
     let raw: DisplayJtGraphWire = serde_json::from_value(wire).unwrap();
-    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .unwrap();
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let error = DisplayJtGraph::from_wire_with_context(&service, raw).unwrap_err();
-    assert!(matches!(error, cadmpeg_ir::native::NativeConvertError::InvalidCollection(message)
-        if message.contains("nx:display-jt:segment#0: document does not resolve")));
+    assert!(
+        matches!(error, cadmpeg_ir::native::NativeConvertError::InvalidCollection(message)
+        if message.contains("nx:display-jt:segment#0: document does not resolve"))
+    );
 }
 
 #[test]
@@ -164,8 +172,10 @@ fn graph_native_reader_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = DisplayJtGraph::from_namespace_with_context(&ctx, &namespace).unwrap_err();
-    assert!(matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
-        CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems));
+    assert!(
+        matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+        CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]
@@ -176,8 +186,10 @@ fn graph_native_reader_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = DisplayJtGraph::from_namespace_with_context(&ctx, &namespace).unwrap_err();
-    assert!(matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
-        CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+    assert!(
+        matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+        CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+    );
 }
 
 #[test]

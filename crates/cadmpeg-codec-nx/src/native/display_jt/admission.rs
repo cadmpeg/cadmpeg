@@ -132,18 +132,28 @@ impl DisplayJtGraph {
     #[cfg(test)]
     fn from_namespace(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())?;
-        Self::from_wire_with_context(&ctx, DisplayJtGraphWire {
-            documents: namespace.arena_as("display_jt_documents")?,
-            segments: namespace.arena_as("display_jt_segments")?,
-            shape_lod_elements: namespace.arena_as("display_jt_shape_lod_elements")?,
-            compressed_elements: namespace.arena_as("display_jt_compressed_elements")?,
-            compressed_element_sequences: namespace
-                .arena_as("display_jt_compressed_element_sequences")?,
-        })
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )?;
+        Self::from_wire_with_context(
+            &ctx,
+            DisplayJtGraphWire {
+                documents: namespace.arena_as("display_jt_documents")?,
+                segments: namespace.arena_as("display_jt_segments")?,
+                shape_lod_elements: namespace.arena_as("display_jt_shape_lod_elements")?,
+                compressed_elements: namespace.arena_as("display_jt_compressed_elements")?,
+                compressed_element_sequences: namespace
+                    .arena_as("display_jt_compressed_element_sequences")?,
+            },
+        )
     }
 
-    fn from_wire(ctx: &DecodeContext<'_>, wire: DisplayJtGraphWire) -> Result<Self, NativeConvertError> {
+    fn from_wire(
+        ctx: &DecodeContext<'_>,
+        wire: DisplayJtGraphWire,
+    ) -> Result<Self, NativeConvertError> {
         let documents = by_id(ctx, &wire.documents, |item| item.id.as_str(), "documents")?;
         let segments = by_id(ctx, &wire.segments, |item| item.id.as_str(), "segments")?;
         let elements = by_id(
@@ -179,7 +189,8 @@ impl DisplayJtGraph {
                     .insert((document.id.as_str(), entry.id.as_str()), entry)
                     .is_some()
                 {
-                    return Err(invalid(ctx,
+                    return Err(invalid(
+                        ctx,
                         &entry.id,
                         "duplicate toc_entry identity in document",
                     ));
@@ -192,18 +203,26 @@ impl DisplayJtGraph {
                 .ok_or_else(|| invalid(ctx, &segment.id, "document does not resolve"))?;
             let entry = toc_entries
                 .get(&(segment.document.as_str(), segment.toc_entry.as_str()))
-                .ok_or_else(|| invalid(ctx, &segment.id, "toc_entry does not resolve in document"))?;
+                .ok_or_else(|| {
+                    invalid(ctx, &segment.id, "toc_entry does not resolve in document")
+                })?;
             if segment.segment_id != entry.segment_id {
-                return Err(invalid(ctx, &segment.id, "segment_id disagrees with toc_entry"));
+                return Err(invalid(
+                    ctx,
+                    &segment.id,
+                    "segment_id disagrees with toc_entry",
+                ));
             }
             if segment.segment_type != cadmpeg_core::bytes::assemble_u32_be(entry.attributes) {
-                return Err(invalid(ctx,
+                return Err(invalid(
+                    ctx,
                     &segment.id,
                     "segment_type disagrees with toc_entry.attributes",
                 ));
             }
             if segment.segment_byte_len != entry.segment_byte_len {
-                return Err(invalid(ctx,
+                return Err(invalid(
+                    ctx,
                     &segment.id,
                     "segment_byte_len disagrees with toc_entry",
                 ));
@@ -213,7 +232,8 @@ impl DisplayJtGraph {
                 .checked_add(u64::from(entry.segment_offset))
                 != Some(segment.source_offset)
             {
-                return Err(invalid(ctx,
+                return Err(invalid(
+                    ctx,
                     &segment.id,
                     "source_offset disagrees with document and toc_entry",
                 ));
@@ -224,7 +244,11 @@ impl DisplayJtGraph {
                 .get(element.segment.as_str())
                 .ok_or_else(|| invalid(ctx, &element.id, "segment does not resolve"))?;
             if segment.segment_type != 7 {
-                return Err(invalid(ctx, &element.id, "segment is not a type-7 shape LOD"));
+                return Err(invalid(
+                    ctx,
+                    &element.id,
+                    "segment is not a type-7 shape LOD",
+                ));
             }
         }
         for element in &wire.compressed_elements {
@@ -249,18 +273,24 @@ impl DisplayJtGraph {
             let mut next_offset = 0u64;
             for (ordinal, id) in sequence.elements().iter().enumerate() {
                 let element = elements.get(id.as_str()).ok_or_else(|| {
-                    invalid(ctx, &sequence.id, "elements contains an unresolved identity")
+                    invalid(
+                        ctx,
+                        &sequence.id,
+                        "elements contains an unresolved identity",
+                    )
                 })?;
                 if element.segment != sequence.segment
                     || usize::try_from(element.ordinal).ok() != Some(ordinal)
                 {
-                    return Err(invalid(ctx,
+                    return Err(invalid(
+                        ctx,
                         &sequence.id,
                         "elements disagrees with element.segment or element.ordinal",
                     ));
                 }
                 if u64::from(element.inflated_offset) != next_offset {
-                    return Err(invalid(ctx,
+                    return Err(invalid(
+                        ctx,
                         &element.id,
                         "inflated_offset disagrees with the preceding element extent",
                     ));
@@ -270,7 +300,8 @@ impl DisplayJtGraph {
                     .ok_or_else(|| invalid(ctx, &sequence.id, "framed_byte_len overflows"))?;
             }
             if next_offset.checked_add(20) != Some(u64::from(sequence.framed_byte_len())) {
-                return Err(invalid(ctx,
+                return Err(invalid(
+                    ctx,
                     &sequence.id,
                     "framed_byte_len disagrees with element body_byte_len values and end marker",
                 ));
@@ -286,7 +317,11 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
 
     fn try_from(wire: DisplayJtGraphWire) -> Result<Self, Self::Error> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())?;
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )?;
         Self::from_wire_with_context(&ctx, wire)
     }
 }
@@ -372,6 +407,8 @@ fn arena_as_charged<T: DeserializeOwned>(
         }
     }
     ctx.charge_work(json_size.0, "decode DisplayJT native records")?;
+    let _materialization =
+        ctx.reserve_scoped(json_size.0, "materialize DisplayJT native records")?;
     namespace.arena_as_charged(ctx, name)
 }
 

@@ -14,7 +14,8 @@ fn hole_diameters_for_operations(
 ) -> BTreeMap<String, Length> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     hole_body_projection(&ctx, ir, operations, outputs)
         .expect("hole witness resource budget")
         .map(|projection| projection.diameters)
@@ -34,9 +35,11 @@ fn simple_hole_diameters(
         .collect::<BTreeMap<_, _>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let Some(operations) = simple_hole_operations(&ctx, templates, groups, &operation_positions)
-        .expect("simple hole operation resource budget") else {
+        .expect("simple hole operation resource budget")
+    else {
         return BTreeMap::new();
     };
     hole_diameters_for_operations(ir, &operations, outputs)
@@ -59,8 +62,8 @@ mod fill_hole;
 mod holes_offsets_and_attributes;
 mod indexing;
 mod linked_face;
-mod mirror_face;
 mod material_assets;
+mod mirror_face;
 mod move_face;
 mod move_object;
 mod operation_sources;

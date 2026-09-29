@@ -170,11 +170,16 @@ pub(in crate::native) fn material_texture_assets(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<MaterialTextureAsset>, CodecError> {
-    let name_bytes = container.entries.iter().try_fold(0usize, |total, entry| {
-        total.checked_add(entry.name.len())
-    }).and_then(|total| total.checked_mul(2))
+    let name_bytes = container
+        .entries
+        .iter()
+        .try_fold(0usize, |total, entry| total.checked_add(entry.name.len()))
+        .and_then(|total| total.checked_mul(2))
         .ok_or_else(|| ctx.refuse_codec_limit("NX material texture entry scan", 0, 1))?;
-    ctx.charge_work(u64_from_index(name_bytes), "scan NX material texture entries")?;
+    ctx.charge_work(
+        u64_from_index(name_bytes),
+        "scan NX material texture entries",
+    )?;
     let count = container
         .entries
         .iter()
@@ -183,14 +188,27 @@ pub(in crate::native) fn material_texture_assets(
     let entry_bytes = count
         .checked_mul(std::mem::size_of::<&crate::container::DirEntry>())
         .ok_or_else(|| ctx.refuse_codec_limit("NX material texture entry slots", 0, 1))?;
-    let _entry_reservation = ctx.reserve_scoped(u64_from_index(entry_bytes), "sort NX material texture entries")?;
+    let _entry_reservation = ctx.reserve_scoped(
+        u64_from_index(entry_bytes),
+        "sort NX material texture entries",
+    )?;
     let mut entries = Vec::new();
-    entries.try_reserve_exact(count)
+    entries
+        .try_reserve_exact(count)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX material texture entries", 0, 1))?;
-    entries.extend(container.entries.iter().filter(|entry| entry.name.starts_with(TEXTURE_PREFIX)));
-    let sort_work = count.checked_mul(count)
+    entries.extend(
+        container
+            .entries
+            .iter()
+            .filter(|entry| entry.name.starts_with(TEXTURE_PREFIX)),
+    );
+    let sort_work = count
+        .checked_mul(count)
         .ok_or_else(|| ctx.refuse_codec_limit("NX material texture sort work", 0, 1))?;
-    ctx.charge_work(u64_from_index(sort_work), "sort NX material texture entries")?;
+    ctx.charge_work(
+        u64_from_index(sort_work),
+        "sort NX material texture entries",
+    )?;
     entries.sort_by(|first, second| first.name.cmp(&second.name));
     let mut assets = Vec::new();
     for entry in entries {
@@ -208,38 +226,65 @@ pub(in crate::native) fn material_texture_assets(
             (u64::from(first_ifd_offset) < u64_from_index(size)
                 && first_ifd_offset >= 8
                 && entry.name.len() > TEXTURE_PREFIX.len())
-                .then_some((offset, size, payload, byte_order, first_ifd_offset))
+            .then_some((offset, size, payload, byte_order, first_ifd_offset))
         })();
         let Some((offset, size, payload, byte_order, first_ifd_offset)) = parsed else {
             continue;
         };
         ctx.charge_collection_items(1, "NX material texture assets")?;
-        ctx.charge_retained(u64_from_index(std::mem::size_of::<MaterialTextureAsset>()), "retain NX material texture assets")?;
-        assets.try_reserve(1)
+        ctx.charge_retained(
+            u64_from_index(std::mem::size_of::<MaterialTextureAsset>()),
+            "retain NX material texture assets",
+        )?;
+        assets
+            .try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit("allocate NX material texture assets", 0, 1))?;
         let ordinal = assets.len();
         let mut digits = 1;
         let mut value = ordinal;
-        while value >= 10 { value /= 10; digits += 1; }
-        let id_len = "nx:container:material-texture#".len().checked_add(digits)
+        while value >= 10 {
+            value /= 10;
+            digits += 1;
+        }
+        let id_len = "nx:container:material-texture#"
+            .len()
+            .checked_add(digits)
             .ok_or_else(|| ctx.refuse_codec_limit("NX material texture identity length", 0, 1))?;
-        ctx.charge_retained(u64_from_index(id_len), "retain NX material texture identity")?;
+        ctx.charge_retained(
+            u64_from_index(id_len),
+            "retain NX material texture identity",
+        )?;
         let mut id = String::new();
         id.try_reserve_exact(id_len)
             .map_err(|_| ctx.refuse_codec_limit("allocate NX material texture identity", 0, 1))?;
         write!(id, "nx:container:material-texture#{ordinal}")
             .map_err(|_| ctx.refuse_codec_limit("write NX material texture identity", 0, 1))?;
-        ctx.charge_retained(u64_from_index(entry.name.len()), "retain NX material texture source entry")?;
+        ctx.charge_retained(
+            u64_from_index(entry.name.len()),
+            "retain NX material texture source entry",
+        )?;
         let mut source_entry = String::new();
-        source_entry.try_reserve_exact(entry.name.len())
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX material texture source entry", 0, 1))?;
+        source_entry
+            .try_reserve_exact(entry.name.len())
+            .map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX material texture source entry", 0, 1)
+            })?;
         source_entry.push_str(&entry.name);
         ctx.charge_retained(64, "retain NX material texture digest")?;
-        ctx.charge_work(u64_from_index(payload.len()), "hash NX material texture payload")?;
+        ctx.charge_work(
+            u64_from_index(payload.len()),
+            "hash NX material texture payload",
+        )?;
         let asset = MaterialTextureAsset::new(
-            id, byte_order, first_ifd_offset, u64_from_index(size),
-            crate::native::hex::Sha256Hex::digest(payload), source_entry, offset,
-        ).map_err(|error| CodecError::InvalidInput(error.to_owned()))?;
+            id,
+            byte_order,
+            first_ifd_offset,
+            u64_from_index(size),
+            crate::native::hex::Sha256Hex::digest(payload),
+            source_entry,
+            offset,
+        )
+        .map_err(|error| CodecError::InvalidInput(error.to_owned()))?;
         assets.push(asset);
     }
     Ok(assets)
@@ -264,7 +309,10 @@ mod tests {
             entries: vec![DirEntry {
                 name: "/Root/materialsTif/Steel".to_owned(),
                 region: Region::Header,
-                body: DirEntryBody::File { offset: 0, len: TIFF.len() as u64 },
+                body: DirEntryBody::File {
+                    offset: 0,
+                    len: TIFF.len() as u64,
+                },
             }],
             fastload_table: None,
             indexed_section_layouts: OnceLock::new(),
@@ -283,22 +331,34 @@ mod tests {
 
     #[test]
     fn material_texture_assets_refuse_collection_limit() {
-        assert_limit(|policy| policy.limits.max_collection_items = 0, ResourceDimension::CollectionItems);
+        assert_limit(
+            |policy| policy.limits.max_collection_items = 0,
+            ResourceDimension::CollectionItems,
+        );
     }
 
     #[test]
     fn material_texture_assets_refuse_retained_limit() {
-        assert_limit(|policy| policy.limits.max_retained_bytes = 0, ResourceDimension::RetainedBytes);
+        assert_limit(
+            |policy| policy.limits.max_retained_bytes = 0,
+            ResourceDimension::RetainedBytes,
+        );
     }
 
     #[test]
     fn material_texture_assets_refuse_scoped_limit() {
-        assert_limit(|policy| policy.limits.max_materialized_bytes = 0, ResourceDimension::MaterializedBytes);
+        assert_limit(
+            |policy| policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::MaterializedBytes,
+        );
     }
 
     #[test]
     fn material_texture_assets_refuse_work_limit() {
-        assert_limit(|policy| policy.limits.max_work_units = 0, ResourceDimension::WorkUnits);
+        assert_limit(
+            |policy| policy.limits.max_work_units = 0,
+            ResourceDimension::WorkUnits,
+        );
     }
 
     #[test]

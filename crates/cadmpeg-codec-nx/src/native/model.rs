@@ -840,7 +840,11 @@ impl NativeModel {
             &parasolid_entity_51_structured_uses,
         )?;
         let parasolid_topology_attribute_list_references =
-            parasolid_topology_attribute_list_references(ctx, parsed, &parasolid_entity_51_records)?;
+            parasolid_topology_attribute_list_references(
+                ctx,
+                parsed,
+                &parasolid_entity_51_records,
+            )?;
         let parasolid_topology_attribute_class_uses = parasolid_topology_attribute_class_uses(
             ctx,
             &parasolid_topology_attribute_list_references,
@@ -1077,8 +1081,11 @@ impl NativeModel {
         let feature_datum_csys_descriptors =
             feature_datum_csys_descriptors(ctx, container, &feature_datum_csys_constructions)?;
         let feature_datum_plane_headers = feature_datum_plane_headers(ctx, container)?;
-        let feature_datum_plane_block_uses =
-            feature_datum_plane_block_uses(ctx, &feature_datum_plane_headers, &feature_input_blocks)?;
+        let feature_datum_plane_block_uses = feature_datum_plane_block_uses(
+            ctx,
+            &feature_datum_plane_headers,
+            &feature_input_blocks,
+        )?;
         let feature_datum_plane_payloads =
             feature_datum_plane_payloads(ctx, container, &feature_datum_plane_headers)?;
         let feature_datum_plane_payload_scalar_pairs = feature_datum_plane_payload_scalar_pairs(
@@ -1093,8 +1100,11 @@ impl NativeModel {
             &feature_datum_plane_descriptors,
             &feature_datum_csys_descriptors,
         )?;
-        let feature_datum_csys_block_uses =
-            feature_datum_csys_block_uses(ctx, &feature_datum_csys_constructions, &feature_input_blocks)?;
+        let feature_datum_csys_block_uses = feature_datum_csys_block_uses(
+            ctx,
+            &feature_datum_csys_constructions,
+            &feature_input_blocks,
+        )?;
         let feature_sketch_references = feature_sketch_references(ctx, container)?;
         let feature_projected_curve_references =
             feature_projected_curve_references(ctx, container)?;
@@ -1259,8 +1269,11 @@ impl NativeModel {
             &feature_input_blocks,
             &feature_sketch_references,
         )?;
-        let feature_sketch_construction_inputs =
-            feature_sketch_construction_inputs(ctx, &feature_sketch_records, &feature_sketch_references)?;
+        let feature_sketch_construction_inputs = feature_sketch_construction_inputs(
+            ctx,
+            &feature_sketch_records,
+            &feature_sketch_references,
+        )?;
         let feature_sketch_construction_payloads = feature_sketch_construction_payloads(
             ctx,
             container,
@@ -1406,8 +1419,12 @@ impl NativeModel {
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
         )?;
-        let feature_parameter_bindings =
-            feature_parameter_bindings(ctx, &feature_input_blocks, &data_block_references, &expressions)?;
+        let feature_parameter_bindings = feature_parameter_bindings(
+            ctx,
+            &feature_input_blocks,
+            &data_block_references,
+            &expressions,
+        )?;
         let feature_parameter_uses = feature_parameter_uses(ctx, &feature_parameter_bindings)?;
         let feature_block_dimensions = feature_block_dimensions(
             ctx,

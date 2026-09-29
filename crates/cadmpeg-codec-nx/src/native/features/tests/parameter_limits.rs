@@ -6,30 +6,34 @@ fn parameter_binding_input() -> (
     crate::native::om::Expression,
 ) {
     let input = crate::native::features::FeatureInputBlock {
-        id: "input".into(), operation_label: "operation#1".into(),
+        id: "input".into(),
+        operation_label: "operation#1".into(),
         input_slot: crate::om::header_references::HeaderSlot::Zero,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(45, &[45])
             .expect("input token"),
-        data_block: "block#45".into(), source_offset: 700,
+        data_block: "block#45".into(),
+        source_offset: 700,
     };
     let reference = crate::native::om::DataBlockReference {
-        id: "reference".into(), data_block: input.data_block.clone(), ordinal: 0,
+        id: "reference".into(),
+        data_block: input.data_block.clone(),
+        ordinal: 0,
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(201, &[0x80, 201])
             .expect("reference token"),
-        target_record: None, target_expression_declaration: Some("declaration".into()),
+        target_record: None,
+        target_expression_declaration: Some("declaration".into()),
         source_offset: 800,
     };
     let expression = crate::native::om::Expression {
-        id: "expression#1".into(), owner: None,
+        id: "expression#1".into(),
+        owner: None,
         declaration: Some("declaration".into()),
         name: crate::om::parameter_name::ParameterName::new("p1".into()),
         unit: crate::native::om::ExpressionUnit::Millimeter,
         expression: "12".into(),
-        value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(12.0)
-            .expect("finite expression")),
+        value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(12.0).expect("finite expression")),
         source_entry: "section".into(),
-        source_table: cadmpeg_core::text::NonBlankString::new("table")
-            .expect("source table"),
+        source_table: cadmpeg_core::text::NonBlankString::new("table").expect("source table"),
         source_offset: 900,
     };
     (input, reference, expression)
@@ -40,12 +44,19 @@ fn parameter_binding_refusal(
 ) -> cadmpeg_core::CodecError {
     let (input, reference, expression) = parameter_binding_input();
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::native::features::feature_parameter_bindings(ctx,
-            std::slice::from_ref(&input), std::slice::from_ref(&reference),
-            std::slice::from_ref(&expression))
+        crate::native::features::feature_parameter_bindings(
+            ctx,
+            std::slice::from_ref(&input),
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&expression),
+        )
     };
-    assert_eq!(crate::test_support::with_decode_context(|ctx| decode(ctx))
-        .expect("admitted parameter binding").len(), 1);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| decode(ctx))
+            .expect("admitted parameter binding")
+            .len(),
+        1
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     configure(&mut policy);
@@ -57,22 +68,28 @@ fn parameter_binding_refusal(
 #[test]
 fn parameter_binding_refuses_collection_limit() {
     let error = parameter_binding_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]
 fn parameter_binding_refuses_retained_limit() {
     let error = parameter_binding_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
 }
 
 #[test]
 fn parameter_binding_refuses_work_limit() {
     let error = parameter_binding_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 fn parameter_use_refusal(
@@ -80,10 +97,14 @@ fn parameter_use_refusal(
 ) -> cadmpeg_core::CodecError {
     let (input, reference, expression) = parameter_binding_input();
     let mut bindings = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::feature_parameter_bindings(ctx,
-            std::slice::from_ref(&input), std::slice::from_ref(&reference),
-            std::slice::from_ref(&expression))
-    }).expect("admitted parameter binding input");
+        crate::native::features::feature_parameter_bindings(
+            ctx,
+            std::slice::from_ref(&input),
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&expression),
+        )
+    })
+    .expect("admitted parameter binding input");
     let mut second = bindings[0].clone();
     second.id = "second-binding".into();
     second.source_offset = 801;
@@ -106,20 +127,26 @@ fn parameter_use_refusal(
 #[test]
 fn parameter_use_refuses_collection_limit() {
     let error = parameter_use_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]
 fn parameter_use_refuses_retained_limit() {
     let error = parameter_use_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
 }
 
 #[test]
 fn parameter_use_refuses_work_limit() {
     let error = parameter_use_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }

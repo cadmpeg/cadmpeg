@@ -13,21 +13,24 @@ fn link_order_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> cadmpeg_core
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
     crate::native::features::canonical_feature_history_links(&ctx, vec![link]).unwrap_err()
 }
 
 #[test]
 fn feature_history_links_refuse_work_limit() {
     let error = link_order_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
 fn feature_history_links_refuse_scoped_limit() {
     let error = link_order_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::MaterializedBytes));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes)
+    );
 }

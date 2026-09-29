@@ -56,9 +56,15 @@ fn sketch_datum_dependencies_for_test(
 ) -> Vec<crate::native::features::FeatureSketchDatumCsysDependency> {
     crate::test_support::with_decode_context(|ctx| {
         feature_sketch_datum_csys_dependencies(
-            ctx, labels, named_points, point_uses, constructions, scalars,
+            ctx,
+            labels,
+            named_points,
+            point_uses,
+            constructions,
+            scalars,
         )
-    }).expect("admitted sketch datum dependencies")
+    })
+    .expect("admitted sketch datum dependencies")
 }
 use std::sync::Arc;
 
@@ -110,7 +116,8 @@ fn unique_offset_data_store_rejects_a_second_matching_section() {
 fn nx_feature_source_content_orders_payload_text() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let text = FeaturePayloadString {
         id: "text".into(),
         operation_record: "record".into(),
@@ -142,13 +149,24 @@ fn feature_source_text_with_limit(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     match dimension {
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+            policy.limits.max_collection_items = 0;
+        }
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+            policy.limits.max_retained_bytes = 0;
+        }
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+            policy.limits.max_materialized_bytes = 0;
+        }
         cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-        _ => return Err(cadmpeg_core::CodecError::InvalidInput("unsupported source text test limit".to_string())),
+        _ => {
+            return Err(cadmpeg_core::CodecError::InvalidInput(
+                "unsupported source text test limit".to_string(),
+            ))
+        }
     }
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let text = FeaturePayloadString {
         id: "text".into(),
         operation_record: "record".into(),
@@ -164,34 +182,44 @@ fn feature_source_text_with_limit(
 #[test]
 fn feature_source_text_refuses_collection_limit() {
     let dimension = cadmpeg_core::decode::ResourceDimension::CollectionItems;
-    assert!(matches!(feature_source_text_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+    assert!(
+        matches!(feature_source_text_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+    );
 }
 
 #[test]
 fn feature_source_text_refuses_retained_limit() {
     let dimension = cadmpeg_core::decode::ResourceDimension::RetainedBytes;
-    assert!(matches!(feature_source_text_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+    assert!(
+        matches!(feature_source_text_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+    );
 }
 
 #[test]
 fn feature_source_text_refuses_scoped_limit() {
     let dimension = cadmpeg_core::decode::ResourceDimension::MaterializedBytes;
-    assert!(matches!(feature_source_text_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+    assert!(
+        matches!(feature_source_text_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+    );
 }
 
 #[test]
 fn feature_source_text_refuses_work_limit() {
     let dimension = cadmpeg_core::decode::ResourceDimension::WorkUnits;
-    assert!(matches!(feature_source_text_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+    assert!(
+        matches!(feature_source_text_with_limit(dimension), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+    );
 }
 
 #[test]
 fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
     use std::collections::BTreeMap;
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
 
     let operation = FeatureBooleanOperation {
         id: "boolean#0".to_string(),
@@ -298,12 +326,16 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     };
     let references = [reference(1, 97), reference(0, 96)];
 
-    let sketches = crate::test_support::with_decode_context(|ctx| feature_sketch_records(ctx,
-        std::slice::from_ref(&label),
-        std::slice::from_ref(&record),
-        &inputs,
-        &references,
-    )).unwrap();
+    let sketches = crate::test_support::with_decode_context(|ctx| {
+        feature_sketch_records(
+            ctx,
+            std::slice::from_ref(&label),
+            std::slice::from_ref(&record),
+            &inputs,
+            &references,
+        )
+    })
+    .unwrap();
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].ordinal, 7);
     assert_eq!(
@@ -326,14 +358,21 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     );
     let mut duplicate_record = record.clone();
     duplicate_record.id.push_str("-duplicate");
-    assert!(crate::test_support::with_decode_context(|ctx| feature_sketch_records(ctx,
-        std::slice::from_ref(&label),
-        &[record.clone(), duplicate_record],
-        &inputs,
-        &references,
-    )).unwrap()
-    .is_empty());
-    let construction = crate::test_support::with_decode_context(|ctx| feature_sketch_construction_inputs(ctx, &sketches, &references)).unwrap();
+    assert!(
+        crate::test_support::with_decode_context(|ctx| feature_sketch_records(
+            ctx,
+            std::slice::from_ref(&label),
+            &[record.clone(), duplicate_record],
+            &inputs,
+            &references,
+        ))
+        .unwrap()
+        .is_empty()
+    );
+    let construction = crate::test_support::with_decode_context(|ctx| {
+        feature_sketch_construction_inputs(ctx, &sketches, &references)
+    })
+    .unwrap();
     assert_eq!(construction.len(), 1);
     assert_eq!(
         construction[0]
@@ -366,7 +405,13 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         2,
     )
     .unwrap();
-    assert!(crate::test_support::with_decode_context(|ctx| feature_sketch_construction_inputs(ctx, &sketches, &malformed)).unwrap().is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| feature_sketch_construction_inputs(
+            ctx, &sketches, &malformed
+        ))
+        .unwrap()
+        .is_empty()
+    );
 }
 
 #[test]
@@ -384,7 +429,9 @@ fn nx_offset_store_block_bytes_follow_catalog_identity() {
         bytes: &[0xcc],
     };
     let controlled = crate::test_support::with_decode_context(|ctx| {
-        let mut reservation = ctx.reserve_scoped(0, "NX offset block view storage").unwrap();
+        let mut reservation = ctx
+            .reserve_scoped(0, "NX offset block view storage")
+            .unwrap();
         let mut blocks = std::collections::BTreeMap::new();
         offset_data_block_bytes_for_section(
             ctx,
@@ -394,7 +441,8 @@ fn nx_offset_store_block_bytes_follow_catalog_identity() {
             100,
             &control,
             &[first, second],
-        ).unwrap();
+        )
+        .unwrap();
         blocks
     });
     assert_eq!(
@@ -427,12 +475,18 @@ fn feature_history_links_follow_unique_physical_section_order() {
         )
         .unwrap(),
     };
-    let links = crate::test_support::with_decode_context(|ctx| canonical_feature_history_links(ctx, vec![
-        link("late", OmSchemaRole::FeatureHistory, 300, 300),
-        link("model", OmSchemaRole::Model, 50, 50),
-        link("duplicate", OmSchemaRole::FeatureHistory, 100, 100),
-        link("early", OmSchemaRole::FeatureHistory, 100, 100),
-    ])).unwrap();
+    let links = crate::test_support::with_decode_context(|ctx| {
+        canonical_feature_history_links(
+            ctx,
+            vec![
+                link("late", OmSchemaRole::FeatureHistory, 300, 300),
+                link("model", OmSchemaRole::Model, 50, 50),
+                link("duplicate", OmSchemaRole::FeatureHistory, 100, 100),
+                link("early", OmSchemaRole::FeatureHistory, 100, 100),
+            ],
+        )
+    })
+    .unwrap();
 
     assert_eq!(
         links
@@ -927,7 +981,10 @@ fn nx_datum_plane_csys_identity_uses_join_only_equal_typed_identities() {
         )
         .unwrap(),
     };
-    let uses = crate::test_support::with_decode_context(|ctx| feature_datum_plane_csys_identity_uses(ctx, &[plane], &[csys])).unwrap();
+    let uses = crate::test_support::with_decode_context(|ctx| {
+        feature_datum_plane_csys_identity_uses(ctx, &[plane], &[csys])
+    })
+    .unwrap();
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].identity.as_str(), "012345678901234567890123456789");
     assert_eq!(uses[0].datum_plane_operation_label, "operation#4");
@@ -964,14 +1021,18 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
         data_block: block.to_string(),
         source_offset: 200,
     };
-    let uses = crate::test_support::with_decode_context(|ctx| feature_datum_csys_block_uses(ctx,
-        &[construction],
-        &[
-            input("input#0", "operation#0", 1, "block#43"),
-            input("input#1", "operation#6", 0, "block#44"),
-            input("input#2", "operation#7", 0, "block#44"),
-        ],
-    )).unwrap();
+    let uses = crate::test_support::with_decode_context(|ctx| {
+        feature_datum_csys_block_uses(
+            ctx,
+            &[construction],
+            &[
+                input("input#0", "operation#0", 1, "block#43"),
+                input("input#1", "operation#6", 0, "block#44"),
+                input("input#2", "operation#7", 0, "block#44"),
+            ],
+        )
+    })
+    .unwrap();
     assert_eq!(uses.len(), 3);
     assert_eq!(
         uses[0].id,
@@ -1003,7 +1064,10 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
         data_block: Some(format!("block-{ordinal}")),
         source_offset: u64::from(ordinal),
     });
-    let profiles = crate::test_support::with_decode_context(|ctx| feature_extrude_construction_profiles(ctx, &references)).unwrap();
+    let profiles = crate::test_support::with_decode_context(|ctx| {
+        feature_extrude_construction_profiles(ctx, &references)
+    })
+    .unwrap();
     assert_eq!(profiles.len(), 1);
     assert_eq!(
         profiles[0]
@@ -1033,15 +1097,33 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
     for ordinal in [0, 2] {
         let mut malformed = references.clone();
         malformed[1].ordinal = ordinal;
-        assert!(crate::test_support::with_decode_context(|ctx| feature_extrude_construction_profiles(ctx, &malformed)).unwrap().is_empty());
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            feature_extrude_construction_profiles(ctx, &malformed)
+        })
+        .unwrap()
+        .is_empty());
     }
 
     let mut unwitnessed = references.clone();
     unwitnessed[1].witness_source_offset = None;
-    assert!(crate::test_support::with_decode_context(|ctx| feature_extrude_construction_profiles(ctx, &unwitnessed)).unwrap().is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| feature_extrude_construction_profiles(
+            ctx,
+            &unwitnessed
+        ))
+        .unwrap()
+        .is_empty()
+    );
     let mut unresolved = references;
     unresolved[1].data_block = None;
-    assert!(crate::test_support::with_decode_context(|ctx| feature_extrude_construction_profiles(ctx, &unresolved)).unwrap().is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| feature_extrude_construction_profiles(
+            ctx,
+            &unresolved
+        ))
+        .unwrap()
+        .is_empty()
+    );
 }
 
 #[test]
@@ -1084,7 +1166,8 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     }];
     let operands = crate::test_support::with_decode_context(|ctx| {
         feature_operation_body_operands(ctx, &members, &references, &[], &[], &bindings)
-    }).unwrap();
+    })
+    .unwrap();
     assert_eq!(
         operands
             .iter()
@@ -1125,8 +1208,16 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         block("nx:om-data-blocks-2:block#20", 2),
     ];
     assert!(
-        crate::test_support::with_decode_context(|ctx| feature_operation_body_operands(ctx, &members, &references, &inputs, &blocks, &bindings,)).unwrap()
-            .is_empty()
+        crate::test_support::with_decode_context(|ctx| feature_operation_body_operands(
+            ctx,
+            &members,
+            &references,
+            &inputs,
+            &blocks,
+            &bindings,
+        ))
+        .unwrap()
+        .is_empty()
     );
 
     let same_store_reference = FeatureBodyReference {
@@ -1135,9 +1226,17 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     };
     let mut same_store_inputs = inputs.to_vec();
     same_store_inputs.push(input("same-store", "nx:om-data-blocks-1:block#2"));
-    let same_store = crate::test_support::with_decode_context(|ctx| feature_operation_body_operands(
-        ctx, &members, &[same_store_reference], &same_store_inputs, &blocks, &bindings,
-    )).unwrap();
+    let same_store = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_operands(
+            ctx,
+            &members,
+            &[same_store_reference],
+            &same_store_inputs,
+            &blocks,
+            &bindings,
+        )
+    })
+    .unwrap();
     assert_eq!(same_store.len(), 2);
     assert_eq!(
         same_store[0].operand_data_block.as_deref(),
@@ -1150,23 +1249,41 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     assert!(same_store[0].segment_body_bindings.is_empty());
 
     let distinct_member = member(0, 30);
-    let distinct_member_operand = crate::test_support::with_decode_context(|ctx| feature_operation_body_operands(
-        ctx, &[distinct_member], &[FeatureBodyReference {
-            operation_label: "same-store".to_string(), ..references[0].clone()
-        }], &same_store_inputs, &blocks, &bindings,
-    )).unwrap();
+    let distinct_member_operand = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_operands(
+            ctx,
+            &[distinct_member],
+            &[FeatureBodyReference {
+                operation_label: "same-store".to_string(),
+                ..references[0].clone()
+            }],
+            &same_store_inputs,
+            &blocks,
+            &bindings,
+        )
+    })
+    .unwrap();
     assert_eq!(distinct_member_operand.len(), 1);
     assert_eq!(distinct_member_operand[0].operand.atom.value(), 30);
     assert_eq!(
         distinct_member_operand[0].operand_data_block.as_deref(),
         Some("nx:om-data-blocks-1:block#30")
     );
-    assert!(crate::test_support::with_decode_context(|ctx| feature_operation_body_operands(
-        ctx, &members, &[FeatureBodyReference {
-            operation_label: "same-store".to_string(), ..references[0].clone()
-        }], &same_store_inputs, &blocks[2..], &bindings,
-    )).unwrap()
-    .is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| feature_operation_body_operands(
+            ctx,
+            &members,
+            &[FeatureBodyReference {
+                operation_label: "same-store".to_string(),
+                ..references[0].clone()
+            }],
+            &same_store_inputs,
+            &blocks[2..],
+            &bindings,
+        ))
+        .unwrap()
+        .is_empty()
+    );
 }
 
 #[test]
@@ -1195,10 +1312,14 @@ fn nx_operation_body_operands_refuse_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = feature_operation_body_operands(&ctx, &[member], &[], &[], &[], &[binding]).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        feature_operation_body_operands(&ctx, &[member], &[], &[], &[], &[binding]).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
 }
 
 fn operation_body_operand_store_refusal(
@@ -1245,29 +1366,38 @@ fn operation_body_operand_store_refusal(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    feature_operation_body_operands(&ctx, &[member], &[reference], &[input], &[block], &[]).unwrap_err()
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    feature_operation_body_operands(&ctx, &[member], &[reference], &[input], &[block], &[])
+        .unwrap_err()
 }
 
 #[test]
 fn nx_operation_body_operands_refuse_retained_limit() {
     let error = operation_body_operand_store_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
 }
 
 #[test]
 fn nx_operation_body_operands_refuse_scoped_limit() {
-    let error = operation_body_operand_store_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    let error =
+        operation_body_operand_store_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
 }
 
 #[test]
 fn nx_operation_body_operands_refuse_work_limit() {
     let error = operation_body_operand_store_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 pub(super) fn extrude_32_fixture() -> (
@@ -1356,10 +1486,9 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
     );
     let mut unresolved_lane = branch;
     unresolved_lane.frame = crate::test_support::with_decode_context(|ctx| {
-        unresolved_lane.frame.map_bindings(
-            ctx,
-            |index, binding| Ok(if index == 2 { None } else { binding }),
-        )
+        unresolved_lane.frame.map_bindings(ctx, |index, binding| {
+            Ok(if index == 2 { None } else { binding })
+        })
     })
     .unwrap();
     assert!(extrude_constructions_for_test(
@@ -1430,7 +1559,10 @@ fn nx_block_construction_requires_complete_resolved_reference_field() {
             }
         })
         .collect::<Vec<_>>();
-    let constructions = crate::test_support::with_decode_context(|ctx| feature_block_constructions(ctx, &references)).unwrap();
+    let constructions = crate::test_support::with_decode_context(|ctx| {
+        feature_block_constructions(ctx, &references)
+    })
+    .unwrap();
     assert_eq!(constructions.len(), 1);
     assert_eq!(constructions[0].control, 0x26);
     assert_eq!(constructions[0].members.len(), 18);
@@ -1440,21 +1572,36 @@ fn nx_block_construction_requires_complete_resolved_reference_field() {
     let mut duplicate = references.clone();
     duplicate[7].position =
         crate::native::features::block_reference::BlockReferencePosition::new(8).unwrap();
-    assert!(crate::test_support::with_decode_context(|ctx| feature_block_constructions(ctx, &duplicate)).unwrap().is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| feature_block_constructions(
+            ctx, &duplicate
+        ))
+        .unwrap()
+        .is_empty()
+    );
 
     let mut unresolved = references;
     unresolved[7].data_block = None;
-    assert!(crate::test_support::with_decode_context(|ctx| feature_block_constructions(ctx, &unresolved)).unwrap().is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| feature_block_constructions(
+            ctx,
+            &unresolved
+        ))
+        .unwrap()
+        .is_empty()
+    );
 }
 
 #[test]
 fn data_block_object_frame_ids_include_the_store_qualifier() {
     let first = crate::test_support::with_decode_context(|ctx| {
         data_block_object_frame_id(ctx, "nx:om-data-blocks-2:block#17", 0)
-    }).unwrap();
+    })
+    .unwrap();
     let second = crate::test_support::with_decode_context(|ctx| {
         data_block_object_frame_id(ctx, "nx:om-data-blocks-3:block#17", 0)
-    }).unwrap();
+    })
+    .unwrap();
     assert_eq!(first, "nx:om-data-block-object-frames-2:block-frame#17-0");
     assert_eq!(second, "nx:om-data-block-object-frames-3:block-frame#17-0");
     assert_ne!(first, second);
@@ -1473,12 +1620,18 @@ fn feature_input_identity_groups_require_distinct_operations_and_preserve_order(
         data_block: block.to_string(),
         source_offset: offset,
     };
-    let groups = crate::test_support::with_decode_context(|ctx| feature_input_block_identity_groups(ctx, &[
-        input("late", "operation-b", 1, "block-7", 30),
-        input("single-a", "operation-a", 0, "block-8", 10),
-        input("early", "operation-a", 2, "block-7", 20),
-        input("single-b", "operation-a", 3, "block-8", 40),
-    ])).expect("admitted input block identity groups");
+    let groups = crate::test_support::with_decode_context(|ctx| {
+        feature_input_block_identity_groups(
+            ctx,
+            &[
+                input("late", "operation-b", 1, "block-7", 30),
+                input("single-a", "operation-a", 0, "block-8", 10),
+                input("early", "operation-a", 2, "block-7", 20),
+                input("single-b", "operation-a", 3, "block-8", 40),
+            ],
+        )
+    })
+    .expect("admitted input block identity groups");
 
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].data_block, "block-7");
@@ -1550,7 +1703,10 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
         opening_block_offset: 8,
     };
 
-    let uses = crate::test_support::with_decode_context(|ctx| feature_input_column_row_uses(ctx, &[input], &[row], &[], &[], &[])).unwrap();
+    let uses = crate::test_support::with_decode_context(|ctx| {
+        feature_input_column_row_uses(ctx, &[input], &[row], &[], &[], &[])
+    })
+    .unwrap();
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
@@ -1619,13 +1775,17 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
         source_entry: "entry".into(),
         source_offset: 100,
     };
-    let uses = crate::test_support::with_decode_context(|ctx| feature_input_column_row_uses(ctx,
-        std::slice::from_ref(&input),
-        &[],
-        std::slice::from_ref(&row),
-        &[],
-        &[table],
-    )).unwrap();
+    let uses = crate::test_support::with_decode_context(|ctx| {
+        feature_input_column_row_uses(
+            ctx,
+            std::slice::from_ref(&input),
+            &[],
+            std::slice::from_ref(&row),
+            &[],
+            &[table],
+        )
+    })
+    .unwrap();
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
@@ -1636,7 +1796,10 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
     assert_eq!(uses[0].source_offset, 107);
     assert_eq!(u8::from(uses[1].row_slot), 3);
     assert_eq!(uses[1].source_offset, 114);
-    let targets = crate::test_support::with_decode_context(|ctx| feature_input_column_targets(ctx, &[input], &uses, &[row], &[])).unwrap();
+    let targets = crate::test_support::with_decode_context(|ctx| {
+        feature_input_column_targets(ctx, &[input], &uses, &[row], &[])
+    })
+    .unwrap();
     assert_eq!(targets.len(), 1);
     assert_eq!(
         targets[0].row,
@@ -1704,21 +1867,29 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
         source_entry: "entry".into(),
         source_offset: 50,
     };
-    let ambiguous = crate::test_support::with_decode_context(|ctx| feature_input_column_row_uses(ctx,
-        std::slice::from_ref(&input),
-        &[],
-        &[],
-        std::slice::from_ref(&row),
-        &[table.clone(), table.clone()],
-    )).unwrap();
+    let ambiguous = crate::test_support::with_decode_context(|ctx| {
+        feature_input_column_row_uses(
+            ctx,
+            std::slice::from_ref(&input),
+            &[],
+            &[],
+            std::slice::from_ref(&row),
+            &[table.clone(), table.clone()],
+        )
+    })
+    .unwrap();
     assert!(ambiguous.iter().all(|use_| use_.column_table.is_none()));
-    let uses = crate::test_support::with_decode_context(|ctx| feature_input_column_row_uses(ctx,
-        std::slice::from_ref(&input),
-        &[],
-        &[],
-        std::slice::from_ref(&row),
-        &[table],
-    )).unwrap();
+    let uses = crate::test_support::with_decode_context(|ctx| {
+        feature_input_column_row_uses(
+            ctx,
+            std::slice::from_ref(&input),
+            &[],
+            &[],
+            std::slice::from_ref(&row),
+            &[table],
+        )
+    })
+    .unwrap();
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
@@ -1730,12 +1901,16 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
     assert_eq!(uses[0].source_offset, 105);
     assert_eq!(u8::from(uses[1].row_slot), 3);
     assert_eq!(uses[1].source_offset, 112);
-    let targets = crate::test_support::with_decode_context(|ctx| feature_input_column_targets(ctx,
-        std::slice::from_ref(&input),
-        &uses,
-        &[],
-        std::slice::from_ref(&row),
-    )).unwrap();
+    let targets = crate::test_support::with_decode_context(|ctx| {
+        feature_input_column_targets(
+            ctx,
+            std::slice::from_ref(&input),
+            &uses,
+            &[],
+            std::slice::from_ref(&row),
+        )
+    })
+    .unwrap();
     assert_eq!(targets.len(), 1);
     assert_eq!(targets[0].input_block, input.id);
     assert_eq!(targets[0].column_row, "target-row#3");
@@ -1750,7 +1925,17 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
     assert_eq!(targets[0].row, FeatureInputColumnTargetRow::Target);
     let mut duplicate = uses.clone();
     duplicate.push(uses[0].clone());
-    assert!(crate::test_support::with_decode_context(|ctx| feature_input_column_targets(ctx, &[input], &duplicate, &[], &[row])).unwrap().is_empty());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| feature_input_column_targets(
+            ctx,
+            &[input],
+            &duplicate,
+            &[],
+            &[row]
+        ))
+        .unwrap()
+        .is_empty()
+    );
 }
 
 #[test]
@@ -1815,7 +2000,10 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
         source_offset: 50,
     };
 
-    let uses = crate::test_support::with_decode_context(|ctx| feature_datum_csys_column_row_uses(ctx, &[construction], &[], &[], &[row], &[table])).unwrap();
+    let uses = crate::test_support::with_decode_context(|ctx| {
+        feature_datum_csys_column_row_uses(ctx, &[construction], &[], &[], &[row], &[table])
+    })
+    .unwrap();
     assert_eq!(uses.len(), 4);
     assert_eq!(
         uses.iter()

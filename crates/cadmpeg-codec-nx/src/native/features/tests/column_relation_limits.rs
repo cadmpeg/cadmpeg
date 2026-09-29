@@ -12,7 +12,11 @@ use crate::om::column_row::TargetRow;
 use crate::om::compact::CompactIndexTarget;
 
 #[derive(Clone, Copy)]
-enum ColumnRoute { InputUse, DatumUse, Target }
+enum ColumnRoute {
+    InputUse,
+    DatumUse,
+    Target,
+}
 
 fn column_relation_refusal(
     route_kind: ColumnRoute,
@@ -36,16 +40,18 @@ fn column_relation_refusal(
             std::array::from_fn(|slot| {
                 (
                     crate::om::reference_index::PayloadIndexToken::from_wire(
-                        slot as u32, &[0xf0, slot as u8],
-                    ).expect("datum reference token"),
+                        slot as u32,
+                        &[0xf0, slot as u8],
+                    )
+                    .expect("datum reference token"),
                     format!("block#{slot}"),
                 )
             }),
-        ).expect("datum CSYS frame"),
+        )
+        .expect("datum CSYS frame"),
     };
     let target = |value| CompactIndexTarget {
-        atom: crate::om::compact::CompactIndexAtom::read(&[value])
-            .expect("column target token"),
+        atom: crate::om::compact::CompactIndexAtom::read(&[value]).expect("column target token"),
         target: format!("block#{value}"),
     };
     let row = DataBlockTargetIndexRow {
@@ -53,9 +59,12 @@ fn column_relation_refusal(
         section_ordinal: 0,
         ordinal: 0,
         frame: TargetRow::<String, u64>::new(
-            target(5), [6, 7, 8].map(target),
-            crate::om::discriminators::IndexRowMode::Form07, 100,
-        ).expect("target row"),
+            target(5),
+            [6, 7, 8].map(target),
+            crate::om::discriminators::IndexRowMode::Form07,
+            100,
+        )
+        .expect("target row"),
         source_entry: "entry".into(),
         opening_data_block: "opening-block".into(),
         opening_block_offset: 8,
@@ -72,24 +81,44 @@ fn column_relation_refusal(
         data_block: input.data_block.clone(),
         source_offset: 100,
     };
-    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        match route_kind {
-            ColumnRoute::DatumUse => feature_datum_csys_column_row_uses(ctx,
-                std::slice::from_ref(&construction),
-                &[], &[], std::slice::from_ref(&row), &[]).map(|uses| uses.len())
-            ,
-            ColumnRoute::InputUse => feature_input_column_row_uses(ctx,
-                std::slice::from_ref(&input),
-                &[], &[], std::slice::from_ref(&row), &[]).map(|uses| uses.len())
-            ,
-            ColumnRoute::Target => feature_input_column_targets(ctx,
-                std::slice::from_ref(&input), std::slice::from_ref(&target_use),
-                &[], std::slice::from_ref(&row)).map(|targets| targets.len()),
-        }
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route_kind {
+        ColumnRoute::DatumUse => feature_datum_csys_column_row_uses(
+            ctx,
+            std::slice::from_ref(&construction),
+            &[],
+            &[],
+            std::slice::from_ref(&row),
+            &[],
+        )
+        .map(|uses| uses.len()),
+        ColumnRoute::InputUse => feature_input_column_row_uses(
+            ctx,
+            std::slice::from_ref(&input),
+            &[],
+            &[],
+            std::slice::from_ref(&row),
+            &[],
+        )
+        .map(|uses| uses.len()),
+        ColumnRoute::Target => feature_input_column_targets(
+            ctx,
+            std::slice::from_ref(&input),
+            std::slice::from_ref(&target_use),
+            &[],
+            std::slice::from_ref(&row),
+        )
+        .map(|targets| targets.len()),
     };
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
         .expect("admitted column relation");
-    assert_eq!(admitted, if matches!(route_kind, ColumnRoute::DatumUse) { 3 } else { 1 });
+    assert_eq!(
+        admitted,
+        if matches!(route_kind, ColumnRoute::DatumUse) {
+            3
+        } else {
+            1
+        }
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     configure(&mut policy);

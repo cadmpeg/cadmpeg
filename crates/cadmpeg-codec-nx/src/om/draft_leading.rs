@@ -75,10 +75,12 @@ impl<O> DraftLeadingLane<(), O> {
     ) -> Result<DraftLeadingLane<T, O>, CodecError> {
         Ok(DraftLeadingLane {
             offset: self.offset,
-            indices: self.indices.map_charged(ctx, |token| Ok(CompactIndexTarget {
-                atom: token.atom,
-                target: resolve(token.atom.value())?,
-            }))?,
+            indices: self.indices.map_charged(ctx, |token| {
+                Ok(CompactIndexTarget {
+                    atom: token.atom,
+                    target: resolve(token.atom.value())?,
+                })
+            })?,
         })
     }
 

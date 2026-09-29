@@ -84,9 +84,10 @@ fn prepare_topology_streams<'a>(
         });
     }
     let pairs = paired_delta_streams(ctx, scan)?;
-    let paired_count = pairs.values().try_fold(0usize, |total, deltas| {
-        total.checked_add(deltas.len())
-    }).ok_or_else(|| ctx.refuse_codec_limit("nx paired topology deltas", 0, 1))?;
+    let paired_count = pairs
+        .values()
+        .try_fold(0usize, |total, deltas| total.checked_add(deltas.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("nx paired topology deltas", 0, 1))?;
     let paired_bytes = paired_count
         .checked_mul(std::mem::size_of::<usize>())
         .ok_or_else(|| ctx.refuse_codec_limit("nx paired topology deltas", 0, 1))?;
@@ -111,9 +112,10 @@ fn prepare_topology_streams<'a>(
                     if !totals.contains_key(family) {
                         ctx.charge_collection_items(1, "NX unmatched tombstone family totals")?;
                         ctx.charge_retained(
-                            cadmpeg_core::decode::u64_from_index(
-                                std::mem::size_of::<(&'static str, usize)>()
-                            ),
+                            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+                                &'static str,
+                                usize,
+                            )>()),
                             "NX unmatched tombstone family totals",
                         )?;
                     }
@@ -315,7 +317,8 @@ impl StreamView {
                 cadmpeg_core::decode::u64_from_index(delta_indices.len()),
                 "nx auxiliary replacement views",
             )?;
-            let replacement_bytes = delta_indices.len()
+            let replacement_bytes = delta_indices
+                .len()
                 .checked_mul(std::mem::size_of::<&[u8]>())
                 .ok_or_else(|| ctx.refuse_codec_limit("nx auxiliary replacement views", 0, 1))?;
             let _replacement_reservation = ctx.reserve_scoped(
@@ -400,9 +403,10 @@ impl<'a> ParsedStreams<'a> {
         let mut topology_streams =
             prepare_topology_streams(ctx, scan, Some(&mut unmatched_tombstone_counts))?;
         let delta_pairs = paired_delta_streams(ctx, scan)?;
-        let paired_count = delta_pairs.values().try_fold(0usize, |total, deltas| {
-            total.checked_add(deltas.len())
-        }).ok_or_else(|| ctx.refuse_codec_limit("nx parsed stream paired deltas", 0, 1))?;
+        let paired_count = delta_pairs
+            .values()
+            .try_fold(0usize, |total, deltas| total.checked_add(deltas.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("nx parsed stream paired deltas", 0, 1))?;
         let paired_bytes = paired_count
             .checked_mul(std::mem::size_of::<usize>())
             .ok_or_else(|| ctx.refuse_codec_limit("nx parsed stream paired deltas", 0, 1))?;
@@ -468,8 +472,7 @@ impl<'a> ParsedStreams<'a> {
                         &stream.inflated,
                         census,
                     )?;
-                    residual_reservation
-                        .grow(cadmpeg_core::decode::u64_from_index(part.len()))?;
+                    residual_reservation.grow(cadmpeg_core::decode::u64_from_index(part.len()))?;
                     residual.try_reserve(part.len()).map_err(|_| {
                         ctx.refuse_codec_limit("nx semantic residual aggregation", 0, 1)
                     })?;
@@ -529,9 +532,10 @@ impl<'a> ParsedStreams<'a> {
                 } else {
                     None
                 };
-                let total_len = semantic_bytes.len().checked_add(residual.len()).ok_or_else(|| {
-                    ctx.refuse_codec_limit("nx extended semantic topology", 0, 1)
-                })?;
+                let total_len = semantic_bytes
+                    .len()
+                    .checked_add(residual.len())
+                    .ok_or_else(|| ctx.refuse_codec_limit("nx extended semantic topology", 0, 1))?;
                 match &mut semantic_bytes {
                     Cow::Borrowed(bytes) => {
                         ctx.charge_retained(
@@ -731,8 +735,8 @@ mod tests {
         policy.limits.max_retained_bytes =
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::TopologyStream<'_>>())
                 - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test root");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
         let error = topology_streams(&ctx, &scan)
             .expect_err("one prepared stream exceeds the retained limit");
         assert!(matches!(
@@ -750,10 +754,10 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes =
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test root");
-        let error = topology_streams(&ctx, &scan)
-            .expect_err("one paired delta exceeds the scoped limit");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        let error =
+            topology_streams(&ctx, &scan).expect_err("one paired delta exceeds the scoped limit");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -876,14 +880,16 @@ mod tests {
         policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<usize>() + std::mem::size_of::<&[u8]>() - 1,
         );
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test root");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
         let error = ParsedStreams::parse(&ctx, &scan)
             .err()
             .expect("replacement view exceeds remaining scoped bytes");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == "nx auxiliary replacement views"));
+                && limit.operation == "nx auxiliary replacement views")
+        );
     }
 
     fn pair_under_limits(collection_items: u64, work_units: u64) -> cadmpeg_core::CodecError {

@@ -123,12 +123,16 @@ impl<B> Extrude32Frame<B> {
         Ok(Extrude32Frame {
             origin: self.origin,
             scalar: self.scalar,
-            atoms: self.atoms.try_map_indexed_charged(ctx, |_, (token, binding)| {
-                Ok((token, map(token.value(), binding)?))
-            })?,
-            first: self.first.try_map_indexed_charged(ctx, |_, (token, binding)| {
-                Ok((token, map(token.value(), binding)?))
-            })?,
+            atoms: self
+                .atoms
+                .try_map_indexed_charged(ctx, |_, (token, binding)| {
+                    Ok((token, map(token.value(), binding)?))
+                })?,
+            first: self
+                .first
+                .try_map_indexed_charged(ctx, |_, (token, binding)| {
+                    Ok((token, map(token.value(), binding)?))
+                })?,
             second: self
                 .second
                 .try_map_indexed_charged(ctx, |_, (token, binding)| {

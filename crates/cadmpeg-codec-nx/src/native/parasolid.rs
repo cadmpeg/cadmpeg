@@ -15,8 +15,8 @@ use crate::deltas::record_family::RecordFamily;
 use crate::parasolid::attribute_action::AttributeAction;
 use crate::parasolid::attribute_field::AttributeField;
 use cadmpeg_ir::units::FiniteVector;
-use std::num::NonZeroU32;
 use std::fmt::Write;
+use std::num::NonZeroU32;
 
 pub(super) mod structured_value_kind;
 use structured_value_kind::StructuredValueKind;
@@ -168,11 +168,15 @@ pub(super) fn parasolid_group_records(
     let mut paired_partition = BTreeMap::new();
     let mut pair_guard = ctx.reserve_scoped(0, "NX GROUP delta pair index")?;
     for (&partition, deltas) in delta_pairs {
-        let Ok(partition) = u32::try_from(partition) else { continue; };
+        let Ok(partition) = u32::try_from(partition) else {
+            continue;
+        };
         for &delta in deltas {
             if !paired_partition.contains_key(&delta) {
                 ctx.charge_collection_items(1, "NX GROUP delta pair index")?;
-                pair_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(usize, u32)>() * 4))?;
+                pair_guard.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(usize, u32)>() * 4,
+                ))?;
             }
             paired_partition.insert(delta, partition);
         }
@@ -198,19 +202,29 @@ pub(super) fn parasolid_group_records(
             else {
                 continue;
             };
-            push_group_record(ctx, &mut groups, ParasolidGroupRecord {
-                id: deltas_event_id(ctx, stream_ordinal, "parasolid-group", record.offset, Some(record.xmt))?,
-                origin: GroupOrigin::Partition {
-                    stream_ordinal: stream_ordinal_u32,
+            push_group_record(
+                ctx,
+                &mut groups,
+                ParasolidGroupRecord {
+                    id: deltas_event_id(
+                        ctx,
+                        stream_ordinal,
+                        "parasolid-group",
+                        record.offset,
+                        Some(record.xmt),
+                    )?,
+                    origin: GroupOrigin::Partition {
+                        stream_ordinal: stream_ordinal_u32,
+                    },
+                    xmt: record.xmt,
+                    node_id,
+                    references,
+                    selector,
+                    linked_reference_status,
+                    byte_len: cadmpeg_core::decode::u64_from_index(record.end - record.offset),
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
                 },
-                xmt: record.xmt,
-                node_id,
-                references,
-                selector,
-                linked_reference_status,
-                byte_len: cadmpeg_core::decode::u64_from_index(record.end - record.offset),
-                inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
-            })?;
+            )?;
         }
     }
     for record in deltas_records {
@@ -223,29 +237,48 @@ pub(super) fn parasolid_group_records(
         else {
             continue;
         };
-        push_group_record(ctx, &mut groups, ParasolidGroupRecord {
-            id: replace_group_record_id(ctx, &record.id)?,
-            origin: GroupOrigin::Deltas {
-                stream_ordinal: record.stream_ordinal,
-                partition_stream_ordinal: usize::try_from(record.stream_ordinal)
-                    .ok()
-                    .and_then(|delta| paired_partition.get(&delta).copied()),
+        push_group_record(
+            ctx,
+            &mut groups,
+            ParasolidGroupRecord {
+                id: replace_group_record_id(ctx, &record.id)?,
+                origin: GroupOrigin::Deltas {
+                    stream_ordinal: record.stream_ordinal,
+                    partition_stream_ordinal: usize::try_from(record.stream_ordinal)
+                        .ok()
+                        .and_then(|delta| paired_partition.get(&delta).copied()),
+                },
+                xmt: record.xmt,
+                node_id: *node_id,
+                references: *references,
+                selector: *selector,
+                linked_reference_status: *linked_reference_status,
+                byte_len: record.byte_len,
+                inflated_offset: record.inflated_offset,
             },
-            xmt: record.xmt,
-            node_id: *node_id,
-            references: *references,
-            selector: *selector,
-            linked_reference_status: *linked_reference_status,
-            byte_len: record.byte_len,
-            inflated_offset: record.inflated_offset,
-        })?;
+        )?;
     }
-    let scratch = groups.len().checked_mul(std::mem::size_of::<ParasolidGroupRecord>())
+    let scratch = groups
+        .len()
+        .checked_mul(std::mem::size_of::<ParasolidGroupRecord>())
         .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP record sort scratch", 0, 1))?;
-    let _sorting = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(scratch), "NX GROUP record sort scratch")?;
-    let work = groups.len().checked_mul(groups.len().checked_ilog2().map_or(1, |count| count as usize + 1))
+    let _sorting = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(scratch),
+        "NX GROUP record sort scratch",
+    )?;
+    let work = groups
+        .len()
+        .checked_mul(
+            groups
+                .len()
+                .checked_ilog2()
+                .map_or(1, |count| count as usize + 1),
+        )
         .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP record sort work", 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX GROUP record sort work")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "NX GROUP record sort work",
+    )?;
     groups.sort_by_key(|group| (group.origin.stream_ordinal(), group.inflated_offset));
     Ok(groups)
 }
@@ -256,8 +289,12 @@ fn push_group_record(
     record: ParasolidGroupRecord,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "NX GROUP records")?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidGroupRecord>()), "NX GROUP record")?;
-    groups.try_reserve(1)
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidGroupRecord>()),
+        "NX GROUP record",
+    )?;
+    groups
+        .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP records", 0, 1))?;
     groups.push(record);
     Ok(())
@@ -269,12 +306,18 @@ fn replace_group_record_id(ctx: &DecodeContext<'_>, id: &str) -> Result<String, 
     } else {
         (id, "", "")
     };
-    let length = prefix.len().checked_add(middle.len())
+    let length = prefix
+        .len()
+        .checked_add(middle.len())
         .and_then(|length| length.checked_add(suffix.len()))
         .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP record identity", 0, 1))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX GROUP record identity")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(length),
+        "NX GROUP record identity",
+    )?;
     let mut output = String::new();
-    output.try_reserve_exact(length)
+    output
+        .try_reserve_exact(length)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP record identity", 0, 1))?;
     output.push_str(prefix);
     output.push_str(middle);
@@ -295,7 +338,9 @@ fn group_members_from_records(
             *unique = None;
         } else {
             ctx.charge_collection_items(1, "NX GROUP record index")?;
-            record_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, Option<&crate::deltas::Record>)>() * 4))?;
+            record_guard.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(u32, Option<&crate::deltas::Record>)>() * 4,
+            ))?;
             records_by_xmt.insert(record.xmt, Some(record));
         }
     }
@@ -313,7 +358,9 @@ fn group_members_from_records(
                 *unique = None;
             } else {
                 ctx.charge_collection_items(1, "NX GROUP node index")?;
-                group_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, Option<(u32, u32)>)>() * 4))?;
+                group_guard.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(u32, Option<(u32, u32)>)>() * 4,
+                ))?;
                 groups_by_node.insert(*node_id, Some((record.xmt, references[4])));
             }
         }
@@ -336,7 +383,9 @@ fn group_members_from_records(
                 break;
             }
             ctx.charge_collection_items(1, "NX GROUP member seen index")?;
-            seen_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>() * 4))?;
+            seen_guard.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<u32>() * 4,
+            ))?;
             seen.insert(current);
             let Some(list_record) = unique_record(current) else {
                 complete = false;
@@ -362,8 +411,13 @@ fn group_members_from_records(
                 break;
             };
             ctx.charge_collection_items(1, "NX GROUP member chain")?;
-            chain_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, u32, GroupMemberTarget)>()))?;
-            reverse_chain.try_reserve(1)
+            chain_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+                u32,
+                u32,
+                GroupMemberTarget,
+            )>()))?;
+            reverse_chain
+                .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP member chain", 0, 1))?;
             reverse_chain.push((current, member_xmt, target));
             expected_next = current;
@@ -373,14 +427,28 @@ fn group_members_from_records(
             continue;
         }
         reverse_chain.reverse();
-        for (ordinal, (list_record_xmt, member_xmt, target)) in reverse_chain.into_iter().enumerate() {
-            let Ok(ordinal_u32) = u32::try_from(ordinal) else { continue; };
+        for (ordinal, (list_record_xmt, member_xmt, target)) in
+            reverse_chain.into_iter().enumerate()
+        {
+            let Ok(ordinal_u32) = u32::try_from(ordinal) else {
+                continue;
+            };
             ctx.charge_collection_items(1, "NX GROUP members")?;
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidGroupMember>()), "NX GROUP member")?;
-            members.try_reserve(1)
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidGroupMember>()),
+                "NX GROUP member",
+            )?;
+            members
+                .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP members", 0, 1))?;
             members.push(ParasolidGroupMember {
-                id: group_member_id(ctx, partition_stream_ordinal, group_node_id, group_xmt, ordinal)?,
+                id: group_member_id(
+                    ctx,
+                    partition_stream_ordinal,
+                    group_node_id,
+                    group_xmt,
+                    ordinal,
+                )?,
                 partition_stream_ordinal,
                 group_xmt,
                 group_node_id,
@@ -402,14 +470,20 @@ fn group_member_id(
     ordinal: usize,
 ) -> Result<String, CodecError> {
     let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
-    let length = "nx:s".len()
+    let length = "nx:s"
+        .len()
         .checked_add(digits(u64::from(partition_stream_ordinal)))
         .and_then(|length| length.checked_add(":parasolid-group-member#".len()))
         .and_then(|length| length.checked_add(digits(u64::from(group_node_id))))
         .and_then(|length| length.checked_add(1 + digits(u64::from(group_xmt))))
-        .and_then(|length| length.checked_add(1 + digits(cadmpeg_core::decode::u64_from_index(ordinal))))
+        .and_then(|length| {
+            length.checked_add(1 + digits(cadmpeg_core::decode::u64_from_index(ordinal)))
+        })
         .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP member identity", 0, 1))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX GROUP member identity")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(length),
+        "NX GROUP member identity",
+    )?;
     let mut id = String::new();
     id.try_reserve_exact(length)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP member identity", 0, 1))?;
@@ -429,14 +503,25 @@ fn apply_group_state_events(
         Tombstone(u32),
     }
     let census = crate::deltas::census::walk(ctx, bytes)?.into_events();
-    let count = census.records.len().checked_add(census.tombstones.len())
+    let count = census
+        .records
+        .len()
+        .checked_add(census.tombstones.len())
         .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP state events", 0, 1))?;
-    let bytes = count.checked_mul(std::mem::size_of::<(usize, Event)>())
+    let bytes = count
+        .checked_mul(std::mem::size_of::<(usize, Event)>())
         .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP state events", 0, 1))?;
-    let _events_guard = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(bytes), "NX GROUP state events")?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "NX GROUP state events")?;
+    let _events_guard = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(bytes),
+        "NX GROUP state events",
+    )?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "NX GROUP state events",
+    )?;
     let mut events = Vec::new();
-    events.try_reserve_exact(count)
+    events
+        .try_reserve_exact(count)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP state events", 0, 1))?;
     for record in census.records {
         events.push((record.offset, Event::Record(record)));
@@ -444,16 +529,26 @@ fn apply_group_state_events(
     for tombstone in census.tombstones {
         events.push((tombstone.offset, Event::Tombstone(tombstone.xmt)));
     }
-    let work = count.checked_mul(count.checked_ilog2().map_or(1, |digits| digits as usize + 1))
+    let work = count
+        .checked_mul(
+            count
+                .checked_ilog2()
+                .map_or(1, |digits| digits as usize + 1),
+        )
         .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP state event sort work", 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX GROUP state event sort work")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "NX GROUP state event sort work",
+    )?;
     events.sort_by_key(|(offset, _)| *offset);
     for (_, event) in events {
         match event {
             Event::Record(record) => {
                 if !records.contains_key(&record.xmt) {
                     ctx.charge_collection_items(1, "NX GROUP current record index")?;
-                    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, crate::deltas::Record)>() * 4))?;
+                    reservation.grow(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<(u32, crate::deltas::Record)>() * 4,
+                    ))?;
                 }
                 records.insert(record.xmt, record);
             }
@@ -495,12 +590,20 @@ pub(super) fn parasolid_group_members(
             continue;
         }
         let count = current.len();
-        let bytes = count.checked_mul(std::mem::size_of::<crate::deltas::Record>())
+        let bytes = count
+            .checked_mul(std::mem::size_of::<crate::deltas::Record>())
             .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP current records", 0, 1))?;
-        let _records_guard = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(bytes), "NX GROUP current records")?;
-        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "NX GROUP current records")?;
+        let _records_guard = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(bytes),
+            "NX GROUP current records",
+        )?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(count),
+            "NX GROUP current records",
+        )?;
         let mut records = Vec::new();
-        records.try_reserve_exact(count)
+        records
+            .try_reserve_exact(count)
             .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP current records", 0, 1))?;
         records.extend(current.into_values());
         group_members_from_records(ctx, stream_ordinal_u32, &records, &mut members)?;
@@ -1216,13 +1319,21 @@ fn deltas_event_id(
     second: Option<u32>,
 ) -> Result<String, CodecError> {
     let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
-    let length = "nx:s".len()
+    let length = "nx:s"
+        .len()
         .checked_add(digits(cadmpeg_core::decode::u64_from_index(stream_ordinal)))
         .and_then(|length| length.checked_add(1 + kind.len() + 1))
         .and_then(|length| length.checked_add(digits(cadmpeg_core::decode::u64_from_index(first))))
-        .and_then(|length| second.map_or(Some(length), |value| length.checked_add(1 + digits(u64::from(value)))))
+        .and_then(|length| {
+            second.map_or(Some(length), |value| {
+                length.checked_add(1 + digits(u64::from(value)))
+            })
+        })
         .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event identity", 0, 1))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX deltas event identity")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(length),
+        "NX deltas event identity",
+    )?;
     let mut id = String::new();
     id.try_reserve_exact(length)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX deltas event identity", 0, 1))?;
@@ -1235,10 +1346,18 @@ fn deltas_event_id(
     Ok(id)
 }
 
-fn push_deltas_event<T>(ctx: &DecodeContext<'_>, output: &mut Vec<T>, event: T) -> Result<(), CodecError> {
+fn push_deltas_event<T>(
+    ctx: &DecodeContext<'_>,
+    output: &mut Vec<T>,
+    event: T,
+) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "NX deltas events")?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()), "NX deltas event")?;
-    output.try_reserve(1)
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
+        "NX deltas event",
+    )?;
+    output
+        .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX deltas events", 0, 1))?;
     output.push(event);
     Ok(())
@@ -1246,16 +1365,28 @@ fn push_deltas_event<T>(ctx: &DecodeContext<'_>, output: &mut Vec<T>, event: T) 
 
 fn sort_deltas_events<T>(
     ctx: &DecodeContext<'_>,
-    events: &mut Vec<T>,
+    events: &mut [T],
     id: impl Fn(&T) -> &str,
 ) -> Result<(), CodecError> {
     let count = events.len();
-    let scratch = count.checked_mul(std::mem::size_of::<T>())
+    let scratch = count
+        .checked_mul(std::mem::size_of::<T>())
         .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event sort scratch", 0, 1))?;
-    let _sorting = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(scratch), "NX deltas event sort scratch")?;
-    let work = count.checked_mul(count.checked_ilog2().map_or(1, |digits| digits as usize + 1))
+    let _sorting = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(scratch),
+        "NX deltas event sort scratch",
+    )?;
+    let work = count
+        .checked_mul(
+            count
+                .checked_ilog2()
+                .map_or(1, |digits| digits as usize + 1),
+        )
         .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event sort work", 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX deltas event sort work")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "NX deltas event sort work",
+    )?;
     events.sort_by(|left, right| id(left).cmp(id(right)));
     Ok(())
 }
@@ -1327,172 +1458,326 @@ pub(super) fn parasolid_deltas_events_with_censuses(
         let census = census.into_events();
         if let Some(header) = census.transmit_header {
             let bytes = &stream.inflated[..header.end];
-            push_deltas_event(ctx, &mut events.transmit_headers, ParasolidDeltasTransmitHeader {
-                id: deltas_event_id(ctx, stream_ordinal, "deltas-transmit-header", 0, None)?,
-                stream_ordinal: stream_ordinal_u32,
-                state: header.state,
-                byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                sha256: crate::native::hex::Sha256Hex::digest(bytes),
-            })?;
+            push_deltas_event(
+                ctx,
+                &mut events.transmit_headers,
+                ParasolidDeltasTransmitHeader {
+                    id: deltas_event_id(ctx, stream_ordinal, "deltas-transmit-header", 0, None)?,
+                    stream_ordinal: stream_ordinal_u32,
+                    state: header.state,
+                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
+                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
+                },
+            )?;
         }
         if let Some(trailer) = census.terminal_null_references {
-            push_deltas_event(ctx, &mut events.terminal_null_references, ParasolidDeltasTerminalNullReferences {
-                    id: deltas_event_id(ctx, stream_ordinal, "deltas-terminal-null-references", trailer.offset(), None)?,
+            push_deltas_event(
+                ctx,
+                &mut events.terminal_null_references,
+                ParasolidDeltasTerminalNullReferences {
+                    id: deltas_event_id(
+                        ctx,
+                        stream_ordinal,
+                        "deltas-terminal-null-references",
+                        trailer.offset(),
+                        None,
+                    )?,
                     stream_ordinal: stream_ordinal_u32,
                     form: trailer.form(),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(trailer.offset()),
-                })?;
+                },
+            )?;
         }
         for record in census.records {
-            push_deltas_event(ctx, &mut events.records, ParasolidDeltasRecord {
-                id: deltas_event_id(ctx, stream_ordinal, "deltas-record", record.offset, Some(record.xmt))?,
-                stream_ordinal: stream_ordinal_u32,
-                family: record.family,
-                xmt: record.xmt,
-                byte_len: cadmpeg_core::decode::u64_from_index(record.end - record.offset),
-                inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
-            })?;
+            push_deltas_event(
+                ctx,
+                &mut events.records,
+                ParasolidDeltasRecord {
+                    id: deltas_event_id(
+                        ctx,
+                        stream_ordinal,
+                        "deltas-record",
+                        record.offset,
+                        Some(record.xmt),
+                    )?,
+                    stream_ordinal: stream_ordinal_u32,
+                    family: record.family,
+                    xmt: record.xmt,
+                    byte_len: cadmpeg_core::decode::u64_from_index(record.end - record.offset),
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
+                },
+            )?;
         }
         for tombstone in census.tombstones {
-            push_deltas_event(ctx, &mut events.tombstones, ParasolidDeltasTombstone {
-                id: deltas_event_id(ctx, stream_ordinal, "deltas-tombstone", tombstone.offset, Some(tombstone.xmt))?,
-                stream_ordinal: stream_ordinal_u32,
-                kind: tombstone.kind,
-                xmt: tombstone.xmt,
-                inflated_offset: cadmpeg_core::decode::u64_from_index(tombstone.offset),
-            })?;
+            push_deltas_event(
+                ctx,
+                &mut events.tombstones,
+                ParasolidDeltasTombstone {
+                    id: deltas_event_id(
+                        ctx,
+                        stream_ordinal,
+                        "deltas-tombstone",
+                        tombstone.offset,
+                        Some(tombstone.xmt),
+                    )?,
+                    stream_ordinal: stream_ordinal_u32,
+                    kind: tombstone.kind,
+                    xmt: tombstone.xmt,
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(tombstone.offset),
+                },
+            )?;
         }
         for revision in census.body_revisions {
             let state_tail = &stream.inflated[revision.prefix_end..revision.end];
-            push_deltas_event(ctx, &mut events.body_revisions, ParasolidDeltasBodyRevision {
-                id: deltas_event_id(ctx, stream_ordinal, "deltas-body-revision", revision.offset, Some(revision.node_id))?,
-                stream_ordinal: stream_ordinal_u32,
-                xmt: revision.xmt,
-                node_id: revision.node_id,
-                references: revision.references,
-                lengths: RevisionLengths::from_slices(
-                    &stream.inflated[revision.offset..revision.prefix_end],
-                    state_tail,
-                ),
-                state_tail_sha256: crate::native::hex::Sha256Hex::digest(state_tail),
-                inflated_offset: cadmpeg_core::decode::u64_from_index(revision.offset),
-            })?;
+            push_deltas_event(
+                ctx,
+                &mut events.body_revisions,
+                ParasolidDeltasBodyRevision {
+                    id: deltas_event_id(
+                        ctx,
+                        stream_ordinal,
+                        "deltas-body-revision",
+                        revision.offset,
+                        Some(revision.node_id),
+                    )?,
+                    stream_ordinal: stream_ordinal_u32,
+                    xmt: revision.xmt,
+                    node_id: revision.node_id,
+                    references: revision.references,
+                    lengths: RevisionLengths::from_slices(
+                        &stream.inflated[revision.offset..revision.prefix_end],
+                        state_tail,
+                    ),
+                    state_tail_sha256: crate::native::hex::Sha256Hex::digest(state_tail),
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(revision.offset),
+                },
+            )?;
         }
         for tail in census.term_use_numeric_tails {
-            push_deltas_event(ctx, &mut events.term_use_numeric_tails, ParasolidDeltasTermUseNumericTail {
-                    id: deltas_event_id(ctx, stream_ordinal, "deltas-term-use-tail", tail.offset(), Some(tail.term_use_xmt))?,
+            push_deltas_event(
+                ctx,
+                &mut events.term_use_numeric_tails,
+                ParasolidDeltasTermUseNumericTail {
+                    id: deltas_event_id(
+                        ctx,
+                        stream_ordinal,
+                        "deltas-term-use-tail",
+                        tail.offset(),
+                        Some(tail.term_use_xmt),
+                    )?,
                     stream_ordinal: stream_ordinal_u32,
                     term_use_xmt: tail.term_use_xmt,
                     inflated_offset: cadmpeg_core::decode::u64_from_index(tail.offset()),
                     values: tail.into_values(),
-                })?;
+                },
+            )?;
         }
         for lane in census.tagged_reference_lanes {
             let bytes = &stream.inflated[lane.offset..lane.end];
-            push_deltas_event(ctx, &mut events.tagged_reference_lanes, ParasolidDeltasTaggedReferenceLane {
-                    id: deltas_event_id(ctx, stream_ordinal, "deltas-tagged-reference-lane", lane.offset, None)?,
+            push_deltas_event(
+                ctx,
+                &mut events.tagged_reference_lanes,
+                ParasolidDeltasTaggedReferenceLane {
+                    id: deltas_event_id(
+                        ctx,
+                        stream_ordinal,
+                        "deltas-tagged-reference-lane",
+                        lane.offset,
+                        None,
+                    )?,
                     stream_ordinal: stream_ordinal_u32,
                     references: lane.references,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(lane.offset),
-                })?;
+                },
+            )?;
         }
         for map in census.reference_type_maps {
             let bytes = &stream.inflated[map.offset..map.end];
-            push_deltas_event(ctx, &mut events.reference_type_maps, ParasolidDeltasReferenceTypeMap {
-                    id: deltas_event_id(ctx, stream_ordinal, "deltas-reference-type-map", map.offset, None)?,
+            push_deltas_event(
+                ctx,
+                &mut events.reference_type_maps,
+                ParasolidDeltasReferenceTypeMap {
+                    id: deltas_event_id(
+                        ctx,
+                        stream_ordinal,
+                        "deltas-reference-type-map",
+                        map.offset,
+                        None,
+                    )?,
                     stream_ordinal: stream_ordinal_u32,
                     entries: map.entries,
                     target_kind: map.target_kind,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(map.offset),
-                })?;
+                },
+            )?;
         }
         for packet in census.reference_state_packets {
             let bytes = &stream.inflated[packet.offset..packet.end];
-            push_deltas_event(ctx, &mut events.reference_state_packets, ParasolidDeltasReferenceStatePacket {
-                    id: deltas_event_id(ctx, stream_ordinal, "deltas-reference-state", packet.offset, None)?,
+            push_deltas_event(
+                ctx,
+                &mut events.reference_state_packets,
+                ParasolidDeltasReferenceStatePacket {
+                    id: deltas_event_id(
+                        ctx,
+                        stream_ordinal,
+                        "deltas-reference-state",
+                        packet.offset,
+                        None,
+                    )?,
                     stream_ordinal: stream_ordinal_u32,
                     frames: packet.frames,
                     terminal: packet.terminal,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
-                })?;
+                },
+            )?;
         }
         for preamble in census.schema_reference_preambles {
             let bytes = &stream.inflated[preamble.offset..preamble.end];
-            push_deltas_event(ctx, &mut events.schema_reference_preambles, ParasolidDeltasSchemaReferencePreamble {
-                    id: deltas_event_id(ctx, stream_ordinal, "deltas-schema-reference-preamble", preamble.offset, None)?,
+            push_deltas_event(
+                ctx,
+                &mut events.schema_reference_preambles,
+                ParasolidDeltasSchemaReferencePreamble {
+                    id: deltas_event_id(
+                        ctx,
+                        stream_ordinal,
+                        "deltas-schema-reference-preamble",
+                        preamble.offset,
+                        None,
+                    )?,
                     stream_ordinal: stream_ordinal_u32,
                     state: preamble.state,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(preamble.offset),
-                })?;
+                },
+            )?;
         }
         for packet in census.reference_marker_packets {
             let bytes = &stream.inflated[packet.offset..packet.end];
-            push_deltas_event(ctx, &mut events.reference_marker_packets, ParasolidDeltasReferenceMarkerPacket {
-                    id: deltas_event_id(ctx, stream_ordinal, "deltas-reference-marker", packet.offset, None)?,
+            push_deltas_event(
+                ctx,
+                &mut events.reference_marker_packets,
+                ParasolidDeltasReferenceMarkerPacket {
+                    id: deltas_event_id(
+                        ctx,
+                        stream_ordinal,
+                        "deltas-reference-marker",
+                        packet.offset,
+                        None,
+                    )?,
                     stream_ordinal: stream_ordinal_u32,
                     reference: packet.reference,
                     marker: packet.marker,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
-                })?;
+                },
+            )?;
         }
         for packet in census.type_150_state_packets {
             let bytes = &stream.inflated[packet.offset..packet.end];
-            push_deltas_event(ctx, &mut events.type_150_state_packets, ParasolidDeltasType150StatePacket {
-                    id: deltas_event_id(ctx, stream_ordinal, "deltas-type-150-state", packet.offset, None)?,
+            push_deltas_event(
+                ctx,
+                &mut events.type_150_state_packets,
+                ParasolidDeltasType150StatePacket {
+                    id: deltas_event_id(
+                        ctx,
+                        stream_ordinal,
+                        "deltas-type-150-state",
+                        packet.offset,
+                        None,
+                    )?,
                     stream_ordinal: stream_ordinal_u32,
                     state: packet.state,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
-                })?;
+                },
+            )?;
         }
         for declaration in census.inline_schema_declarations {
             let bytes = &stream.inflated[declaration.offset..declaration.end];
-            push_deltas_event(ctx, &mut events.inline_schema_declarations, ParasolidDeltasInlineSchemaDeclaration {
-                    id: deltas_event_id(ctx, stream_ordinal, "deltas-inline-schema", declaration.offset, None)?,
+            push_deltas_event(
+                ctx,
+                &mut events.inline_schema_declarations,
+                ParasolidDeltasInlineSchemaDeclaration {
+                    id: deltas_event_id(
+                        ctx,
+                        stream_ordinal,
+                        "deltas-inline-schema",
+                        declaration.offset,
+                        None,
+                    )?,
                     stream_ordinal: stream_ordinal_u32,
                     fields: declaration.fields,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(declaration.offset),
-                })?;
+                },
+            )?;
         }
         for state in census.inline_body_states {
             let bytes = &stream.inflated[state.offset..state.end];
-            push_deltas_event(ctx, &mut events.inline_body_states, ParasolidDeltasInlineBodyState {
-                    id: deltas_event_id(ctx, stream_ordinal, "deltas-inline-body-state", state.offset, None)?,
+            push_deltas_event(
+                ctx,
+                &mut events.inline_body_states,
+                ParasolidDeltasInlineBodyState {
+                    id: deltas_event_id(
+                        ctx,
+                        stream_ordinal,
+                        "deltas-inline-body-state",
+                        state.offset,
+                        None,
+                    )?,
                     stream_ordinal: stream_ordinal_u32,
                     fields: state.fields,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(state.offset),
-                })?;
+                },
+            )?;
         }
     }
     sort_deltas_events(ctx, &mut events.transmit_headers, |value| value.id.as_str())?;
-    sort_deltas_events(ctx, &mut events.terminal_null_references, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.terminal_null_references, |value| {
+        value.id.as_str()
+    })?;
     sort_deltas_events(ctx, &mut events.records, |value| value.id.as_str())?;
     sort_deltas_events(ctx, &mut events.tombstones, |value| value.id.as_str())?;
     sort_deltas_events(ctx, &mut events.body_revisions, |value| value.id.as_str())?;
-    sort_deltas_events(ctx, &mut events.term_use_numeric_tails, |value| value.id.as_str())?;
-    sort_deltas_events(ctx, &mut events.tagged_reference_lanes, |value| value.id.as_str())?;
-    sort_deltas_events(ctx, &mut events.reference_type_maps, |value| value.id.as_str())?;
-    sort_deltas_events(ctx, &mut events.reference_state_packets, |value| value.id.as_str())?;
-    sort_deltas_events(ctx, &mut events.schema_reference_preambles, |value| value.id.as_str())?;
-    sort_deltas_events(ctx, &mut events.reference_marker_packets, |value| value.id.as_str())?;
-    sort_deltas_events(ctx, &mut events.type_150_state_packets, |value| value.id.as_str())?;
-    sort_deltas_events(ctx, &mut events.inline_schema_declarations, |value| value.id.as_str())?;
-    sort_deltas_events(ctx, &mut events.inline_body_states, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.term_use_numeric_tails, |value| {
+        value.id.as_str()
+    })?;
+    sort_deltas_events(ctx, &mut events.tagged_reference_lanes, |value| {
+        value.id.as_str()
+    })?;
+    sort_deltas_events(ctx, &mut events.reference_type_maps, |value| {
+        value.id.as_str()
+    })?;
+    sort_deltas_events(ctx, &mut events.reference_state_packets, |value| {
+        value.id.as_str()
+    })?;
+    sort_deltas_events(ctx, &mut events.schema_reference_preambles, |value| {
+        value.id.as_str()
+    })?;
+    sort_deltas_events(ctx, &mut events.reference_marker_packets, |value| {
+        value.id.as_str()
+    })?;
+    sort_deltas_events(ctx, &mut events.type_150_state_packets, |value| {
+        value.id.as_str()
+    })?;
+    sort_deltas_events(ctx, &mut events.inline_schema_declarations, |value| {
+        value.id.as_str()
+    })?;
+    sort_deltas_events(ctx, &mut events.inline_body_states, |value| {
+        value.id.as_str()
+    })?;
     sort_deltas_events(ctx, &mut events.residual_spans, |value| value.id.as_str())?;
     Ok(events)
 }
@@ -1506,14 +1791,18 @@ fn push_deltas_residual_span(
     end: usize,
 ) -> Result<(), CodecError> {
     let residual = &bytes[start..end];
-    push_deltas_event(ctx, residual_spans, ParasolidDeltasResidualSpan {
-        id: deltas_event_id(ctx, stream_ordinal, "deltas-residual", start, None)?,
-        stream_ordinal: u32::try_from(stream_ordinal)
-            .map_err(|_| ctx.refuse_codec_limit("NX deltas residual stream ordinal", 0, 1))?,
-        byte_len: cadmpeg_core::decode::u64_from_index(residual.len()),
-        sha256: crate::native::hex::Sha256Hex::digest(residual),
-        inflated_offset: cadmpeg_core::decode::u64_from_index(start),
-    })
+    push_deltas_event(
+        ctx,
+        residual_spans,
+        ParasolidDeltasResidualSpan {
+            id: deltas_event_id(ctx, stream_ordinal, "deltas-residual", start, None)?,
+            stream_ordinal: u32::try_from(stream_ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX deltas residual stream ordinal", 0, 1))?,
+            byte_len: cadmpeg_core::decode::u64_from_index(residual.len()),
+            sha256: crate::native::hex::Sha256Hex::digest(residual),
+            inflated_offset: cadmpeg_core::decode::u64_from_index(start),
+        },
+    )
 }
 
 /// Shared skeleton for Parasolid record families read from the cached per-stream
@@ -1543,10 +1832,17 @@ fn parasolid_record_id(
     stem: &'static str,
     xmt: u32,
 ) -> Result<String, CodecError> {
-    let id_len = "nx:s".len()
-        .checked_add(stream_ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1))
+    let id_len = "nx:s"
+        .len()
+        .checked_add(
+            stream_ordinal
+                .checked_ilog10()
+                .map_or(1, |digits| digits as usize + 1),
+        )
         .and_then(|length| length.checked_add(1 + stem.len() + 1))
-        .and_then(|length| length.checked_add(xmt.checked_ilog10().map_or(1, |digits| digits as usize + 1)))
+        .and_then(|length| {
+            length.checked_add(xmt.checked_ilog10().map_or(1, |digits| digits as usize + 1))
+        })
         .ok_or_else(|| ctx.refuse_codec_limit("retain NX Parasolid record id", 0, 1))?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(id_len),
@@ -1567,21 +1863,33 @@ fn parasolid_offset_record_id(
     xmt: u32,
     offset: usize,
 ) -> Result<String, CodecError> {
-    let id_len = "nx:s".len()
-        .checked_add(stream_ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1))
+    let id_len = "nx:s"
+        .len()
+        .checked_add(
+            stream_ordinal
+                .checked_ilog10()
+                .map_or(1, |digits| digits as usize + 1),
+        )
         .and_then(|length| length.checked_add(1 + stem.len() + 1))
-        .and_then(|length| length.checked_add(xmt.checked_ilog10().map_or(1, |digits| digits as usize + 1)))
+        .and_then(|length| {
+            length.checked_add(xmt.checked_ilog10().map_or(1, |digits| digits as usize + 1))
+        })
         .and_then(|length| length.checked_add(1))
-        .and_then(|length| length.checked_add(offset.checked_ilog10().map_or(1, |digits| digits as usize + 1)))
+        .and_then(|length| {
+            length.checked_add(
+                offset
+                    .checked_ilog10()
+                    .map_or(1, |digits| digits as usize + 1),
+            )
+        })
         .ok_or_else(|| ctx.refuse_codec_limit("retain NX Parasolid offset record id", 0, 1))?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(id_len),
         "retain NX Parasolid offset record id",
     )?;
     let mut id = String::new();
-    id.try_reserve_exact(id_len).map_err(|_| {
-        ctx.refuse_codec_limit("allocate NX Parasolid offset record id", 0, 1)
-    })?;
+    id.try_reserve_exact(id_len)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid offset record id", 0, 1))?;
     write!(&mut id, "nx:s{stream_ordinal}:{stem}#{xmt}-{offset}")
         .map_err(|_| ctx.refuse_codec_limit("write NX Parasolid offset record id", 0, 1))?;
     Ok(id)
@@ -1618,7 +1926,9 @@ fn per_parasolid_stream<P: ParasolidStreamRecords>(
             .map_err(|_| ctx.refuse_codec_limit("sort NX Parasolid cached records", 0, 1))?
             + 1
     };
-    let sort_units = records.len().checked_mul(sort_factor)
+    let sort_units = records
+        .len()
+        .checked_mul(sort_factor)
         .ok_or_else(|| ctx.refuse_codec_limit("sort NX Parasolid cached records", 0, 1))?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(sort_units),
@@ -1682,7 +1992,9 @@ fn per_parasolid_scan<P: ParasolidScanRecords>(
             .map_err(|_| ctx.refuse_codec_limit("sort NX Parasolid scanned records", 0, 1))?
             + 1
     };
-    let sort_units = records.len().checked_mul(sort_factor)
+    let sort_units = records
+        .len()
+        .checked_mul(sort_factor)
         .ok_or_else(|| ctx.refuse_codec_limit("sort NX Parasolid scanned records", 0, 1))?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(sort_units),
@@ -2138,12 +2450,20 @@ pub(super) fn parasolid_chart_records(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidChartRecord>()),
                 "NX Parasolid chart record",
             )?;
-            records.try_reserve(1)
+            records
+                .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid chart records", 0, 1))?;
             records.push(ParasolidChartRecord {
-                id: parasolid_offset_record_id(ctx, stream_ordinal, "chart-record", chart.xmt, chart.pos)?,
-                stream_ordinal: u32::try_from(stream_ordinal)
-                    .map_err(|_| ctx.refuse_codec_limit("NX Parasolid chart stream ordinal", 0, 1))?,
+                id: parasolid_offset_record_id(
+                    ctx,
+                    stream_ordinal,
+                    "chart-record",
+                    chart.xmt,
+                    chart.pos,
+                )?,
+                stream_ordinal: u32::try_from(stream_ordinal).map_err(|_| {
+                    ctx.refuse_codec_limit("NX Parasolid chart stream ordinal", 0, 1)
+                })?,
                 xmt: chart.xmt,
                 preamble: chart.preamble,
                 data: chart.data,
@@ -2152,9 +2472,19 @@ pub(super) fn parasolid_chart_records(
             });
         }
     }
-    let work = records.len().checked_mul(records.len().checked_ilog2().map_or(1, |digits| digits as usize + 1))
+    let work = records
+        .len()
+        .checked_mul(
+            records
+                .len()
+                .checked_ilog2()
+                .map_or(1, |digits| digits as usize + 1),
+        )
         .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid chart record sort work", 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX Parasolid chart record sort work")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "NX Parasolid chart record sort work",
+    )?;
     records.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(records)
 }
@@ -3111,12 +3441,14 @@ pub(super) fn parasolid_attribute_definitions(
         for definition in crate::parasolid::attribute_definitions(&stream.inflated) {
             ctx.charge_collection_items(1, "NX attribute definitions")?;
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidAttributeDefinition>()),
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                    ParasolidAttributeDefinition,
+                >()),
                 "retain NX attribute definitions",
             )?;
-            records.try_reserve_exact(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX attribute definitions", 0, 1)
-            })?;
+            records
+                .try_reserve_exact(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX attribute definitions", 0, 1))?;
             let name_len = definition.name.as_str().len();
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(name_len),
@@ -3141,7 +3473,9 @@ pub(super) fn parasolid_attribute_definitions(
                 xmt: definition.xmt,
                 next_definition_xmt: definition.next_definition_xmt,
                 identifier_xmt: definition.identifier_xmt,
-                identifier_inflated_offset: cadmpeg_core::decode::u64_from_index(definition.identifier_offset),
+                identifier_inflated_offset: cadmpeg_core::decode::u64_from_index(
+                    definition.identifier_offset,
+                ),
                 name,
                 type_id: definition.type_id,
                 action_codes: definition.action_codes,
@@ -3170,12 +3504,14 @@ pub(super) fn parasolid_field_names_records(
         for record in crate::parasolid::field_names_records(&stream.inflated) {
             ctx.charge_collection_items(1, "NX field names records")?;
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidFieldNamesRecord>()),
+                cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<ParasolidFieldNamesRecord>(),
+                ),
                 "retain NX field names records",
             )?;
-            records.try_reserve_exact(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX field names records", 0, 1)
-            })?;
+            records
+                .try_reserve_exact(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX field names records", 0, 1))?;
             let id = parasolid_offset_record_id(
                 ctx,
                 stream_ordinal,
@@ -3213,50 +3549,83 @@ pub(super) fn parasolid_attribute_field_names(
         BTreeMap::<(u32, u32), Option<&ParasolidAttributeDefinition>>::new();
     let mut definitions_guard = ctx.reserve_scoped(0, "NX attribute field definition index")?;
     for definition in definitions {
-        insert_unique_value(ctx, &mut definitions_by_identity, &mut definitions_guard,
-            (definition.stream_ordinal, u32::from(definition.xmt)), definition)?;
+        insert_unique_value(
+            ctx,
+            &mut definitions_by_identity,
+            &mut definitions_guard,
+            (definition.stream_ordinal, u32::from(definition.xmt)),
+            definition,
+        )?;
     }
     let mut lists = BTreeMap::<(u32, u32), Option<&ParasolidFieldNamesRecord>>::new();
     let mut lists_guard = ctx.reserve_scoped(0, "NX attribute field list index")?;
     for list in field_names {
-        insert_unique_value(ctx, &mut lists, &mut lists_guard,
-            (list.stream_ordinal, u32::from(list.xmt)), list)?;
+        insert_unique_value(
+            ctx,
+            &mut lists,
+            &mut lists_guard,
+            (list.stream_ordinal, u32::from(list.xmt)),
+            list,
+        )?;
     }
     let mut names_by_xmt = BTreeMap::<(u32, u32), Option<(&str, &str)>>::new();
     let mut names_guard = ctx.reserve_scoped(0, "NX attribute field name index")?;
     for string in strings {
-        insert_unique_value(ctx, &mut names_by_xmt, &mut names_guard,
+        insert_unique_value(
+            ctx,
+            &mut names_by_xmt,
+            &mut names_guard,
             (string.stream_ordinal, u32::from(string.xmt)),
-            (string.id.as_str(), string.value.as_str()))?;
+            (string.id.as_str(), string.value.as_str()),
+        )?;
     }
     for value in unicode {
-        insert_unique_value(ctx, &mut names_by_xmt, &mut names_guard,
+        insert_unique_value(
+            ctx,
+            &mut names_by_xmt,
+            &mut names_guard,
             (value.stream_ordinal, u32::from(value.xmt)),
-            (value.id.as_str(), value.value.as_str()))?;
+            (value.id.as_str(), value.value.as_str()),
+        )?;
     }
     let mut relations = Vec::new();
     for definition in definitions_by_identity.values().filter_map(|value| *value) {
-        let Some(field_names_xmt) = definition.field_names_xmt else { continue; };
-        let Some(Some(list)) = lists.get(&(definition.stream_ordinal, u32::from(field_names_xmt))) else {
+        let Some(field_names_xmt) = definition.field_names_xmt else {
+            continue;
+        };
+        let Some(Some(list)) = lists.get(&(definition.stream_ordinal, u32::from(field_names_xmt)))
+        else {
             continue;
         };
         if list.name_xmts.as_slice().len() != definition.field_codes.len() {
             continue;
         }
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(list.name_xmts.as_slice().len()), "resolve NX attribute field names")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(list.name_xmts.as_slice().len()),
+            "resolve NX attribute field names",
+        )?;
         if !list.name_xmts.as_slice().iter().all(|xmt| {
-            matches!(names_by_xmt.get(&(definition.stream_ordinal, u32::from(*xmt))), Some(Some(_)))
+            matches!(
+                names_by_xmt.get(&(definition.stream_ordinal, u32::from(*xmt))),
+                Some(Some(_))
+            )
         }) {
             continue;
         }
         let mut resolved = Vec::new();
         for xmt in list.name_xmts.as_slice() {
-            let Some(Some((value_record, name))) = names_by_xmt.get(&(definition.stream_ordinal, u32::from(*xmt))) else {
+            let Some(Some((value_record, name))) =
+                names_by_xmt.get(&(definition.stream_ordinal, u32::from(*xmt)))
+            else {
                 continue;
             };
             ctx.charge_collection_items(1, "NX attribute field names")?;
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NamedField>()), "NX attribute field name")?;
-            resolved.try_reserve(1)
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NamedField>()),
+                "NX attribute field name",
+            )?;
+            resolved
+                .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field names", 0, 1))?;
             resolved.push(NamedField {
                 value_record: entity_51_use_text(ctx, value_record)?,
@@ -3264,22 +3633,45 @@ pub(super) fn parasolid_attribute_field_names(
             });
         }
         ctx.charge_collection_items(1, "NX attribute field name relations")?;
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidAttributeFieldNames>()), "NX attribute field name relation")?;
-        relations.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field name relations", 0, 1))?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<ParasolidAttributeFieldNames>(),
+            ),
+            "NX attribute field name relation",
+        )?;
+        relations.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX attribute field name relations", 0, 1)
+        })?;
         let ordinal = usize::try_from(definition.stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX attribute field name stream ordinal", 0, 1))?;
         relations.push(ParasolidAttributeFieldNames {
-                id: parasolid_record_id(ctx, ordinal, "attribute-field-names", u32::from(definition.xmt))?,
-                stream_ordinal: definition.stream_ordinal,
-                attribute_definition: entity_51_use_text(ctx, &definition.id)?,
-                field_names_record: entity_51_use_text(ctx, &list.id)?,
-                fields: resolved,
-            });
+            id: parasolid_record_id(
+                ctx,
+                ordinal,
+                "attribute-field-names",
+                u32::from(definition.xmt),
+            )?,
+            stream_ordinal: definition.stream_ordinal,
+            attribute_definition: entity_51_use_text(ctx, &definition.id)?,
+            field_names_record: entity_51_use_text(ctx, &list.id)?,
+            fields: resolved,
+        });
     }
-    let work = relations.len().checked_mul(relations.len().checked_ilog2().map_or(1, |digits| digits as usize + 1))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX attribute field name relation sort work", 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX attribute field name relation sort work")?;
+    let work = relations
+        .len()
+        .checked_mul(
+            relations
+                .len()
+                .checked_ilog2()
+                .map_or(1, |digits| digits as usize + 1),
+        )
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("NX attribute field name relation sort work", 0, 1)
+        })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "NX attribute field name relation sort work",
+    )?;
     relations.sort_by(|first, second| first.id.cmp(&second.id));
     Ok(relations)
 }
@@ -3325,8 +3717,13 @@ pub(super) fn parasolid_topology_attribute_list_references(
     let mut records_by_identity = BTreeMap::<(u32, u32), Option<&str>>::new();
     let mut records_guard = ctx.reserve_scoped(0, "NX topology attribute list record index")?;
     for record in entity_records {
-        insert_unique_value(ctx, &mut records_by_identity, &mut records_guard,
-            (record.stream_ordinal, u32::from(record.xmt)), record.id.as_str())?;
+        insert_unique_value(
+            ctx,
+            &mut records_by_identity,
+            &mut records_guard,
+            (record.stream_ordinal, u32::from(record.xmt)),
+            record.id.as_str(),
+        )?;
     }
     let mut references = Vec::new();
     for (stream_ordinal, stream) in parsed.iter() {
@@ -3360,25 +3757,61 @@ pub(super) fn parasolid_topology_attribute_list_references(
                 let Some(inflated_offset) = node.attribute_field_offset() else {
                     continue;
                 };
-                let ordinal = u32::try_from(stream_ordinal)
-                    .map_err(|_| ctx.refuse_codec_limit("NX topology attribute stream ordinal", 0, 1))?;
+                let ordinal = u32::try_from(stream_ordinal).map_err(|_| {
+                    ctx.refuse_codec_limit("NX topology attribute stream ordinal", 0, 1)
+                })?;
                 ctx.charge_collection_items(1, "NX topology attribute list references")?;
-                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidTopologyAttributeListReference>()), "NX topology attribute list reference")?;
-                references.try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("allocate NX topology attribute list references", 0, 1))?;
-                let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
-                let length = "nx:s".len()
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        ParasolidTopologyAttributeListReference,
+                    >()),
+                    "NX topology attribute list reference",
+                )?;
+                references.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("allocate NX topology attribute list references", 0, 1)
+                })?;
+                let digits =
+                    |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
+                let length = "nx:s"
+                    .len()
                     .checked_add(digits(cadmpeg_core::decode::u64_from_index(stream_ordinal)))
-                    .and_then(|length| length.checked_add(":topology-attribute-list-reference#".len()))
+                    .and_then(|length| {
+                        length.checked_add(":topology-attribute-list-reference#".len())
+                    })
                     .and_then(|length| length.checked_add(digits(u64::from(topology_type.code()))))
                     .and_then(|length| length.checked_add(1 + digits(u64::from(node.xmt))))
-                    .ok_or_else(|| ctx.refuse_codec_limit("NX topology attribute list reference identity", 0, 1))?;
-                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX topology attribute list reference identity")?;
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "NX topology attribute list reference identity",
+                            0,
+                            1,
+                        )
+                    })?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(length),
+                    "NX topology attribute list reference identity",
+                )?;
                 let mut id = String::new();
-                id.try_reserve_exact(length)
-                    .map_err(|_| ctx.refuse_codec_limit("allocate NX topology attribute list reference identity", 0, 1))?;
-                write!(&mut id, "nx:s{stream_ordinal}:topology-attribute-list-reference#{}-{}", topology_type.code(), node.xmt)
-                    .map_err(|_| ctx.refuse_codec_limit("write NX topology attribute list reference identity", 0, 1))?;
+                id.try_reserve_exact(length).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "allocate NX topology attribute list reference identity",
+                        0,
+                        1,
+                    )
+                })?;
+                write!(
+                    &mut id,
+                    "nx:s{stream_ordinal}:topology-attribute-list-reference#{}-{}",
+                    topology_type.code(),
+                    node.xmt
+                )
+                .map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "write NX topology attribute list reference identity",
+                        0,
+                        1,
+                    )
+                })?;
                 let attribute_list_record = records_by_identity
                     .get(&(ordinal, attribute_list_xmt))
                     .and_then(|record| *record)
@@ -3417,9 +3850,9 @@ pub(super) fn parasolid_entity_51_records(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidEntity51Record>()),
                 "retain NX entity 51 records",
             )?;
-            records.try_reserve_exact(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX entity 51 records", 0, 1)
-            })?;
+            records
+                .try_reserve_exact(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX entity 51 records", 0, 1))?;
             let id = parasolid_offset_record_id(
                 ctx,
                 stream_ordinal,
@@ -3458,7 +3891,8 @@ fn reserve_native_value_record<T>(
         cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
         "retain NX Parasolid value records",
     )?;
-    records.try_reserve_exact(1)
+    records
+        .try_reserve_exact(1)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid value records", 0, 1))
 }
 
@@ -3505,7 +3939,9 @@ pub(super) fn parasolid_entity_value_records(
                         continue;
                     };
                     ctx.charge_collection_items(1, "NX value record owner offsets")?;
-                    offsets_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()))?;
+                    offsets_guard.grow(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<usize>(),
+                    ))?;
                     offsets.try_reserve_exact(1).map_err(|_| {
                         ctx.refuse_codec_limit("allocate NX value record owner offsets", 0, 1)
                     })?;
@@ -3519,7 +3955,9 @@ pub(super) fn parasolid_entity_value_records(
                     cadmpeg_core::decode::u64_from_index(offsets.len()),
                     "NX value record owner offsets",
                 )?;
-                let bytes = offsets.len().checked_mul(std::mem::size_of::<usize>())
+                let bytes = offsets
+                    .len()
+                    .checked_mul(std::mem::size_of::<usize>())
                     .ok_or_else(|| ctx.refuse_codec_limit("NX value record owner offsets", 0, 1))?;
                 offsets_guard.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
                 offsets
@@ -3534,7 +3972,11 @@ pub(super) fn parasolid_entity_value_records(
         for record in values.integers {
             reserve_native_value_record(ctx, &mut records.integers)?;
             let id = parasolid_offset_record_id(
-                ctx, stream_ordinal, "entity-52-integers", u32::from(record.xmt), record.offset,
+                ctx,
+                stream_ordinal,
+                "entity-52-integers",
+                u32::from(record.xmt),
+                record.offset,
             )?;
             records.integers.push(ParasolidEntity52IntegerRecord {
                 id,
@@ -3548,7 +3990,11 @@ pub(super) fn parasolid_entity_value_records(
         for record in values.doubles {
             reserve_native_value_record(ctx, &mut records.doubles)?;
             let id = parasolid_offset_record_id(
-                ctx, stream_ordinal, "entity-53-doubles", u32::from(record.xmt), record.offset,
+                ctx,
+                stream_ordinal,
+                "entity-53-doubles",
+                u32::from(record.xmt),
+                record.offset,
             )?;
             records.doubles.push(ParasolidEntity53DoubleRecord {
                 id,
@@ -3562,7 +4008,11 @@ pub(super) fn parasolid_entity_value_records(
         for record in values.strings {
             reserve_native_value_record(ctx, &mut records.strings)?;
             let id = parasolid_offset_record_id(
-                ctx, stream_ordinal, "entity-54-string", u32::from(record.xmt), record.offset,
+                ctx,
+                stream_ordinal,
+                "entity-54-string",
+                u32::from(record.xmt),
+                record.offset,
             )?;
             let value_len = record.value.as_str().len();
             ctx.charge_retained(
@@ -3570,9 +4020,8 @@ pub(super) fn parasolid_entity_value_records(
                 "retain NX Parasolid string value",
             )?;
             let mut text = String::new();
-            text.try_reserve_exact(value_len).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX Parasolid string value", 0, 1)
-            })?;
+            text.try_reserve_exact(value_len)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid string value", 0, 1))?;
             text.push_str(record.value.as_str());
             let value = crate::printable_string::PrintableString::new(text)
                 .map_err(|message| CodecError::Malformed(message.into()))?;
@@ -3585,11 +4034,16 @@ pub(super) fn parasolid_entity_value_records(
                 inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
-        let mut retain_vector = |kind, family: &'static str, xmt, offset, byte_len, values| -> Result<(), CodecError> {
+        let mut retain_vector = |kind,
+                                 family: &'static str,
+                                 xmt,
+                                 offset,
+                                 byte_len,
+                                 values|
+         -> Result<(), CodecError> {
             reserve_native_value_record(ctx, &mut records.vectors)?;
-            let id = parasolid_offset_record_id(
-                ctx, stream_ordinal, family, u32::from(xmt), offset,
-            )?;
+            let id =
+                parasolid_offset_record_id(ctx, stream_ordinal, family, u32::from(xmt), offset)?;
             records.vectors.push(ParasolidEntityVectorRecord {
                 id,
                 stream_ordinal: ordinal,
@@ -3634,7 +4088,11 @@ pub(super) fn parasolid_entity_value_records(
         for record in values.axes {
             reserve_native_value_record(ctx, &mut records.axes)?;
             let id = parasolid_offset_record_id(
-                ctx, stream_ordinal, "entity-57-axes", u32::from(record.xmt), record.offset,
+                ctx,
+                stream_ordinal,
+                "entity-57-axes",
+                u32::from(record.xmt),
+                record.offset,
             )?;
             records.axes.push(ParasolidEntity57AxisRecord {
                 id,
@@ -3648,7 +4106,11 @@ pub(super) fn parasolid_entity_value_records(
         for record in values.tags {
             reserve_native_value_record(ctx, &mut records.tags)?;
             let id = parasolid_offset_record_id(
-                ctx, stream_ordinal, "entity-58-tags", u32::from(record.xmt), record.offset,
+                ctx,
+                stream_ordinal,
+                "entity-58-tags",
+                u32::from(record.xmt),
+                record.offset,
             )?;
             records.tags.push(ParasolidEntity58TagRecord {
                 id,
@@ -3662,7 +4124,11 @@ pub(super) fn parasolid_entity_value_records(
         for record in values.unicode {
             reserve_native_value_record(ctx, &mut records.unicode)?;
             let id = parasolid_offset_record_id(
-                ctx, stream_ordinal, "entity-62-unicode", u32::from(record.xmt), record.offset,
+                ctx,
+                stream_ordinal,
+                "entity-62-unicode",
+                u32::from(record.xmt),
+                record.offset,
             )?;
             records.unicode.push(ParasolidEntity62UnicodeRecord {
                 id,
@@ -3682,9 +4148,12 @@ pub(super) fn parasolid_entity_value_records(
             cadmpeg_core::decode::u64_from_index(unmaterialized_bytes),
             "retain NX Parasolid unmaterialized records",
         )?;
-        records.unmaterialized.try_reserve_exact(values.unmaterialized.len()).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX Parasolid unmaterialized records", 0, 1)
-        })?;
+        records
+            .unmaterialized
+            .try_reserve_exact(values.unmaterialized.len())
+            .map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX Parasolid unmaterialized records", 0, 1)
+            })?;
         records.unmaterialized.extend(values.unmaterialized);
     }
     let sort_units = [
@@ -3762,19 +4231,29 @@ fn entity_51_use_id(
     reference_ordinal: u32,
 ) -> Result<String, CodecError> {
     let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
-    let length = "nx:s".len()
+    let length = "nx:s"
+        .len()
         .checked_add(digits(u64::from(entity.stream_ordinal)))
         .and_then(|length| length.checked_add(1 + stem.len() + 1))
         .and_then(|length| length.checked_add(digits(u64::from(u32::from(entity.xmt)))))
         .and_then(|length| length.checked_add(1 + digits(entity.inflated_offset)))
         .and_then(|length| length.checked_add(1 + digits(u64::from(reference_ordinal))))
         .ok_or_else(|| ctx.refuse_codec_limit("NX entity 51 value use identity", 0, 1))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX entity 51 value use identity")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(length),
+        "NX entity 51 value use identity",
+    )?;
     let mut id = String::new();
     id.try_reserve_exact(length)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX entity 51 value use identity", 0, 1))?;
-    write!(&mut id, "nx:s{}:{stem}#{}-{}-{reference_ordinal}", entity.stream_ordinal, u32::from(entity.xmt), entity.inflated_offset)
-        .map_err(|_| ctx.refuse_codec_limit("write NX entity 51 value use identity", 0, 1))?;
+    write!(
+        &mut id,
+        "nx:s{}:{stem}#{}-{}-{reference_ordinal}",
+        entity.stream_ordinal,
+        u32::from(entity.xmt),
+        entity.inflated_offset
+    )
+    .map_err(|_| ctx.refuse_codec_limit("write NX entity 51 value use identity", 0, 1))?;
     Ok(id)
 }
 
@@ -3789,7 +4268,10 @@ fn push_entity_51_use<T>(
     value: T,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "NX entity 51 value uses")?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()), "NX entity 51 value use")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
+        "NX entity 51 value use",
+    )?;
     uses.try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit("allocate NX entity 51 value uses", 0, 1))?;
     uses.push(value);
@@ -3801,9 +4283,18 @@ fn sort_entity_51_uses<T>(
     uses: &mut [T],
     id: impl Fn(&T) -> &str,
 ) -> Result<(), CodecError> {
-    let work = uses.len().checked_mul(uses.len().checked_ilog2().map_or(1, |digits| digits as usize + 1))
+    let work = uses
+        .len()
+        .checked_mul(
+            uses.len()
+                .checked_ilog2()
+                .map_or(1, |digits| digits as usize + 1),
+        )
         .ok_or_else(|| ctx.refuse_codec_limit("NX entity 51 value use sort work", 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX entity 51 value use sort work")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "NX entity 51 value use sort work",
+    )?;
     uses.sort_by(|left, right| id(left).cmp(id(right)));
     Ok(())
 }
@@ -3818,40 +4309,54 @@ pub(super) fn parasolid_entity_51_numeric_uses(
         BTreeMap::<(u32, u32), Option<(ParasolidEntity51NumericKind, NonNullXmt, &str)>>::new();
     let mut values_guard = ctx.reserve_scoped(0, "NX entity 51 value identity index")?;
     for record in integers {
-        insert_unique_value(ctx, &mut values, &mut values_guard,
-            (record.stream_ordinal, u32::from(record.xmt)), (
+        insert_unique_value(
+            ctx,
+            &mut values,
+            &mut values_guard,
+            (record.stream_ordinal, u32::from(record.xmt)),
+            (
                 ParasolidEntity51NumericKind::UnsignedIntegers,
                 record.xmt,
                 &record.id,
-            ))?;
+            ),
+        )?;
     }
     for record in doubles {
-        insert_unique_value(ctx, &mut values, &mut values_guard,
-            (record.stream_ordinal, u32::from(record.xmt)), (
+        insert_unique_value(
+            ctx,
+            &mut values,
+            &mut values_guard,
+            (record.stream_ordinal, u32::from(record.xmt)),
+            (
                 ParasolidEntity51NumericKind::Doubles,
                 record.xmt,
                 &record.id,
-            ))?;
+            ),
+        )?;
     }
     let mut uses = Vec::new();
     for entity in entities {
         for (position, &referenced_xmt) in entity.trailing_references.fields() {
             let reference_ordinal = position.reference_ordinal();
-            let Some(Some((kind, target_xmt, value_record))) = values
-                .get(&(entity.stream_ordinal, referenced_xmt))
+            let Some(Some((kind, target_xmt, value_record))) =
+                values.get(&(entity.stream_ordinal, referenced_xmt))
             else {
                 continue;
             };
-            push_entity_51_use(ctx, &mut uses, ParasolidEntity51NumericUse {
-                id: entity_51_use_id(ctx, "entity-51-numeric-use", entity, reference_ordinal)?,
-                stream_ordinal: entity.stream_ordinal,
-                entity_51_record: entity_51_use_text(ctx, &entity.id)?,
-                position,
-                referenced_xmt: *target_xmt,
-                kind: *kind,
-                value_record: entity_51_use_text(ctx, value_record)?,
-                inflated_offset: entity.inflated_offset,
-            })?;
+            push_entity_51_use(
+                ctx,
+                &mut uses,
+                ParasolidEntity51NumericUse {
+                    id: entity_51_use_id(ctx, "entity-51-numeric-use", entity, reference_ordinal)?,
+                    stream_ordinal: entity.stream_ordinal,
+                    entity_51_record: entity_51_use_text(ctx, &entity.id)?,
+                    position,
+                    referenced_xmt: *target_xmt,
+                    kind: *kind,
+                    value_record: entity_51_use_text(ctx, value_record)?,
+                    inflated_offset: entity.inflated_offset,
+                },
+            )?;
         }
     }
     sort_entity_51_uses(ctx, &mut uses, |value| &value.id)?;
@@ -3868,27 +4373,36 @@ pub(super) fn parasolid_entity_51_string_uses(
         BTreeMap::<(u32, u32), Option<&ParasolidEntity54StringRecord>>::new();
     let mut strings_guard = ctx.reserve_scoped(0, "NX entity 51 value identity index")?;
     for string in strings {
-        insert_unique_value(ctx, &mut strings_by_identity, &mut strings_guard,
-            (string.stream_ordinal, u32::from(string.xmt)), string)?;
+        insert_unique_value(
+            ctx,
+            &mut strings_by_identity,
+            &mut strings_guard,
+            (string.stream_ordinal, u32::from(string.xmt)),
+            string,
+        )?;
     }
     let mut uses = Vec::new();
     for entity in entities {
         for (position, &referenced_xmt) in entity.trailing_references.fields() {
             let reference_ordinal = position.reference_ordinal();
-            let Some(Some(string)) = strings_by_identity
-                .get(&(entity.stream_ordinal, referenced_xmt))
+            let Some(Some(string)) =
+                strings_by_identity.get(&(entity.stream_ordinal, referenced_xmt))
             else {
                 continue;
             };
-            push_entity_51_use(ctx, &mut uses, ParasolidEntity51StringUse {
-                id: entity_51_use_id(ctx, "entity-51-string-use", entity, reference_ordinal)?,
-                stream_ordinal: entity.stream_ordinal,
-                entity_51_record: entity_51_use_text(ctx, &entity.id)?,
-                position,
-                referenced_xmt: string.xmt,
-                string_record: entity_51_use_text(ctx, &string.id)?,
-                inflated_offset: entity.inflated_offset,
-            })?;
+            push_entity_51_use(
+                ctx,
+                &mut uses,
+                ParasolidEntity51StringUse {
+                    id: entity_51_use_id(ctx, "entity-51-string-use", entity, reference_ordinal)?,
+                    stream_ordinal: entity.stream_ordinal,
+                    entity_51_record: entity_51_use_text(ctx, &entity.id)?,
+                    position,
+                    referenced_xmt: string.xmt,
+                    string_record: entity_51_use_text(ctx, &string.id)?,
+                    inflated_offset: entity.inflated_offset,
+                },
+            )?;
         }
     }
     sort_entity_51_uses(ctx, &mut uses, |value| &value.id)?;
@@ -3912,9 +4426,13 @@ pub(super) fn parasolid_entity_51_structured_uses(
             ParasolidVectorValueKind::Vectors => StructuredValueKind::Vectors,
             ParasolidVectorValueKind::Directions => StructuredValueKind::Directions,
         };
-        insert_unique_value(ctx, &mut values, &mut values_guard,
+        insert_unique_value(
+            ctx,
+            &mut values,
+            &mut values_guard,
             (record.stream_ordinal, u32::from(record.xmt)),
-            (kind, record.xmt, record.id.as_str()))?;
+            (kind, record.xmt, record.id.as_str()),
+        )?;
     }
     for (kind, stream_ordinal, xmt, id) in axes
         .iter()
@@ -3943,28 +4461,42 @@ pub(super) fn parasolid_entity_51_structured_uses(
             )
         }))
     {
-        insert_unique_value(ctx, &mut values, &mut values_guard,
-            (stream_ordinal, u32::from(xmt)), (kind, xmt, id))?;
+        insert_unique_value(
+            ctx,
+            &mut values,
+            &mut values_guard,
+            (stream_ordinal, u32::from(xmt)),
+            (kind, xmt, id),
+        )?;
     }
     let mut uses = Vec::new();
     for entity in entities {
         for (position, &referenced_xmt) in entity.trailing_references.fields() {
             let reference_ordinal = position.reference_ordinal();
-            let Some(Some((kind, target_xmt, value_record))) = values
-                .get(&(entity.stream_ordinal, referenced_xmt))
+            let Some(Some((kind, target_xmt, value_record))) =
+                values.get(&(entity.stream_ordinal, referenced_xmt))
             else {
                 continue;
             };
-            push_entity_51_use(ctx, &mut uses, ParasolidEntity51StructuredUse {
-                id: entity_51_use_id(ctx, "entity-51-structured-use", entity, reference_ordinal)?,
-                stream_ordinal: entity.stream_ordinal,
-                entity_51_record: entity_51_use_text(ctx, &entity.id)?,
-                position,
-                referenced_xmt: *target_xmt,
-                kind: *kind,
-                value_record: entity_51_use_text(ctx, value_record)?,
-                inflated_offset: entity.inflated_offset,
-            })?;
+            push_entity_51_use(
+                ctx,
+                &mut uses,
+                ParasolidEntity51StructuredUse {
+                    id: entity_51_use_id(
+                        ctx,
+                        "entity-51-structured-use",
+                        entity,
+                        reference_ordinal,
+                    )?,
+                    stream_ordinal: entity.stream_ordinal,
+                    entity_51_record: entity_51_use_text(ctx, &entity.id)?,
+                    position,
+                    referenced_xmt: *target_xmt,
+                    kind: *kind,
+                    value_record: entity_51_use_text(ctx, value_record)?,
+                    inflated_offset: entity.inflated_offset,
+                },
+            )?;
         }
     }
     sort_entity_51_uses(ctx, &mut uses, |value| &value.id)?;
@@ -3981,8 +4513,13 @@ pub(super) fn parasolid_topology_attribute_class_uses(
     let mut records_by_identity = BTreeMap::<(u32, u32), Option<&ParasolidEntity51Record>>::new();
     let mut identity_guard = ctx.reserve_scoped(0, "NX topology attribute entity index")?;
     for record in entity_records {
-        insert_unique_value(ctx, &mut records_by_identity, &mut identity_guard,
-            (record.stream_ordinal, u32::from(record.xmt)), record)?;
+        insert_unique_value(
+            ctx,
+            &mut records_by_identity,
+            &mut identity_guard,
+            (record.stream_ordinal, u32::from(record.xmt)),
+            record,
+        )?;
     }
     let mut records_by_owner = BTreeMap::<(u32, u32), Vec<&ParasolidEntity51Record>>::new();
     let mut owner_guard = ctx.reserve_scoped(0, "NX topology attribute owner index")?;
@@ -4000,9 +4537,12 @@ pub(super) fn parasolid_topology_attribute_class_uses(
                 }
             };
             ctx.charge_collection_items(1, "NX topology attribute owner members")?;
-            owner_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&ParasolidEntity51Record>()))?;
-            members.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX topology attribute owner members", 0, 1))?;
+            owner_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                &ParasolidEntity51Record,
+            >()))?;
+            members.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX topology attribute owner members", 0, 1)
+            })?;
             members.push(record);
         }
     }
@@ -4025,8 +4565,8 @@ pub(super) fn parasolid_topology_attribute_class_uses(
         let Some(entity_id) = reference.attribute_list_record.as_deref() else {
             continue;
         };
-        let Some(Some(head)) = records_by_identity
-            .get(&(reference.stream_ordinal, reference.attribute_list_xmt))
+        let Some(Some(head)) =
+            records_by_identity.get(&(reference.stream_ordinal, reference.attribute_list_xmt))
         else {
             continue;
         };
@@ -4047,54 +4587,88 @@ pub(super) fn parasolid_topology_attribute_class_uses(
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     ctx.charge_collection_items(1, "NX topology attribute member XMT counts")?;
-                    count_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, usize)>() * 4))?;
+                    count_guard.grow(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<(u32, usize)>() * 4,
+                    ))?;
                     entry.insert(0)
                 }
             };
-            *count = count.checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit("count NX topology attribute member XMT", 0, 1))?;
+            *count = count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("count NX topology attribute member XMT", 0, 1)
+            })?;
         }
         for member in members {
-            let Some(Some(class_use)) = class_uses_by_entity
-                .get(member.id.as_str())
-            else {
+            let Some(Some(class_use)) = class_uses_by_entity.get(member.id.as_str()) else {
                 continue;
             };
             let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
-            let mut length = "nx:s".len()
+            let mut length = "nx:s"
+                .len()
                 .checked_add(digits(u64::from(reference.stream_ordinal)))
                 .and_then(|length| length.checked_add(":topology-attribute-class-use#".len()))
-                .and_then(|length| length.checked_add(digits(u64::from(reference.topology_type.code()))))
-                .and_then(|length| length.checked_add(1 + digits(u64::from(reference.topology_xmt))))
-                .ok_or_else(|| ctx.refuse_codec_limit("NX topology attribute class identity", 0, 1))?;
+                .and_then(|length| {
+                    length.checked_add(digits(u64::from(reference.topology_type.code())))
+                })
+                .and_then(|length| {
+                    length.checked_add(1 + digits(u64::from(reference.topology_xmt)))
+                })
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("NX topology attribute class identity", 0, 1)
+                })?;
             let suffix = member.id != head.id;
             let offset_suffix = suffix && member_xmt_counts.get(&u32::from(member.xmt)) != Some(&1);
             if suffix {
-                length = length.checked_add(1 + digits(u64::from(u32::from(member.xmt))))
-                    .ok_or_else(|| ctx.refuse_codec_limit("NX topology attribute class identity", 0, 1))?;
+                length = length
+                    .checked_add(1 + digits(u64::from(u32::from(member.xmt))))
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("NX topology attribute class identity", 0, 1)
+                    })?;
             }
             if offset_suffix {
-                length = length.checked_add(1 + digits(member.inflated_offset))
-                    .ok_or_else(|| ctx.refuse_codec_limit("NX topology attribute class identity", 0, 1))?;
+                length = length
+                    .checked_add(1 + digits(member.inflated_offset))
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("NX topology attribute class identity", 0, 1)
+                    })?;
             }
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX topology attribute class identity")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(length),
+                "NX topology attribute class identity",
+            )?;
             let mut id = String::new();
-            id.try_reserve_exact(length)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX topology attribute class identity", 0, 1))?;
-            write!(&mut id, "nx:s{}:topology-attribute-class-use#{}-{}", reference.stream_ordinal, reference.topology_type.code(), reference.topology_xmt)
-                .map_err(|_| ctx.refuse_codec_limit("write NX topology attribute class identity", 0, 1))?;
+            id.try_reserve_exact(length).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX topology attribute class identity", 0, 1)
+            })?;
+            write!(
+                &mut id,
+                "nx:s{}:topology-attribute-class-use#{}-{}",
+                reference.stream_ordinal,
+                reference.topology_type.code(),
+                reference.topology_xmt
+            )
+            .map_err(|_| {
+                ctx.refuse_codec_limit("write NX topology attribute class identity", 0, 1)
+            })?;
             if suffix {
-                write!(&mut id, "-{}", u32::from(member.xmt))
-                    .map_err(|_| ctx.refuse_codec_limit("write NX topology attribute class identity", 0, 1))?;
+                write!(&mut id, "-{}", u32::from(member.xmt)).map_err(|_| {
+                    ctx.refuse_codec_limit("write NX topology attribute class identity", 0, 1)
+                })?;
             }
             if offset_suffix {
-                write!(&mut id, "-{}", member.inflated_offset)
-                    .map_err(|_| ctx.refuse_codec_limit("write NX topology attribute class identity", 0, 1))?;
+                write!(&mut id, "-{}", member.inflated_offset).map_err(|_| {
+                    ctx.refuse_codec_limit("write NX topology attribute class identity", 0, 1)
+                })?;
             }
             ctx.charge_collection_items(1, "NX topology attribute class uses")?;
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidTopologyAttributeClassUse>()), "NX topology attribute class use")?;
-            uses.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX topology attribute class uses", 0, 1))?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                    ParasolidTopologyAttributeClassUse,
+                >()),
+                "NX topology attribute class use",
+            )?;
+            uses.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX topology attribute class uses", 0, 1)
+            })?;
             uses.push(ParasolidTopologyAttributeClassUse {
                 stream_ordinal: reference.stream_ordinal,
                 inflated_offset: member.inflated_offset,
@@ -4107,9 +4681,18 @@ pub(super) fn parasolid_topology_attribute_class_uses(
             });
         }
     }
-    let work = uses.len().checked_mul(uses.len().checked_ilog2().map_or(1, |digits| digits as usize + 1))
+    let work = uses
+        .len()
+        .checked_mul(
+            uses.len()
+                .checked_ilog2()
+                .map_or(1, |digits| digits as usize + 1),
+        )
         .ok_or_else(|| ctx.refuse_codec_limit("NX topology attribute class sort work", 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX topology attribute class sort work")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "NX topology attribute class sort work",
+    )?;
     uses.sort_by(|first, second| first.id.cmp(&second.id));
     Ok(uses)
 }
@@ -4124,44 +4707,73 @@ pub(super) fn parasolid_attribute_class_uses(
         BTreeMap::<(u32, u32), Option<&ParasolidAttributeDefinition>>::new();
     let mut definitions_guard = ctx.reserve_scoped(0, "NX attribute class definition index")?;
     for definition in definitions {
-        insert_unique_value(ctx, &mut definitions_by_identity, &mut definitions_guard,
-            (definition.stream_ordinal, u32::from(definition.xmt)), definition)?;
+        insert_unique_value(
+            ctx,
+            &mut definitions_by_identity,
+            &mut definitions_guard,
+            (definition.stream_ordinal, u32::from(definition.xmt)),
+            definition,
+        )?;
     }
     let mut uses = Vec::new();
     for entity in entities {
-        let Some(Some(definition)) = definitions_by_identity
-            .get(&(entity.stream_ordinal, entity.definition_xmt)) else {
+        let Some(Some(definition)) =
+            definitions_by_identity.get(&(entity.stream_ordinal, entity.definition_xmt))
+        else {
             continue;
         };
         ctx.charge_collection_items(1, "NX attribute class uses")?;
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidAttributeClassUse>()), "NX attribute class use")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidAttributeClassUse>()),
+            "NX attribute class use",
+        )?;
         uses.try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit("allocate NX attribute class uses", 0, 1))?;
         let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
-        let length = "nx:s".len()
+        let length = "nx:s"
+            .len()
             .checked_add(digits(u64::from(entity.stream_ordinal)))
             .and_then(|length| length.checked_add(":attribute-class-use#".len()))
             .and_then(|length| length.checked_add(digits(u64::from(u32::from(entity.xmt)))))
             .and_then(|length| length.checked_add(1 + digits(entity.inflated_offset)))
             .ok_or_else(|| ctx.refuse_codec_limit("NX attribute class use identity", 0, 1))?;
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX attribute class use identity")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(length),
+            "NX attribute class use identity",
+        )?;
         let mut id = String::new();
-        id.try_reserve_exact(length)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX attribute class use identity", 0, 1))?;
-        write!(&mut id, "nx:s{}:attribute-class-use#{}-{}", entity.stream_ordinal, u32::from(entity.xmt), entity.inflated_offset)
-            .map_err(|_| ctx.refuse_codec_limit("write NX attribute class use identity", 0, 1))?;
+        id.try_reserve_exact(length).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX attribute class use identity", 0, 1)
+        })?;
+        write!(
+            &mut id,
+            "nx:s{}:attribute-class-use#{}-{}",
+            entity.stream_ordinal,
+            u32::from(entity.xmt),
+            entity.inflated_offset
+        )
+        .map_err(|_| ctx.refuse_codec_limit("write NX attribute class use identity", 0, 1))?;
         uses.push(ParasolidAttributeClassUse {
-                inflated_offset: entity.inflated_offset,
-                id,
-                stream_ordinal: entity.stream_ordinal,
-                entity_51_record: entity_51_use_text(ctx, &entity.id)?,
-                definition_xmt: definition.xmt,
-                attribute_definition: entity_51_use_text(ctx, &definition.id)?,
-            });
+            inflated_offset: entity.inflated_offset,
+            id,
+            stream_ordinal: entity.stream_ordinal,
+            entity_51_record: entity_51_use_text(ctx, &entity.id)?,
+            definition_xmt: definition.xmt,
+            attribute_definition: entity_51_use_text(ctx, &definition.id)?,
+        });
     }
-    let work = uses.len().checked_mul(uses.len().checked_ilog2().map_or(1, |digits| digits as usize + 1))
+    let work = uses
+        .len()
+        .checked_mul(
+            uses.len()
+                .checked_ilog2()
+                .map_or(1, |digits| digits as usize + 1),
+        )
         .ok_or_else(|| ctx.refuse_codec_limit("NX attribute class use sort work", 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX attribute class use sort work")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "NX attribute class use sort work",
+    )?;
     uses.sort_by(|first, second| first.id.cmp(&second.id));
     Ok(uses)
 }
@@ -4189,10 +4801,12 @@ pub(super) fn parasolid_attribute_field_uses(
             }
         };
         ctx.charge_collection_items(1, "NX attribute field class members")?;
-        classes_guard.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<&ParasolidAttributeClassUse>(),
-        ))?;
-        group.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field class members", 0, 1))?;
+        classes_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            &ParasolidAttributeClassUse,
+        >()))?;
+        group.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX attribute field class members", 0, 1)
+        })?;
         group.push(class_use);
     }
     let mut definitions_by_id = BTreeMap::<&str, Vec<&ParasolidAttributeDefinition>>::new();
@@ -4209,10 +4823,12 @@ pub(super) fn parasolid_attribute_field_uses(
             }
         };
         ctx.charge_collection_items(1, "NX attribute field definition members")?;
-        definitions_guard.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<&ParasolidAttributeDefinition>(),
-        ))?;
-        group.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field definition members", 0, 1))?;
+        definitions_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            &ParasolidAttributeDefinition,
+        >()))?;
+        group.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX attribute field definition members", 0, 1)
+        })?;
         group.push(definition);
     }
     let mut candidates = BTreeMap::<(&str, FieldPosition), Vec<_>>::new();
@@ -4223,16 +4839,25 @@ pub(super) fn parasolid_attribute_field_uses(
             std::collections::btree_map::Entry::Vacant(entry) => {
                 ctx.charge_collection_items(1, "NX attribute field candidate index")?;
                 candidates_guard.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<((&str, FieldPosition), Vec<(u32, ParasolidAttributeFieldValueKind, &str, &str, u64)>)>() * 4,
+                    std::mem::size_of::<(
+                        (&str, FieldPosition),
+                        Vec<(u32, ParasolidAttributeFieldValueKind, &str, &str, u64)>,
+                    )>() * 4,
                 ))?;
                 entry.insert(Vec::new())
             }
         };
         ctx.charge_collection_items(1, "NX attribute field candidate members")?;
-        candidates_guard.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<(u32, ParasolidAttributeFieldValueKind, &str, &str, u64)>(),
-        ))?;
-        group.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field candidate members", 0, 1))?;
+        candidates_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+            u32,
+            ParasolidAttributeFieldValueKind,
+            &str,
+            &str,
+            u64,
+        )>()))?;
+        group.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX attribute field candidate members", 0, 1)
+        })?;
         group.push(candidate);
         Ok(())
     };
@@ -4281,10 +4906,15 @@ pub(super) fn parasolid_attribute_field_uses(
             ),
         )?;
     }
-    let candidate_count = numeric_uses.len().checked_add(string_uses.len())
+    let candidate_count = numeric_uses
+        .len()
+        .checked_add(string_uses.len())
         .and_then(|count| count.checked_add(structured_uses.len()))
         .ok_or_else(|| ctx.refuse_codec_limit("NX attribute field join work", 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(candidate_count), "NX attribute field join work")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(candidate_count),
+        "NX attribute field join work",
+    )?;
     let mut uses = Vec::new();
     for ((entity_51_record, position), candidates) in candidates {
         let matched = (|| {
@@ -4309,42 +4939,83 @@ pub(super) fn parasolid_attribute_field_uses(
             let field_code = *definition.field_codes.get(field_ordinal as usize)?;
             (field_code == value_kind.field_code()).then_some(())?;
             let (_, class_key) = class_use.id.rsplit_once('#')?;
-            Some((*stream_ordinal, *value_kind, *value_use, *value_record, *inflated_offset, class_use, class_key, field_ordinal))
+            Some((
+                *stream_ordinal,
+                *value_kind,
+                *value_use,
+                *value_record,
+                *inflated_offset,
+                class_use,
+                class_key,
+                field_ordinal,
+            ))
         })();
-        let Some((stream_ordinal, value_kind, value_use, value_record, inflated_offset, class_use, class_key, field_ordinal)) = matched else {
+        let Some((
+            stream_ordinal,
+            value_kind,
+            value_use,
+            value_record,
+            inflated_offset,
+            class_use,
+            class_key,
+            field_ordinal,
+        )) = matched
+        else {
             continue;
         };
         let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
-        let id_len = "nx:s".len()
+        let id_len = "nx:s"
+            .len()
             .checked_add(digits(u64::from(stream_ordinal)))
             .and_then(|length| length.checked_add(":attribute-field-use#".len()))
             .and_then(|length| length.checked_add(class_key.len()))
             .and_then(|length| length.checked_add(1 + digits(u64::from(field_ordinal))))
             .ok_or_else(|| ctx.refuse_codec_limit("NX attribute field use identity", 0, 1))?;
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_len), "NX attribute field use identity")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(id_len),
+            "NX attribute field use identity",
+        )?;
         let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field use identity", 0, 1))?;
-        write!(&mut id, "nx:s{stream_ordinal}:attribute-field-use#{class_key}-{field_ordinal}")
-            .map_err(|_| ctx.refuse_codec_limit("write NX attribute field use identity", 0, 1))?;
+        id.try_reserve_exact(id_len).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX attribute field use identity", 0, 1)
+        })?;
+        write!(
+            &mut id,
+            "nx:s{stream_ordinal}:attribute-field-use#{class_key}-{field_ordinal}"
+        )
+        .map_err(|_| ctx.refuse_codec_limit("write NX attribute field use identity", 0, 1))?;
         ctx.charge_collection_items(1, "NX attribute field uses")?;
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidAttributeFieldUse>()), "NX attribute field use")?;
-        uses.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field uses", 0, 1))?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidAttributeFieldUse>()),
+            "NX attribute field use",
+        )?;
+        uses.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field uses", 0, 1))?;
         uses.push(ParasolidAttributeFieldUse {
-                id,
-                stream_ordinal,
-                attribute_class_use: entity_51_use_text(ctx, &class_use.id)?,
-                entity_51_record: entity_51_use_text(ctx, entity_51_record)?,
-                attribute_definition: entity_51_use_text(ctx, &class_use.attribute_definition)?,
-                position,
-                value_kind,
-                value_use: entity_51_use_text(ctx, value_use)?,
-                value_record: entity_51_use_text(ctx, value_record)?,
-                inflated_offset,
-            });
+            id,
+            stream_ordinal,
+            attribute_class_use: entity_51_use_text(ctx, &class_use.id)?,
+            entity_51_record: entity_51_use_text(ctx, entity_51_record)?,
+            attribute_definition: entity_51_use_text(ctx, &class_use.attribute_definition)?,
+            position,
+            value_kind,
+            value_use: entity_51_use_text(ctx, value_use)?,
+            value_record: entity_51_use_text(ctx, value_record)?,
+            inflated_offset,
+        });
     }
-    let sort_work = uses.len().checked_mul(uses.len().checked_ilog2().map_or(1, |digits| digits as usize + 1))
+    let sort_work = uses
+        .len()
+        .checked_mul(
+            uses.len()
+                .checked_ilog2()
+                .map_or(1, |digits| digits as usize + 1),
+        )
         .ok_or_else(|| ctx.refuse_codec_limit("NX attribute field use sort work", 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(sort_work), "NX attribute field use sort work")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(sort_work),
+        "NX attribute field use sort work",
+    )?;
     uses.sort_by(|first, second| first.id.cmp(&second.id));
     Ok(uses)
 }
@@ -4371,10 +5042,14 @@ pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
             }
         }
     }
-    let mut fields_by_identity = BTreeMap::<(&str, u32), Option<&ParasolidAttributeFieldUse>>::new();
+    let mut fields_by_identity =
+        BTreeMap::<(&str, u32), Option<&ParasolidAttributeFieldUse>>::new();
     let mut fields_guard = ctx.reserve_scoped(0, "NX topology attribute field index")?;
     for field_use in field_uses {
-        let key = (field_use.entity_51_record.as_str(), field_use.position.field_ordinal());
+        let key = (
+            field_use.entity_51_record.as_str(),
+            field_use.position.field_ordinal(),
+        );
         match fields_by_identity.entry(key) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -4402,20 +5077,29 @@ pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
         }
     }
 
-    let work = topology_class_uses.iter().try_fold(0usize, |total, use_| {
-        let fields = definitions_by_id.get(use_.attribute_definition.as_str())
-            .and_then(|definition| *definition)
-            .map_or(0, |definition| definition.field_codes.len());
-        total.checked_add(fields.checked_add(1)?)
-    }).ok_or_else(|| ctx.refuse_codec_limit("NX topology attribute field validation work", 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX topology attribute field validation work")?;
+    let work = topology_class_uses
+        .iter()
+        .try_fold(0usize, |total, use_| {
+            let fields = definitions_by_id
+                .get(use_.attribute_definition.as_str())
+                .and_then(|definition| *definition)
+                .map_or(0, |definition| definition.field_codes.len());
+            total.checked_add(fields.checked_add(1)?)
+        })
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("NX topology attribute field validation work", 0, 1)
+        })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "NX topology attribute field validation work",
+    )?;
     Ok(topology_class_uses.iter().any(|topology_class_use| {
         let entity_id = topology_class_use.entity_51_record.as_str();
         let Some(Some(entity)) = entities_by_id.get(entity_id) else {
             return true;
         };
-        let Some(Some(definition)) = definitions_by_id
-            .get(topology_class_use.attribute_definition.as_str())
+        let Some(Some(definition)) =
+            definitions_by_id.get(topology_class_use.attribute_definition.as_str())
         else {
             return true;
         };
@@ -4442,17 +5126,20 @@ pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
                 let Ok(field_ordinal) = u32::try_from(field_ordinal) else {
                     return true;
                 };
-                !matches!(fields_by_identity.get(&(entity.id.as_str(), field_ordinal)), Some(Some(_)))
+                !matches!(
+                    fields_by_identity.get(&(entity.id.as_str(), field_ordinal)),
+                    Some(Some(_))
+                )
             })
     }))
 }
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::CodecError;
     use crate::test_support::test_bytes::put_ref;
     use crate::test_support::test_prt::prt_with_partition;
     use crate::test_support::test_streams::topology_partition_stream;
+    use cadmpeg_core::CodecError;
 
     #[test]
     fn parasolid_cached_records_refuse_collection_at_caller_limit() {
@@ -4475,8 +5162,7 @@ mod tests {
         )
         .unwrap();
         let error = super::parasolid_blend_surface_records(&limited_ctx, &parsed)
-            .err()
-            .expect("cached record refusal");
+            .expect_err("cached record refusal");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -4530,8 +5216,7 @@ mod tests {
         )
         .unwrap();
         let error = super::per_parasolid_scan::<OneScannedRecord>(&limited_ctx, &scan.streams)
-            .err()
-            .expect("scanned record refusal");
+            .expect_err("scanned record refusal");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -4563,8 +5248,7 @@ mod tests {
         )
         .unwrap();
         let error = super::parasolid_attribute_definitions(&limited_ctx, &scan.streams)
-            .err()
-            .expect("attribute definition collection refusal");
+            .expect_err("attribute definition collection refusal");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -4598,8 +5282,7 @@ mod tests {
         )
         .unwrap();
         let error = super::parasolid_field_names_records(&limited_ctx, &scan.streams)
-            .err()
-            .expect("field names collection refusal");
+            .expect_err("field names collection refusal");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -4631,8 +5314,7 @@ mod tests {
         )
         .unwrap();
         let error = super::parasolid_entity_51_records(&limited_ctx, &scan.streams)
-            .err()
-            .expect("entity 51 collection refusal");
+            .expect_err("entity 51 collection refusal");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -4728,10 +5410,10 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         configure(&mut policy);
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         super::parasolid_group_records(&ctx, &streams, &BTreeMap::new(), &[])
-            .err()
-            .expect("GROUP record limit refusal")
+            .expect_err("GROUP record limit refusal")
     }
 
     fn chart_record_route_limit_error(
@@ -4740,17 +5422,20 @@ mod tests {
         let streams = [stream(
             crate::parasolid::ParasolidSubtype::Partition,
             "SCH_TEST",
-            crate::test_support::test_streams::charted_intersection_curve_topology_partition_stream(),
+            crate::test_support::test_streams::charted_intersection_curve_topology_partition_stream(
+            ),
         )];
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         configure(&mut policy);
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &streams[0].inflated, &arena, &policy,
-        ).unwrap();
+            &streams[0].inflated,
+            &arena,
+            &policy,
+        )
+        .unwrap();
         super::parasolid_chart_records(&ctx, &streams)
-            .err()
-            .expect("chart record route limit refusal")
+            .expect_err("chart record route limit refusal")
     }
 
     #[test]
@@ -4769,7 +5454,8 @@ mod tests {
 
     #[test]
     fn chart_record_route_refuses_scoped_limit() {
-        let error = chart_record_route_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        let error =
+            chart_record_route_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
     }
@@ -4789,20 +5475,21 @@ mod tests {
         );
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &bytes, &arena, &policy,
-        ).unwrap();
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let scan = crate::decode::scan(&ctx, root).unwrap();
         let parsed = crate::native::substrate::ParsedStreams::parse(&ctx, &scan).unwrap();
         let limited_arena = cadmpeg_core::decode::DecodeArena::new();
         let mut limited_policy = cadmpeg_core::decode::DecodePolicy::service();
         configure(&mut limited_policy);
         let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &bytes, &limited_arena, &limited_policy,
-        ).unwrap();
+            &bytes,
+            &limited_arena,
+            &limited_policy,
+        )
+        .unwrap();
         super::parasolid_group_members(&limited_ctx, &scan.streams, &BTreeMap::new(), &parsed)
-            .err()
-            .expect("GROUP member route limit refusal")
+            .expect_err("GROUP member route limit refusal")
     }
 
     #[test]
@@ -4821,7 +5508,8 @@ mod tests {
 
     #[test]
     fn group_member_route_refuses_scoped_limit() {
-        let error = group_member_route_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        let error =
+            group_member_route_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
     }
@@ -5158,7 +5846,9 @@ mod tests {
         }];
         let scan_arena = DecodeArena::new();
         let scan_policy = DecodePolicy::service();
-        let (scan_ctx, _) = DecodeContext::from_root_bytes(&streams[0].inflated, &scan_arena, &scan_policy).unwrap();
+        let (scan_ctx, _) =
+            DecodeContext::from_root_bytes(&streams[0].inflated, &scan_arena, &scan_policy)
+                .unwrap();
         let census = crate::deltas::census::walk(&scan_ctx, &streams[0].inflated).unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -5746,7 +6436,8 @@ mod tests {
     fn attribute_value_uses_are_assigned_to_compatible_declared_fields() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let definition = ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 2,
@@ -5809,7 +6500,8 @@ mod tests {
             &[numeric_use.clone(), double_use],
             std::slice::from_ref(&string_use),
             &[],
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(uses.len(), 3);
         assert_eq!(uses[0].id, "nx:s2:attribute-field-use#class-use-0");
@@ -5855,7 +6547,8 @@ mod tests {
             &[],
             &[],
         )
-        .unwrap().is_empty());
+        .unwrap()
+        .is_empty());
 
         let wrong_stream = ParasolidAttributeClassUse {
             stream_ordinal: 3,
@@ -5869,7 +6562,8 @@ mod tests {
             &[],
             &[],
         )
-        .unwrap().is_empty());
+        .unwrap()
+        .is_empty());
 
         let mismatched = ParasolidEntity51NumericUse {
             kind: ParasolidEntity51NumericKind::Doubles,
@@ -5883,7 +6577,8 @@ mod tests {
             &[],
             &[],
         )
-        .unwrap().is_empty());
+        .unwrap()
+        .is_empty());
 
         let ambiguous_string = ParasolidEntity51StringUse {
             position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
@@ -5897,7 +6592,8 @@ mod tests {
             &[ambiguous_string],
             &[],
         )
-        .unwrap().is_empty());
+        .unwrap()
+        .is_empty());
     }
 
     #[test]
@@ -5924,11 +6620,15 @@ mod tests {
             inflated_offset: 80,
         };
         let uses = crate::test_support::with_decode_context(|ctx| {
-            parasolid_entity_51_structured_uses(ctx,
+            parasolid_entity_51_structured_uses(
+                ctx,
                 std::slice::from_ref(&entity),
                 std::slice::from_ref(&point),
-                &[], &[], &[],
-            ).unwrap()
+                &[],
+                &[],
+                &[],
+            )
+            .unwrap()
         });
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].position.reference_ordinal(), 5);
@@ -5944,12 +6644,17 @@ mod tests {
             inflated_offset: 90,
         };
         assert!(crate::test_support::with_decode_context(|ctx| {
-            parasolid_entity_51_structured_uses(ctx,
+            parasolid_entity_51_structured_uses(
+                ctx,
                 std::slice::from_ref(&entity),
                 std::slice::from_ref(&point),
-                &[], std::slice::from_ref(&colliding_tag), &[],
-            ).unwrap()
-        }).is_empty());
+                &[],
+                std::slice::from_ref(&colliding_tag),
+                &[],
+            )
+            .unwrap()
+        })
+        .is_empty());
 
         let other_stream = ParasolidEntityVectorRecord {
             stream_ordinal: 3,
@@ -5958,14 +6663,16 @@ mod tests {
         assert!(crate::test_support::with_decode_context(|ctx| {
             parasolid_entity_51_structured_uses(ctx, &[entity], &[other_stream], &[], &[], &[])
                 .unwrap()
-        }).is_empty());
+        })
+        .is_empty());
     }
 
     #[test]
     fn structured_value_families_match_only_their_declared_field_codes() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let kinds = [
             StructuredValueKind::Points,
             StructuredValueKind::Vectors,
@@ -6032,7 +6739,8 @@ mod tests {
             &[],
             &[],
             &structured,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(
             uses.iter().map(|use_| use_.value_kind).collect::<Vec<_>>(),
             kinds.map(ParasolidAttributeFieldValueKind::from)
@@ -6040,8 +6748,15 @@ mod tests {
 
         let mut mismatched = structured;
         mismatched[0].kind = StructuredValueKind::Vectors;
-        let uses =
-            parasolid_attribute_field_uses(&ctx, &[class_use], &[definition], &[], &[], &mismatched).unwrap();
+        let uses = parasolid_attribute_field_uses(
+            &ctx,
+            &[class_use],
+            &[definition],
+            &[],
+            &[],
+            &mismatched,
+        )
+        .unwrap();
         assert_eq!(uses.len(), 5);
         assert!(uses.iter().all(|use_| use_.position.field_ordinal() != 0));
     }
@@ -6050,7 +6765,8 @@ mod tests {
     fn attribute_loss_requires_concrete_unresolved_references() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let definition = |field_names_xmt, field_codes: Vec<u8>| ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 0,
@@ -6130,7 +6846,8 @@ mod tests {
                 &[],
                 &[],
                 &[],
-            ).unwrap()
+            )
+            .unwrap()
         );
         // A non-null instance reference must have exactly one resolved field use.
         assert!(
@@ -6140,7 +6857,8 @@ mod tests {
                 std::slice::from_ref(&entity),
                 &[],
                 std::slice::from_ref(&topology_class_use),
-            ).unwrap()
+            )
+            .unwrap()
         );
         assert!(
             !parasolid_topology_attribute_fields_have_untransferred_values(
@@ -6149,7 +6867,8 @@ mod tests {
                 std::slice::from_ref(&entity),
                 std::slice::from_ref(&field_use),
                 std::slice::from_ref(&topology_class_use),
-            ).unwrap()
+            )
+            .unwrap()
         );
         // Null values and always-empty pointer fields require no value relation.
         let mut null_entity = entity.clone();
@@ -6161,7 +6880,8 @@ mod tests {
                 &[null_entity],
                 &[],
                 std::slice::from_ref(&topology_class_use),
-            ).unwrap()
+            )
+            .unwrap()
         );
         assert!(
             !parasolid_topology_attribute_fields_have_untransferred_values(
@@ -6170,7 +6890,8 @@ mod tests {
                 std::slice::from_ref(&entity),
                 &[],
                 std::slice::from_ref(&topology_class_use),
-            ).unwrap()
+            )
+            .unwrap()
         );
 
         let named_definition = definition(22, vec![4]);
@@ -6183,7 +6904,8 @@ mod tests {
                 std::slice::from_ref(&entity),
                 std::slice::from_ref(&field_use),
                 std::slice::from_ref(&topology_class_use),
-            ).unwrap()
+            )
+            .unwrap()
         );
         assert!(
             parasolid_topology_attribute_fields_have_untransferred_values(
@@ -6192,7 +6914,8 @@ mod tests {
                 std::slice::from_ref(&entity),
                 &[],
                 std::slice::from_ref(&topology_class_use),
-            ).unwrap()
+            )
+            .unwrap()
         );
     }
 
@@ -6200,7 +6923,8 @@ mod tests {
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> CodecError {
         let definition = ParasolidAttributeDefinition {
-            id: "definition".into(), stream_ordinal: 0,
+            id: "definition".into(),
+            stream_ordinal: 0,
             xmt: NonNullXmt::try_from(20).unwrap(),
             next_definition_xmt: None,
             identifier_xmt: NonNullXmt::try_from(21).unwrap(),
@@ -6214,13 +6938,15 @@ mod tests {
             inflated_offset: 20,
         };
         let entity = ParasolidEntity51Record {
-            id: "entity".into(), stream_ordinal: 0,
+            id: "entity".into(),
+            stream_ordinal: 0,
             xmt: NonNullXmt::try_from(30).unwrap(),
             sequence: NonZeroU32::new(1).unwrap(),
             definition_xmt: 20,
             leading_references: [1; 5],
             trailing_references: EntityReferences::new(vec![40]).unwrap(),
-            byte_len: 32, inflated_offset: 30,
+            byte_len: 32,
+            inflated_offset: 30,
         };
         let class_use = ParasolidTopologyAttributeClassUse {
             id: "topology-class-use".into(),
@@ -6229,22 +6955,30 @@ mod tests {
             attribute_class_use: "class-use".into(),
             definition_xmt: definition.xmt,
             attribute_definition: definition.id.clone(),
-            stream_ordinal: 0, inflated_offset: 30,
+            stream_ordinal: 0,
+            inflated_offset: 30,
         };
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         configure(&mut policy);
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         parasolid_topology_attribute_fields_have_untransferred_values(
-            &ctx, &[definition], &[entity], &[], &[class_use],
-        ).err().expect("topology attribute validation limit refusal")
+            &ctx,
+            &[definition],
+            &[entity],
+            &[],
+            &[class_use],
+        )
+        .expect_err("topology attribute validation limit refusal")
     }
 
     fn attribute_class_use_limit_error(
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> CodecError {
         let definition = ParasolidAttributeDefinition {
-            id: "definition".into(), stream_ordinal: 0,
+            id: "definition".into(),
+            stream_ordinal: 0,
             xmt: NonNullXmt::try_from(20).unwrap(),
             next_definition_xmt: None,
             identifier_xmt: NonNullXmt::try_from(21).unwrap(),
@@ -6258,27 +6992,31 @@ mod tests {
             inflated_offset: 20,
         };
         let entity = ParasolidEntity51Record {
-            id: "entity".into(), stream_ordinal: 0,
+            id: "entity".into(),
+            stream_ordinal: 0,
             xmt: NonNullXmt::try_from(30).unwrap(),
             sequence: NonZeroU32::new(1).unwrap(),
             definition_xmt: 20,
             leading_references: [1; 5],
             trailing_references: EntityReferences::new(vec![40]).unwrap(),
-            byte_len: 32, inflated_offset: 30,
+            byte_len: 32,
+            inflated_offset: 30,
         };
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         configure(&mut policy);
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         super::parasolid_attribute_class_uses(&ctx, &[entity], &[definition])
-            .err().expect("attribute class use limit refusal")
+            .expect_err("attribute class use limit refusal")
     }
 
     fn attribute_field_use_limit_error(
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> CodecError {
         let definition = ParasolidAttributeDefinition {
-            id: "definition".into(), stream_ordinal: 0,
+            id: "definition".into(),
+            stream_ordinal: 0,
             xmt: NonNullXmt::try_from(20).unwrap(),
             next_definition_xmt: None,
             identifier_xmt: NonNullXmt::try_from(21).unwrap(),
@@ -6292,31 +7030,43 @@ mod tests {
             inflated_offset: 20,
         };
         let class_use = ParasolidAttributeClassUse {
-            id: "nx:s0:attribute-class-use#class".into(), stream_ordinal: 0,
+            id: "nx:s0:attribute-class-use#class".into(),
+            stream_ordinal: 0,
             entity_51_record: "entity".into(),
             definition_xmt: definition.xmt,
             attribute_definition: definition.id.clone(),
             inflated_offset: 30,
         };
         let numeric_use = ParasolidEntity51NumericUse {
-            id: "numeric".into(), stream_ordinal: 0,
+            id: "numeric".into(),
+            stream_ordinal: 0,
             entity_51_record: "entity".into(),
             position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
             referenced_xmt: NonNullXmt::try_from(40).unwrap(),
             kind: ParasolidEntity51NumericKind::UnsignedIntegers,
-            value_record: "value".into(), inflated_offset: 30,
+            value_record: "value".into(),
+            inflated_offset: 30,
         };
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         configure(&mut policy);
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        super::parasolid_attribute_field_uses(&ctx, &[class_use], &[definition], &[numeric_use], &[], &[])
-            .err().expect("attribute field use limit refusal")
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        super::parasolid_attribute_field_uses(
+            &ctx,
+            &[class_use],
+            &[definition],
+            &[numeric_use],
+            &[],
+            &[],
+        )
+        .expect_err("attribute field use limit refusal")
     }
 
     #[test]
     fn attribute_field_use_refuses_collection_limit() {
-        let error = attribute_field_use_limit_error(|policy| policy.limits.max_collection_items = 0);
+        let error =
+            attribute_field_use_limit_error(|policy| policy.limits.max_collection_items = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
     }
@@ -6330,7 +7080,8 @@ mod tests {
 
     #[test]
     fn attribute_field_use_refuses_scoped_limit() {
-        let error = attribute_field_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        let error =
+            attribute_field_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
     }
@@ -6346,23 +7097,27 @@ mod tests {
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> CodecError {
         let entity = ParasolidEntity51Record {
-            id: "head".into(), stream_ordinal: 0,
+            id: "head".into(),
+            stream_ordinal: 0,
             xmt: NonNullXmt::try_from(30).unwrap(),
             sequence: NonZeroU32::new(1).unwrap(),
             definition_xmt: 20,
             leading_references: [40, 1, 1, 1, 1],
             trailing_references: EntityReferences::new(vec![50]).unwrap(),
-            byte_len: 32, inflated_offset: 30,
+            byte_len: 32,
+            inflated_offset: 30,
         };
         let class_use = ParasolidAttributeClassUse {
-            id: "class".into(), stream_ordinal: 0,
+            id: "class".into(),
+            stream_ordinal: 0,
             entity_51_record: entity.id.clone(),
             definition_xmt: NonNullXmt::try_from(20).unwrap(),
             attribute_definition: "definition".into(),
             inflated_offset: 30,
         };
         let reference = ParasolidTopologyAttributeListReference {
-            id: "reference".into(), stream_ordinal: 0,
+            id: "reference".into(),
+            stream_ordinal: 0,
             topology_type: TopologyAttributeKind::Face,
             topology_xmt: 40,
             attribute_list_xmt: 30,
@@ -6372,9 +7127,10 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         configure(&mut policy);
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         super::parasolid_topology_attribute_class_uses(&ctx, &[reference], &[entity], &[class_use])
-            .err().expect("topology attribute class use limit refusal")
+            .expect_err("topology attribute class use limit refusal")
     }
 
     #[test]
@@ -6393,7 +7149,8 @@ mod tests {
 
     #[test]
     fn topology_class_use_refuses_scoped_limit() {
-        let error = topology_class_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        let error =
+            topology_class_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
     }
@@ -6407,7 +7164,8 @@ mod tests {
 
     #[test]
     fn attribute_class_use_refuses_collection_limit() {
-        let error = attribute_class_use_limit_error(|policy| policy.limits.max_collection_items = 0);
+        let error =
+            attribute_class_use_limit_error(|policy| policy.limits.max_collection_items = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
     }
@@ -6421,7 +7179,8 @@ mod tests {
 
     #[test]
     fn attribute_class_use_refuses_scoped_limit() {
-        let error = attribute_class_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        let error =
+            attribute_class_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
     }
@@ -6435,21 +7194,26 @@ mod tests {
 
     #[test]
     fn topology_attribute_validation_refuses_collection_limit() {
-        let error = topology_attribute_validation_limit_error(|policy| policy.limits.max_collection_items = 0);
+        let error = topology_attribute_validation_limit_error(|policy| {
+            policy.limits.max_collection_items = 0;
+        });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
     }
 
     #[test]
     fn topology_attribute_validation_refuses_scoped_limit() {
-        let error = topology_attribute_validation_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        let error = topology_attribute_validation_limit_error(|policy| {
+            policy.limits.max_materialized_bytes = 0;
+        });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
     }
 
     #[test]
     fn topology_attribute_validation_refuses_work_limit() {
-        let error = topology_attribute_validation_limit_error(|policy| policy.limits.max_work_units = 0);
+        let error =
+            topology_attribute_validation_limit_error(|policy| policy.limits.max_work_units = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
     }
@@ -6458,7 +7222,8 @@ mod tests {
     fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let definition = ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 3,
@@ -6515,7 +7280,8 @@ mod tests {
             std::slice::from_ref(&list),
             &strings,
             std::slice::from_ref(&unicode),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(relations.len(), 1);
         assert_eq!(
             relations[0]
@@ -6535,7 +7301,8 @@ mod tests {
             &[incomplete],
             &strings,
             std::slice::from_ref(&unicode),
-        ).unwrap()
+        )
+        .unwrap()
         .is_empty());
         assert!(parasolid_attribute_field_names(
             &ctx,
@@ -6543,7 +7310,8 @@ mod tests {
             std::slice::from_ref(&list),
             &strings,
             std::slice::from_ref(&unicode),
-        ).unwrap()
+        )
+        .unwrap()
         .is_empty());
 
         let ambiguous = ParasolidEntity62UnicodeRecord {
@@ -6568,7 +7336,8 @@ mod tests {
             }],
             &strings,
             &[unicode, ambiguous],
-        ).unwrap()
+        )
+        .unwrap()
         .is_empty());
     }
 
@@ -6576,7 +7345,8 @@ mod tests {
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> CodecError {
         let definition = ParasolidAttributeDefinition {
-            id: "definition".into(), stream_ordinal: 0,
+            id: "definition".into(),
+            stream_ordinal: 0,
             xmt: NonNullXmt::try_from(20).unwrap(),
             next_definition_xmt: None,
             identifier_xmt: NonNullXmt::try_from(21).unwrap(),
@@ -6590,23 +7360,28 @@ mod tests {
             inflated_offset: 20,
         };
         let list = ParasolidFieldNamesRecord {
-            id: "list".into(), stream_ordinal: 0,
+            id: "list".into(),
+            stream_ordinal: 0,
             xmt: NonNullXmt::try_from(25).unwrap(),
             name_xmts: NameReferences::try_from(vec![NonNullXmt::try_from(28).unwrap()]).unwrap(),
-            byte_len: 8, inflated_offset: 30,
+            byte_len: 8,
+            inflated_offset: 30,
         };
         let value = ParasolidEntity54StringRecord {
-            id: "value".into(), stream_ordinal: 0,
+            id: "value".into(),
+            stream_ordinal: 0,
             xmt: NonNullXmt::try_from(28).unwrap(),
             value: PrintableString::new("field".to_owned()).unwrap(),
-            byte_len: 10, inflated_offset: 40,
+            byte_len: 10,
+            inflated_offset: 40,
         };
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         configure(&mut policy);
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         parasolid_attribute_field_names(&ctx, &[definition], &[list], &[value], &[])
-            .err().expect("attribute field-name relation limit refusal")
+            .expect_err("attribute field-name relation limit refusal")
     }
 
     fn topology_list_reference_limit_error(
@@ -6619,43 +7394,54 @@ mod tests {
         let bytes = prt_with_partition(&stream);
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let scan = crate::decode::scan(&ctx, root).unwrap();
         let parsed = crate::native::substrate::ParsedStreams::parse(&ctx, &scan).unwrap();
         let entity = super::ParasolidEntity51Record {
-            id: "entity".into(), stream_ordinal: 0,
+            id: "entity".into(),
+            stream_ordinal: 0,
             xmt: NonNullXmt::try_from(50).unwrap(),
             sequence: NonZeroU32::new(1).unwrap(),
             definition_xmt: 20,
             leading_references: [1; 5],
             trailing_references: EntityReferences::new(vec![1]).unwrap(),
-            byte_len: 32, inflated_offset: 40,
+            byte_len: 32,
+            inflated_offset: 40,
         };
         let limited_arena = cadmpeg_core::decode::DecodeArena::new();
         let mut limited_policy = cadmpeg_core::decode::DecodePolicy::service();
         configure(&mut limited_policy);
-        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &limited_arena, &limited_policy).unwrap();
+        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes,
+            &limited_arena,
+            &limited_policy,
+        )
+        .unwrap();
         super::parasolid_topology_attribute_list_references(&limited_ctx, &parsed, &[entity])
-            .err().expect("topology attribute list reference limit refusal")
+            .expect_err("topology attribute list reference limit refusal")
     }
 
     #[test]
     fn topology_list_reference_refuses_collection_limit() {
-        let error = topology_list_reference_limit_error(|policy| policy.limits.max_collection_items = 0);
+        let error =
+            topology_list_reference_limit_error(|policy| policy.limits.max_collection_items = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
     }
 
     #[test]
     fn topology_list_reference_refuses_retained_limit() {
-        let error = topology_list_reference_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+        let error =
+            topology_list_reference_limit_error(|policy| policy.limits.max_retained_bytes = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
     }
 
     #[test]
     fn topology_list_reference_refuses_scoped_limit() {
-        let error = topology_list_reference_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        let error =
+            topology_list_reference_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
     }
@@ -6669,21 +7455,24 @@ mod tests {
 
     #[test]
     fn attribute_field_names_refuse_collection_limit() {
-        let error = attribute_field_names_limit_error(|policy| policy.limits.max_collection_items = 0);
+        let error =
+            attribute_field_names_limit_error(|policy| policy.limits.max_collection_items = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
     }
 
     #[test]
     fn attribute_field_names_refuse_retained_limit() {
-        let error = attribute_field_names_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+        let error =
+            attribute_field_names_limit_error(|policy| policy.limits.max_retained_bytes = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
     }
 
     #[test]
     fn attribute_field_names_refuse_scoped_limit() {
-        let error = attribute_field_names_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        let error =
+            attribute_field_names_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
     }
@@ -6914,8 +7703,12 @@ mod tests {
         };
 
         let instance_uses = crate::test_support::with_decode_context(|ctx| {
-            super::parasolid_attribute_class_uses(ctx,
-                std::slice::from_ref(&entity), std::slice::from_ref(&definition)).unwrap()
+            super::parasolid_attribute_class_uses(
+                ctx,
+                std::slice::from_ref(&entity),
+                std::slice::from_ref(&definition),
+            )
+            .unwrap()
         });
         assert_eq!(instance_uses.len(), 1);
         assert_eq!(instance_uses[0].entity_51_record, entity.id);
@@ -6923,35 +7716,53 @@ mod tests {
         assert_eq!(instance_uses[0].attribute_definition, definition.id);
 
         let uses = crate::test_support::with_decode_context(|ctx| {
-            super::parasolid_topology_attribute_class_uses(ctx,
-                std::slice::from_ref(&reference), std::slice::from_ref(&entity), &instance_uses)
-                .unwrap()
+            super::parasolid_topology_attribute_class_uses(
+                ctx,
+                std::slice::from_ref(&reference),
+                std::slice::from_ref(&entity),
+                &instance_uses,
+            )
+            .unwrap()
         });
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].attribute_class_use, instance_uses[0].id);
         assert_eq!(u32::from(uses[0].definition_xmt), 34);
         assert_eq!(uses[0].attribute_definition, definition.id);
         assert!(crate::test_support::with_decode_context(|ctx| {
-            super::parasolid_topology_attribute_class_uses(ctx,
-                std::slice::from_ref(&reference), std::slice::from_ref(&entity),
-                &[instance_uses[0].clone(), instance_uses[0].clone()])
-                .unwrap()
-        }).is_empty());
+            super::parasolid_topology_attribute_class_uses(
+                ctx,
+                std::slice::from_ref(&reference),
+                std::slice::from_ref(&entity),
+                &[instance_uses[0].clone(), instance_uses[0].clone()],
+            )
+            .unwrap()
+        })
+        .is_empty());
 
         let mut invalid = entity;
         invalid.definition_xmt = 33;
         assert!(crate::test_support::with_decode_context(|ctx| {
-            super::parasolid_attribute_class_uses(ctx,
-                std::slice::from_ref(&invalid), std::slice::from_ref(&definition)).unwrap()
-        }).is_empty());
+            super::parasolid_attribute_class_uses(
+                ctx,
+                std::slice::from_ref(&invalid),
+                std::slice::from_ref(&definition),
+            )
+            .unwrap()
+        })
+        .is_empty());
         let invalid_uses = crate::test_support::with_decode_context(|ctx| {
             super::parasolid_attribute_class_uses(ctx, &[invalid.clone()], &[definition]).unwrap()
         });
         assert!(crate::test_support::with_decode_context(|ctx| {
-            super::parasolid_topology_attribute_class_uses(ctx,
-                &[reference], std::slice::from_ref(&invalid), &invalid_uses)
-                .unwrap()
-        }).is_empty());
+            super::parasolid_topology_attribute_class_uses(
+                ctx,
+                &[reference],
+                std::slice::from_ref(&invalid),
+                &invalid_uses,
+            )
+            .unwrap()
+        })
+        .is_empty());
     }
 
     #[test]
@@ -7001,14 +7812,22 @@ mod tests {
             inflated_offset: 80,
         };
         let class_uses = crate::test_support::with_decode_context(|ctx| {
-            super::parasolid_attribute_class_uses(ctx,
-                &[head.clone(), child.clone()], std::slice::from_ref(&definition)).unwrap()
+            super::parasolid_attribute_class_uses(
+                ctx,
+                &[head.clone(), child.clone()],
+                std::slice::from_ref(&definition),
+            )
+            .unwrap()
         });
 
         let uses = crate::test_support::with_decode_context(|ctx| {
-            super::parasolid_topology_attribute_class_uses(ctx,
-                std::slice::from_ref(&reference), &[head, child], &class_uses)
-                .unwrap()
+            super::parasolid_topology_attribute_class_uses(
+                ctx,
+                std::slice::from_ref(&reference),
+                &[head, child],
+                &class_uses,
+            )
+            .unwrap()
         });
 
         assert_eq!(uses.len(), 2);
@@ -7052,8 +7871,13 @@ mod tests {
         }];
 
         let numeric_uses = crate::test_support::with_decode_context(|ctx| {
-            super::parasolid_entity_51_numeric_uses(ctx, std::slice::from_ref(&entity), &integers, &[])
-                .unwrap()
+            super::parasolid_entity_51_numeric_uses(
+                ctx,
+                std::slice::from_ref(&entity),
+                &integers,
+                &[],
+            )
+            .unwrap()
         });
         assert_eq!(numeric_uses.len(), 1);
         assert_eq!(numeric_uses[0].position.reference_ordinal(), 5);
@@ -7068,6 +7892,7 @@ mod tests {
         assert_eq!(u32::from(string_uses[0].referenced_xmt), 71);
     }
 
+    #[derive(Clone, Copy)]
     enum ValueUseRoute {
         Numeric,
         String,
@@ -7093,34 +7918,49 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         configure(&mut policy);
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match route {
             ValueUseRoute::Numeric => {
                 let value = super::ParasolidEntity52IntegerRecord {
-                    id: "value".into(), stream_ordinal: 1, xmt,
+                    id: "value".into(),
+                    stream_ordinal: 1,
+                    xmt,
                     values: crate::parasolid::counted_values::CountedValues::new(vec![1]).unwrap(),
-                    byte_len: 12, inflated_offset: 80,
+                    byte_len: 12,
+                    inflated_offset: 80,
                 };
                 super::parasolid_entity_51_numeric_uses(&ctx, &[entity], &[value], &[]).err()
             }
             ValueUseRoute::String => {
                 let value = super::ParasolidEntity54StringRecord {
-                    id: "value".into(), stream_ordinal: 1, xmt,
+                    id: "value".into(),
+                    stream_ordinal: 1,
+                    xmt,
                     value: PrintableString::new("text".to_owned()).unwrap(),
-                    byte_len: 12, inflated_offset: 80,
+                    byte_len: 12,
+                    inflated_offset: 80,
                 };
                 super::parasolid_entity_51_string_uses(&ctx, &[entity], &[value]).err()
             }
             ValueUseRoute::Structured => {
                 let value = super::ParasolidEntityVectorRecord {
-                    id: "value".into(), stream_ordinal: 1,
-                    kind: super::ParasolidVectorValueKind::Points, xmt,
-                    values: crate::parasolid::counted_values::CountedValues::new(vec![[1.0, 2.0, 3.0]]).unwrap(),
-                    byte_len: 36, inflated_offset: 80,
+                    id: "value".into(),
+                    stream_ordinal: 1,
+                    kind: super::ParasolidVectorValueKind::Points,
+                    xmt,
+                    values: crate::parasolid::counted_values::CountedValues::new(vec![[
+                        1.0, 2.0, 3.0,
+                    ]])
+                    .unwrap(),
+                    byte_len: 36,
+                    inflated_offset: 80,
                 };
-                super::parasolid_entity_51_structured_uses(&ctx, &[entity], &[value], &[], &[], &[]).err()
+                super::parasolid_entity_51_structured_uses(&ctx, &[entity], &[value], &[], &[], &[])
+                    .err()
             }
-        }.expect("entity 51 value use route limit refusal")
+        }
+        .expect("entity 51 value use route limit refusal")
     }
 
     macro_rules! value_use_limit_test {
@@ -7135,18 +7975,78 @@ mod tests {
         };
     }
 
-    value_use_limit_test!(numeric_use_route_refuses_collection_limit, Numeric, max_collection_items, CollectionItems);
-    value_use_limit_test!(numeric_use_route_refuses_retained_limit, Numeric, max_retained_bytes, RetainedBytes);
-    value_use_limit_test!(numeric_use_route_refuses_scoped_limit, Numeric, max_materialized_bytes, MaterializedBytes);
-    value_use_limit_test!(numeric_use_route_refuses_work_limit, Numeric, max_work_units, WorkUnits);
-    value_use_limit_test!(string_use_route_refuses_collection_limit, String, max_collection_items, CollectionItems);
-    value_use_limit_test!(string_use_route_refuses_retained_limit, String, max_retained_bytes, RetainedBytes);
-    value_use_limit_test!(string_use_route_refuses_scoped_limit, String, max_materialized_bytes, MaterializedBytes);
-    value_use_limit_test!(string_use_route_refuses_work_limit, String, max_work_units, WorkUnits);
-    value_use_limit_test!(structured_use_route_refuses_collection_limit, Structured, max_collection_items, CollectionItems);
-    value_use_limit_test!(structured_use_route_refuses_retained_limit, Structured, max_retained_bytes, RetainedBytes);
-    value_use_limit_test!(structured_use_route_refuses_scoped_limit, Structured, max_materialized_bytes, MaterializedBytes);
-    value_use_limit_test!(structured_use_route_refuses_work_limit, Structured, max_work_units, WorkUnits);
+    value_use_limit_test!(
+        numeric_use_route_refuses_collection_limit,
+        Numeric,
+        max_collection_items,
+        CollectionItems
+    );
+    value_use_limit_test!(
+        numeric_use_route_refuses_retained_limit,
+        Numeric,
+        max_retained_bytes,
+        RetainedBytes
+    );
+    value_use_limit_test!(
+        numeric_use_route_refuses_scoped_limit,
+        Numeric,
+        max_materialized_bytes,
+        MaterializedBytes
+    );
+    value_use_limit_test!(
+        numeric_use_route_refuses_work_limit,
+        Numeric,
+        max_work_units,
+        WorkUnits
+    );
+    value_use_limit_test!(
+        string_use_route_refuses_collection_limit,
+        String,
+        max_collection_items,
+        CollectionItems
+    );
+    value_use_limit_test!(
+        string_use_route_refuses_retained_limit,
+        String,
+        max_retained_bytes,
+        RetainedBytes
+    );
+    value_use_limit_test!(
+        string_use_route_refuses_scoped_limit,
+        String,
+        max_materialized_bytes,
+        MaterializedBytes
+    );
+    value_use_limit_test!(
+        string_use_route_refuses_work_limit,
+        String,
+        max_work_units,
+        WorkUnits
+    );
+    value_use_limit_test!(
+        structured_use_route_refuses_collection_limit,
+        Structured,
+        max_collection_items,
+        CollectionItems
+    );
+    value_use_limit_test!(
+        structured_use_route_refuses_retained_limit,
+        Structured,
+        max_retained_bytes,
+        RetainedBytes
+    );
+    value_use_limit_test!(
+        structured_use_route_refuses_scoped_limit,
+        Structured,
+        max_materialized_bytes,
+        MaterializedBytes
+    );
+    value_use_limit_test!(
+        structured_use_route_refuses_work_limit,
+        Structured,
+        max_work_units,
+        WorkUnits
+    );
 
     mod attribute_wire;
     mod carrier_and_attribute_resolution;

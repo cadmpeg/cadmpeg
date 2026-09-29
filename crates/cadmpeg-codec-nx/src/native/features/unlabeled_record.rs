@@ -58,13 +58,13 @@ impl FeatureUnlabeledOperationRecord {
         entry_offset: u64,
         record: UnlabeledOperationRecord<'_>,
     ) -> Result<Option<Self>, CodecError> {
-        let Some(header_offset) = entry_offset.checked_add(u64_from_index(record.header().offset())) else {
+        let Some(header_offset) =
+            entry_offset.checked_add(u64_from_index(record.header().offset()))
+        else {
             return Ok(None);
         };
-        let Some(header) = OperationHeader::<u64>::new(
-            header_offset,
-            record.header().objects(),
-        ) else {
+        let Some(header) = OperationHeader::<u64>::new(header_offset, record.header().objects())
+        else {
             return Ok(None);
         };
         let payload_byte_len = u64_from_index(record.payload().len());

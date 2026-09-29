@@ -8,16 +8,22 @@ use crate::native::features::feature_sketch_records;
 use crate::native::features::feature_sketch_references;
 
 #[derive(Clone, Copy)]
-enum SketchRoute { Record, ConstructionInput }
+enum SketchRoute {
+    Record,
+    ConstructionInput,
+}
 
 fn sketch_record_refusal(
     route: SketchRoute,
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(ctx,
-            crate::test_support::test_prt::composed_feature_history_prt())
-    }).expect("composed feature-history container");
+        crate::container::scan_bytes(
+            ctx,
+            crate::test_support::test_prt::composed_feature_history_prt(),
+        )
+    })
+    .expect("composed feature-history container");
     let (labels, records, inputs, references) = crate::test_support::with_decode_context(|ctx| {
         Ok::<_, cadmpeg_core::CodecError>((
             feature_operation_labels(ctx, &container)?,
@@ -25,23 +31,25 @@ fn sketch_record_refusal(
             feature_input_blocks(ctx, &container)?,
             feature_sketch_references(ctx, &container)?,
         ))
-    }).expect("sketch record inputs");
+    })
+    .expect("sketch record inputs");
     let sketches = crate::test_support::with_decode_context(|ctx| {
         feature_sketch_records(ctx, &labels, &records, &inputs, &references)
-    }).expect("admitted sketch records");
+    })
+    .expect("admitted sketch records");
     assert!(!sketches.is_empty());
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        match route {
-            SketchRoute::Record =>
-                feature_sketch_records(ctx, &labels, &records, &inputs, &references)
-                    .map(|rows| rows.len()),
-            SketchRoute::ConstructionInput =>
-                feature_sketch_construction_inputs(ctx, &sketches, &references)
-                    .map(|rows| rows.len()),
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
+        SketchRoute::Record => feature_sketch_records(ctx, &labels, &records, &inputs, &references)
+            .map(|rows| rows.len()),
+        SketchRoute::ConstructionInput => {
+            feature_sketch_construction_inputs(ctx, &sketches, &references).map(|rows| rows.len())
         }
     };
-    assert!(crate::test_support::with_decode_context(|ctx| decode(ctx))
-        .expect("admitted sketch record route") > 0);
+    assert!(
+        crate::test_support::with_decode_context(|ctx| decode(ctx))
+            .expect("admitted sketch record route")
+            > 0
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     configure(&mut policy);

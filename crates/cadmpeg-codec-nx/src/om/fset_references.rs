@@ -138,7 +138,8 @@ impl FsetReferences<()> {
                 (second_middle, target(second_middle)?),
                 (second_tail, target(second_tail)?),
             ],
-        ).ok())
+        )
+        .ok())
     }
 }
 
@@ -149,9 +150,9 @@ mod tests {
 
     fn graph() -> FsetReferences<()> {
         let payload = [
-            1, 0x13, 0x3c, b'T', b';', b':', b'S', b'5', b'6', b'7', b'R', b'8', b'9', b'3',
-            0x90, 0x19, 0x40, 0x90, 0x19, 0x41, 0x3e, 0x90, 0x19, 0x30,
-            0x90, 0x19, 0x31, 0x90, 0x19, 0x32, 0, 3, 0,
+            1, 0x13, 0x3c, b'T', b';', b':', b'S', b'5', b'6', b'7', b'R', b'8', b'9', b'3', 0x90,
+            0x19, 0x40, 0x90, 0x19, 0x41, 0x3e, 0x90, 0x19, 0x30, 0x90, 0x19, 0x31, 0x90, 0x19,
+            0x32, 0, 3, 0,
         ];
         let record = OperationPayload::new(&payload, 100, "FSET").expect("test FSET payload");
         FsetReferences::read(record).expect("complete FSET graph")
@@ -164,22 +165,32 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test root");
-        let error = graph().resolve(0, |index| {
-            ctx.charge_collection_items(1, "NX FSET target")?;
-            Ok(Some(index))
-        }).err().expect("target resolution refusal");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        let error = graph()
+            .resolve(0, |index| {
+                ctx.charge_collection_items(1, "NX FSET target")?;
+                Ok(Some(index))
+            })
+            .expect_err("target resolution refusal");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]
     fn fset_resolution_preserves_both_groups() {
-        let resolved = graph().resolve(20, |index| Ok::<_, cadmpeg_core::CodecError>(Some(index)))
-            .expect("target resolution").expect("valid relocated graph");
+        let resolved = graph()
+            .resolve(20, |index| Ok::<_, cadmpeg_core::CodecError>(Some(index)))
+            .expect("target resolution")
+            .expect("valid relocated graph");
         assert_eq!(resolved.offset(), 120);
-        assert_eq!(resolved.first().map(|(index, value)| (index, value)),
-            [(6464, Some(6464)), (6465, Some(6465))]);
-        assert_eq!(resolved.second().map(|(index, value)| (index, value)),
-            [(6448, Some(6448)), (6449, Some(6449)), (6450, Some(6450))]);
+        assert_eq!(
+            resolved.first().map(|(index, value)| (index, value)),
+            [(6464, Some(6464)), (6465, Some(6465))]
+        );
+        assert_eq!(
+            resolved.second().map(|(index, value)| (index, value)),
+            [(6448, Some(6448)), (6449, Some(6449)), (6450, Some(6450))]
+        );
     }
 }

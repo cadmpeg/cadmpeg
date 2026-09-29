@@ -74,8 +74,8 @@ fn jt_int32_cdp2_refuses_nesting_at_caller_limit() {
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&packet, &arena, &policy)
         .expect("test decode context");
-    let error = super::decode_int32_cdp2(&ctx, &packet, 0)
-        .expect_err("packet nesting exceeds zero levels");
+    let error =
+        super::decode_int32_cdp2(&ctx, &packet, 0).expect_err("packet nesting exceeds zero levels");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -153,7 +153,8 @@ fn decode_vertex_flags(bytes: &[u8], count: usize) -> Option<(Vec<u32>, usize)> 
 
 fn parse_probability_context(bytes: &[u8]) -> Option<(Vec<super::ProbabilityEntry>, usize)> {
     with_context(bytes, |ctx| {
-        super::parse_probability_context(ctx, bytes).expect("service decode budget")
+        super::parse_probability_context(ctx, bytes)
+            .expect("service decode budget")
             .map(|(entries, length, _reservation)| (entries, length))
     })
 }
@@ -165,8 +166,9 @@ fn decode_arithmetic(
     entries: &[super::ProbabilityEntry],
 ) -> Option<Vec<Option<i32>>> {
     with_context(bytes, |ctx| {
-        super::decode_arithmetic(ctx, bytes, bits, count, entries).expect("service decode budget")
-            .map(|(values, _reservation)| values)
+        super::decode_arithmetic(ctx, bytes, bits, count, entries)
+            .expect("service decode budget")
+            .map(|symbols| symbols.values)
     })
 }
 
@@ -321,8 +323,7 @@ fn jt_int32_cdp2_refuses_scoped_probability_table_at_caller_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&packet, &arena, &policy)
         .expect("test decode context");
     let error = super::decode_int32_cdp2(&ctx, &packet, 0)
-        .err()
-        .expect("probability table needs scoped storage");
+        .expect_err("probability table needs scoped storage");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -597,15 +598,9 @@ fn jt_coordinate_array_refuses_scoped_component_storage() {
         cadmpeg_core::decode::u64_from_index(3 * std::mem::size_of::<Vec<FiniteBinary32>>()) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&array, &arena, &policy)
         .expect("test decode context");
-    let error = super::decode_vertex_coordinates(
-        &ctx,
-        &array,
-        4,
-        [range(10.0, 20.0); 3],
-        [2; 3],
-    )
-    .err()
-    .expect("the component vector exceeds scoped storage");
+    let error = super::decode_vertex_coordinates(&ctx, &array, 4, [range(10.0, 20.0); 3], [2; 3])
+        .err()
+        .expect("the component vector exceeds scoped storage");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)

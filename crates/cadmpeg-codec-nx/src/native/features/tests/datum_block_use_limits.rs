@@ -7,33 +7,43 @@ use crate::native::features::feature_datum_plane_block_uses;
 use crate::native::features::feature_input_blocks;
 
 #[derive(Clone, Copy)]
-enum DatumBlockUseRoute { Csys, Plane }
+enum DatumBlockUseRoute {
+    Csys,
+    Plane,
+}
 
 fn datum_block_use_refusal(
     route: DatumBlockUseRoute,
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(ctx,
-            crate::test_support::test_prt::composed_feature_history_prt())
-    }).expect("composed feature-history container");
+        crate::container::scan_bytes(
+            ctx,
+            crate::test_support::test_prt::composed_feature_history_prt(),
+        )
+    })
+    .expect("composed feature-history container");
     let (constructions, headers, inputs) = crate::test_support::with_decode_context(|ctx| {
         Ok::<_, cadmpeg_core::CodecError>((
             feature_datum_csys_constructions(ctx, &container)?,
             feature_datum_plane_headers(ctx, &container)?,
             feature_input_blocks(ctx, &container)?,
         ))
-    }).expect("datum block use inputs");
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        match route {
-            DatumBlockUseRoute::Csys =>
-                feature_datum_csys_block_uses(ctx, &constructions, &inputs).map(|rows| rows.len()),
-            DatumBlockUseRoute::Plane =>
-                feature_datum_plane_block_uses(ctx, &headers, &inputs).map(|rows| rows.len()),
+    })
+    .expect("datum block use inputs");
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
+        DatumBlockUseRoute::Csys => {
+            feature_datum_csys_block_uses(ctx, &constructions, &inputs).map(|rows| rows.len())
+        }
+        DatumBlockUseRoute::Plane => {
+            feature_datum_plane_block_uses(ctx, &headers, &inputs).map(|rows| rows.len())
         }
     };
-    assert!(crate::test_support::with_decode_context(|ctx| decode(ctx))
-        .expect("admitted datum block use") > 0);
+    assert!(
+        crate::test_support::with_decode_context(|ctx| decode(ctx))
+            .expect("admitted datum block use")
+            > 0
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     configure(&mut policy);

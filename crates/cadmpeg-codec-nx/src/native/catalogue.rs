@@ -2235,19 +2235,33 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             },
         },
         emit: |ctx, m, r, ns| {
-            let count = m.om.operation_state_groups.iter().try_fold(0usize, |total, table| {
-                total.checked_add(table.groups().len())
-            }).ok_or_else(|| ctx.refuse_codec_limit("NX roll-forward catalog group count", 0, 1))?;
-            let bytes = count.checked_mul(std::mem::size_of::<&OmRollForwardStateGroup>())
-                .ok_or_else(|| ctx.refuse_codec_limit("NX roll-forward catalog group slots", 0, 1))?;
+            let count =
+                m.om.operation_state_groups
+                    .iter()
+                    .try_fold(0usize, |total, table| {
+                        total.checked_add(table.groups().len())
+                    })
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("NX roll-forward catalog group count", 0, 1)
+                    })?;
+            let bytes = count
+                .checked_mul(std::mem::size_of::<&OmRollForwardStateGroup>())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("NX roll-forward catalog group slots", 0, 1)
+                })?;
             let _groups_reservation = ctx.reserve_scoped(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "NX roll-forward catalog group slots",
             )?;
             let mut groups = Vec::new();
-            groups.try_reserve_exact(count)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX roll-forward catalog groups", 0, 1))?;
-            groups.extend(m.om.operation_state_groups.iter().flat_map(OmRollForwardStateTable::groups));
+            groups.try_reserve_exact(count).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX roll-forward catalog groups", 0, 1)
+            })?;
+            groups.extend(
+                m.om.operation_state_groups
+                    .iter()
+                    .flat_map(OmRollForwardStateTable::groups),
+            );
             emit_arena(ctx, &groups, r, ns)
         },
         len: |m| {
@@ -4152,7 +4166,8 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let bytes = crate::test_support::test_prt::prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
-            crate::test_support::test_om::segment_om_record_area_with_state_groups_and_counter_map(),
+            crate::test_support::test_om::segment_om_record_area_with_state_groups_and_counter_map(
+            ),
         )]);
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
@@ -4160,20 +4175,30 @@ mod tests {
         let scan = crate::decode::scan(&ctx, root).unwrap();
         let mut parsed = crate::native::substrate::ParsedStreams::parse(&ctx, &scan).unwrap();
         let model = crate::native::model::NativeModel::extract(
-            &ctx, root, &scan.container, &scan.streams, &mut parsed, None,
-        ).unwrap();
+            &ctx,
+            root,
+            &scan.container,
+            &scan.streams,
+            &mut parsed,
+            None,
+        )
+        .unwrap();
         assert!(!model.om.operation_state_groups.is_empty());
-        let row = super::CATALOGUE.iter()
+        let row = super::CATALOGUE
+            .iter()
             .find(|row| row.arena == "om_roll_forward_state_groups")
             .expect("roll-forward group family");
         let refusal_arena = DecodeArena::new();
         let mut refusal_policy = DecodePolicy::service();
         refusal_policy.limits.max_materialized_bytes = 0;
-        let (refusal_ctx, _) = DecodeContext::from_root_bytes(&bytes, &refusal_arena, &refusal_policy).unwrap();
+        let (refusal_ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &refusal_arena, &refusal_policy).unwrap();
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
         let error = (row.emit)(&refusal_ctx, &model, row, &mut namespace).unwrap_err();
-        assert!(matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::MaterializedBytes));
+        assert!(
+            matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes)
+        );
     }
 
     #[test]

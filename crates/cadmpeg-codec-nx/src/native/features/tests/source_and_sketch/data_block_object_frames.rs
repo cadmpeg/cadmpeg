@@ -7,8 +7,8 @@ fn data_block_object_frame_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let frame = [
-        0x73, 0x00, 0x72, 0x01, 0xc0, 0x20, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86,
-        0x02, 0x01, 0x02, 0x80, 0xa4,
+        0x73, 0x00, 0x72, 0x01, 0xc0, 0x20, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
+        0x01, 0x02, 0x80, 0xa4,
     ];
     let mut store_records = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
     store_records[0] = &frame;
@@ -19,12 +19,13 @@ fn data_block_object_frame_route_refusal(
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
     let container = crate::test_support::with_decode_context(|ctx| {
         crate::container::scan_bytes(ctx, file.as_slice())
-    }).expect("synthetic data block object frame container");
+    })
+    .expect("synthetic data block object frame container");
     crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
         .expect("cached offset-store source");
-    let records = crate::test_support::with_decode_context(|ctx| {
-        data_block_object_frames(ctx, &container)
-    }).expect("data block object frame projection");
+    let records =
+        crate::test_support::with_decode_context(|ctx| data_block_object_frames(ctx, &container))
+            .expect("data block object frame projection");
     assert_eq!(records.len(), 1);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -36,10 +37,14 @@ fn data_block_object_frame_route_refusal(
 
 #[test]
 fn data_block_object_frame_route_refuses_collection_limit() {
-    let error = data_block_object_frame_route_refusal(|policy| policy.limits.max_collection_items = 1);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    let error =
+        data_block_object_frame_route_refusal(|policy| policy.limits.max_collection_items = 1);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "NX data block object frames"), "{error:?}");
+            && limit.operation == "NX data block object frames"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -51,16 +56,21 @@ fn data_block_object_frame_route_refuses_retained_limit() {
                 + "nx:om-data-blocks-0:block#1".len(),
         );
     });
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && limit.operation == "retain NX data block object frame"), "{error:?}");
+            && limit.operation == "retain NX data block object frame"),
+        "{error:?}"
+    );
 }
 
 #[test]
 fn data_block_object_frame_route_refuses_work_limit() {
     let error = data_block_object_frame_route_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
@@ -75,13 +85,16 @@ fn data_block_object_frame_owned_route_refuses_scoped_limit() {
             ctx,
             prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
         )
-    }).expect("owned offset-store source");
+    })
+    .expect("owned offset-store source");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty test root");
     let error = data_block_object_frames(&ctx, &container).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
 }

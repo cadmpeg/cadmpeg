@@ -49,7 +49,8 @@ fn counted_lane_id(
         digits
     }
     let operation = "NX counted lane id";
-    let length = "nx:om-data-block-counted-index-lanes-".len()
+    let length = "nx:om-data-block-counted-index-lanes-"
+        .len()
         .checked_add(digits(section_ordinal))
         .and_then(|length| length.checked_add(1))
         .and_then(|length| length.checked_add(digits(block_ordinal)))
@@ -61,8 +62,11 @@ fn counted_lane_id(
     let mut id = String::new();
     id.try_reserve_exact(length)
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    write!(&mut id, "nx:om-data-block-counted-index-lanes-{section_ordinal}-{block_ordinal}:lane#{ordinal}")
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    write!(
+        &mut id,
+        "nx:om-data-block-counted-index-lanes-{section_ordinal}-{block_ordinal}:lane#{ordinal}"
+    )
+    .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
     Ok(id)
 }
 
@@ -79,10 +83,13 @@ pub(in crate::native) fn data_block_counted_index_lanes(
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let block_count = records.len().checked_add(1)
+        let block_count = records
+            .len()
+            .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit("NX counted lane block count", 0, 1))?;
         for (record_ordinal, block) in records.iter().enumerate() {
-            let block_ordinal = record_ordinal.checked_add(1)
+            let block_ordinal = record_ordinal
+                .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit("NX counted lane block ordinal", 0, 1))?;
             let Some(source_base) = entry_offset.checked_add(u64_from_index(block.offset)) else {
                 continue;
@@ -101,16 +108,28 @@ pub(in crate::native) fn data_block_counted_index_lanes(
                 let row_ordinal = u32::try_from(ordinal)
                     .map_err(|_| ctx.refuse_codec_limit("NX counted lane ordinal", 0, 1))?;
                 ctx.charge_collection_items(1, "NX native counted index lanes")?;
-                ctx.charge_retained(u64_from_index(std::mem::size_of::<DataBlockCountedIndexLane>()), "retain NX native counted index lane")?;
-                output.try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("allocate NX native counted index lane", 0, 1))?;
+                ctx.charge_retained(
+                    u64_from_index(std::mem::size_of::<DataBlockCountedIndexLane>()),
+                    "retain NX native counted index lane",
+                )?;
+                output.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("allocate NX native counted index lane", 0, 1)
+                })?;
                 output.push(DataBlockCountedIndexLane {
                     id: counted_lane_id(ctx, section_ordinal, block_ordinal, ordinal)?,
-                    data_block: retained_om_index_id(ctx, "nx:om-data-blocks-", section_ordinal, ":block#", u64_from_index(block_ordinal), "NX counted lane data block")?,
+                    data_block: retained_om_index_id(
+                        ctx,
+                        "nx:om-data-blocks-",
+                        section_ordinal,
+                        ":block#",
+                        u64_from_index(block_ordinal),
+                        "NX counted lane data block",
+                    )?,
                     ordinal: row_ordinal,
                     frame,
                 });
-                ordinal = ordinal.checked_add(1)
+                ordinal = ordinal
+                    .checked_add(1)
                     .ok_or_else(|| ctx.refuse_codec_limit("NX counted lane ordinal", 0, 1))?;
             }
         }
@@ -137,7 +156,9 @@ pub(in crate::native) fn data_block_abr_reference_lanes(
         let Some(source_base) = entry_offset.checked_add(u64_from_index(storage_offset)) else {
             continue;
         };
-        let block_count = records.len().checked_add(1)
+        let block_count = records
+            .len()
+            .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit("NX ABR lane block count", 0, 1))?;
         let mut ordinal = 0usize;
         for lane in abr_lanes(ctx, storage)? {
@@ -146,7 +167,8 @@ pub(in crate::native) fn data_block_abr_reference_lanes(
             };
             let Some(frame) = lane.try_resolve(|atom| {
                 control_index_data_block(ctx, section_ordinal, block_count, atom.value())
-            })? else {
+            })?
+            else {
                 continue;
             };
             let section_number = u32::try_from(section_ordinal)
@@ -154,17 +176,29 @@ pub(in crate::native) fn data_block_abr_reference_lanes(
             let row_ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX ABR lane ordinal", 0, 1))?;
             ctx.charge_collection_items(1, "NX native ABR reference lanes")?;
-            ctx.charge_retained(u64_from_index(std::mem::size_of::<DataBlockAbrReferenceLane>()), "retain NX native ABR reference lane")?;
-            output.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX native ABR reference lane", 0, 1))?;
+            ctx.charge_retained(
+                u64_from_index(std::mem::size_of::<DataBlockAbrReferenceLane>()),
+                "retain NX native ABR reference lane",
+            )?;
+            output.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX native ABR reference lane", 0, 1)
+            })?;
             output.push(DataBlockAbrReferenceLane {
-                id: retained_om_index_id(ctx, "nx:om-data-block-abr-reference-lanes-", section_ordinal, ":lane#", u64_from_index(ordinal), "NX ABR lane id")?,
+                id: retained_om_index_id(
+                    ctx,
+                    "nx:om-data-block-abr-reference-lanes-",
+                    section_ordinal,
+                    ":lane#",
+                    u64_from_index(ordinal),
+                    "NX ABR lane id",
+                )?,
                 section_ordinal: section_number,
                 ordinal: row_ordinal,
                 frame,
                 source_entry: copy_om_retained_text(ctx, &entry.name, "NX ABR lane source entry")?,
             });
-            ordinal = ordinal.checked_add(1)
+            ordinal = ordinal
+                .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit("NX ABR lane ordinal", 0, 1))?;
         }
     }
@@ -181,8 +215,8 @@ mod tests {
 
     const COUNTED: &[u8] = &[0x01, 0x03, 0x01, 0x01, 0x01, 0x11];
     const ABR: &[u8] = &[
-        0x11, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03,
+        0x11, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03,
     ];
 
     fn lane_container(lane: &[u8]) -> container::Container<'static> {
@@ -199,11 +233,17 @@ mod tests {
 
     type Route = fn(&DecodeContext<'_>, &container::Container<'_>) -> Result<usize, CodecError>;
 
-    fn counted_count(ctx: &DecodeContext<'_>, container: &container::Container<'_>) -> Result<usize, CodecError> {
+    fn counted_count(
+        ctx: &DecodeContext<'_>,
+        container: &container::Container<'_>,
+    ) -> Result<usize, CodecError> {
         Ok(super::data_block_counted_index_lanes(ctx, container)?.len())
     }
 
-    fn abr_count(ctx: &DecodeContext<'_>, container: &container::Container<'_>) -> Result<usize, CodecError> {
+    fn abr_count(
+        ctx: &DecodeContext<'_>,
+        container: &container::Container<'_>,
+    ) -> Result<usize, CodecError> {
         Ok(super::data_block_abr_reference_lanes(ctx, container)?.len())
     }
 
@@ -217,7 +257,8 @@ mod tests {
             ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
             _ => panic!("unsupported test dimension"),
         }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
         route(&ctx, &container).expect_err("lane resource refusal")
     }
 
@@ -225,7 +266,11 @@ mod tests {
     fn native_compact_lane_routes_keep_resolved_frames() {
         for (lane, route) in [(COUNTED, counted_count as Route), (ABR, abr_count)] {
             let container = lane_container(lane);
-            assert_eq!(crate::test_support::with_decode_context(|ctx| route(ctx, &container)).expect("resolved lane"), 1);
+            assert_eq!(
+                crate::test_support::with_decode_context(|ctx| route(ctx, &container))
+                    .expect("resolved lane"),
+                1
+            );
         }
     }
 
@@ -239,12 +284,42 @@ mod tests {
         };
     }
 
-    lane_limit_test!(native_counted_lane_refuses_collection_limit, COUNTED, counted_count, CollectionItems);
-    lane_limit_test!(native_counted_lane_refuses_retained_limit, COUNTED, counted_count, RetainedBytes);
-    lane_limit_test!(native_counted_lane_refuses_work_limit, COUNTED, counted_count, WorkUnits);
-    lane_limit_test!(native_abr_lane_refuses_collection_limit, ABR, abr_count, CollectionItems);
-    lane_limit_test!(native_abr_lane_refuses_retained_limit, ABR, abr_count, RetainedBytes);
-    lane_limit_test!(native_abr_lane_refuses_work_limit, ABR, abr_count, WorkUnits);
+    lane_limit_test!(
+        native_counted_lane_refuses_collection_limit,
+        COUNTED,
+        counted_count,
+        CollectionItems
+    );
+    lane_limit_test!(
+        native_counted_lane_refuses_retained_limit,
+        COUNTED,
+        counted_count,
+        RetainedBytes
+    );
+    lane_limit_test!(
+        native_counted_lane_refuses_work_limit,
+        COUNTED,
+        counted_count,
+        WorkUnits
+    );
+    lane_limit_test!(
+        native_abr_lane_refuses_collection_limit,
+        ABR,
+        abr_count,
+        CollectionItems
+    );
+    lane_limit_test!(
+        native_abr_lane_refuses_retained_limit,
+        ABR,
+        abr_count,
+        RetainedBytes
+    );
+    lane_limit_test!(
+        native_abr_lane_refuses_work_limit,
+        ABR,
+        abr_count,
+        WorkUnits
+    );
 
     #[test]
     fn native_abr_lane_resolves_nullable_slots_within_its_offset_store() {
