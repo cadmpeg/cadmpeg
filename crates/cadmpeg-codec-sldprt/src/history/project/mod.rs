@@ -412,7 +412,7 @@ pub(crate) fn project_feature_model(
         result?;
     }
     bind_offset_plane_references(&mut features);
-    bind_native_construction_features(&mut features, histories);
+    bind_native_construction_features(ctx, &mut features, histories)?;
     Ok(FeatureProjection {
         features,
         regeneration_parents,
@@ -931,98 +931,94 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
 }
 
 fn bind_native_construction_features(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
-) {
-    let construction_native_refs = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter(|feature| {
-            matches!(
-                classify(feature),
-                Some(
-                    FeatureClass::Sketch
-                        | FeatureClass::SketchBlockInstance
-                        | FeatureClass::EquationCurve
-                        | FeatureClass::ProjectedCurve
-                        | FeatureClass::CompositeCurve
-                )
-            )
-        })
-        .map(|feature| feature.id.as_str())
-        .collect::<HashSet<_>>();
-    let feature_ids_by_native = features
-        .iter()
-        .filter_map(|feature| {
-            let native = feature.native_ref.as_deref()?;
-            construction_native_refs
-                .contains(native)
-                .then_some((native.to_string(), feature.id.clone()))
-        })
-        .collect::<HashMap<_, _>>();
-
-    for feature in features {
-        let mut dependencies = Vec::new();
-        let bind_planar = |profile: &mut PlanarProfileRef, dependencies: &mut Vec<FeatureId>| {
-            let PlanarProfileRef::Native(native) = profile else {
-                return;
-            };
-            let Some(target) = feature_ids_by_native.get(native.as_str()) else {
-                return;
-            };
-            *profile = PlanarProfileRef::Feature(target.clone());
-            dependencies.push(target.clone());
-        };
-        let bind = |profile: &mut ProfileRef, dependencies: &mut Vec<FeatureId>| {
-            if let ProfileRef::Planar(profile) = profile {
-                bind_planar(profile, dependencies);
-            }
-        };
-        feature.evaluation.edit(|definition, _| match definition {
-            FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
-                bind(profile, &mut dependencies);
-            }
-            FeatureDefinition::Operation(FeatureOperation::Wrap { profile, .. }) => {
-                bind_planar(profile, &mut dependencies);
-            }
-            FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) => {
-                if let Some(profile) = construction.profile_mut() {
-                    bind_planar(profile, &mut dependencies);
-                }
-            }
-            FeatureDefinition::Operation(FeatureOperation::Rib { construction, .. }) => {
-                if let Some(profile) = &mut construction.profile {
-                    bind_planar(profile, &mut dependencies);
-                }
-            }
-            FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
-                if let Some(profile) = shape.referenced_profile_mut() {
-                    bind_planar(profile, &mut dependencies);
-                }
-            }
-            FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => {
-                for section in sections {
-                    if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
-                        bind(profile, &mut dependencies);
-                    }
-                }
-            }
-            FeatureDefinition::Operation(FeatureOperation::SplitFace {
-                tool: SplitFaceTool::Path(PathRef::Native(native)),
-                ..
-            }) => {
-                if let Some(target) = feature_ids_by_native.get(native.as_str()) {
-                    dependencies.push(target.clone());
-                }
-            }
-            _ => {}
-        });
-        for dependency in dependencies {
-            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                feature.dependencies.insert(dependency);
-            }
+) -> Result<(), CodecError> {
+    let mut construction_native_refs = HashSet::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, "index SLDPRT native construction sources")?;
+        if !matches!(classify(feature), Some(
+            FeatureClass::Sketch | FeatureClass::SketchBlockInstance | FeatureClass::EquationCurve
+                | FeatureClass::ProjectedCurve | FeatureClass::CompositeCurve
+        )) || construction_native_refs.contains(feature.id.as_str()) {
+            continue;
+        }
+        ctx.charge_collection_items(1, "index SLDPRT native construction sources")?;
+        construction_native_refs.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("index SLDPRT native construction sources", u64::MAX - 1, u64::MAX)
+        })?;
+        construction_native_refs.insert(feature.id.as_str());
+    }
+    let mut feature_ids_by_native = HashMap::new();
+    for feature in features.iter() {
+        ctx.charge_work(1, "index SLDPRT native construction features")?;
+        let Some(native) = feature.native_ref.as_deref() else { continue; };
+        if construction_native_refs.contains(native) {
+            let native = copy_projected_feature_text(ctx, native)?;
+            let id = copy_projected_feature_id(ctx, &feature.id)?;
+            insert_projected_map(ctx, &mut feature_ids_by_native, native, id,
+                "index SLDPRT native construction features")?;
         }
     }
+
+    for feature in features {
+        let feature_id = &feature.id;
+        let dependencies = &mut feature.dependencies;
+        let insert_dependency = |dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>, target: &FeatureId| -> Result<(), CodecError> {
+            ctx.charge_work(dependencies.as_slice().len() as u64, "bind SLDPRT native construction references")?;
+            if target != feature_id && !dependencies.contains(target) {
+                ctx.charge_work(dependencies.as_slice().len() as u64, "bind SLDPRT native construction references")?;
+                dependencies.try_insert_charged(copy_projected_feature_id(ctx, target)?, ctx,
+                    "bind SLDPRT native construction dependencies")?;
+            }
+            Ok(())
+        };
+        let bind_planar = |profile: &mut PlanarProfileRef, dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>| -> Result<(), CodecError> {
+            ctx.charge_work(1, "bind SLDPRT native construction references")?;
+            let PlanarProfileRef::Native(native) = profile else { return Ok(()); };
+            let Some(target) = feature_ids_by_native.get(native.as_str()) else { return Ok(()); };
+            let target_id = copy_projected_feature_id(ctx, target)?;
+            insert_dependency(dependencies, target)?;
+            *profile = PlanarProfileRef::Feature(target_id);
+            Ok(())
+        };
+        let bind = |profile: &mut ProfileRef, dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>| -> Result<(), CodecError> {
+            if let ProfileRef::Planar(profile) = profile { bind_planar(profile, dependencies)?; }
+            Ok(())
+        };
+        let mut result: Result<(), CodecError> = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            result = (|| {
+                match definition {
+                    FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => bind(profile, dependencies)?,
+                    FeatureDefinition::Operation(FeatureOperation::Wrap { profile, .. }) => bind_planar(profile, dependencies)?,
+                    FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) => {
+                        if let Some(profile) = construction.profile_mut() { bind_planar(profile, dependencies)?; }
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::Rib { construction, .. }) => {
+                        if let Some(profile) = &mut construction.profile { bind_planar(profile, dependencies)?; }
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
+                        if let Some(profile) = shape.referenced_profile_mut() { bind_planar(profile, dependencies)?; }
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => {
+                        for section in sections {
+                            if let cadmpeg_ir::features::LoftSection::Profile(profile) = section { bind(profile, dependencies)?; }
+                        }
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::SplitFace { tool: SplitFaceTool::Path(PathRef::Native(native)), .. }) => {
+                        ctx.charge_work(1, "bind SLDPRT native construction references")?;
+                        if let Some(target) = feature_ids_by_native.get(native.as_str()) { insert_dependency(dependencies, target)?; }
+                    }
+                    _ => {}
+                }
+                Ok(())
+            })();
+        });
+        result?;
+    }
+    Ok(())
 }
 
 struct EncodedNativeKey<'a>(&'a str);
