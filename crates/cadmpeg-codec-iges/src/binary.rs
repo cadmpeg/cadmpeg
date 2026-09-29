@@ -254,7 +254,7 @@ impl<'a> BitReader<'a> {
     fn read_string(
         &mut self,
         lengths: PrimitiveLengths,
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
     ) -> Result<Vec<u8>, CodecError> {
         let mut output = Vec::new();
         loop {
@@ -273,7 +273,7 @@ impl<'a> BitReader<'a> {
             if count > remaining {
                 return Err(malformed("a Binary string payload is truncated"));
             }
-            if let Some(ctx) = ctx {
+            {
                 ctx.charge_retained(u64_from_index(count), "iges binary string payload")?;
             }
             output.try_reserve(count).map_err(|_| {
@@ -308,14 +308,14 @@ struct ValueStream<'a, 'ctx, 'arena> {
     bits: BitReader<'a>,
     lengths: PrimitiveLengths,
     pending: VecDeque<BinaryValue>,
-    ctx: Option<&'ctx DecodeContext<'arena>>,
+    ctx: &'ctx DecodeContext<'arena>,
 }
 
 impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
     fn new(
         bytes: &'a [u8],
         lengths: PrimitiveLengths,
-        ctx: Option<&'ctx DecodeContext<'arena>>,
+        ctx: &'ctx DecodeContext<'arena>,
     ) -> Self {
         Self {
             bits: BitReader::new(bytes),
@@ -386,9 +386,7 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
     }
 
     fn reserve_pending(&mut self) -> Result<(), CodecError> {
-        if let Some(ctx) = self.ctx {
-            ctx.charge_collection_items(1, "iges binary repeated values")?;
-        }
+        self.ctx.charge_collection_items(1, "iges binary repeated values")?;
         self.pending.try_reserve(1).map_err(|_| {
             cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -408,8 +406,7 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
             BinaryValue::Real(value) => Ok(BinaryValue::Real(*value)),
             BinaryValue::Pointer(value) => Ok(BinaryValue::Pointer(*value)),
             BinaryValue::String(bytes) => {
-                cadmpeg_core::decode::DecodeContext::copy_retained_optional(
-                    self.ctx,
+                self.ctx.copy_retained(
                     bytes,
                     "iges binary repeated string",
                 )
@@ -682,7 +679,7 @@ fn read_global(
     lengths: PrimitiveLengths,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<BinaryValue>, CodecError> {
-    let mut stream = ValueStream::new(payload, lengths, Some(ctx));
+    let mut stream = ValueStream::new(payload, lengths, ctx);
     let mut values = ctx.collection_vec(24, "iges binary global values")?;
     for _ in 0..24 {
         values.push(one_value(&mut stream, "Global")?);
@@ -712,7 +709,7 @@ fn read_directory(
         if body_end > payload.len() {
             return Err(malformed("Binary Directory entity exceeds its section"));
         }
-        let mut stream = ValueStream::new(&payload[body_start..body_end], lengths, Some(ctx));
+        let mut stream = ValueStream::new(&payload[body_start..body_end], lengths, ctx);
         let mut values = std::array::from_fn(|_| BinaryValue::Default);
         for value in &mut values {
             *value = one_value(&mut stream, "Directory")?;
@@ -983,7 +980,7 @@ fn normalize_start(
     lengths: PrimitiveLengths,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u8>, CodecError> {
-    let mut stream = ValueStream::new(payload, lengths, Some(ctx));
+    let mut stream = ValueStream::new(payload, lengths, ctx);
     let mut text = Vec::new();
     while let Some(value) = stream.next()? {
         let BinaryValue::String(value) = value else {
@@ -1087,7 +1084,7 @@ fn read_parameters(
         if body_end > payload.len() {
             return Err(malformed("Binary Parameter entity exceeds its section"));
         }
-        let mut stream = ValueStream::new(&payload[body_start..body_end], lengths, Some(ctx));
+        let mut stream = ValueStream::new(&payload[body_start..body_end], lengths, ctx);
         let entity_type = integer_value(
             &one_value(&mut stream, "Parameter")?,
             "Parameter entity type",
@@ -1128,8 +1125,7 @@ fn normalize_directory_and_parameters(
 ) -> Result<(usize, usize), CodecError> {
     let mut directory_by_offset = BTreeMap::new();
     for (index, record) in directory.iter().enumerate() {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut directory_by_offset,
             record.offset,
             index,
@@ -1177,8 +1173,7 @@ fn normalize_directory_and_parameters(
     }
     let mut parameter_by_offset = BTreeMap::new();
     for (index, record) in normalized.iter().enumerate() {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut parameter_by_offset,
             record.offset,
             index,
@@ -1198,8 +1193,7 @@ fn normalize_directory_and_parameters(
         let parameter_index = *parameter_by_offset
             .get(&parameter_offset)
             .ok_or_else(|| malformed("Binary Directory Parameter Data pointer does not resolve"))?;
-        if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            Some(ctx),
+        if !ctx.insert_btree_set(
             &mut referenced_parameters,
             parameter_index,
             "iges binary referenced parameters",
@@ -1361,7 +1355,7 @@ fn render_parameter_lines(
         }
         return Ok(cards);
     }
-    crate::parameter::layout_parameter_cards(data, Some(ctx))
+    crate::parameter::layout_parameter_cards(data, ctx)
 }
 
 fn render_directory_card(
@@ -1450,8 +1444,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     let directory = read_directory(sections.directory, sections.lengths, ctx)?;
     let mut directory_by_offset = BTreeMap::new();
     for (index, record) in directory.iter().enumerate() {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut directory_by_offset,
             record.offset,
             index,
@@ -1474,7 +1467,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     )
     .map_err(|_| malformed("a Binary Start count does not fit memory"))?;
     let mut global_sequence = 1_u32;
-    let global_cards = crate::global::layout_global_cards(&global_text, Some(ctx))?;
+    let global_cards = crate::global::layout_global_cards(&global_text, ctx)?;
     for card in &global_cards {
         render_cards(&mut output, card, b'G', &mut global_sequence, ctx)?;
     }
@@ -2110,7 +2103,12 @@ mod tests {
             physical.integer(value, lengths.single_integer);
         }
         let physical_bytes = physical.bytes();
-        let mut stream = ValueStream::new(&physical_bytes, lengths, None);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &physical_bytes, &arena, &policy,
+        ).expect("test input fits service policy");
+        let mut stream = ValueStream::new(&physical_bytes, lengths, &ctx);
         assert_eq!(
             stream.next().expect("physical value"),
             Some(BinaryValue::Integer(1))
@@ -2130,7 +2128,7 @@ mod tests {
         implicit.control_repeat(false, 3, 1);
         implicit.integer(7, lengths.single_integer);
         let implicit_bytes = implicit.bytes();
-        let mut stream = ValueStream::new(&implicit_bytes, lengths, None);
+        let mut stream = ValueStream::new(&implicit_bytes, lengths, &ctx);
         for _ in 0..3 {
             assert_eq!(
                 stream.next().expect("implicit value"),
@@ -2162,7 +2160,7 @@ mod tests {
         policy.limits.max_retained_bytes = 2;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("valid test fixture");
-        let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
+        let mut stream = ValueStream::new(&bytes, lengths, &ctx);
         assert!(matches!(
             stream.next(),
             Err(CodecError::ResourceLimit(limit))
@@ -2174,7 +2172,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("valid test fixture");
-        let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
+        let mut stream = ValueStream::new(&bytes, lengths, &ctx);
         assert_eq!(
             stream.next().expect("valid test fixture"),
             Some(BinaryValue::String(b"abc".to_vec()))
@@ -2202,7 +2200,7 @@ mod tests {
         policy.limits.max_collection_items = 1;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("valid test fixture");
-        let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
+        let mut stream = ValueStream::new(&bytes, lengths, &ctx);
         assert!(matches!(
             stream.next(),
             Err(CodecError::ResourceLimit(limit))
@@ -2214,7 +2212,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("valid test fixture");
-        let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
+        let mut stream = ValueStream::new(&bytes, lengths, &ctx);
         assert_eq!(
             stream.next().expect("valid test fixture"),
             Some(BinaryValue::Integer(7))
@@ -2242,7 +2240,7 @@ mod tests {
         policy.limits.max_retained_bytes = 3;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("valid test fixture");
-        let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
+        let mut stream = ValueStream::new(&bytes, lengths, &ctx);
         assert!(matches!(
             stream.next(),
             Err(CodecError::ResourceLimit(limit))
@@ -2255,7 +2253,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("valid test fixture");
-        let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
+        let mut stream = ValueStream::new(&bytes, lengths, &ctx);
         assert_eq!(
             stream.next().expect("valid test fixture"),
             Some(BinaryValue::String(b"ab".to_vec()))
@@ -2287,7 +2285,12 @@ mod tests {
         writer.string_part(b"de", false, lengths);
         let bytes = writer.bytes();
 
-        let mut stream = ValueStream::new(&bytes, lengths, None);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes, &arena, &policy,
+        ).expect("test input fits service policy");
+        let mut stream = ValueStream::new(&bytes, lengths, &ctx);
         assert_eq!(
             stream.next().expect("default value"),
             Some(BinaryValue::Default)

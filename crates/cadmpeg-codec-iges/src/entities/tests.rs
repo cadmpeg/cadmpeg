@@ -17,7 +17,7 @@ fn diagnostic_error_text_refuses_before_retained_copy() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result =
-        super::non_resource_error(CodecError::Malformed("invalid source".into()), Some(&ctx));
+        super::non_resource_error(CodecError::Malformed("invalid source".into()), &ctx);
     assert!(
         matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges diagnostic error text")
     );
@@ -25,7 +25,7 @@ fn diagnostic_error_text_refuses_before_retained_copy() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
-        super::non_resource_error(CodecError::Malformed("invalid source".into()), Some(&ctx))
+        super::non_resource_error(CodecError::Malformed("invalid source".into()), &ctx)
             .unwrap(),
         "malformed container: invalid source"
     );
@@ -154,6 +154,8 @@ fn affine_parameter_map_retains_identity_between_overflowing_spans() {
 
 #[test]
 fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let mut graph = (1..=100_000_u32)
         .map(|sequence| (sequence, vec![sequence + 1]))
         .collect::<BTreeMap<_, _>>();
@@ -161,7 +163,7 @@ fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
     let mut visited = std::collections::BTreeSet::new();
 
     assert!(
-        !crate::entities::directed_cycle(1, &mut visited, None, |sequence| graph
+        !crate::entities::directed_cycle(1, &mut visited, decode_ctx, |sequence| graph
             .get(&sequence)
             .into_iter()
             .flatten()
@@ -174,10 +176,12 @@ fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
     assert!(crate::entities::directed_cycle(
         1,
         &mut std::collections::BTreeSet::new(),
-        None,
+        decode_ctx,
         |sequence| graph.get(&sequence).into_iter().flatten().copied()
     )
     .unwrap());
+
+    })
 }
 
 #[test]
@@ -198,7 +202,7 @@ fn directed_cycle_refuses_stack_and_tree_nodes_before_allocation() {
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error =
-            crate::entities::directed_cycle(1, &mut BTreeSet::new(), Some(&ctx), |sequence| {
+            crate::entities::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| {
                 graph.get(&sequence).into_iter().flatten().copied()
             })
             .unwrap_err();
@@ -210,7 +214,7 @@ fn directed_cycle_refuses_stack_and_tree_nodes_before_allocation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut visited = BTreeSet::new();
     assert!(
-        !crate::entities::directed_cycle(1, &mut visited, Some(&ctx), |sequence| graph
+        !crate::entities::directed_cycle(1, &mut visited, &ctx, |sequence| graph
             .get(&sequence)
             .into_iter()
             .flatten()

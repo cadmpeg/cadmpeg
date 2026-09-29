@@ -31,7 +31,7 @@ fn admit_conic<T>(
     result: Result<T, &str>,
     entry: &DirectoryEntry,
     losses: &mut Vec<LossNote>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<T>, CodecError> {
     match result {
         Ok(value) => Ok(Some(value)),
@@ -57,7 +57,7 @@ fn add_bounded_curve(
     geometry: CurveGeometry,
     span: BoundedSpan,
     sequences: &mut super::geometry::SourceSequences,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<EdgeId, cadmpeg_core::CodecError> {
     let BoundedSpan {
         start,
@@ -74,13 +74,12 @@ fn add_bounded_curve(
     let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
     let curve = crate::ids::curve_admitted(&stem, ctx)?;
     let edge = crate::ids::edge_admitted(&stem, ctx)?;
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-        ctx,
+    ctx.reserve_vec(
         &mut ir.model.points,
         2,
         "iges conic neutral points",
     )?;
-    crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_conics")?;
+    ctx.charge_entities( 2, "iges_geometry_conics")?;
     ir.model.points.extend([
         Point::new(
             start_point.try_clone_for_decode(ctx, "iges conics identity copy")?,
@@ -93,13 +92,12 @@ fn add_bounded_curve(
             None,
         ),
     ]);
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-        ctx,
+    ctx.reserve_vec(
         &mut ir.model.vertices,
         2,
         "iges conic neutral vertices",
     )?;
-    crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_conics")?;
+    ctx.charge_entities( 2, "iges_geometry_conics")?;
     ir.model.vertices.extend([
         Vertex {
             id: start_vertex.try_clone_for_decode(ctx, "iges conics identity copy")?,
@@ -113,25 +111,23 @@ fn add_bounded_curve(
         },
     ]);
     sequences.record_curve(&curve, entry.sequence, ctx)?;
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-        ctx,
+    ctx.reserve_vec(
         &mut ir.model.curves,
         1,
         "iges conic neutral curves",
     )?;
-    crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_conics")?;
+    ctx.charge_entities( 1, "iges_geometry_conics")?;
     ir.model.curves.push(Curve {
         id: curve.try_clone_for_decode(ctx, "iges conics identity copy")?,
         geometry,
         source_object: Some(source_object(entry, ctx)?),
     });
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-        ctx,
+    ctx.reserve_vec(
         &mut ir.model.edges,
         1,
         "iges conic neutral edges",
     )?;
-    crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_conics")?;
+    ctx.charge_entities( 1, "iges_geometry_conics")?;
     ir.model.edges.push(Edge {
         id: edge.try_clone_for_decode(ctx, "iges conics identity copy")?,
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some(parameter_range))
@@ -157,13 +153,12 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut records,
             record.directory_sequence,
             record,
@@ -172,8 +167,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            ctx,
+        ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
@@ -732,15 +726,13 @@ pub(super) fn project(
                 continue;
             }
         };
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut wire_edges,
             1,
             "iges conic wire edges",
         )?;
         wire_edges.push(edge);
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
+        ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges conic decoded sequences",

@@ -139,7 +139,7 @@ fn topology_vertex(
     let (list, index) = vertex_key;
     if let Some(existing) = vertex_ids.get(&(list, index)) {
         return Ok(Some(
-            existing.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+            existing.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
         ));
     }
     let Some(position) = FinitePoint3::new(vertex_lists[&list][index]) else {
@@ -160,17 +160,17 @@ fn topology_vertex(
     }
     let point_id = crate::ids::point_admitted(&stem.child(list).slot(index + 1), ctx)?;
     let point = Point::new(
-        point_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+        point_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
         position,
         None,
     );
-    sequences.record_point(&point_id, stem, Some(ctx))?;
+    sequences.record_point(&point_id, stem, ctx)?;
     let vertex_id = crate::ids::vertex_admitted(&stem.child(list).slot(index + 1), ctx)?;
-    crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
+    ctx.charge_entities( 1, "iges_geometry_brep")?;
     candidate.model_mut().points.push(point);
-    crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
+    ctx.charge_entities( 1, "iges_geometry_brep")?;
     candidate.model_mut().vertices.push(Vertex {
-        id: vertex_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+        id: vertex_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
         point: point_id,
         tolerance: None,
     });
@@ -178,7 +178,7 @@ fn topology_vertex(
         vertex_ids
             .entry((list, index))
             .or_insert(vertex_id)
-            .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+            .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
     ))
 }
 
@@ -252,9 +252,9 @@ fn project_pcurve_uses(
             "iges B-rep pcurve slots",
         )?;
         let id = crate::ids::pcurve_admitted(&id_stem.slot(index), ctx)?;
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
+        ctx.charge_entities( 1, "iges_geometry_brep")?;
         candidate.model_mut().pcurves.push(Pcurve {
-            id: id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+            id: id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
             geometry,
             metadata: PcurveMetadata::general(None, Some(parameter_range), checked_tolerance),
         });
@@ -325,7 +325,7 @@ fn resolve_pcurve_uses<'a>(
                 factor: support.factor,
             },
             Some(tolerance),
-            Some(ctx),
+            ctx,
             None,
         )?
         else {
@@ -377,8 +377,7 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut records,
             record.directory_sequence,
             record,
@@ -387,8 +386,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
@@ -410,7 +408,7 @@ pub(super) fn project(
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -419,7 +417,7 @@ pub(super) fn project(
         };
         if entry.transform != 0 {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "vertex lists cannot carry a transformation"),
@@ -428,7 +426,7 @@ pub(super) fn project(
         }
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "vertex-list count is not positive"),
@@ -455,15 +453,14 @@ pub(super) fn project(
         }
         if points.len() != count {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "vertex-list coordinates are truncated or non-finite"),
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut vertex_lists,
             entry.sequence,
             points,
@@ -477,7 +474,7 @@ pub(super) fn project(
     {
         if entry.transform != 0 {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "edge lists cannot carry a transformation"),
@@ -486,7 +483,7 @@ pub(super) fn project(
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -495,7 +492,7 @@ pub(super) fn project(
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "edge-list count is not positive"),
@@ -537,15 +534,14 @@ pub(super) fn project(
         }
         if edges.len() != count {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "edge-list tuple is invalid or names a missing vertex"),
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut edge_lists,
             entry.sequence,
             edges,
@@ -559,7 +555,7 @@ pub(super) fn project(
     {
         if entry.transform != 0 {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "loops cannot carry a transformation"),
@@ -568,7 +564,7 @@ pub(super) fn project(
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -577,7 +573,7 @@ pub(super) fn project(
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "loop edge-use count is not positive"),
@@ -677,15 +673,14 @@ pub(super) fn project(
         }
         if uses.len() != count {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "loop edge-use tuple is invalid"),
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut loops,
             entry.sequence,
             uses,
@@ -699,7 +694,7 @@ pub(super) fn project(
     {
         if entry.transform != 0 {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "faces cannot carry a transformation"),
@@ -708,7 +703,7 @@ pub(super) fn project(
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -717,7 +712,7 @@ pub(super) fn project(
         };
         let Some(surface) = pointer(record, 1) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "face surface pointer is invalid"),
@@ -726,7 +721,7 @@ pub(super) fn project(
         };
         let Some(count) = record.count(2).filter(|count| *count > 0) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "face loop count is not positive"),
@@ -738,7 +733,7 @@ pub(super) fn project(
             Some(0) => false,
             _ => {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "face outer-loop flag is not logical"),
@@ -748,7 +743,7 @@ pub(super) fn project(
         };
         let Some(first) = pointer(record, 4) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "face loop pointer is invalid"),
@@ -766,7 +761,7 @@ pub(super) fn project(
         }
         if !valid_pointers {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "face loop pointer is invalid"),
@@ -786,15 +781,14 @@ pub(super) fn project(
             .any(|sequence| !loops.contains_key(&sequence))
         {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "face loop is missing"),
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut faces,
             entry.sequence,
             FaceDefinition {
@@ -812,7 +806,7 @@ pub(super) fn project(
     {
         if entry.transform != 0 {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "shells cannot carry a transformation"),
@@ -821,7 +815,7 @@ pub(super) fn project(
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -830,7 +824,7 @@ pub(super) fn project(
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "shell face count is not positive"),
@@ -859,15 +853,14 @@ pub(super) fn project(
         }
         if face_uses.len() != count {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "shell face-use tuple is invalid"),
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut shell_definitions,
             entry.sequence,
             ShellDefinition {
@@ -903,7 +896,7 @@ pub(super) fn project(
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -912,7 +905,7 @@ pub(super) fn project(
         };
         let Some(outer) = pointer(record, 1) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid outer-shell pointer is invalid"),
@@ -924,7 +917,7 @@ pub(super) fn project(
             Some(0) => Sense::Reversed,
             _ => {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "solid outer-shell orientation is not logical"),
@@ -934,7 +927,7 @@ pub(super) fn project(
         };
         let Some(void_count) = record.count(3) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid void-shell count is invalid"),
@@ -970,7 +963,7 @@ pub(super) fn project(
             })
         {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid shell-use tuple is invalid or not closed"),
@@ -978,8 +971,7 @@ pub(super) fn project(
             continue;
         }
         for (sequence, _) in &shell_uses {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut referenced_closed_shells,
                 *sequence,
                 "iges B-rep referenced closed shells",
@@ -992,13 +984,13 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
-            Some(ctx),
+            ctx,
         ) {
             Ok(transform) => (entry.transform != 0).then_some(transform),
             Err(error) => {
                 let message = error.non_resource()?;
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{message}"),
@@ -1050,8 +1042,7 @@ pub(super) fn project(
                     format_args!("{}", surface.id),
                     "iges B-rep surface index keys",
                 )?;
-                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                    Some(ctx),
+                ctx.insert_btree_map(
                     &mut surface_positions,
                     key,
                     position,
@@ -1063,8 +1054,7 @@ pub(super) fn project(
             if !curve_positions.contains_key(curve.id.as_str()) {
                 let key = ctx
                     .format_retained(format_args!("{}", curve.id), "iges B-rep curve index keys")?;
-                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                    Some(ctx),
+                ctx.insert_btree_map(
                     &mut curve_positions,
                     key,
                     position,
@@ -1090,7 +1080,7 @@ pub(super) fn project(
         let mut candidate = ModelDraft::new();
         let stem = crate::ids::Stem::directory(entry.sequence);
         let body_id = crate::ids::body_admitted(&stem, ctx)?;
-        sequences.record_body(&body_id, entry.sequence, &stem, Some(ctx))?;
+        sequences.record_body(&body_id, entry.sequence, &stem, ctx)?;
         let region_id = crate::ids::region_admitted(&stem, ctx)?;
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
@@ -1125,7 +1115,7 @@ pub(super) fn project(
                     break;
                 };
                 let face_id = crate::ids::face_admitted(&shell_stem.child(face_sequence), ctx)?;
-                sequences.record_face(&face_id, face_sequence, Some(ctx))?;
+                sequences.record_face(&face_id, face_sequence, ctx)?;
                 let loop_id_for =
                     |sequence| crate::ids::loop_admitted(&shell_stem.child(sequence), ctx);
                 for loop_sequence in face_definition.loops.iter() {
@@ -1147,12 +1137,11 @@ pub(super) fn project(
                                 &shell_stem.child(loop_sequence).slot(index),
                                 ctx,
                             )?;
-                            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                                Some(ctx),
+                            ctx.insert_btree_map(
                                 &mut coedge_by_use,
                                 index,
                                 coedge_id
-                                    .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                                    .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                                 "iges B-rep coedge use nodes",
                             )?;
                             coedge_ids.push(coedge_id);
@@ -1218,7 +1207,7 @@ pub(super) fn project(
                                 Err(error) => {
                                     let error = error.non_resource()?;
                                     super::push_optional_entity_loss(
-                                        Some(ctx),
+                                        ctx,
                                         &mut losses,
                                         entry,
                                         format_args!(
@@ -1230,7 +1219,7 @@ pub(super) fn project(
                                 }
                             }) else {
                                 super::push_optional_entity_loss(
-                                    Some(ctx),
+                                    ctx,
                                     &mut losses,
                                     entry,
                                     format_args!(
@@ -1252,7 +1241,7 @@ pub(super) fn project(
                                 Ok(projected) => projected,
                                 Err(PcurveProjectionError::Invalid(error)) => {
                                     super::push_optional_entity_loss(
-                                        Some(ctx),
+                                        ctx,
                                         &mut losses,
                                         entry,
                                         format_args!("{error}"),
@@ -1285,7 +1274,7 @@ pub(super) fn project(
                         }
                         if !placed {
                             super::push_optional_entity_loss(
-                                Some(ctx),
+                                ctx,
                                 &mut losses,
                                 entry,
                                 format_args!(
@@ -1326,7 +1315,7 @@ pub(super) fn project(
                             Err(error) => {
                                 let error = error.non_resource()?;
                                 super::push_optional_entity_loss(
-                                    Some(ctx),
+                                    ctx,
                                     &mut losses,
                                     entry,
                                     format_args!(
@@ -1338,7 +1327,7 @@ pub(super) fn project(
                             }
                         }) else {
                             super::push_optional_entity_loss(
-                                Some(ctx),
+                                ctx,
                                 &mut losses,
                                 entry,
                                 format_args!(
@@ -1350,7 +1339,7 @@ pub(super) fn project(
                             break;
                         };
                         let edge_id = if let Some(id) = edge_ids.get(&edge_key) {
-                            id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?
+                            id.try_clone_for_decode(ctx, "iges B-rep identity copy")?
                         } else {
                             let curve_id = crate::ids::curve_admitted(
                                 &crate::ids::Stem::directory(edge_definition.curve),
@@ -1391,7 +1380,7 @@ pub(super) fn project(
                                 .and_then(|position| ir.model.curves.get(*position))
                             else {
                                 super::push_optional_entity_loss(
-                                    Some(ctx),
+                                    ctx,
                                     &mut losses,
                                     entry,
                                     format_args!(
@@ -1412,12 +1401,12 @@ pub(super) fn project(
                             ) {
                                 Ok(source_edge) => source_edge,
                                 Err(SourceEdgeSelectionError::NoMatch) => {
-                                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge curve endpoints disagree with the vertex-list points"))?;
+                                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "edge curve endpoints disagree with the vertex-list points"))?;
                                     valid = false;
                                     break;
                                 }
                                 Err(SourceEdgeSelectionError::Ambiguous) => {
-                                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge curve maps to multiple ambiguous edge occurrences"))?;
+                                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "edge curve maps to multiple ambiguous edge occurrences"))?;
                                     valid = false;
                                     break;
                                 }
@@ -1438,7 +1427,7 @@ pub(super) fn project(
                                 Ok(carrier) => carrier,
                                 Err(error) => {
                                     super::push_optional_entity_loss(
-                                        Some(ctx),
+                                        ctx,
                                         &mut losses,
                                         entry,
                                         format_args!("{error}"),
@@ -1452,28 +1441,26 @@ pub(super) fn project(
                                 1,
                                 "iges B-rep topology edges",
                             )?;
-                            crate::decode_resource::admit_optional_entities(
-                                Some(ctx),
+                            ctx.charge_entities(
                                 1,
                                 "iges_geometry_brep",
                             )?;
                             candidate.model_mut().edges.push(Edge {
                                 id: id
-                                    .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                                    .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                                 carrier,
                                 start: vertex_ids
                                     [&(edge_definition.start_list, edge_definition.start_index)]
-                                    .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                                    .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                                 end: vertex_ids
                                     [&(edge_definition.end_list, edge_definition.end_index)]
-                                    .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                                    .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                                 tolerance: None,
                             });
-                            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                                Some(ctx),
+                            ctx.insert_btree_map(
                                 &mut edge_ids,
                                 edge_key,
-                                id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                                id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                                 "iges B-rep topology edge index",
                             )?;
                             id
@@ -1489,7 +1476,7 @@ pub(super) fn project(
                             Ok(projected) => projected,
                             Err(PcurveProjectionError::Invalid(error)) => {
                                 super::push_optional_entity_loss(
-                                    Some(ctx),
+                                    ctx,
                                     &mut losses,
                                     entry,
                                     format_args!("{error}"),
@@ -1507,7 +1494,7 @@ pub(super) fn project(
                             break;
                         };
                         let coedge_id = coedge_ids[coedge_position]
-                            .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?;
+                            .try_clone_for_decode(ctx, "iges B-rep identity copy")?;
                         let radial_key = (shell_sequence, edge_key.0, edge_key.1);
                         if !radial.contains_key(&radial_key) {
                             ctx.charge_collection_items(1, "iges B-rep radial index nodes")?;
@@ -1516,26 +1503,25 @@ pub(super) fn project(
                         ctx.reserve_vec(ring, 1, "iges B-rep radial coedge ids")?;
                         ring.push(
                             coedge_id
-                                .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                                .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                         );
                         ctx.reserve_vec(
                             &mut candidate.model_mut().coedges,
                             1,
                             "iges B-rep topology coedges",
                         )?;
-                        crate::decode_resource::admit_optional_entities(
-                            Some(ctx),
+                        ctx.charge_entities(
                             1,
                             "iges_geometry_brep",
                         )?;
                         candidate.model_mut().coedges.push(Coedge {
                             id: coedge_id
-                                .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                                .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                             owner_loop: loop_id
-                                .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                                .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                             edge: edge_id,
                             radial_next: coedge_id
-                                .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                                .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                             sense: *sense,
                             pcurves: projected,
                             use_curve: None,
@@ -1547,12 +1533,12 @@ pub(super) fn project(
                     let boundary = if coedge_ids.is_empty() {
                         let mut uses = loop_vertex_uses.into_iter();
                         let Some((vertex, None, pcurves)) = uses.next() else {
-                            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "vertex-only loop does not contain exactly one unanchored vertex"))?;
+                            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "vertex-only loop does not contain exactly one unanchored vertex"))?;
                             valid = false;
                             break;
                         };
                         if uses.next().is_some() {
-                            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "vertex-only loop does not contain exactly one unanchored vertex"))?;
+                            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "vertex-only loop does not contain exactly one unanchored vertex"))?;
                             valid = false;
                             break;
                         }
@@ -1573,7 +1559,7 @@ pub(super) fn project(
                         )?
                         else {
                             super::push_optional_entity_loss(
-                                Some(ctx),
+                                ctx,
                                 &mut losses,
                                 entry,
                                 format_args!("{}", "edge loop contains an unanchored vertex use"),
@@ -1588,7 +1574,7 @@ pub(super) fn project(
                         )?
                         else {
                             super::push_optional_entity_loss(
-                                Some(ctx),
+                                ctx,
                                 &mut losses,
                                 entry,
                                 format_args!("{}", "edge loop has no coedges"),
@@ -1603,19 +1589,17 @@ pub(super) fn project(
                         1,
                         "iges B-rep topology loops",
                     )?;
-                    crate::decode_resource::admit_optional_entities(
-                        Some(ctx),
+                    ctx.charge_entities(
                         1,
                         "iges_geometry_brep",
                     )?;
                     candidate.model_mut().loops.push(Loop {
-                        id: loop_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                        id: loop_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                         face: face_id
-                            .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                            .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                         boundary,
                     });
-                    cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                        Some(ctx),
+                    ctx.insert_btree_set(
                         &mut consumed,
                         loop_sequence,
                         "iges B-rep consumed loop nodes",
@@ -1655,14 +1639,13 @@ pub(super) fn project(
                     1,
                     "iges B-rep topology faces",
                 )?;
-                crate::decode_resource::admit_optional_entities(
-                    Some(ctx),
+                ctx.charge_entities(
                     1,
                     "iges_geometry_brep",
                 )?;
                 candidate.model_mut().faces.push(Face {
-                    id: face_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
-                    shell: shell_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                    id: face_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                    shell: shell_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                     surface: surface_id,
                     sense: face_sense,
                     loops: face_loops,
@@ -1671,8 +1654,7 @@ pub(super) fn project(
                     tolerance: None,
                 });
                 shell_faces.push(face_id);
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                    Some(ctx),
+                ctx.insert_btree_set(
                     &mut consumed,
                     face_sequence,
                     "iges B-rep consumed face nodes",
@@ -1686,11 +1668,11 @@ pub(super) fn project(
                 1,
                 "iges B-rep topology shells",
             )?;
-            crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
+            ctx.charge_entities( 1, "iges_geometry_brep")?;
             candidate.model_mut().shells.push(
                 match Shell::new(
-                    shell_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
-                    region_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+                    shell_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                    region_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                     shell_faces,
                     Vec::new(),
                     Vec::new(),
@@ -1703,8 +1685,7 @@ pub(super) fn project(
                 },
             );
             region_shells.push(shell_id);
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut consumed,
                 shell_sequence,
                 "iges B-rep consumed shell nodes",
@@ -1712,7 +1693,7 @@ pub(super) fn project(
         }
         if !valid {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "shell topology references missing geometry"),
@@ -1739,7 +1720,7 @@ pub(super) fn project(
             })
         {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -1758,7 +1739,7 @@ pub(super) fn project(
                     .find(|coedge| coedge.id == *id)
                 {
                     coedge.radial_next = ring[(index + 1) % ring.len()]
-                        .try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?;
+                        .try_clone_for_decode(ctx, "iges B-rep identity copy")?;
                 }
             }
         }
@@ -1767,10 +1748,10 @@ pub(super) fn project(
             1,
             "iges B-rep topology regions",
         )?;
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
+        ctx.charge_entities( 1, "iges_geometry_brep")?;
         candidate.model_mut().regions.push(Region {
-            id: region_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
-            body: body_id.try_clone_for_decode(Some(ctx), "iges B-rep identity copy")?,
+            id: region_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+            body: body_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
             shells: region_shells,
         });
         let mut body_regions = ctx.collection_vec(1, "iges B-rep body region ids")?;
@@ -1780,7 +1761,7 @@ pub(super) fn project(
             1,
             "iges B-rep topology bodies",
         )?;
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
+        ctx.charge_entities( 1, "iges_geometry_brep")?;
         candidate.model_mut().bodies.push(Body {
             id: body_id,
             kind: definition.kind,
@@ -1796,15 +1777,14 @@ pub(super) fn project(
             .is_err()
         {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "shell candidate failed neutral validation"),
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            Some(ctx),
+        ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges brep decoded sequences",
@@ -1814,8 +1794,7 @@ pub(super) fn project(
             .chain(edge_ids.keys().map(|key| key.0))
             .chain(vertex_ids.keys().map(|key| key.0))
         {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 sequence,
                 "iges B-rep decoded topology sequences",

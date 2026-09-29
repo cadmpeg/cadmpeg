@@ -158,13 +158,13 @@ fn directory_fixture() -> (
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let bytes = point_file();
-    let scan = crate::card::scan(&bytes).unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
     let table = global.global_table();
-    let (directory, _) = crate::directory::parse(&scan, table, Some(&ctx)).unwrap();
+    let (directory, _) = crate::directory::parse(&scan, table, &ctx).unwrap();
     (directory, table)
 }
 
@@ -398,11 +398,11 @@ fn combined_summary_refuses_collection_limit_before_append() {
 
 #[test]
 fn source_metadata_admits_formatted_values_before_building_attributes() {
-    use crate::{card, dialect, global, representation::Representation};
+    use crate::{dialect, global, representation::Representation};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let bytes = point_file();
-    let scan = card::scan(&bytes).unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
     let arena = DecodeArena::new();
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
@@ -813,13 +813,13 @@ fn projected_directory_refuses_entry_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let bytes = point_file();
-    let scan = crate::card::scan(&bytes).unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
     let arena = DecodeArena::new();
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, _) =
-        crate::directory::parse(&scan, global.global_table(), Some(&parse_ctx)).unwrap();
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
     let quarantined = std::collections::BTreeSet::from([99]);
 
     let arena = DecodeArena::new();

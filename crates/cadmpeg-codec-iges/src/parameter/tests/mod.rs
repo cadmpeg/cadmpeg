@@ -6,7 +6,8 @@ use crate::directory::{DirectoryEntry, SourceStatus};
 use super::ParameterRecord;
 use super::Token;
 use super::TokenValue;
-use crate::card::{scan, Section};
+use crate::card::Section;
+use crate::test_support::scan;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
 mod advanced_entity_boundaries;
@@ -95,7 +96,7 @@ fn trailing_pointer_prefix_refuses_collection_limit_before_allocation() {
         &record,
         &BTreeMap::new(),
         crate::global::GlobalTable::V5Later,
-        Some(&ctx),
+        &ctx,
     );
     assert!(matches!(
         result,
@@ -113,7 +114,7 @@ fn trailing_pointer_prefix_refuses_collection_limit_before_allocation() {
             &record,
             &BTreeMap::new(),
             crate::global::GlobalTable::V5Later,
-            Some(&ctx),
+            &ctx,
         )
         .is_ok()
     );
@@ -136,7 +137,7 @@ fn trailing_pointer_entries_refuse_collection_limit_before_allocation() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result =
-        super::groups_for_candidate_with_context(&record, &BTreeMap::new(), candidate, Some(&ctx));
+        super::groups_for_candidate_with_context(&record, &BTreeMap::new(), candidate, &ctx);
     assert!(matches!(
         result,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -152,7 +153,7 @@ fn trailing_pointer_entries_refuse_collection_limit_before_allocation() {
         &record,
         &BTreeMap::new(),
         candidate,
-        Some(&ctx),
+        &ctx,
     )
     .unwrap()
     .is_some());
@@ -179,7 +180,7 @@ fn resolved_pointer_groups_refuse_collection_limit_before_allocation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = groups.fully_valid_with_context(Some(&ctx));
+    let result = groups.fully_valid_with_context(&ctx);
     assert!(matches!(
         result,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -193,7 +194,7 @@ fn resolved_pointer_groups_refuse_collection_limit_before_allocation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
         groups
-            .fully_valid_with_context(Some(&ctx))
+            .fully_valid_with_context(&ctx)
             .unwrap()
             .unwrap()
             .associations(),
@@ -214,7 +215,7 @@ fn owned_parameter_bytes_refuse_retained_limit_before_copy() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 63;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let result = super::owned_bytes(&cards, &lines, Some(&ctx));
+    let result = super::owned_bytes(&cards, &lines, &ctx);
     assert!(matches!(
         result,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -226,11 +227,13 @@ fn owned_parameter_bytes_refuse_retained_limit_before_copy() {
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    assert!(super::owned_bytes(&cards, &lines, Some(&ctx)).is_ok());
+    assert!(super::owned_bytes(&cards, &lines, &ctx).is_ok());
 }
 
 #[test]
 fn quarantined_parameter_bytes_refuse_retained_limit_before_copy() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::BTreeMap;
 
@@ -239,7 +242,7 @@ fn quarantined_parameter_bytes_refuse_retained_limit_before_copy() {
     let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
     let cards = [*lines.keys().next().unwrap()];
     let (directory, _) =
-        crate::directory::parse(&scan, crate::global::GlobalTable::V5Later, None).unwrap();
+        crate::directory::parse(&scan, crate::global::GlobalTable::V5Later, decode_ctx).unwrap();
     let entry = directory.first().unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -251,7 +254,7 @@ fn quarantined_parameter_bytes_refuse_retained_limit_before_copy() {
         &lines,
         super::ParameterDefect::NoOwnedCards,
         None,
-        Some(&ctx),
+        &ctx,
     );
     assert!(matches!(
         result,
@@ -270,20 +273,24 @@ fn quarantined_parameter_bytes_refuse_retained_limit_before_copy() {
         &lines,
         super::ParameterDefect::NoOwnedCards,
         None,
-        Some(&ctx),
+        &ctx,
     )
     .is_ok());
+
+    })
 }
 
 #[test]
 fn parameter_ownership_refuses_nested_owner_map_before_insertion() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::BTreeMap;
 
     let bytes = crate::test_support::test_curves_and_surfaces::point_file();
     let scan = scan(&bytes).unwrap();
     let (directory, _) =
-        crate::directory::parse(&scan, crate::global::GlobalTable::V5Later, None).unwrap();
+        crate::directory::parse(&scan, crate::global::GlobalTable::V5Later, decode_ctx).unwrap();
     let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
     let back_pointers = lines
         .iter()
@@ -298,7 +305,7 @@ fn parameter_ownership_refuses_nested_owner_map_before_insertion() {
         &lines,
         &back_pointers,
         &mut crate::card::FramingRecoveries::default(),
-        Some(&ctx),
+        &ctx,
     );
     assert!(matches!(
         result,
@@ -317,9 +324,11 @@ fn parameter_ownership_refuses_nested_owner_map_before_insertion() {
         &lines,
         &back_pointers,
         &mut crate::card::FramingRecoveries::default(),
-        Some(&ctx),
+        &ctx,
     )
     .is_ok());
+
+    })
 }
 
 fn parameter_owner(field: [u8; 8]) -> Option<u32> {

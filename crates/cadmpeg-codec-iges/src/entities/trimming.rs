@@ -243,17 +243,17 @@ fn create_boundary_vertices(
             1,
             "iges boundary vertices",
         )?;
-        sequences.record_point(&point_id, stem, Some(ctx))?;
+        sequences.record_point(&point_id, stem, ctx)?;
         let vertex_id = crate::ids::vertex_admitted(&stem.slot(boundary).slot(index), ctx)?;
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
+        ctx.charge_entities( 1, "iges_geometry_trimming")?;
         candidate.model_mut().points.push(Point::new(
-            point_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+            point_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
             cluster.representative,
             None,
         ));
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
+        ctx.charge_entities( 1, "iges_geometry_trimming")?;
         candidate.model_mut().vertices.push(Vertex {
-            id: vertex_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+            id: vertex_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
             point: point_id,
             tolerance: Some(tolerance),
         });
@@ -275,14 +275,14 @@ fn create_boundary_vertices(
                 format_args!("{source_entity}"),
                 "iges boundary derivation source text",
             )?,
-            vertex: vertex_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+            vertex: vertex_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
             representative: cluster.representative,
             tolerance: tolerance.get(),
             source_endpoints: derivation_endpoints,
         });
         for member in cluster.members {
             vertex_ids[member] =
-                Some(vertex_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?);
+                Some(vertex_id.try_clone_for_decode(ctx, "iges trimming identity copy")?);
         }
     }
     let mut result_ids = ctx.collection_vec(vertex_ids.len(), "iges boundary result vertex ids")?;
@@ -408,7 +408,7 @@ pub(super) fn pcurve_geometry(
     sequence: u32,
     support: &PcurveSupport<'_>,
     tolerance: Option<f64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     composite_index: Option<&CompositeIndex>,
 ) -> Result<Option<(PcurveGeometry, [f64; 2])>, super::composite::CompositeCurveError> {
     let curve_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx)?;
@@ -450,8 +450,7 @@ pub(super) fn pcurve_geometry(
     let (degree, knots, poles, periodic) = nurbs.into_parts();
     let poles = match poles {
         NurbsPoles3::Polynomial { points } => {
-            let mut mapped = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
+            let mut mapped = ctx.collection_vec(
                 points.len(),
                 "iges pcurve mapped polynomial poles",
             )?;
@@ -461,8 +460,7 @@ pub(super) fn pcurve_geometry(
             PcurveNurbsPoles::Polynomial { points: mapped }
         }
         NurbsPoles3::Rational { points } => {
-            let mut mapped = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
-                ctx,
+            let mut mapped = ctx.collection_vec(
                 points.len(),
                 "iges pcurve mapped rational poles",
             )?;
@@ -640,9 +638,8 @@ fn source_curve_control_intervals(
     if active.contains(curve_id) {
         return Ok(None);
     }
-    let active_id = curve_id.try_clone_for_decode(Some(ctx), "iges source active curve ID")?;
-    cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-        Some(ctx),
+    let active_id = curve_id.try_clone_for_decode(ctx, "iges source active curve ID")?;
+    ctx.insert_btree_set(
         active,
         active_id,
         "iges source active curve nodes",
@@ -1065,7 +1062,7 @@ fn linear_boundary_geometry(
             model_plane,
             resolution,
             &mut BTreeSet::new(),
-            Some(ctx),
+            ctx,
         )? {
             return Ok(None);
         }
@@ -1649,9 +1646,8 @@ fn surface_parameter_bounds(
             return Ok(None);
         }
         let visited_id =
-            surface_id.try_clone_for_decode(Some(ctx), "iges support-bound visiting surface ID")?;
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            Some(ctx),
+            surface_id.try_clone_for_decode(ctx, "iges support-bound visiting surface ID")?;
+        ctx.insert_btree_set(
             visiting,
             visited_id,
             "iges support-bound visiting surface nodes",
@@ -1907,12 +1903,12 @@ pub(super) fn clone_boundary_edge(
         }
         cadmpeg_ir::topology::EdgeCarrier::Curve(curve) => {
             cadmpeg_ir::topology::EdgeCarrier::Curve(
-                curve.try_clone_for_decode(Some(ctx), "iges selected edge curve ID")?,
+                curve.try_clone_for_decode(ctx, "iges selected edge curve ID")?,
             )
         }
         cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, range) => {
             cadmpeg_ir::topology::EdgeCarrier::Bounded(
-                curve.try_clone_for_decode(Some(ctx), "iges selected edge curve ID")?,
+                curve.try_clone_for_decode(ctx, "iges selected edge curve ID")?,
                 *range,
             )
         }
@@ -1920,14 +1916,14 @@ pub(super) fn clone_boundary_edge(
     Ok(Edge {
         id: edge
             .id
-            .try_clone_for_decode(Some(ctx), "iges selected edge ID")?,
+            .try_clone_for_decode(ctx, "iges selected edge ID")?,
         carrier,
         start: edge
             .start
-            .try_clone_for_decode(Some(ctx), "iges selected edge start ID")?,
+            .try_clone_for_decode(ctx, "iges selected edge start ID")?,
         end: edge
             .end
-            .try_clone_for_decode(Some(ctx), "iges selected edge end ID")?,
+            .try_clone_for_decode(ctx, "iges selected edge end ID")?,
         tolerance: edge.tolerance,
     })
 }
@@ -1942,8 +1938,7 @@ pub(super) fn project(
 ) -> Result<(ProjectionOutcome, Vec<BoundaryVertexDerivation>), CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut records,
             record.directory_sequence,
             record,
@@ -1952,8 +1947,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
@@ -1985,7 +1979,7 @@ pub(super) fn project(
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -1997,7 +1991,7 @@ pub(super) fn project(
             .filter(|value| matches!(value, 0..=3) && matches!(record.integer(1), Some(0..=3)))
         else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -2009,7 +2003,7 @@ pub(super) fn project(
         };
         let Some(surface) = pointer(record, 2) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "curve-on-surface surface pointer is invalid"),
@@ -2028,7 +2022,7 @@ pub(super) fn project(
             .is_none_or(|value| value != 0 && pcurve.is_none())
         {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "curve-on-surface parameter curve pointer is invalid"),
@@ -2037,7 +2031,7 @@ pub(super) fn project(
         }
         let Some(model_curve) = pointer(record, 4) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "curve-on-surface model curve pointer is invalid"),
@@ -2050,7 +2044,7 @@ pub(super) fn project(
             })
         }) {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "parameter curve does not have entity-use flag 05"),
@@ -2071,15 +2065,13 @@ pub(super) fn project(
             sense: Sense::Forward,
             parameter_curves_authoritative: pcurve.is_some() && preference != 2,
         });
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut boundaries,
             entry.sequence,
             BoundaryDefinition { surface, segments },
             "iges trimming boundary index nodes",
         )?;
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            Some(ctx),
+        ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges trimming decoded sequences",
@@ -2091,7 +2083,7 @@ pub(super) fn project(
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -2100,7 +2092,7 @@ pub(super) fn project(
         };
         let Some(boundary_type) = record.integer(1).filter(|value| matches!(value, 0 | 1)) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "boundary representation type is not 0 or 1"),
@@ -2109,7 +2101,7 @@ pub(super) fn project(
         };
         let Some(preference) = record.integer(2).filter(|value| matches!(value, 0..=3)) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "boundary preference flag is invalid"),
@@ -2118,7 +2110,7 @@ pub(super) fn project(
         };
         let Some(surface) = pointer(record, 3) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "boundary support pointer is invalid"),
@@ -2127,7 +2119,7 @@ pub(super) fn project(
         };
         let Some(segment_count) = record.count(4).filter(|count| *count > 0) else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "boundary segment count is not positive"),
@@ -2140,7 +2132,7 @@ pub(super) fn project(
         for _ in 0..segment_count {
             let Some(model_curve) = pointer(record, index) else {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "boundary model-curve pointer is invalid"),
@@ -2153,7 +2145,7 @@ pub(super) fn project(
                 Some(2) => Sense::Reversed,
                 _ => {
                     super::push_optional_entity_loss(
-                        Some(ctx),
+                        ctx,
                         &mut losses,
                         entry,
                         format_args!("{}", "boundary segment sense is not 1 or 2"),
@@ -2164,7 +2156,7 @@ pub(super) fn project(
             };
             let Some(pcurve_count) = record.count(index + 2) else {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "boundary pcurve count is invalid"),
@@ -2175,7 +2167,7 @@ pub(super) fn project(
             if (boundary_type == 0 && pcurve_count != 0)
                 || (boundary_type == 1 && pcurve_count == 0)
             {
-                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary pcurve collection cardinality disagrees with its representation type"))?;
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "boundary pcurve collection cardinality disagrees with its representation type"))?;
                 valid = false;
                 break;
             }
@@ -2189,7 +2181,7 @@ pub(super) fn project(
                     entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
                 }) {
                     super::push_optional_entity_loss(
-                        Some(ctx),
+                        ctx,
                         &mut losses,
                         entry,
                         format_args!("{}", "boundary pcurve does not have entity-use flag 05"),
@@ -2201,7 +2193,7 @@ pub(super) fn project(
             }
             if pcurves.len() != pcurve_count {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "boundary pcurve pointer is invalid"),
@@ -2218,15 +2210,13 @@ pub(super) fn project(
             index += 3 + pcurve_count;
         }
         if valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                Some(ctx),
+            ctx.insert_btree_map(
                 &mut boundaries,
                 entry.sequence,
                 BoundaryDefinition { surface, segments },
                 "iges trimming boundary index nodes",
             )?;
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges trimming decoded sequences",
@@ -2241,7 +2231,7 @@ pub(super) fn project(
         let carrier_agreement_tolerance = global.minimum_resolution_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -2262,7 +2252,7 @@ pub(super) fn project(
         ) = if surface_kind == BoundarySurfaceKind::Trimmed {
             let Some(surface) = pointer(record, 1) else {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "trimmed-surface support pointer is invalid"),
@@ -2275,7 +2265,7 @@ pub(super) fn project(
                 _ => None,
             }) else {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "trimmed-surface outer-boundary flag is not 0 or 1"),
@@ -2284,7 +2274,7 @@ pub(super) fn project(
             };
             let Some(inner_count) = record.count(3) else {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "trimmed-surface inner-boundary count is invalid"),
@@ -2304,7 +2294,7 @@ pub(super) fn project(
             if has_explicit_outer {
                 let Some(outer) = pointer(record, 4) else {
                     super::push_optional_entity_loss(
-                        Some(ctx),
+                        ctx,
                         &mut losses,
                         entry,
                         format_args!("{}", "trimmed-surface outer-boundary pointer is invalid"),
@@ -2315,7 +2305,7 @@ pub(super) fn project(
                     .get(&outer)
                     .is_none_or(|target| target.entity_type != 142 || target.form != 0)
                 {
-                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface outer-boundary pointer does not target a Type 142 Form 0 entity"))?;
+                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface outer-boundary pointer does not target a Type 142 Form 0 entity"))?;
                     continue;
                 }
                 sequences.push(outer);
@@ -2324,14 +2314,14 @@ pub(super) fn project(
                 record.value(4),
                 None | Some(TokenValue::Omitted | TokenValue::Integer(0))
             ) {
-                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface parameter-domain outer-boundary pointer is neither zero nor omitted"))?;
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface parameter-domain outer-boundary pointer is neither zero nor omitted"))?;
                 continue;
             }
             let mut valid = true;
             for index in 0..inner_count {
                 let Some(sequence) = pointer(record, 5 + index) else {
                     super::push_optional_entity_loss(
-                        Some(ctx),
+                        ctx,
                         &mut losses,
                         entry,
                         format_args!("{}", "trimmed-surface inner-boundary pointer is invalid"),
@@ -2343,7 +2333,7 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 142 || target.form != 0)
                 {
-                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface inner-boundary pointer does not target a Type 142 Form 0 entity"))?;
+                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface inner-boundary pointer does not target a Type 142 Form 0 entity"))?;
                     valid = false;
                     break;
                 }
@@ -2360,7 +2350,7 @@ pub(super) fn project(
             let Some(representation) = record.integer(1).filter(|value| matches!(value, 0 | 1))
             else {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "bounded-surface representation type is not 0 or 1"),
@@ -2369,7 +2359,7 @@ pub(super) fn project(
             };
             let Some(surface) = pointer(record, 2) else {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "bounded-surface support pointer is invalid"),
@@ -2378,7 +2368,7 @@ pub(super) fn project(
             };
             let Some(count) = record.count(3).filter(|count| *count > 0) else {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "bounded-surface boundary count is not positive"),
@@ -2390,7 +2380,7 @@ pub(super) fn project(
             for index in 0..count {
                 let Some(sequence) = pointer(record, 4 + index) else {
                     super::push_optional_entity_loss(
-                        Some(ctx),
+                        ctx,
                         &mut losses,
                         entry,
                         format_args!("{}", "bounded-surface boundary pointer is invalid"),
@@ -2402,7 +2392,7 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 141 || target.form != 0)
                 {
-                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "bounded-surface boundary pointer does not target a Type 141 Form 0 entity"))?;
+                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "bounded-surface boundary pointer does not target a Type 141 Form 0 entity"))?;
                     valid = false;
                     break;
                 }
@@ -2421,7 +2411,7 @@ pub(super) fn project(
                     sequences.push(sequence);
                 } else {
                     super::push_optional_entity_loss(
-                        Some(ctx),
+                        ctx,
                         &mut losses,
                         entry,
                         format_args!(
@@ -2444,16 +2434,16 @@ pub(super) fn project(
             .surfaces(surface_id.as_str())
             .map(|surface| {
                 if let Some(cache) = surface.geometry.solved_cache() {
-                    super::geometry_copy::copy_solved_surface(cache, Some(ctx))
+                    super::geometry_copy::copy_solved_surface(cache, ctx)
                         .map(SurfaceGeometry::Solved)
                 } else {
-                    super::geometry_copy::copy_surface_geometry(&surface.geometry, Some(ctx))
+                    super::geometry_copy::copy_surface_geometry(&surface.geometry, ctx)
                 }
             })
             .transpose()?
         else {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "trimmed-surface support carrier is missing"),
@@ -2463,11 +2453,11 @@ pub(super) fn project(
         let mut candidate = ModelDraft::new();
         let stem = crate::ids::Stem::directory(entry.sequence);
         let body_id = crate::ids::body_admitted(&stem, ctx)?;
-        sequences.record_body(&body_id, entry.sequence, &stem, Some(ctx))?;
+        sequences.record_body(&body_id, entry.sequence, &stem, ctx)?;
         let region_id = crate::ids::region_admitted(&stem, ctx)?;
         let shell_id = crate::ids::shell_admitted(&stem, ctx)?;
         let face_id = crate::ids::face_admitted(&stem, ctx)?;
-        sequences.record_face(&face_id, entry.sequence, Some(ctx))?;
+        sequences.record_face(&face_id, entry.sequence, ctx)?;
         let mut candidate_boundary_vertex_derivations = Vec::new();
         let support_parameter_bounds = surface_parameter_bounds(&carrier_index, &surface_id, ctx)?;
         let support_parameter_intervals = surface_parameter_bound_intervals(
@@ -2491,7 +2481,7 @@ pub(super) fn project(
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
             let Some(boundary) = boundaries.get(&sequence) else {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "trimmed-surface boundary definition is missing"),
@@ -2501,7 +2491,7 @@ pub(super) fn project(
             };
             if boundary.surface != surface_sequence {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!(
@@ -2521,7 +2511,7 @@ pub(super) fn project(
                 )?;
                 let Some(candidates) = edges_by_curve.get(&model_curve_id) else {
                     super::push_optional_entity_loss(
-                        Some(ctx),
+                        ctx,
                         &mut losses,
                         entry,
                         format_args!("{}", "boundary model curve has no bounded edge"),
@@ -2535,7 +2525,7 @@ pub(super) fn project(
                 let mut pcurve_refusal = None;
                 for sequence in &segment.pcurves {
                     if composite_index.is_none() {
-                        composite_index = Some(CompositeIndex::from_ir(ir, Some(ctx))?);
+                        composite_index = Some(CompositeIndex::from_ir(ir, ctx)?);
                     }
                     let index = composite_index.as_ref().ok_or_else(|| {
                         CodecError::Malformed("IGES trimming composite index is absent".into())
@@ -2549,7 +2539,7 @@ pub(super) fn project(
                             factor,
                         },
                         Some(carrier_agreement_tolerance),
-                        Some(ctx),
+                        ctx,
                         Some(index),
                     ) {
                         Ok(Some(resolved)) => {
@@ -2571,7 +2561,7 @@ pub(super) fn project(
                 if let Some(error) = pcurve_refusal {
                     let error = error.non_resource()?;
                     super::push_optional_entity_loss(
-                        Some(ctx),
+                        ctx,
                         &mut losses,
                         entry,
                         format_args!("boundary parameter curve states no NURBS carrier: {error}"),
@@ -2583,7 +2573,7 @@ pub(super) fn project(
                     Some(pcurves) => pcurves,
                     None if segment.parameter_curves_authoritative => {
                         super::push_optional_entity_loss(
-                            Some(ctx),
+                            ctx,
                             &mut losses,
                             entry,
                             format_args!("{}", "boundary parameter curve has no NURBS carrier"),
@@ -2648,7 +2638,7 @@ pub(super) fn project(
                     Ok(selected) => selected,
                     Err(BoundaryEdgeSelectionError::MissingEndpoints) => {
                         super::push_optional_entity_loss(
-                            Some(ctx),
+                            ctx,
                             &mut losses,
                             entry,
                             format_args!("{}", "boundary model-curve endpoints are missing"),
@@ -2658,7 +2648,7 @@ pub(super) fn project(
                     }
                     Err(BoundaryEdgeSelectionError::InvalidRange) => {
                         super::push_optional_entity_loss(
-                            Some(ctx),
+                            ctx,
                             &mut losses,
                             entry,
                             format_args!(
@@ -2671,7 +2661,7 @@ pub(super) fn project(
                     }
                     Err(BoundaryEdgeSelectionError::Ambiguous) => {
                         super::push_optional_entity_loss(
-                            Some(ctx),
+                            ctx,
                             &mut losses,
                             entry,
                             format_args!(
@@ -2684,7 +2674,7 @@ pub(super) fn project(
                     }
                     Err(BoundaryEdgeSelectionError::PcurveDisagreement) => {
                         super::push_optional_entity_loss(
-                            Some(ctx),
+                            ctx,
                             &mut losses,
                             entry,
                             format_args!(
@@ -2721,7 +2711,7 @@ pub(super) fn project(
                 for item in &items {
                     implicit_boundary_curves.push(
                         item.model_curve.try_clone_for_decode(
-                            Some(ctx),
+                            ctx,
                             "iges implicit boundary curve ID text",
                         )?,
                     );
@@ -2748,7 +2738,7 @@ pub(super) fn project(
                 !close(end.get(), next_start.get(), sewing_tolerance)
             }) {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "ordered boundary segments do not form a closed ring"),
@@ -2799,7 +2789,7 @@ pub(super) fn project(
                 cadmpeg_ir::scalar::PositiveReal::new(sewing_tolerance)
             else {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "boundary sewing tolerance is invalid"),
@@ -2827,7 +2817,7 @@ pub(super) fn project(
                     BoundaryVertexClusterError::NonTransitive,
                 )) => {
                     super::push_optional_entity_loss(
-                        Some(ctx),
+                        ctx,
                         &mut losses,
                         entry,
                         format_args!(
@@ -2850,9 +2840,9 @@ pub(super) fn project(
                 let edge_id =
                     crate::ids::edge_admitted(&stem.slot(boundary_index).slot(segment_index), ctx)?;
                 let start_vertex = vertex_ids[segment_index * 2]
-                    .try_clone_for_decode(Some(ctx), "iges trimming identity copy")?;
+                    .try_clone_for_decode(ctx, "iges trimming identity copy")?;
                 let end_vertex = vertex_ids[segment_index * 2 + 1]
-                    .try_clone_for_decode(Some(ctx), "iges trimming identity copy")?;
+                    .try_clone_for_decode(ctx, "iges trimming identity copy")?;
                 let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
                     Some(item.model_curve),
                     item.source_edge
@@ -2862,7 +2852,7 @@ pub(super) fn project(
                     Ok(carrier) => carrier,
                     Err(error) => {
                         super::push_optional_entity_loss(
-                            Some(ctx),
+                            ctx,
                             &mut losses,
                             entry,
                             format_args!("{error}"),
@@ -2871,13 +2861,12 @@ pub(super) fn project(
                         break;
                     }
                 };
-                crate::decode_resource::admit_optional_entities(
-                    Some(ctx),
+                ctx.charge_entities(
                     1,
                     "iges_geometry_trimming",
                 )?;
                 candidate.model_mut().edges.push(Edge {
-                    id: edge_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+                    id: edge_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
                     carrier,
                     start: start_vertex,
                     end: end_vertex,
@@ -2889,7 +2878,7 @@ pub(super) fn project(
                     .any(|(_, range)| cadmpeg_ir::units::FiniteVector::new(*range).is_none())
                 {
                     super::push_optional_entity_loss(
-                        Some(ctx),
+                        ctx,
                         &mut losses,
                         entry,
                         format_args!("{}", PcurveMetadata::NON_FINITE_PARAMETER_RANGE),
@@ -2916,7 +2905,7 @@ pub(super) fn project(
                             "iges implicit boundary pcurve IDs",
                         )?;
                         implicit_boundary_pcurves.push(id.try_clone_for_decode(
-                            Some(ctx),
+                            ctx,
                             "iges implicit boundary pcurve ID text",
                         )?);
                     }
@@ -2925,13 +2914,12 @@ pub(super) fn project(
                         1,
                         "iges trimming pcurve slots",
                     )?;
-                    crate::decode_resource::admit_optional_entities(
-                        Some(ctx),
+                    ctx.charge_entities(
                         1,
                         "iges_geometry_trimming",
                     )?;
                     candidate.model_mut().pcurves.push(Pcurve {
-                        id: id.try_clone_for_decode(Some(ctx), "iges trimming pcurve ID copy")?,
+                        id: id.try_clone_for_decode(ctx, "iges trimming pcurve ID copy")?,
                         geometry,
                         metadata: PcurveMetadata::general(
                             None,
@@ -2946,16 +2934,15 @@ pub(super) fn project(
                     });
                 }
                 let coedge_id = coedge_ids[segment_index]
-                    .try_clone_for_decode(Some(ctx), "iges trimming identity copy")?;
-                crate::decode_resource::admit_optional_entities(
-                    Some(ctx),
+                    .try_clone_for_decode(ctx, "iges trimming identity copy")?;
+                ctx.charge_entities(
                     1,
                     "iges_geometry_trimming",
                 )?;
                 candidate.model_mut().coedges.push(Coedge {
-                    id: coedge_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+                    id: coedge_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
                     owner_loop: loop_id
-                        .try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+                        .try_clone_for_decode(ctx, "iges trimming identity copy")?,
                     edge: edge_id,
                     radial_next: coedge_id,
                     sense: item.segment.sense,
@@ -2967,7 +2954,7 @@ pub(super) fn project(
                 cadmpeg_ir::topology::LoopRing::try_new_for_decode(ctx, coedge_ids, Vec::new())?
             else {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "boundary loop contains no coedges"),
@@ -2975,19 +2962,18 @@ pub(super) fn project(
                 valid = false;
                 break;
             };
-            crate::decode_resource::admit_optional_entities(
-                Some(ctx),
+            ctx.charge_entities(
                 1,
                 "iges_geometry_trimming",
             )?;
             candidate.model_mut().loops.push(Loop {
-                id: loop_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
-                face: face_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+                id: loop_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
+                face: face_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
             if explicit_outer_sequence == Some(sequence) {
                 explicit_outer_loop =
-                    Some(loop_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?);
+                    Some(loop_id.try_clone_for_decode(ctx, "iges trimming identity copy")?);
             }
             ctx.reserve_vec(&mut loop_ids, 1, "iges trimming face loop IDs")?;
             loop_ids.push(loop_id);
@@ -3015,7 +3001,7 @@ pub(super) fn project(
         });
         if linear_relationship == Some(false) {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -3034,24 +3020,23 @@ pub(super) fn project(
                 &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::ImplicitOuter),
                 ctx,
             )?;
-            sequences.record_surface(&derived_surface_id, entry.sequence, Some(ctx))?;
-            crate::decode_resource::admit_optional_entities(
-                Some(ctx),
+            sequences.record_surface(&derived_surface_id, entry.sequence, ctx)?;
+            ctx.charge_entities(
                 1,
                 "iges_geometry_trimming",
             )?;
             candidate.model_mut().surfaces.push(Surface {
                 id: derived_surface_id
-                    .try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+                    .try_clone_for_decode(ctx, "iges trimming identity copy")?,
                 geometry: support_geometry,
-                source_object: Some(match source_object(entry, Some(ctx)) {
+                source_object: Some(match source_object(entry, ctx) {
                     Ok(source) => source,
                     Err(error) => {
                         super::push_optional_entity_loss(
-                            Some(ctx),
+                            ctx,
                             &mut losses,
                             entry,
-                            format_args!("{}", super::non_resource_error(error, Some(ctx))?),
+                            format_args!("{}", super::non_resource_error(error, ctx)?),
                         )?;
                         continue;
                     }
@@ -3064,7 +3049,7 @@ pub(super) fn project(
                 Ok(record_bounds) => record_bounds,
                 Err(error) => {
                     super::push_optional_entity_loss(
-                        Some(ctx),
+                        ctx,
                         &mut losses,
                         entry,
                         format_args!("{error}"),
@@ -3077,14 +3062,13 @@ pub(super) fn project(
                 1,
                 "iges procedural surface slots",
             )?;
-            crate::decode_resource::admit_optional_entities(
-                Some(ctx),
+            ctx.charge_entities(
                 1,
                 "iges_geometry_trimming",
             )?;
             let _attached = candidate.model_mut().add_procedural_surface(
                 &derived_surface_id
-                    .try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+                    .try_clone_for_decode(ctx, "iges trimming identity copy")?,
                 ProceduralSurface::new(
                     crate::ids::procedural_surface_admitted(
                         &crate::ids::Stem::directory(entry.sequence)
@@ -3093,7 +3077,7 @@ pub(super) fn project(
                     )?,
                     ProceduralSurfaceDefinition::CurveBounded {
                         support: surface_id
-                            .try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+                            .try_clone_for_decode(ctx, "iges trimming identity copy")?,
                         boundaries: implicit_boundary_curves,
                         boundary_pcurves: implicit_boundary_pcurves,
                         implicit_outer: true,
@@ -3108,7 +3092,7 @@ pub(super) fn project(
         let checked_face_tolerance = if face_tolerance > 0.0 {
             let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(face_tolerance) else {
                 super::push_optional_entity_loss(
-                    Some(ctx),
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "face tolerance is invalid"),
@@ -3128,10 +3112,10 @@ pub(super) fn project(
             }
             None => cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids),
         };
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
+        ctx.charge_entities( 1, "iges_geometry_trimming")?;
         candidate.model_mut().faces.push(Face {
-            id: face_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
-            shell: shell_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+            id: face_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
+            shell: shell_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
             surface: face_surface_id,
             sense: Sense::Forward,
             loops: face_loops,
@@ -3141,10 +3125,10 @@ pub(super) fn project(
         });
         let mut shell_faces = ctx.collection_vec(1, "iges trimming shell face IDs")?;
         shell_faces.push(face_id);
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
+        ctx.charge_entities( 1, "iges_geometry_trimming")?;
         let shell = match Shell::new(
-            shell_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
-            region_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+            shell_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
+            region_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
             shell_faces,
             Vec::new(),
             Vec::new(),
@@ -3160,15 +3144,15 @@ pub(super) fn project(
         candidate.model_mut().shells.push(shell);
         let mut region_shells = ctx.collection_vec(1, "iges trimming region shell IDs")?;
         region_shells.push(shell_id);
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
+        ctx.charge_entities( 1, "iges_geometry_trimming")?;
         candidate.model_mut().regions.push(Region {
-            id: region_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
-            body: body_id.try_clone_for_decode(Some(ctx), "iges trimming identity copy")?,
+            id: region_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
+            body: body_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
             shells: region_shells,
         });
         let mut body_regions = ctx.collection_vec(1, "iges trimming body region IDs")?;
         body_regions.push(region_id);
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
+        ctx.charge_entities( 1, "iges_geometry_trimming")?;
         candidate.model_mut().bodies.push(Body {
             id: body_id,
             kind: BodyKind::Sheet,
@@ -3190,15 +3174,14 @@ pub(super) fn project(
             .is_err()
         {
             super::push_optional_entity_loss(
-                Some(ctx),
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "trimmed sheet candidate failed neutral validation"),
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            Some(ctx),
+        ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges trimming decoded sequences",

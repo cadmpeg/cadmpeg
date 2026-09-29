@@ -272,6 +272,8 @@ fn expected_counts(name: &str) -> (usize, usize, usize) {
 fn decode_matrix(
     fixtures: Vec<(&'static str, Vec<u8>, i64, ExpectedArena)>,
 ) -> Vec<EditableDecodeResult> {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let matrix_path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/iges-envelope-a.toml");
     let source = std::fs::read_to_string(matrix_path).unwrap();
@@ -281,11 +283,11 @@ fn decode_matrix(
         .map(|(name, bytes, subject_type, expected_arena)| {
             assert_matrix_destination(&matrix, subject_type, expected_arena);
             let (expected_subjects, expected_total, expected_associated) = expected_counts(name);
-            let scan = crate::card::scan(&bytes).expect("integration fixture cards");
+            let scan = crate::test_support::scan(&bytes).expect("integration fixture cards");
             let (global, _global_losses) =
                 crate::test_support::parse_global(&scan).expect("integration global");
             let (directory, _quarantined) =
-                crate::directory::parse(&scan, global.global_table(), None)
+                crate::directory::parse(&scan, global.global_table(), decode_ctx)
                     .expect("integration directory");
             let subject_count = directory
                 .iter()
@@ -322,6 +324,8 @@ fn decode_matrix(
             result
         })
         .collect()
+
+    })
 }
 
 fn matrix_destination(arena: ExpectedArena) -> &'static str {

@@ -45,6 +45,8 @@ use crate::IgesCodec;
 
 #[test]
 fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
     let curve = test_nurbs(
         2,
@@ -58,7 +60,7 @@ fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
         Some(vec![1.0, 0.5, 2.0, 1.0]),
     );
     let interval = [0.25, 1.5];
-    let trimmed = trim_nurbs_to_interval(None, &curve, interval)
+    let trimmed = trim_nurbs_to_interval(decode_ctx, &curve, interval)
         .expect("carrier lanes pair")
         .expect("a bounded active interval has an exact NURBS subrange");
 
@@ -75,10 +77,14 @@ fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
             .expect("trimmed NURBS evaluates");
         assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
     }
+
+    })
 }
 
 #[test]
 fn concatenation_accepts_exact_active_nurbs_subranges() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
     let curve = test_nurbs(
         2,
@@ -91,14 +97,14 @@ fn concatenation_accepts_exact_active_nurbs_subranges() {
         ],
         Some(vec![1.0, 0.5, 2.0, 1.0]),
     );
-    let first = trim_nurbs_to_interval(None, &curve, [0.0, 1.0])
+    let first = trim_nurbs_to_interval(decode_ctx, &curve, [0.0, 1.0])
         .expect("carrier lanes pair")
         .expect("first active NURBS interval is exact");
-    let second = trim_nurbs_to_interval(None, &curve, [1.0, 2.0])
+    let second = trim_nurbs_to_interval(decode_ctx, &curve, [1.0, 2.0])
         .expect("carrier lanes pair")
         .expect("second active NURBS interval is exact");
     let concatenated = concatenate_nurbs(
-        None,
+        decode_ctx,
         vec![(first, [0.0, 1.0], ()), (second, [1.0, 2.0], ())],
         None,
     )
@@ -112,10 +118,14 @@ fn concatenation_accepts_exact_active_nurbs_subranges() {
             .expect("concatenated NURBS evaluates");
         assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
     }
+
+    })
 }
 
 #[test]
 fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
     let piecewise_constant = test_nurbs(
         0,
@@ -139,7 +149,7 @@ fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
         (piecewise_constant, [0.5, 1.5], vec![0.75, 1.25]),
         (nonclamped, [1.0, 3.0], vec![1.25, 2.0, 2.75]),
     ] {
-        let trimmed = trim_nurbs_to_interval(None, &curve, interval)
+        let trimmed = trim_nurbs_to_interval(decode_ctx, &curve, interval)
             .expect("carrier lanes pair")
             .expect("a valid active interval has an exact NURBS subrange");
         for parameter in parameters {
@@ -150,10 +160,14 @@ fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
             assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
         }
     }
+
+    })
 }
 
 #[test]
 fn concatenation_preserves_degree_zero_spans() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let point = Point3::new(1.0, 2.0, 3.0);
     let first = (
         test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point, point], None),
@@ -161,7 +175,7 @@ fn concatenation_preserves_degree_zero_spans() {
     );
     let second = (test_nurbs(0, vec![0.0, 1.0], vec![point], None), [0.0, 1.0]);
     let concatenated = concatenate_nurbs(
-        None,
+        decode_ctx,
         vec![(first.0, first.1, ()), (second.0, second.1, ())],
         None,
     )
@@ -185,10 +199,14 @@ fn concatenation_preserves_degree_zero_spans() {
             Some(point)
         );
     }
+
+    })
 }
 
 #[test]
 fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let mut curve = test_nurbs(
         1,
         vec![0.5, 0.5, 1.5, 2.5, 2.5],
@@ -201,19 +219,23 @@ fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
     );
     let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 2.0)
         .expect("valid multi-span linear NURBS evaluates before degree elevation");
-    elevate_nurbs_to_degree(None, &mut curve, [0.5, 2.5], 3, None).expect("elevation lanes pair");
+    elevate_nurbs_to_degree(decode_ctx, &mut curve, [0.5, 2.5], 3, None).expect("elevation lanes pair");
     let after = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 2.0)
         .expect("valid multi-span linear NURBS evaluates after degree elevation");
     assert_eq!(curve.degree(), 3);
     assert!(before.distance(after.get()) <= 1.0e-12);
+
+    })
 }
 
 #[test]
 fn multi_span_degree_zero_elevation_preserves_the_curve() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let point = Point3::new(1.0, 2.0, 3.0);
     let source = test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point; 2], None);
     let mut elevated = source.clone();
-    elevate_nurbs_to_degree(None, &mut elevated, [0.0, 2.0], 2, None)
+    elevate_nurbs_to_degree(decode_ctx, &mut elevated, [0.0, 2.0], 2, None)
         .expect("elevation lanes pair");
     assert_eq!(elevated.degree(), 2);
     for parameter in [0.25, 0.75, 1.25, 1.75] {
@@ -221,10 +243,14 @@ fn multi_span_degree_zero_elevation_preserves_the_curve() {
         let after = cadmpeg_ir::eval::nurbs_curve_point_at(&elevated, parameter).unwrap();
         assert_eq!(before, after);
     }
+
+    })
 }
 
 #[test]
 fn multi_span_rational_degree_elevation_preserves_the_curve() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     const EPS_DEGREE_ELEVATION: f64 = 1.0e-9;
     let source = test_nurbs(
         2,
@@ -238,7 +264,7 @@ fn multi_span_rational_degree_elevation_preserves_the_curve() {
         Some(vec![1.0, 2.0, 1.0, 3.0]),
     );
     let mut elevated = source.clone();
-    elevate_nurbs_to_degree(None, &mut elevated, [0.0, 1.0], 3, None)
+    elevate_nurbs_to_degree(decode_ctx, &mut elevated, [0.0, 1.0], 3, None)
         .expect("elevation lanes pair");
     assert_eq!(elevated.degree(), 3);
     assert_eq!(elevated.weights().map(|weights| weights.len()), Some(7));
@@ -247,10 +273,14 @@ fn multi_span_rational_degree_elevation_preserves_the_curve() {
         let after = cadmpeg_ir::eval::nurbs_curve_point_at(&elevated, parameter).unwrap();
         assert!(before.distance(after.get()) <= EPS_DEGREE_ELEVATION);
     }
+
+    })
 }
 
 #[test]
 fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let point = |x, y| Point3::new(x, y, 0.0);
     let line = |start, end| test_nurbs(1, vec![0.0, 0.0, 1.0, 1.0], vec![start, end], None);
     let constant = |position| test_nurbs(1, vec![0.0, 0.0, 1.0, 2.0, 2.0], vec![position; 3], None);
@@ -275,12 +305,12 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
     ];
     for (index, (curve, interval)) in children.iter_mut().enumerate() {
         if curve.degree() < 3 {
-            elevate_nurbs_to_degree(None, curve, *interval, 3, None)
+            elevate_nurbs_to_degree(decode_ctx, curve, *interval, 3, None)
                 .unwrap_or_else(|error| panic!("child {index} should elevate: {error}"));
         }
     }
     let concatenated = concatenate_nurbs(
-        None,
+        decode_ctx,
         children
             .into_iter()
             .map(|(curve, range)| (curve, range, ()))
@@ -296,10 +326,14 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
             .collect::<Vec<_>>(),
         vec![0.0, 1.0, 3.0, 4.0, 5.0, 7.0, 8.0]
     );
+
+    })
 }
 
 #[test]
 fn concatenated_range_is_exactly_the_canonical_knot_domain() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let line = |start: f64, end: f64, x: f64| {
         (
             test_nurbs(
@@ -315,7 +349,7 @@ fn concatenated_range_is_exactly_the_canonical_knot_domain() {
     let second = line(1.0e9, 1.0e9 + 0.1, 1.0);
 
     let concatenated = concatenate_nurbs(
-        None,
+        decode_ctx,
         vec![(first.0, first.1, ()), (second.0, second.1, ())],
         None,
     )
@@ -326,10 +360,14 @@ fn concatenated_range_is_exactly_the_canonical_knot_domain() {
         Some(&concatenated.segments.end()),
         concatenated.nurbs.knots().last()
     );
+
+    })
 }
 
 #[test]
 fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let first_id = CurveId::mint("test:model:curve#first").expect("identity grammar");
     let second_id = CurveId::mint("test:model:curve#second").expect("identity grammar");
     let composite_id = CurveId::mint("test:model:curve#composite").expect("identity grammar");
@@ -388,15 +426,17 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
             tolerance: None,
         });
     }
-    assert!(bounded_nurbs_for_curve(&ir, &composite_id, None, None)
+    assert!(bounded_nurbs_for_curve(&ir, &composite_id, decode_ctx, None)
         .expect("carrier lanes pair")
         .is_none());
     let (carrier, range) =
-        bounded_nurbs_for_curve_with_tolerance(&ir, &composite_id, Some(0.001), None, None)
+        bounded_nurbs_for_curve_with_tolerance(&ir, &composite_id, Some(0.001), decode_ctx, None)
             .expect("carrier lanes pair")
             .expect("carrier join within the global resolution should project");
     assert_eq!(range, [0.0, 2.0]);
     assert_eq!(carrier.control_points()[0], Point3::new(0.0, 0.0, 0.0));
+
+    })
 }
 
 #[test]
@@ -821,6 +861,8 @@ fn decode_projects_a_large_composite_batch_without_repeated_curve_scans() {
 /// failure, and the refusal says so.
 #[test]
 fn a_reversed_child_interval_names_itself_not_the_endpoint_join() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
     let point = Point3::new(1.0, 2.0, 3.0);
     let first = (
         test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point, point], None),
@@ -830,7 +872,7 @@ fn a_reversed_child_interval_names_itself_not_the_endpoint_join() {
     // vector: the stated interval, not the knots, runs backwards.
     let second = (test_nurbs(0, vec![0.0, 1.0], vec![point], None), [1.0, 0.0]);
     let error = concatenate_nurbs(
-        None,
+        decode_ctx,
         vec![(first.0, first.1, ()), (second.0, second.1, ())],
         None,
     )
@@ -844,16 +886,22 @@ fn a_reversed_child_interval_names_itself_not_the_endpoint_join() {
         !error.contains("endpoints"),
         "the refusal is not the endpoint join: {error}"
     );
+
+    })
 }
 
 /// A composite that states no child at all is refused by name.
 #[test]
 fn an_empty_child_list_names_itself() {
-    let error = concatenate_nurbs(None, Vec::<(NurbsCurve, [f64; 2], ())>::new(), None)
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+
+    let error = concatenate_nurbs(decode_ctx, Vec::<(NurbsCurve, [f64; 2], ())>::new(), None)
         .expect_err("an empty child list is refused by name")
         .to_string();
     assert!(
         error.contains("no child curve"),
         "the refusal names the empty child list: {error}"
     );
+
+    })
 }

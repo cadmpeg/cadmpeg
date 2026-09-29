@@ -252,6 +252,7 @@ impl DirectoryEntry {
         .with_tag(tag))
     }
 
+    #[cfg(test)]
     pub(crate) fn loss_provenance(&self) -> cadmpeg_ir::SourceProvenance {
         cadmpeg_ir::SourceProvenance::in_stream(
             "iges",
@@ -495,13 +496,13 @@ fn quarantine(
     first: (u32, &PhysicalLine),
     rest: &[(u32, &PhysicalLine)],
     defect: DirectoryDefect,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<QuarantinedDirectoryRecord, CodecError> {
     let bytes_len = std::iter::once(first.1)
         .chain(rest.iter().map(|(_, line)| *line))
         .try_fold(0_usize, |total, line| total.checked_add(line.payload.len()))
         .ok_or_else(|| refuse_local_limit("iges quarantined directory bytes", u64::MAX, 1))?;
-    if let Some(ctx) = ctx {
+    {
         ctx.charge_retained(
             u64_from_index(bytes_len),
             "iges quarantined directory bytes",
@@ -533,37 +534,22 @@ fn quarantine(
 pub(crate) fn parse(
     scan: &CardScan,
     global_table: GlobalTable,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>), CodecError> {
     let line_count = scan.section(Section::Directory).count();
-    let mut lines = match ctx {
-        Some(ctx) => ctx.collection_vec(line_count, "iges directory lines")?,
-        None => Vec::new(),
-    };
-    if ctx.is_none() {
-        lines.try_reserve_exact(line_count).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("iges directory lines"),
-                    u64_from_index(line_count),
-                    u64_from_index(line_count),
-                    "iges directory lines",
-                ),
-            )
-        })?;
-    }
+    let mut lines = ctx.collection_vec(line_count, "iges directory lines")?;
+
     lines.extend(scan.section(Section::Directory));
     let mut entries = Vec::new();
     let mut quarantined = Vec::new();
     let mut pairs = lines.chunks_exact(2);
     for pair in pairs.by_ref() {
-        if let Some(ctx) = ctx {
+        {
             ctx.charge_entities(1, "iges_directory_entries")?;
         }
         match parse_pair(pair[0].0, pair[0].1, pair[1].1, global_table) {
             Ok(entry) => {
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                    ctx,
+                ctx.reserve_vec(
                     &mut entries,
                     1,
                     "iges directory entries",
@@ -571,8 +557,7 @@ pub(crate) fn parse(
                 entries.push(entry);
             }
             Err(defect) => {
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                    ctx,
+                ctx.reserve_vec(
                     &mut quarantined,
                     1,
                     "iges quarantined directory entries",
@@ -582,11 +567,10 @@ pub(crate) fn parse(
         }
     }
     if let Some(unpaired) = pairs.remainder().first() {
-        if let Some(ctx) = ctx {
+        {
             ctx.charge_entities(1, "iges_directory_entries")?;
         }
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
+        ctx.reserve_vec(
             &mut quarantined,
             1,
             "iges quarantined directory entries",
