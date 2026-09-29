@@ -371,3 +371,43 @@ fn combined_historical_edge_refuses_collection_limit() {
 fn combined_historical_group_id_refuses_retained_limit() {
     assert_combined_historical_refusal("f3d combined historical group id", true);
 }
+
+fn assert_native_group_refusal(standard_recipe: bool) {
+    let group = group(2, 10);
+    let mut operand = recipe_edge_operand(10, &[], &[]);
+    if standard_recipe {
+        operand.recipe_structure = Some(
+            crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+                root: 1,
+                sides: Vec::new(),
+            },
+        );
+    }
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#native-group")
+        .unwrap();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match resolved_edge_group(&group, std::slice::from_ref(&group),
+            std::slice::from_ref(&operand), &[], standard_recipe.then_some(7),
+            &feature_id, Some(&ctx)) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d native edge group id" => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            other => panic!("expected native edge group ID refusal: {other:?}"),
+        }
+    }
+    panic!("no native edge group ID refusal");
+}
+
+#[test]
+fn no_state_native_edge_group_id_refuses_retained_limit() {
+    assert_native_group_refusal(false);
+}
+
+#[test]
+fn standard_recipe_native_edge_group_id_refuses_retained_limit() {
+    assert_native_group_refusal(true);
+}
