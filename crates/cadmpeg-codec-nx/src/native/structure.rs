@@ -371,23 +371,6 @@ fn structure_identity(
     Ok(id)
 }
 
-fn roster_slots<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, cadmpeg_core::CodecError> {
-    let bytes = count
-        .checked_mul(std::mem::size_of::<T>())
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), operation)?;
-    let mut records = Vec::new();
-    records
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(records)
-}
-
 fn roster_offset(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entry_offset: u64,
@@ -516,11 +499,7 @@ pub(super) fn fast_load_component_roster(
         return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
 
-    let mut prototypes = roster_slots::<FastLoadComponentPrototype>(
-        ctx,
-        candidate.prototype_count,
-        "NX fast-load prototypes",
-    )?;
+    let mut prototypes = ctx.retained_vec::<FastLoadComponentPrototype>(candidate.prototype_count, "NX fast-load prototypes")?;
     let mut at = candidate.prototypes_offset;
     for ordinal in 0..candidate.prototype_count {
         let (offset, name) = parse_string(payload, &mut at).ok_or_else(|| {
@@ -542,7 +521,7 @@ pub(super) fn fast_load_component_roster(
         });
     }
     let mut uuids =
-        roster_slots::<FastLoadComponentUuid>(ctx, candidate.uuid_count, "NX fast-load UUIDs")?;
+        ctx.retained_vec::<FastLoadComponentUuid>(candidate.uuid_count, "NX fast-load UUIDs")?;
     let mut at = candidate.uuids_offset;
     for ordinal in 0..candidate.uuid_count {
         let (offset, text) = parse_tagged_string(payload, &mut at, 3).ok_or_else(|| {
@@ -577,11 +556,7 @@ pub(super) fn fast_load_component_roster(
     let markers = lane_bytes(candidate.occurrence_markers_offset)?;
     let prototype_indices = lane_bytes(candidate.occurrences_offset)?;
     let uuid_indices = lane_bytes(candidate.uuid_indices_offset)?;
-    let mut records = roster_slots::<FastLoadComponentOccurrence>(
-        ctx,
-        candidate.occurrence_count,
-        "NX fast-load occurrences",
-    )?;
+    let mut records = ctx.retained_vec::<FastLoadComponentOccurrence>(candidate.occurrence_count, "NX fast-load occurrences")?;
     for (ordinal, ((marker, prototype_index), uuid_index)) in markers
         .iter()
         .zip(prototype_indices)

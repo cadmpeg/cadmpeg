@@ -399,14 +399,10 @@ impl<'a> Container<'a> {
             .om_section_cache
             .get()
             .ok_or_else(|| ctx.refuse_codec_limit("nx framed OM cache", 0, 1))?;
-        let mut result = crate::om::cache::charged_items(
-            ctx,
-            match framed_cache {
+        let mut result = ctx.retained_vec(match framed_cache {
                 FramedSectionCache::Borrowed { sections } => sections.len(),
                 FramedSectionCache::Owned { layouts } => layouts.len(),
-            },
-            "NX framed section readers",
-        )?;
+            }, "NX framed section readers")?;
         match framed_cache {
             FramedSectionCache::Borrowed { sections } => {
                 for (entry_index, section) in sections {
@@ -489,14 +485,10 @@ impl<'a> Container<'a> {
             .indexed_section_layouts
             .get()
             .ok_or_else(|| ctx.refuse_codec_limit("nx indexed OM cache", 0, 1))?;
-        let mut result = crate::om::cache::charged_items(
-            ctx,
-            match cache {
+        let mut result = ctx.retained_vec(match cache {
                 IndexedSectionCache::Borrowed { sections, .. } => sections.len(),
                 IndexedSectionCache::Owned { layouts } => layouts.len(),
-            },
-            "NX indexed section readers",
-        )?;
+            }, "NX indexed section readers")?;
         match cache {
             IndexedSectionCache::Borrowed { sections, .. } => {
                 for (entry_index, section) in sections {

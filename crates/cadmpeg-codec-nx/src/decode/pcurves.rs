@@ -2344,7 +2344,7 @@ fn exact_boundary_curve_breaks(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
     let mut breaks = match geometry {
-        SolvedCurveGeometry::Line(_) => copy_breaks(geometry_budget, &range)?,
+        SolvedCurveGeometry::Line(_) => cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, &range, "nx boundary breaks").map(|(copy, _reservation)| copy)?,
         SolvedCurveGeometry::Nurbs(nurbs)
             if nurbs.degree() == 1
                 && !nurbs.periodic()
@@ -2364,7 +2364,7 @@ fn exact_boundary_curve_breaks(
             let Some(knots) = nurbs.knots().get(degree..=count) else {
                 return Ok(None);
             };
-            copy_breaks(geometry_budget, knots)?
+            cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, knots, "nx boundary breaks").map(|(copy, _reservation)| copy)?
         }
         _ => return Ok(None),
     };
@@ -2377,17 +2377,6 @@ fn exact_boundary_curve_breaks(
     breaks.sort_by(f64::total_cmp);
     breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
     Ok(Some(breaks))
-}
-
-fn copy_breaks(
-    geometry_budget: &GeometryWorkBudget<'_>,
-    values: &[f64],
-) -> Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit> {
-    let mut breaks = Vec::new();
-    let _reservation =
-        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut breaks, values.len(), "nx boundary breaks")?;
-    breaks.extend_from_slice(values);
-    Ok(breaks)
 }
 
 #[cfg(test)]
@@ -2733,7 +2722,7 @@ fn boundary_curve_affine_breaks_with_index(
             carrier.geometry.solved(),
             Some(SolvedSurfaceGeometry::Plane(_))
         ) {
-            return Some(copy_breaks(geometry_budget, &range));
+            return Some(cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, &range, "nx boundary breaks").map(|(copy, _reservation)| copy));
         }
         if matches!(
             carrier.geometry.solved(),
@@ -2750,7 +2739,7 @@ fn boundary_curve_affine_breaks_with_index(
                     && points[0].u == points[1].u
                     && nurbs.knots().as_slice() == [range[0], range[0], range[1], range[1]]
                 {
-                    return Some(copy_breaks(geometry_budget, &range));
+                    return Some(cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, &range, "nx boundary breaks").map(|(copy, _reservation)| copy));
                 }
             }
         }
@@ -2826,12 +2815,12 @@ fn boundary_curve_affine_breaks_with_index(
             Some(SolvedSurfaceGeometry::Cylinder(_))
                 if { direction.u == 0.0 && direction.v != 0.0 } =>
             {
-                return Some(copy_breaks(geometry_budget, &range));
+                return Some(cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, &range, "nx boundary breaks").map(|(copy, _reservation)| copy));
             }
             Some(SolvedSurfaceGeometry::Cone(_))
                 if { direction.u == 0.0 && direction.v != 0.0 } =>
             {
-                return Some(copy_breaks(geometry_budget, &range));
+                return Some(cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, &range, "nx boundary breaks").map(|(copy, _reservation)| copy));
             }
             Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                 let (fixed_axis, fixed_parameter, varying_origin, varying_scale) =
@@ -2854,7 +2843,7 @@ fn boundary_curve_affine_breaks_with_index(
                 let degree = usize::try_from(isocurve.degree()).ok()?;
                 let count = isocurve.control_points().len();
                 let mut breaks =
-                    match copy_breaks(geometry_budget, isocurve.knots().get(degree..=count)?) {
+                    match cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, isocurve.knots().get(degree..=count)?, "nx boundary breaks").map(|(copy, _reservation)| copy) {
                         Ok(breaks) => breaks,
                         Err(limit) => return Some(Err(limit)),
                     };

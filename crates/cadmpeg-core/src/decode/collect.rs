@@ -167,6 +167,30 @@ impl DecodeContext<'_> {
         self.reserve_retained_vec(records, count, operation)
     }
 
+    /// Copies a temporary slice under an optional session and keeps its reservation live.
+    pub fn copy_temporary_slice_optional_limit<'ctx, T: Clone>(ctx: Option<&'ctx Self>, values: &[T], operation: &'static str) -> Result<(Vec<T>, Option<ScopedReservation<'ctx>>), ResourceLimit> {
+        let mut copy = Vec::new();
+        let reservation = Self::reserve_temporary_vec_optional_limit(ctx, &mut copy, values.len(), operation)?;
+        copy.extend_from_slice(values);
+        Ok((copy, reservation))
+    }
+
+    /// Collects retained slots before adding each value.
+    pub fn collect_retained_vec<T>(&self, values: impl IntoIterator<Item = T>, operation: &'static str) -> Result<Vec<T>, CodecError> {
+        let mut collected = Vec::new();
+        for value in values {
+            self.reserve_retained_vec(&mut collected, 1, operation)?;
+            collected.push(value);
+        }
+        Ok(collected)
+    }
+
+    /// Copies a slice after admitting its work and collection slots.
+    pub fn copy_slice_with_work<T: Clone>(&self, values: &[T], operation: &'static str) -> Result<Vec<T>, CodecError> {
+        self.charge_work(u64_from_index(values.len()), operation)?;
+        self.copy_slice(values, operation)
+    }
+
     fn collection_allocation_failed(&self, count: usize, operation: &'static str) -> CodecError {
         CodecError::ResourceLimit(ResourceLimit::allocation_failed(
             ResourceDimension::CollectionItems,
@@ -1848,4 +1872,11 @@ mod tests {
     fn copy_admitted_text_preserves_utf8() {
         assert_eq!(DecodeContext::copy_admitted_text("aé", "test admitted text").expect("admitted text"), "aé");
     }
+    operation_case!(copy_temporary_slice_optional_limit_refuses_before_copy, ResourceDimension::MaterializedBytes, 2,
+        |ctx: &DecodeContext<'_>| DecodeContext::copy_temporary_slice_optional_limit(Some(ctx), &[1u8, 2], "test temporary copy").map(|_| ()).map_err(CodecError::from));
+    operation_case!(collect_retained_vec_refuses_before_first_allocation, ResourceDimension::RetainedBytes, 2,
+        |ctx: &DecodeContext<'_>| ctx.collect_retained_vec([1u16], "test retained collection").map(|_| ()));
+    operation_case!(copy_slice_with_work_refuses_before_copy, ResourceDimension::WorkUnits, 2,
+        |ctx: &DecodeContext<'_>| ctx.copy_slice_with_work(&[1u8, 2], "test work copy").map(|_| ()));
+
 }

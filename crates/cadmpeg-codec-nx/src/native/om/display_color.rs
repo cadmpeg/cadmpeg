@@ -69,16 +69,6 @@ pub(in crate::native) struct RmDisplayColorAssignment {
     pub(in crate::native) source_entry: String,
 }
 
-fn retained_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    ctx.charge_retained(u64_from_index(text.len()), "retain NX display color text")?;
-    let mut owned = String::new();
-    owned
-        .try_reserve_exact(text.len())
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX display color text", 0, 1))?;
-    owned.push_str(text);
-    Ok(owned)
-}
-
 fn push_assignment(
     ctx: &DecodeContext<'_>,
     assignments: &mut Vec<RmDisplayColorAssignment>,
@@ -93,8 +83,8 @@ fn push_assignment(
         ordinal: 0,
         frame,
         target_object_id,
-        color_definition: retained_text(ctx, color_definition)?,
-        source_entry: retained_text(ctx, source_entry)?,
+        color_definition: ctx.copy_retained_text(color_definition, "retain NX display color text")?,
+        source_entry: ctx.copy_retained_text(source_entry, "retain NX display color text")?,
     });
     Ok(())
 }

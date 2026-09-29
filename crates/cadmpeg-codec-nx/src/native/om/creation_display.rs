@@ -66,19 +66,6 @@ fn retained_identity(
     Ok(id)
 }
 
-fn retained_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    ctx.charge_retained(
-        u64_from_index(text.len()),
-        "retain NX creation display text",
-    )?;
-    let mut owned = String::new();
-    owned
-        .try_reserve_exact(text.len())
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX creation display text", 0, 1))?;
-    owned.push_str(text);
-    Ok(owned)
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "wire::RmCreationDisplayDataRelationWire")]
 pub(in crate::native) struct RmCreationDisplayDataRelation {
@@ -121,7 +108,7 @@ fn push_relation(
         ordinal: 0,
         class_definition,
         encoding,
-        source_entry: retained_text(ctx, source_entry)?,
+        source_entry: ctx.copy_retained_text(source_entry, "retain NX creation display text")?,
     });
     Ok(())
 }

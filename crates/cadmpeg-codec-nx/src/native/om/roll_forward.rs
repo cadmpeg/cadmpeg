@@ -21,19 +21,6 @@ fn decimal_len(mut value: usize) -> usize {
     length
 }
 
-fn retained_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    ctx.charge_retained(
-        u64_from_index(text.len()),
-        "retain NX roll-forward table text",
-    )?;
-    let mut owned = String::new();
-    owned
-        .try_reserve_exact(text.len())
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX roll-forward table text", 0, 1))?;
-    owned.push_str(text);
-    Ok(owned)
-}
-
 fn group_id(ctx: &DecodeContext<'_>, section: usize, ordinal: u32) -> Result<String, CodecError> {
     let section_digits = decimal_len(section).max(10);
     let ordinal_digits = decimal_len(
@@ -292,8 +279,8 @@ impl OmRollForwardStateTable {
             });
         }
         Ok(Self {
-            section_link: retained_text(ctx, section_link)?,
-            source_entry: retained_text(ctx, source_entry)?,
+            section_link: ctx.copy_retained_text(section_link, "retain NX roll-forward table text")?,
+            source_entry: ctx.copy_retained_text(source_entry, "retain NX roll-forward table text")?,
             table_footer,
             table_end_offset,
             groups,
