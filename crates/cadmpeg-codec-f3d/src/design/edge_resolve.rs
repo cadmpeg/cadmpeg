@@ -39,6 +39,20 @@ fn push_edge_item<T>(
     Ok(())
 }
 
+fn sorted_transition_slots(
+    slots: &[i64],
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<Vec<i64>, CodecError> {
+    let mut sorted = Vec::new();
+    for &slot in slots {
+        push_edge_item(ctx, &mut sorted, slot, operation)?;
+    }
+    sorted.sort_unstable();
+    sorted.dedup();
+    Ok(sorted)
+}
+
 fn insert_edge_set<T: Eq + std::hash::Hash>(
     ctx: Option<&DecodeContext<'_>>,
     items: &mut HashSet<T>,
@@ -743,37 +757,50 @@ fn resolved_edge_group_with_transition_chain(
                             || !operand.treatment_radius_candidates.is_empty())
                 })
             });
-    let identity_transition_slots = (allow_edge_treatment_transition_chain
+    let identity_transition_slots = if allow_edge_treatment_transition_chain
         && treatment_radius.is_none()
-        && members.len() == 1)
-        .then(|| {
-            let [operand] = identity_matches.as_ref()?.as_slice() else {
-                return None;
-            };
-            let mut edges = operand.transition_edge_candidates.clone();
-            edges.sort_unstable();
-            edges.dedup();
-            (!edges.is_empty()).then_some(edges)
-        })
-        .flatten();
-    let identity_group_transition_slots = identity_matches.as_ref().and_then(|identity_operands| {
-        let first = identity_operands.first()?;
-        let mut edges = first.transition_edge_candidates.clone();
-        edges.sort_unstable();
-        edges.dedup();
-        let is_uniform_compact_transition_chain = allow_edge_treatment_transition_chain
-            && !edges.is_empty()
-            && identity_operands.iter().all(|operand| {
-                if !operand.layout().is_compact() {
-                    return false;
+        && members.len() == 1
+    {
+        match identity_matches.as_deref() {
+            Some([operand]) => {
+                let edges = sorted_transition_slots(&operand.transition_edge_candidates, ctx,
+                    "f3d single identity transition slot")?;
+                (!edges.is_empty()).then_some(edges)
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let identity_group_transition_slots = if let Some(first) = identity_matches
+        .as_ref()
+        .and_then(|matches| matches.first())
+    {
+        let edges = sorted_transition_slots(&first.transition_edge_candidates, ctx,
+            "f3d group identity transition slot")?;
+        if allow_edge_treatment_transition_chain && !edges.is_empty() {
+            let mut uniform = true;
+            if let Some(matches) = identity_matches.as_ref() {
+                for operand in matches {
+                    if !operand.layout().is_compact() {
+                        uniform = false;
+                        break;
+                    }
+                    let candidate = sorted_transition_slots(&operand.transition_edge_candidates,
+                        ctx, "f3d compared identity transition slot")?;
+                    if candidate != edges {
+                        uniform = false;
+                        break;
+                    }
                 }
-                let mut candidate = operand.transition_edge_candidates.clone();
-                candidate.sort_unstable();
-                candidate.dedup();
-                candidate == edges
-            });
-        is_uniform_compact_transition_chain.then_some(edges)
-    });
+            }
+            uniform.then_some(edges)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     let recipe_supports_transition_chain = |chain: &[i64]| -> Result<bool, CodecError> {
         let mut member_operands = Vec::new();
         for member in members.iter().map(|member| &member.value) {
