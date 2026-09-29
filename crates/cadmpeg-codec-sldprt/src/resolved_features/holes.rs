@@ -507,81 +507,72 @@ pub(crate) fn enrich_history_hole_constructions(
 }
 
 pub(crate) fn enrich_history_cosmetic_thread_diameters(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "enrich SLDPRT cosmetic thread diameters";
     for history in histories {
-        let features_by_id = history
-            .features
-            .iter()
-            .map(|feature| (feature.id.as_str(), feature))
-            .collect::<HashMap<_, _>>();
-        let features_by_source = history
-            .features
-            .iter()
-            .filter_map(|feature| Some((feature.source_id?, feature)))
-            .collect::<HashMap<_, _>>();
-        let mut candidates = HashMap::<String, Vec<f64>>::new();
-        for lane in lanes {
-            for selection in &lane.surface_selections {
-                let Some(thread) = features_by_id.get(selection.feature_ref.as_str()) else {
-                    continue;
-                };
-                if classify(thread) != Some(FeatureClass::CosmeticThread) {
-                    continue;
+        let mut features_by_id = HashMap::new();
+        let mut features_by_source = HashMap::new();
+        for feature in &history.features {
+            ctx.charge_work(1, OPERATION)?;
+            if !features_by_id.contains_key(feature.id.as_str()) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                features_by_id.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            }
+            features_by_id.insert(feature.id.as_str(), feature);
+            if let Some(source) = feature.source_id {
+                if !features_by_source.contains_key(&source) {
+                    ctx.charge_collection_items(1, OPERATION)?;
+                    features_by_source.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 }
-                let mut producer_diameters = selection
-                    .producer_feature_refs
-                    .iter()
-                    .chain(selection.terminal_feature_ref.iter())
-                    .filter_map(|producer| features_by_id.get(producer.as_str()).copied())
-                    .filter_map(|producer| {
-                        crate::history::project::solid::threaded_hole_major_diameter(
-                            producer,
-                            &features_by_source,
-                            &history.features,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                producer_diameters.sort_by(f64::total_cmp);
-                producer_diameters.dedup_by(|left, right| left.to_bits() == right.to_bits());
-                let [diameter] = producer_diameters.as_slice() else {
-                    continue;
-                };
-                candidates
-                    .entry(thread.id.clone())
-                    .or_default()
-                    .push(*diameter);
+                features_by_source.insert(source, feature);
+            }
+        }
+        let mut candidates = HashMap::<String, Option<f64>>::new();
+        for lane in lanes {
+            ctx.charge_work(1, OPERATION)?;
+            for selection in &lane.surface_selections {
+                ctx.charge_work(1, OPERATION)?;
+                let Some(thread) = features_by_id.get(selection.feature_ref.as_str()) else { continue; };
+                if classify(thread) != Some(FeatureClass::CosmeticThread) { continue; }
+                let mut diameter = None;
+                let mut ambiguous = false;
+                for producer in selection.producer_feature_refs.iter().chain(selection.terminal_feature_ref.iter()) {
+                    ctx.charge_work(1, OPERATION)?;
+                    let Some(producer) = features_by_id.get(producer.as_str()).copied() else { continue; };
+                    let Some(value) = crate::history::project::solid::threaded_hole_major_diameter(
+                        producer, &features_by_source, &history.features,
+                    ) else { continue; };
+                    if let Some(existing) = diameter {
+                        if f64::to_bits(existing) != value.to_bits() { ambiguous = true; break; }
+                    } else { diameter = Some(value); }
+                }
+                if ambiguous { continue; }
+                let Some(diameter) = diameter else { continue; };
+                if let Some(candidate) = candidates.get_mut(&thread.id) {
+                    if candidate.is_some_and(|value| value.to_bits() != diameter.to_bits()) { *candidate = None; }
+                } else {
+                    ctx.charge_collection_items(1, OPERATION)?;
+                    candidates.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                    ctx.charge_work(u64_from_index(thread.id.len()), OPERATION)?;
+                    let identity = ctx.format_retained(format_args!("{}", thread.id), OPERATION)?;
+                    candidates.insert(identity, Some(diameter));
+                }
             }
         }
         for feature in &mut history.features {
-            if feature.parameters.contains_key("D2") {
-                continue;
-            }
-            let Some(values) = candidates.get(&feature.id) else {
-                continue;
-            };
-            let Some((&diameter, rest)) = values.split_first() else {
-                continue;
-            };
-            if rest
-                .iter()
-                .any(|candidate| candidate.to_bits() != diameter.to_bits())
-            {
-                continue;
-            }
-            let Some(diameter) = cadmpeg_ir::scalar::Length::new(diameter) else {
-                continue;
-            };
-            feature.parameters.insert(
-                cadmpeg_core::nonblank_literal!("D2"),
-                format!(
-                    "<MOD-DIAM>{}",
-                    crate::history::literals::format_length_mm(diameter)
-                ),
-            );
+            ctx.charge_work(1, OPERATION)?;
+            if feature.parameters.contains_key("D2") { continue; }
+            let Some(Some(diameter)) = candidates.get(&feature.id) else { continue; };
+            let Some(diameter) = cadmpeg_ir::scalar::Length::new(*diameter) else { continue; };
+            let value = ctx.format_retained(format_args!("<MOD-DIAM>{}", crate::history::literals::LengthLiteral(diameter)), OPERATION)?;
+            ctx.charge_collection_items(1, OPERATION)?;
+            feature.parameters.insert(cadmpeg_core::nonblank_literal!("D2"), value);
         }
     }
+    Ok(())
 }
 
 pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_constructions(
@@ -589,29 +580,30 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
+    const OPERATION: &str = "copy SLDPRT fallback thread diameters";
     let mut projection = crate::records::charged_clone::clone_histories_charged(
         ctx, histories, "clone SLDPRT cosmetic thread histories",
     )?;
     enrich_history_hole_constructions(&mut projection, lanes);
-    enrich_history_cosmetic_thread_diameters(&mut projection, lanes);
-    let fallback_parameters = projection
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(|feature| Some((feature.id.clone(), feature.parameters.get("D2")?.clone())))
-        .collect::<HashMap<_, _>>();
-    for feature in histories
-        .iter_mut()
-        .flat_map(|history| &mut history.features)
-    {
-        if feature.parameters.contains_key("D2") {
-            continue;
+    enrich_history_cosmetic_thread_diameters(ctx, &mut projection, lanes)?;
+    let mut fallback_parameters = HashMap::new();
+    for feature in projection.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, OPERATION)?;
+        let Some(diameter) = feature.parameters.get("D2") else { continue; };
+        if !fallback_parameters.contains_key(feature.id.as_str()) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            fallback_parameters.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
-        let Some(diameter) = fallback_parameters.get(&feature.id) else {
-            continue;
-        };
-        feature
-            .parameters
-            .insert(cadmpeg_core::nonblank_literal!("D2"), diameter.clone());
+        fallback_parameters.insert(feature.id.as_str(), diameter);
+    }
+    for feature in histories.iter_mut().flat_map(|history| &mut history.features) {
+        ctx.charge_work(1, OPERATION)?;
+        if feature.parameters.contains_key("D2") { continue; }
+        let Some(diameter) = fallback_parameters.get(feature.id.as_str()) else { continue; };
+        ctx.charge_work(u64_from_index(diameter.len()), OPERATION)?;
+        let value = ctx.format_retained(format_args!("{diameter}"), OPERATION)?;
+        ctx.charge_collection_items(1, OPERATION)?;
+        feature.parameters.insert(cadmpeg_core::nonblank_literal!("D2"), value);
     }
     Ok(())
 }
