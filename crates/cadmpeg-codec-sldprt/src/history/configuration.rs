@@ -726,6 +726,7 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
         );
         crate::resolved_features::holes::project_topological_hole_constructions(
+            ctx,
             &mut features,
             &crate::resolved_features::holes::HoleTopology {
                 surfaces: &surfaces,
