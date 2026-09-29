@@ -6422,16 +6422,21 @@ fn attach_standard_topology(
                     if deferred_port_edges[edge] {
                         continue;
                     }
-                    let mut index = 0;
-                    while index < domain.len() {
-                        if endpoint_pair_on_incident_faces(edge, domain[index])
-                            .map_err(CodecError::from)
-                            .map_err(StandardTopologyError::Resource)?
-                        {
-                            index += 1;
-                        } else {
-                            domain.remove(index);
+                    let mut refusal = None;
+                    domain.retain(|pair| {
+                        if refusal.is_some() {
+                            return true;
                         }
+                        match endpoint_pair_on_incident_faces(edge, *pair) {
+                            Ok(on_faces) => on_faces,
+                            Err(limit) => {
+                                refusal = Some(limit);
+                                false
+                            }
+                        }
+                    });
+                    if let Some(limit) = refusal {
+                        return Err(StandardTopologyError::Resource(CodecError::from(limit)));
                     }
                     if domain.is_empty() {
                         continue;
@@ -6470,16 +6475,21 @@ fn attach_standard_topology(
                     if deferred_port_edges[edge] {
                         continue;
                     }
-                    let mut index = 0;
-                    while index < domain.len() {
-                        if endpoint_pair_on_incident_faces(edge, domain[index])
-                            .map_err(CodecError::from)
-                            .map_err(StandardTopologyError::Resource)?
-                        {
-                            index += 1;
-                        } else {
-                            domain.remove(index);
+                    let mut refusal = None;
+                    domain.retain(|pair| {
+                        if refusal.is_some() {
+                            return true;
                         }
+                        match endpoint_pair_on_incident_faces(edge, *pair) {
+                            Ok(on_faces) => on_faces,
+                            Err(limit) => {
+                                refusal = Some(limit);
+                                false
+                            }
+                        }
+                    });
+                    if let Some(limit) = refusal {
+                        return Err(StandardTopologyError::Resource(CodecError::from(limit)));
                     }
                     let previous = crate::resource::copy_slice(
                         ctx,
@@ -6504,16 +6514,21 @@ fn attach_standard_topology(
             }
         }
         for (edge, pairs) in options.iter_mut().enumerate() {
-            let mut index = 0;
-            while index < pairs.len() {
-                if endpoint_pair_on_incident_faces(edge, pairs[index])
-                    .map_err(CodecError::from)
-                    .map_err(StandardTopologyError::Resource)?
-                {
-                    index += 1;
-                } else {
-                    pairs.remove(index);
+            let mut refusal = None;
+            pairs.retain(|pair| {
+                if refusal.is_some() {
+                    return true;
                 }
+                match endpoint_pair_on_incident_faces(edge, *pair) {
+                    Ok(on_faces) => on_faces,
+                    Err(limit) => {
+                        refusal = Some(limit);
+                        false
+                    }
+                }
+            });
+            if let Some(limit) = refusal {
+                return Err(StandardTopologyError::Resource(CodecError::from(limit)));
             }
             pairs.sort_unstable();
             pairs.dedup();
@@ -6951,13 +6966,11 @@ fn attach_standard_topology(
             )?,
         };
         let point_on_face = |face: usize, point: usize| {
-            face_point_membership.as_ref().is_some_and(|membership| {
-                membership
-                    .get(face)
-                    .and_then(|points| points.get(point))
-                    .copied()
-                    .unwrap_or(false)
-            })
+            face_point_membership
+                .get(face)
+                .and_then(|points| points.get(point))
+                .copied()
+                .unwrap_or(false)
         };
         let mut point_positions = Vec::new();
         for point in &ir.model.points {
@@ -8987,7 +9000,7 @@ fn standard_face_point_membership(
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     face_bounds: Option<&[Option<crate::families::standard::records::StandardFaceBounds>]>,
-) -> Result<Option<Vec<Vec<bool>>>, cadmpeg_core::CodecError> {
+) -> Result<Vec<Vec<bool>>, cadmpeg_core::CodecError> {
     let mut memberships =
         ctx.alloc_filled(bindings.len(), Vec::new(), "catia_face_membership_rows")?;
     for (face, membership) in memberships.iter_mut().enumerate() {
@@ -9004,7 +9017,7 @@ fn standard_face_point_membership(
                 point_on_standard_face(candidate.position().get(), &surface.geometry, bounds)?;
         }
     }
-    Ok(Some(memberships))
+    Ok(memberships)
 }
 
 fn point_on_standard_face(
