@@ -2,7 +2,7 @@
 
 use super::selections::{
     operand_accepts_marker, operand_allows_compatible_ordinal_fallback,
-    operand_uses_compatible_ordinal, unique_marker_candidate,
+    operand_uses_compatible_ordinal,
 };
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
@@ -306,19 +306,17 @@ fn resolve_operand_marker_excluding<'a>(
         }
         ordinal_link_graph = true;
     }
-    let exact = if ordinal_link_graph {
-        Vec::new()
-    } else {
-        compatible
-            .iter()
-            .copied()
-            .filter(|entity| entity.local_id() == Some(u32::from(address)))
-            .filter(|entity| !excluded(entity.id()))
-            .collect::<Vec<_>>()
+    let exact_candidates = || {
+        compatible.iter().copied().filter(|entity| {
+            !ordinal_link_graph
+                && entity.local_id() == Some(u32::from(address))
+                && !excluded(entity.id())
+        })
     };
-    match exact.as_slice() {
-        [entity] => Some(*entity),
-        [] => {
+    let mut exact = exact_candidates();
+    match (exact.next(), exact.next()) {
+        (Some(entity), None) => Some(entity),
+        (None, _) => {
             if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386) {
                 let entities_by_id = entities
                     .iter()
@@ -389,13 +387,9 @@ fn resolve_operand_marker_excluding<'a>(
                 _ => None,
             }
         }
-        _ => unique_marker_candidate(
-            &exact
-                .iter()
-                .map(|entity| (entity.id().to_string(), entity.coordinates_m.is_some()))
-                .collect::<Vec<_>>(),
-        )
-        .and_then(|id| exact.iter().copied().find(|entity| entity.id() == id)),
+        (Some(_), Some(_)) => {
+            unique_entity(exact_candidates().filter(|entity| entity.coordinates_m.is_some()))
+        }
     }
 }
 
