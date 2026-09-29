@@ -234,8 +234,13 @@ fn copy_feature_record_ref(
     tag: &'static str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let suffix = offset.to_string();
-    let size = stream.len().checked_add(tag.len()).and_then(|size| size.checked_add(suffix.len()))
+    let mut remaining = offset;
+    let mut digits = 1usize;
+    while remaining >= 10 {
+        remaining /= 10;
+        digits += 1;
+    }
+    let size = stream.len().checked_add(tag.len()).and_then(|size| size.checked_add(digits))
         .ok_or_else(|| CodecError::malformed("Design record reference size overflow"))?;
     let bytes = u64::try_from(size)
         .map_err(|_| CodecError::malformed("Design record reference size overflow"))?;
@@ -248,7 +253,9 @@ fn copy_feature_record_ref(
     }
     reference.push_str(stream);
     reference.push_str(tag);
-    reference.push_str(&suffix);
+    use std::fmt::Write;
+    write!(&mut reference, "{offset}")
+        .map_err(|_| CodecError::malformed("Design record reference formatting failed"))?;
     Ok(reference)
 }
 
@@ -1075,14 +1082,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     parameters: BTreeMap::new(),
                 })),
                 Some(DesignFeatureFamily::SurfaceExtend) => {
-                    scope.surface_extend_operation().and_then(|operation| {
+                    if let Some((operation, distance)) = scope.surface_extend_operation().and_then(|operation| {
                         cadmpeg_ir::scalar::PositiveLength::new(operation.distance.get() * 10.0).map(|distance| (operation, distance))
-                    }).map_or_else(
-                        || FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: scope.kind_name().into(),
-                            parameters: BTreeMap::new(),
-                        }),
-                        |(operation, distance)| {
+                    }) {
                             use crate::records::feature::surface_ops::DesignSurfaceExtendMethod;
                             use cadmpeg_ir::features::{FaceSelection, SurfaceExtension};
 
@@ -1094,15 +1096,18 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 }
                             };
                             FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
-                                faces: FaceSelection::Native(format!(
-                                    "{native_scope}:design-record#{}",
-                                    operation.boundary_record_index
-                                )),
+                                faces: FaceSelection::Native(copy_feature_record_ref(
+                                    ctx, native_scope, u64::from(operation.boundary_record_index),
+                                    ":design-record#", "f3d surface extend boundary id")?),
                                 distance: Some(distance),
                                 method,
                             })
-                        },
-                    )
+                    } else {
+                        FeatureDefinition::Operation(FeatureOperation::Native {
+                            kind: scope.kind_name().into(),
+                            parameters: BTreeMap::new(),
+                        })
+                    }
                 }
                 Some(DesignFeatureFamily::SurfaceOffset) => scope
                     .surface_offset_operation()
@@ -1189,35 +1194,41 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     project_coil(scope, &parameters, construction_groups)
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
-                Some(DesignFeatureFamily::Scale) => scope.scale_operation().map_or_else(
-                    || FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: scope.kind_name().into(),
-                        parameters: BTreeMap::new(),
-                    }),
-                    |operation| {
+                Some(DesignFeatureFamily::Scale) => if let Some(operation) = scope.scale_operation() {
                         let factor = cadmpeg_ir::scalar::NonZeroReal::from(operation.uniform_factor);
                         let body_group = construction_groups.iter().find(|group| {
                             native_stream(&group.id) == Some(native_scope)
                                 && group.scope_record_index == scope.record_index
                                 && group.record_index == operation.body_group_record_index
                         });
+                        let bodies = match body_group {
+                            Some(group) => cadmpeg_ir::features::BodySelection::Native(
+                                copy_feature_text(ctx, &group.id, "f3d Scale body group id")?),
+                            None => cadmpeg_ir::features::BodySelection::Unresolved,
+                        };
+                        let center = match operation.center_position.and_then(|center| {
+                            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                                center.value[0].get() * 10.0, center.value[1].get() * 10.0,
+                                center.value[2].get() * 10.0,
+                            ))
+                        }) {
+                            Some(center) => cadmpeg_ir::features::ScaleCenter::Point(center),
+                            None => cadmpeg_ir::features::ScaleCenter::Native(
+                                copy_feature_record_ref(ctx, native_scope,
+                                    u64::from(operation.center_record_index),
+                                    ":design-record#", "f3d Scale center id")?),
+                        };
                         FeatureDefinition::Operation(FeatureOperation::Scale {
-                            bodies: body_group.map_or(
-                                cadmpeg_ir::features::BodySelection::Unresolved,
-                                |group| {
-                                    cadmpeg_ir::features::BodySelection::Native(group.id.clone())
-                                },
-                            ),
-                            center: Some(operation.center_position.and_then(|center| cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                                center.value[0].get() * 10.0, center.value[1].get() * 10.0, center.value[2].get() * 10.0,
-                            ))).map_or_else(
-                                || cadmpeg_ir::features::ScaleCenter::Native(format!("{native_scope}:design-record#{}", operation.center_record_index)),
-                                cadmpeg_ir::features::ScaleCenter::Point,
-                            )),
+                            bodies,
+                            center: Some(center),
                             factors: cadmpeg_ir::features::ScaleFactors::Uniform { factor },
                         })
+                    } else {
+                        FeatureDefinition::Operation(FeatureOperation::Native {
+                        kind: scope.kind_name().into(),
+                        parameters: BTreeMap::new(),
+                        })
                     },
-                ),
                 Some(DesignFeatureFamily::Thread) => scope
                     .thread_construction()
                     .and_then(|construction| {
@@ -3202,9 +3213,9 @@ fn project_surface_offset(
         };
         return Ok(Some(FeatureDefinition::Operation(
             FeatureOperation::OffsetSurface {
-                faces: FaceSelection::Native(format!(
-                    "{stream}:design-record#{boundary_record_index}"
-                )),
+                faces: FaceSelection::Native(copy_feature_record_ref(
+                    ctx, stream, u64::from(*boundary_record_index), ":design-record#",
+                    "f3d surface offset boundary id")?),
                 distance: Some(distance),
             },
         )));
