@@ -4371,46 +4371,52 @@ pub(super) fn feature_operation_body_identity_segment_uses(
 const BODY_HISTORY_TERMINAL_STREAM_ROLE: u32 = 16;
 
 fn body_history_partition_stream(
+    ctx: &DecodeContext<'_>,
     binding: &SegmentBodyBinding,
     bindings: &[SegmentBodyBinding],
     streams: &[crate::parasolid::Stream],
-) -> Option<u32> {
-    (binding.stream_kind == crate::parasolid::StreamKind::Plain).then_some(())?;
-    let stream_ordinal = usize::try_from(binding.stream_ordinal).ok()?;
-    (streams.get(stream_ordinal)?.kind() == crate::parasolid::StreamKind::Plain).then_some(())?;
-    let partition_ordinal = streams
+) -> Result<Option<u32>, CodecError> {
+    let stream_work = streams.len().checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX body-history partition", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(stream_work), "scan NX body-history partition")?;
+    if binding.stream_kind != crate::parasolid::StreamKind::Plain { return Ok(None); }
+    let Ok(stream_ordinal) = usize::try_from(binding.stream_ordinal) else { return Ok(None); };
+    if streams.get(stream_ordinal).is_none_or(|stream| stream.kind() != crate::parasolid::StreamKind::Plain) {
+        return Ok(None);
+    }
+    let Some(partition_ordinal) = streams
         .iter()
         .enumerate()
         .skip(stream_ordinal + 1)
         .find_map(|(ordinal, stream)| {
             (stream.kind() == crate::parasolid::StreamKind::Partition).then_some(ordinal)
-        })?;
+        }) else { return Ok(None); };
     let run_start = streams[..stream_ordinal]
         .iter()
         .rposition(|stream| stream.kind() != crate::parasolid::StreamKind::Plain)
         .map_or(0, |ordinal| ordinal + 1);
-    let run_streams = streams.get(run_start..partition_ordinal)?;
-    run_streams
+    let Some(run_streams) = streams.get(run_start..partition_ordinal) else { return Ok(None); };
+    if !run_streams
         .iter()
         .all(|stream| stream.kind() == crate::parasolid::StreamKind::Plain)
-        .then_some(())?;
-    let mut run_bindings = Vec::with_capacity(run_streams.len());
+    { return Ok(None); }
+    let work = run_streams.len().checked_mul(bindings.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX body-history partition", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "scan NX body-history partition")?;
+    let mut terminal_role = None;
     for ordinal in run_start..partition_ordinal {
         let mut matches = bindings.iter().filter(|candidate| {
             candidate.stream_kind == crate::parasolid::StreamKind::Plain
                 && usize::try_from(candidate.stream_ordinal).ok() == Some(ordinal)
         });
-        let candidate = matches.next()?;
-        matches.next().is_none().then_some(())?;
-        run_bindings.push(candidate);
+        let Some(candidate) = matches.next() else { return Ok(None); };
+        if matches.next().is_some() || terminal_role == Some(BODY_HISTORY_TERMINAL_STREAM_ROLE) {
+            return Ok(None);
+        }
+        terminal_role = Some(candidate.stream_role);
     }
-    let (terminal, preceding) = run_bindings.split_last()?;
-    (terminal.stream_role == BODY_HISTORY_TERMINAL_STREAM_ROLE
-        && preceding
-            .iter()
-            .all(|candidate| candidate.stream_role != BODY_HISTORY_TERMINAL_STREAM_ROLE))
-    .then_some(())?;
-    u32::try_from(partition_ordinal).ok()
+    if terminal_role != Some(BODY_HISTORY_TERMINAL_STREAM_ROLE) { return Ok(None); }
+    Ok(u32::try_from(partition_ordinal).ok())
 }
 
 /// Resolve body-write GROUP nodes only inside their complete body-history unit.
@@ -4421,58 +4427,85 @@ fn body_history_partition_stream(
 /// partition-local namespaces never participate, even when their node IDs are
 /// equal.
 pub(super) fn feature_operation_body_partition_uses(
+    ctx: &DecodeContext<'_>,
     writes: &[FeatureOperationBodyWrite],
     image_uses: &[FeatureOperationBodyImageSegmentUse],
     bindings: &[SegmentBodyBinding],
     streams: &[crate::parasolid::Stream],
     groups: &[crate::native::parasolid::ParasolidGroupRecord],
     group_members: &[crate::native::parasolid::ParasolidGroupMember],
-) -> Vec<FeatureOperationBodyPartitionUse> {
-    image_uses
-        .iter()
-        .filter_map(|image_use| {
+) -> Result<Vec<FeatureOperationBodyPartitionUse>, CodecError> {
+    let scan_width = writes.len().checked_add(bindings.len())
+        .and_then(|count| count.checked_add(groups.len()))
+        .and_then(|count| count.checked_add(group_members.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX body partition uses", 0, 1))?;
+    let work = image_uses.len().checked_mul(scan_width)
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX body partition uses", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "join NX body partition uses")?;
+    let mut output = Vec::new();
+    for image_use in image_uses {
             let mut matching_writes = writes
                 .iter()
                 .filter(|write| write.id == image_use.operation_body_write);
-            let write = matching_writes.next()?;
-            matching_writes.next().is_none().then_some(())?;
+            let Some(write) = matching_writes.next() else { continue; };
+            if matching_writes.next().is_some() { continue; }
             let mut matching_bindings = bindings
                 .iter()
                 .filter(|binding| binding.id == image_use.segment_body_binding);
-            let binding = matching_bindings.next()?;
-            matching_bindings.next().is_none().then_some(())?;
-            let partition_stream_ordinal =
-                body_history_partition_stream(binding, bindings, streams)?;
-            let parasolid_group_records = groups
-                .iter()
-                .filter(|group| {
-                    group.origin.partition_stream_ordinal() == Some(partition_stream_ordinal)
-                        && group.node_id == write.frame.group_node().value()
-                })
-                .map(|group| group.id.clone())
-                .collect();
-            let parasolid_group_members = group_members
-                .iter()
-                .filter(|member| {
-                    member.partition_stream_ordinal == partition_stream_ordinal
-                        && member.group_node_id == write.frame.group_node().value()
-                })
-                .map(|member| member.id.clone())
-                .collect();
-            Some(FeatureOperationBodyPartitionUse {
-                id: write
-                    .id
-                    .replacen("operation-body-write", "operation-body-partition-use", 1),
-                operation_body_write: write.id.clone(),
-                body_image_segment_use: image_use.id.clone(),
-                segment_body_binding: binding.id.clone(),
+            let Some(binding) = matching_bindings.next() else { continue; };
+            if matching_bindings.next().is_some() { continue; }
+            let Some(partition_stream_ordinal) =
+                body_history_partition_stream(ctx, binding, bindings, streams)? else { continue; };
+            let mut parasolid_group_records = Vec::new();
+            for group in groups.iter().filter(|group| {
+                group.origin.partition_stream_ordinal() == Some(partition_stream_ordinal)
+                    && group.node_id == write.frame.group_node().value()
+            }) {
+                ctx.charge_collection_items(1, "NX body partition group records")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
+                    "NX body partition group record slots")?;
+                parasolid_group_records.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX body partition group records", 0, 1))?;
+                parasolid_group_records.push(copy_operation_text(ctx, &group.id,
+                    "NX body partition group record identity")?);
+            }
+            let mut parasolid_group_members = Vec::new();
+            for member in group_members.iter().filter(|member| {
+                member.partition_stream_ordinal == partition_stream_ordinal
+                    && member.group_node_id == write.frame.group_node().value()
+            }) {
+                ctx.charge_collection_items(1, "NX body partition group members")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
+                    "NX body partition group member slots")?;
+                parasolid_group_members.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX body partition group members", 0, 1))?;
+                parasolid_group_members.push(copy_operation_text(ctx, &member.id,
+                    "NX body partition group member identity")?);
+            }
+            let item = FeatureOperationBodyPartitionUse {
+                id: replace_operation_text(ctx, &write.id,
+                    "operation-body-write", "operation-body-partition-use",
+                    "NX body partition use identity")?,
+                operation_body_write: copy_operation_text(ctx, &write.id,
+                    "NX body partition write identity")?,
+                body_image_segment_use: copy_operation_text(ctx, &image_use.id,
+                    "NX body partition image use identity")?,
+                segment_body_binding: copy_operation_text(ctx, &binding.id,
+                    "NX body partition binding identity")?,
                 partition_stream_ordinal,
                 group_node: write.frame.group_node().value(),
                 parasolid_group_records,
                 parasolid_group_members,
-            })
-        })
-        .collect()
+            };
+            ctx.charge_collection_items(1, "NX body partition uses")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureOperationBodyPartitionUse>(),
+            ), "NX body partition uses")?;
+            output.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX body partition uses", 0, 1))?;
+            output.push(item);
+    }
+    Ok(output)
 }
 
 /// Resolve body-write GROUP nodes directly through their partition ownership.

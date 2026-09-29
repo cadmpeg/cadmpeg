@@ -42,6 +42,21 @@ fn identity_segment_uses_for_test(
     }).expect("admitted body-identity segment uses")
 }
 
+fn body_partition_uses_for_test(
+    writes: &[FeatureOperationBodyWrite],
+    image_uses: &[crate::native::features::FeatureOperationBodyImageSegmentUse],
+    bindings: &[SegmentBodyBinding],
+    streams: &[crate::parasolid::Stream],
+    groups: &[crate::native::parasolid::ParasolidGroupRecord],
+    members: &[crate::native::parasolid::ParasolidGroupMember],
+) -> Vec<crate::native::features::FeatureOperationBodyPartitionUse> {
+    crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_partition_uses(
+            ctx, writes, image_uses, bindings, streams, groups, members,
+        )
+    }).expect("admitted body partition uses")
+}
+
 fn body_segment_join_refusal<T>(
     route: for<'ctx> fn(
         &cadmpeg_core::decode::DecodeContext<'ctx>,
@@ -127,6 +142,91 @@ body_segment_join_limit_tests!(
     body_identity_join_refuses_work_limit,
     feature_operation_body_identity_segment_uses
 );
+
+fn body_partition_join_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let write = FeatureOperationBodyWrite {
+        id: "nx:operation-body-write#0".to_string(),
+        operation_label: Some("operation#0".to_string()),
+        operation_record: "record#0".to_string(),
+        ordinal: 0,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
+            11,
+            crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).expect("group token"),
+            crate::om::body_write::BodyImageTag::Form12,
+            crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).expect("image token"),
+            0,
+        ).expect("body-write frame"),
+        body_image_data_block: Some("block#2".to_string()),
+    };
+    let image_use = crate::native::features::FeatureOperationBodyImageSegmentUse {
+        id: "image-use#0".to_string(),
+        operation_body_write: write.id.clone(),
+        body_image_data_block: "block#2".to_string(),
+        segment_body_binding: "binding#0".to_string(),
+    };
+    let binding = SegmentBodyBinding {
+        id: "binding#0".to_string(),
+        stream_link: "stream#0".to_string(),
+        stream_ordinal: 0,
+        stream_kind: crate::parasolid::StreamKind::Plain,
+        body_object_index: 10,
+        body_alias_object_index: 11,
+        stream_role: 16,
+        source_offset: 0,
+    };
+    let stream = |subtype| crate::parasolid::Stream {
+        file_offset: 0,
+        consumed: 0,
+        inflated: Vec::new(),
+        body: crate::parasolid::StreamBody::Parasolid {
+            subtype,
+            schema: Some(cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST")
+                .expect("schema token")),
+        },
+    };
+    let streams = [
+        stream(crate::parasolid::ParasolidSubtype::Plain),
+        stream(crate::parasolid::ParasolidSubtype::Partition),
+    ];
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_operation_body_partition_uses(
+            ctx, std::slice::from_ref(&write), std::slice::from_ref(&image_use),
+            std::slice::from_ref(&binding), &streams, &[], &[],
+        )
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted body partition use");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("body partition use resource limit")
+}
+
+#[test]
+fn body_partition_join_refuses_collection_limit() {
+    let error = body_partition_join_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn body_partition_join_refuses_retained_limit() {
+    let error = body_partition_join_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn body_partition_join_refuses_work_limit() {
+    let error = body_partition_join_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
 
 fn label(ordinal: u32, object_indices: [Option<u32>; 4]) -> FeatureOperationLabel {
     FeatureOperationLabel {
@@ -792,7 +892,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         };
     let groups = [group("owned", 2), group("collision", 4)];
 
-    let uses = feature_operation_body_partition_uses(
+    let uses = body_partition_uses_for_test(
         &writes,
         &image_uses,
         &bindings,
@@ -806,7 +906,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     assert_eq!(uses[0].parasolid_group_records, ["owned"]);
 
     let unterminated = [binding("plain-0", 0, 11, 10), binding("plain-1", 1, 12, 10)];
-    assert!(feature_operation_body_partition_uses(
+    assert!(body_partition_uses_for_test(
         &writes,
         &image_uses,
         &unterminated,
@@ -818,7 +918,9 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
 
     let repeated_terminal = [binding("plain-0", 0, 11, 16), binding("plain-1", 1, 12, 16)];
     assert!(
-        body_history_partition_stream(&repeated_terminal[1], &repeated_terminal, &streams,)
+        crate::test_support::with_decode_context(|ctx| body_history_partition_stream(
+            ctx, &repeated_terminal[1], &repeated_terminal, &streams,
+        )).expect("admitted body-history partition")
             .is_none()
     );
 
@@ -827,7 +929,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         stream(crate::parasolid::ParasolidSubtype::Deltas),
         stream(crate::parasolid::ParasolidSubtype::Partition),
     ];
-    assert!(feature_operation_body_partition_uses(
+    assert!(body_partition_uses_for_test(
         &writes,
         &image_uses,
         &bindings,
