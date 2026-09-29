@@ -18,6 +18,123 @@ pub(super) fn decode_fillet_radius_groups(
     decode_fillet_radius_groups_charged(&ctx, scopes, groups, owners, parameters).unwrap()
 }
 
+fn variable_law_parameters() -> Vec<DesignParameter> {
+    [
+        (1, "StartRadius", Some("mm"), 0.2),
+        (2, "EndRadius", Some("mm"), 0.3),
+        (3, "MidRadius", Some("mm"), 0.4),
+        (4, "MidParams", None, 0.5),
+    ].into_iter().map(|(record, kind, unit, value)| {
+        let mut parameter = super::parse_design_parameter_record(
+            &super::parameter_record(Some(record + 100), "value", kind, unit, "d1", value))
+            .unwrap();
+        parameter.record_index = record;
+        parameter
+    }).collect()
+}
+
+fn assert_variable_law_limit(operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let parameters = variable_law_parameters();
+    let controls = parameters.iter().enumerate()
+        .map(|(ordinal, parameter)| (u32::try_from(ordinal).unwrap(), parameter))
+        .collect::<Vec<_>>();
+    let mut found = false;
+    for limit in 0..32 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(crate::design::feature_project::variable_fillet_law(Some(&ctx), &controls),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension == ResourceDimension::CollectionItems) {
+            found = true;
+            break;
+        }
+    }
+    assert!(found, "no collection refusal at {operation}");
+}
+
+macro_rules! variable_law_limit_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert_variable_law_limit($operation);
+        }
+    };
+}
+
+variable_law_limit_test!(variable_fillet_middle_radii_refuse_collection_limit,
+    "f3d variable Fillet middle radii");
+variable_law_limit_test!(variable_fillet_middle_parameters_refuse_collection_limit,
+    "f3d variable Fillet middle parameters");
+variable_law_limit_test!(variable_fillet_radius_points_refuse_collection_limit,
+    "f3d variable Fillet radius point");
+
+fn assert_resolved_assignment_limit(operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use crate::records::topology::fillet::{DesignFilletMidpoint, DesignFilletRadiusLaw};
+
+    let parameters = variable_law_parameters();
+    let controls = parameters.iter().enumerate()
+        .map(|(ordinal, parameter)| (u32::try_from(ordinal).unwrap(), parameter))
+        .collect::<Vec<_>>();
+    let assignment = DesignFilletRadiusGroup {
+        id: "test".to_owned(),
+        scope_record_index: 1,
+        group_ordinal: 0,
+        group_record_index: 2,
+        edge_operand_record_indices: Vec::new(),
+        law: DesignFilletRadiusLaw::Variable {
+            start_radius_parameter_record_index: 1,
+            end_radius_parameter_record_index: 2,
+            middle: vec![DesignFilletMidpoint {
+                radius_parameter_record_index: 3,
+                parameter_record_index: 4,
+            }],
+        },
+        tangency_weight_parameter_record_index: None,
+    };
+    let mut found = false;
+    for limit in 0..64 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(crate::design::feature_project::resolved_fillet_assignments(
+            Some(&ctx), &[&assignment], &controls),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension == ResourceDimension::CollectionItems) {
+            found = true;
+            break;
+        }
+    }
+    assert!(found, "no collection refusal at {operation}");
+}
+
+macro_rules! resolved_assignment_limit_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert_resolved_assignment_limit($operation);
+        }
+    };
+}
+
+resolved_assignment_limit_test!(fillet_assignment_parameter_index_refuses_collection_limit,
+    "f3d Fillet assignment parameter index");
+resolved_assignment_limit_test!(fillet_assigned_parameter_refuses_collection_limit,
+    "f3d Fillet assigned parameter");
+resolved_assignment_limit_test!(fillet_variable_control_refuses_collection_limit,
+    "f3d Fillet variable control");
+resolved_assignment_limit_test!(fillet_resolved_assignment_refuses_collection_limit,
+    "f3d Fillet resolved assignment");
+
 #[test]
 fn fillet_radius_group_collections_and_ids_refuse_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
