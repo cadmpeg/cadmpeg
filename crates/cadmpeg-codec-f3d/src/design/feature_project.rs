@@ -1160,7 +1160,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         }))
                 }
                 Some(DesignFeatureFamily::RectangularPattern) => {
-                    project_rectangular_pattern_scalars(scope, construction_groups, face_operands)
+                    project_rectangular_pattern_scalars(ctx, scope, construction_groups, face_operands)?
                         .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Pattern {
                             seeds: Vec::new(),
                             pattern: PatternKind::UNRESOLVED_LINEAR,
@@ -7427,18 +7427,19 @@ impl PatternIntervals {
 }
 
 fn project_rectangular_pattern_scalars(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternSeed, PatternTransform},
         FeatureDefinition, FeatureOperation,
     };
     use cadmpeg_ir::scalar::PositiveLength;
 
-    let construction = scope.rectangular_pattern_construction()?;
-    let active = [
+    let Some(construction) = scope.rectangular_pattern_construction() else { return Ok(None); };
+    let mut active = [
         (
             construction.u_count(),
             construction.u_extent(),
@@ -7453,16 +7454,15 @@ fn project_rectangular_pattern_scalars(
     .into_iter()
     .filter_map(|(count, extent, inactive_count)| {
         Some((count, PatternIntervals::new(count)?, extent, inactive_count))
-    })
-    .collect::<Vec<_>>();
-    let [(count, intervals, extent, inactive_count)] = active.as_slice() else {
-        return None;
+    });
+    let Some((count, intervals, extent, inactive_count)) = active.next() else {
+        return Ok(None);
     };
-    if *inactive_count != 1 {
-        return None;
+    if active.next().is_some() || inactive_count != 1 {
+        return Ok(None);
     }
     let direction = construction.instances.as_ref().and_then(|instances| {
-        if instances.instance_count() != usize::try_from(*count).ok()? {
+        if instances.instance_count() != usize::try_from(count).ok()? {
             return None;
         }
         let first = &instances.frames().next()?.transform.value;
@@ -7490,10 +7490,8 @@ fn project_rectangular_pattern_scalars(
                 .ok()?,
             )),
         });
-    let group_seed = native_stream(&scope.id).and_then(|stream| {
-        let matching_groups = groups
-            .iter()
-            .filter(|group| {
+    let group_seed = if let Some(stream) = native_stream(&scope.id) {
+        let mut matching_groups = groups.iter().filter(|group| {
                 native_stream(&group.id) == Some(stream)
                     && group.scope_record_index == scope.record_index
                     && matches!(
@@ -7501,39 +7499,44 @@ fn project_rectangular_pattern_scalars(
                         DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
                     )
                     && !group.members().is_empty()
-            })
-            .collect::<Vec<_>>();
-        let [group] = matching_groups.as_slice() else {
-            return None;
-        };
-        Some(if group.role() == DesignOperandRole::BODIES_A {
-            PatternSeed::Faces(
-                resolved_historical_face_group(
+            });
+        let first = matching_groups.next();
+        let second = matching_groups.next();
+        match (first, second) {
+            (Some(group), None) => Some(if group.role() == DesignOperandRole::BODIES_A {
+                PatternSeed::Faces(match resolved_historical_face_group(
                     scope,
                     scope.previous_history_state_id(),
                     group,
                     face_operands,
-                )
-                .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())),
-            )
-        } else {
-            PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
-                group.id.clone(),
-            ))
-        })
-    });
+                ) {
+                    Some(selection) => selection,
+                    None => cadmpeg_ir::features::FaceSelection::Native(copy_feature_text(
+                        ctx, &group.id, "f3d rectangular face seed id")?),
+                })
+            } else {
+                PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
+                    copy_feature_text(ctx, &group.id, "f3d rectangular body seed id")?,
+                ))
+            }),
+            _ => None,
+        }
+    } else { None };
     let seeds = component_seed.or(group_seed).into_iter().collect();
     let direction = direction.map(cadmpeg_ir::features::FeatureDirection3::from);
-    Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
+    let Some(spacing) = PositiveLength::new(extent.abs() * 10.0 / f64::from(intervals.get())) else {
+        return Ok(None);
+    };
+    let Some(pattern) = PatternKind::new(PatternTransform::Linear {
+        direction,
+        spacing,
+        count,
+        second: None,
+    }).ok() else { return Ok(None); };
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds,
-        pattern: PatternKind::new(PatternTransform::Linear {
-            direction,
-            spacing: PositiveLength::new(extent.abs() * 10.0 / f64::from(intervals.get()))?,
-            count: *count,
-            second: None,
-        })
-        .ok()?,
-    }))
+        pattern,
+    })))
 }
 
 fn project_mirror(
