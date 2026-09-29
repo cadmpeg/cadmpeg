@@ -1589,7 +1589,7 @@ fn nx_block_construction_requires_complete_resolved_reference_field() {
             }
         })
         .collect::<Vec<_>>();
-    let constructions = feature_block_constructions(&references);
+    let constructions = crate::test_support::with_decode_context(|ctx| feature_block_constructions(ctx, &references)).unwrap();
     assert_eq!(constructions.len(), 1);
     assert_eq!(constructions[0].control, 0x26);
     assert_eq!(constructions[0].members.len(), 18);
@@ -1599,11 +1599,11 @@ fn nx_block_construction_requires_complete_resolved_reference_field() {
     let mut duplicate = references.clone();
     duplicate[7].position =
         crate::native::features::block_reference::BlockReferencePosition::new(8).unwrap();
-    assert!(feature_block_constructions(&duplicate).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| feature_block_constructions(ctx, &duplicate)).unwrap().is_empty());
 
     let mut unresolved = references;
     unresolved[7].data_block = None;
-    assert!(feature_block_constructions(&unresolved).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| feature_block_constructions(ctx, &unresolved)).unwrap().is_empty());
 }
 
 #[test]

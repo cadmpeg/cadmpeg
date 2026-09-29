@@ -1231,7 +1231,7 @@ impl NativeModel {
         let feature_block_construction_references =
             feature_block_construction_references(ctx, container)?;
         let feature_block_constructions =
-            feature_block_constructions(&feature_block_construction_references);
+            feature_block_constructions(ctx, &feature_block_construction_references)?;
         let feature_block_construction_payloads =
             feature_block_construction_payloads(ctx, container, &feature_block_constructions)?;
         let feature_block_payload_scalars =
