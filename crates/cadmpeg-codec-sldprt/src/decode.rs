@@ -4902,29 +4902,24 @@ fn sync_active_configuration_resolutions(ctx: &DecodeContext<'_>, ir: &mut CadIr
             });
         }
     }
-    let resolved = ir
-        .model
-        .features
-        .iter()
-        .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Pattern { seeds, pattern },
-            ) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            if !matches!(
-                pattern.definition(),
-                cadmpeg_ir::features::patterns::PatternTransform::Mirror { .. }
-            ) {
-                return None;
-            }
-            Some((feature.id.clone(), seeds.clone(), pattern.clone()))
-        })
-        .collect::<Vec<_>>();
-    let configuration = &mut ir.model.configurations[configuration_index];
-    for (feature, resolved_seeds, resolved_pattern) in resolved {
-        let Some(state) = configuration.feature_states.get_mut(&feature) else {
+    for feature in features {
+        ctx.charge_work(1, "scan SLDPRT active configuration patterns")?;
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Pattern {
+                seeds: resolved_seeds,
+                pattern: resolved_pattern,
+            },
+        ) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        if !matches!(
+            resolved_pattern.definition(),
+            cadmpeg_ir::features::patterns::PatternTransform::Mirror { .. }
+        ) {
+            continue;
+        }
+        let Some(state) = configuration.feature_states.get_mut(&feature.id) else {
             continue;
         };
         let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -4933,8 +4928,8 @@ fn sync_active_configuration_resolutions(ctx: &DecodeContext<'_>, ir: &mut CadIr
         else {
             continue;
         };
-        if *seeds == resolved_seeds && pattern.is_unresolved() {
-            *pattern = resolved_pattern;
+        if seeds == resolved_seeds && pattern.is_unresolved() {
+            *pattern = resolved_pattern.clone();
         }
     }
 
