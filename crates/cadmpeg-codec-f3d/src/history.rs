@@ -4961,36 +4961,38 @@ pub(crate) fn bind_face_operand_history_candidates(
             )
         })
         .flatten();
-        let history_candidates = direct_face_candidates.clone().unwrap_or_else(|| {
-            thread_face_candidates
-                .clone()
-                .or(nested_split_face_candidates)
-                .or_else(|| grouped_reference_face_candidates.clone())
-                .unwrap_or_else(|| {
-                    crate::design::face_resolve::historical_face_operand_candidates(operand)
-                })
-        });
-        operand.preceding_candidate_faces = faces_in_topology(&history_candidates, topology);
-        operand.changed_candidate_faces = operand
-            .preceding_candidate_faces
-            .iter()
-            .filter(|face| {
+        let fallback_candidates;
+        let history_candidates = if let Some(candidates) = direct_face_candidates.as_deref()
+            .or(thread_face_candidates.as_deref())
+            .or(nested_split_face_candidates.as_deref())
+            .or(grouped_reference_face_candidates.as_deref())
+        {
+            candidates
+        } else {
+            fallback_candidates =
+                crate::design::face_resolve::historical_face_operand_candidates(operand);
+            &fallback_candidates
+        };
+        operand.preceding_candidate_faces = faces_in_topology(history_candidates, topology);
+        operand.changed_candidate_faces = collect_historical_face_ids(
+            decode,
+            operand.preceding_candidate_faces.iter().filter(|face| {
                 stable_ref(face.as_str()).is_some_and(|slot| changed_faces.contains(&slot))
-            })
-            .cloned()
-            .collect();
+            }),
+            "collect F3D changed candidate faces",
+        )?;
         operand.historical_support_contexts = historical_face_support_contexts(
-            &history_candidates,
+            history_candidates,
             history,
             topology,
             &changed_faces,
         );
         if direct_face_candidates.is_some() {
-            operand.resolved_face_slots = operand
-                .preceding_candidate_faces
-                .iter()
-                .filter_map(|face| stable_ref(face.as_str()))
-                .collect();
+            operand.resolved_face_slots = history_collect(
+                decode,
+                operand.preceding_candidate_faces.iter().filter_map(|face| stable_ref(face.as_str())),
+                "collect F3D direct resolved face slots",
+            )?;
             continue;
         }
         let preserves_stable_face_set = feature_family
@@ -5014,10 +5016,11 @@ pub(crate) fn bind_face_operand_history_candidates(
             crate::records::feature::scope::DesignScopePayload::OffsetFaces(Some(_))
             | crate::records::feature::scope::DesignScopePayload::DecalerLesFaces(Some(_)) => {
                 let direct = resolve_direct_face_recipe_clauses(
+                    decode,
                     &operand.recipe_references,
                     topology,
                     &changed_faces,
-                );
+                )?;
                 if direct.is_empty() {
                     crate::design::face_resolve::resolve_face_operand_history_candidates(operand)
                         .into_iter()
@@ -6031,10 +6034,11 @@ fn historical_brep_source(state_id: &str) -> Option<&str> {
 }
 
 fn resolve_direct_face_recipe_clauses(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     references: &[crate::records::dimensions::DesignRecipeReference],
     topology: &crate::history_records::AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
-) -> Vec<i64> {
+) -> Result<Vec<i64>, cadmpeg_core::CodecError> {
     let mut clauses = Vec::<(
         u64,
         u64,
@@ -6046,12 +6050,29 @@ fn resolve_direct_face_recipe_clauses(
             .iter_mut()
             .find(|(selector, token, _)| (*selector, *token) == key)
         {
+            charge_history_item(decode, "group F3D direct face references")?;
+            references.try_reserve(1).map_err(|_| {
+                history_reserve_error(decode, "group F3D direct face references")
+            })?;
             references.push(reference);
         } else {
-            clauses.push((key.0, key.1, vec![reference]));
+            charge_history_item(decode, "collect F3D direct face clauses")?;
+            clauses.try_reserve(1).map_err(|_| {
+                history_reserve_error(decode, "collect F3D direct face clauses")
+            })?;
+            charge_history_item(decode, "group F3D direct face references")?;
+            let mut grouped = Vec::new();
+            grouped.try_reserve(1).map_err(|_| {
+                history_reserve_error(decode, "group F3D direct face references")
+            })?;
+            grouped.push(reference);
+            clauses.push((key.0, key.1, grouped));
         }
     }
-    let topology_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
+    let mut topology_faces = HashSet::new();
+    for face in &topology.faces {
+        history_hash_set_insert(decode, &mut topology_faces, *face, "index F3D direct topology faces")?;
+    }
     let mut resolved = Vec::new();
     for (_, _, references) in clauses {
         let mut intersection = None::<HashSet<i64>>;
@@ -6061,13 +6082,22 @@ fn resolve_direct_face_recipe_clauses(
             } else {
                 &reference.candidate_faces
             };
-            let candidates = candidates
+            let mut eligible = HashSet::new();
+            for face in candidates
                 .iter()
                 .filter_map(|face| stable_ref(face.as_str()))
                 .filter(|face| topology_faces.contains(face) && changed_faces.contains(face))
-                .collect::<HashSet<_>>();
+            {
+                history_hash_set_insert(
+                    decode,
+                    &mut eligible,
+                    face,
+                    "collect F3D direct face clause candidates",
+                )?;
+            }
+            let candidates = eligible;
             if candidates.is_empty() {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             intersection = Some(match intersection {
                 None => candidates,
@@ -6078,20 +6108,24 @@ fn resolve_direct_face_recipe_clauses(
             });
         }
         let Some(intersection) = intersection else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let mut candidates = intersection.into_iter();
         let Some(face) = candidates.next() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if candidates.next().is_some() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         if !resolved.contains(&face) {
+            charge_history_item(decode, "collect F3D resolved direct faces")?;
+            resolved.try_reserve(1).map_err(|_| {
+                history_reserve_error(decode, "collect F3D resolved direct faces")
+            })?;
             resolved.push(face);
         }
     }
-    resolved
+    Ok(resolved)
 }
 
 fn bind_profile_face_group_cardinality(
