@@ -394,7 +394,7 @@ pub fn owned_construction_subtype(
         .find(|name| *name != "ref")
         .map(|name| {
             let name = canonical_intcurve_kind(name);
-            crate::decode_alloc::copy_string(ctx, name, "ASM construction subtype name")
+            ctx.copy_retained_text(name, "ASM construction subtype name")
         })
 }
 

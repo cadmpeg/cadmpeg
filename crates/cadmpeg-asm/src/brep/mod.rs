@@ -342,7 +342,7 @@ fn insert_adjacency(
 ) -> Result<(), cadmpeg_core::CodecError> {
     if !out.contains_key(owner) {
         ctx.charge_collection_items(1, "ASM adjacency owners")?;
-        let key = crate::decode_alloc::copy_string(ctx, owner, "ASM adjacency owner")?;
+        let key = ctx.copy_retained_text(owner, "ASM adjacency owner")?;
         out.try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit("ASM adjacency owners", 0, 1))?;
         out.insert(key, HashSet::new());
@@ -427,7 +427,7 @@ pub fn remap_owned_ids(
     match value {
         Value::String(id) => {
             if let Some(replacement) = replacements.get(id) {
-                *id = crate::decode_alloc::copy_string(ctx, replacement, "ASM remapped id")?;
+                *id = ctx.copy_retained_text(replacement, "ASM remapped id")?;
             }
         }
         Value::Seq(items) => {
@@ -464,7 +464,7 @@ fn count_kind(
         return Ok(());
     }
     ctx.charge_collection_items(1, "ASM loss kind")?;
-    let key = crate::decode_alloc::copy_string(ctx, kind, "ASM loss kind")?;
+    let key = ctx.copy_retained_text(kind, "ASM loss kind")?;
     counts.insert(key, 1);
     Ok(())
 }
