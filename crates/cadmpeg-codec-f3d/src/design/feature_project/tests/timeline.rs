@@ -1376,8 +1376,9 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let (scopes, timeline) = authored_ordinal_limit_fixture();
+    let unit = if operation == "f3d projected parameter unit" { "custom" } else { "mm" };
     let mut parameter = parse_design_parameter_record(&parameter_record(
-        Some(40), "1 mm", "FeatureInput", Some("mm"), "InternalValue", 0.1,
+        Some(40), "1 mm", "FeatureInput", Some(unit), "InternalValue", 0.1,
     )).unwrap();
     parameter.id = "f3d:Design/BulkStream.dat:design-parameter#41".to_owned();
     parameter.record_index = 41;
@@ -1401,7 +1402,8 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
             companion_record_index: 42,
         },
     ).unwrap();
-    for limit in 0..512 {
+    let max_limit = if retained { 4096 } else { 128 };
+    for limit in 0..max_limit {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         if retained { policy.limits.max_retained_bytes = limit; }
@@ -1471,6 +1473,46 @@ fn projected_feature_id_refuses_retained_limit() {
 #[test]
 fn projected_feature_native_ref_refuses_retained_limit() {
     assert_projected_feature_refusal("f3d projected feature native reference", true);
+}
+
+#[test]
+fn projected_parameter_property_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d projected parameter property", false);
+}
+
+#[test]
+fn projected_parameter_source_kind_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected parameter source kind", true);
+}
+
+#[test]
+fn projected_parameter_unit_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected parameter unit", true);
+}
+
+#[test]
+fn projected_parameter_owner_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected parameter owner id", true);
+}
+
+#[test]
+fn projected_parameter_name_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected parameter name", true);
+}
+
+#[test]
+fn projected_parameter_expression_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected parameter expression", true);
+}
+
+#[test]
+fn projected_parameter_native_ref_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected parameter native reference", true);
+}
+
+#[test]
+fn projected_parameter_output_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d projected parameter output", false);
 }
 
 fn assert_history_dependency_refusal(operation: &'static str, retained: bool) {
