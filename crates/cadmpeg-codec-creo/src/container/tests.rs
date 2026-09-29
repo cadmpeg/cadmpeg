@@ -19,6 +19,7 @@ use crate::container::{self, Layout, UnknownLayout};
 use crate::CreoCodec;
 
 mod aggregation;
+mod sections;
 
 fn assert_summary_limit(
     operation: &'static str,
