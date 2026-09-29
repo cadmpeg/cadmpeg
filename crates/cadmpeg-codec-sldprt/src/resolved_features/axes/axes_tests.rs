@@ -43,6 +43,85 @@ fn compact_line_reference_directions_test(
         .expect("line reference test scan succeeds")
 }
 
+fn enrich_history_revolution_inputs_test(
+    histories: &mut [FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let bytes = lanes.first().map_or(&[][..], |lane| lane.native_payload.as_slice());
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).expect("revolution test input fits service policy");
+    enrich_history_revolution_inputs(&ctx, histories, lanes)
+        .expect("revolution test enrichment succeeds");
+}
+
+fn single_revolution_history() -> [FeatureHistory; 1] {
+    [FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![Feature {
+            id: "revolution".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: None,
+            ordinal: 0,
+            name: "Revolution".into(),
+            kind: String::new(),
+            input_class: Some("moRevolution_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }]
+}
+
+#[test]
+fn revolution_history_enrichment_refuses_collection_limit() {
+    let mut histories = single_revolution_history();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits service policy");
+    let error = enrich_history_revolution_inputs(&ctx, &mut histories, &[])
+        .expect_err("feature name index needs one item");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn revolution_history_enrichment_refuses_retained_limit() {
+    let mut histories = single_revolution_history();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits service policy");
+    let error = enrich_history_revolution_inputs(&ctx, &mut histories, &[])
+        .expect_err("feature name copy needs retained bytes");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn revolution_history_enrichment_refuses_work_limit() {
+    let mut histories = single_revolution_history();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits service policy");
+    let error = enrich_history_revolution_inputs(&ctx, &mut histories, &[])
+        .expect_err("feature name scan needs work");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
 #[test]
 fn declared_line_reference_directions_refuse_collection_limit() {
     let mut payload = vec![0; 240];
@@ -1152,7 +1231,7 @@ fn revolution_consumes_the_preceding_profile_object() {
         sketch_entities: Vec::new(),
     };
 
-    enrich_history_revolution_inputs(&mut histories, std::slice::from_ref(&lane));
+    enrich_history_revolution_inputs_test(&mut histories, std::slice::from_ref(&lane));
 
     assert_eq!(
         histories[0].features[1].properties.get("Profile"),
@@ -1167,7 +1246,7 @@ fn revolution_consumes_the_preceding_profile_object() {
         feature.source_id = None;
         feature.properties.clear();
     }
-    enrich_history_revolution_inputs(&mut histories, &[lane]);
+    enrich_history_revolution_inputs_test(&mut histories, &[lane]);
     assert_eq!(
         histories[0].features[1].properties.get("Profile"),
         Some(&"23".into())
