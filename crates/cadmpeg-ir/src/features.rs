@@ -6617,6 +6617,36 @@ impl NativeSelections {
     pub fn as_slice(&self) -> &[String] {
         &self.0
     }
+
+    /// Admit decoded names with a charged uniqueness index.
+    ///
+    /// The outer result reports a resource refusal. The inner result reports
+    /// the same semantic admission error as `TryFrom<Vec<String>>`.
+    pub fn try_from_charged(
+        value: Vec<String>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::CodecError> {
+        const OPERATION: &str = "validate distinct decoded native selections";
+        if value.is_empty() {
+            return Ok(Err(BodySelectionError::Empty));
+        }
+        if value.iter().any(|name| name.trim().is_empty()) {
+            return Ok(Err(BodySelectionError::BlankNativeMember));
+        }
+        let count = u64::try_from(value.len())
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_collection_items(count, OPERATION)?;
+        let mut seen = HashSet::new();
+        seen.try_reserve(value.len())
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        for name in &value {
+            ctx.charge_work(1, OPERATION)?;
+            if !seen.insert(name) {
+                return Ok(Err(BodySelectionError::RepeatedNativeMember));
+            }
+        }
+        Ok(Ok(Self(value)))
+    }
 }
 
 impl IntoIterator for NativeSelections {
@@ -6878,6 +6908,21 @@ impl BodySelection {
             bodies: bodies.try_into()?,
             native: native.try_into()?,
         })
+    }
+
+    /// Admit decoded local operands with a charged uniqueness index.
+    pub fn local_charged(
+        bodies: Vec<String>,
+        native: String,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::CodecError> {
+        let bodies = NativeSelections::try_from_charged(bodies, ctx)?;
+        Ok(bodies.and_then(|bodies| {
+            Ok(Self::Local {
+                bodies,
+                native: native.try_into()?,
+            })
+        }))
     }
 
     /// Checked historical body operands with their native reference.
