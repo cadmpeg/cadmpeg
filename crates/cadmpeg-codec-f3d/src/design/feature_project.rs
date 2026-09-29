@@ -1135,7 +1135,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         }))
                 }
                 Some(DesignFeatureFamily::BoundaryFill) => {
-                    project_boundary_fill(scope, construction_groups).unwrap_or_else(|| {
+                    project_boundary_fill(ctx, scope, construction_groups)?.unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
                             parameters: BTreeMap::new(),
@@ -8311,61 +8311,66 @@ fn project_surface_patch(
 }
 
 fn project_boundary_fill(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::BoundaryFill
         || scope.reference_members().len() < 5
     {
-        return None;
+        return Ok(None);
     }
-    let stream = native_stream(&scope.id)?;
-    let mut groups = construction_groups
-        .iter()
-        .filter(|group| {
+    let stream = or_none!(native_stream(&scope.id));
+    let mut groups = Vec::new();
+    for group in construction_groups.iter().filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
+        }) {
+        push_feature_item(ctx, &mut groups, group, "f3d BoundaryFill group")?;
+    }
     groups.sort_by_key(|group| group.scope_reference_ordinal);
-    let (tools, cells) = groups.split_first()?;
+    let (tools, cells) = or_none!(groups.split_first());
     if tools.scope_reference_ordinal != 0
-        || tools.record_index != *scope.reference_members().values().next()?
+        || tools.record_index != *or_none!(scope.reference_members().values().next())
         || tools.role() != DesignOperandRole::BODIES_A
         || cells.is_empty()
     {
-        return None;
+        return Ok(None);
     }
     for (index, group) in groups.iter().enumerate() {
-        let start = usize::try_from(group.scope_reference_ordinal).ok()?;
+        let start = or_none!(usize::try_from(group.scope_reference_ordinal).ok());
         let end = groups
             .get(index + 1)
             .and_then(|next| usize::try_from(next.scope_reference_ordinal).ok())
             .unwrap_or(scope.reference_members().len() - 1);
         if start >= end
-            || group.record_index != *scope.reference_members().values().nth(start)?
-            || !group.members().iter().map(|member| member.value).eq(scope
+            || group.record_index != *or_none!(scope.reference_members().values().nth(start))
+            || !group.members().iter().map(|member| member.value).eq(or_none!(scope
                 .reference_members()
-                .values_in(start + 1..end)?
+                .values_in(start + 1..end))
                 .copied())
             || (index > 0 && group.role() != DesignOperandRole::ROLE_0X5)
         {
-            return None;
+            return Ok(None);
         }
     }
-    Some(FeatureDefinition::Operation(
+    let mut selected_cells = Vec::new();
+    for cell in cells {
+        push_feature_item(ctx, &mut selected_cells,
+            BodySelection::Native(copy_feature_text(ctx, &cell.id,
+                "f3d BoundaryFill cell id")?),
+            "f3d BoundaryFill cell")?;
+    }
+    let Some(selected_cells) = selected_cells.try_into().ok() else { return Ok(None); };
+    Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::BoundaryFill {
-            tools: BodySelection::Native(tools.id.clone()),
-            cells: cells
-                .iter()
-                .map(|cell| BodySelection::Native(cell.id.clone()))
-                .collect::<Vec<_>>()
-                .try_into()
-                .ok()?,
+            tools: BodySelection::Native(copy_feature_text(ctx, &tools.id,
+                "f3d BoundaryFill tool id")?),
+            cells: selected_cells,
         },
-    ))
+    )))
 }
 
 fn project_hole(
