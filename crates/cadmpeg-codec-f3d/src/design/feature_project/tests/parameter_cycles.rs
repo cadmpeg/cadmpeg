@@ -7,7 +7,7 @@ use crate::loss::F3dLossCode;
 use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::F3dCodec;
-use crate::design::feature_project::cyclic_parameter_components;
+use crate::design::feature_project::{cyclic_parameter_components, normalize_parameter_ordinals};
 
 fn decode_parameters(records: &[(u32, &str, &str)]) -> DecodeResult {
     let mut bulk = Vec::new();
@@ -84,6 +84,82 @@ fn two_parameter_cycle() -> Vec<cadmpeg_ir::features::DesignParameter> {
     parameters[1].dependencies.insert(first);
     parameters
 }
+
+fn owned_parameter_cycle() -> Vec<cadmpeg_ir::features::DesignParameter> {
+    let mut parameters = two_parameter_cycle();
+    let owner = crate::ids::neutral_feature_id_parts("test", "cycle", 0, 0);
+    parameters[0].owner = Some(owner.clone());
+    parameters[1].owner = Some(owner);
+    parameters
+}
+
+fn assert_normalization_refusal(
+    operation: &'static str,
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let parameters = owned_parameter_cycle();
+    let owners = parameters.iter()
+        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
+        .collect();
+    let mut found = false;
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut copy = parameters.clone();
+        if matches!(normalize_parameter_ordinals(Some(&ctx), &mut copy, &owners),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation && failure.dimension == dimension) {
+            found = true;
+            break;
+        }
+    }
+    assert!(found, "no resource limit reached {operation}");
+}
+
+macro_rules! normalization_limit_test {
+    ($name:ident, $operation:literal, $dimension:ident) => {
+        #[test]
+        fn $name() {
+            assert_normalization_refusal(
+                $operation, cadmpeg_core::decode::ResourceDimension::$dimension);
+        }
+    };
+}
+
+normalization_limit_test!(parameter_owner_id_refuses_retained_limit,
+    "f3d parameter owner ID", RetainedBytes);
+normalization_limit_test!(parameter_owner_member_refuses_collection_limit,
+    "f3d parameter owner member", CollectionItems);
+normalization_limit_test!(parameter_owner_group_refuses_collection_limit,
+    "f3d parameter owner group", CollectionItems);
+normalization_limit_test!(parameter_group_ordinal_refuses_collection_limit,
+    "f3d parameter group ordinal", CollectionItems);
+normalization_limit_test!(parameter_unresolved_index_refuses_collection_limit,
+    "f3d parameter unresolved index", CollectionItems);
+normalization_limit_test!(parameter_readiness_refuses_work_limit,
+    "f3d parameter readiness", WorkUnits);
+normalization_limit_test!(parameter_ready_index_refuses_collection_limit,
+    "f3d parameter ready index", CollectionItems);
+normalization_limit_test!(parameter_cycle_member_id_refuses_retained_limit,
+    "f3d parameter cycle member ID", RetainedBytes);
+normalization_limit_test!(parameter_cycle_member_refuses_collection_limit,
+    "f3d parameter cycle member", CollectionItems);
+normalization_limit_test!(parameter_resolved_id_refuses_retained_limit,
+    "f3d parameter resolved ID", RetainedBytes);
+normalization_limit_test!(parameter_resolved_index_refuses_collection_limit,
+    "f3d parameter resolved index", CollectionItems);
+normalization_limit_test!(parameter_sorted_order_refuses_collection_limit,
+    "f3d parameter sorted order", CollectionItems);
 
 fn assert_cycle_collection_refusal(limit: u64, operation: &'static str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
