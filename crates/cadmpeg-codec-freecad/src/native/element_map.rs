@@ -211,7 +211,11 @@ impl ElementMapNodes {
             };
             for name in names {
                 if !name.topology_ids.iter().any(|existing| existing == id) {
-                    ctx.reserve_vec(&mut name.topology_ids, 1, "FreeCAD element topology bindings")?;
+                    ctx.reserve_vec(
+                        &mut name.topology_ids,
+                        1,
+                        "FreeCAD element topology bindings",
+                    )?;
                     name.topology_ids
                         .push(ctx.copy_retained_text(id, "FreeCAD element topology identity")?);
                 }

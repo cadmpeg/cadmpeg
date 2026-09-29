@@ -5,7 +5,7 @@ use super::curve_conversion::{
     circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs, CurveConversionError,
 };
 use super::geometry::{resolve_transform, source_object, WireProjectionOutcome};
-use crate::decode_resource::{copy_optional_identity};
+use crate::decode_resource::copy_optional_identity;
 use crate::directory::{DirectoryEntry, Hierarchy, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
@@ -247,7 +247,13 @@ impl CompositeIndex {
                     curve.id.as_str(),
                     "iges composite curve index keys",
                 )?;
-                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(ctx, &mut curve_positions, key, position, "iges composite curve index nodes")?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+                    ctx,
+                    &mut curve_positions,
+                    key,
+                    position,
+                    "iges composite curve index nodes",
+                )?;
             }
         }
         let mut edges = BTreeMap::new();
@@ -259,12 +265,23 @@ impl CompositeIndex {
                         curve.as_str(),
                         "iges composite edge index keys",
                     )?;
-                    cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(ctx, &mut edges, key, Vec::new(), "iges composite edge index nodes")?;
+                    cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+                        ctx,
+                        &mut edges,
+                        key,
+                        Vec::new(),
+                        "iges composite edge index nodes",
+                    )?;
                 }
                 let indexed = edges.get_mut(curve).ok_or_else(|| {
                     CodecError::Malformed("IGES composite edge index is absent".into())
                 })?;
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, indexed, 1, "iges composite indexed edges")?;
+                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                    ctx,
+                    indexed,
+                    1,
+                    "iges composite indexed edges",
+                )?;
                 indexed.push(CompositeEdge {
                     start: crate::decode_resource::copy_optional_identity(
                         ctx,
@@ -288,7 +305,13 @@ impl CompositeIndex {
                     point.id.as_str(),
                     "iges composite point index keys",
                 )?;
-                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(ctx, &mut points, key, point.position(), "iges composite point index nodes")?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+                    ctx,
+                    &mut points,
+                    key,
+                    point.position(),
+                    "iges composite point index nodes",
+                )?;
             }
         }
         let mut vertex_points = BTreeMap::<VertexId, FinitePoint3>::new();
@@ -300,7 +323,13 @@ impl CompositeIndex {
                         vertex.id.as_str(),
                         "iges composite vertex index keys",
                     )?;
-                    cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(ctx, &mut vertex_points, key, point, "iges composite vertex index nodes")?;
+                    cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+                        ctx,
+                        &mut vertex_points,
+                        key,
+                        point,
+                        "iges composite vertex index nodes",
+                    )?;
                 }
             }
         }
@@ -330,22 +359,45 @@ impl CompositeIndex {
             curve_id.as_str(),
             "iges composite added curve index key",
         )?;
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(ctx, &mut self.curve_positions, position_key, curve_index, "iges composite added curve index node")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            ctx,
+            &mut self.curve_positions,
+            position_key,
+            curve_index,
+            "iges composite added curve index node",
+        )?;
         if !self.edges.contains_key(curve_id) {
             let edge_key = crate::decode_resource::copy_optional_identity(
                 ctx,
                 curve_id.as_str(),
                 "iges composite added edge index key",
             )?;
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(ctx, &mut self.edges, edge_key, Vec::new(), "iges composite added edge index node")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+                ctx,
+                &mut self.edges,
+                edge_key,
+                Vec::new(),
+                "iges composite added edge index node",
+            )?;
         }
         let indexed = self.edges.get_mut(curve_id).ok_or_else(|| {
             CodecError::Malformed("IGES composite added edge index is absent".into())
         })?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, indexed, 1, "iges composite added edge slots")?;
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+            ctx,
+            indexed,
+            1,
+            "iges composite added edge slots",
+        )?;
         indexed.push(edge);
         for (vertex, point) in endpoints {
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(ctx, &mut self.vertex_points, vertex, point, "iges composite added vertex index nodes")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+                ctx,
+                &mut self.vertex_points,
+                vertex,
+                point,
+                "iges composite added vertex index nodes",
+            )?;
         }
         Ok(())
     }
@@ -505,10 +557,15 @@ fn euclidean_control_points(
             )?;
         }
     }
-    let mut control_points =
-        cadmpeg_core::decode::DecodeContext::admitted_vec(homogeneous.len(), "iges composite Euclidean control points")?;
+    let mut control_points = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        homogeneous.len(),
+        "iges composite Euclidean control points",
+    )?;
     let mut weights = if rational {
-        Some(cadmpeg_core::decode::DecodeContext::admitted_vec(homogeneous.len(), "iges composite Euclidean weights")?)
+        Some(cadmpeg_core::decode::DecodeContext::admitted_vec(
+            homogeneous.len(),
+            "iges composite Euclidean weights",
+        )?)
     } else {
         None
     };
@@ -555,8 +612,10 @@ fn elevate_bezier_homogeneous(
             "iges composite Bezier source copy",
         )?;
     }
-    let mut elevated =
-        cadmpeg_core::decode::DecodeContext::admitted_vec(control_points.len(), "iges composite Bezier source copy")?;
+    let mut elevated = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        control_points.len(),
+        "iges composite Bezier source copy",
+    )?;
     elevated.extend_from_slice(control_points);
     let mut degree = source_degree;
     while degree < target_degree {
@@ -569,7 +628,10 @@ fn elevate_bezier_homogeneous(
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(next_count as u64, "iges composite Bezier elevated net")?;
         }
-        let mut next = cadmpeg_core::decode::DecodeContext::admitted_vec(next_count, "iges composite Bezier elevated net")?;
+        let mut next = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            next_count,
+            "iges composite Bezier elevated net",
+        )?;
         next.push(elevated[0]);
         for index in 1..=degree {
             let alpha = index as f64 / next_degree as f64;
@@ -830,7 +892,11 @@ fn trim_nurbs_to_interval(
     };
     let weights = weights
         .map(|weights| {
-            let mut converted = cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, weights.len(), "iges composite trimmed weight conversion")?;
+            let mut converted = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                ctx,
+                weights.len(),
+                "iges composite trimmed weight conversion",
+            )?;
             converted.extend(
                 weights
                     .into_iter()
@@ -882,8 +948,11 @@ fn trim_nurbs_lanes(
     let Some(mut homogeneous) = homogeneous_control_points(ctx, curve)? else {
         return Ok(None);
     };
-    let mut knots =
-        cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, curve.knots().len(), "iges composite trim knot copy")?;
+    let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+        ctx,
+        curve.knots().len(),
+        "iges composite trim knot copy",
+    )?;
     knots.extend_from_slice(curve.knots());
     for value in [start, end] {
         let Some(target_multiplicity) = degree.checked_add(1) else {
@@ -919,10 +988,17 @@ fn trim_nurbs_lanes(
     ) else {
         return Ok(None);
     };
-    let mut trimmed_homogeneous = cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, homogeneous_slice.len(), "iges composite trimmed controls")?;
+    let mut trimmed_homogeneous = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+        ctx,
+        homogeneous_slice.len(),
+        "iges composite trimmed controls",
+    )?;
     trimmed_homogeneous.extend_from_slice(homogeneous_slice);
-    let mut trimmed_knots =
-        cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, knot_slice.len(), "iges composite trimmed knots")?;
+    let mut trimmed_knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+        ctx,
+        knot_slice.len(),
+        "iges composite trimmed knots",
+    )?;
     trimmed_knots.extend_from_slice(knot_slice);
     let Some(expected_knots) = trimmed_homogeneous
         .len()
@@ -1252,14 +1328,23 @@ fn elevate_nurbs_to_degree(
     // point, so no second pass over the net can observe one.
     let mut homogeneous =
         homogeneous_control_points(ctx, curve).map_err(DegreeElevationError::Allocation)?;
-    let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, curve.knots().len(), "iges composite elevation knot copy")
+    let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+        ctx,
+        curve.knots().len(),
+        "iges composite elevation knot copy",
+    )
     .map_err(DegreeElevationError::Allocation)?;
     knots.extend_from_slice(curve.knots());
     let mut internal_values = Vec::new();
     for &knot in &knots {
         if knot > interval[0] && knot < interval[1] && internal_values.last().copied() != Some(knot)
         {
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut internal_values, 1, "iges composite internal knot values")
+            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                ctx,
+                &mut internal_values,
+                1,
+                "iges composite internal knot values",
+            )
             .map_err(DegreeElevationError::Allocation)?;
             internal_values.push(knot);
         }
@@ -1351,7 +1436,12 @@ fn elevate_nurbs_to_degree(
             None => alloc_filled(target_knot_count, start, "iges composite elevated knots"),
         }
         .map_err(DegreeElevationError::Allocation)?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut piece_knots, target_knot_count, "iges composite elevated knot suffix")
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+            ctx,
+            &mut piece_knots,
+            target_knot_count,
+            "iges composite elevated knot suffix",
+        )
         .map_err(DegreeElevationError::Allocation)?;
         let complete_knot_count = piece_knots
             .len()
@@ -1363,10 +1453,15 @@ fn elevate_nurbs_to_degree(
                     1,
                 ))
             })?;
-        piece_knots.extend(std::iter::repeat(end).take(complete_knot_count - piece_knots.len()));
+        piece_knots
+            .extend(std::iter::repeat_with(|| end).take(complete_knot_count - piece_knots.len()));
         let weights = weights
             .map(|weights| {
-                let mut converted = cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, weights.len(), "iges composite elevated weight conversion")?;
+                let mut converted = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                    ctx,
+                    weights.len(),
+                    "iges composite elevated weight conversion",
+                )?;
                 converted.extend(
                     weights
                         .into_iter()
@@ -1376,8 +1471,13 @@ fn elevate_nurbs_to_degree(
             })
             .transpose()
             .map_err(DegreeElevationError::Allocation)?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut pieces, 1, "iges composite elevated span")
-            .map_err(DegreeElevationError::Allocation)?;
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+            ctx,
+            &mut pieces,
+            1,
+            "iges composite elevated span",
+        )
+        .map_err(DegreeElevationError::Allocation)?;
         let piece = NurbsCurve::from_checked_lanes(
             target_degree as u32,
             piece_knots,
@@ -1474,7 +1574,11 @@ fn concatenate_nurbs<T>(
             *knot = (*knot - child_start) + cursor;
         }
         let mut child_control_points =
-            cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, control_count, "iges composite child control points")?;
+            cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                ctx,
+                control_count,
+                "iges composite child control points",
+            )?;
         let child_weights = match poles {
             NurbsPoles3::Polynomial { points } => {
                 child_control_points.extend(points);
@@ -1487,8 +1591,11 @@ fn concatenate_nurbs<T>(
                 .map_err(CompositeCurveError::ChildWeightAllocation)?
             }
             NurbsPoles3::Rational { points } => {
-                let mut weights =
-                    cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, control_count, "iges composite child weight copy")?;
+                let mut weights = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                    ctx,
+                    control_count,
+                    "iges composite child weight copy",
+                )?;
                 for pole in points {
                     child_control_points.push(pole.point);
                     weights.push(pole.weight.get());
@@ -1516,7 +1623,11 @@ fn concatenate_nurbs<T>(
     };
     let (mut knots, mut control_points, mut weights, last) = prepare_child(first, 0.0)?;
     let mut segments = ConcatenatedSegments {
-        preceding: cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, children.len(), "iges composite segment slots")?,
+        preceding: cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+            ctx,
+            children.len(),
+            "iges composite segment slots",
+        )?,
         last,
     };
     for child in children {
@@ -1549,17 +1660,47 @@ fn concatenate_nurbs<T>(
             };
         }
         if degree_usize == 0 {
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut knots, shifted_knots.len() - 1, "iges composite joined knots")?;
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut control_points, child_control_points.len(), "iges composite joined controls")?;
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut weights, child_weights.len(), "iges composite joined weights")?;
+            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                ctx,
+                &mut knots,
+                shifted_knots.len() - 1,
+                "iges composite joined knots",
+            )?;
+            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                ctx,
+                &mut control_points,
+                child_control_points.len(),
+                "iges composite joined controls",
+            )?;
+            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                ctx,
+                &mut weights,
+                child_weights.len(),
+                "iges composite joined weights",
+            )?;
             knots.extend_from_slice(&shifted_knots[1..]);
             control_points.extend_from_slice(&child_control_points);
             weights.extend_from_slice(&child_weights);
         } else {
             knots.pop();
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut knots, shifted_knots.len() - degree_usize - 1, "iges composite joined knots")?;
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut control_points, child_control_points.len() - 1, "iges composite joined controls")?;
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut weights, child_weights.len() - 1, "iges composite joined weights")?;
+            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                ctx,
+                &mut knots,
+                shifted_knots.len() - degree_usize - 1,
+                "iges composite joined knots",
+            )?;
+            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                ctx,
+                &mut control_points,
+                child_control_points.len() - 1,
+                "iges composite joined controls",
+            )?;
+            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                ctx,
+                &mut weights,
+                child_weights.len() - 1,
+                "iges composite joined weights",
+            )?;
             knots.extend_from_slice(&shifted_knots[degree_usize + 1..]);
             control_points.extend_from_slice(&child_control_points[1..]);
             weights.extend_from_slice(&child_weights[1..]);
@@ -1572,11 +1713,18 @@ fn concatenate_nurbs<T>(
         .first()
         .is_some_and(|first| weights.iter().any(|weight| weight != first));
     let poles = if rational {
-        let mut weighted = cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, control_points.len(), "iges composite joined weighted poles")?;
+        let mut weighted = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+            ctx,
+            control_points.len(),
+            "iges composite joined weighted poles",
+        )?;
         for (index, (point, weight)) in control_points.into_iter().zip(weights).enumerate() {
             let Some(admitted_weight) = NonZeroReal::new(weight) else {
                 let field = match ctx {
-                    Some(ctx) => ctx.format_retained(format_args!("poles"), "iges composite weight error field")?,
+                    Some(ctx) => ctx.format_retained(
+                        format_args!("poles"),
+                        "iges composite weight error field",
+                    )?,
                     None => "poles".to_owned(),
                 };
                 return Err(NurbsError::UnusableWeight {
@@ -1636,7 +1784,11 @@ fn bounded_edge_for_curve(
                 .edges
                 .iter()
                 .filter(|edge| edge.curve() == Some(curve_id));
-            let mut candidates = cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, edges.clone().count(), "iges composite scanned edge candidates")?;
+            let mut candidates = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                ctx,
+                edges.clone().count(),
+                "iges composite scanned edge candidates",
+            )?;
             for edge in edges {
                 candidates.push(CompositeEdge {
                     start: crate::decode_resource::clone_optional_identity(
@@ -1703,7 +1855,10 @@ fn bounded_nurbs_for_id(
                 "iges composite nested children",
             )?;
         }
-        let mut children = cadmpeg_core::decode::DecodeContext::admitted_vec(segments.len(), "iges composite nested children")?;
+        let mut children = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            segments.len(),
+            "iges composite nested children",
+        )?;
         for segment in segments {
             let Some(child) =
                 bounded_nurbs_for_id(ir, &segment.curve, depth + 1, join_tolerance, ctx, index)?
@@ -1745,9 +1900,17 @@ fn bounded_nurbs_for_id(
             ) else {
                 return Ok(None);
             };
-            let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, 4, "iges composite line knots")?;
+            let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                ctx,
+                4,
+                "iges composite line knots",
+            )?;
             knots.extend([0.0, 0.0, 1.0, 1.0]);
-            let mut points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, 2, "iges composite line points")?;
+            let mut points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                ctx,
+                2,
+                "iges composite line points",
+            )?;
             points.extend([start, end]);
             Some((
                 NurbsCurve::new(1, knots, NurbsPoles3::Polynomial { points }, false)?,
@@ -2016,7 +2179,10 @@ fn project_native_composite(
     }
     let mut endpoints = match ctx {
         Some(ctx) => ctx.collection_vec(child_curves.len(), "iges composite native endpoints")?,
-        None => cadmpeg_core::decode::DecodeContext::admitted_vec(child_curves.len(), "iges composite native endpoints")?,
+        None => cadmpeg_core::decode::DecodeContext::admitted_vec(
+            child_curves.len(),
+            "iges composite native endpoints",
+        )?,
     };
     for curve_id in child_curves {
         let Some(endpoint) = curve_endpoints(ir, curve_id, index, join_tolerance)? else {
@@ -2032,7 +2198,10 @@ fn project_native_composite(
     };
     let mut segments = match ctx {
         Some(ctx) => ctx.collection_vec(child_curves.len(), "iges composite native segments")?,
-        None => cadmpeg_core::decode::DecodeContext::admitted_vec(child_curves.len(), "iges composite native segments")?,
+        None => cadmpeg_core::decode::DecodeContext::admitted_vec(
+            child_curves.len(),
+            "iges composite native segments",
+        )?,
     };
     for (position, curve) in child_curves.iter().enumerate() {
         segments.push(CompositeCurveSegment {
@@ -2063,8 +2232,18 @@ fn project_native_composite(
     let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
     let curve_id = crate::ids::curve_admitted(&stem, ctx)?;
     let edge_id = crate::ids::edge_admitted(&stem, ctx)?;
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut ir.model.points, 2, "iges composite native point slots")?;
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut ir.model.vertices, 2, "iges composite native vertex slots")?;
+    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+        ctx,
+        &mut ir.model.points,
+        2,
+        "iges composite native point slots",
+    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+        ctx,
+        &mut ir.model.vertices,
+        2,
+        "iges composite native vertex slots",
+    )?;
     crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_composites")?;
     ir.model.points.extend([
         Point::new(
@@ -2119,7 +2298,12 @@ fn project_native_composite(
             return Ok(None);
         }
     };
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut ir.model.curves, 1, "iges composite native curve slots")?;
+    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+        ctx,
+        &mut ir.model.curves,
+        1,
+        "iges composite native curve slots",
+    )?;
     crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
     ir.model.curves.push(Curve {
         id: crate::decode_resource::clone_optional_identity(
@@ -2133,7 +2317,12 @@ fn project_native_composite(
         }),
         source_object: Some(source),
     });
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut ir.model.edges, 1, "iges composite native edge slots")?;
+    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+        ctx,
+        &mut ir.model.edges,
+        1,
+        "iges composite native edge slots",
+    )?;
     crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
     ir.model.edges.push(Edge {
         id: crate::decode_resource::clone_optional_identity(
@@ -2314,11 +2503,23 @@ fn project_with_type_130_policy(
 ) -> Result<WireProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(ctx, &mut records, record.directory_sequence, record, "iges composite parameter index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            ctx,
+            &mut records,
+            record.directory_sequence,
+            record,
+            "iges composite parameter index",
+        )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(ctx, &mut entries, entry.sequence, entry, "iges composite directory index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            ctx,
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges composite directory index",
+        )?;
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -2407,8 +2608,11 @@ fn project_with_type_130_policy(
             )?;
             continue;
         };
-        let mut child_sequences =
-            cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, child_count, "iges composite child pointer slots")?;
+        let mut child_sequences = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+            ctx,
+            child_count,
+            "iges composite child pointer slots",
+        )?;
         let mut valid_child_pointers = true;
         for index in 0..child_count {
             let Some(sequence) = record
@@ -2479,7 +2683,13 @@ fn project_with_type_130_policy(
         let mut curve_carriers = BTreeMap::new();
         for sequence in child_sequences.iter().copied().filter(is_curve_sequence) {
             if let Some(curve_id) = curve_carrier_id(sequence, &entries, &records, ctx)? {
-                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(ctx, &mut curve_carriers, sequence, curve_id, "iges composite child carrier nodes")?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+                    ctx,
+                    &mut curve_carriers,
+                    sequence,
+                    curve_id,
+                    "iges composite child carrier nodes",
+                )?;
             }
         }
         if !composite_point_adjacency_valid(
@@ -2503,7 +2713,10 @@ fn project_with_type_130_policy(
             .count();
         let mut curve_sequences = match ctx {
             Some(ctx) => ctx.collection_vec(curve_count, "iges composite curve child sequences")?,
-            None => cadmpeg_core::decode::DecodeContext::admitted_vec(curve_count, "iges composite curve child sequences")?,
+            None => cadmpeg_core::decode::DecodeContext::admitted_vec(
+                curve_count,
+                "iges composite curve child sequences",
+            )?,
         };
         curve_sequences.extend(child_sequences.iter().copied().filter(is_curve_sequence));
         if curve_sequences.is_empty() {
@@ -2516,8 +2729,13 @@ fn project_with_type_130_policy(
             continue;
         }
         let mut curve_ids = match ctx {
-            Some(ctx) => ctx.collection_vec(curve_sequences.len(), "iges composite child curve ids")?,
-            None => cadmpeg_core::decode::DecodeContext::admitted_vec(curve_sequences.len(), "iges composite child curve ids")?,
+            Some(ctx) => {
+                ctx.collection_vec(curve_sequences.len(), "iges composite child curve ids")?
+            }
+            None => cadmpeg_core::decode::DecodeContext::admitted_vec(
+                curve_sequences.len(),
+                "iges composite child curve ids",
+            )?,
         };
         let mut missing_curve = false;
         for sequence in &curve_sequences {
@@ -2554,8 +2772,10 @@ fn project_with_type_130_policy(
                 "iges composite projected children",
             )?;
         }
-        let mut children =
-            cadmpeg_core::decode::DecodeContext::admitted_vec(curve_ids.len(), "iges composite projected children")?;
+        let mut children = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            curve_ids.len(),
+            "iges composite projected children",
+        )?;
         let mut child_refusal = None;
         for curve_id in &curve_ids {
             match bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx) {
@@ -2590,9 +2810,19 @@ fn project_with_type_130_policy(
                 &mut losses,
             )?;
             if let Some(edge) = edge {
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut wire_edges, 1, "iges composite wire edge ids")?;
+                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                    ctx,
+                    &mut wire_edges,
+                    1,
+                    "iges composite wire edge ids",
+                )?;
                 wire_edges.push(edge);
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                    ctx,
+                    &mut decoded,
+                    entry.sequence,
+                    "iges composite decoded sequences",
+                )?;
             }
             continue;
         }
@@ -2622,9 +2852,19 @@ fn project_with_type_130_policy(
                     &mut losses,
                 )?;
                 if let Some(edge) = edge {
-                    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut wire_edges, 1, "iges composite wire edge ids")?;
+                    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                        ctx,
+                        &mut wire_edges,
+                        1,
+                        "iges composite wire edge ids",
+                    )?;
                     wire_edges.push(edge);
-                    cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
+                    cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                        ctx,
+                        &mut decoded,
+                        entry.sequence,
+                        "iges composite decoded sequences",
+                    )?;
                 }
                 continue;
             }
@@ -2640,9 +2880,19 @@ fn project_with_type_130_policy(
                 &mut losses,
             )?;
             if let Some(edge) = edge {
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut wire_edges, 1, "iges composite wire edge ids")?;
+                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                    ctx,
+                    &mut wire_edges,
+                    1,
+                    "iges composite wire edge ids",
+                )?;
                 wire_edges.push(edge);
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                    ctx,
+                    &mut decoded,
+                    entry.sequence,
+                    "iges composite decoded sequences",
+                )?;
                 continue;
             }
             continue;
@@ -2660,9 +2910,19 @@ fn project_with_type_130_policy(
                 &mut losses,
             )?;
             if let Some(edge) = edge {
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut wire_edges, 1, "iges composite wire edge ids")?;
+                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                    ctx,
+                    &mut wire_edges,
+                    1,
+                    "iges composite wire edge ids",
+                )?;
                 wire_edges.push(edge);
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                    ctx,
+                    &mut decoded,
+                    entry.sequence,
+                    "iges composite decoded sequences",
+                )?;
                 continue;
             }
             continue;
@@ -2679,9 +2939,19 @@ fn project_with_type_130_policy(
                 &mut losses,
             )?;
             if let Some(edge) = edge {
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut wire_edges, 1, "iges composite wire edge ids")?;
+                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                    ctx,
+                    &mut wire_edges,
+                    1,
+                    "iges composite wire edge ids",
+                )?;
                 wire_edges.push(edge);
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                    ctx,
+                    &mut decoded,
+                    entry.sequence,
+                    "iges composite decoded sequences",
+                )?;
                 continue;
             }
             continue;
@@ -2695,8 +2965,18 @@ fn project_with_type_130_policy(
         let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
         let curve_id = crate::ids::curve_admitted(&stem, ctx)?;
         let edge = crate::ids::edge_admitted(&stem, ctx)?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut ir.model.points, 2, "iges composite solved point slots")?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut ir.model.vertices, 2, "iges composite solved vertex slots")?;
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+            ctx,
+            &mut ir.model.points,
+            2,
+            "iges composite solved point slots",
+        )?;
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+            ctx,
+            &mut ir.model.vertices,
+            2,
+            "iges composite solved vertex slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_composites")?;
         ir.model.points.extend([
             Point::new(
@@ -2740,7 +3020,12 @@ fn project_with_type_130_policy(
             },
         ]);
         sequences.record_curve(&curve_id, entry.sequence, ctx)?;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut ir.model.curves, 1, "iges composite solved curve slots")?;
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+            ctx,
+            &mut ir.model.curves,
+            1,
+            "iges composite solved curve slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
         ir.model.curves.push(Curve {
             id: crate::decode_resource::clone_optional_identity(
@@ -2751,7 +3036,12 @@ fn project_with_type_130_policy(
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry, ctx)?),
         });
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut ir.model.edges, 1, "iges composite solved edge slots")?;
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+            ctx,
+            &mut ir.model.edges,
+            1,
+            "iges composite solved edge slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
         ir.model.edges.push(Edge {
             id: crate::decode_resource::clone_optional_identity(
@@ -2806,13 +3096,23 @@ fn project_with_type_130_policy(
             refuse_local_limit("iges composite procedural boundaries", u64::MAX, 1)
         })?;
         let mut boundaries = match ctx {
-            Some(ctx) => ctx.collection_vec(boundary_count, "iges composite procedural boundaries")?,
-            None => cadmpeg_core::decode::DecodeContext::admitted_vec(boundary_count, "iges composite procedural boundaries")?,
+            Some(ctx) => {
+                ctx.collection_vec(boundary_count, "iges composite procedural boundaries")?
+            }
+            None => cadmpeg_core::decode::DecodeContext::admitted_vec(
+                boundary_count,
+                "iges composite procedural boundaries",
+            )?,
         };
         boundaries.push(0.0);
         let mut components = match ctx {
-            Some(ctx) => ctx.collection_vec(component_count, "iges composite procedural components")?,
-            None => cadmpeg_core::decode::DecodeContext::admitted_vec(component_count, "iges composite procedural components")?,
+            Some(ctx) => {
+                ctx.collection_vec(component_count, "iges composite procedural components")?
+            }
+            None => cadmpeg_core::decode::DecodeContext::admitted_vec(
+                component_count,
+                "iges composite procedural components",
+            )?,
         };
         for segment in segments.into_iter() {
             boundaries.push(segment.end);
@@ -2821,7 +3121,12 @@ fn project_with_type_130_policy(
                 component: segment.child,
             });
         }
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut ir.model.procedural_curves, 1, "iges composite procedural curve slots")?;
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+            ctx,
+            &mut ir.model.procedural_curves,
+            1,
+            "iges composite procedural curve slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
         let _attached = ir.model.add_procedural_curve(
             curve_id,
@@ -2835,9 +3140,19 @@ fn project_with_type_130_policy(
                 ),
             ),
         );
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut wire_edges, 1, "iges composite wire edge ids")?;
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+            ctx,
+            &mut wire_edges,
+            1,
+            "iges composite wire edge ids",
+        )?;
         wire_edges.push(edge);
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            ctx,
+            &mut decoded,
+            entry.sequence,
+            "iges composite decoded sequences",
+        )?;
     }
 
     Ok(WireProjectionOutcome {

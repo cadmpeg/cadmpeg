@@ -3012,7 +3012,8 @@ impl LinkTarget {
                 .ok_or_else(|| CodecError::Malformed("link object is empty".into()))
             })
             .transpose()?;
-        let mut subelements = ctx.collection_vec(self.subelements.len(), "FreeCAD link subelement copies")?;
+        let mut subelements =
+            ctx.collection_vec(self.subelements.len(), "FreeCAD link subelement copies")?;
         for subelement in &self.subelements {
             subelements.push(ctx.copy_retained_text(subelement, "FreeCAD link subelement text")?);
         }
@@ -3214,7 +3215,10 @@ pub(crate) fn sole_named_property<'a>(
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
     match unique_property(properties.iter().copied(), |property| property.name == name) {
         Ok(property) => Ok(property),
-        Err(_) => Err(CodecError::Malformed(ctx.format_retained(format_args!("{owner} property {name} occurs more than once"), "FreeCAD duplicate property diagnostic")?)),
+        Err(_) => Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("{owner} property {name} occurs more than once"),
+            "FreeCAD duplicate property diagnostic",
+        )?)),
     }
 }
 

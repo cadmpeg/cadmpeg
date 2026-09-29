@@ -41,7 +41,10 @@ pub(crate) fn cgm_source_key(
     kind: &str,
     key: impl std::fmt::Display,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
-    let object_id = ctx.format_retained(format_args!("cgm-{kind}:{key}"), "catia_cgm_source_object_id")?;
+    let object_id = ctx.format_retained(
+        format_args!("cgm-{kind}:{key}"),
+        "catia_cgm_source_object_id",
+    )?;
     let object_id = cadmpeg_core::text::NonBlankString::new(object_id)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_cgm_source_object_id", 1, 1))?;
     Ok(SourceObjectAssociation {
@@ -66,7 +69,10 @@ pub(crate) fn annotate(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let id = ctx.format_retained(format_args!("{id}"), "catia_annotation_id")?;
     let exactness_id = ctx.copy_retained_text(&id, "catia_annotation_exactness_id")?;
-    let stream_name = ctx.format_retained(format_args!("catia:{stream_name}"), "catia_annotation_stream")?;
+    let stream_name = ctx.format_retained(
+        format_args!("catia:{stream_name}"),
+        "catia_annotation_stream",
+    )?;
     let stream_name = cadmpeg_ir::StreamName::try_from(stream_name)
         .map_err(cadmpeg_core::CodecError::malformed)?;
     let stream_bytes =
@@ -110,7 +116,8 @@ fn unresolved_carrier_ids<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &'a CadIr,
 ) -> Result<(Vec<&'a str>, Vec<&'a str>), cadmpeg_core::CodecError> {
-    let mut resolved_curves = ctx.collect_hash_set(ir.model
+    let mut resolved_curves = ctx.collect_hash_set(
+        ir.model
             .curves
             .iter()
             .filter(|curve| {
@@ -120,8 +127,11 @@ fn unresolved_carrier_ids<'a>(
                         | CurveGeometry::Procedural { .. }
                 )
             })
-            .map(|curve| curve.id.as_str()), "catia_resolved_curve_ids")?;
-    let mut resolved_surfaces = ctx.collect_hash_set(ir.model
+            .map(|curve| curve.id.as_str()),
+        "catia_resolved_curve_ids",
+    )?;
+    let mut resolved_surfaces = ctx.collect_hash_set(
+        ir.model
             .surfaces
             .iter()
             .filter(|surface| {
@@ -131,7 +141,9 @@ fn unresolved_carrier_ids<'a>(
                         | SurfaceGeometry::Procedural { .. }
                 )
             })
-            .map(|surface| surface.id.as_str()), "catia_resolved_surface_ids")?;
+            .map(|surface| surface.id.as_str()),
+        "catia_resolved_surface_ids",
+    )?;
     loop {
         let work = ir
             .model
@@ -174,7 +186,11 @@ fn unresolved_carrier_ids<'a>(
             };
             if resolved {
                 if let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) {
-                    changed |= ctx.insert_hash_set(&mut resolved_surfaces, owner.as_str(), "catia_resolved_surface_ids")?;
+                    changed |= ctx.insert_hash_set(
+                        &mut resolved_surfaces,
+                        owner.as_str(),
+                        "catia_resolved_surface_ids",
+                    )?;
                 }
             }
         }
@@ -208,7 +224,11 @@ fn unresolved_carrier_ids<'a>(
             };
             if resolved {
                 if let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) {
-                    changed |= ctx.insert_hash_set(&mut resolved_curves, owner.as_str(), "catia_resolved_curve_ids")?;
+                    changed |= ctx.insert_hash_set(
+                        &mut resolved_curves,
+                        owner.as_str(),
+                        "catia_resolved_curve_ids",
+                    )?;
                 }
             }
         }
@@ -216,7 +236,8 @@ fn unresolved_carrier_ids<'a>(
             break;
         }
     }
-    let curves = ctx.collect_vec(ir.model
+    let curves = ctx.collect_vec(
+        ir.model
             .curves
             .iter()
             .filter(|curve| {
@@ -233,8 +254,11 @@ fn unresolved_carrier_ids<'a>(
                     .iter()
                     .filter(|edge| edge.curve().is_none())
                     .map(|edge| edge.id.as_str()),
-            ), "catia_unresolved_curve_ids")?;
-    let surfaces = ctx.collect_vec(ir.model
+            ),
+        "catia_unresolved_curve_ids",
+    )?;
+    let surfaces = ctx.collect_vec(
+        ir.model
             .surfaces
             .iter()
             .filter(|surface| {
@@ -244,7 +268,9 @@ fn unresolved_carrier_ids<'a>(
                         | SurfaceGeometry::Procedural { .. }
                 ) && !resolved_surfaces.contains(surface.id.as_str())
             })
-            .map(|surface| surface.id.as_str()), "catia_unresolved_surface_ids")?;
+            .map(|surface| surface.id.as_str()),
+        "catia_unresolved_surface_ids",
+    )?;
     Ok((curves, surfaces))
 }
 
@@ -940,7 +966,11 @@ pub(crate) fn rational_pcurve_arc(
     )?;
     let step = span / segment_count as f64;
     let mut control_points = Vec::new();
-    ctx.reserve_vec(&mut control_points, control_count, "catia_rational_arc_controls")?;
+    ctx.reserve_vec(
+        &mut control_points,
+        control_count,
+        "catia_rational_arc_controls",
+    )?;
     let mut weights = Vec::new();
     ctx.reserve_vec(&mut weights, control_count, "catia_rational_arc_weights")?;
     let mut knots = Vec::new();
@@ -1011,7 +1041,11 @@ pub(crate) fn quintic_jet_pcurve(
         return Ok(None);
     };
     let mut control_points = Vec::new();
-    ctx.reserve_vec(&mut control_points, controls.len(), "catia quintic pcurve points")?;
+    ctx.reserve_vec(
+        &mut control_points,
+        controls.len(),
+        "catia quintic pcurve points",
+    )?;
     control_points.extend(
         controls
             .into_iter()

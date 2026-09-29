@@ -675,9 +675,7 @@ fn parse_viewport(
         port,
         source_uuid: viewport_id
             .filter(|id| !id.is_nil())
-            .map(|id| {
-                ctx.format_retained(format_args!("{id}"), "Rhino viewport UUID")
-            })
+            .map(|id| ctx.format_retained(format_args!("{id}"), "Rhino viewport UUID"))
             .transpose()?,
         camera_up_locked: locks[0],
         camera_direction_locked: locks[1],
@@ -824,9 +822,7 @@ fn parse_attributes(
     let display = if version[1] >= 2 {
         let id = uuid(&mut reader)?;
         (!id.is_nil())
-            .then(|| {
-                ctx.format_retained(format_args!("{id}"), "Rhino view display UUID")
-            })
+            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino view display UUID"))
             .transpose()?
     } else {
         None
@@ -991,9 +987,7 @@ fn parse_attributes(
     if version[1] >= 5 {
         let id = uuid(&mut reader)?;
         result.named_view_uuid = (!id.is_nil())
-            .then(|| {
-                ctx.format_retained(format_args!("{id}"), "Rhino named view UUID")
-            })
+            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino named view UUID"))
             .transpose()?;
     }
     if version[1] >= 6 {
@@ -1198,7 +1192,10 @@ fn parse_view(
                         return Err(FramingError::Resource(limit));
                     }
                     Err(error) => {
-                        let message = ctx.format_retained(format_args!("viewport retained: {error}"), "Rhino view parse warning")?;
+                        let message = ctx.format_retained(
+                            format_args!("viewport retained: {error}"),
+                            "Rhino view parse warning",
+                        )?;
                         ctx.reserve_vec(&mut parse_warnings, 1, "Rhino view parse warnings")?;
                         parse_warnings.push(
                             ctx.copy_retained_text(&message, "Rhino view parse warning copy")?,
@@ -1377,7 +1374,10 @@ fn parse_view(
         }
         reserve_admitted_vec(ctx, &mut children, 1, "Rhino view children")?;
         children.push(ViewChild {
-            typecode: ctx.format_retained(format_args!("{:#010x}", child.typecode), "Rhino view child typecode")?,
+            typecode: ctx.format_retained(
+                format_args!("{:#010x}", child.typecode),
+                "Rhino view child typecode",
+            )?,
             kind: child_kind(child.typecode),
             source_offset: offset as u64,
             byte_len: (child.next_offset() - offset) as u64,
@@ -1417,7 +1417,10 @@ fn parse_view(
         )?;
     }
     Ok(ViewRecord {
-        id: ctx.format_retained(format_args!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()), "Rhino view ID")?,
+        id: ctx.format_retained(
+            format_args!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
+            "Rhino view ID",
+        )?,
         source_offset: record.header_start as u64,
         list_kind,
         list_index,
@@ -1613,7 +1616,10 @@ fn parse_named_cplanes(
         }
         reserve_admitted_vec(ctx, &mut values, 1, "Rhino named construction planes")?;
         values.push(NamedConstructionPlane {
-            id: ctx.format_retained(format_args!("rhino:document:construction_plane#{index:04}"), "Rhino named construction plane ID")?,
+            id: ctx.format_retained(
+                format_args!("rhino:document:construction_plane#{index:04}"),
+                "Rhino named construction plane ID",
+            )?,
             source_offset: chunk.header_start as u64,
             list_index: index,
             value: parse_cplane(ctx, data, chunk.body().clone(), scale)?,

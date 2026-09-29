@@ -220,14 +220,12 @@ pub(super) fn pcurve_block_with_end(
     let mut points = Vec::new();
     let mut weighted = Vec::new();
     if rational {
-        weighted = match ctx.collection_vec(n_poles, "ASM rational pcurve poles")
-        {
+        weighted = match ctx.collection_vec(n_poles, "ASM rational pcurve poles") {
             Ok(weighted) => weighted,
             Err(error) => return Some(Err(error)),
         };
     } else {
-        points = match ctx.collection_vec(n_poles, "ASM polynomial pcurve poles")
-        {
+        points = match ctx.collection_vec(n_poles, "ASM polynomial pcurve poles") {
             Ok(points) => points,
             Err(error) => return Some(Err(error)),
         };

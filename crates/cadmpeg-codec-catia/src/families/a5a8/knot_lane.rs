@@ -15,7 +15,8 @@ impl A8KnotLane {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
             distinct: ctx.copy_retained_slice(&self.distinct, "catia_a8_copied_distinct_knots")?,
-            multiplicities: ctx.copy_retained_slice(&self.multiplicities, "catia_a8_copied_multiplicities")?,
+            multiplicities: ctx
+                .copy_retained_slice(&self.multiplicities, "catia_a8_copied_multiplicities")?,
         })
     }
 
@@ -50,7 +51,7 @@ impl A8KnotLane {
             let Some(repeats) = usize::try_from(multiplicity).ok() else {
                 return Ok(None);
             };
-            expanded.extend(std::iter::repeat(knot.get()).take(repeats));
+            expanded.extend(std::iter::repeat_with(|| knot.get()).take(repeats));
         }
         Ok(Some(expanded))
     }

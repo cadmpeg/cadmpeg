@@ -1202,10 +1202,11 @@ fn embedded_deformable(
             }
             let count = cur.take_long()?;
             let count = usize::try_from(count).ok()?;
-            let mut parameter_pairs = match ctx.collection_vec(count, "ASM deformable curve parameter pairs") {
-                Ok(parameter_pairs) => parameter_pairs,
-                Err(error) => return Some(Err(error)),
-            };
+            let mut parameter_pairs =
+                match ctx.collection_vec(count, "ASM deformable curve parameter pairs") {
+                    Ok(parameter_pairs) => parameter_pairs,
+                    Err(error) => return Some(Err(error)),
+                };
             for _ in 0..count {
                 parameter_pairs.push([cur.take_f64()?, cur.take_f64()?]);
             }
@@ -1372,7 +1373,8 @@ fn embedded_law_curve(
     if count > 100_000 {
         return None;
     }
-    let mut additional = propagate_resource!(ctx.collection_vec(count, "ASM law curve additional formulas"));
+    let mut additional =
+        propagate_resource!(ctx.collection_vec(count, "ASM law curve additional formulas"));
     for _ in 0..count {
         additional.push(propagate_resource!(law_formula(ctx, &mut cur)?));
     }
@@ -3605,11 +3607,11 @@ fn compound_definition(
     if count == 0 {
         return None;
     }
-    let mut component_parameters =
-        match ctx.collection_vec(count, "ASM compound curve parameters") {
-            Ok(component_parameters) => component_parameters,
-            Err(error) => return Some(Err(error)),
-        };
+    let mut component_parameters = match ctx.collection_vec(count, "ASM compound curve parameters")
+    {
+        Ok(component_parameters) => component_parameters,
+        Err(error) => return Some(Err(error)),
+    };
     for _ in 0..count {
         component_parameters.push(cur.take_f64()?);
     }
@@ -3617,11 +3619,10 @@ fn compound_definition(
         return None;
     }
     cur.bump();
-    let mut components =
-        match ctx.collection_vec(count, "ASM compound curve components") {
-            Ok(components) => components,
-            Err(error) => return Some(Err(error)),
-        };
+    let mut components = match ctx.collection_vec(count, "ASM compound curve components") {
+        Ok(components) => components,
+        Err(error) => return Some(Err(error)),
+    };
     for parameter in component_parameters {
         let (curve, end) = propagate_resource!(curve_block(ctx, toks, cur.pos())?);
         components.push(cadmpeg_ir::geometry::CompoundComponent {

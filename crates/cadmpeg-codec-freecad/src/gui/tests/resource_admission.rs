@@ -653,8 +653,13 @@ fn gui_removed_appearance_refuses_at_caller_limit() {
     let mut plan = super::super::AppearancePlan::default();
     let id = cadmpeg_ir::ids::AppearanceId::mint("fcstd:appearance:object#sample")
         .expect("valid appearance identity");
-    let error = &ctx.insert_hash_set(&mut plan.remove_appearances, id, "FCStd GUI removed appearances")
-    .expect_err("removed appearance must be admitted");
+    let error = &ctx
+        .insert_hash_set(
+            &mut plan.remove_appearances,
+            id,
+            "FCStd GUI removed appearances",
+        )
+        .expect_err("removed appearance must be admitted");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems

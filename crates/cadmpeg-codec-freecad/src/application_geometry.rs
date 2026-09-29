@@ -34,10 +34,13 @@ pub(crate) fn transfer(
             _ => continue,
         };
         if property.side_entries().len() > 1 {
-            return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+            return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!(
                     "geometry property {} references more than one side entry",
                     property.id
-                ), "FreeCAD geometry side-entry error")?));
+                ),
+                "FreeCAD geometry side-entry error",
+            )?));
         }
         let root_entry = validate_value_root(ctx, property, geometry_kind.value_tag())?;
         let side_entry_matches_root = property.side_entries().len()
@@ -52,10 +55,13 @@ pub(crate) fn transfer(
             continue;
         };
         let Some(entry) = entries.iter().find(|entry| entry.name == *entry_name) else {
-            return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+            return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!(
                     "geometry property {} references missing side entry {entry_name}",
                     property.id
-                ), "FreeCAD geometry missing side-entry error")?));
+                ),
+                "FreeCAD geometry missing side-entry error",
+            )?));
         };
         if geometry_kind == GeometryKind::Mesh {
             ctx.reserve_vec(&mut ir.model.tessellations, 1, "FreeCAD mesh tessellations")?;
@@ -94,7 +100,10 @@ fn validate_value_root(
     expected_tag: &str,
 ) -> Result<Option<String>, CodecError> {
     let document = roxmltree::Document::parse(property.xml.text()).or_else(|error| {
-        Err(CodecError::Malformed(ctx.format_retained(format_args!("invalid geometry property XML {}: {error}", property.id), "FreeCAD geometry XML error")?))
+        Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("invalid geometry property XML {}: {error}", property.id),
+            "FreeCAD geometry XML error",
+        )?))
     })?;
     let mut roots = document
         .root_element()
@@ -103,7 +112,8 @@ fn validate_value_root(
     let root = roots.next();
     let extra = roots.next().is_some();
     let Some(root) = root.filter(|_| !extra) else {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!(
                 "geometry property {} must contain exactly one {expected_tag} value root, found {}",
                 property.id,
                 document
@@ -111,7 +121,9 @@ fn validate_value_root(
                     .children()
                     .filter(|node| node.is_element() && node.has_tag_name(expected_tag))
                     .count()
-            ), "FreeCAD geometry root error")?));
+            ),
+            "FreeCAD geometry root error",
+        )?));
     };
     root.attribute("file")
         .filter(|value| !value.is_empty())
@@ -192,7 +204,11 @@ fn parse_mesh(
     }
     reader.finish("mesh payload")?;
     Ok(Tessellation::from_parts(
-        cadmpeg_ir::tessellation::TessellationId::mint(ctx.retained_suffix(&property.id, ":mesh", "FreeCAD mesh identity")?)
+        cadmpeg_ir::tessellation::TessellationId::mint(ctx.retained_suffix(
+            &property.id,
+            ":mesh",
+            "FreeCAD mesh identity",
+        )?)
         .map_err(|error| CodecError::malformed(error.to_string()))?,
         cadmpeg_ir::tessellation::TessellationMesh::List {
             vertices,
@@ -236,7 +252,10 @@ fn point_transform(
     property: &PropertyRecord,
 ) -> Result<[[FiniteReal; 4]; 4], CodecError> {
     let document = roxmltree::Document::parse(property.xml.text()).or_else(|error| {
-        Err(CodecError::Malformed(ctx.format_retained(format_args!("invalid point property XML {}: {error}", property.id), "FreeCAD point XML error")?))
+        Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("invalid point property XML {}: {error}", property.id),
+            "FreeCAD point XML error",
+        )?))
     })?;
     let Some(text) = document
         .root_element()
@@ -361,7 +380,10 @@ impl<'a> Reader<'a> {
         if self.view.u32_be() == Some(MESH_MAGIC) && self.view.u32_be() == Some(MESH_VERSION) {
             return Ok(ByteOrder::Big);
         }
-        Err(CodecError::NotImplemented(ctx.format_retained(format_args!("FCStd mesh payload {property_id} has an unsupported header or version"), "FreeCAD unsupported mesh header")?))
+        Err(CodecError::NotImplemented(ctx.format_retained(
+            format_args!("FCStd mesh payload {property_id} has an unsupported header or version"),
+            "FreeCAD unsupported mesh header",
+        )?))
     }
 
     fn u32(&mut self, order: ByteOrder) -> Result<u32, CodecError> {

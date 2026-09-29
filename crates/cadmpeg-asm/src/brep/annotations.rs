@@ -63,42 +63,48 @@ pub(super) fn emit_annotation_records(
     stream: &str,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let curve_geometries = ctx.collect_hash_map(out
-        .curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), &curve.geometry)), "ASM annotation curve geometry index")?;
-    let emitted_ids = ctx.collect_hash_set(out
-        .bodies
-        .iter()
-        .map(|entity| entity.id.as_str())
-        .chain(out.regions.iter().map(|entity| entity.id.as_str()))
-        .chain(out.shells.iter().map(|entity| entity.id.as_str()))
-        .chain(out.faces.iter().map(|entity| entity.id.as_str()))
-        .chain(out.loops.iter().map(|entity| entity.id.as_str()))
-        .chain(out.coedges.iter().map(|entity| entity.id.as_str()))
-        .chain(out.edges.iter().map(|entity| entity.id.as_str()))
-        .chain(out.vertices.iter().map(|entity| entity.id.as_str()))
-        .chain(out.points.iter().map(|entity| entity.id.as_str()))
-        .chain(out.surfaces.iter().map(|entity| entity.id.as_str()))
-        .chain(out.curves.iter().map(|entity| entity.id.as_str()))
-        .chain(out.pcurves.iter().map(|entity| entity.id.as_str())), "ASM annotation emitted IDs")?;
-    let attribute_ids = ctx.collect_hash_set(out
-        .attributes
-        .iter()
-        .map(|attribute| attribute.id.as_str()), "ASM annotation attribute IDs")?;
-    let unknown_ids = ctx.collect_hash_set(out
-        .unknowns
-        .iter()
-        .map(|unknown| unknown.id().as_str()), "ASM annotation unknown IDs")?;
-    let procedural_ids = ctx.collect_hash_set(out
-        .procedural_surfaces
-        .iter()
-        .map(|(_, entity)| entity.id.as_str())
-        .chain(
-            out.procedural_curves
-                .iter()
-                .map(|(_, entity)| entity.id.as_str()),
-        ), "ASM annotation procedural IDs")?;
+    let curve_geometries = ctx.collect_hash_map(
+        out.curves
+            .iter()
+            .map(|curve| (curve.id.as_str(), &curve.geometry)),
+        "ASM annotation curve geometry index",
+    )?;
+    let emitted_ids = ctx.collect_hash_set(
+        out.bodies
+            .iter()
+            .map(|entity| entity.id.as_str())
+            .chain(out.regions.iter().map(|entity| entity.id.as_str()))
+            .chain(out.shells.iter().map(|entity| entity.id.as_str()))
+            .chain(out.faces.iter().map(|entity| entity.id.as_str()))
+            .chain(out.loops.iter().map(|entity| entity.id.as_str()))
+            .chain(out.coedges.iter().map(|entity| entity.id.as_str()))
+            .chain(out.edges.iter().map(|entity| entity.id.as_str()))
+            .chain(out.vertices.iter().map(|entity| entity.id.as_str()))
+            .chain(out.points.iter().map(|entity| entity.id.as_str()))
+            .chain(out.surfaces.iter().map(|entity| entity.id.as_str()))
+            .chain(out.curves.iter().map(|entity| entity.id.as_str()))
+            .chain(out.pcurves.iter().map(|entity| entity.id.as_str())),
+        "ASM annotation emitted IDs",
+    )?;
+    let attribute_ids = ctx.collect_hash_set(
+        out.attributes.iter().map(|attribute| attribute.id.as_str()),
+        "ASM annotation attribute IDs",
+    )?;
+    let unknown_ids = ctx.collect_hash_set(
+        out.unknowns.iter().map(|unknown| unknown.id().as_str()),
+        "ASM annotation unknown IDs",
+    )?;
+    let procedural_ids = ctx.collect_hash_set(
+        out.procedural_surfaces
+            .iter()
+            .map(|(_, entity)| entity.id.as_str())
+            .chain(
+                out.procedural_curves
+                    .iter()
+                    .map(|(_, entity)| entity.id.as_str()),
+            ),
+        "ASM annotation procedural IDs",
+    )?;
     for record in records {
         let entity_id = id(format, record.index as i64).into_string();
         if emitted_ids.contains(entity_id.as_str()) {

@@ -245,7 +245,11 @@ fn inspect_parsed_exchange(
             ctx,
             &mut attributes,
             "external_uris",
-            ctx.join_display_retained(exchange.references().iter().map(|entry| entry.uri.as_str()), ",", "step_inspect_external_uris")?,
+            ctx.join_display_retained(
+                exchange.references().iter().map(|entry| entry.uri.as_str()),
+                ",",
+                "step_inspect_external_uris",
+            )?,
         )?;
         push_entry(
             ctx,
@@ -274,9 +278,13 @@ fn inspect_parsed_exchange(
                 }
             }
         }
-        let unknown = ctx.join_display_retained(counts
+        let unknown = ctx.join_display_retained(
+            counts
                 .iter()
-                .map(|(&name, &count)| CountItem { name, count }), ",", "step_inspect_unknown_entities")?;
+                .map(|(&name, &count)| CountItem { name, count }),
+            ",",
+            "step_inspect_unknown_entities",
+        )?;
         let mut attributes = std::collections::BTreeMap::new();
         insert_attribute(
             ctx,
@@ -312,7 +320,11 @@ fn inspect_parsed_exchange(
             ctx,
             &mut attributes,
             "dependencies",
-            ctx.join_display_retained(external_dependencies.map(String::as_str), ",", "step_inspect_dependency_text")?,
+            ctx.join_display_retained(
+                external_dependencies.map(String::as_str),
+                ",",
+                "step_inspect_dependency_text",
+            )?,
         )?;
         push_entry(
             ctx,
@@ -352,10 +364,16 @@ fn inspect_parsed_exchange(
     append_notes(
         ctx,
         &mut notes,
-        [ctx.format_retained(format_args!("schema {schema}; dialect {dialect}"), "step_inspect_schema_note")?],
+        [ctx.format_retained(
+            format_args!("schema {schema}; dialect {dialect}"),
+            "step_inspect_schema_note",
+        )?],
     )?;
     for diagnostic in diagnostics {
-        let note = ctx.format_retained(format_args!("{}", diagnostic.message), "step_inspect_diagnostic_copy")?;
+        let note = ctx.format_retained(
+            format_args!("{}", diagnostic.message),
+            "step_inspect_diagnostic_copy",
+        )?;
         append_notes(ctx, &mut notes, [note])?;
     }
     Ok(InspectedExchange {
@@ -427,7 +445,11 @@ fn inspect_zip(
     let mut inspected = inspect_parsed_exchange(root_bytes, ctx, &mut exchange, &diagnostics)?;
     let resource_notes = resource_notes?;
     let entry_count = archive.entries().len();
-    let logical_entries = ctx.join_display_retained(inspected.entries.iter().map(|entry| entry.name.as_str()), ",", "step_inspect_logical_sections")?;
+    let logical_entries = ctx.join_display_retained(
+        inspected.entries.iter().map(|entry| entry.name.as_str()),
+        ",",
+        "step_inspect_logical_sections",
+    )?;
     let mut entries = archive.container_entries(ctx, archive::classify_entry)?;
     if let Some(root_entry) = entries
         .iter_mut()

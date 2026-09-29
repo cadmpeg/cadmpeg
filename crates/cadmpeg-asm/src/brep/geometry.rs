@@ -873,7 +873,9 @@ pub(super) fn rational_four_arc_circle(
         .iter()
         .map(|pole| pole.weight.get().abs())
         .fold(0.0, f64::max);
-    let mut homogeneous = propagate_resource!(ctx.collection_vec(points.len(), "ASM rational four-arc homogeneous poles"));
+    let mut homogeneous = propagate_resource!(
+        ctx.collection_vec(points.len(), "ASM rational four-arc homogeneous poles")
+    );
     for pole in points {
         let point = pole.point;
         let weight = pole.weight.get() / weight_scale;
@@ -984,11 +986,14 @@ fn reduce_homogeneous_bezier_to_quadratic(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: &[[f64; 4]],
 ) -> Option<Result<[[f64; 4]; 3], cadmpeg_core::CodecError>> {
-    let mut control = propagate_resource!(ctx.collection_vec(input.len(), "ASM rational four-arc control copy"));
+    let mut control =
+        propagate_resource!(ctx.collection_vec(input.len(), "ASM rational four-arc control copy"));
     control.extend_from_slice(input);
     while control.len() > 3 {
         let degree = control.len() - 1;
-        let mut reduced = propagate_resource!(ctx.collection_vec(degree, "ASM rational four-arc degree reduction"));
+        let mut reduced = propagate_resource!(
+            ctx.collection_vec(degree, "ASM rational four-arc degree reduction")
+        );
         reduced.push(control[0]);
         for index in 1..degree {
             let alpha = index as f64 / degree as f64;
@@ -1035,17 +1040,17 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let domains: HashMap<&str, [f64; 2]> = ctx.collect_hash_map(out
-        .curves
-        .iter()
-        .filter_map(|curve| match &curve.geometry {
+    let domains: HashMap<&str, [f64; 2]> = ctx.collect_hash_map(
+        out.curves.iter().filter_map(|curve| match &curve.geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 let first = nurbs.knots().get(nurbs.degree() as usize)?;
                 let last = nurbs.knots().get(nurbs.pole_count())?;
                 Some((curve.id.as_str(), [*first, *last]))
             }
             _ => None,
-        }), "ASM edge carrier domains")?;
+        }),
+        "ASM edge carrier domains",
+    )?;
     for edge in &mut out.edges {
         let Some([mut start, mut end]) = edge.param_range().map(FiniteVector::get) else {
             continue;
@@ -1075,7 +1080,12 @@ pub(super) fn classify_body_kinds(
     let mut shell_bodies = HashMap::new();
     for region in &out.regions {
         for shell in &region.shells {
-            ctx.insert_hash_map(&mut shell_bodies, shell.clone(), region.body.clone(), "ASM shell bodies")?;
+            ctx.insert_hash_map(
+                &mut shell_bodies,
+                shell.clone(),
+                region.body.clone(),
+                "ASM shell bodies",
+            )?;
         }
     }
     let mut body_has_faces = HashSet::new();
@@ -1092,7 +1102,12 @@ pub(super) fn classify_body_kinds(
             ctx.insert_hash_set(&mut body_has_faces, body.clone(), "ASM bodies with faces")?;
         }
         for face in shell.faces() {
-            ctx.insert_hash_map(&mut face_bodies, face.clone(), body.clone(), "ASM face bodies")?;
+            ctx.insert_hash_map(
+                &mut face_bodies,
+                face.clone(),
+                body.clone(),
+                "ASM face bodies",
+            )?;
         }
     }
     let mut loop_bodies = HashMap::new();
@@ -1101,7 +1116,12 @@ pub(super) fn classify_body_kinds(
             continue;
         };
         for loop_id in &face.loops {
-            ctx.insert_hash_map(&mut loop_bodies, loop_id.clone(), body.clone(), "ASM loop bodies")?;
+            ctx.insert_hash_map(
+                &mut loop_bodies,
+                loop_id.clone(),
+                body.clone(),
+                "ASM loop bodies",
+            )?;
         }
     }
     let mut coedge_bodies = HashMap::new();
@@ -1110,7 +1130,12 @@ pub(super) fn classify_body_kinds(
             continue;
         };
         for coedge in loop_.coedges() {
-            ctx.insert_hash_map(&mut coedge_bodies, coedge.clone(), body.clone(), "ASM coedge bodies")?;
+            ctx.insert_hash_map(
+                &mut coedge_bodies,
+                coedge.clone(),
+                body.clone(),
+                "ASM coedge bodies",
+            )?;
         }
     }
     let mut edge_use_counts = HashMap::<_, HashMap<EdgeId, usize>>::new();

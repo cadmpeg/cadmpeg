@@ -680,7 +680,9 @@ fn frame_impl(
                     grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
                     reserve_framed_vec(&mut tokens, "frame SAB token")?;
                     let owned = match ctx {
-                        Some(ctx) => ctx.copy_retained_text(identifier, "retain SAB token string")?,
+                        Some(ctx) => {
+                            ctx.copy_retained_text(identifier, "retain SAB token string")?
+                        }
                         None => identifier.to_owned(),
                     };
                     tokens.push(Token::Ident(owned));
@@ -691,7 +693,9 @@ fn frame_impl(
                     grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
                     reserve_framed_vec(&mut tokens, "frame SAB token")?;
                     let owned = match ctx {
-                        Some(ctx) => ctx.copy_retained_text(identifier, "retain SAB token string")?,
+                        Some(ctx) => {
+                            ctx.copy_retained_text(identifier, "retain SAB token string")?
+                        }
                         None => identifier.to_owned(),
                     };
                     tokens.push(Token::SubIdent(owned));

@@ -2670,7 +2670,11 @@ pub(crate) fn parse_metadata(
                     AS_FILE_NAME => utf16_record(ctx, data, record, "Rhino as-file name")
                         .map(|value| metadata.properties.as_file_name = Some(value)),
                     PREVIEW | COMPRESSED_PREVIEW => {
-                        ctx.reserve_vec(&mut metadata.properties.previews, 1, "Rhino property previews")?;
+                        ctx.reserve_vec(
+                            &mut metadata.properties.previews,
+                            1,
+                            "Rhino property previews",
+                        )?;
                         metadata.properties.previews.push(PreviewDescriptor {
                             source: SourceRange {
                                 range: record.range.clone(),
@@ -2715,7 +2719,11 @@ pub(crate) fn parse_metadata(
                         ctx.reserve_vec(&mut metadata.layers, 1, "Rhino metadata layers")?;
                         metadata.layers.push(layer);
                         if source_requires_opaque {
-                            ctx.reserve_vec(&mut opaque_records, 1, "Rhino metadata opaque records")?;
+                            ctx.reserve_vec(
+                                &mut opaque_records,
+                                1,
+                                "Rhino metadata opaque records",
+                            )?;
                             opaque_records.push(OpaqueRecord {
                                 table_typecode: table.typecode,
                                 record: record.clone(),
@@ -2734,14 +2742,22 @@ pub(crate) fn parse_metadata(
                         property_workspace.grow(cadmpeg_core::decode::u64_from_index(
                             std::mem::size_of::<u32>(),
                         ))?;
-                        ctx.reserve_set(&mut property_singletons, 1, "Rhino property singleton keys")?;
+                        ctx.reserve_set(
+                            &mut property_singletons,
+                            1,
+                            "Rhino property singleton keys",
+                        )?;
                         property_singletons.insert(record.typecode);
                     }
                     SETTINGS if !setting_singletons.contains(&record.typecode) => {
                         setting_workspace.grow(cadmpeg_core::decode::u64_from_index(
                             std::mem::size_of::<u32>(),
                         ))?;
-                        ctx.reserve_set(&mut setting_singletons, 1, "Rhino setting singleton keys")?;
+                        ctx.reserve_set(
+                            &mut setting_singletons,
+                            1,
+                            "Rhino setting singleton keys",
+                        )?;
                         setting_singletons.insert(record.typecode);
                     }
                     _ => {}

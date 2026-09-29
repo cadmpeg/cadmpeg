@@ -7,7 +7,10 @@ use std::hash::Hash;
 
 use crate::CodecError;
 
-use super::{u64_from_index, BoundedCount, DecodeContext, ResourceDimension, ResourceLimit, ScopedReservation};
+use super::{
+    u64_from_index, BoundedCount, DecodeContext, ResourceDimension, ResourceLimit,
+    ScopedReservation,
+};
 
 /// A vector that must contain exactly a count proven against input.
 #[derive(Debug)]
@@ -233,7 +236,8 @@ impl DecodeContext<'_> {
     ) -> Result<Vec<T>, E> {
         let mut out = Vec::new();
         for value in values {
-            self.push_vec(&mut out, value?, operation).map_err(E::from)?;
+            self.push_vec(&mut out, value?, operation)
+                .map_err(E::from)?;
         }
         Ok(out)
     }
@@ -393,10 +397,7 @@ impl DecodeContext<'_> {
     }
 
     /// Creates a vector whose items were charged by aggregate admission.
-    pub fn admitted_vec<T>(
-        count: usize,
-        operation: &'static str,
-    ) -> Result<Vec<T>, CodecError> {
+    pub fn admitted_vec<T>(count: usize, operation: &'static str) -> Result<Vec<T>, CodecError> {
         let mut values = Vec::new();
         Self::reserve_admitted_vec(&mut values, count, operation)?;
         Ok(values)
@@ -532,7 +533,9 @@ impl DecodeContext<'_> {
     ) -> Result<Option<Vec<T>>, CodecError> {
         let mut collected = Vec::new();
         for value in values {
-            let Some(value) = value.map_err(Into::into)? else { return Ok(None) };
+            let Some(value) = value.map_err(Into::into)? else {
+                return Ok(None);
+            };
             self.push_vec(&mut collected, value, operation)?;
         }
         Ok(Some(collected))
@@ -740,12 +743,13 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(HashSet<T>, ScopedReservation<'_>), CodecError> {
-        let reservation = self.reserve_scoped(self.temporary_hash_bytes::<T>(count, operation)?, operation)?;
+        let reservation =
+            self.reserve_scoped(self.temporary_hash_bytes::<T>(count, operation)?, operation)?;
         self.charge_collection_items(u64_from_index(count), operation)?;
         let mut values = HashSet::new();
-        values
-            .try_reserve(count)
-            .map_err(|_| self.allocation_failed(ResourceDimension::MaterializedBytes, count, operation))?;
+        values.try_reserve(count).map_err(|_| {
+            self.allocation_failed(ResourceDimension::MaterializedBytes, count, operation)
+        })?;
         Ok((values, reservation))
     }
 
@@ -755,12 +759,13 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(VecDeque<T>, ScopedReservation<'_>), CodecError> {
-        let reservation = self.reserve_scoped(self.temporary_hash_bytes::<T>(count, operation)?, operation)?;
+        let reservation =
+            self.reserve_scoped(self.temporary_hash_bytes::<T>(count, operation)?, operation)?;
         self.charge_collection_items(u64_from_index(count), operation)?;
         let mut values = VecDeque::new();
-        values
-            .try_reserve(count)
-            .map_err(|_| self.allocation_failed(ResourceDimension::MaterializedBytes, count, operation))?;
+        values.try_reserve(count).map_err(|_| {
+            self.allocation_failed(ResourceDimension::MaterializedBytes, count, operation)
+        })?;
         Ok((values, reservation))
     }
 
@@ -773,8 +778,9 @@ impl DecodeContext<'_> {
         let length = self.formatted_length(args, operation)?;
         self.charge_retained(u64_from_index(length), operation)?;
         let mut text = String::new();
-        text.try_reserve_exact(length)
-            .map_err(|_| self.allocation_failed(ResourceDimension::RetainedBytes, length, operation))?;
+        text.try_reserve_exact(length).map_err(|_| {
+            self.allocation_failed(ResourceDimension::RetainedBytes, length, operation)
+        })?;
         fmt::write(&mut text, args).map_err(CodecError::malformed)?;
         Ok(text)
     }
@@ -788,8 +794,9 @@ impl DecodeContext<'_> {
         let length = self.formatted_length(args, operation)?;
         let reservation = self.reserve_scoped(u64_from_index(length), operation)?;
         let mut text = String::new();
-        text.try_reserve_exact(length)
-            .map_err(|_| self.allocation_failed(ResourceDimension::MaterializedBytes, length, operation))?;
+        text.try_reserve_exact(length).map_err(|_| {
+            self.allocation_failed(ResourceDimension::MaterializedBytes, length, operation)
+        })?;
         fmt::write(&mut text, args).map_err(CodecError::malformed)?;
         Ok((text, reservation))
     }
@@ -802,8 +809,9 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         self.charge_retained(u64_from_index(suffix.len()), operation)?;
-        output.try_reserve(suffix.len())
-            .map_err(|_| self.allocation_failed(ResourceDimension::RetainedBytes, suffix.len(), operation))?;
+        output.try_reserve(suffix.len()).map_err(|_| {
+            self.allocation_failed(ResourceDimension::RetainedBytes, suffix.len(), operation)
+        })?;
         output.push_str(suffix);
         Ok(())
     }
@@ -816,8 +824,9 @@ impl DecodeContext<'_> {
     ) -> Result<String, CodecError> {
         self.charge_retained(u64_from_index(length), operation)?;
         let mut value = String::new();
-        value.try_reserve_exact(length)
-            .map_err(|_| self.allocation_failed(ResourceDimension::RetainedBytes, length, operation))?;
+        value.try_reserve_exact(length).map_err(|_| {
+            self.allocation_failed(ResourceDimension::RetainedBytes, length, operation)
+        })?;
         Ok(value)
     }
 
@@ -855,17 +864,21 @@ impl DecodeContext<'_> {
     ) -> Result<String, CodecError> {
         let mut count = 0_usize;
         for part in parts {
-            count = count.checked_add(part.as_ref().len())
+            count = count
+                .checked_add(part.as_ref().len())
                 .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         }
         let gaps = if parts.is_empty() { 0 } else { parts.len() - 1 };
-        count = separator.len().checked_mul(gaps)
+        count = separator
+            .len()
+            .checked_mul(gaps)
             .and_then(|separators| count.checked_add(separators))
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         self.charge_retained(u64_from_index(count), operation)?;
         let mut output = String::new();
-        output.try_reserve_exact(count)
-            .map_err(|_| self.allocation_failed(ResourceDimension::RetainedBytes, count, operation))?;
+        output.try_reserve_exact(count).map_err(|_| {
+            self.allocation_failed(ResourceDimension::RetainedBytes, count, operation)
+        })?;
         for (index, part) in parts.iter().enumerate() {
             if index != 0 {
                 output.push_str(separator);
@@ -890,7 +903,10 @@ impl DecodeContext<'_> {
         }
         impl Write for ChargedText<'_, '_> {
             fn write_str(&mut self, fragment: &str) -> fmt::Result {
-                if let Err(error) = self.ctx.charge_retained(u64_from_index(fragment.len()), self.operation) {
+                if let Err(error) = self
+                    .ctx
+                    .charge_retained(u64_from_index(fragment.len()), self.operation)
+                {
                     self.refusal = Some(error);
                     return Err(fmt::Error);
                 }
@@ -916,7 +932,9 @@ impl DecodeContext<'_> {
             let written = if index == 0 {
                 output.write_fmt(format_args!("{value}"))
             } else {
-                output.write_str(separator).and_then(|()| output.write_fmt(format_args!("{value}")))
+                output
+                    .write_str(separator)
+                    .and_then(|()| output.write_fmt(format_args!("{value}")))
             };
             if written.is_err() {
                 return Err(match output.refusal {
@@ -943,7 +961,9 @@ impl DecodeContext<'_> {
         let mut count = Count(Some(0));
         fmt::write(&mut count, args)
             .map_err(|_| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        count.0.ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+        count
+            .0
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))
     }
 }
 
@@ -951,11 +971,11 @@ impl DecodeContext<'_> {
 mod tests {
     use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 
-    use super::ExactVec;
     use super::super::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use super::ExactVec;
     use crate::CodecError;
 
-    fn context<'a>(arena: &'a DecodeArena, items: u64) -> DecodeContext<'a> {
+    fn context(arena: &DecodeArena, items: u64) -> DecodeContext<'_> {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = items;
         match DecodeContext::from_root_bytes(&[], arena, &policy) {
@@ -981,9 +1001,16 @@ mod tests {
         };
     }
 
-    collection_case!(collection_vec_charges_before_allocation, 2,
-        |ctx: &DecodeContext<'_>| ctx.collection_vec::<u8>(2, "test collection vec").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.collection_vec::<u8>(2, "test collection vec").map(|_| ()));
+    collection_case!(
+        collection_vec_charges_before_allocation,
+        2,
+        |ctx: &DecodeContext<'_>| ctx
+            .collection_vec::<u8>(2, "test collection vec")
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .collection_vec::<u8>(2, "test collection vec")
+            .map(|_| ())
+    );
 
     #[test]
     fn exact_vec_charges_before_allocation_and_requires_full_count() {
@@ -1009,105 +1036,376 @@ mod tests {
         short.push(1_u8).expect("first item fits");
         assert!(short.finish().is_err());
     }
-    collection_case!(reserve_vec_charges_before_growth, 1,
+    collection_case!(
+        reserve_vec_charges_before_growth,
+        1,
         |ctx: &DecodeContext<'_>| ctx.reserve_vec(&mut Vec::<u8>::new(), 1, "test reserve vec"),
-        |ctx: &DecodeContext<'_>| ctx.reserve_vec(&mut Vec::<u8>::new(), 1, "test reserve vec"));
-    collection_case!(push_vec_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.reserve_vec(&mut Vec::<u8>::new(), 1, "test reserve vec")
+    );
+    collection_case!(
+        push_vec_charges_before_growth,
+        1,
         |ctx: &DecodeContext<'_>| ctx.push_vec(&mut Vec::new(), 7_u8, "test push vec"),
-        |ctx: &DecodeContext<'_>| ctx.push_vec(&mut Vec::new(), 7_u8, "test push vec"));
-    collection_case!(push_formatted_retained_charges_before_growth, 1,
-        |ctx: &DecodeContext<'_>| ctx.push_formatted_retained(&mut Vec::new(), format_args!("a"), "test note slots", "test note text"),
-        |ctx: &DecodeContext<'_>| ctx.push_formatted_retained(&mut Vec::new(), format_args!("a"), "test note slots", "test note text"));
-    collection_case!(append_vec_charges_before_growth, 2,
-        |ctx: &DecodeContext<'_>| ctx.append_vec(&mut Vec::new(), &mut vec![1_u8, 2], "test append vec"),
-        |ctx: &DecodeContext<'_>| ctx.append_vec(&mut Vec::new(), &mut vec![1_u8, 2], "test append vec"));
-    collection_case!(extend_vec_charges_before_growth, 2,
+        |ctx: &DecodeContext<'_>| ctx.push_vec(&mut Vec::new(), 7_u8, "test push vec")
+    );
+    collection_case!(
+        push_formatted_retained_charges_before_growth,
+        1,
+        |ctx: &DecodeContext<'_>| ctx.push_formatted_retained(
+            &mut Vec::new(),
+            format_args!("a"),
+            "test note slots",
+            "test note text"
+        ),
+        |ctx: &DecodeContext<'_>| ctx.push_formatted_retained(
+            &mut Vec::new(),
+            format_args!("a"),
+            "test note slots",
+            "test note text"
+        )
+    );
+    collection_case!(
+        append_vec_charges_before_growth,
+        2,
+        |ctx: &DecodeContext<'_>| ctx.append_vec(
+            &mut Vec::new(),
+            &mut vec![1_u8, 2],
+            "test append vec"
+        ),
+        |ctx: &DecodeContext<'_>| ctx.append_vec(
+            &mut Vec::new(),
+            &mut vec![1_u8, 2],
+            "test append vec"
+        )
+    );
+    collection_case!(
+        extend_vec_charges_before_growth,
+        2,
         |ctx: &DecodeContext<'_>| ctx.extend_vec(&mut Vec::new(), vec![1_u8, 2], "test extend vec"),
-        |ctx: &DecodeContext<'_>| ctx.extend_vec(&mut Vec::new(), vec![1_u8, 2], "test extend vec"));
-    collection_case!(collect_vec_charges_before_growth, 2,
+        |ctx: &DecodeContext<'_>| ctx.extend_vec(&mut Vec::new(), vec![1_u8, 2], "test extend vec")
+    );
+    collection_case!(
+        collect_vec_charges_before_growth,
+        2,
         |ctx: &DecodeContext<'_>| ctx.collect_vec([1_u8, 2], "test collect vec").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.collect_vec([1_u8, 2], "test collect vec").map(|_| ()));
-    collection_case!(try_collect_vec_charges_before_growth, 2,
-        |ctx: &DecodeContext<'_>| ctx.try_collect_vec([Ok::<u8, CodecError>(1), Ok(2)], "test try collect vec").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.try_collect_vec([Ok::<u8, CodecError>(1), Ok(2)], "test try collect vec").map(|_| ()));
-    collection_case!(insert_hash_set_charges_before_growth, 1,
-        |ctx: &DecodeContext<'_>| ctx.insert_hash_set(&mut HashSet::new(), 1_u8, "test insert set").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.insert_hash_set(&mut HashSet::new(), 1_u8, "test insert set").map(|_| ()));
-    collection_case!(insert_string_set_charges_before_growth, 1,
-        |ctx: &DecodeContext<'_>| ctx.insert_string_set(&mut HashSet::new(), "a", "test insert string").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.insert_string_set(&mut HashSet::new(), "a", "test insert string").map(|_| ()));
-    collection_case!(collect_hash_set_charges_before_growth, 2,
-        |ctx: &DecodeContext<'_>| ctx.collect_hash_set([1_u8, 2], "test collect set").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.collect_hash_set([1_u8, 2], "test collect set").map(|_| ()));
-    collection_case!(admit_hash_map_entry_charges_before_growth, 1,
-        |ctx: &DecodeContext<'_>| ctx.admit_hash_map_entry(&mut HashMap::<u8, u8>::new(), &1, "test admit map"),
-        |ctx: &DecodeContext<'_>| ctx.admit_hash_map_entry(&mut HashMap::<u8, u8>::new(), &1, "test admit map"));
-    collection_case!(insert_hash_map_charges_before_growth, 1,
-        |ctx: &DecodeContext<'_>| ctx.insert_hash_map(&mut HashMap::new(), 1_u8, 2_u8, "test insert map").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.insert_hash_map(&mut HashMap::new(), 1_u8, 2_u8, "test insert map").map(|_| ()));
-    collection_case!(collect_hash_map_charges_before_growth, 2,
-        |ctx: &DecodeContext<'_>| ctx.collect_hash_map([(1_u8, 2_u8), (3, 4)], "test collect map").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.collect_hash_map([(1_u8, 2_u8), (3, 4)], "test collect map").map(|_| ()));
-    collection_case!(push_back_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.collect_vec([1_u8, 2], "test collect vec").map(|_| ())
+    );
+    collection_case!(
+        try_collect_vec_charges_before_growth,
+        2,
+        |ctx: &DecodeContext<'_>| ctx
+            .try_collect_vec([Ok::<u8, CodecError>(1), Ok(2)], "test try collect vec")
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .try_collect_vec([Ok::<u8, CodecError>(1), Ok(2)], "test try collect vec")
+            .map(|_| ())
+    );
+    collection_case!(
+        insert_hash_set_charges_before_growth,
+        1,
+        |ctx: &DecodeContext<'_>| ctx
+            .insert_hash_set(&mut HashSet::new(), 1_u8, "test insert set")
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .insert_hash_set(&mut HashSet::new(), 1_u8, "test insert set")
+            .map(|_| ())
+    );
+    collection_case!(
+        insert_string_set_charges_before_growth,
+        1,
+        |ctx: &DecodeContext<'_>| ctx
+            .insert_string_set(&mut HashSet::new(), "a", "test insert string")
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .insert_string_set(&mut HashSet::new(), "a", "test insert string")
+            .map(|_| ())
+    );
+    collection_case!(
+        collect_hash_set_charges_before_growth,
+        2,
+        |ctx: &DecodeContext<'_>| ctx
+            .collect_hash_set([1_u8, 2], "test collect set")
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .collect_hash_set([1_u8, 2], "test collect set")
+            .map(|_| ())
+    );
+    collection_case!(
+        admit_hash_map_entry_charges_before_growth,
+        1,
+        |ctx: &DecodeContext<'_>| ctx.admit_hash_map_entry(
+            &mut HashMap::<u8, u8>::new(),
+            &1,
+            "test admit map"
+        ),
+        |ctx: &DecodeContext<'_>| ctx.admit_hash_map_entry(
+            &mut HashMap::<u8, u8>::new(),
+            &1,
+            "test admit map"
+        )
+    );
+    collection_case!(
+        insert_hash_map_charges_before_growth,
+        1,
+        |ctx: &DecodeContext<'_>| ctx
+            .insert_hash_map(&mut HashMap::new(), 1_u8, 2_u8, "test insert map")
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .insert_hash_map(&mut HashMap::new(), 1_u8, 2_u8, "test insert map")
+            .map(|_| ())
+    );
+    collection_case!(
+        collect_hash_map_charges_before_growth,
+        2,
+        |ctx: &DecodeContext<'_>| ctx
+            .collect_hash_map([(1_u8, 2_u8), (3, 4)], "test collect map")
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .collect_hash_map([(1_u8, 2_u8), (3, 4)], "test collect map")
+            .map(|_| ())
+    );
+    collection_case!(
+        push_back_charges_before_growth,
+        1,
         |ctx: &DecodeContext<'_>| ctx.push_back(&mut VecDeque::new(), 1_u8, "test push back"),
-        |ctx: &DecodeContext<'_>| ctx.push_back(&mut VecDeque::new(), 1_u8, "test push back"));
-    collection_case!(reserve_heap_charges_before_growth, 1,
-        |ctx: &DecodeContext<'_>| ctx.reserve_heap(&mut BinaryHeap::<u8>::new(), 1, "test reserve heap"),
-        |ctx: &DecodeContext<'_>| ctx.reserve_heap(&mut BinaryHeap::<u8>::new(), 1, "test reserve heap"));
-    collection_case!(copy_slice_charges_before_allocation, 2,
+        |ctx: &DecodeContext<'_>| ctx.push_back(&mut VecDeque::new(), 1_u8, "test push back")
+    );
+    collection_case!(
+        reserve_heap_charges_before_growth,
+        1,
+        |ctx: &DecodeContext<'_>| ctx.reserve_heap(
+            &mut BinaryHeap::<u8>::new(),
+            1,
+            "test reserve heap"
+        ),
+        |ctx: &DecodeContext<'_>| ctx.reserve_heap(
+            &mut BinaryHeap::<u8>::new(),
+            1,
+            "test reserve heap"
+        )
+    );
+    collection_case!(
+        copy_slice_charges_before_allocation,
+        2,
         |ctx: &DecodeContext<'_>| ctx.copy_slice(&[1_u8, 2], "test copy slice").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.copy_slice(&[1_u8, 2], "test copy slice").map(|_| ()));
-    collection_case!(collect_options_charges_before_growth, 2,
-        |ctx: &DecodeContext<'_>| ctx.collect_options([Some(1_u8), Some(2)], "test collect options").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.collect_options([Some(1_u8), Some(2)], "test collect options").map(|_| ()));
-    collection_case!(collect_fallible_options_charges_before_growth, 2,
-        |ctx: &DecodeContext<'_>| ctx.collect_fallible_options([Ok::<Option<u8>, CodecError>(Some(1)), Ok(Some(2))], "test fallible options").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.collect_fallible_options([Ok::<Option<u8>, CodecError>(Some(1)), Ok(Some(2))], "test fallible options").map(|_| ()));
-    collection_case!(collect_string_set_charges_before_growth, 1,
-        |ctx: &DecodeContext<'_>| ctx.collect_string_set(["one"], "test string set").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.collect_string_set(["one"], "test string set").map(|_| ()));
-    collection_case!(reserve_set_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.copy_slice(&[1_u8, 2], "test copy slice").map(|_| ())
+    );
+    collection_case!(
+        collect_options_charges_before_growth,
+        2,
+        |ctx: &DecodeContext<'_>| ctx
+            .collect_options([Some(1_u8), Some(2)], "test collect options")
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .collect_options([Some(1_u8), Some(2)], "test collect options")
+            .map(|_| ())
+    );
+    collection_case!(
+        collect_fallible_options_charges_before_growth,
+        2,
+        |ctx: &DecodeContext<'_>| ctx
+            .collect_fallible_options(
+                [Ok::<Option<u8>, CodecError>(Some(1)), Ok(Some(2))],
+                "test fallible options"
+            )
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .collect_fallible_options(
+                [Ok::<Option<u8>, CodecError>(Some(1)), Ok(Some(2))],
+                "test fallible options"
+            )
+            .map(|_| ())
+    );
+    collection_case!(
+        collect_string_set_charges_before_growth,
+        1,
+        |ctx: &DecodeContext<'_>| ctx
+            .collect_string_set(["one"], "test string set")
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .collect_string_set(["one"], "test string set")
+            .map(|_| ())
+    );
+    collection_case!(
+        reserve_set_charges_before_growth,
+        1,
         |ctx: &DecodeContext<'_>| ctx.reserve_set(&mut HashSet::<u8>::new(), 1, "test reserve set"),
-        |ctx: &DecodeContext<'_>| ctx.reserve_set(&mut HashSet::<u8>::new(), 1, "test reserve set"));
-    collection_case!(reserve_map_charges_before_growth, 1,
-        |ctx: &DecodeContext<'_>| ctx.reserve_map(&mut HashMap::<u8, u8>::new(), 1, "test reserve map"),
-        |ctx: &DecodeContext<'_>| ctx.reserve_map(&mut HashMap::<u8, u8>::new(), 1, "test reserve map"));
-    collection_case!(admit_btree_entry_charges_before_growth, 1,
-        |ctx: &DecodeContext<'_>| ctx.admit_btree_entry(&BTreeMap::<u8, u8>::new(), &1, "test admit btree"),
-        |ctx: &DecodeContext<'_>| ctx.admit_btree_entry(&BTreeMap::<u8, u8>::new(), &1, "test admit btree"));
-    collection_case!(insert_btree_map_charges_before_growth, 1,
-        |ctx: &DecodeContext<'_>| ctx.insert_btree_map(&mut BTreeMap::new(), 1_u8, 2_u8, "test insert btree map").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.insert_btree_map(&mut BTreeMap::new(), 1_u8, 2_u8, "test insert btree map").map(|_| ()));
-    collection_case!(insert_btree_set_charges_before_growth, 1,
-        |ctx: &DecodeContext<'_>| ctx.insert_btree_set(&mut BTreeSet::new(), 1_u8, "test insert btree set").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.insert_btree_set(&mut BTreeSet::new(), 1_u8, "test insert btree set").map(|_| ()));
-    collection_case!(extend_retained_bytes_charges_before_growth, 1,
-        |ctx: &DecodeContext<'_>| ctx.extend_retained_bytes(&mut Vec::new(), b"a", "test extend bytes"),
-        |ctx: &DecodeContext<'_>| ctx.extend_retained_bytes(&mut Vec::new(), b"a", "test extend bytes"));
-    collection_case!(temporary_vec_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.reserve_set(&mut HashSet::<u8>::new(), 1, "test reserve set")
+    );
+    collection_case!(
+        reserve_map_charges_before_growth,
+        1,
+        |ctx: &DecodeContext<'_>| ctx.reserve_map(
+            &mut HashMap::<u8, u8>::new(),
+            1,
+            "test reserve map"
+        ),
+        |ctx: &DecodeContext<'_>| ctx.reserve_map(
+            &mut HashMap::<u8, u8>::new(),
+            1,
+            "test reserve map"
+        )
+    );
+    collection_case!(
+        admit_btree_entry_charges_before_growth,
+        1,
+        |ctx: &DecodeContext<'_>| ctx.admit_btree_entry(
+            &BTreeMap::<u8, u8>::new(),
+            &1,
+            "test admit btree"
+        ),
+        |ctx: &DecodeContext<'_>| ctx.admit_btree_entry(
+            &BTreeMap::<u8, u8>::new(),
+            &1,
+            "test admit btree"
+        )
+    );
+    collection_case!(
+        insert_btree_map_charges_before_growth,
+        1,
+        |ctx: &DecodeContext<'_>| ctx
+            .insert_btree_map(&mut BTreeMap::new(), 1_u8, 2_u8, "test insert btree map")
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .insert_btree_map(&mut BTreeMap::new(), 1_u8, 2_u8, "test insert btree map")
+            .map(|_| ())
+    );
+    collection_case!(
+        insert_btree_set_charges_before_growth,
+        1,
+        |ctx: &DecodeContext<'_>| ctx
+            .insert_btree_set(&mut BTreeSet::new(), 1_u8, "test insert btree set")
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .insert_btree_set(&mut BTreeSet::new(), 1_u8, "test insert btree set")
+            .map(|_| ())
+    );
+    collection_case!(
+        extend_retained_bytes_charges_before_growth,
+        1,
+        |ctx: &DecodeContext<'_>| ctx.extend_retained_bytes(
+            &mut Vec::new(),
+            b"a",
+            "test extend bytes"
+        ),
+        |ctx: &DecodeContext<'_>| ctx.extend_retained_bytes(
+            &mut Vec::new(),
+            b"a",
+            "test extend bytes"
+        )
+    );
+    collection_case!(
+        temporary_vec_charges_before_growth,
+        1,
         |ctx: &DecodeContext<'_>| ctx.temporary_vec::<u8>(1, "test temporary vec").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.temporary_vec::<u8>(1, "test temporary vec").map(|_| ()));
-    collection_case!(copy_retained_strings_charges_before_growth, 2,
-        |ctx: &DecodeContext<'_>| ctx.copy_retained_strings(&[String::from("a"), String::from("b")], "test retained strings").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.copy_retained_strings(&[String::from("a"), String::from("b")], "test retained strings").map(|_| ()));
-    collection_case!(optional_collection_vec_charges_before_allocation, 2,
-        |ctx: &DecodeContext<'_>| ctx.optional_collection_vec::<u8>(true, 2, "test optional collection").map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.optional_collection_vec::<u8>(true, 2, "test optional collection").map(|_| ()));
-    collection_case!(collection_vec_optional_charges_before_allocation, 2,
-        |ctx: &DecodeContext<'_>| DecodeContext::collection_vec_optional::<u8>(Some(ctx), 2, "test optional vec").map(|_| ()),
-        |ctx: &DecodeContext<'_>| DecodeContext::collection_vec_optional::<u8>(Some(ctx), 2, "test optional vec").map(|_| ()));
-    collection_case!(reserve_vec_optional_charges_before_growth, 2,
-        |ctx: &DecodeContext<'_>| DecodeContext::reserve_vec_optional(Some(ctx), &mut Vec::<u8>::new(), 2, "test optional reserve"),
-        |ctx: &DecodeContext<'_>| DecodeContext::reserve_vec_optional(Some(ctx), &mut Vec::<u8>::new(), 2, "test optional reserve"));
-    collection_case!(collect_indexed_vec_charges_before_allocation, 2,
-        |ctx: &DecodeContext<'_>| ctx.collect_indexed_vec(2, "test indexed vec", |index| Ok(index as u8)).map(|_| ()),
-        |ctx: &DecodeContext<'_>| ctx.collect_indexed_vec(2, "test indexed vec", |index| Ok(index as u8)).map(|_| ()));
-    collection_case!(insert_btree_set_optional_charges_before_growth, 1,
-        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_set_optional(Some(ctx), &mut BTreeSet::new(), 1_u8, "test optional btree set").map(|_| ()),
-        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_set_optional(Some(ctx), &mut BTreeSet::new(), 1_u8, "test optional btree set").map(|_| ()));
-    collection_case!(insert_btree_map_optional_charges_before_growth, 1,
-        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_map_optional(Some(ctx), &mut BTreeMap::new(), 1_u8, 2_u8, "test optional btree map").map(|_| ()),
-        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_map_optional(Some(ctx), &mut BTreeMap::new(), 1_u8, 2_u8, "test optional btree map").map(|_| ()));
+        |ctx: &DecodeContext<'_>| ctx.temporary_vec::<u8>(1, "test temporary vec").map(|_| ())
+    );
+    collection_case!(
+        copy_retained_strings_charges_before_growth,
+        2,
+        |ctx: &DecodeContext<'_>| ctx
+            .copy_retained_strings(
+                &[String::from("a"), String::from("b")],
+                "test retained strings"
+            )
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .copy_retained_strings(
+                &[String::from("a"), String::from("b")],
+                "test retained strings"
+            )
+            .map(|_| ())
+    );
+    collection_case!(
+        optional_collection_vec_charges_before_allocation,
+        2,
+        |ctx: &DecodeContext<'_>| ctx
+            .optional_collection_vec::<u8>(true, 2, "test optional collection")
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .optional_collection_vec::<u8>(true, 2, "test optional collection")
+            .map(|_| ())
+    );
+    collection_case!(
+        collection_vec_optional_charges_before_allocation,
+        2,
+        |ctx: &DecodeContext<'_>| DecodeContext::collection_vec_optional::<u8>(
+            Some(ctx),
+            2,
+            "test optional vec"
+        )
+        .map(|_| ()),
+        |ctx: &DecodeContext<'_>| DecodeContext::collection_vec_optional::<u8>(
+            Some(ctx),
+            2,
+            "test optional vec"
+        )
+        .map(|_| ())
+    );
+    collection_case!(
+        reserve_vec_optional_charges_before_growth,
+        2,
+        |ctx: &DecodeContext<'_>| DecodeContext::reserve_vec_optional(
+            Some(ctx),
+            &mut Vec::<u8>::new(),
+            2,
+            "test optional reserve"
+        ),
+        |ctx: &DecodeContext<'_>| DecodeContext::reserve_vec_optional(
+            Some(ctx),
+            &mut Vec::<u8>::new(),
+            2,
+            "test optional reserve"
+        )
+    );
+    collection_case!(
+        collect_indexed_vec_charges_before_allocation,
+        2,
+        |ctx: &DecodeContext<'_>| ctx
+            .collect_indexed_vec(2, "test indexed vec", |index| Ok(index as u8))
+            .map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx
+            .collect_indexed_vec(2, "test indexed vec", |index| Ok(index as u8))
+            .map(|_| ())
+    );
+    collection_case!(
+        insert_btree_set_optional_charges_before_growth,
+        1,
+        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_set_optional(
+            Some(ctx),
+            &mut BTreeSet::new(),
+            1_u8,
+            "test optional btree set"
+        )
+        .map(|_| ()),
+        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_set_optional(
+            Some(ctx),
+            &mut BTreeSet::new(),
+            1_u8,
+            "test optional btree set"
+        )
+        .map(|_| ())
+    );
+    collection_case!(
+        insert_btree_map_optional_charges_before_growth,
+        1,
+        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut BTreeMap::new(),
+            1_u8,
+            2_u8,
+            "test optional btree map"
+        )
+        .map(|_| ()),
+        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut BTreeMap::new(),
+            1_u8,
+            2_u8,
+            "test optional btree map"
+        )
+        .map(|_| ())
+    );
 
     macro_rules! admitted_case {
         ($name:ident, $body:expr) => {
@@ -1128,22 +1426,67 @@ mod tests {
             }
         };
     }
-    admitted_case!(reserve_admitted_vec_follows_prior_admission,
-        |_ctx: &DecodeContext<'_>| DecodeContext::reserve_admitted_vec(&mut Vec::<u8>::new(), 2, "test admitted"));
-    admitted_case!(reserve_admitted_map_follows_prior_admission,
-        |_ctx: &DecodeContext<'_>| DecodeContext::reserve_admitted_map(&mut HashMap::<u8, u8>::new(), 2, "test admitted"));
-    admitted_case!(reserve_admitted_set_follows_prior_admission,
-        |_ctx: &DecodeContext<'_>| DecodeContext::reserve_admitted_set(&mut HashSet::<u8>::new(), 2, "test admitted"));
-    admitted_case!(copy_admitted_slice_follows_prior_admission,
-        |_ctx: &DecodeContext<'_>| DecodeContext::copy_admitted_slice(&[1_u8, 2], "test admitted").map(|_| ()));
-    admitted_case!(copy_admitted_rows_follows_prior_admission,
-        |_ctx: &DecodeContext<'_>| DecodeContext::copy_admitted_rows(&[1_u8, 2], 1, "test admitted").map(|_| ()));
-    admitted_case!(admitted_vec_follows_prior_admission,
-        |_ctx: &DecodeContext<'_>| DecodeContext::admitted_vec::<u8>(2, "test admitted").map(|_| ()));
-    admitted_case!(optional_admitted_vec_follows_prior_admission,
-        |ctx: &DecodeContext<'_>| DecodeContext::optional_admitted_vec::<u8>(Some(ctx), 2, "test admitted").map(|_| ()));
-    admitted_case!(reserve_optional_admitted_vec_follows_prior_admission,
-        |ctx: &DecodeContext<'_>| DecodeContext::reserve_optional_admitted_vec(Some(ctx), &mut Vec::<u8>::new(), 2, "test admitted"));
+    admitted_case!(
+        reserve_admitted_vec_follows_prior_admission,
+        |_ctx: &DecodeContext<'_>| DecodeContext::reserve_admitted_vec(
+            &mut Vec::<u8>::new(),
+            2,
+            "test admitted"
+        )
+    );
+    admitted_case!(
+        reserve_admitted_map_follows_prior_admission,
+        |_ctx: &DecodeContext<'_>| DecodeContext::reserve_admitted_map(
+            &mut HashMap::<u8, u8>::new(),
+            2,
+            "test admitted"
+        )
+    );
+    admitted_case!(
+        reserve_admitted_set_follows_prior_admission,
+        |_ctx: &DecodeContext<'_>| DecodeContext::reserve_admitted_set(
+            &mut HashSet::<u8>::new(),
+            2,
+            "test admitted"
+        )
+    );
+    admitted_case!(
+        copy_admitted_slice_follows_prior_admission,
+        |_ctx: &DecodeContext<'_>| DecodeContext::copy_admitted_slice(&[1_u8, 2], "test admitted")
+            .map(|_| ())
+    );
+    admitted_case!(
+        copy_admitted_rows_follows_prior_admission,
+        |_ctx: &DecodeContext<'_>| DecodeContext::copy_admitted_rows(
+            &[1_u8, 2],
+            1,
+            "test admitted"
+        )
+        .map(|_| ())
+    );
+    admitted_case!(
+        admitted_vec_follows_prior_admission,
+        |_ctx: &DecodeContext<'_>| DecodeContext::admitted_vec::<u8>(2, "test admitted")
+            .map(|_| ())
+    );
+    admitted_case!(
+        optional_admitted_vec_follows_prior_admission,
+        |ctx: &DecodeContext<'_>| DecodeContext::optional_admitted_vec::<u8>(
+            Some(ctx),
+            2,
+            "test admitted"
+        )
+        .map(|_| ())
+    );
+    admitted_case!(
+        reserve_optional_admitted_vec_follows_prior_admission,
+        |ctx: &DecodeContext<'_>| DecodeContext::reserve_optional_admitted_vec(
+            Some(ctx),
+            &mut Vec::<u8>::new(),
+            2,
+            "test admitted"
+        )
+    );
 
     macro_rules! retained_case {
         ($name:ident, $need:expr, $body:expr) => {
@@ -1164,27 +1507,81 @@ mod tests {
             }
         };
     }
-    retained_case!(copy_retained_slice_charges_before_allocation, 2,
-        |ctx: &DecodeContext<'_>| ctx.copy_retained_slice(&[1_u8, 2], "test retained slice").map(|_| ()));
-    retained_case!(copy_retained_rows_charges_before_allocation, std::mem::size_of::<Vec<u8>>() as u64,
-        |ctx: &DecodeContext<'_>| ctx.copy_retained_rows(&[vec![1_u8]], "test retained rows", "test retained row items").map(|_| ()));
-    retained_case!(copy_retained_set_charges_before_allocation,
+    retained_case!(
+        copy_retained_slice_charges_before_allocation,
+        2,
+        |ctx: &DecodeContext<'_>| ctx
+            .copy_retained_slice(&[1_u8, 2], "test retained slice")
+            .map(|_| ())
+    );
+    retained_case!(
+        copy_retained_rows_charges_before_allocation,
+        std::mem::size_of::<Vec<u8>>() as u64,
+        |ctx: &DecodeContext<'_>| ctx
+            .copy_retained_rows(
+                &[vec![1_u8]],
+                "test retained rows",
+                "test retained row items"
+            )
+            .map(|_| ())
+    );
+    retained_case!(
+        copy_retained_set_charges_before_allocation,
         (std::mem::size_of::<HashSet<u8>>() + 1) as u64,
-        |ctx: &DecodeContext<'_>| ctx.copy_retained_set(&HashSet::from([1_u8]), "test retained set").map(|_| ()));
-    retained_case!(format_retained_charges_before_allocation, 3,
-        |ctx: &DecodeContext<'_>| ctx.format_retained(format_args!("abc"), "test format retained").map(|_| ()));
-    retained_case!(append_retained_charges_before_growth, 3,
-        |ctx: &DecodeContext<'_>| ctx.append_retained(&mut String::new(), "abc", "test append retained"));
-    retained_case!(retained_suffix_charges_before_growth, 2,
-        |ctx: &DecodeContext<'_>| ctx.retained_suffix("a", "b", "test suffix").map(|_| ()));
-    retained_case!(join_retained_charges_before_allocation, 3,
-        |ctx: &DecodeContext<'_>| ctx.join_retained(&["a", "b"], "-", "test join retained").map(|_| ()));
-    retained_case!(join_display_retained_charges_before_growth, 7,
-        |ctx: &DecodeContext<'_>| ctx.join_display_retained(["one", "two"], ",", "test display join").map(|_| ()));
-    retained_case!(retained_string_charges_before_allocation, 3,
-        |ctx: &DecodeContext<'_>| ctx.retained_string(3, "test retained string").map(|_| ()));
-    retained_case!(copy_retained_optional_charges_before_allocation, 3,
-        |ctx: &DecodeContext<'_>| DecodeContext::copy_retained_optional(Some(ctx), b"abc", "test optional retained").map(|_| ()));
+        |ctx: &DecodeContext<'_>| ctx
+            .copy_retained_set(&HashSet::from([1_u8]), "test retained set")
+            .map(|_| ())
+    );
+    retained_case!(
+        format_retained_charges_before_allocation,
+        3,
+        |ctx: &DecodeContext<'_>| ctx
+            .format_retained(format_args!("abc"), "test format retained")
+            .map(|_| ())
+    );
+    retained_case!(
+        append_retained_charges_before_growth,
+        3,
+        |ctx: &DecodeContext<'_>| ctx.append_retained(
+            &mut String::new(),
+            "abc",
+            "test append retained"
+        )
+    );
+    retained_case!(
+        retained_suffix_charges_before_growth,
+        2,
+        |ctx: &DecodeContext<'_>| ctx.retained_suffix("a", "b", "test suffix").map(|_| ())
+    );
+    retained_case!(
+        join_retained_charges_before_allocation,
+        3,
+        |ctx: &DecodeContext<'_>| ctx
+            .join_retained(&["a", "b"], "-", "test join retained")
+            .map(|_| ())
+    );
+    retained_case!(
+        join_display_retained_charges_before_growth,
+        7,
+        |ctx: &DecodeContext<'_>| ctx
+            .join_display_retained(["one", "two"], ",", "test display join")
+            .map(|_| ())
+    );
+    retained_case!(
+        retained_string_charges_before_allocation,
+        3,
+        |ctx: &DecodeContext<'_>| ctx.retained_string(3, "test retained string").map(|_| ())
+    );
+    retained_case!(
+        copy_retained_optional_charges_before_allocation,
+        3,
+        |ctx: &DecodeContext<'_>| DecodeContext::copy_retained_optional(
+            Some(ctx),
+            b"abc",
+            "test optional retained"
+        )
+        .map(|_| ())
+    );
 
     macro_rules! materialized_case {
         ($name:ident, $need:expr, $body:expr) => {
@@ -1205,29 +1602,49 @@ mod tests {
             }
         };
     }
-    materialized_case!(temporary_set_reserves_scoped_storage, 33,
-        |ctx: &DecodeContext<'_>| ctx.temporary_set::<u8>(1, "test temporary set").map(|_| ()));
-    materialized_case!(temporary_queue_reserves_scoped_storage, 33,
-        |ctx: &DecodeContext<'_>| ctx.temporary_queue::<u8>(1, "test temporary queue").map(|_| ()));
-    materialized_case!(format_scoped_charges_before_allocation, 3,
-        |ctx: &DecodeContext<'_>| ctx.format_scoped(format_args!("abc"), "test format scoped").map(|_| ()));
+    materialized_case!(
+        temporary_set_reserves_scoped_storage,
+        33,
+        |ctx: &DecodeContext<'_>| ctx.temporary_set::<u8>(1, "test temporary set").map(|_| ())
+    );
+    materialized_case!(
+        temporary_queue_reserves_scoped_storage,
+        33,
+        |ctx: &DecodeContext<'_>| ctx
+            .temporary_queue::<u8>(1, "test temporary queue")
+            .map(|_| ())
+    );
+    materialized_case!(
+        format_scoped_charges_before_allocation,
+        3,
+        |ctx: &DecodeContext<'_>| ctx
+            .format_scoped(format_args!("abc"), "test format scoped")
+            .map(|_| ())
+    );
 
     #[test]
     fn copy_scoped_text_refuses_before_allocation_and_succeeds_under_service_profile() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test context");
-        let mut reservation = ctx.reserve_scoped(0, "test scoped text").expect("empty reserve");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+        let mut reservation = ctx
+            .reserve_scoped(0, "test scoped text")
+            .expect("empty reserve");
         let result = ctx.copy_scoped_text("abc", &mut reservation, "test scoped text");
         assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::MaterializedBytes));
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("test context");
-        let mut reservation = ctx.reserve_scoped(0, "test scoped text").expect("empty reserve");
-        assert_eq!(ctx.copy_scoped_text("abc", &mut reservation, "test scoped text").expect("copy"), "abc");
+        let mut reservation = ctx
+            .reserve_scoped(0, "test scoped text")
+            .expect("empty reserve");
+        assert_eq!(
+            ctx.copy_scoped_text("abc", &mut reservation, "test scoped text")
+                .expect("copy"),
+            "abc"
+        );
     }
     #[test]
     fn charged_join_refuses_input_sized_text_before_growth() {
@@ -1251,8 +1668,12 @@ mod tests {
         policy.limits.max_retained_bytes = 3;
         let (ctx, _) =
             DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-        let error = ctx.format_retained(format_args!("prefix {suffix}", suffix = "input"), "step_test_format")
-        .expect_err("formatted text exceeds three bytes");
+        let error = ctx
+            .format_retained(
+                format_args!("prefix {suffix}", suffix = "input"),
+                "step_test_format",
+            )
+            .expect_err("formatted text exceeds three bytes");
         assert!(matches!(
             error,
             CodecError::ResourceLimit(limit)

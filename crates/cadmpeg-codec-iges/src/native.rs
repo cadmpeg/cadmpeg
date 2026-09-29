@@ -350,7 +350,10 @@ fn resolve_display_ref(
                 .find_map(|reference| reference.resolved_target_sequence_for(kind))
         })
         .map(|sequence| {
-            ctx.format_retained(format_args!("iges:presentation:{arena}#D{sequence}"), "iges native display definition")
+            ctx.format_retained(
+                format_args!("iges:presentation:{arena}#D{sequence}"),
+                "iges native display definition",
+            )
         })
         .transpose()?;
     Ok(DisplayRef::Definition { pointer, target })
@@ -373,7 +376,10 @@ fn resolved_label_display_definition(
         })
         .flatten()
         .map(|sequence| {
-            ctx.format_retained(format_args!("iges:structure:associativity#D{sequence}"), "iges native label display definition")
+            ctx.format_retained(
+                format_args!("iges:structure:associativity#D{sequence}"),
+                "iges native label display definition",
+            )
         })
         .transpose()
 }
@@ -1285,27 +1291,52 @@ mod occurrence {
             let path_key = OccurrencePath(path);
             let (id, role) = match member {
                 Some(member) => (
-                    ctx.format_retained(format_args!("iges:product:occurrence#{path_key}/D{member}"), "iges native occurrence id")?,
-                    OccurrenceRole::Member(ctx.format_retained(format_args!("iges:entity:directory#{member}"), "iges native occurrence member")?),
+                    ctx.format_retained(
+                        format_args!("iges:product:occurrence#{path_key}/D{member}"),
+                        "iges native occurrence id",
+                    )?,
+                    OccurrenceRole::Member(ctx.format_retained(
+                        format_args!("iges:entity:directory#{member}"),
+                        "iges native occurrence member",
+                    )?),
                 ),
                 None if path.len() == 1 => (
-                    ctx.format_retained(format_args!("iges:product:occurrence#{path_key}"), "iges native occurrence id")?,
+                    ctx.format_retained(
+                        format_args!("iges:product:occurrence#{path_key}"),
+                        "iges native occurrence id",
+                    )?,
                     OccurrenceRole::Root,
                 ),
                 None => (
-                    ctx.format_retained(format_args!("iges:product:occurrence#{path_key}"), "iges native occurrence id")?,
+                    ctx.format_retained(
+                        format_args!("iges:product:occurrence#{path_key}"),
+                        "iges native occurrence id",
+                    )?,
                     OccurrenceRole::Nested,
                 ),
             };
             Ok(Self {
                 id,
                 role,
-                source_instance: ctx.format_retained(format_args!("iges:entity:directory#{instance_sequence}"), "iges native occurrence instance")?,
-                definition: ctx.format_retained(format_args!("iges:entity:directory#{definition_sequence}"), "iges native occurrence definition")?,
+                source_instance: ctx.format_retained(
+                    format_args!("iges:entity:directory#{instance_sequence}"),
+                    "iges native occurrence instance",
+                )?,
+                definition: ctx.format_retained(
+                    format_args!("iges:entity:directory#{definition_sequence}"),
+                    "iges native occurrence definition",
+                )?,
                 neutral_links,
-                instance_path: ctx.collect_indexed_vec(path.len(), "iges native occurrence path slots", |index| {
-                        ctx.format_retained(format_args!("iges:entity:directory#{}", path[index]), "iges native occurrence path entry")
-                    })?,
+                instance_path: ctx.collect_indexed_vec(
+                    path.len(),
+                    "iges native occurrence path slots",
+                    |index| {
+                        ctx.format_retained(
+                            format_args!("iges:entity:directory#{}", path[index]),
+                            "iges native occurrence path entry",
+                        )
+                    },
+                )?,
                 local_transform,
                 world_transform,
             })
@@ -2022,7 +2053,12 @@ impl OccurrenceExpansion<'_, '_> {
         malformed: &mut BTreeSet<u32>,
         sequence: u32,
     ) -> Result<(), CodecError> {
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(self.ctx), malformed, sequence, "iges malformed occurrence placement nodes")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            Some(self.ctx),
+            malformed,
+            sequence,
+            "iges malformed occurrence placement nodes",
+        )?;
         Ok(())
     }
 
@@ -2082,9 +2118,11 @@ impl OccurrenceExpansion<'_, '_> {
             self.record_malformed(malformed_placement_sequences, instance_sequence)?;
             return Ok(None);
         };
-        self.ctx.reserve_vec(path, 1, "iges occurrence expansion path slots")?;
+        self.ctx
+            .reserve_vec(path, 1, "iges occurrence expansion path slots")?;
         path.push(instance_sequence);
-        self.ctx.reserve_vec(occurrences, 1, "iges_product_occurrences")?;
+        self.ctx
+            .reserve_vec(occurrences, 1, "iges_product_occurrences")?;
         occurrences.push(NativeProductOccurrence::new(
             self.ctx,
             path,
@@ -2140,14 +2178,22 @@ impl OccurrenceExpansion<'_, '_> {
                 self.record_malformed(malformed_placement_sequences, *member)?;
                 continue;
             };
-            self.ctx.reserve_vec(occurrences, 1, "iges_product_occurrences")?;
+            self.ctx
+                .reserve_vec(occurrences, 1, "iges_product_occurrences")?;
             let neutral_links = self
                 .neutral_links
                 .get(member)
                 .map_or(Ok(Vec::new()), |links| {
-                    self.ctx.collect_indexed_vec(links.len(), "iges occurrence neutral link copy slots", |index| {
-                            self.ctx.format_retained(format_args!("{}", links[index]), "iges occurrence neutral link copy")
-                        })
+                    self.ctx.collect_indexed_vec(
+                        links.len(),
+                        "iges occurrence neutral link copy slots",
+                        |index| {
+                            self.ctx.format_retained(
+                                format_args!("{}", links[index]),
+                                "iges occurrence neutral link copy",
+                            )
+                        },
+                    )
                 })?;
             occurrences.push(NativeProductOccurrence::new(
                 self.ctx,
@@ -2205,7 +2251,10 @@ fn native_entity_ids(
     let mut ids = Vec::new();
     for sequence in sequences {
         ctx.reserve_vec(&mut ids, 1, operation)?;
-        ids.push(ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native linked entity id")?);
+        ids.push(ctx.format_retained(
+            format_args!("iges:entity:directory#{sequence}"),
+            "iges native linked entity id",
+        )?);
     }
     Ok(ids)
 }
@@ -2217,7 +2266,13 @@ fn push_occurrence_neutral_link(
     id: &str,
 ) -> Result<(), CodecError> {
     if !links.contains_key(&sequence) {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), links, sequence, Vec::new(), "iges occurrence neutral link map nodes")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            links,
+            sequence,
+            Vec::new(),
+            "iges occurrence neutral link map nodes",
+        )?;
     }
     if let Some(group) = links.get_mut(&sequence) {
         ctx.reserve_vec(group, 1, "iges occurrence neutral link slots")?;
@@ -2283,14 +2338,20 @@ fn index_native_inputs<'a>(
     quarantine: QuarantinedRecords<'a>,
     ctx: &DecodeContext<'_>,
 ) -> Result<NativeInputIndexes<'a>, CodecError> {
-    let mut quarantined_directory_records = ctx.collection_vec(quarantine.directory.len(), "iges native quarantined directory slots")?;
+    let mut quarantined_directory_records = ctx.collection_vec(
+        quarantine.directory.len(),
+        "iges native quarantined directory slots",
+    )?;
     quarantined_directory_records.extend(
         quarantine
             .directory
             .iter()
             .map(NativeQuarantinedRecord::Directory),
     );
-    let mut quarantined_parameter_records = ctx.collection_vec(quarantine.parameters.len(), "iges native quarantined parameter slots")?;
+    let mut quarantined_parameter_records = ctx.collection_vec(
+        quarantine.parameters.len(),
+        "iges native quarantined parameter slots",
+    )?;
     quarantined_parameter_records.extend(
         quarantine
             .parameters
@@ -2306,11 +2367,23 @@ fn index_native_inputs<'a>(
     );
     let mut by_directory = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut by_directory, record.directory_sequence, record, "iges native parameter index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut by_directory,
+            record.directory_sequence,
+            record,
+            "iges native parameter index",
+        )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut entries, entry.sequence, entry, "iges native directory index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges native directory index",
+        )?;
     }
     Ok(NativeInputIndexes {
         quarantined_directory_records,
@@ -2382,8 +2455,14 @@ pub(crate) fn store(
         }
         ctx.reserve_vec(&mut macro_definitions, 1, "iges native macro definitions")?;
         macro_definitions.push(NativeMacroDefinition {
-            id: ctx.format_retained(format_args!("iges:native:macro-definition#D{}", entry.sequence), "iges native macro definition id")?,
-            source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native macro source id")?,
+            id: ctx.format_retained(
+                format_args!("iges:native:macro-definition#D{}", entry.sequence),
+                "iges native macro definition id",
+            )?,
+            source_entity: ctx.format_retained(
+                format_args!("iges:entity:directory#{}", entry.sequence),
+                "iges native macro source id",
+            )?,
             defined_entity_type: data.defined_entity_type,
             macro_statement: ctx.copy_retained(
                 &record.bytes[first.clone()],
@@ -2414,7 +2493,10 @@ pub(crate) fn store(
                     .is_some_and(|target| target.entity_type == 306)
             })
             .map(|sequence| {
-                ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native macro definition reference")
+                ctx.format_retained(
+                    format_args!("iges:entity:directory#{sequence}"),
+                    "iges native macro definition reference",
+                )
             })
             .transpose()?;
         let macro_library = structure_sequence
@@ -2424,12 +2506,21 @@ pub(crate) fn store(
                     .is_some_and(|target| target.entity_type == 416)
             })
             .map(|sequence| {
-                ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native macro library reference")
+                ctx.format_retained(
+                    format_args!("iges:entity:directory#{sequence}"),
+                    "iges native macro library reference",
+                )
             })
             .transpose()?;
         macro_instances.push(NativeMacroInstance {
-            id: ctx.format_retained(format_args!("iges:native:macro-instance#D{}", entry.sequence), "iges native macro instance id")?,
-            source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native macro instance source")?,
+            id: ctx.format_retained(
+                format_args!("iges:native:macro-instance#D{}", entry.sequence),
+                "iges native macro instance id",
+            )?,
+            source_entity: ctx.format_retained(
+                format_args!("iges:entity:directory#{}", entry.sequence),
+                "iges native macro instance source",
+            )?,
             entity_type: entry.entity_type,
             form: entry.form,
             macro_definition,
@@ -2476,7 +2567,12 @@ pub(crate) fn store(
                 .and_then(|value| u32::try_from(value).ok())
                 .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
             {
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut required_back_pointer_members, sequence, "iges native required back-pointer member")?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                    Some(ctx),
+                    &mut required_back_pointer_members,
+                    sequence,
+                    "iges native required back-pointer member",
+                )?;
             }
         }
     }
@@ -2495,7 +2591,11 @@ pub(crate) fn store(
         } else {
             continue;
         };
-        ctx.reserve_vec(&mut ambiguous_parameter_boundaries, 1, "iges native ambiguous boundary slots")?;
+        ctx.reserve_vec(
+            &mut ambiguous_parameter_boundaries,
+            1,
+            "iges native ambiguous boundary slots",
+        )?;
         ambiguous_parameter_boundaries.push(AmbiguousParameterBoundary {
             sequence: *sequence,
             ambiguity,
@@ -2595,7 +2695,10 @@ pub(crate) fn store(
                 "iges native property link slots",
             )?;
             Ok(NativeEntity {
-                id: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native entity id")?,
+                id: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native entity id",
+                )?,
                 directory_sequence: entry.sequence,
                 entity_type: entry.entity_type,
                 form: entry.form,
@@ -2649,9 +2752,19 @@ pub(crate) fn store(
         |entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
             Ok(NativeDirection {
-                id: ctx.format_retained(format_args!("iges:native:direction#D{}", entry.sequence), "iges native direction id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native direction source")?,
-                components: ctx.collect_indexed_vec(3, "iges native direction components", |index| Ok(parameters.and_then(|record| record.number(index + 1))))?,
+                id: ctx.format_retained(
+                    format_args!("iges:native:direction#D{}", entry.sequence),
+                    "iges native direction id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native direction source",
+                )?,
+                components: ctx.collect_indexed_vec(
+                    3,
+                    "iges native direction components",
+                    |index| Ok(parameters.and_then(|record| record.number(index + 1))),
+                )?,
                 physically_dependent: entry.status.is_physically_dependent(),
                 has_transform: entry.transform != 0,
             })
@@ -2671,12 +2784,21 @@ pub(crate) fn store(
                 .transpose()?
                 .flatten()
                 .map(|sequence| {
-                    ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native flash reference")
+                    ctx.format_retained(
+                        format_args!("iges:entity:directory#{sequence}"),
+                        "iges native flash reference",
+                    )
                 })
                 .transpose()?;
             Ok(NativeFlash {
-                id: ctx.format_retained(format_args!("iges:native:flash#D{}", entry.sequence), "iges native flash id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native flash source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:native:flash#D{}", entry.sequence),
+                    "iges native flash id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native flash source",
+                )?,
                 form: entry.form,
                 reference_point: [
                     parameters.and_then(|record| record.number(1)),
@@ -2698,13 +2820,26 @@ pub(crate) fn store(
         |entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
             Ok(NativeTransformation {
-                id: ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.sequence), "iges native transformation id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native transformation source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:native:transformation#D{}", entry.sequence),
+                    "iges native transformation id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native transformation source",
+                )?,
                 form: entry.form,
-                coefficients: ctx.collect_indexed_vec(12, "iges native transformation coefficients", |index| Ok(parameters.and_then(|record| record.number(index + 1))))?,
+                coefficients: ctx.collect_indexed_vec(
+                    12,
+                    "iges native transformation coefficients",
+                    |index| Ok(parameters.and_then(|record| record.number(index + 1))),
+                )?,
                 parent: (entry.transform > 0)
                     .then(|| {
-                        ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native transformation parent")
+                        ctx.format_retained(
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native transformation parent",
+                        )
                     })
                     .transpose()?,
             })
@@ -2734,20 +2869,30 @@ pub(crate) fn store(
                         width,
                     );
                     ctx.collect_indexed_vec(count, "iges native copious tuple slots", |tuple| {
-                        ctx.collect_indexed_vec(width, "iges native copious component slots", |component| {
+                        ctx.collect_indexed_vec(
+                            width,
+                            "iges native copious component slots",
+                            |component| {
                                 Ok(tuple
                                     .checked_mul(width)
                                     .and_then(|offset| offset.checked_add(start))
                                     .and_then(|offset| offset.checked_add(component))
                                     .and_then(|index| record.number(index)))
-                            })
+                            },
+                        )
                     })?
                 }
                 _ => Vec::new(),
             };
             Ok(NativeCopiousData {
-                id: ctx.format_retained(format_args!("iges:native:copious-data#D{}", entry.sequence), "iges native copious data id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native copious data source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:native:copious-data#D{}", entry.sequence),
+                    "iges native copious data id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native copious data source",
+                )?,
                 form: entry.form,
                 interpretation,
                 declared_tuple_count,
@@ -2765,8 +2910,14 @@ pub(crate) fn store(
         |entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
             Ok(NativeColorDefinition {
-                id: ctx.format_retained(format_args!("iges:presentation:color#D{}", entry.sequence), "iges native color id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native color source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:presentation:color#D{}", entry.sequence),
+                    "iges native color id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native color source",
+                )?,
                 red_percent: parameters.and_then(|record| record.number(1)),
                 green_percent: parameters.and_then(|record| record.number(2)),
                 blue_percent: parameters.and_then(|record| record.number(3)),
@@ -2784,8 +2935,14 @@ pub(crate) fn store(
         "iges native display attribute slots",
         |entry| {
             Ok(NativeDisplayAttributes {
-                id: ctx.format_retained(format_args!("iges:presentation:display-attributes#D{}", entry.sequence), "iges native display id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native display source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:presentation:display-attributes#D{}", entry.sequence),
+                    "iges native display id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native display source",
+                )?,
                 visible: entry.status.is_visible(),
                 line_font: resolve_display_ref(
                     ctx,
@@ -2829,8 +2986,14 @@ pub(crate) fn store(
             let parameters = by_directory.get(&entry.sequence).copied();
             Ok(if entry.form == 1 {
                 NativeLineFontDefinition::Template {
-                    id: ctx.format_retained(format_args!("iges:presentation:line-font#D{}", entry.sequence), "iges native line font id")?,
-                    source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native line font source")?,
+                    id: ctx.format_retained(
+                        format_args!("iges:presentation:line-font#D{}", entry.sequence),
+                        "iges native line font id",
+                    )?,
+                    source_entity: ctx.format_retained(
+                        format_args!("iges:entity:directory#{}", entry.sequence),
+                        "iges native line font source",
+                    )?,
                     fallback_line_font_number: entry.line_font,
                     tangent_oriented: binary_integer(
                         parameters.and_then(|record| record.integer(1)),
@@ -2843,7 +3006,10 @@ pub(crate) fn store(
                         .transpose()?
                         .flatten()
                         .map(|sequence| {
-                            ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native line font template")
+                            ctx.format_retained(
+                                format_args!("iges:entity:directory#{sequence}"),
+                                "iges native line font template",
+                            )
                         })
                         .transpose()?,
                     spacing: parameters.and_then(|record| record.number(3)),
@@ -2864,11 +3030,21 @@ pub(crate) fn store(
                 let declared = parameters.and_then(|record| record.integer(1));
                 let held = declared.and_then(|value| usize::try_from(value).ok()) == Some(count);
                 NativeLineFontDefinition::VisibleBlankPattern {
-                    id: ctx.format_retained(format_args!("iges:presentation:line-font#D{}", entry.sequence), "iges native line font id")?,
-                    source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native line font source")?,
+                    id: ctx.format_retained(
+                        format_args!("iges:presentation:line-font#D{}", entry.sequence),
+                        "iges native line font id",
+                    )?,
+                    source_entity: ctx.format_retained(
+                        format_args!("iges:entity:directory#{}", entry.sequence),
+                        "iges native line font source",
+                    )?,
                     fallback_line_font_number: entry.line_font,
                     segment_count: declared,
-                    lengths: ctx.collect_indexed_vec(count, "iges native line font lengths", |index| Ok(parameters.and_then(|record| record.number(2 + index))))?,
+                    lengths: ctx.collect_indexed_vec(
+                        count,
+                        "iges native line font lengths",
+                        |index| Ok(parameters.and_then(|record| record.number(2 + index))),
+                    )?,
                     hexadecimal_pattern: held
                         .then(|| parameters.and_then(|record| record.string(2 + count)))
                         .flatten()
@@ -2888,8 +3064,14 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let font_code = record.and_then(|record| record.integer(3));
             Ok(NativeTextDisplayTemplate {
-                id: ctx.format_retained(format_args!("iges:presentation:text-template#D{}", entry.sequence), "iges native text template id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native text template source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:presentation:text-template#D{}", entry.sequence),
+                    "iges native text template id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native text template source",
+                )?,
                 form: entry.form,
                 character_box: [
                     record.and_then(|record| record.number(1)),
@@ -2910,7 +3092,10 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:presentation:text-font#D{sequence}"), "iges native text template font")
+                        ctx.format_retained(
+                            format_args!("iges:presentation:text-font#D{sequence}"),
+                            "iges native text template font",
+                        )
                     })
                     .transpose()?,
                 slant_angle: record.and_then(|record| record.number(4)),
@@ -2972,13 +3157,17 @@ pub(crate) fn store(
                     malformed = true;
                     break;
                 };
-                let motions = ctx.collect_indexed_vec(motion_count, "iges native text font motion slots", |offset| {
+                let motions = ctx.collect_indexed_vec(
+                    motion_count,
+                    "iges native text font motion slots",
+                    |offset| {
                         let start = cursor + 4 + offset * 3;
                         Ok(NativeGlyphMotion {
                             pen_up: record.integer(start).map(|value| value == 1),
                             point: [record.integer(start + 1), record.integer(start + 2)],
                         })
-                    })?;
+                    },
+                )?;
                 characters.push(NativeGlyph {
                     character_code: record.integer(cursor),
                     next_origin: [record.integer(cursor + 1), record.integer(cursor + 2)],
@@ -2991,8 +3180,14 @@ pub(crate) fn store(
                 characters.clear();
             }
             Ok(NativeTextFontDefinition {
-                id: ctx.format_retained(format_args!("iges:presentation:text-font#D{}", entry.sequence), "iges native text font id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native text font source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:presentation:text-font#D{}", entry.sequence),
+                    "iges native text font id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native text font source",
+                )?,
                 font_code: record.and_then(|record| record.integer(1)),
                 name: record
                     .and_then(|record| record.string(2))
@@ -3013,7 +3208,10 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:presentation:text-font#D{sequence}"), "iges native text font superseded")
+                        ctx.format_retained(
+                            format_args!("iges:presentation:text-font#D{sequence}"),
+                            "iges native text font superseded",
+                        )
                     })
                     .transpose()?,
                 grid_units_per_text_height: record.and_then(|record| record.integer(4)),
@@ -3033,10 +3231,20 @@ pub(crate) fn store(
             let end = parameters.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let count = overdeclared_counts.counted_tail(entry.sequence, parameters, end, 1, 1);
             Ok(NativeDefinitionLevels {
-                id: ctx.format_retained(format_args!("iges:presentation:definition-levels#D{}", entry.sequence), "iges native definition levels id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native definition levels source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:presentation:definition-levels#D{}", entry.sequence),
+                    "iges native definition levels id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native definition levels source",
+                )?,
                 declared_count: parameters.and_then(|record| record.integer(1)),
-                levels: ctx.collect_indexed_vec(count, "iges native definition level values", |index| Ok(parameters.and_then(|record| record.integer(2 + index))))?,
+                levels: ctx.collect_indexed_vec(
+                    count,
+                    "iges native definition level values",
+                    |index| Ok(parameters.and_then(|record| record.integer(2 + index))),
+                )?,
             })
         },
     )?;
@@ -3099,16 +3307,35 @@ pub(crate) fn store(
             ),
             _ => continue,
         };
-        ctx.reserve_vec(&mut primitive_solids, 1, "iges native primitive solid slots")?;
+        ctx.reserve_vec(
+            &mut primitive_solids,
+            1,
+            "iges native primitive solid slots",
+        )?;
         let mut dimensions = BTreeMap::new();
         for (index, name) in dimension_names.iter().enumerate() {
-            let key = ctx.format_retained(format_args!("{name}"), "iges native primitive dimension name")?;
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut dimensions, key, number(index + 1), "iges native primitive dimension node")?;
+            let key = ctx.format_retained(
+                format_args!("{name}"),
+                "iges native primitive dimension name",
+            )?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+                Some(ctx),
+                &mut dimensions,
+                key,
+                number(index + 1),
+                "iges native primitive dimension node",
+            )?;
         }
         let axis = |start: usize| [number(start), number(start + 1), number(start + 2)];
         primitive_solids.push(NativePrimitiveSolid {
-            id: ctx.format_retained(format_args!("iges:solid:primitive#D{}", entry.sequence), "iges native primitive solid id")?,
-            source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native primitive solid source")?,
+            id: ctx.format_retained(
+                format_args!("iges:solid:primitive#D{}", entry.sequence),
+                "iges native primitive solid id",
+            )?,
+            source_entity: ctx.format_retained(
+                format_args!("iges:entity:directory#{}", entry.sequence),
+                "iges native primitive solid source",
+            )?,
             kind,
             dimensions,
             origin: axis(origin_start),
@@ -3116,7 +3343,10 @@ pub(crate) fn store(
             z_axis: z_axis_start.map(axis),
             transformation: (entry.transform > 0)
                 .then(|| {
-                    ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native primitive transformation")
+                    ctx.format_retained(
+                        format_args!("iges:native:transformation#D{}", entry.transform),
+                        "iges native primitive transformation",
+                    )
                 })
                 .transpose()?,
         });
@@ -3133,8 +3363,14 @@ pub(crate) fn store(
             let axis = |start: usize| [number(start), number(start + 1), number(start + 2)];
             let revolution = entry.entity_type == 162;
             Ok(NativeProceduralSolid {
-                id: ctx.format_retained(format_args!("iges:solid:procedural#D{}", entry.sequence), "iges native procedural solid id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native procedural solid source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:solid:procedural#D{}", entry.sequence),
+                    "iges native procedural solid id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native procedural solid source",
+                )?,
                 kind: if revolution {
                     ProceduralSolidKind::Revolution
                 } else {
@@ -3160,7 +3396,10 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native procedural profile")
+                        ctx.format_retained(
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native procedural profile",
+                        )
                     })
                     .transpose()?,
                 amount: number(2),
@@ -3168,7 +3407,10 @@ pub(crate) fn store(
                 direction: axis(if revolution { 6 } else { 3 }),
                 transformation: (entry.transform > 0)
                     .then(|| {
-                        ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native procedural transformation")
+                        ctx.format_retained(
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native procedural transformation",
+                        )
                     })
                     .transpose()?,
             })
@@ -3221,7 +3463,10 @@ pub(crate) fn store(
                                 },
                             )?
                             .map(|sequence| {
-                                ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native boolean operand")
+                                ctx.format_retained(
+                                    format_args!("iges:entity:directory#{sequence}"),
+                                    "iges native boolean operand",
+                                )
                             })
                             .transpose()?,
                         raw: value,
@@ -3231,14 +3476,23 @@ pub(crate) fn store(
                 });
             }
             Ok(NativeBooleanTree {
-                id: ctx.format_retained(format_args!("iges:solid:boolean-tree#D{}", entry.sequence), "iges native boolean tree id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native boolean tree source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:solid:boolean-tree#D{}", entry.sequence),
+                    "iges native boolean tree id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native boolean tree source",
+                )?,
                 form: entry.form,
                 declared_length: record.and_then(|record| record.integer(1)),
                 terms,
                 transformation: (entry.transform > 0)
                     .then(|| {
-                        ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native boolean transformation")
+                        ctx.format_retained(
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native boolean transformation",
+                        )
                     })
                     .transpose()?,
             })
@@ -3253,8 +3507,14 @@ pub(crate) fn store(
         |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             Ok(NativeSelectedComponent {
-                id: ctx.format_retained(format_args!("iges:solid:selected-component#D{}", entry.sequence), "iges native selected component id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native selected component source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:solid:selected-component#D{}", entry.sequence),
+                    "iges native selected component id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native selected component source",
+                )?,
                 boolean_tree: record
                     .and_then(|record| record.integer(1))
                     .map(|sequence| {
@@ -3263,7 +3523,10 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:solid:boolean-tree#D{sequence}"), "iges native selected boolean tree")
+                        ctx.format_retained(
+                            format_args!("iges:solid:boolean-tree#D{sequence}"),
+                            "iges native selected boolean tree",
+                        )
                     })
                     .transpose()?,
                 selection_point: [
@@ -3273,7 +3536,10 @@ pub(crate) fn store(
                 ],
                 transformation: (entry.transform > 0)
                     .then(|| {
-                        ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native selected transformation")
+                        ctx.format_retained(
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native selected transformation",
+                        )
                     })
                     .transpose()?,
             })
@@ -3290,11 +3556,20 @@ pub(crate) fn store(
             let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let count = overdeclared_counts.counted_complete(entry.sequence, record, end, 1, 2, 2);
             Ok(NativeSolidAssembly {
-                id: ctx.format_retained(format_args!("iges:product:solid-assembly#D{}", entry.sequence), "iges native solid assembly id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native solid assembly source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:product:solid-assembly#D{}", entry.sequence),
+                    "iges native solid assembly id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native solid assembly source",
+                )?,
                 form: entry.form,
                 declared_count: record.and_then(|record| record.integer(1)),
-                items: ctx.collect_indexed_vec(count, "iges native solid assembly item slots", |index| {
+                items: ctx.collect_indexed_vec(
+                    count,
+                    "iges native solid assembly item slots",
+                    |index| {
                         Ok(NativeAssemblyItem {
                             item: record
                                 .and_then(|record| record.integer(2 + index))
@@ -3333,7 +3608,10 @@ pub(crate) fn store(
                                 .transpose()?
                                 .flatten()
                                 .map(|sequence| {
-                                    ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native solid assembly member")
+                                    ctx.format_retained(
+                                        format_args!("iges:entity:directory#{sequence}"),
+                                        "iges native solid assembly member",
+                                    )
                                 })
                                 .transpose()?,
                             transformation: record
@@ -3351,14 +3629,21 @@ pub(crate) fn store(
                                 .transpose()?
                                 .flatten()
                                 .map(|sequence| {
-                                    ctx.format_retained(format_args!("iges:native:transformation#D{sequence}"), "iges native solid assembly item transform")
+                                    ctx.format_retained(
+                                        format_args!("iges:native:transformation#D{sequence}"),
+                                        "iges native solid assembly item transform",
+                                    )
                                 })
                                 .transpose()?,
                         })
-                    })?,
+                    },
+                )?,
                 transformation: (entry.transform > 0)
                     .then(|| {
-                        ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native solid assembly transformation")
+                        ctx.format_retained(
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native solid assembly transformation",
+                        )
                     })
                     .transpose()?,
             })
@@ -3388,13 +3673,22 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native manifold shell")
+                        ctx.format_retained(
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native manifold shell",
+                        )
                     })
                     .transpose()
             };
             Ok(NativeManifoldSolid {
-                id: ctx.format_retained(format_args!("iges:solid:manifold-brep#D{}", entry.sequence), "iges native manifold solid id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native manifold solid source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:solid:manifold-brep#D{}", entry.sequence),
+                    "iges native manifold solid id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native manifold solid source",
+                )?,
                 shell: closed_shell(1)?,
                 shell_orientation: record.and_then(|record| record.integer(2)),
                 declared_void_count: record.and_then(|record| record.integer(3)),
@@ -3402,15 +3696,22 @@ pub(crate) fn store(
                 // records its reference edge before any void pair records its
                 // own, pinning the serialized edge order to ascending
                 // parameter index.
-                voids: ctx.collect_indexed_vec(count, "iges native manifold void slots", |index| {
+                voids: ctx.collect_indexed_vec(
+                    count,
+                    "iges native manifold void slots",
+                    |index| {
                         Ok(NativeVoidShell {
                             shell: closed_shell(4 + index * 2)?,
                             orientation: record.and_then(|record| record.integer(5 + index * 2)),
                         })
-                    })?,
+                    },
+                )?,
                 transformation: (entry.transform > 0)
                     .then(|| {
-                        ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native manifold transformation")
+                        ctx.format_retained(
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native manifold transformation",
+                        )
                     })
                     .transpose()?,
             })
@@ -3425,8 +3726,14 @@ pub(crate) fn store(
         |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             Ok(NativeSolidInstance {
-                id: ctx.format_retained(format_args!("iges:product:solid-instance#D{}", entry.sequence), "iges native solid instance id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native solid instance source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:product:solid-instance#D{}", entry.sequence),
+                    "iges native solid instance id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native solid instance source",
+                )?,
                 form: entry.form,
                 solid: record
                     .and_then(|record| record.integer(1))
@@ -3461,12 +3768,18 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native solid instance target")
+                        ctx.format_retained(
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native solid instance target",
+                        )
                     })
                     .transpose()?,
                 transformation: (entry.transform > 0)
                     .then(|| {
-                        ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native solid instance transformation")
+                        ctx.format_retained(
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native solid instance transformation",
+                        )
                     })
                     .transpose()?,
             })
@@ -3483,15 +3796,24 @@ pub(crate) fn store(
             let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 3, 1);
             Ok(NativeSubfigureDefinition {
-                id: ctx.format_retained(format_args!("iges:product:subfigure-definition#D{}", entry.sequence), "iges native subfigure definition id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native subfigure definition source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:product:subfigure-definition#D{}", entry.sequence),
+                    "iges native subfigure definition id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native subfigure definition source",
+                )?,
                 depth: record.and_then(|record| record.integer(1)),
                 name: record
                     .and_then(|record| record.string(2))
                     .map(|bytes| ctx.copy_retained(bytes, "iges native subfigure name"))
                     .transpose()?,
                 declared_member_count: record.and_then(|record| record.integer(3)),
-                members: ctx.collect_indexed_vec(count, "iges native subfigure member slots", |index| {
+                members: ctx.collect_indexed_vec(
+                    count,
+                    "iges native subfigure member slots",
+                    |index| {
                         record
                             .and_then(|record| record.integer(4 + index))
                             .map(|sequence| {
@@ -3500,13 +3822,20 @@ pub(crate) fn store(
                             .transpose()?
                             .flatten()
                             .map(|sequence| {
-                                ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native subfigure member")
+                                ctx.format_retained(
+                                    format_args!("iges:entity:directory#{sequence}"),
+                                    "iges native subfigure member",
+                                )
                             })
                             .transpose()
-                    })?,
+                    },
+                )?,
                 transformation: (entry.transform > 0)
                     .then(|| {
-                        ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native subfigure definition transform")
+                        ctx.format_retained(
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native subfigure definition transform",
+                        )
                     })
                     .transpose()?,
                 label_display: resolved_label_display_definition(
@@ -3527,8 +3856,14 @@ pub(crate) fn store(
         |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             Ok(NativeSubfigureInstance {
-                id: ctx.format_retained(format_args!("iges:product:subfigure-instance#D{}", entry.sequence), "iges native subfigure instance id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native subfigure instance source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:product:subfigure-instance#D{}", entry.sequence),
+                    "iges native subfigure instance id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native subfigure instance source",
+                )?,
                 definition: record
                     .and_then(|record| record.integer(1))
                     .map(|sequence| {
@@ -3537,7 +3872,10 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:product:subfigure-definition#D{sequence}"), "iges native subfigure instance definition")
+                        ctx.format_retained(
+                            format_args!("iges:product:subfigure-definition#D{sequence}"),
+                            "iges native subfigure instance definition",
+                        )
                     })
                     .transpose()?,
                 translation: [
@@ -3548,7 +3886,10 @@ pub(crate) fn store(
                 scale: record.and_then(|record| record.number(5)),
                 transformation: (entry.transform > 0)
                     .then(|| {
-                        ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native subfigure instance transform")
+                        ctx.format_retained(
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native subfigure instance transform",
+                        )
                     })
                     .transpose()?,
             })
@@ -3586,8 +3927,14 @@ pub(crate) fn store(
                 )
             });
             Ok(NativeNetworkDefinition {
-                id: ctx.format_retained(format_args!("iges:product:network-definition#D{}", entry.sequence), "iges native network definition id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native network definition source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:product:network-definition#D{}", entry.sequence),
+                    "iges native network definition id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native network definition source",
+                )?,
                 depth: record.and_then(|record| record.integer(1)),
                 name: record
                     .and_then(|record| record.string(2))
@@ -3595,7 +3942,10 @@ pub(crate) fn store(
                     .transpose()?,
                 declared_member_count: record.and_then(|record| record.integer(3)),
                 members: if let Some(member_count) = member_count {
-                    ctx.collect_indexed_vec(member_count, "iges native network member slots", |index| {
+                    ctx.collect_indexed_vec(
+                        member_count,
+                        "iges native network member slots",
+                        |index| {
                             record
                                 .and_then(|record| record.integer(4 + index))
                                 .map(|sequence| {
@@ -3608,10 +3958,14 @@ pub(crate) fn store(
                                 .transpose()?
                                 .flatten()
                                 .map(|sequence| {
-                                    ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native network member")
+                                    ctx.format_retained(
+                                        format_args!("iges:entity:directory#{sequence}"),
+                                        "iges native network member",
+                                    )
                                 })
                                 .transpose()
-                        })?
+                        },
+                    )?
                 } else {
                     Vec::new()
                 },
@@ -3644,7 +3998,10 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native network template")
+                        ctx.format_retained(
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native network template",
+                        )
                     })
                     .transpose()?,
                 declared_connect_point_count: member_count.and_then(|member_count| {
@@ -3653,7 +4010,10 @@ pub(crate) fn store(
                 connect_points: if let Some((member_count, connect_count)) =
                     member_count.zip(connect_count)
                 {
-                    ctx.collect_indexed_vec(connect_count, "iges native network connect point slots", |index| {
+                    ctx.collect_indexed_vec(
+                        connect_count,
+                        "iges native network connect point slots",
+                        |index| {
                             record
                                 .and_then(|record| record.integer(8 + member_count + index))
                                 .filter(|sequence| *sequence != 0)
@@ -3669,16 +4029,23 @@ pub(crate) fn store(
                                 .transpose()?
                                 .flatten()
                                 .map(|sequence| {
-                                    ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native network connect point")
+                                    ctx.format_retained(
+                                        format_args!("iges:entity:directory#{sequence}"),
+                                        "iges native network connect point",
+                                    )
                                 })
                                 .transpose()
-                        })?
+                        },
+                    )?
                 } else {
                     Vec::new()
                 },
                 transformation: (entry.transform > 0)
                     .then(|| {
-                        ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native network definition transform")
+                        ctx.format_retained(
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native network definition transform",
+                        )
                     })
                     .transpose()?,
                 label_display: resolved_label_display_definition(
@@ -3702,8 +4069,14 @@ pub(crate) fn store(
             let connect_count =
                 overdeclared_counts.counted_tail(entry.sequence, record, end, 11, 1);
             Ok(NativeNetworkInstance {
-                id: ctx.format_retained(format_args!("iges:product:network-instance#D{}", entry.sequence), "iges native network instance id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native network instance source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:product:network-instance#D{}", entry.sequence),
+                    "iges native network instance id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native network instance source",
+                )?,
                 definition: record
                     .and_then(|record| record.integer(1))
                     .map(|sequence| {
@@ -3712,7 +4085,10 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:product:network-definition#D{sequence}"), "iges native network instance definition")
+                        ctx.format_retained(
+                            format_args!("iges:product:network-definition#D{sequence}"),
+                            "iges native network instance definition",
+                        )
                     })
                     .transpose()?,
                 translation: [
@@ -3742,11 +4118,17 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native network instance template")
+                        ctx.format_retained(
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native network instance template",
+                        )
                     })
                     .transpose()?,
                 declared_connect_point_count: record.and_then(|record| record.integer(11)),
-                connect_points: ctx.collect_indexed_vec(connect_count, "iges native network instance connect point slots", |index| {
+                connect_points: ctx.collect_indexed_vec(
+                    connect_count,
+                    "iges native network instance connect point slots",
+                    |index| {
                         record
                             .and_then(|record| record.integer(12 + index))
                             .filter(|sequence| *sequence != 0)
@@ -3762,13 +4144,20 @@ pub(crate) fn store(
                             .transpose()?
                             .flatten()
                             .map(|sequence| {
-                                ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native network instance connect point")
+                                ctx.format_retained(
+                                    format_args!("iges:entity:directory#{sequence}"),
+                                    "iges native network instance connect point",
+                                )
                             })
                             .transpose()
-                    })?,
+                    },
+                )?,
                 transformation: (entry.transform > 0)
                     .then(|| {
-                        ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native network instance transform")
+                        ctx.format_retained(
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native network instance transform",
+                        )
                     })
                     .transpose()?,
             })
@@ -3790,7 +4179,10 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native connect point link")
+                        ctx.format_retained(
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native connect point link",
+                        )
                     })
                     .transpose()
             };
@@ -3810,13 +4202,22 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native connect point template")
+                        ctx.format_retained(
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native connect point template",
+                        )
                     })
                     .transpose()
             };
             Ok(NativeConnectPoint {
-                id: ctx.format_retained(format_args!("iges:product:connect-point#D{}", entry.sequence), "iges native connect point id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native connect point source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:product:connect-point#D{}", entry.sequence),
+                    "iges native connect point id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native connect point source",
+                )?,
                 position: [
                     record.and_then(|record| record.number(1)),
                     record.and_then(|record| record.number(2)),
@@ -3859,12 +4260,18 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native connect point owner")
+                        ctx.format_retained(
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native connect point owner",
+                        )
                     })
                     .transpose()?,
                 transformation: (entry.transform > 0)
                     .then(|| {
-                        ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native connect point transform")
+                        ctx.format_retained(
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native connect point transform",
+                        )
                     })
                     .transpose()?,
             })
@@ -3881,8 +4288,14 @@ pub(crate) fn store(
             let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let count = overdeclared_counts.counted_tail_at(entry.sequence, record, end, 11, 13, 1);
             Ok(NativeRectangularArray {
-                id: ctx.format_retained(format_args!("iges:product:rectangular-array#D{}", entry.sequence), "iges native rectangular array id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native rectangular array source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:product:rectangular-array#D{}", entry.sequence),
+                    "iges native rectangular array id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native rectangular array source",
+                )?,
                 base: record
                     .and_then(|record| record.integer(1))
                     .map(|sequence| {
@@ -3897,7 +4310,10 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native rectangular array base")
+                        ctx.format_retained(
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native rectangular array base",
+                        )
                     })
                     .transpose()?,
                 scale: record.and_then(|record| record.number(2)),
@@ -3912,10 +4328,17 @@ pub(crate) fn store(
                 row_spacing: record.and_then(|record| record.number(9)),
                 rotation: record.and_then(|record| record.number(10)),
                 do_dont_flag: record.and_then(|record| record.integer(12)),
-                positions: ctx.collect_indexed_vec(count, "iges native rectangular position slots", |index| Ok(record.and_then(|record| record.integer(13 + index))))?,
+                positions: ctx.collect_indexed_vec(
+                    count,
+                    "iges native rectangular position slots",
+                    |index| Ok(record.and_then(|record| record.integer(13 + index))),
+                )?,
                 transformation: (entry.transform > 0)
                     .then(|| {
-                        ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native rectangular array transform")
+                        ctx.format_retained(
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native rectangular array transform",
+                        )
                     })
                     .transpose()?,
             })
@@ -3932,8 +4355,14 @@ pub(crate) fn store(
             let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let count = overdeclared_counts.counted_tail_at(entry.sequence, record, end, 9, 11, 1);
             Ok(NativeCircularArray {
-                id: ctx.format_retained(format_args!("iges:product:circular-array#D{}", entry.sequence), "iges native circular array id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native circular array source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:product:circular-array#D{}", entry.sequence),
+                    "iges native circular array id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native circular array source",
+                )?,
                 base: record
                     .and_then(|record| record.integer(1))
                     .map(|sequence| {
@@ -3948,7 +4377,10 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native circular array base")
+                        ctx.format_retained(
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native circular array base",
+                        )
                     })
                     .transpose()?,
                 location_count: record.and_then(|record| record.integer(2)),
@@ -3961,10 +4393,17 @@ pub(crate) fn store(
                 start_angle: record.and_then(|record| record.number(7)),
                 delta_angle: record.and_then(|record| record.number(8)),
                 do_dont_flag: record.and_then(|record| record.integer(10)),
-                positions: ctx.collect_indexed_vec(count, "iges native circular position slots", |index| Ok(record.and_then(|record| record.integer(11 + index))))?,
+                positions: ctx.collect_indexed_vec(
+                    count,
+                    "iges native circular position slots",
+                    |index| Ok(record.and_then(|record| record.integer(11 + index))),
+                )?,
                 transformation: (entry.transform > 0)
                     .then(|| {
-                        ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native circular array transform")
+                        ctx.format_retained(
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native circular array transform",
+                        )
                     })
                     .transpose()?,
             })
@@ -4004,10 +4443,20 @@ pub(crate) fn store(
             ),
             _ => continue,
         };
-        ctx.reserve_vec(&mut external_references, 1, "iges native external reference slots")?;
+        ctx.reserve_vec(
+            &mut external_references,
+            1,
+            "iges native external reference slots",
+        )?;
         external_references.push(NativeExternalReference {
-            id: ctx.format_retained(format_args!("iges:product:external-reference#D{}", entry.sequence), "iges native external reference id")?,
-            source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native external reference source")?,
+            id: ctx.format_retained(
+                format_args!("iges:product:external-reference#D{}", entry.sequence),
+                "iges native external reference id",
+            )?,
+            source_entity: ctx.format_retained(
+                format_args!("iges:entity:directory#{}", entry.sequence),
+                "iges native external reference source",
+            )?,
             reference_kind,
             file_identifier: file_index
                 .and_then(|index| {
@@ -4043,12 +4492,21 @@ pub(crate) fn store(
             let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 1, 1);
             Ok(NativeGroup {
-                id: ctx.format_retained(format_args!("iges:product:group#D{}", entry.sequence), "iges native group id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native group source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:product:group#D{}", entry.sequence),
+                    "iges native group id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native group source",
+                )?,
                 ordered: matches!(entry.form, 14 | 15),
                 back_pointers_required: matches!(entry.form, 1 | 14),
                 declared_member_count: record.and_then(|record| record.integer(1)),
-                members: ctx.collect_indexed_vec(count, "iges native group member slots", |index| {
+                members: ctx.collect_indexed_vec(
+                    count,
+                    "iges native group member slots",
+                    |index| {
                         record
                             .and_then(|record| record.integer(2 + index))
                             .map(|sequence| {
@@ -4057,10 +4515,14 @@ pub(crate) fn store(
                             .transpose()?
                             .flatten()
                             .map(|sequence| {
-                                ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native group member")
+                                ctx.format_retained(
+                                    format_args!("iges:entity:directory#{sequence}"),
+                                    "iges native group member",
+                                )
                             })
                             .transpose()
-                    })?,
+                    },
+                )?,
             })
         },
     )?;
@@ -4101,7 +4563,11 @@ pub(crate) fn store(
                         back_pointers_required: record.integer(cursor).map(|value| value == 1),
                         ordered: record.integer(cursor + 1).map(|value| value == 1),
                         declared_item_count: record.integer(cursor + 2),
-                        item_types: ctx.collect_indexed_vec(item_count, "iges native associativity class item types", |offset| Ok(record.integer(cursor + 3 + offset)))?,
+                        item_types: ctx.collect_indexed_vec(
+                            item_count,
+                            "iges native associativity class item types",
+                            |offset| Ok(record.integer(cursor + 3 + offset)),
+                        )?,
                     });
                     cursor = next;
                 }
@@ -4114,8 +4580,14 @@ pub(crate) fn store(
                 Vec::new()
             };
             Ok(NativeAssociativity::Definition {
-                id: ctx.format_retained(format_args!("iges:structure:associativity#D{}", entry.sequence), "iges native associativity definition id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native associativity definition source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:structure:associativity#D{}", entry.sequence),
+                    "iges native associativity definition id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native associativity definition source",
+                )?,
                 associativity_form: entry.form,
                 declared_class_count: record.and_then(|record| record.integer(1)),
                 classes,
@@ -4134,8 +4606,14 @@ pub(crate) fn store(
         .try_for_each(|entry| -> Result<(), CodecError> {
             ctx.reserve_vec(&mut associativities, 1, "iges native associativities")?;
             let record = by_directory.get(&entry.sequence).copied();
-            let id = ctx.format_retained(format_args!("iges:structure:associativity#D{}", entry.sequence), "iges native associativity id")?;
-            let source_entity = ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native associativity source")?;
+            let id = ctx.format_retained(
+                format_args!("iges:structure:associativity#D{}", entry.sequence),
+                "iges native associativity id",
+            )?;
+            let source_entity = ctx.format_retained(
+                format_args!("iges:entity:directory#{}", entry.sequence),
+                "iges native associativity source",
+            )?;
             let entity_link = |index| -> Result<Option<String>, CodecError> {
                 record
                     .and_then(|record| record.integer(index))
@@ -4144,7 +4622,10 @@ pub(crate) fn store(
                     .transpose()?
                     .flatten()
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native associativity link")
+                        ctx.format_retained(
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native associativity link",
+                        )
                     })
                     .transpose()
             };
@@ -4157,7 +4638,10 @@ pub(crate) fn store(
                         id,
                         source_entity,
                         declared_count: record.and_then(|record| record.integer(1)),
-                        placements: ctx.collect_indexed_vec(count, "iges native label placement slots", |offset| {
+                        placements: ctx.collect_indexed_vec(
+                            count,
+                            "iges native label placement slots",
+                            |offset| {
                                 let start = 2 + offset * 7;
                                 Ok(NativeLabelPlacement {
                                     view: record
@@ -4174,7 +4658,10 @@ pub(crate) fn store(
                                         .transpose()?
                                         .flatten()
                                         .map(|sequence| {
-                                            ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native label placement view")
+                                            ctx.format_retained(
+                                                format_args!("iges:entity:directory#{sequence}"),
+                                                "iges native label placement view",
+                                            )
                                         })
                                         .transpose()?,
                                     text_location: [
@@ -4196,14 +4683,18 @@ pub(crate) fn store(
                                         .transpose()?
                                         .flatten()
                                         .map(|sequence| {
-                                            ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native label placement leader")
+                                            ctx.format_retained(
+                                                format_args!("iges:entity:directory#{sequence}"),
+                                                "iges native label placement leader",
+                                            )
                                         })
                                         .transpose()?,
                                     label_level: record
                                         .and_then(|record| record.integer(start + 5)),
                                     entity: entity_link(start + 6)?,
                                 })
-                            })?,
+                            },
+                        )?,
                     }
                 }
                 6 => {
@@ -4229,10 +4720,17 @@ pub(crate) fn store(
                             .transpose()?
                             .flatten()
                             .map(|sequence| {
-                                ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native view list view")
+                                ctx.format_retained(
+                                    format_args!("iges:entity:directory#{sequence}"),
+                                    "iges native view list view",
+                                )
                             })
                             .transpose()?,
-                        visible_entities: ctx.collect_indexed_vec(count, "iges native visible entity slots", |offset| entity_link(4 + offset))?,
+                        visible_entities: ctx.collect_indexed_vec(
+                            count,
+                            "iges native visible entity slots",
+                            |offset| entity_link(4 + offset),
+                        )?,
                     }
                 }
                 9 => {
@@ -4245,7 +4743,11 @@ pub(crate) fn store(
                         source_entity,
                         declared_child_count: record.and_then(|record| record.integer(2)),
                         parent: entity_link(3)?,
-                        children: ctx.collect_indexed_vec(count, "iges native single-parent child slots", |offset| entity_link(4 + offset))?,
+                        children: ctx.collect_indexed_vec(
+                            count,
+                            "iges native single-parent child slots",
+                            |offset| entity_link(4 + offset),
+                        )?,
                     }
                 }
                 2 | 12 => {
@@ -4256,7 +4758,10 @@ pub(crate) fn store(
                         id,
                         source_entity,
                         declared_count: record.and_then(|record| record.integer(1)),
-                        entries: ctx.collect_indexed_vec(count, "iges native external index entries", |offset| -> Result<NativeExternalIndexEntry, CodecError> {
+                        entries: ctx.collect_indexed_vec(
+                            count,
+                            "iges native external index entries",
+                            |offset| -> Result<NativeExternalIndexEntry, CodecError> {
                                 let start = 2 + offset * 2;
                                 Ok(NativeExternalIndexEntry {
                                     symbolic_name: record
@@ -4270,7 +4775,8 @@ pub(crate) fn store(
                                         .transpose()?,
                                     entity: entity_link(start + 1)?,
                                 })
-                            })?,
+                            },
+                        )?,
                     }
                 }
                 8 => {
@@ -4281,7 +4787,10 @@ pub(crate) fn store(
                         match fields {
                             Some((record, layout)) => {
                                 let connection_indices = layout.connections();
-                                let connections = ctx.collect_indexed_vec(connection_indices.len(), "iges native signal connection slots", |offset| {
+                                let connections = ctx.collect_indexed_vec(
+                                    connection_indices.len(),
+                                    "iges native signal connection slots",
+                                    |offset| {
                                         let index = connection_indices.start + offset;
                                         record
                                             .integer(index)
@@ -4297,17 +4806,24 @@ pub(crate) fn store(
                                             .transpose()?
                                             .flatten()
                                             .map(|sequence| {
-                                                ctx.format_retained(format_args!(
+                                                ctx.format_retained(
+                                                    format_args!(
                                                         "iges:entity:directory#{sequence}"
-                                                    ), "iges native signal connection")
+                                                    ),
+                                                    "iges native signal connection",
+                                                )
                                             })
                                             .transpose()
-                                    })?;
+                                    },
+                                )?;
                                 let geometry_links = |indices: std::ops::Range<usize>| -> Result<
                                     Vec<Option<String>>,
                                     CodecError,
                                 > {
-                                    ctx.collect_indexed_vec(indices.len(), "iges native signal geometry slots", |offset| {
+                                    ctx.collect_indexed_vec(
+                                        indices.len(),
+                                        "iges native signal geometry slots",
+                                        |offset| {
                                             let index = indices.start + offset;
                                             record
                                                 .integer(index)
@@ -4330,16 +4846,23 @@ pub(crate) fn store(
                                                 .transpose()?
                                                 .flatten()
                                                 .map(|sequence| {
-                                                    ctx.format_retained(format_args!(
+                                                    ctx.format_retained(
+                                                        format_args!(
                                                             "iges:entity:directory#{sequence}"
-                                                        ), "iges native signal geometry")
+                                                        ),
+                                                        "iges native signal geometry",
+                                                    )
                                                 })
                                                 .transpose()
-                                        })
+                                        },
+                                    )
                                 };
                                 let name_indices = layout.signal_names();
                                 (
-                                    ctx.collect_indexed_vec(name_indices.len(), "iges native signal name slots", |offset| {
+                                    ctx.collect_indexed_vec(
+                                        name_indices.len(),
+                                        "iges native signal name slots",
+                                        |offset| {
                                             record
                                                 .string(name_indices.start + offset)
                                                 .map(|bytes| {
@@ -4349,7 +4872,8 @@ pub(crate) fn store(
                                                     )
                                                 })
                                                 .transpose()
-                                        })?,
+                                        },
+                                    )?,
                                     connections,
                                     geometry_links(layout.schematic())?,
                                     geometry_links(layout.physical())?,
@@ -4393,7 +4917,10 @@ pub(crate) fn store(
                         .transpose()?
                         .flatten()
                         .map(|sequence| {
-                            ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native text font definition")
+                            ctx.format_retained(
+                                format_args!("iges:entity:directory#{sequence}"),
+                                "iges native text font definition",
+                            )
                         })
                         .transpose()?;
                     let geometry_indices = layout
@@ -4406,7 +4933,10 @@ pub(crate) fn store(
                         declared_geometry_count: record.and_then(|record| record.integer(1)),
                         declared_text_description_count: record
                             .and_then(|record| record.integer(2)),
-                        geometry: ctx.collect_indexed_vec(geometry_indices.len(), "iges native text node geometry slots", |offset| {
+                        geometry: ctx.collect_indexed_vec(
+                            geometry_indices.len(),
+                            "iges native text node geometry slots",
+                            |offset| {
                                 let index = geometry_indices.start + offset;
                                 record
                                     .and_then(|record| record.integer(index))
@@ -4422,10 +4952,14 @@ pub(crate) fn store(
                                     .transpose()?
                                     .flatten()
                                     .map(|sequence| {
-                                        ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native text node geometry")
+                                        ctx.format_retained(
+                                            format_args!("iges:entity:directory#{sequence}"),
+                                            "iges native text node geometry",
+                                        )
                                     })
                                     .transpose()
-                            })?,
+                            },
+                        )?,
                         box_width: description_start.and_then(|index| {
                             record.and_then(|record| record.number_or(index, 0.0))
                         }),
@@ -4457,7 +4991,10 @@ pub(crate) fn store(
                     let (points, data) = match fields {
                         Some((record, layout)) => {
                             let point_indices = layout.points();
-                            let points = ctx.collect_indexed_vec(point_indices.len(), "iges native connect node point slots", |offset| {
+                            let points = ctx.collect_indexed_vec(
+                                point_indices.len(),
+                                "iges native connect node point slots",
+                                |offset| {
                                     let index = point_indices.start + offset;
                                     record
                                         .integer(index)
@@ -4473,18 +5010,26 @@ pub(crate) fn store(
                                         .transpose()?
                                         .flatten()
                                         .map(|sequence| {
-                                            ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native connect node point")
+                                            ctx.format_retained(
+                                                format_args!("iges:entity:directory#{sequence}"),
+                                                "iges native connect node point",
+                                            )
                                         })
                                         .transpose()
-                                })?;
+                                },
+                            )?;
                             let data_indices = layout.data();
-                            let data = ctx.collect_indexed_vec(data_indices.len(), "iges native connect node data slots", |offset| {
+                            let data = ctx.collect_indexed_vec(
+                                data_indices.len(),
+                                "iges native connect node data slots",
+                                |offset| {
                                     record
                                         .token(data_indices.start + offset)
                                         .map_or(Ok(TokenValue::Omitted), |item| {
                                             copy_native_token_value(ctx, &item.value)
                                         })
-                                })?;
+                                },
+                            )?;
                             (points, data)
                         }
                         None => (Vec::new(), Vec::new()),
@@ -4526,10 +5071,17 @@ pub(crate) fn store(
                             .transpose()?
                             .flatten()
                             .map(|sequence| {
-                                ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native dimension geometry dimension")
+                                ctx.format_retained(
+                                    format_args!("iges:entity:directory#{sequence}"),
+                                    "iges native dimension geometry dimension",
+                                )
                             })
                             .transpose()?,
-                        geometry: ctx.collect_indexed_vec(count, "iges native dimension geometry slots", |offset| entity_link(4 + offset))?,
+                        geometry: ctx.collect_indexed_vec(
+                            count,
+                            "iges native dimension geometry slots",
+                            |offset| entity_link(4 + offset),
+                        )?,
                     }
                 }
                 16 => {
@@ -4556,10 +5108,17 @@ pub(crate) fn store(
                             .transpose()?
                             .flatten()
                             .map(|sequence| {
-                                ctx.format_retained(format_args!("iges:native:transformation#D{sequence}"), "iges native planar transformation")
+                                ctx.format_retained(
+                                    format_args!("iges:native:transformation#D{sequence}"),
+                                    "iges native planar transformation",
+                                )
                             })
                             .transpose()?,
-                        entities: ctx.collect_indexed_vec(count, "iges native planar entity slots", |offset| entity_link(4 + offset))?,
+                        entities: ctx.collect_indexed_vec(
+                            count,
+                            "iges native planar entity slots",
+                            |offset| entity_link(4 + offset),
+                        )?,
                     }
                 }
                 18 | 20 => {
@@ -4603,7 +5162,10 @@ pub(crate) fn store(
                                 .transpose()?
                                 .flatten()
                                 .map(|sequence| {
-                                    ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native flow link")
+                                    ctx.format_retained(
+                                        format_args!("iges:entity:directory#{sequence}"),
+                                        "iges native flow link",
+                                    )
                                 })
                                 .transpose()
                         })
@@ -4611,7 +5173,10 @@ pub(crate) fn store(
                     let mut cursor = first_list_index;
                     let associated_flows = flow_links(cursor, counts[0])?;
                     cursor += counts[0];
-                    let connections = ctx.collect_indexed_vec(counts[1], "iges native flow connection slots", |offset| {
+                    let connections = ctx.collect_indexed_vec(
+                        counts[1],
+                        "iges native flow connection slots",
+                        |offset| {
                             let index = cursor + offset;
                             record
                                 .and_then(|record| record.integer(index))
@@ -4641,12 +5206,19 @@ pub(crate) fn store(
                                 .transpose()?
                                 .flatten()
                                 .map(|sequence| {
-                                    ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native flow connection")
+                                    ctx.format_retained(
+                                        format_args!("iges:entity:directory#{sequence}"),
+                                        "iges native flow connection",
+                                    )
                                 })
                                 .transpose()
-                        })?;
+                        },
+                    )?;
                     cursor += counts[1];
-                    let joins = ctx.collect_indexed_vec(counts[2], "iges native flow join slots", |offset| {
+                    let joins = ctx.collect_indexed_vec(
+                        counts[2],
+                        "iges native flow join slots",
+                        |offset| {
                             let index = cursor + offset;
                             record
                                 .and_then(|record| record.integer(index))
@@ -4666,19 +5238,30 @@ pub(crate) fn store(
                                 .transpose()?
                                 .flatten()
                                 .map(|sequence| {
-                                    ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native flow join")
+                                    ctx.format_retained(
+                                        format_args!("iges:entity:directory#{sequence}"),
+                                        "iges native flow join",
+                                    )
                                 })
                                 .transpose()
-                        })?;
+                        },
+                    )?;
                     cursor += counts[2];
-                    let names = ctx.collect_indexed_vec(counts[3], "iges native flow name slots", |offset| {
+                    let names = ctx.collect_indexed_vec(
+                        counts[3],
+                        "iges native flow name slots",
+                        |offset| {
                             record
                                 .and_then(|record| record.string(cursor + offset))
                                 .map(|bytes| ctx.copy_retained(bytes, "iges native flow name"))
                                 .transpose()
-                        })?;
+                        },
+                    )?;
                     cursor += counts[3];
-                    let name_displays = ctx.collect_indexed_vec(counts[4], "iges native flow name display slots", |offset| {
+                    let name_displays = ctx.collect_indexed_vec(
+                        counts[4],
+                        "iges native flow name display slots",
+                        |offset| {
                             let index = cursor + offset;
                             record
                                 .and_then(|record| record.integer(index))
@@ -4708,12 +5291,19 @@ pub(crate) fn store(
                                 .transpose()?
                                 .flatten()
                                 .map(|sequence| {
-                                    ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native flow name display")
+                                    ctx.format_retained(
+                                        format_args!("iges:entity:directory#{sequence}"),
+                                        "iges native flow name display",
+                                    )
                                 })
                                 .transpose()
-                        })?;
+                        },
+                    )?;
                     cursor += counts[4];
-                    let continuations = ctx.collect_indexed_vec(counts[5], "iges native flow continuation slots", |offset| {
+                    let continuations = ctx.collect_indexed_vec(
+                        counts[5],
+                        "iges native flow continuation slots",
+                        |offset| {
                             let index = cursor + offset;
                             record
                                 .and_then(|record| record.integer(index))
@@ -4740,10 +5330,14 @@ pub(crate) fn store(
                                 .transpose()?
                                 .flatten()
                                 .map(|sequence| {
-                                    ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native flow continuation")
+                                    ctx.format_retained(
+                                        format_args!("iges:entity:directory#{sequence}"),
+                                        "iges native flow continuation",
+                                    )
                                 })
                                 .transpose()
-                        })?;
+                        },
+                    )?;
                     NativeAssociativity::Flow {
                         id,
                         source_entity,
@@ -4794,12 +5388,18 @@ pub(crate) fn store(
                             .transpose()?
                             .flatten()
                             .map(|sequence| {
-                                ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native recalculable dimension")
+                                ctx.format_retained(
+                                    format_args!("iges:entity:directory#{sequence}"),
+                                    "iges native recalculable dimension",
+                                )
                             })
                             .transpose()?,
                         orientation_flag: record.and_then(|record| record.integer(4)),
                         angle: record.and_then(|record| record.number(5)),
-                        geometry: ctx.collect_indexed_vec(count, "iges native recalculable geometry slots", |offset| -> Result<NativeDimensionGeometryItem, CodecError> {
+                        geometry: ctx.collect_indexed_vec(
+                            count,
+                            "iges native recalculable geometry slots",
+                            |offset| -> Result<NativeDimensionGeometryItem, CodecError> {
                                 let start = 6 + offset * 5;
                                 Ok(NativeDimensionGeometryItem {
                                     geometry: entity_link(start)?,
@@ -4811,7 +5411,8 @@ pub(crate) fn store(
                                         record.and_then(|record| record.number(start + 4)),
                                     ],
                                 })
-                            })?,
+                            },
+                        )?,
                     }
                 }
                 _ => return Ok(()),
@@ -4834,7 +5435,10 @@ pub(crate) fn store(
                 record.and_then(|record| record.count_with_stride_before(3, 1, end))
             };
             let mut cursor = 4;
-            let mut attributes = ctx.collection_vec(count.unwrap_or_default(), "iges native attribute definition attributes")?;
+            let mut attributes = ctx.collection_vec(
+                count.unwrap_or_default(),
+                "iges native attribute definition attributes",
+            )?;
             let mut complete = true;
             if let Some(count) = count {
                 for _ in 0..count {
@@ -4902,7 +5506,10 @@ pub(crate) fn store(
                                 .transpose()?
                                 .flatten()
                                 .map(|sequence| {
-                                    ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native attribute display template")
+                                    ctx.format_retained(
+                                        format_args!("iges:entity:directory#{sequence}"),
+                                        "iges native attribute display template",
+                                    )
                                 })
                                 .transpose()?;
                             values.push(NativeAttributeValue {
@@ -4924,10 +5531,19 @@ pub(crate) fn store(
                 attributes.clear();
             }
             Ok(NativeAttributeTableDefinition {
-                id: ctx.format_retained(format_args!("iges:product:attribute-definition#D{}", entry.sequence), "iges native attribute definition id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native attribute definition source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:product:attribute-definition#D{}", entry.sequence),
+                    "iges native attribute definition id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native attribute definition source",
+                )?,
                 form: entry.form,
-                name: record.and_then(|record| record.string(1)).map(|bytes| ctx.copy_retained(bytes, "iges native attribute definition name")).transpose()?,
+                name: record
+                    .and_then(|record| record.string(1))
+                    .map(|bytes| ctx.copy_retained(bytes, "iges native attribute definition name"))
+                    .transpose()?,
                 attribute_list_type: record.and_then(|record| record.integer(2)),
                 declared_attribute_count: record.and_then(|record| record.integer(3)),
                 attributes,
@@ -4973,24 +5589,47 @@ pub(crate) fn store(
             let rows = match grid {
                 Ok(Some(grid)) => {
                     let row_width = grid.values_per_row.get();
-                    ctx.collect_indexed_vec(grid.values.len() / row_width, "iges native attribute instance row slots", |index| {
+                    ctx.collect_indexed_vec(
+                        grid.values.len() / row_width,
+                        "iges native attribute instance row slots",
+                        |index| {
                             let row = &grid.values[index * row_width..(index + 1) * row_width];
-                            ctx.collect_indexed_vec(row.len(), "iges native attribute instance value slots", |offset| copy_native_token_value(ctx, &row[offset].value))
-                        })?
+                            ctx.collect_indexed_vec(
+                                row.len(),
+                                "iges native attribute instance value slots",
+                                |offset| copy_native_token_value(ctx, &row[offset].value),
+                            )
+                        },
+                    )?
                 }
                 Ok(None) => Vec::new(),
                 Err(refusal) => {
-                    cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut unstatable_attribute_tables, entry.sequence, refusal, "iges unstatable attribute table nodes")?;
+                    cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+                        Some(ctx),
+                        &mut unstatable_attribute_tables,
+                        entry.sequence,
+                        refusal,
+                        "iges unstatable attribute table nodes",
+                    )?;
                     Vec::new()
                 }
             };
             Ok(NativeAttributeTableInstance {
-                id: ctx.format_retained(format_args!("iges:product:attribute-instance#D{}", entry.sequence), "iges native attribute instance id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native attribute instance source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:product:attribute-instance#D{}", entry.sequence),
+                    "iges native attribute instance id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native attribute instance source",
+                )?,
                 form: entry.form,
                 definition: definition_sequence
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:product:attribute-definition#D{sequence}"), "iges native attribute instance definition")
+                        ctx.format_retained(
+                            format_args!("iges:product:attribute-definition#D{sequence}"),
+                            "iges native attribute instance definition",
+                        )
                     })
                     .transpose()?,
                 declared_row_count: (entry.form == 1)
@@ -5009,14 +5648,23 @@ pub(crate) fn store(
         |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             Ok(NativeProductProperty {
-                id: ctx.format_retained(format_args!("iges:product:property#D{}", entry.sequence), "iges native product property id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native product property source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:product:property#D{}", entry.sequence),
+                    "iges native product property id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native product property source",
+                )?,
                 property_kind: if entry.form == 7 {
                     ProductPropertyKind::ReferenceDesignator
                 } else {
                     ProductPropertyKind::Name
                 },
-                value: record.and_then(|record| record.string(2)).map(|bytes| ctx.copy_retained(bytes, "iges native product property value")).transpose()?,
+                value: record
+                    .and_then(|record| record.string(2))
+                    .map(|bytes| ctx.copy_retained(bytes, "iges native product property value"))
+                    .transpose()?,
                 owners: native_entity_ids(
                     ctx,
                     by_directory
@@ -5054,8 +5702,12 @@ pub(crate) fn store(
         let mut counted = |index, stride| {
             overdeclared_counts.counted_tail(entry.sequence, Some(record), end, index, stride)
         };
-        let string =
-            |index| record.string(index).map(|bytes| ctx.copy_retained(bytes, "iges native property string")).transpose();
+        let string = |index| {
+            record
+                .string(index)
+                .map(|bytes| ctx.copy_retained(bytes, "iges native property string"))
+                .transpose()
+        };
         let strings = |start: usize, count: usize| -> Result<Vec<Option<Vec<u8>>>, CodecError> {
             ctx.collect_indexed_vec(count, "iges native property string slots", |offset| {
                 string(start + offset)
@@ -5124,7 +5776,10 @@ pub(crate) fn store(
                                     let count_start = 5 + independent_count;
                                     let mut cursor = header_end;
                                     let mut point_count = 1_usize;
-                                    let mut independent_variables = ctx.collection_vec(independent_count, "iges native tabular independent variables")?;
+                                    let mut independent_variables = ctx.collection_vec(
+                                        independent_count,
+                                        "iges native tabular independent variables",
+                                    )?;
                                     let mut valid = true;
                                     for offset in 0..independent_count {
                                         let declared_value_count =
@@ -5153,7 +5808,11 @@ pub(crate) fn store(
                                         independent_variables.push(NativeIndependentVariable {
                                             variable_type: record.integer(5 + offset),
                                             declared_value_count,
-                                            values: ctx.collect_indexed_vec(value_count, "iges native tabular independent values", |index| Ok(record.number(cursor + index)))?,
+                                            values: ctx.collect_indexed_vec(
+                                                value_count,
+                                                "iges native tabular independent values",
+                                                |index| Ok(record.number(cursor + index)),
+                                            )?,
                                         });
                                         cursor = next;
                                     }
@@ -5164,7 +5823,11 @@ pub(crate) fn store(
                                     match dependent_value_count {
                                         Some(count) => (
                                             independent_variables,
-                                            ctx.collect_indexed_vec(count, "iges native tabular dependent values", |offset| Ok(record.number(cursor + offset)))?,
+                                            ctx.collect_indexed_vec(
+                                                count,
+                                                "iges native tabular dependent values",
+                                                |offset| Ok(record.number(cursor + offset)),
+                                            )?,
                                         ),
                                         None => (Vec::new(), Vec::new()),
                                     }
@@ -5220,7 +5883,10 @@ pub(crate) fn store(
             24 => {
                 let definition_count = counted(2, 4);
                 NativePropertyValue::LevelToLepLayerMap {
-                    definitions: ctx.collect_indexed_vec(definition_count, "iges native layer definition slots", |offset| {
+                    definitions: ctx.collect_indexed_vec(
+                        definition_count,
+                        "iges native layer definition slots",
+                        |offset| {
                             let start = 3 + offset * 4;
                             Ok(NativeLepLayerDefinition {
                                 exchange_level: record.integer(start),
@@ -5228,14 +5894,19 @@ pub(crate) fn store(
                                 physical_layer: record.integer(start + 2),
                                 functional_identifier: string(start + 3)?,
                             })
-                        })?,
+                        },
+                    )?,
                 }
             }
             25 => {
                 let level_count = counted(3, 1);
                 NativePropertyValue::LepArtworkStackup {
                     identification: string(2)?,
-                    levels: ctx.collect_indexed_vec(level_count, "iges native artwork level slots", |offset| Ok(record.integer(4 + offset)))?,
+                    levels: ctx.collect_indexed_vec(
+                        level_count,
+                        "iges native artwork level slots",
+                        |offset| Ok(record.integer(4 + offset)),
+                    )?,
                 }
             }
             26 => NativePropertyValue::LepDrilledHole {
@@ -5247,7 +5918,10 @@ pub(crate) fn store(
                 let value_count = counted(3, 2);
                 NativePropertyValue::GenericData {
                     name: string(2)?,
-                    values: ctx.collect_indexed_vec(value_count, "iges native generic property value slots", |offset| {
+                    values: ctx.collect_indexed_vec(
+                        value_count,
+                        "iges native generic property value slots",
+                        |offset| {
                             let index = 4 + offset * 2;
                             Ok(NativeGenericPropertyValue {
                                 data_type: record.integer(index),
@@ -5258,7 +5932,8 @@ pub(crate) fn store(
                                         copy_native_token_value(ctx, &token.value)
                                     })?,
                             })
-                        })?,
+                        },
+                    )?,
                 }
             }
             28 => NativePropertyValue::DimensionUnits {
@@ -5296,18 +5971,26 @@ pub(crate) fn store(
                     text_placement: record.integer(10),
                     arrow_orientation: record.integer(11),
                     initial_value: record.number(12),
-                    supplemental_notes: ctx.collect_indexed_vec(note_count, "iges native supplemental note slots", |offset| {
+                    supplemental_notes: ctx.collect_indexed_vec(
+                        note_count,
+                        "iges native supplemental note slots",
+                        |offset| {
                             let start = 14 + offset * 3;
                             Ok(NativeSupplementalNote {
                                 position: record.integer(start),
                                 first_text: record.integer(start + 1),
                                 last_text: record.integer(start + 2),
                             })
-                        })?,
+                        },
+                    )?,
                 }
             }
             31 => NativePropertyValue::BasicDimension {
-                corners: ctx.collect_indexed_vec(4, "iges native basic dimension corners", |offset| Ok([record.number(2 + offset * 2), record.number(3 + offset * 2)]))?,
+                corners: ctx.collect_indexed_vec(
+                    4,
+                    "iges native basic dimension corners",
+                    |offset| Ok([record.number(2 + offset * 2), record.number(3 + offset * 2)]),
+                )?,
             },
             32 => NativePropertyValue::DrawingSheetApproval {
                 name: string(2)?,
@@ -5320,14 +6003,18 @@ pub(crate) fn store(
             },
             34 | 35 => {
                 let range_count = counted(2, 3);
-                let ranges = ctx.collect_indexed_vec(range_count, "iges native text score range slots", |offset| {
+                let ranges = ctx.collect_indexed_vec(
+                    range_count,
+                    "iges native text score range slots",
+                    |offset| {
                         let start = 3 + offset * 3;
                         Ok(NativeTextScoreRange {
                             text_index: record.integer(start),
                             first_character: record.integer(start + 1),
                             last_character: record.integer(start + 2),
                         })
-                    })?;
+                    },
+                )?;
                 if entry.form == 34 {
                     NativePropertyValue::Underscore { ranges }
                 } else {
@@ -5341,8 +6028,14 @@ pub(crate) fn store(
             _ => continue,
         };
         properties.push(NativeProperty {
-            id: ctx.format_retained(format_args!("iges:application:property#D{}", entry.sequence), "iges native property id")?,
-            source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native property source")?,
+            id: ctx.format_retained(
+                format_args!("iges:application:property#D{}", entry.sequence),
+                "iges native property id",
+            )?,
+            source_entity: ctx.format_retained(
+                format_args!("iges:entity:directory#{}", entry.sequence),
+                "iges native property source",
+            )?,
             form: entry.form,
             declared_value_count: record.integer(1),
             owners: native_entity_ids(
@@ -5392,17 +6085,33 @@ pub(crate) fn store(
                 "iges native units owner slots",
             )?;
             Ok(NativeUnitsData {
-                id: ctx.format_retained(format_args!("iges:metadata:units-data#D{}", entry.sequence), "iges native units data id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native units data source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:metadata:units-data#D{}", entry.sequence),
+                    "iges native units data id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native units data source",
+                )?,
                 declared_count: record.and_then(|record| record.integer(1)),
-                units: ctx.collect_indexed_vec(count, "iges native unit definition slots", |offset| {
+                units: ctx.collect_indexed_vec(
+                    count,
+                    "iges native unit definition slots",
+                    |offset| {
                         let start = 2 + offset * 3;
                         Ok(NativeUnitDefinition {
-                            unit_type: record.and_then(|record| record.string(start)).map(|bytes| ctx.copy_retained(bytes, "iges native unit type")).transpose()?,
-                            unit_value: record.and_then(|record| record.string(start + 1)).map(|bytes| ctx.copy_retained(bytes, "iges native unit value")).transpose()?,
+                            unit_type: record
+                                .and_then(|record| record.string(start))
+                                .map(|bytes| ctx.copy_retained(bytes, "iges native unit type"))
+                                .transpose()?,
+                            unit_value: record
+                                .and_then(|record| record.string(start + 1))
+                                .map(|bytes| ctx.copy_retained(bytes, "iges native unit value"))
+                                .transpose()?,
                             scale_factor: record.and_then(|record| record.number(start + 2)),
                         })
-                    })?,
+                    },
+                )?,
                 owners,
             })
         },
@@ -5423,18 +6132,30 @@ pub(crate) fn store(
                 ]
             };
             Ok(NativeView {
-                id: ctx.format_retained(format_args!("iges:presentation:view#D{}", entry.sequence), "iges native view id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native view source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:presentation:view#D{}", entry.sequence),
+                    "iges native view id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native view source",
+                )?,
                 view_number: record.and_then(|record| record.integer(1)),
                 scale: record.and_then(|record| record.number(2)),
                 geometry: if entry.form == 0 {
                     ViewGeometry::Orthographic {
                         model_to_view: (entry.transform > 0)
                             .then(|| {
-                                ctx.format_retained(format_args!("iges:native:transformation#D{}", entry.transform), "iges native view transformation")
+                                ctx.format_retained(
+                                    format_args!("iges:native:transformation#D{}", entry.transform),
+                                    "iges native view transformation",
+                                )
                             })
                             .transpose()?,
-                        clipping_planes: ctx.collect_indexed_vec(6, "iges native view clipping plane slots", |offset| {
+                        clipping_planes: ctx.collect_indexed_vec(
+                            6,
+                            "iges native view clipping plane slots",
+                            |offset| {
                                 let index = offset + 3;
                                 record
                                     .and_then(|record| record.integer(index))
@@ -5451,10 +6172,14 @@ pub(crate) fn store(
                                     .transpose()?
                                     .flatten()
                                     .map(|sequence| {
-                                        ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native view clipping plane")
+                                        ctx.format_retained(
+                                            format_args!("iges:entity:directory#{sequence}"),
+                                            "iges native view clipping plane",
+                                        )
                                     })
                                     .transpose()
-                            })?,
+                            },
+                        )?,
                     }
                 } else {
                     ctx.charge_collection_items(1, "iges native perspective view geometry")?;
@@ -5502,14 +6227,23 @@ pub(crate) fn store(
                 .unwrap_or_default();
             let (view_count, entity_count) = view_count;
             Ok(NativeViewVisibility {
-                id: ctx.format_retained(format_args!("iges:presentation:view-visibility#D{}", entry.sequence), "iges native view visibility id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native view visibility source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:presentation:view-visibility#D{}", entry.sequence),
+                    "iges native view visibility id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native view visibility source",
+                )?,
                 form: entry.form,
                 // Both counts sit at fixed Parameter indices 1 and 2 for every
                 // form, so retention is unconditional; only the entity list's
                 // start moves with the view count.
                 declared_view_count: record.and_then(|record| record.integer(1)),
-                displays: ctx.collect_indexed_vec(view_count, "iges native view display slots", |index| {
+                displays: ctx.collect_indexed_vec(
+                    view_count,
+                    "iges native view display slots",
+                    |index| {
                         let start = 3 + index * width;
                         if let Some(color) = (entry.form == 4)
                             .then(|| record.and_then(|record| record.integer(start + 3)))
@@ -5539,7 +6273,10 @@ pub(crate) fn store(
                                 .transpose()?
                                 .flatten()
                                 .map(|sequence| {
-                                    ctx.format_retained(format_args!("iges:presentation:view#D{sequence}"), "iges native view display view")
+                                    ctx.format_retained(
+                                        format_args!("iges:presentation:view#D{sequence}"),
+                                        "iges native view display view",
+                                    )
                                 })
                                 .transpose()?,
                             style: if entry.form == 4 {
@@ -5560,9 +6297,12 @@ pub(crate) fn store(
                                         .transpose()?
                                         .flatten()
                                         .map(|sequence| {
-                                            ctx.format_retained(format_args!(
+                                            ctx.format_retained(
+                                                format_args!(
                                                     "iges:presentation:line-font#D{sequence}"
-                                                ), "iges native view display line font")
+                                                ),
+                                                "iges native view display line font",
+                                            )
                                         })
                                         .transpose()?,
                                     color: record.and_then(|record| record.integer(start + 3)),
@@ -5573,9 +6313,13 @@ pub(crate) fn store(
                                 ViewDisplayStyle::Inherited
                             },
                         })
-                    })?,
+                    },
+                )?,
                 declared_entity_count: record.and_then(|record| record.integer(2)),
-                entities: ctx.collect_indexed_vec(entity_count, "iges native visible entity slots", |index| {
+                entities: ctx.collect_indexed_vec(
+                    entity_count,
+                    "iges native visible entity slots",
+                    |index| {
                         record
                             .and_then(|record| record.integer(3 + view_count * width + index))
                             .map(|sequence| {
@@ -5588,10 +6332,14 @@ pub(crate) fn store(
                             .transpose()?
                             .flatten()
                             .map(|sequence| {
-                                ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native visible entity")
+                                ctx.format_retained(
+                                    format_args!("iges:entity:directory#{sequence}"),
+                                    "iges native visible entity",
+                                )
                             })
                             .transpose()
-                    })?,
+                    },
+                )?,
             })
         },
     )?;
@@ -5613,10 +6361,19 @@ pub(crate) fn store(
                     })
             };
             Ok(NativeSegmentedVisibility {
-                id: ctx.format_retained(format_args!("iges:presentation:segmented-visibility#D{}", entry.sequence), "iges native segmented visibility id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native segmented visibility source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:presentation:segmented-visibility#D{}", entry.sequence),
+                    "iges native segmented visibility id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native segmented visibility source",
+                )?,
                 declared_block_count: record.and_then(|record| record.integer(1)),
-                blocks: ctx.collect_indexed_vec(count, "iges native segment display slots", |index| {
+                blocks: ctx.collect_indexed_vec(
+                    count,
+                    "iges native segment display slots",
+                    |index| {
                         let start = 2 + index * 6;
                         if let Some(color) = record
                             .and_then(|record| record.integer(start + 3))
@@ -5657,7 +6414,10 @@ pub(crate) fn store(
                                 .transpose()?
                                 .flatten()
                                 .map(|sequence| {
-                                    ctx.format_retained(format_args!("iges:presentation:view#D{sequence}"), "iges native segment display view")
+                                    ctx.format_retained(
+                                        format_args!("iges:presentation:view#D{sequence}"),
+                                        "iges native segment display view",
+                                    )
                                 })
                                 .transpose()?,
                             breakpoint: record.and_then(|record| record.number(start + 1)),
@@ -5666,7 +6426,8 @@ pub(crate) fn store(
                             line_font: value(start + 4)?,
                             line_weight: value(start + 5)?,
                         })
-                    })?,
+                    },
+                )?,
             })
         },
     )?;
@@ -5733,11 +6494,20 @@ pub(crate) fn store(
                 Ok,
             )?;
             Ok(NativeDrawing {
-                id: ctx.format_retained(format_args!("iges:presentation:drawing#D{}", entry.sequence), "iges native drawing id")?,
-                source_entity: ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges native drawing source")?,
+                id: ctx.format_retained(
+                    format_args!("iges:presentation:drawing#D{}", entry.sequence),
+                    "iges native drawing id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native drawing source",
+                )?,
                 form: entry.form,
                 declared_view_count,
-                views: ctx.collect_indexed_vec(view_count, "iges native drawing view slots", |index| {
+                views: ctx.collect_indexed_vec(
+                    view_count,
+                    "iges native drawing view slots",
+                    |index| {
                         let start = 2 + index * width;
                         Ok(NativeDrawingView {
                             view: record
@@ -5754,7 +6524,10 @@ pub(crate) fn store(
                                 .transpose()?
                                 .flatten()
                                 .map(|sequence| {
-                                    ctx.format_retained(format_args!("iges:presentation:view#D{sequence}"), "iges native drawing view")
+                                    ctx.format_retained(
+                                        format_args!("iges:presentation:view#D{sequence}"),
+                                        "iges native drawing view",
+                                    )
                                 })
                                 .transpose()?,
                             origin: [
@@ -5765,9 +6538,13 @@ pub(crate) fn store(
                                 .then(|| record.and_then(|record| record.number(start + 3)))
                                 .flatten(),
                         })
-                    })?,
+                    },
+                )?,
                 declared_annotation_count,
-                annotations: ctx.collect_indexed_vec(annotation_count, "iges native drawing annotation slots", |index| {
+                annotations: ctx.collect_indexed_vec(
+                    annotation_count,
+                    "iges native drawing annotation slots",
+                    |index| {
                         record
                             .and_then(|record| record.integer(annotation_count_index + 1 + index))
                             .map(|sequence| {
@@ -5788,18 +6565,27 @@ pub(crate) fn store(
                             .transpose()?
                             .flatten()
                             .map(|sequence| {
-                                ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges native drawing annotation")
+                                ctx.format_retained(
+                                    format_args!("iges:entity:directory#{sequence}"),
+                                    "iges native drawing annotation",
+                                )
                             })
                             .transpose()
-                    })?,
+                    },
+                )?,
                 name_property: name_property
                     .map(|sequence| {
-                        ctx.format_retained(format_args!("iges:product:property#D{sequence}"), "iges native drawing name property")
+                        ctx.format_retained(
+                            format_args!("iges:product:property#D{sequence}"),
+                            "iges native drawing name property",
+                        )
                     })
                     .transpose()?,
                 name: name_property
-                        .and_then(|sequence| by_directory.get(&sequence))
-                        .and_then(|record| record.string(2)).map(|bytes| ctx.copy_retained(bytes, "iges native drawing name")).transpose()?,
+                    .and_then(|sequence| by_directory.get(&sequence))
+                    .and_then(|record| record.string(2))
+                    .map(|bytes| ctx.copy_retained(bytes, "iges native drawing name"))
+                    .transpose()?,
                 size: size_property.and_then(|sequence| {
                     let record = by_directory.get(&sequence)?;
                     Some([record.number(2), record.number(3)])
@@ -5808,8 +6594,10 @@ pub(crate) fn store(
                     .and_then(|sequence| by_directory.get(&sequence))
                     .and_then(|record| record.integer(2)),
                 units_name: units_property
-                        .and_then(|sequence| by_directory.get(&sequence))
-                        .and_then(|record| record.string(3)).map(|bytes| ctx.copy_retained(bytes, "iges native drawing units name")).transpose()?,
+                    .and_then(|sequence| by_directory.get(&sequence))
+                    .and_then(|record| record.string(3))
+                    .map(|bytes| ctx.copy_retained(bytes, "iges native drawing units name"))
+                    .transpose()?,
                 ambiguous_property_forms,
             })
         },
@@ -5836,14 +6624,22 @@ pub(crate) fn store(
         .filter(|entry| matches!(entry.entity_type, 308 | 320) && entry.form == 0)
     {
         let Some(record) = by_directory.get(&entry.sequence).copied() else {
-            ctx.reserve_vec(&mut malformed_definition_sequences, 1, "iges malformed occurrence definitions")?;
+            ctx.reserve_vec(
+                &mut malformed_definition_sequences,
+                1,
+                "iges malformed occurrence definitions",
+            )?;
             malformed_definition_sequences.push(entry.sequence);
             continue;
         };
         let Some(count) =
             record.count_with_stride_before(3, 1, clamped_primary_end(entry.sequence, record))
         else {
-            ctx.reserve_vec(&mut malformed_definition_sequences, 1, "iges malformed occurrence definitions")?;
+            ctx.reserve_vec(
+                &mut malformed_definition_sequences,
+                1,
+                "iges malformed occurrence definitions",
+            )?;
             malformed_definition_sequences.push(entry.sequence);
             if !all_occurrence_definitions.contains_key(&entry.sequence) {
                 ctx.charge_collection_items(1, "iges occurrence definition map")?;
@@ -5893,7 +6689,11 @@ pub(crate) fn store(
             Transform::identity()
         };
         if malformed {
-            ctx.reserve_vec(&mut malformed_definition_sequences, 1, "iges malformed occurrence definitions")?;
+            ctx.reserve_vec(
+                &mut malformed_definition_sequences,
+                1,
+                "iges malformed occurrence definitions",
+            )?;
             malformed_definition_sequences.push(entry.sequence);
         }
         if !all_occurrence_definitions.contains_key(&entry.sequence) {
@@ -5917,7 +6717,12 @@ pub(crate) fn store(
                 .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
         })
     {
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut contained_instances, sequence, "iges contained occurrence instances")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            Some(ctx),
+            &mut contained_instances,
+            sequence,
+            "iges contained occurrence instances",
+        )?;
     }
     let mut occurrence_definitions = BTreeMap::new();
     for (sequence, definition) in all_occurrence_definitions
@@ -5926,7 +6731,13 @@ pub(crate) fn store(
             structure_admitted.is_none_or(|admitted| admitted.decoded.contains(sequence))
         })
     {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut occurrence_definitions, sequence, definition, "iges admitted occurrence definition nodes")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut occurrence_definitions,
+            sequence,
+            definition,
+            "iges admitted occurrence definition nodes",
+        )?;
     }
     let mut occurrence_neutral_links = BTreeMap::<u32, Vec<String>>::new();
     for curve in &ir.model.curves {
@@ -5995,7 +6806,12 @@ pub(crate) fn store(
                     }
                 },
             ) {
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut malformed_placement_sequences, sequence, "iges malformed occurrence placement nodes")?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                    Some(ctx),
+                    &mut malformed_placement_sequences,
+                    sequence,
+                    "iges malformed occurrence placement nodes",
+                )?;
             }
         }
         let expansion = OccurrenceExpansion {
@@ -6051,7 +6867,10 @@ pub(crate) fn store(
         Ok,
     )?;
     let product_occurrence_expansion = [NativeProductOccurrenceExpansion {
-        id: ctx.format_retained(format_args!("iges:product:occurrence-expansion#state"), "iges occurrence expansion state id")?,
+        id: ctx.format_retained(
+            format_args!("iges:product:occurrence-expansion#state"),
+            "iges occurrence expansion state id",
+        )?,
         output_limit: limits.output,
         depth_limit: limits.depth,
         emitted: product_occurrences.len(),
@@ -6063,7 +6882,8 @@ pub(crate) fn store(
         "iges boundary vertex sewing slots",
         |derivation| {
             Ok(NativeBoundaryVertex {
-                id: ctx.format_retained(format_args!(
+                id: ctx.format_retained(
+                    format_args!(
                         "iges:topology:boundary-vertex#{}",
                         ColonsAsUnderscores(
                             derivation
@@ -6072,9 +6892,17 @@ pub(crate) fn store(
                                 .strip_prefix("iges:model:vertex#")
                                 .unwrap_or(derivation.vertex.as_str())
                         )
-                    ), "iges boundary vertex sewing id")?,
-                source_entity: ctx.format_retained(format_args!("{}", derivation.source_entity), "iges boundary vertex sewing source")?,
-                vertex: ctx.format_retained(format_args!("{}", derivation.vertex.as_str()), "iges boundary vertex sewing vertex")?,
+                    ),
+                    "iges boundary vertex sewing id",
+                )?,
+                source_entity: ctx.format_retained(
+                    format_args!("{}", derivation.source_entity),
+                    "iges boundary vertex sewing source",
+                )?,
+                vertex: ctx.format_retained(
+                    format_args!("{}", derivation.vertex.as_str()),
+                    "iges boundary vertex sewing vertex",
+                )?,
                 representative: [
                     derivation.representative.x,
                     derivation.representative.y,
@@ -6091,7 +6919,10 @@ pub(crate) fn store(
                     "iges boundary vertex endpoint slots",
                     |endpoint| {
                         Ok(NativeBoundaryVertexEndpoint {
-                            edge: ctx.format_retained(format_args!("{}", endpoint.edge), "iges boundary vertex endpoint edge")?,
+                            edge: ctx.format_retained(
+                                format_args!("{}", endpoint.edge),
+                                "iges boundary vertex endpoint edge",
+                            )?,
                             endpoint: endpoint.endpoint,
                             position: [
                                 endpoint.position.x,
@@ -6253,7 +7084,10 @@ pub(crate) fn store(
             depth_truncated_at,
             malformed_definition_sequences,
             malformed_placement_sequences: {
-                let mut sequences = ctx.collection_vec(malformed_placement_sequences.len(), "iges malformed occurrence placement result slots")?;
+                let mut sequences = ctx.collection_vec(
+                    malformed_placement_sequences.len(),
+                    "iges malformed occurrence placement result slots",
+                )?;
                 sequences.extend(malformed_placement_sequences);
                 sequences
             },

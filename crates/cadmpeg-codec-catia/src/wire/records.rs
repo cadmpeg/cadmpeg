@@ -94,8 +94,16 @@ impl ConsolidatedPcurve {
         let mut second = Vec::new();
         ctx.reserve_vec(&mut knots, self.sites.len(), "catia_native_pcurve_knots")?;
         ctx.reserve_vec(&mut points, self.sites.len(), "catia_native_pcurve_points")?;
-        ctx.reserve_vec(&mut first, self.sites.len(), "catia_native_pcurve_first_derivatives")?;
-        ctx.reserve_vec(&mut second, self.sites.len(), "catia_native_pcurve_second_derivatives")?;
+        ctx.reserve_vec(
+            &mut first,
+            self.sites.len(),
+            "catia_native_pcurve_first_derivatives",
+        )?;
+        ctx.reserve_vec(
+            &mut second,
+            self.sites.len(),
+            "catia_native_pcurve_second_derivatives",
+        )?;
         for site in &self.sites {
             knots.push(site.knot);
             points.push(site.point);
@@ -592,10 +600,13 @@ where
     for (source_index, extents) in sources.into_iter().enumerate() {
         // Every extent is inside the image by construction. An empty extent
         // holds no record, so it opens no logical source offset.
-        let source_ranges = ctx.collect_vec(extents
+        let source_ranges = ctx.collect_vec(
+            extents
                 .into_iter()
                 .map(|extent| extent.borrow().range())
-                .filter(|range| range.start < range.end), "catia_record_source_ranges")?;
+                .filter(|range| range.start < range.end),
+            "catia_record_source_ranges",
+        )?;
         let mut source_records = Vec::new();
         let mut source_offset = 0usize;
         for range in &source_ranges {
@@ -630,14 +641,26 @@ where
         let mut record_starts = HashSet::new();
         let mut record_ranges = HashSet::new();
         for record in &source_records {
-            ctx.insert_hash_set(&mut record_starts, record.source_range.start, "catia_record_starts")?;
-            ctx.insert_hash_set(&mut record_ranges, (record.source_range.start, record.source_range.end), "catia_record_ranges")?;
+            ctx.insert_hash_set(
+                &mut record_starts,
+                record.source_range.start,
+                "catia_record_starts",
+            )?;
+            ctx.insert_hash_set(
+                &mut record_ranges,
+                (record.source_range.start, record.source_range.end),
+                "catia_record_ranges",
+            )?;
         }
         loop {
             let mut added = Vec::new();
             let mut source_ends = HashSet::new();
             for record in &source_records {
-                ctx.insert_hash_set(&mut source_ends, record.source_range.end, "catia_record_source_ends")?;
+                ctx.insert_hash_set(
+                    &mut source_ends,
+                    record.source_range.end,
+                    "catia_record_source_ends",
+                )?;
             }
             for source_start in source_ends {
                 if record_starts.contains(&source_start) {
@@ -651,8 +674,16 @@ where
                 ) else {
                     continue;
                 };
-                if ctx.insert_hash_set(&mut record_ranges, (record.source_range.start, record.source_range.end), "catia_record_ranges")? {
-                    ctx.insert_hash_set(&mut record_starts, record.source_range.start, "catia_record_starts")?;
+                if ctx.insert_hash_set(
+                    &mut record_ranges,
+                    (record.source_range.start, record.source_range.end),
+                    "catia_record_ranges",
+                )? {
+                    ctx.insert_hash_set(
+                        &mut record_starts,
+                        record.source_range.start,
+                        "catia_record_starts",
+                    )?;
                     ctx.push_vec(&mut added, record, "catia_spanning_records")?;
                 }
             }
@@ -663,7 +694,11 @@ where
             source_records.extend(added);
             source_records.sort_by_key(|record| record.source_range.start);
         }
-        ctx.reserve_vec(&mut records, source_records.len(), "catia_consolidated_records")?;
+        ctx.reserve_vec(
+            &mut records,
+            source_records.len(),
+            "catia_consolidated_records",
+        )?;
         records.extend(source_records);
     }
     Ok(records)

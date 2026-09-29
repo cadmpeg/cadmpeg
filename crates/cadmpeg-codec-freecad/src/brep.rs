@@ -2317,7 +2317,10 @@ pub(crate) fn parse_payloads(
             continue;
         };
         let Some(entry) = entries_by_name.get(name.as_str()) else {
-            return Err(CodecError::Malformed(ctx.format_retained(format_args!("missing exact-shape entry {name}"), "FreeCAD missing shape entry")?));
+            return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("missing exact-shape entry {name}"),
+                "FreeCAD missing shape entry",
+            )?));
         };
         let payload = if entry.data.is_empty() {
             ShapePayload::Empty
@@ -2347,24 +2350,33 @@ fn direct_shape_entry(
     property: &PropertyRecord,
 ) -> Result<Option<String>, CodecError> {
     let document = roxmltree::Document::parse(property.xml.text()).or_else(|error| {
-        Err(CodecError::Malformed(ctx.format_retained(format_args!("invalid exact-shape property XML {}: {error}", property.id), "FreeCAD shape property XML diagnostic")?))
+        Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("invalid exact-shape property XML {}: {error}", property.id),
+            "FreeCAD shape property XML diagnostic",
+        )?))
     })?;
     let root = document.root_element();
     if !matches!(root.tag_name().name(), "Property" | "_Property") {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!(
                 "exact-shape property {} has no property record root",
                 property.id
-            ), "FreeCAD shape property root diagnostic")?));
+            ),
+            "FreeCAD shape property root diagnostic",
+        )?));
     }
     let mut parts = root.children().filter(|node| node.has_tag_name("Part"));
     let Some(part) = parts.next() else {
         return Ok(None);
     };
     if parts.next().is_some() {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!(
                 "exact-shape property {} has multiple direct Part carriers",
                 property.id
-            ), "FreeCAD shape property carrier diagnostic")?));
+            ),
+            "FreeCAD shape property carrier diagnostic",
+        )?));
     }
     part.attribute("file")
         .filter(|file| !file.is_empty())
@@ -2727,7 +2739,10 @@ fn parse_binary_prefix(
     };
     let location_count = cursor.section_count("Locations")?;
     // Each location consumes at least its 1-byte kind discriminant.
-    let mut locations: Vec<TextLocation> = cursor.ctx.collection_vec(cursor.bounded(location_count, 1, "binary Locations")?, "FreeCAD B-rep parse_binary_prefix")?;
+    let mut locations: Vec<TextLocation> = cursor.ctx.collection_vec(
+        cursor.bounded(location_count, 1, "binary Locations")?,
+        "FreeCAD B-rep parse_binary_prefix",
+    )?;
     for index in 0..location_count {
         let kind = cursor.u8("binary location kind")?;
         let location = match kind {
@@ -2773,7 +2788,9 @@ fn parse_binary_prefix(
                     transform = powered
                         .compose(transform)
                         .map_err(location_transform_error)?;
-                    cursor.ctx.reserve_vec(&mut factors, 1, "FreeCAD binary location factors")?;
+                    cursor
+                        .ctx
+                        .reserve_vec(&mut factors, 1, "FreeCAD binary location factors")?;
                     factors.push(LocationFactor {
                         location: referenced,
                         power: i64::from(power),
@@ -2791,19 +2808,28 @@ fn parse_binary_prefix(
     }
     let curve_count = cursor.section_count("Curve2ds")?;
     // Each parameter curve consumes at least its 1-byte kind discriminant.
-    let mut curve2ds = cursor.ctx.collection_vec(cursor.bounded(curve_count, 1, "binary Curve2ds")?, "FreeCAD B-rep parse_binary_prefix")?;
+    let mut curve2ds = cursor.ctx.collection_vec(
+        cursor.bounded(curve_count, 1, "binary Curve2ds")?,
+        "FreeCAD B-rep parse_binary_prefix",
+    )?;
     for _ in 0..curve_count {
         curve2ds.push(parse_binary_curve2d(&mut cursor, 0)?);
     }
     let curve_count = cursor.section_count("Curves")?;
     // Each 3D curve consumes at least its 1-byte kind discriminant.
-    let mut curves = cursor.ctx.collection_vec(cursor.bounded(curve_count, 1, "binary Curves")?, "FreeCAD B-rep parse_binary_prefix")?;
+    let mut curves = cursor.ctx.collection_vec(
+        cursor.bounded(curve_count, 1, "binary Curves")?,
+        "FreeCAD B-rep parse_binary_prefix",
+    )?;
     for _ in 0..curve_count {
         curves.push(parse_binary_curve(&mut cursor, 0)?);
     }
     let polygon_count = cursor.section_count("Polygon3D")?;
     // Each 3D polygon consumes at least a 4-byte node count, a 1-byte flag, and an 8-byte deflection.
-    let mut polygons3d = cursor.ctx.collection_vec(cursor.bounded(polygon_count, 13, "binary Polygon3D")?, "FreeCAD B-rep parse_binary_prefix")?;
+    let mut polygons3d = cursor.ctx.collection_vec(
+        cursor.bounded(polygon_count, 13, "binary Polygon3D")?,
+        "FreeCAD B-rep parse_binary_prefix",
+    )?;
     for _ in 0..polygon_count {
         let node_count = cursor.count("binary 3D polygon node count")?;
         let has_parameters = cursor.bool("binary 3D polygon parameter flag")?;
@@ -2826,7 +2852,10 @@ fn parse_binary_prefix(
     }
     let indexed_polygon_count = cursor.section_count("PolygonOnTriangulations")?;
     // Each indexed polygon consumes at least a 4-byte node count, an 8-byte deflection, and a 1-byte flag.
-    let mut polygons_on_triangulations = cursor.ctx.collection_vec(cursor.bounded(indexed_polygon_count, 13, "binary PolygonOnTriangulations")?, "FreeCAD B-rep parse_binary_prefix")?;
+    let mut polygons_on_triangulations = cursor.ctx.collection_vec(
+        cursor.bounded(indexed_polygon_count, 13, "binary PolygonOnTriangulations")?,
+        "FreeCAD B-rep parse_binary_prefix",
+    )?;
     for _ in 0..indexed_polygon_count {
         let node_count = cursor.count("binary indexed polygon node count")?;
         let nodes = cursor.read_counted(
@@ -2863,13 +2892,19 @@ fn parse_binary_prefix(
     }
     let surface_count = cursor.section_count("Surfaces")?;
     // Each surface consumes at least its 1-byte kind discriminant.
-    let mut surfaces = cursor.ctx.collection_vec(cursor.bounded(surface_count, 1, "binary Surfaces")?, "FreeCAD B-rep parse_binary_prefix")?;
+    let mut surfaces = cursor.ctx.collection_vec(
+        cursor.bounded(surface_count, 1, "binary Surfaces")?,
+        "FreeCAD B-rep parse_binary_prefix",
+    )?;
     for _ in 0..surface_count {
         surfaces.push(parse_binary_surface(&mut cursor, 0)?);
     }
     let triangulation_count = cursor.section_count("Triangulations")?;
     // Each triangulation consumes at least two 4-byte counts, a 1-byte flag, and an 8-byte deflection.
-    let mut triangulations = cursor.ctx.collection_vec(cursor.bounded(triangulation_count, 17, "binary Triangulations")?, "FreeCAD B-rep parse_binary_prefix")?;
+    let mut triangulations = cursor.ctx.collection_vec(
+        cursor.bounded(triangulation_count, 17, "binary Triangulations")?,
+        "FreeCAD B-rep parse_binary_prefix",
+    )?;
     for _ in 0..triangulation_count {
         let node_count = cursor.count("binary triangulation node count")?;
         let triangle_count = cursor.count("binary triangulation triangle count")?;
@@ -2919,7 +2954,10 @@ fn parse_binary_prefix(
     }
     let tshape_count = cursor.section_count("TShapes")?;
     // Each TShape consumes at least its 1-byte kind discriminant.
-    let mut tshapes = cursor.ctx.collection_vec(cursor.bounded(tshape_count, 1, "binary TShapes")?, "FreeCAD B-rep parse_binary_prefix")?;
+    let mut tshapes = cursor.ctx.collection_vec(
+        cursor.bounded(tshape_count, 1, "binary TShapes")?,
+        "FreeCAD B-rep parse_binary_prefix",
+    )?;
     for index in 0..tshape_count {
         tshapes.push(parse_binary_tshape(
             &mut cursor,
@@ -3085,7 +3123,11 @@ fn parse_binary_tshape(
                         )));
                     }
                 };
-                cursor.ctx.reserve_vec(&mut representations, 1, "FreeCAD binary vertex representations")?;
+                cursor.ctx.reserve_vec(
+                    &mut representations,
+                    1,
+                    "FreeCAD binary vertex representations",
+                )?;
                 representations.push(representation);
             }
             TextTShapeGeometry::Vertex {
@@ -3110,7 +3152,11 @@ fn parse_binary_tshape(
                         "binary edge representation-count limit exceeded".into(),
                     ));
                 }
-                cursor.ctx.reserve_vec(&mut representations, 1, "FreeCAD binary edge representations")?;
+                cursor.ctx.reserve_vec(
+                    &mut representations,
+                    1,
+                    "FreeCAD binary edge representations",
+                )?;
                 representations.push(parse_binary_edge_representation(
                     cursor,
                     version,
@@ -3200,7 +3246,9 @@ fn parse_binary_tshape(
                 "binary TShape {index} references non-prior child {shape}"
             )));
         }
-        cursor.ctx.reserve_vec(&mut children, 1, "FreeCAD binary shape children")?;
+        cursor
+            .ctx
+            .reserve_vec(&mut children, 1, "FreeCAD binary shape children")?;
         children.push(TextShapeUse {
             shape,
             orientation: binary_orientation(i32::from(orientation))?,
@@ -3546,10 +3594,13 @@ fn parse_binary_surface(
             let rational = u_rational || v_rational;
             // Each pole consumes at least a 24-byte point3.
             let capacity = cursor.bounded(pole_count, 24, "binary Bezier surface pole")?;
-            let mut control_points =
-                cursor.ctx.collection_vec(capacity, "FreeCAD B-rep parse_binary_surface")?;
+            let mut control_points = cursor
+                .ctx
+                .collection_vec(capacity, "FreeCAD B-rep parse_binary_surface")?;
             let mut weights =
-                cursor.ctx.optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+                cursor
+                    .ctx
+                    .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point3("binary Bezier surface pole")?);
                 if let Some(weights) = &mut weights {
@@ -3598,10 +3649,13 @@ fn parse_binary_surface(
             let rational = u_rational || v_rational;
             // Each pole consumes at least a 24-byte point3.
             let capacity = cursor.bounded(pole_count, 24, "binary B-spline surface pole")?;
-            let mut control_points =
-                cursor.ctx.collection_vec(capacity, "FreeCAD B-rep parse_binary_surface")?;
+            let mut control_points = cursor
+                .ctx
+                .collection_vec(capacity, "FreeCAD B-rep parse_binary_surface")?;
             let mut weights =
-                cursor.ctx.optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+                cursor
+                    .ctx
+                    .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point3("binary B-spline surface pole")?);
                 if let Some(weights) = &mut weights {
@@ -3727,10 +3781,13 @@ fn parse_binary_curve(
                 .ok_or_else(|| CodecError::Malformed("binary Bezier pole count overflow".into()))?;
             // Each pole consumes at least a 24-byte point3.
             let capacity = cursor.bounded(pole_count, 24, "binary Bezier pole")?;
-            let mut control_points =
-                cursor.ctx.collection_vec(capacity, "FreeCAD B-rep parse_binary_curve")?;
+            let mut control_points = cursor
+                .ctx
+                .collection_vec(capacity, "FreeCAD B-rep parse_binary_curve")?;
             let mut weights =
-                cursor.ctx.optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+                cursor
+                    .ctx
+                    .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point3("binary Bezier pole")?);
                 if let Some(weights) = &mut weights {
@@ -3758,10 +3815,13 @@ fn parse_binary_curve(
             let knot_count = cursor.count("binary B-spline knot count")?;
             // Each pole consumes at least a 24-byte point3.
             let capacity = cursor.bounded(pole_count, 24, "binary B-spline pole")?;
-            let mut control_points =
-                cursor.ctx.collection_vec(capacity, "FreeCAD B-rep parse_binary_curve")?;
+            let mut control_points = cursor
+                .ctx
+                .collection_vec(capacity, "FreeCAD B-rep parse_binary_curve")?;
             let mut weights =
-                cursor.ctx.optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+                cursor
+                    .ctx
+                    .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point3("binary B-spline pole")?);
                 if let Some(weights) = &mut weights {
@@ -3851,10 +3911,13 @@ fn parse_binary_curve2d(
                 .ok_or_else(|| CodecError::Malformed("binary Bezier pole count overflow".into()))?;
             // Each pole consumes at least a 16-byte point2.
             let capacity = cursor.bounded(pole_count, 16, "binary Bezier parameter pole")?;
-            let mut control_points =
-                cursor.ctx.collection_vec(capacity, "FreeCAD B-rep parse_binary_curve2d")?;
+            let mut control_points = cursor
+                .ctx
+                .collection_vec(capacity, "FreeCAD B-rep parse_binary_curve2d")?;
             let mut weights =
-                cursor.ctx.optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+                cursor
+                    .ctx
+                    .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point2("binary Bezier pole")?);
                 if let Some(weights) = &mut weights {
@@ -3879,10 +3942,13 @@ fn parse_binary_curve2d(
             let knot_count = cursor.count("binary B-spline knot count")?;
             // Each pole consumes at least a 16-byte point2.
             let capacity = cursor.bounded(pole_count, 16, "binary B-spline parameter pole")?;
-            let mut control_points =
-                cursor.ctx.collection_vec(capacity, "FreeCAD B-rep parse_binary_curve2d")?;
+            let mut control_points = cursor
+                .ctx
+                .collection_vec(capacity, "FreeCAD B-rep parse_binary_curve2d")?;
             let mut weights =
-                cursor.ctx.optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+                cursor
+                    .ctx
+                    .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point2("binary B-spline pole")?);
                 if let Some(weights) = &mut weights {
@@ -4094,8 +4160,9 @@ impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
                     "{label} expanded knot-count limit exceeded"
                 )));
             }
-            self.ctx.reserve_vec(&mut knots, multiplicity, "FreeCAD binary expanded knots")?;
-            knots.extend(std::iter::repeat(knot).take(multiplicity));
+            self.ctx
+                .reserve_vec(&mut knots, multiplicity, "FreeCAD binary expanded knots")?;
+            knots.extend(std::iter::repeat_with(|| knot).take(multiplicity));
         }
         Ok(knots)
     }
@@ -4118,7 +4185,10 @@ fn parse_locations(
     let count = section_counts.get("Locations").copied().unwrap_or(0);
     let mut cursor = TokenCursor::new(ctx, &tokens[start..end]);
     // Each location consumes at least its one type token.
-    let mut locations: Vec<TextLocation> = cursor.ctx.collection_vec(cursor.bounded(count, 1, "text Locations")?, "FreeCAD B-rep parse_locations")?;
+    let mut locations: Vec<TextLocation> = cursor.ctx.collection_vec(
+        cursor.bounded(count, 1, "text Locations")?,
+        "FreeCAD B-rep parse_locations",
+    )?;
     for index in 0..count {
         let kind = cursor.integer("location type")?;
         let location = match kind {
@@ -4163,7 +4233,9 @@ fn parse_locations(
                     transform = powered
                         .compose(transform)
                         .map_err(location_transform_error)?;
-                    cursor.ctx.reserve_vec(&mut factors, 1, "FreeCAD text location factors")?;
+                    cursor
+                        .ctx
+                        .reserve_vec(&mut factors, 1, "FreeCAD text location factors")?;
                     factors.push(LocationFactor {
                         location: referenced,
                         power,
@@ -4215,7 +4287,10 @@ fn parse_geometry_table<T>(
         })?,
     );
     // Every row consumes at least its type token.
-    let mut curves = cursor.ctx.collection_vec(cursor.bounded(count, 1, &format!("text {table}"))?, "FreeCAD B-rep parse_geometry_table")?;
+    let mut curves = cursor.ctx.collection_vec(
+        cursor.bounded(count, 1, &format!("text {table}"))?,
+        "FreeCAD B-rep parse_geometry_table",
+    )?;
     for index in 0..count {
         curves.push(parse(&mut cursor, 0, index + 1)?);
     }
@@ -4302,10 +4377,13 @@ fn parse_bezier_curve2d(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCur
     let rational = cursor.boolean("2D Bezier rational flag")?;
     let degree = cursor.count("2D Bezier degree", 64)?;
     let pole_count = degree + 1;
-    let mut control_points =
-        cursor.ctx.collection_vec(pole_count, "FreeCAD B-rep parse_bezier_curve2d")?;
+    let mut control_points = cursor
+        .ctx
+        .collection_vec(pole_count, "FreeCAD B-rep parse_bezier_curve2d")?;
     let mut weights =
-        cursor.ctx.optional_collection_vec(rational, pole_count, "FreeCAD B-rep weights")?;
+        cursor
+            .ctx
+            .optional_collection_vec(rational, pole_count, "FreeCAD B-rep weights")?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point2("2D Bezier pole")?);
         if let Some(weights) = &mut weights {
@@ -4329,10 +4407,13 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurv
     let knot_count = cursor.count("2D B-spline knot count", 1_000_000)?;
     // Each pole consumes at least its two point2 tokens.
     let capacity = cursor.bounded(pole_count, 2, "2D B-spline pole")?;
-    let mut control_points =
-        cursor.ctx.collection_vec(capacity, "FreeCAD B-rep parse_nurbs_curve2d")?;
+    let mut control_points = cursor
+        .ctx
+        .collection_vec(capacity, "FreeCAD B-rep parse_nurbs_curve2d")?;
     let mut weights =
-        cursor.ctx.optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+        cursor
+            .ctx
+            .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point2("2D B-spline pole")?);
         if let Some(weights) = &mut weights {
@@ -4390,19 +4471,28 @@ fn parse_polygons3d(
     let mut cursor = section_cursor(ctx, tokens, "Polygon3D", "PolygonOnTriangulations")?;
     let count = section_counts.get("Polygon3D").copied().unwrap_or(0);
     // Each polygon consumes at least a node-count, flag, and deflection token.
-    let mut polygons = cursor.ctx.collection_vec(cursor.bounded(count, 3, "text Polygon3D")?, "FreeCAD B-rep parse_polygons3d")?;
+    let mut polygons = cursor.ctx.collection_vec(
+        cursor.bounded(count, 3, "text Polygon3D")?,
+        "FreeCAD B-rep parse_polygons3d",
+    )?;
     for _ in 0..count {
         let node_count = cursor.count("3D polygon node count", 1_000_000)?;
         let has_parameters = cursor.boolean("3D polygon parameter flag")?;
         let deflection = cursor.finite_real("3D polygon deflection")?;
         // Each node consumes its three point tokens.
-        let mut nodes = cursor.ctx.collection_vec(cursor.bounded(node_count, 3, "3D polygon node")?, "FreeCAD B-rep parse_polygons3d")?;
+        let mut nodes = cursor.ctx.collection_vec(
+            cursor.bounded(node_count, 3, "3D polygon node")?,
+            "FreeCAD B-rep parse_polygons3d",
+        )?;
         for _ in 0..node_count {
             nodes.push(cursor.finite_point("3D polygon node")?);
         }
         let parameters = if has_parameters {
             // Each parameter consumes its one token.
-            let mut parameters = cursor.ctx.collection_vec(cursor.bounded(node_count, 1, "3D polygon parameter")?, "FreeCAD B-rep parse_polygons3d")?;
+            let mut parameters = cursor.ctx.collection_vec(
+                cursor.bounded(node_count, 1, "3D polygon parameter")?,
+                "FreeCAD B-rep parse_polygons3d",
+            )?;
             for _ in 0..node_count {
                 parameters.push(cursor.finite_real("3D polygon parameter")?);
             }
@@ -4431,11 +4521,17 @@ fn parse_polygons_on_triangulations(
         .copied()
         .unwrap_or(0);
     // Each polygon consumes at least a node-count, marker, deflection, and flag token.
-    let mut polygons = cursor.ctx.collection_vec(cursor.bounded(count, 4, "text PolygonOnTriangulations")?, "FreeCAD B-rep parse_polygons_on_triangulations")?;
+    let mut polygons = cursor.ctx.collection_vec(
+        cursor.bounded(count, 4, "text PolygonOnTriangulations")?,
+        "FreeCAD B-rep parse_polygons_on_triangulations",
+    )?;
     for _ in 0..count {
         let node_count = cursor.count("polygon-on-triangulation node count", 1_000_000)?;
         // Each node index consumes its one token.
-        let mut nodes = cursor.ctx.collection_vec(cursor.bounded(node_count, 1, "polygon-on-triangulation node")?, "FreeCAD B-rep parse_polygons_on_triangulations")?;
+        let mut nodes = cursor.ctx.collection_vec(
+            cursor.bounded(node_count, 1, "polygon-on-triangulation node")?,
+            "FreeCAD B-rep parse_polygons_on_triangulations",
+        )?;
         for _ in 0..node_count {
             let node = cursor.count("polygon-on-triangulation node index", u32::MAX as usize)?;
             if node == 0 {
@@ -4454,7 +4550,10 @@ fn parse_polygons_on_triangulations(
         let has_parameters = cursor.boolean("polygon-on-triangulation parameter flag")?;
         let parameters = if has_parameters {
             // Each parameter consumes its one token.
-            let mut parameters = cursor.ctx.collection_vec(cursor.bounded(node_count, 1, "polygon-on-triangulation parameter")?, "FreeCAD B-rep parse_polygons_on_triangulations")?;
+            let mut parameters = cursor.ctx.collection_vec(
+                cursor.bounded(node_count, 1, "polygon-on-triangulation parameter")?,
+                "FreeCAD B-rep parse_polygons_on_triangulations",
+            )?;
             for _ in 0..node_count {
                 parameters.push(cursor.finite_real("polygon-on-triangulation parameter")?);
             }
@@ -4481,7 +4580,10 @@ fn parse_triangulations(
     let mut cursor = section_cursor(ctx, tokens, "Triangulations", "TShapes")?;
     let count = section_counts.get("Triangulations").copied().unwrap_or(0);
     // Each triangulation consumes at least two counts, a flag, and a deflection token.
-    let mut triangulations = cursor.ctx.collection_vec(cursor.bounded(count, 4, "text Triangulations")?, "FreeCAD B-rep parse_triangulations")?;
+    let mut triangulations = cursor.ctx.collection_vec(
+        cursor.bounded(count, 4, "text Triangulations")?,
+        "FreeCAD B-rep parse_triangulations",
+    )?;
     for _ in 0..count {
         let node_count = cursor.count("triangulation node count", 1_000_000)?;
         let triangle_count = cursor.count("triangulation triangle count", 1_000_000)?;
@@ -4489,13 +4591,19 @@ fn parse_triangulations(
         let has_normals = topology_version >= 3 && cursor.boolean("triangulation normal flag")?;
         let deflection = cursor.finite_real("triangulation deflection")?;
         // Each node consumes its three point tokens.
-        let mut nodes = cursor.ctx.collection_vec(cursor.bounded(node_count, 3, "triangulation node")?, "FreeCAD B-rep parse_triangulations")?;
+        let mut nodes = cursor.ctx.collection_vec(
+            cursor.bounded(node_count, 3, "triangulation node")?,
+            "FreeCAD B-rep parse_triangulations",
+        )?;
         for _ in 0..node_count {
             nodes.push(cursor.finite_point("triangulation node")?);
         }
         let uv_nodes = if has_uv {
             // Each UV node consumes its two point2 tokens.
-            let mut uv_nodes = cursor.ctx.collection_vec(cursor.bounded(node_count, 2, "triangulation UV node")?, "FreeCAD B-rep parse_triangulations")?;
+            let mut uv_nodes = cursor.ctx.collection_vec(
+                cursor.bounded(node_count, 2, "triangulation UV node")?,
+                "FreeCAD B-rep parse_triangulations",
+            )?;
             for _ in 0..node_count {
                 uv_nodes.push(cursor.finite_point2("triangulation UV node")?);
             }
@@ -4504,7 +4612,10 @@ fn parse_triangulations(
             None
         };
         // Each triangle consumes its three index tokens.
-        let mut triangles = cursor.ctx.collection_vec(cursor.bounded(triangle_count, 3, "triangulation triangle")?, "FreeCAD B-rep parse_triangulations")?;
+        let mut triangles = cursor.ctx.collection_vec(
+            cursor.bounded(triangle_count, 3, "triangulation triangle")?,
+            "FreeCAD B-rep parse_triangulations",
+        )?;
         for _ in 0..triangle_count {
             let mut triangle = [0_u32; 3];
             for node in &mut triangle {
@@ -4520,7 +4631,10 @@ fn parse_triangulations(
         }
         let normals = if has_normals {
             // Each normal consumes its three vector tokens.
-            let mut normals = cursor.ctx.collection_vec(cursor.bounded(node_count, 3, "triangulation normal")?, "FreeCAD B-rep parse_triangulations")?;
+            let mut normals = cursor.ctx.collection_vec(
+                cursor.bounded(node_count, 3, "triangulation normal")?,
+                "FreeCAD B-rep parse_triangulations",
+            )?;
             for _ in 0..node_count {
                 normals.push(cursor.finite_vector("triangulation normal")?);
             }
@@ -4584,7 +4698,10 @@ fn parse_tshapes(
     let count = section_counts.get("TShapes").copied().unwrap_or(0);
     let mut cursor = TokenCursor::new(ctx, &tokens[start..]);
     // Each TShape consumes at least its one kind token.
-    let mut shapes = cursor.ctx.collection_vec(cursor.bounded(count, 1, "text TShapes")?, "FreeCAD B-rep parse_tshapes")?;
+    let mut shapes = cursor.ctx.collection_vec(
+        cursor.bounded(count, 1, "text TShapes")?,
+        "FreeCAD B-rep parse_tshapes",
+    )?;
     for index in 1..=count {
         let token = cursor.next("TShape kind")?;
         let kind = parse_shape_kind(cursor.ctx, token)?;
@@ -4604,7 +4721,9 @@ fn parse_tshapes(
                     child.shape
                 )));
             }
-            cursor.ctx.reserve_vec(&mut children, 1, "FreeCAD text shape children")?;
+            cursor
+                .ctx
+                .reserve_vec(&mut children, 1, "FreeCAD text shape children")?;
             children.push(child);
         }
         shapes.push(TextTShape {
@@ -4619,7 +4738,9 @@ fn parse_tshapes(
             cursor.next("root shape terminator")?;
             break;
         }
-        cursor.ctx.reserve_vec(&mut roots, 1, "FreeCAD text shape roots")?;
+        cursor
+            .ctx
+            .reserve_vec(&mut roots, 1, "FreeCAD text shape roots")?;
         roots.push(parse_shape_use(&mut cursor, count, section_counts)?);
     }
     if !cursor.is_empty() {
@@ -4640,7 +4761,10 @@ fn parse_shape_kind(ctx: &DecodeContext<'_>, token: &str) -> Result<TextShapeKin
         "So" => Ok(TextShapeKind::Solid),
         "CS" => Ok(TextShapeKind::CompSolid),
         "Co" => Ok(TextShapeKind::Compound),
-        _ => Err(CodecError::Malformed(ctx.format_retained(format_args!("invalid TShape kind {token:?}"), "FreeCAD invalid shape kind")?)),
+        _ => Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("invalid TShape kind {token:?}"),
+            "FreeCAD invalid shape kind",
+        )?)),
     }
 }
 
@@ -4712,7 +4836,11 @@ fn parse_vertex_geometry(
                 )));
             }
         };
-        cursor.ctx.reserve_vec(&mut representations, 1, "FreeCAD text vertex representations")?;
+        cursor.ctx.reserve_vec(
+            &mut representations,
+            1,
+            "FreeCAD text vertex representations",
+        )?;
         representations.push(representation);
     }
     Ok(TextTShapeGeometry::Vertex {
@@ -4742,7 +4870,9 @@ fn parse_edge_geometry(
                 "edge representation-count limit exceeded".into(),
             ));
         }
-        cursor.ctx.reserve_vec(&mut representations, 1, "FreeCAD text edge representations")?;
+        cursor
+            .ctx
+            .reserve_vec(&mut representations, 1, "FreeCAD text edge representations")?;
         representations.push(parse_edge_representation(
             kind,
             cursor,
@@ -4982,11 +5112,17 @@ fn parse_shape_use(
         Some(b'i') => (TextOrientation::Internal, &token[1..]),
         Some(b'e') => (TextOrientation::External, &token[1..]),
         _ => {
-            return Err(CodecError::Malformed(cursor.ctx.format_retained(format_args!("invalid shape use {token:?}"), "FreeCAD invalid shape use")?));
+            return Err(CodecError::Malformed(cursor.ctx.format_retained(
+                format_args!("invalid shape use {token:?}"),
+                "FreeCAD invalid shape use",
+            )?));
         }
     };
     let encoded = encoded.parse::<usize>().or_else(|_| {
-        Err(CodecError::Malformed(cursor.ctx.format_retained(format_args!("invalid shape use {token:?}"), "FreeCAD invalid shape use")?))
+        Err(CodecError::Malformed(cursor.ctx.format_retained(
+            format_args!("invalid shape use {token:?}"),
+            "FreeCAD invalid shape use",
+        )?))
     })?;
     if encoded == 0 || encoded > shape_count {
         return Err(CodecError::malformed(format_args!(
@@ -5227,10 +5363,13 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSurf
         .ok_or_else(|| CodecError::Malformed("B-spline surface pole limit exceeded".into()))?;
     // Each pole consumes its three point tokens.
     let capacity = cursor.bounded(pole_count, 3, "B-spline surface pole")?;
-    let mut control_points =
-        cursor.ctx.collection_vec(capacity, "FreeCAD B-rep parse_nurbs_surface")?;
+    let mut control_points = cursor
+        .ctx
+        .collection_vec(capacity, "FreeCAD B-rep parse_nurbs_surface")?;
     let mut weights =
-        cursor.ctx.optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+        cursor
+            .ctx
+            .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point("B-spline surface pole")?);
         if let Some(weights) = &mut weights {
@@ -5261,10 +5400,13 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSur
     let pole_count = u_count
         .checked_mul(v_count)
         .ok_or_else(|| CodecError::Malformed("Bezier surface pole count overflow".into()))?;
-    let mut control_points =
-        cursor.ctx.collection_vec(pole_count, "FreeCAD B-rep parse_bezier_surface")?;
+    let mut control_points = cursor
+        .ctx
+        .collection_vec(pole_count, "FreeCAD B-rep parse_bezier_surface")?;
     let mut weights =
-        cursor.ctx.optional_collection_vec(rational, pole_count, "FreeCAD B-rep weights")?;
+        cursor
+            .ctx
+            .optional_collection_vec(rational, pole_count, "FreeCAD B-rep weights")?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point("Bezier surface pole")?);
         if let Some(weights) = &mut weights {
@@ -5306,15 +5448,16 @@ fn parse_knots(
         if knots
             .len()
             .checked_add(multiplicity)
-            .filter(|count| *count <= 2_000_000)
-            .is_none()
+            .is_none_or(|count| count > 2_000_000)
         {
             return Err(CodecError::malformed(format_args!(
                 "expanded {label} knot limit exceeded"
             )));
         }
-        cursor.ctx.reserve_vec(&mut knots, multiplicity, "FreeCAD text expanded knots")?;
-        knots.extend(std::iter::repeat(knot).take(multiplicity));
+        cursor
+            .ctx
+            .reserve_vec(&mut knots, multiplicity, "FreeCAD text expanded knots")?;
+        knots.extend(std::iter::repeat_with(|| knot).take(multiplicity));
     }
     Ok(knots)
 }
@@ -5393,7 +5536,11 @@ fn append_periodic_curve_poles<T: Clone>(
             "periodic B-spline has insufficient poles".into(),
         ));
     }
-    ctx.reserve_vec(control_points, padding, "FreeCAD periodic B-rep curve poles")?;
+    ctx.reserve_vec(
+        control_points,
+        padding,
+        "FreeCAD periodic B-rep curve poles",
+    )?;
     control_points.extend_from_within(..padding);
     if let Some(weights) = weights {
         if weights.len() < padding {
@@ -5451,7 +5598,11 @@ fn normalize_periodic_surface(
         let old_points = &control_points;
         let old_weights = weights.as_deref();
         let mut points = ctx.collection_vec(new_count, "FreeCAD periodic B-rep surface poles")?;
-        let mut weights = ctx.optional_collection_vec(old_weights.is_some(), new_count, "FreeCAD periodic B-rep surface weights")?;
+        let mut weights = ctx.optional_collection_vec(
+            old_weights.is_some(),
+            new_count,
+            "FreeCAD periodic B-rep surface weights",
+        )?;
         for u in 0..new_u {
             for v in 0..new_v {
                 let source = (u % old_u) * old_v + v % old_v;
@@ -5594,10 +5745,13 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve,
     let knot_count = cursor.count("B-spline knot count", 1_000_000)?;
     // Each pole consumes its three point tokens.
     let capacity = cursor.bounded(pole_count, 3, "B-spline pole")?;
-    let mut control_points =
-        cursor.ctx.collection_vec(capacity, "FreeCAD B-rep parse_nurbs_curve")?;
+    let mut control_points = cursor
+        .ctx
+        .collection_vec(capacity, "FreeCAD B-rep parse_nurbs_curve")?;
     let mut weights =
-        cursor.ctx.optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
+        cursor
+            .ctx
+            .optional_collection_vec(rational, capacity, "FreeCAD B-rep weights")?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point("B-spline pole")?);
         if let Some(weights) = &mut weights {
@@ -5615,10 +5769,13 @@ fn parse_bezier_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve
     let rational = cursor.boolean("Bezier rational flag")?;
     let degree = cursor.count("Bezier degree", 64)?;
     let pole_count = degree + 1;
-    let mut control_points =
-        cursor.ctx.collection_vec(pole_count, "FreeCAD B-rep parse_bezier_curve")?;
+    let mut control_points = cursor
+        .ctx
+        .collection_vec(pole_count, "FreeCAD B-rep parse_bezier_curve")?;
     let mut weights =
-        cursor.ctx.optional_collection_vec(rational, pole_count, "FreeCAD B-rep weights")?;
+        cursor
+            .ctx
+            .optional_collection_vec(rational, pole_count, "FreeCAD B-rep weights")?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point("Bezier pole")?);
         if let Some(weights) = &mut weights {
@@ -5660,8 +5817,8 @@ fn clamped_bezier_knots(
         )
     })?;
     let mut knots = ctx.collection_vec(count, "FreeCAD Bezier knots")?;
-    knots.extend(std::iter::repeat(FiniteReal::ZERO).take(half));
-    knots.extend(std::iter::repeat(FiniteReal::ONE).take(half));
+    knots.extend(std::iter::repeat_with(|| FiniteReal::ZERO).take(half));
+    knots.extend(std::iter::repeat_with(|| FiniteReal::ONE).take(half));
     Ok(knots)
 }
 
@@ -5848,7 +6005,10 @@ pub(crate) fn clone_source_association(
             .as_deref()
             .map(|layer| ctx.copy_retained_text(layer, "FreeCAD geometry source layer"))
             .transpose()?,
-        instance_path: ctx.copy_retained_strings(&source.instance_path, "FreeCAD geometry source instance path")?,
+        instance_path: ctx.copy_retained_strings(
+            &source.instance_path,
+            "FreeCAD geometry source instance path",
+        )?,
     })
 }
 

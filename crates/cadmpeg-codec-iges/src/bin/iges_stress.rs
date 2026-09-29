@@ -188,7 +188,7 @@ fn card(out: &mut Vec<u8>, data: &[u8], section: u8, sequence: u64) {
         "card data exceeds the seventy-two data columns"
     );
     out.extend_from_slice(data);
-    out.extend(std::iter::repeat(b' ').take(CARD_DATA_COLUMNS - data.len()));
+    out.extend(std::iter::repeat_with(|| b' ').take(CARD_DATA_COLUMNS - data.len()));
     out.push(section);
     let mut field = [b' '; SEQUENCE_COLUMNS];
     right_aligned(&mut field, sequence);

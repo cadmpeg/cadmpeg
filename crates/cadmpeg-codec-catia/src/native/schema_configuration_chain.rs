@@ -116,12 +116,16 @@ impl ChainWire {
                 ctx,
                 remaining.peek().map_or(&chain.terminal, |next| &next.row),
             )?;
-            ctx.push_vec(&mut links, LinkWire {
+            ctx.push_vec(
+                &mut links,
+                LinkWire {
                     row: link.row,
                     successor_payload_offset: link.successor_payload_offset,
                     successor,
                     intervening_entities: link.intervening_entities,
-                }, "catia_configuration_chain_wire_links")?;
+                },
+                "catia_configuration_chain_wire_links",
+            )?;
         }
         Ok(Self {
             id: chain.id,
@@ -178,13 +182,21 @@ pub(super) fn derive_schema_configuration_row_chains(
         let Some(link) = &entity.schema_configuration_row_link() else {
             continue;
         };
-        ctx.insert_hash_set(&mut row_ids, (entity.object_graph.as_str(), entity.entity_id), "catia_configuration_row_ids")?;
+        ctx.insert_hash_set(
+            &mut row_ids,
+            (entity.object_graph.as_str(), entity.entity_id),
+            "catia_configuration_row_ids",
+        )?;
         let key = (
             entity.object_graph.as_str(),
             link.class_reference.entity_id(),
         );
         ctx.admit_hash_map_entry(&mut groups, &key, "catia_configuration_groups")?;
-        ctx.push_vec(groups.entry(key).or_default(), (entity.entity_id, link), "catia_configuration_group_links")?;
+        ctx.push_vec(
+            groups.entry(key).or_default(),
+            (entity.entity_id, link),
+            "catia_configuration_group_links",
+        )?;
     }
     let mut groups = ctx.collect_vec(groups, "catia_configuration_sorted_groups")?;
     groups.sort_by(
@@ -197,7 +209,12 @@ pub(super) fn derive_schema_configuration_row_chains(
     for ((graph, root), links) in groups {
         let mut successors = HashMap::new();
         for (row, link) in &links {
-            ctx.insert_hash_map(&mut successors, *row, *link, "catia_configuration_successors")?;
+            ctx.insert_hash_map(
+                &mut successors,
+                *row,
+                *link,
+                "catia_configuration_successors",
+            )?;
         }
         if successors.len() != links.len() {
             continue;
@@ -255,11 +272,15 @@ pub(super) fn derive_schema_configuration_row_chains(
                 entity_classes,
                 terminal_nulls,
             )?;
-            ctx.push_vec(&mut chain_links, CatiaSchemaConfigurationRowChainLink {
+            ctx.push_vec(
+                &mut chain_links,
+                CatiaSchemaConfigurationRowChainLink {
                     row,
                     successor_payload_offset: link.successor_payload_offset,
                     intervening_entities,
-                }, "catia_configuration_chain_links")?;
+                },
+                "catia_configuration_chain_links",
+            )?;
         }
         let Some((namespace, graph_key)) = graph.split_once('#') else {
             continue;
@@ -273,14 +294,21 @@ pub(super) fn derive_schema_configuration_row_chains(
         ) else {
             continue;
         };
-        let id = ctx.format_retained(format_args!("{format}:{scope}:schema-configuration-row-chain#{graph_key}:{root}"), "catia_configuration_chain_id")?;
+        let id = ctx.format_retained(
+            format_args!("{format}:{scope}:schema-configuration-row-chain#{graph_key}:{root}"),
+            "catia_configuration_chain_id",
+        )?;
         let object_graph = ctx.copy_retained_text(graph, "catia_configuration_graph_id")?;
-        ctx.push_vec(&mut chains, CatiaSchemaConfigurationRowChain {
+        ctx.push_vec(
+            &mut chains,
+            CatiaSchemaConfigurationRowChain {
                 id,
                 object_graph,
                 links: chain_links,
                 terminal,
-            }, "catia_configuration_chains")?;
+            },
+            "catia_configuration_chains",
+        )?;
     }
     Ok(chains)
 }

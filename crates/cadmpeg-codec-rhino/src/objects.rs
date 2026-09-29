@@ -1707,20 +1707,29 @@ fn resolve_identity(
             ctx,
             format_args!("object at {} has nil object UUID", descriptor.range.start),
         )?;
-        ctx.format_retained(format_args!(
+        ctx.format_retained(
+            format_args!(
                 "rhino:object:record#record-{index:06}-offset-{}",
                 descriptor.range.start
-            ), "Rhino identity source ID")?
+            ),
+            "Rhino identity source ID",
+        )?
     } else if seen_ids.contains(&object_id) {
         warnings.push_admitted(ctx, format_args!("duplicate object UUID {object_id}"))?;
-        ctx.format_retained(format_args!(
+        ctx.format_retained(
+            format_args!(
                 "rhino:object:record#record-{index:06}-offset-{}",
                 descriptor.range.start
-            ), "Rhino identity source ID")?
+            ),
+            "Rhino identity source ID",
+        )?
     } else {
         ctx.reserve_set(seen_ids, 1, "Rhino identity seen UUIDs")?;
         seen_ids.insert(object_id);
-        ctx.format_retained(format_args!("rhino:object:record#{object_id}"), "Rhino identity source ID")?
+        ctx.format_retained(
+            format_args!("rhino:object:record#{object_id}"),
+            "Rhino identity source ID",
+        )?
     };
     let layer = layer
         .map(|value| {
@@ -1979,10 +1988,13 @@ pub(crate) fn degraded_object_record(
 ) -> Result<ObjectRecord<()>, cadmpeg_core::CodecError> {
     Ok(ObjectRecord::Degraded {
         range: record.range.clone(),
-        warning: ctx.format_retained(format_args!(
+        warning: ctx.format_retained(
+            format_args!(
                 "bounded object record at {} degraded: {error}",
                 record.range.start
-            ), "Rhino degraded object warning")?,
+            ),
+            "Rhino degraded object warning",
+        )?,
     })
 }
 

@@ -1721,7 +1721,8 @@ pub(crate) fn project(
                         "generated dimension reference role is blank",
                     )
                 })?;
-                let mut selections = ctx.collection_vec(1, "Rhino dimension reference selections")?;
+                let mut selections =
+                    ctx.collection_vec(1, "Rhino dimension reference selections")?;
                 selections.push(ReferenceSelection::new(ReferenceTarget::Null, Vec::new()));
                 references.insert(role, selections);
                 Ok(())
@@ -1760,7 +1761,10 @@ pub(crate) fn project(
         ctx.copy_retained_text(key, "Rhino dimension identity key")?,
     )
     .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
-    let annotation_id = SemanticAnnotationId::try_from(ctx.format_retained(format_args!("rhino:dimension:annotation#{}", key.as_str()), "Rhino dimension annotation identity")?)
+    let annotation_id = SemanticAnnotationId::try_from(ctx.format_retained(
+        format_args!("rhino:dimension:annotation#{}", key.as_str()),
+        "Rhino dimension annotation identity",
+    )?)
     .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
     let mut text = Vec::new();
     if !dimension.user_text.is_empty() {

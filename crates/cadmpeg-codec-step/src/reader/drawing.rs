@@ -572,7 +572,11 @@ fn add_source_typed_targets(
             identity.as_str(),
             "step_drawing_native_target_identity_copy",
         )?;
-        let source_type = ctx.join_display_retained(record.partials.iter().map(|partial| partial.name.as_str()), "+", "step_drawing_source_type_text")?;
+        let source_type = ctx.join_display_retained(
+            record.partials.iter().map(|partial| partial.name.as_str()),
+            "+",
+            "step_drawing_source_type_text",
+        )?;
         reserve_drawing_items(
             &mut native_targets,
             1,
@@ -780,7 +784,11 @@ fn note_ambiguous_target(
     identities: &BTreeSet<String>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let identities = ctx.join_display_retained(identities.iter().map(String::as_str), ", ", "step_drawing_ambiguous_identities_text")?;
+    let identities = ctx.join_display_retained(
+        identities.iter().map(String::as_str),
+        ", ",
+        "step_drawing_ambiguous_identities_text",
+    )?;
     reserve_drawing_items(losses, 1, ctx, "step_drawing_losses")?;
     let message = ctx.format_retained(format_args!("STEP {source} relationship {role} references source record #{target_id} with multiple neutral identities ({identities}); no target was selected and the raw source parameter is retained"), "step_drawing_ambiguous_loss_text")?;
     losses.push(StepLossCode::DrawingRelationshipTargetAmbiguous.note(message));

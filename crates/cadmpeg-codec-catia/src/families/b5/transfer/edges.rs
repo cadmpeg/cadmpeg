@@ -553,7 +553,12 @@ pub(super) fn emit_edges(
             EdgeId::mint,
             "catia_b5_edge_map_id",
         )?;
-        admission.context().insert_hash_map(&mut edge_id_map, edge_id, map_id, "catia_b5_emitted_edge_ids")?;
+        admission.context().insert_hash_map(
+            &mut edge_id_map,
+            edge_id,
+            map_id,
+            "catia_b5_emitted_edge_ids",
+        )?;
         let start = crate::resource::compose_index_id(
             admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),

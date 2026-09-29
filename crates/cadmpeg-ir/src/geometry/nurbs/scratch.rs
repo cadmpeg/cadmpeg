@@ -11,7 +11,7 @@ pub(crate) fn filled<T: Clone>(
 ) -> Result<Vec<T>, ResourceLimit> {
     let mut output = Vec::new();
     reserve_exact(&mut output, count, operation)?;
-    output.extend(std::iter::repeat(value).take(count));
+    output.extend(std::iter::repeat_with(|| value.clone()).take(count));
     Ok(output)
 }
 

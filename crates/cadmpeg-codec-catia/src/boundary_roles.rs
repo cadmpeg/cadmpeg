@@ -183,7 +183,11 @@ pub(crate) fn classify_planar_boundaries(
             return unspecified();
         }
         let mut polygon = Vec::new();
-        ctx.reserve_vec(&mut polygon, boundary.len(), "catia_boundary_polygon_points")?;
+        ctx.reserve_vec(
+            &mut polygon,
+            boundary.len(),
+            "catia_boundary_polygon_points",
+        )?;
         for point in boundary {
             let offset = point.vector_from(origin);
             polygon.push(Point2::new(offset.dot(u_axis), offset.dot(v_axis)));

@@ -85,7 +85,8 @@ impl E5RollingBallJet {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<ProceduralSurfaceDefinition>, CodecError> {
-        let stations = ctx.copy_retained_slice(&self.stations, "catia_e5_rolling_ball_definition_stations")?;
+        let stations =
+            ctx.copy_retained_slice(&self.stations, "catia_e5_rolling_ball_definition_stations")?;
         Ok(
             cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(Self::DEGREE, stations)
                 .ok()
@@ -222,12 +223,16 @@ pub(super) fn e5_circles(
                         };
                         let payload =
                             cadmpeg_ir::geometry::analytic::CircleCurve::new(origin, frame, radius);
-                        ctx.push_vec(&mut out, E5Circle {
+                        ctx.push_vec(
+                            &mut out,
+                            E5Circle {
                                 pos,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                                     payload,
                                 )),
-                            }, "catia_e5_circles")?;
+                            },
+                            "catia_e5_circles",
+                        )?;
                     }
                 }
             }
@@ -262,7 +267,9 @@ pub(super) fn e5_planes(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<E5Pl
         #[cfg(not(test))]
         // discarded-value: reading the natural bounds admits them finite; only tests read them
         let _ = bounds;
-        ctx.push_vec(&mut out, E5Plane {
+        ctx.push_vec(
+            &mut out,
+            E5Plane {
                 pos,
                 record_id: View::u32_le_at(data, pos + 9).unwrap_or(0),
                 origin,
@@ -270,7 +277,9 @@ pub(super) fn e5_planes(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<E5Pl
                 u_range: [bounds[0].get(), bounds[1].get()],
                 #[cfg(test)]
                 v_range: [bounds[2].get(), bounds[3].get()],
-            }, "catia_e5_planes")?;
+            },
+            "catia_e5_planes",
+        )?;
     }
     Ok(out)
 }
@@ -295,10 +304,14 @@ pub(super) fn e5_edges(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<E5Edg
             if let Some((_, next)) = e5_ref(payload, 1) {
                 if let Some((start_vertex_id, next)) = e5_ref(payload, next) {
                     if let Some((end_vertex_id, _)) = e5_ref(payload, next) {
-                        ctx.push_vec(&mut out, E5Edge {
+                        ctx.push_vec(
+                            &mut out,
+                            E5Edge {
                                 start_vertex_id,
                                 end_vertex_id,
-                            }, "catia_e5_edges")?;
+                            },
+                            "catia_e5_edges",
+                        )?;
                     }
                 }
             }
@@ -352,12 +365,16 @@ pub(in crate::families) fn e5_surfaces(
             _ => None,
         };
         if let Some((geometry, uv_scale)) = decoded {
-            ctx.push_vec(&mut out, E5Surface {
+            ctx.push_vec(
+                &mut out,
+                E5Surface {
                     pos,
                     record_id: View::u32_le_at(data, pos + 9).unwrap_or(0),
                     geometry,
                     uv_scale,
-                }, "catia_e5_surfaces")?;
+                },
+                "catia_e5_surfaces",
+            )?;
         }
     }
     Ok(out)
@@ -429,13 +446,41 @@ fn parse_e5_rolling_ball_jet(
     let mut second_derivatives = Vec::new();
     let mut sites = Vec::new();
     let mut stations = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut knots, station_count, "decode CATIA E5 rolling-ball stations")?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut multiplicities, station_count, "decode CATIA E5 rolling-ball stations")?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut positions, station_count, "decode CATIA E5 rolling-ball stations")?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut first_derivatives, station_count, "decode CATIA E5 rolling-ball stations")?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut second_derivatives, station_count, "decode CATIA E5 rolling-ball stations")?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut sites, station_count, "decode CATIA E5 rolling-ball stations")?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut stations, station_count, "decode CATIA E5 rolling-ball stations")?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut knots,
+        station_count,
+        "decode CATIA E5 rolling-ball stations",
+    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut multiplicities,
+        station_count,
+        "decode CATIA E5 rolling-ball stations",
+    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut positions,
+        station_count,
+        "decode CATIA E5 rolling-ball stations",
+    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut first_derivatives,
+        station_count,
+        "decode CATIA E5 rolling-ball stations",
+    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut second_derivatives,
+        station_count,
+        "decode CATIA E5 rolling-ball stations",
+    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut sites,
+        station_count,
+        "decode CATIA E5 rolling-ball stations",
+    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut stations,
+        station_count,
+        "decode CATIA E5 rolling-ball stations",
+    )?;
     Ok((|| {
         read_d8_counted(&mut view, station_count_u64, 8, &mut knots, |view| {
             FiniteReal::new(view.f64_le()?)
@@ -665,11 +710,15 @@ pub(in crate::families) fn e5_surface_wrappers(
         if next >= 44 {
             continue;
         }
-        ctx.push_vec(&mut out, E5SurfaceWrapper {
+        ctx.push_vec(
+            &mut out,
+            E5SurfaceWrapper {
                 pos: record.pos,
                 record_id: View::u32_le_at(data, record.pos + 9).unwrap_or(0),
                 references,
-            }, "catia_e5_surface_wrappers")?;
+            },
+            "catia_e5_surface_wrappers",
+        )?;
     }
     Ok(out)
 }
@@ -721,7 +770,11 @@ fn e5_nurbs_surface(
     };
     ctx.charge_retained(retained_bytes, "catia_e5_nurbs_poles")?;
     let mut control_points = Vec::new();
-    ctx.reserve_vec(&mut control_points, control_count, "catia_e5_nurbs_control_points")?;
+    ctx.reserve_vec(
+        &mut control_points,
+        control_count,
+        "catia_e5_nurbs_control_points",
+    )?;
     for _ in 0..control_count {
         let Some(point) =
             (|| FinitePoint3::new(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?)))()
@@ -761,8 +814,7 @@ fn e5_nurbs_surface(
     let weight_rows = if let Some(weights) = weights {
         let mut rows = Vec::new();
         for row in weights.chunks(v_count) {
-            let copied =
-                ctx.copy_retained_slice(row, "catia_e5_nurbs_weight_row")?;
+            let copied = ctx.copy_retained_slice(row, "catia_e5_nurbs_weight_row")?;
             ctx.push_vec(&mut rows, copied, "catia_e5_nurbs_weight_rows")?;
         }
         Some(rows)
@@ -860,7 +912,11 @@ fn read_nurbs_axis(ctx: &DecodeContext<'_>, view: &mut View<'_>) -> NurbsAxisOut
     };
     ctx.charge_retained(bytes, "catia_e5_nurbs_axis")?;
     let mut multiplicities = Vec::new();
-    ctx.reserve_vec(&mut multiplicities, knot_count, "catia_e5_nurbs_axis_multiplicities")?;
+    ctx.reserve_vec(
+        &mut multiplicities,
+        knot_count,
+        "catia_e5_nurbs_axis_multiplicities",
+    )?;
     for _ in 0..knot_count {
         let Some(multiplicity) = view.u32_le() else {
             return Ok(None);
@@ -917,7 +973,7 @@ fn expand_nurbs_axis(
         let Ok(count) = usize::try_from(*multiplicity) else {
             return Ok(None);
         };
-        expanded.extend(std::iter::repeat(*knot).take(count));
+        expanded.extend(std::iter::repeat_with(|| *knot).take(count));
     }
     Ok((expanded.len() == total).then_some((expanded, control_count)))
 }

@@ -201,7 +201,8 @@ pub(crate) fn parse_registry(
     let mut cursor = Cursor::new(bytes, "RSe segment registry");
     let count = cursor.count("segment count", 65_536)?;
     ctx.charge_collection_items(count as u64, "admit Inventor segment registry entries")?;
-    let mut entries = DecodeContext::admitted_vec(count, "admit Inventor segment registry entries")?;
+    let mut entries =
+        DecodeContext::admitted_vec(count, "admit Inventor segment registry entries")?;
     for _ in 0..count {
         let display_name = cursor.utf16(ctx, "segment display name", 4_096)?;
         let segment_id = cursor.array("segment id")?;
@@ -218,7 +219,8 @@ pub(crate) fn parse_registry(
             object_count as u64,
             "admit Inventor segment registry objects",
         )?;
-        let mut objects = DecodeContext::admitted_vec(object_count, "admit Inventor segment registry objects")?;
+        let mut objects =
+            DecodeContext::admitted_vec(object_count, "admit Inventor segment registry objects")?;
         let mut node_count = None;
         for _ in 0..object_count {
             let object = SegmentObject {
@@ -243,7 +245,8 @@ pub(crate) fn parse_registry(
             ));
         }
         ctx.charge_collection_items(node_count as u64, "admit Inventor segment registry nodes")?;
-        let mut nodes = DecodeContext::admitted_vec(node_count, "admit Inventor segment registry nodes")?;
+        let mut nodes =
+            DecodeContext::admitted_vec(node_count, "admit Inventor segment registry nodes")?;
         for _ in 0..node_count {
             nodes.push(SegmentNode {
                 index: cursor.u32("node index")?,
@@ -415,7 +418,8 @@ impl<'a> Cursor<'a> {
     ) -> Result<Vec<[u8; 16]>, CodecError> {
         let count = self.count(field, 1_000_000)?;
         ctx.charge_collection_items(count as u64, "admit Inventor registry identifier list")?;
-        let mut ids = DecodeContext::admitted_vec(count, "admit Inventor registry identifier list")?;
+        let mut ids =
+            DecodeContext::admitted_vec(count, "admit Inventor registry identifier list")?;
         for _ in 0..count {
             ids.push(self.array(field)?);
         }

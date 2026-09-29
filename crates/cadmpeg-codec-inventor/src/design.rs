@@ -1263,7 +1263,8 @@ impl Cursor<'_> {
                 self.u16("reference-array metadata 1")?,
             ])
         };
-        let mut references = DecodeContext::admitted_vec(count, "admit Inventor PmDc unit references")?;
+        let mut references =
+            DecodeContext::admitted_vec(count, "admit Inventor PmDc unit references")?;
         for _ in 0..count {
             references.push(self.reference("reference-array entry")?);
         }

@@ -2,7 +2,7 @@
 //! Global delimiters, count-driven Hollerith values, units, and metadata.
 
 use crate::card::{CardScan, Section};
-use crate::decode_resource::{lossy_retained};
+use crate::decode_resource::lossy_retained;
 use crate::loss::IgesLossCode;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit};
@@ -359,12 +359,15 @@ fn global_loss_note(
     defect: Defect,
     consequence: &str,
 ) -> Result<LossNote, CodecError> {
-    let message = ctx.format_retained(format_args!(
+    let message = ctx.format_retained(
+        format_args!(
             "IGES Global field {} ({}) is {}; {consequence}",
             index + 1,
             field_name(index),
             defect.as_str()
-        ), "iges global loss message")?;
+        ),
+        "iges global loss message",
+    )?;
     admitted_global_loss(ctx, code, message)
 }
 
@@ -473,8 +476,11 @@ pub(crate) fn layout_global_cards(
         delimiter
     };
 
-    let mut fields =
-        cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, 1, "iges global layout fields")?;
+    let mut fields = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+        ctx,
+        1,
+        "iges global layout fields",
+    )?;
     fields.push(0..cursor);
     while cursor < bytes.len() {
         let start = cursor;
@@ -493,7 +499,12 @@ pub(crate) fn layout_global_cards(
             .ok_or_else(|| malformed("Global record delimiter is missing"))?
             == &record_delimiter;
         end += 1;
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut fields, 1, "iges global layout fields")?;
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+            ctx,
+            &mut fields,
+            1,
+            "iges global layout fields",
+        )?;
         fields.push(start..end);
         cursor = end;
         if is_record {
@@ -518,14 +529,24 @@ pub(crate) fn layout_global_cards(
             return Err(malformed("Global field exceeds one card"));
         }
         if card.len() + minimum > 72 {
-            card.extend(std::iter::repeat(b' ').take(72 - card.len()));
-            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut cards, 1, "iges global layout cards")?;
+            card.extend(std::iter::repeat_with(|| b' ').take(72 - card.len()));
+            cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                ctx,
+                &mut cards,
+                1,
+                "iges global layout cards",
+            )?;
             cards.push(std::mem::take(&mut card));
             card = layout_global_card(ctx)?;
         }
         for byte in field.iter().copied() {
             if card.len() == 72 {
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut cards, 1, "iges global layout cards")?;
+                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                    ctx,
+                    &mut cards,
+                    1,
+                    "iges global layout cards",
+                )?;
                 cards.push(std::mem::take(&mut card));
                 card = layout_global_card(ctx)?;
             }
@@ -533,7 +554,12 @@ pub(crate) fn layout_global_cards(
         }
     }
     if !card.is_empty() {
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(ctx, &mut cards, 1, "iges global layout cards")?;
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+            ctx,
+            &mut cards,
+            1,
+            "iges global layout cards",
+        )?;
         cards.push(card);
     }
     Ok(cards)
@@ -974,7 +1000,8 @@ impl Resolution<'_, '_> {
         consequence: &str,
     ) -> Result<(), CodecError> {
         let note = global_loss_note(self.ctx, code, index, defect, consequence)?;
-        self.ctx.reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
+        self.ctx
+            .reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
         self.losses.push(note);
         Ok(())
     }
@@ -1058,7 +1085,8 @@ impl Resolution<'_, '_> {
     fn charge_recovered_real(&mut self, index: usize, value: f64) -> Result<(), CodecError> {
         let source = self.declaration_text(index)?;
         let note = recovered_real_loss_note(self.ctx, index, &source, value)?;
-        self.ctx.reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
+        self.ctx
+            .reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
         self.losses.push(note);
         Ok(())
     }
@@ -1376,7 +1404,10 @@ impl Resolution<'_, '_> {
             let name = match self.supplied_string(FIELD_UNITS_NAME)? {
                 Supplied::Absent if global_table.defaults_units_name() => {
                     match units_flag.and_then(enumerated_unit_name) {
-                        Some(name) => Some(self.ctx.format_retained(format_args!("{name}"), "iges global default units name")?),
+                        Some(name) => Some(self.ctx.format_retained(
+                            format_args!("{name}"),
+                            "iges global default units name",
+                        )?),
                         None => None,
                     }
                 }
@@ -1435,7 +1466,8 @@ impl Resolution<'_, '_> {
                         IgesLossCode::GlobalLengthUnitUnresolved,
                         message,
                     )?;
-                    self.ctx.reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
+                    self.ctx
+                        .reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
                     self.losses.push(note);
                 }
             }
@@ -1510,7 +1542,10 @@ fn resolve(
         Supplied::Absent if global_table.defaults_receiver_product_to_sender() => sender_product
             .as_deref()
             .map(|value| {
-                ctx.format_retained(format_args!("{value}"), "iges global default receiver product")
+                ctx.format_retained(
+                    format_args!("{value}"),
+                    "iges global default receiver product",
+                )
             })
             .transpose()?,
         Supplied::Absent if global_table.field_requires_value(FIELD_RECEIVER_PRODUCT) => {
@@ -1693,31 +1728,76 @@ impl ResolvedGlobal {
     /// recovery rather than presenting it as the document's verified version.
     pub(crate) fn summary_notes(&self, ctx: &DecodeContext<'_>) -> Result<Vec<String>, CodecError> {
         let mut notes = Vec::new();
-        ctx.push_formatted_retained(&mut notes, format_args!(
+        ctx.push_formatted_retained(
+            &mut notes,
+            format_args!(
                 "parameter_delimiter={}",
                 char::from(self.parameter_delimiter)
-            ), "iges global summary notes", "iges global summary text")?;
-        ctx.push_formatted_retained(&mut notes, format_args!("record_delimiter={}", char::from(self.record_delimiter)), "iges global summary notes", "iges global summary text")?;
+            ),
+            "iges global summary notes",
+            "iges global summary text",
+        )?;
+        ctx.push_formatted_retained(
+            &mut notes,
+            format_args!("record_delimiter={}", char::from(self.record_delimiter)),
+            "iges global summary notes",
+            "iges global summary text",
+        )?;
         if let Some(product) = self.sender_product() {
-            ctx.push_formatted_retained(&mut notes, format_args!("sender_product={product}"), "iges global summary notes", "iges global summary text")?;
+            ctx.push_formatted_retained(
+                &mut notes,
+                format_args!("sender_product={product}"),
+                "iges global summary notes",
+                "iges global summary text",
+            )?;
         }
         if self.global_table() == GlobalTable::V5_0 {
             if let Some(product) = self.receiver_product() {
-                ctx.push_formatted_retained(&mut notes, format_args!("receiver_product={product}"), "iges global summary notes", "iges global summary text")?;
+                ctx.push_formatted_retained(
+                    &mut notes,
+                    format_args!("receiver_product={product}"),
+                    "iges global summary notes",
+                    "iges global summary text",
+                )?;
             }
         }
         if let Some(units) = self.units_name() {
-            ctx.push_formatted_retained(&mut notes, format_args!("units={units}"), "iges global summary notes", "iges global summary text")?;
+            ctx.push_formatted_retained(
+                &mut notes,
+                format_args!("units={units}"),
+                "iges global summary notes",
+                "iges global summary text",
+            )?;
         }
         if matches!(self.dialect_recovery(), DialectRecovery::Verified) {
-            ctx.push_formatted_retained(&mut notes, format_args!("iges_version={}", self.version_name()), "iges global summary notes", "iges global summary text")?;
+            ctx.push_formatted_retained(
+                &mut notes,
+                format_args!("iges_version={}", self.version_name()),
+                "iges global summary notes",
+                "iges global summary text",
+            )?;
         } else {
-            ctx.push_formatted_retained(&mut notes, format_args!("iges_version=unverified"), "iges global summary notes", "iges global summary text")?;
-            ctx.push_formatted_retained(&mut notes, format_args!(
+            ctx.push_formatted_retained(
+                &mut notes,
+                format_args!("iges_version=unverified"),
+                "iges global summary notes",
+                "iges global summary text",
+            )?;
+            ctx.push_formatted_retained(
+                &mut notes,
+                format_args!(
                     "iges_declared_version_flag={}",
                     self.declaration.declared_flag()
-                ), "iges global summary notes", "iges global summary text")?;
-            ctx.push_formatted_retained(&mut notes, format_args!("iges_effective_version={}", self.version_name()), "iges global summary notes", "iges global summary text")?;
+                ),
+                "iges global summary notes",
+                "iges global summary text",
+            )?;
+            ctx.push_formatted_retained(
+                &mut notes,
+                format_args!("iges_effective_version={}", self.version_name()),
+                "iges global summary notes",
+                "iges global summary text",
+            )?;
         }
         Ok(notes)
     }

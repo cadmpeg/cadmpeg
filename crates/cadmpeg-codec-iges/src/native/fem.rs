@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed native records for the IGES finite-element entity family.
 
-
 use crate::directory::DirectoryEntry;
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::ParameterResolver;
@@ -135,7 +134,10 @@ fn is_fem(entry: &DirectoryEntry) -> bool {
 }
 
 fn source_entity(ctx: &DecodeContext<'_>, sequence: u32) -> Result<String, CodecError> {
-    ctx.format_retained(format_args!("iges:entity:directory#{sequence}"), "iges FEM source entity id")
+    ctx.format_retained(
+        format_args!("iges:entity:directory#{sequence}"),
+        "iges FEM source entity id",
+    )
 }
 
 fn record_integer(record: Option<&ParameterRecord>, index: usize) -> Option<i64> {
@@ -175,7 +177,10 @@ fn complete_count(
 }
 
 fn entity_id(ctx: &DecodeContext<'_>, kind: &str, sequence: u32) -> Result<String, CodecError> {
-    ctx.format_retained(format_args!("iges:fem:{kind}#D{sequence}"), "iges FEM entity id")
+    ctx.format_retained(
+        format_args!("iges:fem:{kind}#D{sequence}"),
+        "iges FEM entity id",
+    )
 }
 
 fn resolved_id(
@@ -368,7 +373,10 @@ fn nodal_displacement_rotation(
         Vec::new()
     };
     let nodes = if let Some((case_count, node_count, start, stride)) = layout {
-        ctx.collect_indexed_vec(node_count, "iges_fem_displacement_nodes", |node_offset| -> Result<NativeFemNodeSample, CodecError> {
+        ctx.collect_indexed_vec(
+            node_count,
+            "iges_fem_displacement_nodes",
+            |node_offset| -> Result<NativeFemNodeSample, CodecError> {
                 let base = start + node_offset * stride;
                 let identifier = record_integer(record, base);
                 let node = resolve_type(
@@ -402,7 +410,8 @@ fn nodal_displacement_rotation(
                     rotations,
                     values: Vec::new(),
                 })
-            })?
+            },
+        )?
     } else {
         Vec::new()
     };
@@ -453,7 +462,10 @@ fn nodal_results(
         _ => None,
     };
     let nodes = if let Some((value_count, node_count, start, stride)) = layout {
-        ctx.collect_indexed_vec(node_count, "iges_fem_nodal_result_nodes", |offset| -> Result<NativeFemNodeSample, CodecError> {
+        ctx.collect_indexed_vec(
+            node_count,
+            "iges_fem_nodal_result_nodes",
+            |offset| -> Result<NativeFemNodeSample, CodecError> {
                 let base = start + offset * stride;
                 Ok(NativeFemNodeSample {
                     identifier: record_integer(record, base),
@@ -468,9 +480,14 @@ fn nodal_results(
                     )?,
                     translations: Vec::new(),
                     rotations: Vec::new(),
-                    values: ctx.collect_indexed_vec(value_count, "iges_fem_nodal_result_values", |value| Ok(record_number(record, base + 2 + value)))?,
+                    values: ctx.collect_indexed_vec(
+                        value_count,
+                        "iges_fem_nodal_result_values",
+                        |value| Ok(record_number(record, base + 2 + value)),
+                    )?,
                 })
-            })?
+            },
+        )?
     } else {
         Vec::new()
     };
@@ -540,8 +557,16 @@ fn element_results(
             else {
                 break;
             };
-            let report_locations = ctx.collect_indexed_vec(report_location_count, "iges_fem_element_result_locations", |offset| Ok(record_integer(record, report_start + offset)))?;
-            let values = ctx.collect_indexed_vec(result_count, "iges_fem_element_result_values", |offset| Ok(record_number(record, value_count_index + 1 + offset)))?;
+            let report_locations = ctx.collect_indexed_vec(
+                report_location_count,
+                "iges_fem_element_result_locations",
+                |offset| Ok(record_integer(record, report_start + offset)),
+            )?;
+            let values = ctx.collect_indexed_vec(
+                result_count,
+                "iges_fem_element_result_values",
+                |offset| Ok(record_number(record, value_count_index + 1 + offset)),
+            )?;
             elements.push(NativeFemElementSample {
                 identifier: record_integer(record, cursor),
                 element: resolve_type(
@@ -591,7 +616,10 @@ fn nodal_load_constraint(
     let sequence = entry.sequence;
     let declared_case_count = record_integer(record, 1);
     let case_references = if let Some(count) = complete_count(record, 1, 4, 1) {
-        ctx.collect_indexed_vec(count, "iges_fem_load_constraint_cases", |offset| -> Result<Option<String>, CodecError> {
+        ctx.collect_indexed_vec(
+            count,
+            "iges_fem_load_constraint_cases",
+            |offset| -> Result<Option<String>, CodecError> {
                 let index = 4 + offset;
                 let Some(raw_pointer) = record_integer(record, index) else {
                     return Ok(None);
@@ -612,7 +640,8 @@ fn nodal_load_constraint(
                         },
                     )?,
                 )
-            })?
+            },
+        )?
     } else {
         Vec::new()
     };

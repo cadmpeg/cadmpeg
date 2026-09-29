@@ -778,11 +778,8 @@ fn read_texture_uri(
         )));
     }
     let count = read_count(bytes, at, id)?;
-    let mut paths = DecodeContext::collection_vec_optional(
-        ctx,
-        count,
-        "Protein texture URI paths",
-    )?;
+    let mut paths =
+        DecodeContext::collection_vec_optional(ctx, count, "Protein texture URI paths")?;
     for _ in 0..count {
         paths.push(take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(malformed)?);
     }
@@ -896,11 +893,8 @@ fn read_connections(
         )));
     }
     let count = read_count(bytes, at, "connection")?;
-    let mut connections = DecodeContext::collection_vec_optional(
-        ctx,
-        count,
-        "Protein connected asset GUIDs",
-    )?;
+    let mut connections =
+        DecodeContext::collection_vec_optional(ctx, count, "Protein connected asset GUIDs")?;
     for _ in 0..count {
         connections.push(
             take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(|| {

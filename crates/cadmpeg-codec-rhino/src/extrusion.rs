@@ -791,7 +791,11 @@ fn read_mesh_cache(
             }
         }
         let item = anonymous_chunk(data, &mut cache_reader, archive, "mesh-cache item")?;
-        expand.ctx().reserve_vec(&mut cache_children, 1, "Rhino extrusion mesh-cache children")?;
+        expand.ctx().reserve_vec(
+            &mut cache_children,
+            1,
+            "Rhino extrusion mesh-cache children",
+        )?;
         cache_children.push(item.range());
         let mut item_reader = BoundedReader::new(data, item.body().start, item.body().end)?;
         require_anonymous_version(&mut item_reader, 1, 0, "mesh-cache item")?;
@@ -823,7 +827,9 @@ fn read_mesh_cache(
             },
             mesh_budget,
         )?;
-        expand.ctx().reserve_vec(&mut meshes, 1, "Rhino extrusion mesh-cache meshes")?;
+        expand
+            .ctx()
+            .reserve_vec(&mut meshes, 1, "Rhino extrusion mesh-cache meshes")?;
         meshes.push(mesh);
         finish_anonymous(
             expand.ctx(),
@@ -905,7 +911,9 @@ fn read_v5_mesh_cache(
                     },
                     mesh_budget,
                 )?;
-                expand.ctx().reserve_vec(&mut meshes, 1, "Rhino V5 extrusion mesh-cache meshes")?;
+                expand
+                    .ctx()
+                    .reserve_vec(&mut meshes, 1, "Rhino V5 extrusion mesh-cache meshes")?;
                 meshes.push(mesh);
             } else if class.class_uuid != Uuid::nil() {
                 return Err(error(

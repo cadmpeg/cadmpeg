@@ -5,7 +5,6 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{Identity, IdentityComponent};
 
-
 pub(crate) fn neutral_history_id(
     ctx: &DecodeContext<'_>,
     native_id: &str,
@@ -23,7 +22,10 @@ pub(crate) fn neutral_history_id(
     let (scope, _) = rest
         .split_once(':')
         .ok_or_else(|| CodecError::malformed("CATIA history identity has no scope"))?;
-    let derived = ctx.format_retained(format_args!("{format}:{scope}:{}#{key}", kind.as_str()), "catia_neutral_history_derived")?;
+    let derived = ctx.format_retained(
+        format_args!("{format}:{scope}:{}#{key}", kind.as_str()),
+        "catia_neutral_history_derived",
+    )?;
     Identity::new(derived).map_err(CodecError::malformed)
 }
 

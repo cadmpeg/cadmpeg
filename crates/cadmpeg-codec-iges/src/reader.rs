@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Physical graph to CADIR native preservation and loss reporting.
 
-
 use crate::loss::IgesLossCode;
 use crate::representation::Representation;
 use crate::{card, directory, entities, global, graph, native, parameter};
@@ -33,19 +32,28 @@ fn source_meta(
         ctx,
         &mut attributes,
         "representation",
-        ctx.format_retained(format_args!("{}", representation.as_str()), "iges source representation")?,
+        ctx.format_retained(
+            format_args!("{}", representation.as_str()),
+            "iges source representation",
+        )?,
     )?;
     insert_source_attribute(
         ctx,
         &mut attributes,
         "parameter_delimiter",
-        ctx.format_retained(format_args!("{}", char::from(global.parameter_delimiter)), "iges source parameter delimiter")?,
+        ctx.format_retained(
+            format_args!("{}", char::from(global.parameter_delimiter)),
+            "iges source parameter delimiter",
+        )?,
     )?;
     insert_source_attribute(
         ctx,
         &mut attributes,
         "record_delimiter",
-        ctx.format_retained(format_args!("{}", char::from(global.record_delimiter)), "iges source record delimiter")?,
+        ctx.format_retained(
+            format_args!("{}", char::from(global.record_delimiter)),
+            "iges source record delimiter",
+        )?,
     )?;
     if let Some(value) = global.units_name() {
         insert_source_attribute(
@@ -86,7 +94,13 @@ fn insert_source_attribute(
     let key = ctx.format_retained(format_args!("{key}"), "iges source attribute key")?;
     let key = NonBlankString::new(key)
         .ok_or_else(|| CodecError::malformed("IGES source attribute key is blank"))?;
-    cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), attributes, key, value, "iges source attributes")?;
+    cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+        Some(ctx),
+        attributes,
+        key,
+        value,
+        "iges source attributes",
+    )?;
     Ok(())
 }
 
@@ -149,7 +163,12 @@ fn attributed_sequences(
         });
     let mut attributed = BTreeSet::new();
     for sequence in sequences {
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut attributed, sequence, "iges attributed loss sequences")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            Some(ctx),
+            &mut attributed,
+            sequence,
+            "iges attributed loss sequences",
+        )?;
     }
     Ok(attributed)
 }
@@ -179,7 +198,12 @@ fn quarantined_parameter_sequences(
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut sequences = BTreeSet::new();
     for record in records {
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut sequences, record.sequence, "iges quarantined parameter sequence index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            Some(ctx),
+            &mut sequences,
+            record.sequence,
+            "iges quarantined parameter sequence index",
+        )?;
     }
     Ok(sequences)
 }
@@ -189,7 +213,10 @@ fn source_fidelity(
     ctx: &DecodeContext<'_>,
 ) -> Result<SourceFidelity, CodecError> {
     let retained_source = ctx.copy_retained(source_bytes, "iges_source_image")?;
-    let id = ctx.format_retained(format_args!("{}", crate::SOURCE_IMAGE_ID), "iges source fidelity id")?;
+    let id = ctx.format_retained(
+        format_args!("{}", crate::SOURCE_IMAGE_ID),
+        "iges source fidelity id",
+    )?;
     let id = cadmpeg_ir::ids::UnknownId::try_from(id)
         .map_err(|_| CodecError::Malformed("IGES source image id is invalid".into()))?;
     let owner = ctx.format_retained(format_args!("iges"), "iges source fidelity stream owner")?;
@@ -221,10 +248,13 @@ fn append_generic_losses(
         let (code, message) = if admitted {
             (
                 IgesLossCode::EntityRetainedUnprojected,
-                ctx.format_retained(format_args!(
+                ctx.format_retained(
+                    format_args!(
                         "IGES entity type {} form {} retained without neutral projection",
                         entry.entity_type, entry.form
-                    ), "iges generic loss message")?,
+                    ),
+                    "iges generic loss message",
+                )?,
             )
         } else {
             (
@@ -278,10 +308,20 @@ fn annotate_representation(
         .iter_mut()
         .find(|note| note.starts_with("source_bytes="))
     {
-        *note = ctx.format_retained(format_args!("source_bytes={source_size}"), "iges normalized source byte note")?;
+        *note = ctx.format_retained(
+            format_args!("source_bytes={source_size}"),
+            "iges normalized source byte note",
+        )?;
     }
-    ctx.reserve_vec(&mut summary.notes, 1, "iges normalized representation notes")?;
-    summary.notes.push(ctx.format_retained(format_args!("normalized_representation={}", representation.as_str()), "iges normalized representation note")?);
+    ctx.reserve_vec(
+        &mut summary.notes,
+        1,
+        "iges normalized representation notes",
+    )?;
+    summary.notes.push(ctx.format_retained(
+        format_args!("normalized_representation={}", representation.as_str()),
+        "iges normalized representation note",
+    )?);
     Ok(())
 }
 
@@ -296,7 +336,13 @@ fn mark_quarantined_placements(
             && entry.form == 0
             && quarantined.contains(&entry.sequence)
     }) {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut projection.placement_rejections, entry.sequence, entities::structure::PlacementRejection::MissingRecord, "iges quarantined placement rejections")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut projection.placement_rejections,
+            entry.sequence,
+            entities::structure::PlacementRejection::MissingRecord,
+            "iges quarantined placement rejections",
+        )?;
     }
     Ok(())
 }
@@ -371,7 +417,11 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             parameter::uses_double_precision(&parameters),
             ctx,
         )?;
-        ctx.reserve_vec(&mut global_losses, conditional_losses.len(), "iges combined global loss notes")?;
+        ctx.reserve_vec(
+            &mut global_losses,
+            conditional_losses.len(),
+            "iges combined global loss notes",
+        )?;
         global_losses.extend(conditional_losses);
         charge_work(ctx, parameter_tokens(&parameters), parameter_parse)?;
         let references = graph::build(&directory, ctx)?;
@@ -399,7 +449,11 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             ctx.reserve_vec(&mut losses, 1, "iges admission loss slots")?;
             losses.push(loss);
         }
-        ctx.reserve_vec(&mut losses, self.global_losses.len(), "iges admission loss slots")?;
+        ctx.reserve_vec(
+            &mut losses,
+            self.global_losses.len(),
+            "iges admission loss slots",
+        )?;
         losses.extend(std::mem::take(&mut self.global_losses));
         if matches!(self.global.global_table(), global::GlobalTable::V4_0) {
             let post_terminate_count = self.scan.post_terminate_count();
@@ -443,7 +497,11 @@ pub(crate) fn inspect(
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses(ctx)?;
     let record_losses = parse.record_losses(ctx)?;
-    ctx.reserve_vec(&mut losses, record_losses.len(), "iges combined record losses")?;
+    ctx.reserve_vec(
+        &mut losses,
+        record_losses.len(),
+        "iges combined record losses",
+    )?;
     losses.extend(record_losses);
     let mut summary = card::summarize(&parse.scan, primary, ctx)?;
     append_summary_notes(ctx, &mut summary.notes, parse.global.summary_notes(ctx)?)?;
@@ -579,9 +637,12 @@ fn decode_with_occurrence_limits(
         })
     {
         ctx.reserve_vec(&mut losses, 1, "iges substituted context loss slot")?;
-        let message = ctx.format_retained(format_args!(
+        let message = ctx.format_retained(
+            format_args!(
             "minimum resolution must be positive and finite; the default linear tolerance is used"
-        ), "iges substituted context loss message")?;
+        ),
+            "iges substituted context loss message",
+        )?;
         let code = IgesLossCode::GlobalSemanticContextSubstituted;
         ctx.charge_retained(
             4 + code.code().len() as u64,
@@ -589,13 +650,25 @@ fn decode_with_occurrence_limits(
         )?;
         losses.push(code.note(message));
     }
-    ctx.reserve_vec(&mut losses, projection.losses.len(), "iges combined projection losses")?;
+    ctx.reserve_vec(
+        &mut losses,
+        projection.losses.len(),
+        "iges combined projection losses",
+    )?;
     losses.extend(std::mem::take(&mut projection.losses));
     let graph_losses = graph::losses(&parse.references, &parse.scan, &parse.parameters, ctx)?;
-    ctx.reserve_vec(&mut losses, graph_losses.len(), "iges combined graph losses")?;
+    ctx.reserve_vec(
+        &mut losses,
+        graph_losses.len(),
+        "iges combined graph losses",
+    )?;
     losses.extend(graph_losses);
     let record_losses = parse.record_losses(ctx)?;
-    ctx.reserve_vec(&mut losses, record_losses.len(), "iges combined record losses")?;
+    ctx.reserve_vec(
+        &mut losses,
+        record_losses.len(),
+        "iges combined record losses",
+    )?;
     losses.extend(record_losses);
     if let Some(source_sequence) = product_occurrence_expansion.output_truncated_at {
         push_occurrence_loss(
@@ -726,12 +799,21 @@ fn decode_with_occurrence_limits(
             // it names that state truthfully if a later pass admits it.
             "native record retained; no standalone neutral projection was required"
         };
-        let source = ctx.format_retained(format_args!("D{}", entry.sequence), "iges transfer ledger directory source")?;
-        let target = ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges transfer ledger directory target")?;
+        let source = ctx.format_retained(
+            format_args!("D{}", entry.sequence),
+            "iges transfer ledger directory source",
+        )?;
+        let target = ctx.format_retained(
+            format_args!("iges:entity:directory#{}", entry.sequence),
+            "iges transfer ledger directory target",
+        )?;
         record_retained_transfer(ctx, &mut transfer_ledger, source, target, note)?;
     }
     for record in &parse.quarantined_directory {
-        let source = ctx.format_retained(format_args!("D{}", record.sequence), "iges transfer ledger quarantine source")?;
+        let source = ctx.format_retained(
+            format_args!("D{}", record.sequence),
+            "iges transfer ledger quarantine source",
+        )?;
         record_retained_transfer(
             ctx,
             &mut transfer_ledger,
@@ -741,7 +823,10 @@ fn decode_with_occurrence_limits(
         )?;
     }
     for record in &parse.quarantined_parameters {
-        let source = ctx.format_retained(format_args!("D{}:parameter", record.sequence), "iges transfer ledger quarantine source")?;
+        let source = ctx.format_retained(
+            format_args!("D{}:parameter", record.sequence),
+            "iges transfer ledger quarantine source",
+        )?;
         record_retained_transfer(
             ctx,
             &mut transfer_ledger,

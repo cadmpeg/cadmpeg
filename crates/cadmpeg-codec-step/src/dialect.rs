@@ -275,9 +275,7 @@ impl StepDialect {
                 cadmpeg_core::nonblank_const!(DECLARED_FILE_SCHEMA_IDENTIFIER),
                 match ctx {
                     Some(ctx) => ctx.copy_retained_text(identifier, "step_dialect_declared_text"),
-                    None => {
-                        Ok::<String, CodecError>(identifier.to_owned())
-                    }
+                    None => Ok::<String, CodecError>(identifier.to_owned()),
                 }?,
             );
             if let Some((_, Some(arcs))) = split_schema_identifier(identifier) {
@@ -286,9 +284,7 @@ impl StepDialect {
                     cadmpeg_core::nonblank_const!(DECLARED_LONG_FORM_ARCS),
                     match ctx {
                         Some(ctx) => ctx.copy_retained_text(arcs, "step_dialect_declared_text"),
-                        None => {
-                            Ok::<String, CodecError>(arcs.to_owned())
-                        }
+                        None => Ok::<String, CodecError>(arcs.to_owned()),
                     }?,
                 );
             }

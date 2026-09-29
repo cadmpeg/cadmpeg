@@ -374,7 +374,10 @@ fn parse_occurrence<'a>(
         related_count as u64,
         "admit Inventor occurrence related references",
     )?;
-    let mut related_references = DecodeContext::admitted_vec(related_count, "admit Inventor occurrence related references")?;
+    let mut related_references = DecodeContext::admitted_vec(
+        related_count,
+        "admit Inventor occurrence related references",
+    )?;
     if related_count != 0 {
         cursor.u32("occurrence related-list metadata")?;
         cursor.u32("occurrence related-list metadata")?;

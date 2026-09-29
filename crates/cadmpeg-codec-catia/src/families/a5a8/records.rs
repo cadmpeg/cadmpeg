@@ -444,7 +444,11 @@ impl A8Pcurve {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Vec<FiniteReal>, cadmpeg_core::CodecError> {
         let mut knots = Vec::new();
-        ctx.reserve_vec(&mut knots, self.sites.len(), "catia A8 pcurve distinct knots")?;
+        ctx.reserve_vec(
+            &mut knots,
+            self.sites.len(),
+            "catia A8 pcurve distinct knots",
+        )?;
         knots.extend(self.sites.iter().map(|site| site.knot));
         Ok(knots)
     }
@@ -563,9 +567,21 @@ pub(in crate::families) fn rolling_ball_limit_curve(
     let mut positions = Vec::new();
     let mut first = Vec::new();
     let mut second = Vec::new();
-    ctx.reserve_vec(&mut positions, jet.sites.len(), "catia A5 rolling ball positions")?;
-    ctx.reserve_vec(&mut first, jet.sites.len(), "catia A5 rolling ball first jets")?;
-    ctx.reserve_vec(&mut second, jet.sites.len(), "catia A5 rolling ball second jets")?;
+    ctx.reserve_vec(
+        &mut positions,
+        jet.sites.len(),
+        "catia A5 rolling ball positions",
+    )?;
+    ctx.reserve_vec(
+        &mut first,
+        jet.sites.len(),
+        "catia A5 rolling ball first jets",
+    )?;
+    ctx.reserve_vec(
+        &mut second,
+        jet.sites.len(),
+        "catia A5 rolling ball second jets",
+    )?;
     for sample in &jet.sites {
         let limit = if second_limit {
             sample.site.limit2
@@ -599,7 +615,11 @@ pub(in crate::families) fn rolling_ball_limit_curve(
         return Ok(None);
     };
     let mut poles = Vec::new();
-    ctx.reserve_vec(&mut poles, control_points.len(), "catia A5 rolling ball poles")?;
+    ctx.reserve_vec(
+        &mut poles,
+        control_points.len(),
+        "catia A5 rolling ball poles",
+    )?;
     poles.extend(
         control_points
             .into_iter()
@@ -761,7 +781,11 @@ fn parse_a5_nurbs_curve(
         return Ok(None);
     };
     let mut distinct_knots = Vec::new();
-    ctx.reserve_vec(&mut distinct_knots, knot_count, "catia_a5_nurbs_distinct_knots")?;
+    ctx.reserve_vec(
+        &mut distinct_knots,
+        knot_count,
+        "catia_a5_nurbs_distinct_knots",
+    )?;
     for index in 0..knot_count {
         let Some(at) = knot_start.checked_add(index * 8) else {
             return Ok(None);
@@ -772,7 +796,11 @@ fn parse_a5_nurbs_curve(
         distinct_knots.push(knot.get());
     }
     let mut control_points = Vec::new();
-    ctx.reserve_vec(&mut control_points, control_count, "catia_a5_nurbs_control_points")?;
+    ctx.reserve_vec(
+        &mut control_points,
+        control_count,
+        "catia_a5_nurbs_control_points",
+    )?;
     for index in 0..control_count {
         let Some(at) = control_start.checked_add(index * 24) else {
             return Ok(None);
@@ -797,7 +825,7 @@ fn parse_a5_nurbs_curve(
         } else {
             3
         };
-        knots.extend(std::iter::repeat(knot).take(multiplicity));
+        knots.extend(std::iter::repeat_with(|| knot).take(multiplicity));
     }
     crate::nurbs::note_refusal(
         ctx,
@@ -989,7 +1017,11 @@ impl A8FreeformCurve {
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<u32>, CodecError> {
         let mut multiplicities = Vec::new();
-        ctx.reserve_vec(&mut multiplicities, self.sites.len(), "catia_a8_jet_multiplicities")?;
+        ctx.reserve_vec(
+            &mut multiplicities,
+            self.sites.len(),
+            "catia_a8_jet_multiplicities",
+        )?;
         multiplicities.extend(self.sites.iter().map(|site| site.multiplicity));
         Ok(multiplicities)
     }
@@ -2367,9 +2399,13 @@ fn a5_knots(
         _ => return Ok(None),
     };
     let mut multiplicities = Vec::new();
-    ctx.reserve_vec(&mut multiplicities, distinct.len(), "catia_a5_knot_multiplicities")?;
+    ctx.reserve_vec(
+        &mut multiplicities,
+        distinct.len(),
+        "catia_a5_knot_multiplicities",
+    )?;
     multiplicities.push(endpoint);
-    multiplicities.extend(std::iter::repeat(interior).take(distinct.len() - 2));
+    multiplicities.extend(std::iter::repeat_with(|| interior).take(distinct.len() - 2));
     multiplicities.push(endpoint);
     let Some(count) = pole_count(&multiplicities, degree) else {
         return Ok(None);
@@ -2385,7 +2421,7 @@ fn a5_knots(
         let Some(repeats) = usize::try_from(multiplicity).ok() else {
             return Ok(None);
         };
-        knots.extend(std::iter::repeat(knot).take(repeats));
+        knots.extend(std::iter::repeat_with(|| knot).take(repeats));
     }
     Ok(Some((knots, count)))
 }

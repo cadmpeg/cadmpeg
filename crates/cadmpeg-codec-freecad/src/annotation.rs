@@ -200,7 +200,11 @@ pub(crate) fn transfer_neutral(
                 selections,
             );
         }
-        ctx.reserve_vec(&mut model.semantic_annotations, 1, "fcstd neutral annotations")?;
+        ctx.reserve_vec(
+            &mut model.semantic_annotations,
+            1,
+            "fcstd neutral annotations",
+        )?;
         let mut parameters = BTreeMap::new();
         for (name, value) in &record.parameters {
             ctx.charge_collection_items(1, "fcstd annotation neutral parameters")?;
@@ -209,7 +213,8 @@ pub(crate) fn transfer_neutral(
                 ctx.copy_retained_text(value, "fcstd annotation parameter value")?,
             );
         }
-        let mut assets = ctx.collection_vec(record.side_entries.len(), "fcstd annotation assets")?;
+        let mut assets =
+            ctx.collection_vec(record.side_entries.len(), "fcstd annotation assets")?;
         for name in &record.side_entries {
             assets.push(crate::native::native_id_charged(ctx, "entry", name)?);
         }

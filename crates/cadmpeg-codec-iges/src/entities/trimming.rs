@@ -8,7 +8,7 @@ use super::geometry::{
     BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
 };
 use super::{affine_parameter_map, line_directrix, pointer};
-use crate::decode_resource::{copy_optional_identity};
+use crate::decode_resource::copy_optional_identity;
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -228,16 +228,22 @@ fn create_boundary_vertices(
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<VertexId>, Vec<BoundaryVertexDerivation>), BoundaryVertexCreationError> {
     let (source_entity, boundary) = source;
-    let mut positions = ctx.collection_vec(source_endpoints.len(), "iges boundary endpoint positions")?;
+    let mut positions =
+        ctx.collection_vec(source_endpoints.len(), "iges boundary endpoint positions")?;
     positions.extend(source_endpoints.iter().map(|endpoint| endpoint.position));
     let clusters = cluster_boundary_positions(&positions, tolerance, ctx)?;
-    let mut vertex_ids = ctx.collection_vec(positions.len(), "iges boundary endpoint vertex slots")?;
-    vertex_ids.extend(std::iter::repeat(None).take(positions.len()));
+    let mut vertex_ids =
+        ctx.collection_vec(positions.len(), "iges boundary endpoint vertex slots")?;
+    vertex_ids.extend(std::iter::repeat_with(|| None).take(positions.len()));
     let mut derivations = ctx.collection_vec(clusters.len(), "iges boundary vertex derivations")?;
     for (index, cluster) in clusters.into_iter().enumerate() {
         let point_id = crate::ids::point_admitted(&stem.slot(boundary).slot(index), ctx)?;
         ctx.reserve_vec(&mut candidate.model_mut().points, 1, "iges boundary points")?;
-        ctx.reserve_vec(&mut candidate.model_mut().vertices, 1, "iges boundary vertices")?;
+        ctx.reserve_vec(
+            &mut candidate.model_mut().vertices,
+            1,
+            "iges boundary vertices",
+        )?;
         sequences.record_point(&point_id, stem, Some(ctx))?;
         let vertex_id = crate::ids::vertex_admitted(&stem.slot(boundary).slot(index), ctx)?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
@@ -260,17 +266,24 @@ fn create_boundary_vertices(
             point: point_id,
             tolerance: Some(tolerance),
         });
-        let mut derivation_endpoints = ctx.collection_vec(cluster.members.len(), "iges boundary derivation endpoints")?;
+        let mut derivation_endpoints =
+            ctx.collection_vec(cluster.members.len(), "iges boundary derivation endpoints")?;
         for member in &cluster.members {
             let endpoint = &source_endpoints[*member];
             derivation_endpoints.push(BoundaryVertexSourceEndpoint {
-                edge: ctx.format_retained(format_args!("{}", endpoint.edge), "iges boundary derivation edge text")?,
+                edge: ctx.format_retained(
+                    format_args!("{}", endpoint.edge),
+                    "iges boundary derivation edge text",
+                )?,
                 endpoint: endpoint.endpoint,
                 position: endpoint.position,
             });
         }
         derivations.push(BoundaryVertexDerivation {
-            source_entity: ctx.format_retained(format_args!("{source_entity}"), "iges boundary derivation source text")?,
+            source_entity: ctx.format_retained(
+                format_args!("{source_entity}"),
+                "iges boundary derivation source text",
+            )?,
             vertex: crate::decode_resource::clone_optional_identity(
                 Some(ctx),
                 &vertex_id,
@@ -453,16 +466,22 @@ pub(super) fn pcurve_geometry(
     let (degree, knots, poles, periodic) = nurbs.into_parts();
     let poles = match poles {
         NurbsPoles3::Polynomial { points } => {
-            let mut mapped =
-                cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, points.len(), "iges pcurve mapped polynomial poles")?;
+            let mut mapped = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                ctx,
+                points.len(),
+                "iges pcurve mapped polynomial poles",
+            )?;
             for point in points {
                 mapped.push(map_point(point)?);
             }
             PcurveNurbsPoles::Polynomial { points: mapped }
         }
         NurbsPoles3::Rational { points } => {
-            let mut mapped =
-                cadmpeg_core::decode::DecodeContext::collection_vec_optional(ctx, points.len(), "iges pcurve mapped rational poles")?;
+            let mut mapped = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+                ctx,
+                points.len(),
+                "iges pcurve mapped rational poles",
+            )?;
             for pole in points {
                 mapped.push(WeightedPole2 {
                     point: map_point(pole.point)?,
@@ -639,7 +658,12 @@ fn source_curve_control_intervals(
     }
     let active_id =
         copy_optional_identity(Some(ctx), curve_id.as_str(), "iges source active curve ID")?;
-    cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), active, active_id, "iges source active curve nodes")?;
+    cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+        Some(ctx),
+        active,
+        active_id,
+        "iges source active curve nodes",
+    )?;
     let result = (|| -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
         let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) else {
             return Ok(None);
@@ -702,7 +726,11 @@ fn source_curve_control_intervals(
                     else {
                         return Ok(None);
                     };
-                    ctx.reserve_vec(&mut controls, child.len(), "iges source solved composite controls")?;
+                    ctx.reserve_vec(
+                        &mut controls,
+                        child.len(),
+                        "iges source solved composite controls",
+                    )?;
                     controls.extend(child);
                 }
                 Ok((!controls.is_empty()).then_some(controls))
@@ -862,7 +890,10 @@ fn linear_model_nurbs_points(
     ) else {
         return Ok(None);
     };
-    let mut points = ctx.collection_vec(parameters.clone().count(), "iges linear model boundary points")?;
+    let mut points = ctx.collection_vec(
+        parameters.clone().count(),
+        "iges linear model boundary points",
+    )?;
     for parameter in parameters {
         let Some(point) =
             finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, parameter))?
@@ -899,7 +930,10 @@ fn linear_pcurve_points(
     ) else {
         return Ok(None);
     };
-    let mut points = ctx.collection_vec(parameters.clone().count(), "iges linear parameter boundary points")?;
+    let mut points = ctx.collection_vec(
+        parameters.clone().count(),
+        "iges linear parameter boundary points",
+    )?;
     for parameter in parameters {
         let Some(point) = finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(geometry, parameter))?
         else {
@@ -1297,7 +1331,7 @@ fn insert_homogeneous_pcurve_knot(
         return Ok(None);
     };
     let mut inserted = ctx.collection_vec(inserted_count, "iges pcurve inserted controls")?;
-    inserted.extend(std::iter::repeat([0.0; 4]).take(inserted_count));
+    inserted.extend(std::iter::repeat_with(|| [0.0; 4]).take(inserted_count));
     inserted[..=left_end].copy_from_slice(&controls[..=left_end]);
     inserted[tail_start + 1..].copy_from_slice(&controls[tail_start..]);
     for index in left_end + 1..=tail_start {
@@ -1421,7 +1455,8 @@ fn split_homogeneous_pcurve(
         let Some(previous) = levels.last() else {
             return Ok(None);
         };
-        let mut next = ctx.collection_vec(previous.len() - 1, "iges pcurve split level controls")?;
+        let mut next =
+            ctx.collection_vec(previous.len() - 1, "iges pcurve split level controls")?;
         for pair in previous.windows(2) {
             next.push(std::array::from_fn(|axis| {
                 (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
@@ -1515,7 +1550,10 @@ fn pcurve_within_declared_intervals(
     if !range[0].is_finite() || !range[1].is_finite() || range[0] >= range[1] {
         return Ok(false);
     }
-    let mut controls = ctx.collection_vec(nurbs.pole_rows().count(), "iges pcurve homogeneous controls")?;
+    let mut controls = ctx.collection_vec(
+        nurbs.pole_rows().count(),
+        "iges pcurve homogeneous controls",
+    )?;
     for index in 0..nurbs.pole_rows().count() {
         let Some(point) = nurbs
             .pole_rows()
@@ -1632,7 +1670,12 @@ fn surface_parameter_bounds(
             surface_id.as_str(),
             "iges support-bound visiting surface ID",
         )?;
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), visiting, visited_id, "iges support-bound visiting surface nodes")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            Some(ctx),
+            visiting,
+            visited_id,
+            "iges support-bound visiting surface nodes",
+        )?;
         let Some(procedural) = index.procedural_surface_for_surface(surface_id.as_str()) else {
             return Ok(None);
         };
@@ -1784,7 +1827,8 @@ fn select_boundary_edge(
         parameter_curves_authoritative,
     } = boundary;
     let mut candidates_with_endpoints = 0;
-    let mut matched = ctx.collection_vec(candidates.len(), "iges trimmed edge candidates")
+    let mut matched = ctx
+        .collection_vec(candidates.len(), "iges trimmed edge candidates")
         .map_err(BoundaryEdgeSelectionError::Resource)?;
     for &edge in candidates {
         let Some(start) = point_position(carrier_index, &edge.start) else {
@@ -1822,7 +1866,8 @@ fn select_boundary_edge(
         };
     }
 
-    let mut agreeing = ctx.collection_vec(candidates.len(), "iges trimmed agreeing edges")
+    let mut agreeing = ctx
+        .collection_vec(candidates.len(), "iges trimmed agreeing edges")
         .map_err(BoundaryEdgeSelectionError::Resource)?;
     for candidate @ (_, start, end) in &candidates {
         let (expected_start, expected_end) = if sense == Sense::Forward {
@@ -1917,11 +1962,23 @@ pub(super) fn project(
 ) -> Result<(ProjectionOutcome, Vec<BoundaryVertexDerivation>), CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut records, record.directory_sequence, record, "iges trimming parameter index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut records,
+            record.directory_sequence,
+            record,
+            "iges trimming parameter index",
+        )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut entries, entry.sequence, entry, "iges trimming directory index")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges trimming directory index",
+        )?;
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -2020,7 +2077,10 @@ pub(super) fn project(
             )?;
             continue;
         }
-        let mut pcurves = ctx.collection_vec(usize::from(pcurve.is_some()), "iges Type142 boundary pcurve pointers")?;
+        let mut pcurves = ctx.collection_vec(
+            usize::from(pcurve.is_some()),
+            "iges Type142 boundary pcurve pointers",
+        )?;
         if let Some(pcurve) = pcurve {
             pcurves.push(pcurve);
         }
@@ -2031,8 +2091,19 @@ pub(super) fn project(
             sense: Sense::Forward,
             parameter_curves_authoritative: pcurve.is_some() && preference != 2,
         });
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut boundaries, entry.sequence, BoundaryDefinition { surface, segments }, "iges trimming boundary index nodes")?;
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges trimming decoded sequences")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+            Some(ctx),
+            &mut boundaries,
+            entry.sequence,
+            BoundaryDefinition { surface, segments },
+            "iges trimming boundary index nodes",
+        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            Some(ctx),
+            &mut decoded,
+            entry.sequence,
+            "iges trimming decoded sequences",
+        )?;
     }
     for entry in directory
         .iter()
@@ -2167,8 +2238,19 @@ pub(super) fn project(
             index += 3 + pcurve_count;
         }
         if valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut boundaries, entry.sequence, BoundaryDefinition { surface, segments }, "iges trimming boundary index nodes")?;
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges trimming decoded sequences")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
+                Some(ctx),
+                &mut boundaries,
+                entry.sequence,
+                BoundaryDefinition { surface, segments },
+                "iges trimming boundary index nodes",
+            )?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges trimming decoded sequences",
+            )?;
         }
     }
     for entry in directory
@@ -2423,7 +2505,8 @@ pub(super) fn project(
         let mut implicit_boundary_pcurves = Vec::new();
         let mut loop_ids = Vec::new();
         let mut explicit_outer_loop: Option<cadmpeg_ir::ids::LoopId> = None;
-        let mut linear_boundary_candidates = ctx.collection_vec(boundary_sequences.len(), "iges trimming linear candidates")?;
+        let mut linear_boundary_candidates =
+            ctx.collection_vec(boundary_sequences.len(), "iges trimming linear candidates")?;
         let mut face_tolerance = 0.0_f64;
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
             let Some(boundary) = boundaries.get(&sequence) else {
@@ -2466,7 +2549,9 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
-                let mut pcurves = Some(ctx.collection_vec(segment.pcurves.len(), "iges trimming segment pcurves")?);
+                let mut pcurves = Some(
+                    ctx.collection_vec(segment.pcurves.len(), "iges trimming segment pcurves")?,
+                );
                 let mut pcurve_refusal = None;
                 for sequence in &segment.pcurves {
                     if composite_index.is_none() {
@@ -2648,7 +2733,11 @@ pub(super) fn project(
                 break;
             }
             if implicit_outer_domain {
-                ctx.reserve_vec(&mut implicit_boundary_curves, items.len(), "iges implicit boundary curve IDs")?;
+                ctx.reserve_vec(
+                    &mut implicit_boundary_curves,
+                    items.len(),
+                    "iges implicit boundary curve IDs",
+                )?;
                 for item in &items {
                     implicit_boundary_curves.push(copy_optional_identity(
                         Some(ctx),
@@ -2716,7 +2805,10 @@ pub(super) fn project(
                     (BoundaryEndpoint::End, item.end),
                 ] {
                     source_endpoints.push(BoundaryVertexSourceEndpoint {
-                        edge: ctx.format_retained(format_args!("{}", item.source_edge.id), "iges trimming source endpoint edge text")?,
+                        edge: ctx.format_retained(
+                            format_args!("{}", item.source_edge.id),
+                            "iges trimming source endpoint edge text",
+                        )?,
                         endpoint,
                         position,
                     });
@@ -2738,7 +2830,10 @@ pub(super) fn project(
                 &mut candidate,
                 &stem,
                 (
-                    &ctx.format_retained(format_args!("iges:entity:directory#{}", entry.sequence), "iges trimming source entity text")?,
+                    &ctx.format_retained(
+                        format_args!("iges:entity:directory#{}", entry.sequence),
+                        "iges trimming source entity text",
+                    )?,
                     boundary_index,
                 ),
                 &source_endpoints,
@@ -2764,7 +2859,11 @@ pub(super) fn project(
                 }
                 Err(BoundaryVertexCreationError::Resource(error)) => return Err(error),
             };
-            ctx.reserve_vec(&mut candidate_boundary_vertex_derivations, derivations.len(), "iges trimming candidate vertex derivations")?;
+            ctx.reserve_vec(
+                &mut candidate_boundary_vertex_derivations,
+                derivations.len(),
+                "iges trimming candidate vertex derivations",
+            )?;
             candidate_boundary_vertex_derivations.extend(derivations);
             for (segment_index, item) in items.into_iter().enumerate() {
                 let edge_id =
@@ -2840,14 +2939,22 @@ pub(super) fn project(
                         ctx,
                     )?;
                     if implicit_outer_domain {
-                        ctx.reserve_vec(&mut implicit_boundary_pcurves, 1, "iges implicit boundary pcurve IDs")?;
+                        ctx.reserve_vec(
+                            &mut implicit_boundary_pcurves,
+                            1,
+                            "iges implicit boundary pcurve IDs",
+                        )?;
                         implicit_boundary_pcurves.push(copy_optional_identity(
                             Some(ctx),
                             id.as_str(),
                             "iges implicit boundary pcurve ID text",
                         )?);
                     }
-                    ctx.reserve_vec(&mut candidate.model_mut().pcurves, 1, "iges trimming pcurve slots")?;
+                    ctx.reserve_vec(
+                        &mut candidate.model_mut().pcurves,
+                        1,
+                        "iges trimming pcurve slots",
+                    )?;
                     crate::decode_resource::admit_optional_entities(
                         Some(ctx),
                         1,
@@ -2900,11 +3007,9 @@ pub(super) fn project(
                     use_curve: None,
                 });
             }
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::try_new_for_decode(
-                ctx,
-                coedge_ids,
-                Vec::new(),
-            )? else {
+            let Ok(ring) =
+                cadmpeg_ir::topology::LoopRing::try_new_for_decode(ctx, coedge_ids, Vec::new())?
+            else {
                 super::push_optional_entity_loss(
                     Some(ctx),
                     &mut losses,
@@ -3025,7 +3130,11 @@ pub(super) fn project(
                     continue;
                 }
             };
-            ctx.reserve_vec(&mut candidate.model_mut().procedural_surfaces, 1, "iges procedural surface slots")?;
+            ctx.reserve_vec(
+                &mut candidate.model_mut().procedural_surfaces,
+                1,
+                "iges procedural surface slots",
+            )?;
             crate::decode_resource::admit_optional_entities(
                 Some(ctx),
                 1,
@@ -3122,9 +3231,10 @@ pub(super) fn project(
         ) {
             Ok(shell) => shell,
             Err(error) => {
-                return Err(CodecError::Malformed(
-                    ctx.format_retained(format_args!("{error}"), "iges trimming shell error")?,
-                ))
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("{error}"),
+                    "iges trimming shell error",
+                )?))
             }
         };
         candidate.model_mut().shells.push(shell);
@@ -3175,8 +3285,17 @@ pub(super) fn project(
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges trimming decoded sequences")?;
-        ctx.reserve_vec(&mut boundary_vertex_derivations, derivations.len(), "iges trimming committed vertex derivations")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            Some(ctx),
+            &mut decoded,
+            entry.sequence,
+            "iges trimming decoded sequences",
+        )?;
+        ctx.reserve_vec(
+            &mut boundary_vertex_derivations,
+            derivations.len(),
+            "iges trimming committed vertex derivations",
+        )?;
         boundary_vertex_derivations.extend(derivations);
     }
 

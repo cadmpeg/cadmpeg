@@ -168,7 +168,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                     ),
                 )
             })?;
-            body.notes.push(ctx.format_retained(format_args!("external reference {} -> {}", entry.name, entry.uri), "step_decode_reference_note_text")?);
+            body.notes.push(ctx.format_retained(
+                format_args!("external reference {} -> {}", entry.name, entry.uri),
+                "step_decode_reference_note_text",
+            )?);
         }
         if let Some(loss) = dialect_loss {
             push_decode_loss(&mut body.losses, loss, ctx)?;
@@ -190,7 +193,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                     "implementation_level",
                 ),
             };
-            let message = ctx.format_retained(format_args!("{}", diagnostic.message), "step_decode_diagnostic_message")?;
+            let message = ctx.format_retained(
+                format_args!("{}", diagnostic.message),
+                "step_decode_diagnostic_message",
+            )?;
             let loss = code.note(message).with_provenance(
                 cadmpeg_ir::SourceProvenance::root(
                     crate::dialect::FORMAT,
@@ -780,7 +786,10 @@ fn decode_exchange_mode(
     })?;
     session.body.notes.push(accounting_note);
     for (name, count) in counts {
-        let message = session.ctx.format_retained(format_args!("preserved {count} {name} instance(s) as named opaque STEP records"), "step_opaque_preservation_loss_text")?;
+        let message = session.ctx.format_retained(
+            format_args!("preserved {count} {name} instance(s) as named opaque STEP records"),
+            "step_opaque_preservation_loss_text",
+        )?;
         push_decode_loss(
             &mut session.body.losses,
             StepLossCode::OpaqueRecordPreserved.note(message),
@@ -1253,7 +1262,11 @@ fn count_unknown_kind(
     record: &parse::RawRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let kind = ctx.join_display_retained(record.partials.iter().map(|partial| partial.name.as_str()), "+", "step_opaque_kind_text")?;
+    let kind = ctx.join_display_retained(
+        record.partials.iter().map(|partial| partial.name.as_str()),
+        "+",
+        "step_opaque_kind_text",
+    )?;
     if !counts.contains_key(&kind) {
         ctx.charge_collection_items(1, "step_opaque_kind_counts")?;
     }
@@ -1322,7 +1335,10 @@ fn opaque_record_id(
     let kind = derived
         .as_ref()
         .map_or("record", crate::ids::IdentityKind::as_str);
-    let text = ctx.format_retained(format_args!("step:data:{kind}#{id}"), "step_opaque_identity_text")?;
+    let text = ctx.format_retained(
+        format_args!("step:data:{kind}#{id}"),
+        "step_opaque_identity_text",
+    )?;
     let identity = Identity::new(text)
         .map_err(|_| CodecError::WrongFormat("invalid STEP opaque identity".into()))?;
     Ok(UnknownId::from(identity))
@@ -1350,7 +1366,9 @@ fn record_targets(
             .ok_or_else(|| ctx.refuse_codec_limit("step_opaque_target_records", 0, 1))?;
         if !values.contains(identity) {
             ctx.charge_collection_items(1, "step_opaque_target_ids")?;
-            values.insert(ctx.format_retained(format_args!("{identity}"), "step_opaque_target_identity")?);
+            values.insert(
+                ctx.format_retained(format_args!("{identity}"), "step_opaque_target_identity")?,
+            );
         }
     }
     Ok(targets)
@@ -1554,7 +1572,10 @@ fn decode_text_charged(
         Ok(text) => Ok(Some(text)),
         Err(crate::strings::StringDecodeFailure::Invalid(error)) => {
             let message = if let Some(ctx) = ctx {
-                ctx.format_retained(format_args!("STEP record #{record_id} has an invalid {field} string: {error}"), "step_invalid_string_loss_text")?
+                ctx.format_retained(
+                    format_args!("STEP record #{record_id} has an invalid {field} string: {error}"),
+                    "step_invalid_string_loss_text",
+                )?
             } else {
                 format!("STEP record #{record_id} has an invalid {field} string: {error}")
             };
@@ -1630,9 +1651,7 @@ impl RecordExt for RawRecord {
     fn display_name(&self, ctx: Option<&DecodeContext<'_>>) -> Result<String, CodecError> {
         let names = self.partials.iter().map(|partial| partial.name.as_str());
         match ctx {
-            Some(ctx) => {
-                ctx.join_display_retained(names, "+", "step_record_display_name")
-            }
+            Some(ctx) => ctx.join_display_retained(names, "+", "step_record_display_name"),
             None => Ok(names.collect::<Vec<_>>().join("+")),
         }
     }

@@ -1470,7 +1470,11 @@ fn compact_face_quotient_states_accumulate_across_calls() {
 #[test]
 fn compact_face_quotient_state_cap_is_exhausted() {
     const EDGE_COUNT: usize = 14;
-    catia_test_context!(ctx);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 100_000_000;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root fits the collection limit");
     let choices = vec![Vec::new(); EDGE_COUNT];
     let quotient = MeshQuotient::new(
         (0..EDGE_COUNT * 2)
