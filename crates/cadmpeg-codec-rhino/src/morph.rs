@@ -843,7 +843,7 @@ pub(crate) fn project(
         }
     }
     Ok(Feature {
-        id: feature_id.clone(),
+        id: feature_id.try_clone_for_decode(ctx, "Rhino morph feature identity copy")?,
         ordinal,
         name,
         suppressed: Some(false),
