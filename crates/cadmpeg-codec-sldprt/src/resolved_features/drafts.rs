@@ -150,7 +150,7 @@ fn compact_parting_line_draft_operands(
             continue;
         }
         if let Some((role, paths, selection_end)) =
-            compact_draft_selection_at(&lane.native_payload, marker)
+            compact_draft_selection_at(ctx, &lane.native_payload, marker)?
         {
             ctx.reserve_collection_vec(&mut records, 1, OPERATION)?;
             records.push((marker, role, paths, selection_end));
@@ -214,29 +214,42 @@ enum CompactDraftSelectionRole {
 }
 
 fn compact_draft_selection_at(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     marker: usize,
-) -> Option<(
+) -> Result<Option<(
     CompactDraftSelectionRole,
     Vec<Vec<FeatureInputComponentPathEntry>>,
     usize,
-)> {
-    let header = marker.checked_sub(compact_sel::COMPONENT_MARKER)?;
-    usize::try_from(View::u32_le_at(payload, header + compact_sel::CELL_FIELD)?)
+)>, CodecError> {
+    let Some(header) = marker.checked_sub(compact_sel::COMPONENT_MARKER) else {
+        return Ok(None);
+    };
+    let Some(cell_count) = View::u32_le_at(payload, header + compact_sel::CELL_FIELD) else {
+        return Ok(None);
+    };
+    let Some(_cell_count) = usize::try_from(cell_count)
         .ok()
-        .filter(|count| (1..=MAX_PATH_CELLS).contains(count))?;
-    let role_bytes =
-        payload.get(header + compact_sel::SELECTION_ROLE..header + compact_sel::SELECTOR)?;
+        .filter(|count| (1..=MAX_PATH_CELLS).contains(count))
+    else {
+        return Ok(None);
+    };
+    let Some(role_bytes) =
+        payload.get(header + compact_sel::SELECTION_ROLE..header + compact_sel::SELECTOR)
+    else {
+        return Ok(None);
+    };
     let role = match role_bytes {
         [_, 2, 0, 0] => CompactDraftSelectionRole::PartingTool,
         [_, 3, 0, 0] => CompactDraftSelectionRole::DraftedFace,
-        _ => return None,
+        _ => return Ok(None),
     };
-    if payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(marker + COMPACT_EDGE_VECTOR_MARKER.len()..header + compact_sel::LEN)?
-            != [0, 0]
+    if payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())
+        != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+        || payload.get(marker + COMPACT_EDGE_VECTOR_MARKER.len()..header + compact_sel::LEN)
+            != Some(&[0, 0])
     {
-        return None;
+        return Ok(None);
     }
     let mut cursor = header + compact_sel::LEN;
     let mut paths = Vec::new();
@@ -248,8 +261,9 @@ fn compact_draft_selection_at(
             })
             .min_by_key(|(_, path_end)| *path_end);
         let Some((path, path_end)) = candidate else {
-            return (!paths.is_empty()).then_some((role, paths, cursor));
+            return Ok((!paths.is_empty()).then_some((role, paths, cursor)));
         };
+        ctx.reserve_collection_vec(&mut paths, 1, "collect SLDPRT compact draft paths")?;
         paths.push(path);
         cursor = path_end + 8;
     }
@@ -625,6 +639,25 @@ mod tests {
     }
 
     #[test]
+    fn compact_draft_selection_refuses_path_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let mut payload = vec![0; 64];
+        let marker = payload.len() + 12;
+        payload.extend(compact_selection(2, &[&[(0x8083, 80, 900, 1)]]));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+            .expect("test context");
+        let error = compact_draft_selection_at(&ctx, &payload, marker)
+            .expect_err("compact draft path exceeds collection limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect SLDPRT compact draft paths"));
+    }
+
+    #[test]
     fn draft_operand_candidates_refuses_compact_record_collection_limit() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -664,7 +697,7 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
+        policy.limits.max_collection_items = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
             .expect("test context");
         let error = super::draft_operand_candidates(&ctx, &[history], &lane)
@@ -769,8 +802,16 @@ mod tests {
             sketch_entities: Vec::new(),
         };
 
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("test decode context");
         let (_, parting_paths, parsed_parting_end) =
-            compact_draft_selection_at(&lane.native_payload, object_start + 12)
+            compact_draft_selection_at(&ctx, &lane.native_payload, object_start + 12)
+                .expect("compact selection parse")
                 .expect("compact parting-tool selection");
         assert_eq!(parting_paths.len(), 2);
         assert_eq!(parsed_parting_end, parting_selection_end);
@@ -779,20 +820,14 @@ mod tests {
             Some(Vector3::new(0.0, -1.0, 0.0))
         );
         assert_eq!(
-            compact_draft_selection_at(&lane.native_payload, face_marker)
+            compact_draft_selection_at(&ctx, &lane.native_payload, face_marker)
+                .expect("compact selection parse")
                 .expect("compact drafted-face selection")
                 .1
                 .len(),
             2
         );
 
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &lane.native_payload,
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("test decode context");
         let operands = draft_operands(&ctx, &feature, &lane, object_start, object_end)
             .expect("draft parse")
             .expect("compact parting-line draft operands");
