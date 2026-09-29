@@ -815,13 +815,7 @@ mod tests {
     };
     use std::collections::BTreeMap;
 
-    #[test]
-    fn native_skamp_retained_fields_refuse_below_each_need() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-        let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#1")
-            .expect("valid sketch identity");
-        let make_definition = |duplicate: bool| {
+    fn make_definition(duplicate: bool) -> crate::feature::definitions::FeatureDefinition {
             let row = crate::feature::definitions::FeatureSkamp {
                 id: 3,
                 kind: 99,
@@ -871,7 +865,45 @@ mod tests {
                 saved_section: None,
                 offset: 0,
             }
-        };
+    }
+
+    #[test]
+    fn skamp_arc_endpoint_copy_refuses_retained_limit() {
+        for kind in [12, 13] {
+            let mut definition = make_definition(false);
+            let Some(crate::feature::definitions::SolverSubtable::Declared { rows, .. }) = definition.relations.as_mut().expect("relations").skamps.as_mut() else {
+                panic!("declared SKAMP rows");
+            };
+            rows[0].kind = kind;
+            definition.order_table = Some(crate::feature::definitions::FeatureOrderTable {
+                declared_count: 1, has_prototype: false, entity_ref: None,
+                rows: vec![crate::feature::definitions::FeatureOrderRow {
+                    external_id: 7, internal_id: 7, bitmask: 0, offset: 0,
+                }], offset: 0,
+            });
+            definition.saved_section = Some(crate::feature::definitions::FeatureSavedSection {
+                entities: vec![crate::feature::definitions::FeatureSavedEntity::Arc(crate::feature::definitions::FeatureSavedArc {
+                    entity_id: 7, center: [Some(0.0); 3], radius: Some(1.0),
+                    endpoints: [[Some(1.0), Some(0.0), Some(0.0)], [Some(-1.0), Some(0.0), Some(0.0)]],
+                    parameters: [Some(0.0), Some(std::f64::consts::PI)],
+                    body: Vec::new(), offset: 0,
+                })], offset: 0,
+            });
+            let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#1").expect("sketch");
+            let constraints = crate::test_support::assert_retained_boundaries(
+                &["creo skamp arc endpoint identity copy"], |ctx| super::section_skamp_constraints_for_geometry(
+                    ctx, &definition, &sketch, None));
+            assert_eq!(constraints.len(), 1);
+            assert!(matches!(constraints[0].0.definition.kind(), SketchConstraintDefinitionInput::SameCoordinate { .. }));
+        }
+    }
+
+    #[test]
+    fn native_skamp_retained_fields_refuse_below_each_need() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#1")
+            .expect("valid sketch identity");
         let arena = DecodeArena::new();
         let entity = crate::decode::sketch_ids::sketch_entity_id(&sketch, 7)
             .expect("valid entity identity");

@@ -388,3 +388,34 @@ fn the_layout_token_vocabulary_is_not_the_registry_vocabulary() {
         assert!(id.as_str().starts_with("creo:"));
     }
 }
+
+#[test]
+fn source_dialect_copy_refuses_each_declaration_node() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let bytes = legacy_ascii_bytes();
+    let scan = scan_bytes_ok(bytes.as_slice());
+    let classification = classify_ok(&scan);
+    for cap in 0..3 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = classification.copy_matched_admitted(&ctx).expect_err("declaration node");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo source dialect declaration nodes"));
+    }
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| classification.copy_matched_admitted(ctx)).expect("service"), *classification.matched());
+}
+
+#[test]
+fn source_dialect_copy_refuses_keys_and_values_and_preserves_all_layouts() {
+    for case in cases() {
+        let bytes = (case.bytes)();
+        let scan = scan_bytes_ok(bytes.as_slice());
+        let classification = classify_ok(&scan);
+        let copied = crate::test_support::assert_retained_boundaries(
+            &["creo source dialect declaration key", "creo source dialect declaration value"],
+            |ctx| classification.copy_matched_admitted(ctx),
+        );
+        assert_eq!(copied, *classification.matched(), "{}", case.label);
+    }
+}
