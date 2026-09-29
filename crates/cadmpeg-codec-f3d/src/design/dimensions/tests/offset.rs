@@ -526,16 +526,13 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     let parameter = ParameterId::mint("synthetic:test:parameter#offset").expect("identity grammar");
 
     let definition = spatial_counted_offset_dimension_definition(
-        "Linear Dimension-1",
-        Some(0x20),
-        &operands,
-        &parameter,
-        3.0,
-        -3.0,
-        &sketch_id,
-        std::slice::from_ref(&sketch),
-        &by_record,
-    )
+None,
+("Linear Dimension-1", Some(0x20), &operands),
+(&parameter, 3.0, -3.0),
+&sketch_id,
+std::slice::from_ref(&sketch),
+&by_record,
+).transpose().unwrap()
     .expect("counted spatial offset");
     assert!(matches!(
         definition,
@@ -554,28 +551,22 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
             && actual_parameter == parameter) && actual_distance.get() == 3.0
     ));
     assert!(spatial_counted_offset_dimension_definition(
-        "Linear Dimension-1",
-        Some(0),
-        &operands,
-        &parameter,
-        3.0,
-        -3.0,
-        &sketch_id,
-        std::slice::from_ref(&sketch),
-        &by_record,
-    )
+None,
+("Linear Dimension-1", Some(0), &operands),
+(&parameter, 3.0, -3.0),
+&sketch_id,
+std::slice::from_ref(&sketch),
+&by_record,
+).transpose().unwrap()
     .is_none());
     assert!(spatial_counted_offset_dimension_definition(
-        "Linear Dimension-1",
-        Some(0x20),
-        &operands,
-        &parameter,
-        3.0,
-        -2.0,
-        &sketch_id,
-        std::slice::from_ref(&sketch),
-        &by_record,
-    )
+None,
+("Linear Dimension-1", Some(0x20), &operands),
+(&parameter, 3.0, -2.0),
+&sketch_id,
+std::slice::from_ref(&sketch),
+&by_record,
+).transpose().unwrap()
     .is_none());
     let outside_source = entity(
         99,
@@ -591,44 +582,35 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     non_permutation[first_return].object_index = Some(99);
     non_permutation[first_return].native_ref = outside_source.native_ref.clone();
     assert!(spatial_counted_offset_dimension_definition(
-        "Linear Dimension-1",
-        Some(0x20),
-        &non_permutation,
-        &parameter,
-        3.0,
-        -3.0,
-        &sketch_id,
-        std::slice::from_ref(&sketch),
-        &by_record,
-    )
+None,
+("Linear Dimension-1", Some(0x20), &non_permutation),
+(&parameter, 3.0, -3.0),
+&sketch_id,
+std::slice::from_ref(&sketch),
+&by_record,
+).transpose().unwrap()
     .is_none());
     let mut wrong_operand_kind = operands.clone();
     wrong_operand_kind[0].native_kind = cadmpeg_core::text::NonBlankString::new("point").unwrap();
     assert!(spatial_counted_offset_dimension_definition(
-        "Linear Dimension-1",
-        Some(0x20),
-        &wrong_operand_kind,
-        &parameter,
-        3.0,
-        -3.0,
-        &sketch_id,
-        std::slice::from_ref(&sketch),
-        &by_record,
-    )
+None,
+("Linear Dimension-1", Some(0x20), &wrong_operand_kind),
+(&parameter, 3.0, -3.0),
+&sketch_id,
+std::slice::from_ref(&sketch),
+&by_record,
+).transpose().unwrap()
     .is_none());
     let mut ambiguous_sketch = sketch.clone();
     ambiguous_sketch.profiles.push(sketch.profiles[0].clone());
     assert!(spatial_counted_offset_dimension_definition(
-        "Linear Dimension-1",
-        Some(0x20),
-        &operands,
-        &parameter,
-        3.0,
-        -3.0,
-        &sketch_id,
-        std::slice::from_ref(&ambiguous_sketch),
-        &by_record,
-    )
+None,
+("Linear Dimension-1", Some(0x20), &operands),
+(&parameter, 3.0, -3.0),
+&sketch_id,
+std::slice::from_ref(&ambiguous_sketch),
+&by_record,
+).transpose().unwrap()
     .is_none());
 }
 
@@ -754,11 +736,11 @@ fn counted_roles_require_matching_solved_geometry() {
         .unwrap(),
     );
     assert!(matches!(
-        crate::design::dimensions::counted_role_relation_at_tolerance(
+        crate::design::dimensions::counted_role_relation_at_tolerance(None,
             &[&tangent_circle, &rounded_tangent_arc],
             &[crate::records::sketch_relations::SketchConstraintKind::Tangent],
             TEST_LINEAR_TOLERANCE,
-        ),
+        ).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Tangent { first, second })
             if &first == tangent_circle.id() && &second == rounded_tangent_arc.id()
     ));
@@ -1040,3 +1022,7 @@ fn dimension_companion_scope_refuses_collection_limit() {
                 && failure.dimension == ResourceDimension::CollectionItems
     ));
 }
+
+mod refusal_spatial_counted_offset;
+
+mod refusal_counted_role_relation_at_tolerance;
