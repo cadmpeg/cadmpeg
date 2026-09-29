@@ -2108,10 +2108,12 @@ fn evaluate_expression_program_details(
         {
             let affine_solution = match solve_block_dimensions.get(&block.offset) {
                 Some(dimensions) => {
-                    infer_solve_variable_dimensions(ctx, block, &values, dimensions, context)?
-                        .and_then(|dimensions| {
-                            solve_affine_expression_block(block, &values, &dimensions, context)
-                        })
+                    match infer_solve_variable_dimensions(ctx, block, &values, dimensions, context)? {
+                        Some(dimensions) => solve_affine_expression_block(
+                            ctx, block, &values, &dimensions, context,
+                        )?,
+                        None => None,
+                    }
                 }
                 None => None,
             };
@@ -5360,77 +5362,94 @@ fn solve_dimension_axis(
 }
 
 fn solve_affine_expression_block(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block: &CurveExpressionSolveBlock,
     values: &BTreeMap<String, CurveExpressionValue>,
     variable_dimensions: &[RelationDimension],
     context: RelationEvaluationContext<'_>,
-) -> Option<Vec<CurveExpressionValue>> {
-    (variable_dimensions.len() == block.unknowns.len()).then_some(())?;
-    let variable_keys = block
-        .unknowns
-        .iter()
-        .map(|unknown| &unknown.name)
-        .map(|variable| expression_identifier_key(variable))
-        .collect::<Vec<_>>();
-    let mut affine_values = values
-        .iter()
-        .filter_map(|(name, value)| {
-            let (value, dimension) = quantity_parts_ref(value)?;
-            Some((
-                name.clone(),
-                SimultaneousAffineValue::constant(value, dimension),
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
-    for (variable, dimension) in variable_keys.iter().zip(variable_dimensions) {
+) -> Result<Option<Vec<CurveExpressionValue>>, cadmpeg_core::CodecError> {
+    if variable_dimensions.len() != block.unknowns.len() {
+        return Ok(None);
+    }
+    let mut variable_keys = Vec::new();
+    for unknown in &block.unknowns {
+        ctx.try_reserve_items(&mut variable_keys, 1, "creo affine variable keys")?;
+        let mut key = ctx.copy_retained_text(&unknown.name, "creo affine variable names")?;
+        key.make_ascii_lowercase();
+        variable_keys.push(key);
+    }
+    let mut affine_values = BTreeMap::new();
+    for (name, value) in values {
+        let Some((value, dimension)) = quantity_parts_ref(value) else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "creo affine known value nodes")?;
         affine_values.insert(
-            variable.clone(),
+            ctx.copy_retained_text(name, "creo affine known value names")?,
+            SimultaneousAffineValue::constant(value, dimension),
+        );
+    }
+    for (variable, dimension) in variable_keys.iter().zip(variable_dimensions) {
+        ctx.charge_collection_items(1, "creo affine coefficient nodes")?;
+        let mut coefficients = BTreeMap::new();
+        coefficients.insert(
+            ctx.copy_retained_text(variable, "creo affine coefficient names")?,
+            1.0,
+        );
+        if !affine_values.contains_key(variable) {
+            ctx.charge_collection_items(1, "creo affine unknown value nodes")?;
+        }
+        affine_values.insert(
+            ctx.copy_retained_text(variable, "creo affine unknown value names")?,
             SimultaneousAffineValue {
                 dimension: *dimension,
                 constant: 0.0,
-                coefficients: BTreeMap::from([(variable.clone(), 1.0)]),
+                coefficients,
             },
         );
     }
-    let mut rows = block
-        .equations
-        .iter()
-        .map(|equation| {
-            let left = parse_relation_expression::<SimultaneousAffineValue>(
-                &equation.left,
-                &affine_values,
-                context,
-            )?;
-            let right = parse_relation_expression::<SimultaneousAffineValue>(
-                &equation.right,
-                &affine_values,
-                context,
-            )?;
-            let difference = left.combine(right, true)?;
-            let coefficients = variable_keys
-                .iter()
-                .map(|variable| {
-                    difference
-                        .coefficients
-                        .get(variable)
-                        .copied()
-                        .unwrap_or(0.0)
-                })
-                .collect::<Vec<_>>();
-            Some(AffineEquationRow {
-                coefficients,
-                rhs: -difference.constant,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let solution = solve_unique_affine_system(&mut rows, variable_keys.len())?;
-    Some(
-        solution
-            .into_iter()
-            .zip(variable_dimensions)
-            .map(|(value, dimension)| quantity_value(value, *dimension))
-            .collect(),
-    )
+    let mut rows = Vec::new();
+    for equation in &block.equations {
+        let Some(left) = parse_relation_expression::<SimultaneousAffineValue>(
+            &equation.left,
+            &affine_values,
+            context,
+        ) else {
+            return Ok(None);
+        };
+        let Some(right) = parse_relation_expression::<SimultaneousAffineValue>(
+            &equation.right,
+            &affine_values,
+            context,
+        ) else {
+            return Ok(None);
+        };
+        let Some(difference) = left.combine(right, true) else {
+            return Ok(None);
+        };
+        let mut coefficients = ctx.alloc_filled(
+            variable_keys.len(),
+            0.0,
+            "creo affine equation coefficients",
+        )?;
+        for (coefficient, variable) in coefficients.iter_mut().zip(&variable_keys) {
+            *coefficient = difference.coefficients.get(variable).copied().unwrap_or(0.0);
+        }
+        ctx.try_reserve_items(&mut rows, 1, "creo affine equation rows")?;
+        rows.push(AffineEquationRow {
+            coefficients,
+            rhs: -difference.constant,
+        });
+    }
+    let Some(solution) = solve_unique_affine_system(ctx, &mut rows, variable_keys.len())? else {
+        return Ok(None);
+    };
+    let mut values = Vec::new();
+    ctx.try_reserve_items(&mut values, solution.len(), "creo affine solved values")?;
+    for (value, dimension) in solution.into_iter().zip(variable_dimensions) {
+        values.push(quantity_value(value, *dimension));
+    }
+    Ok(Some(values))
 }
 
 const MAX_NONLINEAR_SOLVE_VARIABLES: usize = 8;
@@ -5479,13 +5498,13 @@ fn solve_nonlinear_expression_block(
         return Ok(None);
     };
     let Some(solution) =
-        refine_nonlinear_solution(block, values, &variable_dimensions, &initial_seed, context)
+        refine_nonlinear_solution(ctx, block, values, &variable_dimensions, &initial_seed, context)?
     else {
         return Ok(None);
     };
     for seed in seeds {
         let Some(candidate) =
-            refine_nonlinear_solution(block, values, &variable_dimensions, &seed, context)
+            refine_nonlinear_solution(ctx, block, values, &variable_dimensions, &seed, context)?
         else {
             continue;
         };
@@ -5493,13 +5512,12 @@ fn solve_nonlinear_expression_block(
             return Ok(None);
         }
     }
-    Ok(Some(
-        solution
-            .into_iter()
-            .zip(variable_dimensions)
-            .map(|(value, dimension)| quantity_value(value, dimension))
-            .collect(),
-    ))
+    let mut solved = Vec::new();
+    ctx.try_reserve_items(&mut solved, solution.len(), "creo nonlinear solved values")?;
+    for (value, dimension) in solution.into_iter().zip(variable_dimensions) {
+        solved.push(quantity_value(value, dimension));
+    }
+    Ok(Some(solved))
 }
 
 fn nonlinear_equations_are_smooth(block: &CurveExpressionSolveBlock) -> bool {
@@ -5612,53 +5630,71 @@ fn nonlinear_initial_guesses(
 }
 
 fn refine_nonlinear_solution(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block: &CurveExpressionSolveBlock,
     values: &BTreeMap<String, CurveExpressionValue>,
     variable_dimensions: &[RelationDimension],
     seed: &[f64],
     context: RelationEvaluationContext<'_>,
-) -> Option<Vec<f64>> {
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let variable_count = variable_dimensions.len();
-    let mut point = seed.to_vec();
-    let mut residuals =
-        evaluate_nonlinear_residuals(block, values, variable_dimensions, &point, context)?;
+    let mut point = ctx.alloc_filled(seed.len(), 0.0, "creo nonlinear initial point")?;
+    point.copy_from_slice(seed);
+    let Some(mut residuals) =
+        evaluate_nonlinear_residuals(block, values, variable_dimensions, &point, context)
+    else {
+        return Ok(None);
+    };
     for _ in 0..MAX_NONLINEAR_SOLVE_ITERATIONS {
         if nonlinear_residuals_converged(&residuals) {
-            let mut rank_rows = nonlinear_jacobian_rows(
+            let Some(mut rank_rows) = nonlinear_jacobian_rows(
                 block,
                 values,
                 variable_dimensions,
                 &point,
                 &residuals,
                 context,
-            )?;
-            solve_unique_affine_system(&mut rank_rows, variable_count)?;
-            return Some(point);
+            ) else {
+                return Ok(None);
+            };
+            if solve_unique_affine_system(ctx, &mut rank_rows, variable_count)?.is_none() {
+                return Ok(None);
+            }
+            return Ok(Some(point));
         }
-        let mut rows = nonlinear_jacobian_rows(
+        let Some(mut rows) = nonlinear_jacobian_rows(
             block,
             values,
             variable_dimensions,
             &point,
             &residuals,
             context,
-        )?;
+        ) else {
+            return Ok(None);
+        };
         for (row, residual) in rows.iter_mut().zip(&residuals) {
             row.rhs = -residual.value;
         }
-        let delta = solve_unique_affine_system(&mut rows, variable_count)?;
+        let Some(delta) = solve_unique_affine_system(ctx, &mut rows, variable_count)? else {
+            return Ok(None);
+        };
         let maximum_delta = delta.iter().map(|value| value.abs()).fold(0.0, f64::max);
         let point_scale = point.iter().map(|value| value.abs()).fold(1.0, f64::max);
-        (maximum_delta.is_finite() && maximum_delta <= 1e12 * point_scale).then_some(())?;
+        if !maximum_delta.is_finite() || maximum_delta > 1e12 * point_scale {
+            return Ok(None);
+        }
         let base_norm = nonlinear_residual_norm(&residuals);
         let mut accepted = None;
         let mut scale = 1.0;
         for _ in 0..MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS {
-            let candidate = point
-                .iter()
-                .zip(&delta)
-                .map(|(value, change)| value + scale * change)
-                .collect::<Vec<_>>();
+            let mut candidate = ctx.alloc_filled(
+                point.len(),
+                0.0,
+                "creo nonlinear line-search point",
+            )?;
+            for ((slot, value), change) in candidate.iter_mut().zip(&point).zip(&delta) {
+                *slot = value + scale * change;
+            }
             if candidate.iter().all(|value| value.is_finite()) {
                 if let Some(candidate_residuals) = evaluate_nonlinear_residuals(
                     block,
@@ -5678,28 +5714,34 @@ fn refine_nonlinear_solution(
             }
             scale *= 0.5;
         }
-        let (candidate, candidate_residuals) = accepted?;
+        let Some((candidate, candidate_residuals)) = accepted else {
+            return Ok(None);
+        };
         point = candidate;
         residuals = candidate_residuals;
         if maximum_delta * scale <= NONLINEAR_SOLVE_STEP_TOLERANCE * point_scale
             && !nonlinear_residuals_converged(&residuals)
         {
-            return None;
+            return Ok(None);
         }
     }
     if !nonlinear_residuals_converged(&residuals) {
-        return None;
+        return Ok(None);
     }
-    let mut rank_rows = nonlinear_jacobian_rows(
+    let Some(mut rank_rows) = nonlinear_jacobian_rows(
         block,
         values,
         variable_dimensions,
         &point,
         &residuals,
         context,
-    )?;
-    solve_unique_affine_system(&mut rank_rows, variable_count)?;
-    Some(point)
+    ) else {
+        return Ok(None);
+    };
+    if solve_unique_affine_system(ctx, &mut rank_rows, variable_count)?.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(point))
 }
 
 fn nonlinear_jacobian_rows(
@@ -5844,10 +5886,13 @@ fn eliminate_pivot_column(
 }
 
 fn solve_unique_affine_system(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     rows: &mut [AffineEquationRow],
     variable_count: usize,
-) -> Option<Vec<f64>> {
-    (variable_count > 0 && rows.len() >= variable_count).then_some(())?;
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+    if variable_count == 0 || rows.len() < variable_count {
+        return Ok(None);
+    }
     for row in rows.iter_mut() {
         let scale = row
             .coefficients
@@ -5866,13 +5911,17 @@ fn solve_unique_affine_system(
     let residual_tolerance = EPS_LINEAR_SYSTEM_RESIDUAL * rhs_scale;
     let mut pivot_row = 0;
     for column in 0..variable_count {
-        let selected = (pivot_row..rows.len()).max_by(|&first, &second| {
+        let Some(selected) = (pivot_row..rows.len()).max_by(|&first, &second| {
             rows[first].coefficients[column]
                 .abs()
                 .total_cmp(&rows[second].coefficients[column].abs())
-        })?;
+        }) else {
+            return Ok(None);
+        };
         let divisor = rows[selected].coefficients[column];
-        (divisor.abs() > coefficient_tolerance).then_some(())?;
+        if divisor.abs() <= coefficient_tolerance {
+            return Ok(None);
+        }
         rows.swap(pivot_row, selected);
         for coefficient in &mut rows[pivot_row].coefficients {
             *coefficient /= divisor;
@@ -5881,24 +5930,21 @@ fn solve_unique_affine_system(
         eliminate_pivot_column(rows, pivot_row, column, coefficient_tolerance);
         pivot_row += 1;
     }
-    rows.iter()
+    if !rows.iter()
         .skip(variable_count)
         .all(|row| {
             row.coefficients
                 .iter()
                 .all(|coefficient| coefficient.abs() <= coefficient_tolerance)
                 && row.rhs.abs() <= residual_tolerance
-        })
-        .then_some(())?;
-    let solution = rows
-        .iter()
-        .take(variable_count)
-        .map(|row| row.rhs)
-        .collect::<Vec<_>>();
-    solution
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(solution)
+        }) {
+        return Ok(None);
+    }
+    let mut solution = ctx.alloc_filled(variable_count, 0.0, "creo affine unique solution")?;
+    for (slot, row) in solution.iter_mut().zip(rows.iter()) {
+        *slot = row.rhs;
+    }
+    Ok(solution.iter().all(|value| value.is_finite()).then_some(solution))
 }
 
 fn evaluate_affine_program(
