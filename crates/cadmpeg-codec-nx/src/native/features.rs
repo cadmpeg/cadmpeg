@@ -10091,51 +10091,69 @@ pub(super) fn feature_block_payload_point_groups(
 
 /// Resolve the consecutive three-parameter dimension run of `BLOCK` features.
 pub(super) fn feature_block_dimensions(
+    ctx: &DecodeContext<'_>,
     constructions: &[FeatureBlockConstruction],
     bindings: &[FeatureParameterBinding],
     declarations: &[ExpressionDeclaration],
     expressions: &[Expression],
-) -> Vec<FeatureBlockDimensions> {
-    constructions
-        .iter()
-        .filter_map(|construction| {
-            let mut operation_bindings = bindings
-                .iter()
-                .filter(|binding| binding.operation_label == construction.operation_label)
-                .collect::<Vec<_>>();
-            operation_bindings
-                .sort_by_key(|binding| (binding.input_slot, binding.reference_ordinal));
-            let mut anchors = operation_bindings
-                .iter()
-                .map(|binding| binding.expression_declaration.as_str())
-                .collect::<Vec<_>>();
-            anchors.sort_unstable();
-            anchors.dedup();
-            let [anchor] = anchors.as_slice() else {
-                return None;
+) -> Result<Vec<FeatureBlockDimensions>, CodecError> {
+    let mut dimensions = Vec::new();
+    for construction in constructions {
+            let scan_work = bindings.len().checked_add(declarations.len())
+                .and_then(|count| expressions.len().checked_mul(3)
+                    .and_then(|expressions| count.checked_add(expressions)))
+                .ok_or_else(|| ctx.refuse_codec_limit("scan NX block dimensions", 0, 1))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(scan_work),
+                "scan NX block dimensions")?;
+            let mut operation_bindings = Vec::new();
+            let mut binding_reservation = ctx.reserve_scoped(0,
+                "NX block dimension bindings")?;
+            for binding in bindings.iter().filter(|binding| {
+                binding.operation_label == construction.operation_label
+            }) {
+                ctx.charge_collection_items(1, "NX block dimension bindings")?;
+                binding_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<&FeatureParameterBinding>()))?;
+                operation_bindings.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX block dimension bindings", 0, 1))?;
+                operation_bindings.push(binding);
+            }
+            let Some(anchor) = operation_bindings.first().map(|binding| {
+                binding.expression_declaration.as_str()
+            }) else {
+                continue;
             };
-            let start = declarations
-                .iter()
-                .position(|declaration| declaration.id == *anchor)?;
-            let run: [&ExpressionDeclaration; 3] = declarations
-                .get(start..start + 3)?
-                .iter()
-                .collect::<Vec<_>>()
-                .try_into()
-                .ok()?;
+            if operation_bindings.iter().any(|binding| {
+                binding.expression_declaration != anchor
+            }) {
+                continue;
+            }
+            let sort_work = operation_bindings.len().checked_mul(operation_bindings.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("sort NX block dimension bindings", 0, 1))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(sort_work),
+                "sort NX block dimension bindings")?;
+            operation_bindings.sort_by_key(|binding| {
+                (binding.input_slot, binding.reference_ordinal)
+            });
+            let Some(start) = declarations.iter().position(|declaration| declaration.id == anchor)
+            else {
+                continue;
+            };
+            let Some(end) = start.checked_add(3) else { continue; };
+            let Some(run_slice) = declarations.get(start..end) else { continue; };
+            let run = [&run_slice[0], &run_slice[1], &run_slice[2]];
             let first = run[0].name.index();
             if run.iter().enumerate().any(|(ordinal, declaration)| {
                 declaration.record.split_once(":entry#").map(|pair| pair.0)
                     != run[0].record.split_once(":entry#").map(|pair| pair.0)
                     || declaration.source_entry != run[0].source_entry
-                    || Some(declaration.name.index()) != first.checked_add(ordinal as u32)
+                    || Some(declaration.name.index()) != u32::try_from(ordinal)
+                        .ok().and_then(|ordinal| first.checked_add(ordinal))
                     || declaration.name.as_str() != format!("p{}", declaration.name.index())
             }) {
-                return None;
+                continue;
             }
-            let resolved: [(&Expression, cadmpeg_ir::scalar::FiniteReal); 3] = run
-                .iter()
-                .map(|declaration| {
+            let resolve = |declaration: &ExpressionDeclaration| {
                     let mut matches = expressions.iter().filter(|expression| {
                         expression.declaration.as_deref() == Some(&declaration.id)
                     });
@@ -10152,38 +10170,66 @@ pub(super) fn feature_block_dimensions(
                             )?,
                         )?,
                     ))
-                })
-                .collect::<Option<Vec<_>>>()?
-                .try_into()
-                .ok()?;
+            };
+            let (Some(first_resolved), Some(second_resolved), Some(third_resolved)) =
+                (resolve(run[0]), resolve(run[1]), resolve(run[2])) else {
+                    continue;
+                };
+            let resolved = [first_resolved, second_resolved, third_resolved];
             if resolved
                 .iter()
-                .zip(run)
+                .zip(run.iter())
                 .any(|((expression, _), declaration)| {
                     expression.source_entry != declaration.source_entry
                         || expression.source_table != resolved[0].0.source_table
                 })
             {
-                return None;
+                continue;
             }
-            Some(FeatureBlockDimensions {
-                id: construction
-                    .id
-                    .replacen("block-construction", "block-dimensions", 1),
-                operation_label: construction.operation_label.clone(),
-                construction: construction.id.clone(),
-                anchor_bindings: operation_bindings
-                    .into_iter()
-                    .map(|binding| binding.id.clone())
-                    .collect(),
-                dimensions: std::array::from_fn(|slot| FeatureBlockDimension {
-                    declaration: run[slot].id.clone(),
-                    expression: resolved[slot].0.id.clone(),
+            let id = if let Some((prefix, suffix)) =
+                construction.id.split_once("block-construction") {
+                format_charged_text(ctx,
+                    format_args!("{prefix}block-dimensions{suffix}"),
+                    "NX block dimensions identity")?
+            } else {
+                copy_operation_text(ctx, &construction.id, "NX block dimensions identity")?
+            };
+            let operation_label = copy_operation_text(ctx, &construction.operation_label,
+                "NX block dimensions operation")?;
+            let construction_id = copy_operation_text(ctx, &construction.id,
+                "NX block dimensions construction")?;
+            let mut anchor_bindings = Vec::new();
+            for binding in operation_bindings {
+                let id = copy_operation_text(ctx, &binding.id,
+                    "NX block dimension anchor binding")?;
+                ctx.charge_collection_items(1, "NX block dimension anchor bindings")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<String>()), "NX block dimension anchor bindings")?;
+                anchor_bindings.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX block dimension anchor bindings", 0, 1))?;
+                anchor_bindings.push(id);
+            }
+            let dimension = |slot: usize| -> Result<FeatureBlockDimension, CodecError> {
+                Ok(FeatureBlockDimension {
+                    declaration: copy_operation_text(ctx, &run[slot].id,
+                        "NX block dimension declaration")?,
+                    expression: copy_operation_text(ctx, &resolved[slot].0.id,
+                        "NX block dimension expression")?,
                     value: resolved[slot].1,
-                }),
-            })
-        })
-        .collect()
+                })
+            };
+            let values = [dimension(0)?, dimension(1)?, dimension(2)?];
+            ctx.charge_collection_items(1, "NX block dimensions")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureBlockDimensions>()), "NX block dimensions")?;
+            dimensions.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX block dimensions", 0, 1))?;
+            dimensions.push(FeatureBlockDimensions {
+                id, operation_label, construction: construction_id,
+                anchor_bindings, dimensions: values,
+            });
+    }
+    Ok(dimensions)
 }
 
 /// Decode persistent object frames from bounded offset-store blocks.
