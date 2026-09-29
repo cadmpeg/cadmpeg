@@ -43,6 +43,7 @@ impl<T> Default for FixedCandidates<T> {
 }
 
 impl<T> FixedCandidates<T> {
+    #[cfg(test)]
     pub(in super::super) fn as_slice(&self) -> &[T] {
         self
     }

@@ -34,8 +34,11 @@ pub fn surface_rows(ctx: &cadmpeg_core::decode::DecodeContext<'_>, data: &[u8]) 
 }
 
 /// Exercise Creo PSB scalar decoding.
-pub fn scalar(data: &[u8]) {
-    let cache = ScalarCache::from_section(data);
+pub fn scalar(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let cache = ScalarCache::from_section_checked(ctx, data)?;
     let mut offset = 0usize;
     while offset < data.len() {
         match decode_in_lane(data, offset, &cache) {
@@ -44,6 +47,7 @@ pub fn scalar(data: &[u8]) {
         }
     }
     let _probe = decode(data, 0);
+    Ok(())
 }
 
 /// Exercise Creo compact integer decoding.
@@ -94,7 +98,8 @@ mod tests {
             .expect("curve fuzz wrapper");
         crate::decode::with_test_decode_ctx(|ctx| super::surface_rows(ctx, &[]))
             .expect("surface row fuzz wrapper");
-        super::scalar(&[]);
+        crate::decode::with_test_decode_ctx(|ctx| super::scalar(ctx, &[]))
+            .expect("scalar fuzz wrapper");
         super::compact_int(&[]);
         super::psb_tokens(&[]);
         super::short_form_float(&[]);
@@ -110,10 +115,26 @@ mod tests {
             .expect("curve fuzz wrapper");
         crate::decode::with_test_decode_ctx(|ctx| super::surface_rows(ctx, &data))
             .expect("surface row fuzz wrapper");
-        super::scalar(&data);
+        crate::decode::with_test_decode_ctx(|ctx| super::scalar(ctx, &data))
+            .expect("scalar fuzz wrapper");
         super::compact_int(&data);
         super::psb_tokens(&data);
         super::short_form_float(&data);
         super::container_scan(&data);
+    }
+
+    #[test]
+    fn scalar_wrapper_refuses_unadmitted_cache_image() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let data = [0x46, 0x08, 0, 0, 0, 0, 0, 0];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
+            .expect("scalar input admitted");
+        let error = super::scalar(&ctx, &data).expect_err("cache image exceeds collection limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo scalar cache unique images"));
     }
 }

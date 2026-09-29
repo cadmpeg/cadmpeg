@@ -232,6 +232,7 @@ pub(crate) struct ScalarCache {
 impl ScalarCache {
     /// Build the dictionary in first-appearance order from every complete
     /// eight-byte sequence beginning with `0x46` in one section.
+    #[cfg(test)]
     pub(crate) fn from_section(section: &[u8]) -> Self {
         let mut entries = Vec::<f64>::new();
         let mut seen = HashSet::<[u8; 8]>::new();

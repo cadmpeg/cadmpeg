@@ -604,6 +604,7 @@ impl CubicRoots {
         &self.values[..self.len]
     }
 
+    #[cfg(test)]
     pub(in super::super) fn len(&self) -> usize {
         self.len
     }
