@@ -268,31 +268,6 @@ fn weighted_poles<P, W>(
         .collect()
 }
 
-impl NurbsPoles3 {
-    /// Edit every pole position in place, keeping every accepted edit.
-    ///
-    /// A refusal leaves the lane partly edited, so the caller owns the copy
-    /// that states the prior positions.
-    fn apply_points(
-        &mut self,
-        mut edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
-    ) -> Result<(), NurbsError> {
-        match self {
-            Self::Polynomial { points } => {
-                for point in points.iter_mut() {
-                    edit(point)?;
-                }
-            }
-            Self::Rational { points } => {
-                for pole in points.iter_mut() {
-                    edit(&mut pole.point)?;
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
 impl<P: PoleValue<FinitePoint3>> NurbsPoles3<P> {
     /// The poles with admitted positions.
     ///
@@ -508,31 +483,6 @@ fn weighted_rows<P, W>(
             weighted_poles(row, weight_row, &mut weight)
         })
         .collect()
-}
-
-impl NurbsPoleGrid {
-    /// Edit every pole position in place, keeping every accepted edit.
-    ///
-    /// A refusal leaves the grid partly edited, so the caller owns the copy
-    /// that states the prior positions.
-    fn apply_points(
-        &mut self,
-        mut edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
-    ) -> Result<(), NurbsError> {
-        match self {
-            Self::Polynomial { rows } => {
-                for point in rows.iter_mut().flatten() {
-                    edit(point)?;
-                }
-            }
-            Self::Rational { rows } => {
-                for pole in rows.iter_mut().flatten() {
-                    edit(&mut pole.point)?;
-                }
-            }
-        }
-        Ok(())
-    }
 }
 
 impl<P: PoleValue<FinitePoint3>> NurbsPoleGrid<P> {
@@ -1325,27 +1275,37 @@ impl NurbsSurface {
         }
     }
 
-    /// Atomically edit pole positions and preserve finite coordinates.
-    ///
-    /// The closure states its own refusal, which discards the whole edit.
-    pub fn edit_control_points(
+    /// Map pole positions in row-major order after every result passes admission.
+    /// The map must return the same result for the same index and position.
+    /// Pole weights and knots stay in place.
+    pub fn try_map_control_points<E>(
         &mut self,
-        edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
-    ) -> Result<(), NurbsError> {
-        let mut poles = self.poles.to_raw();
-        poles.apply_points(edit)?;
-        self.poles = poles.admit()?;
-        Ok(())
-    }
-
-    /// Atomically map every admitted pole position. The closure states its
-    /// own refusal, which discards the whole map; the positions it returns are
-    /// admitted, so nothing is checked.
-    pub fn map_control_points(
-        &mut self,
-        map: impl FnMut(FinitePoint3) -> Result<FinitePoint3, NurbsError>,
-    ) -> Result<(), NurbsError> {
-        self.poles = self.poles.clone().try_map_points(map)?;
+        map: impl Fn(usize, FinitePoint3) -> Result<FinitePoint3, E>,
+    ) -> Result<(), E> {
+        match &self.poles {
+            NurbsPoleGrid::Polynomial { rows } => {
+                for (index, point) in rows.iter().flatten().copied().enumerate() {
+                    map(index, point)?;
+                }
+            }
+            NurbsPoleGrid::Rational { rows } => {
+                for (index, pole) in rows.iter().flatten().enumerate() {
+                    map(index, pole.point)?;
+                }
+            }
+        }
+        match &mut self.poles {
+            NurbsPoleGrid::Polynomial { rows } => {
+                for (index, point) in rows.iter_mut().flatten().enumerate() {
+                    *point = map(index, *point)?;
+                }
+            }
+            NurbsPoleGrid::Rational { rows } => {
+                for (index, pole) in rows.iter_mut().flatten().enumerate() {
+                    pole.point = map(index, pole.point)?;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1648,48 +1608,38 @@ impl NurbsCurve {
         self.poles.count()
     }
 
-    /// Atomically edit pole positions and preserve finite coordinates.
-    ///
-    /// The closure states its own refusal, which discards the whole edit.
-    pub fn edit_control_points(
+    /// Map pole positions in order after every result passes admission.
+    /// The map must return the same result for the same index and position.
+    /// Pole weights and knots stay in place.
+    pub fn try_map_control_points<E>(
         &mut self,
-        edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
-    ) -> Result<(), NurbsError> {
-        let mut poles = self.poles.to_raw();
-        poles.apply_points(edit)?;
-        self.poles = poles.admit()?;
-        Ok(())
-    }
-
-    /// Atomically map every admitted pole position. The closure states its
-    /// own refusal, which discards the whole map; the positions it returns are
-    /// admitted, so nothing is checked.
-    pub fn map_control_points(
-        &mut self,
-        map: impl FnMut(FinitePoint3) -> Result<FinitePoint3, NurbsError>,
-    ) -> Result<(), NurbsError> {
-        self.poles = self.poles.clone().try_map_points(map)?;
-        Ok(())
-    }
-
-    /// Map the poles of an owned curve in place. An error discards the curve.
-    pub fn try_map_owned_control_points<E>(
-        mut self,
-        mut map: impl FnMut(FinitePoint3) -> Result<FinitePoint3, E>,
-    ) -> Result<Self, E> {
-        match &mut self.poles {
+        map: impl Fn(usize, FinitePoint3) -> Result<FinitePoint3, E>,
+    ) -> Result<(), E> {
+        match &self.poles {
             NurbsPoles3::Polynomial { points } => {
-                for point in points {
-                    *point = map(*point)?;
+                for (index, point) in points.iter().copied().enumerate() {
+                    map(index, point)?;
                 }
             }
             NurbsPoles3::Rational { points } => {
-                for pole in points {
-                    pole.point = map(pole.point)?;
+                for (index, pole) in points.iter().enumerate() {
+                    map(index, pole.point)?;
                 }
             }
         }
-        Ok(self)
+        match &mut self.poles {
+            NurbsPoles3::Polynomial { points } => {
+                for (index, point) in points.iter_mut().enumerate() {
+                    *point = map(index, *point)?;
+                }
+            }
+            NurbsPoles3::Rational { points } => {
+                for (index, pole) in points.iter_mut().enumerate() {
+                    pole.point = map(index, pole.point)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Rational weights in pole order.

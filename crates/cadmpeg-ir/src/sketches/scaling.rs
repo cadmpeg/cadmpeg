@@ -294,11 +294,14 @@ impl SpatialSketchGeometry {
             }
             Definition::Nurbs { curve } => {
                 curve
-                    .edit_control_points(|point| {
-                        point.x *= scale.get();
-                        point.y *= scale.get();
-                        point.z *= scale.get();
-                        Ok(())
+                    .try_map_control_points(|_, point| {
+                        let mut scaled = point.get();
+                        scaled.x *= scale.get();
+                        scaled.y *= scale.get();
+                        scaled.z *= scale.get();
+                        FinitePoint3::new(scaled).ok_or_else(|| NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        ))
                     })
                     .map_err(SketchLengthScaleError::CurveControlPoints)?;
             }
