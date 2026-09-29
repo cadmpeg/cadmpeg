@@ -4149,7 +4149,7 @@ fn project_edge_flange(
         {
             return Ok(None);
         }
-        selections.push(resolved_edge_flange_group(
+        let selection = resolved_edge_flange_group(
             edge_group,
             groups,
             edge_operands,
@@ -4157,12 +4157,13 @@ fn project_edge_flange(
             scope.previous_history_state_id(),
             &neutral_feature_id(scope),
             ctx,
-        )?);
+        )?;
+        push_feature_item(ctx, &mut selections, selection, "f3d edge flange selection")?;
     }
     let edges = if selections.len() == 1 {
         or_none!(selections.into_iter().next())
     } else {
-        merge_edge_selections(scope, &selections)
+        merge_edge_selections(ctx, scope, &selections)?
     };
 
     Ok(Some(FeatureDefinition::Operation(
@@ -4467,7 +4468,7 @@ fn project_ruled_surface(
         DesignRuledSurfaceMethod::Normal => RuledSurfaceMode::Normal { distance },
         DesignRuledSurfaceMethod::Direction => return Ok(None),
     };
-    let mut ordered_groups = Vec::with_capacity(operation.edge_group_record_indices.len());
+    let mut ordered_groups = Vec::new();
     for record_index in &operation.edge_group_record_indices {
         let mut matching = groups.iter().filter(|group| {
             native_stream(&group.id) == Some(stream)
@@ -4491,12 +4492,11 @@ fn project_ruled_surface(
         {
             return Ok(None);
         }
-        ordered_groups.push(group);
+        push_feature_item(ctx, &mut ordered_groups, group, "f3d ruled surface edge group")?;
     }
-    let selections = ordered_groups
-        .iter()
-        .map(|group| {
-            resolved_edge_group(
+    let mut selections = Vec::new();
+    for group in &ordered_groups {
+        let selection = resolved_edge_group(
                 group,
                 groups,
                 edge_operands,
@@ -4504,14 +4504,17 @@ fn project_ruled_surface(
                 scope.previous_history_state_id(),
                 &neutral_feature_id(scope),
                 ctx,
-            )
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let edges = merge_edge_selections(scope, &selections);
+            )?;
+        push_feature_item(ctx, &mut selections, selection,
+            "f3d ruled surface edge selection")?;
+    }
+    let edges = merge_edge_selections(ctx, scope, &selections)?;
+    let support_native = copy_feature_text(ctx, &scope.id,
+        "f3d ruled surface support native id")?;
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::RuledSurface {
             edges,
-            support_faces: FaceSelection::Native(scope.id.clone()),
+            support_faces: FaceSelection::Native(support_native),
             mode,
             angle: Some(angle),
             alternate_face: Some(operation.alternate_face),
@@ -4524,64 +4527,91 @@ fn project_ruled_surface(
 }
 
 fn merge_edge_selections(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     selections: &[cadmpeg_ir::features::EdgeSelection],
-) -> cadmpeg_ir::features::EdgeSelection {
+) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     use cadmpeg_ir::features::EdgeSelection;
 
-    let direct = selections
-        .iter()
-        .map(|selection| match selection {
-            EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => Some(edges),
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>();
-    if let Some(groups) = direct {
+    let native = || -> Result<EdgeSelection, CodecError> {
+        Ok(EdgeSelection::Native(copy_feature_text(ctx, &scope.id,
+            "f3d merged edge native id")?))
+    };
+    if let Some(ctx) = ctx {
+        let count = u64::try_from(selections.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d merged edge selection scan", 0, 1)
+        })?;
+        ctx.charge_work(count, "f3d merged edge selection scan")?;
+    }
+    if selections.iter().all(|selection| matches!(selection,
+        EdgeSelection::Edges(_) | EdgeSelection::Resolved { .. })) {
         let mut resolved = Vec::new();
-        for edges in groups {
-            for edge in edges.iter().cloned() {
-                if resolved.contains(&edge) {
-                    return EdgeSelection::Native(scope.id.clone());
+        for selection in selections {
+            let edges = match selection {
+                EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => edges,
+                _ => return native(),
+            };
+            for edge in edges {
+                if let Some(ctx) = ctx {
+                    let work = u64::try_from(resolved.len()).map_err(|_| {
+                        ctx.refuse_codec_limit("f3d merged edge duplicate scan", 0, 1)
+                    })?;
+                    ctx.charge_work(work, "f3d merged edge duplicate scan")?;
                 }
-                resolved.push(edge);
+                if resolved.contains(edge) {
+                    return native();
+                }
+                let edge = copy_feature_identity(ctx, edge.as_str(),
+                    "f3d merged direct edge id")?;
+                push_feature_item(ctx, &mut resolved, edge, "f3d merged direct edge")?;
             }
         }
-        return EdgeSelection::Resolved {
+        return Ok(EdgeSelection::Resolved {
             edges: resolved,
-            native: scope.id.clone(),
-        };
+            native: copy_feature_text(ctx, &scope.id, "f3d merged direct native id")?,
+        });
     }
-    let state = selections.first().and_then(|selection| match selection {
-        EdgeSelection::Historical { state, .. } => Some(state.clone()),
-        _ => None,
-    });
-    if let Some(state) = state {
-        let historical = selections
-            .iter()
-            .map(|selection| match selection {
-                EdgeSelection::Historical {
-                    state: candidate,
-                    edges,
-                    ..
-                } if candidate == &state => Some(edges),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>();
-        if let Some(groups) = historical {
+    if let Some(EdgeSelection::Historical { state, .. }) = selections.first() {
+        if selections.iter().all(|selection| matches!(selection,
+            EdgeSelection::Historical { state: candidate, .. } if candidate == state)) {
+            let state = copy_feature_identity(ctx, state.as_str(),
+                "f3d merged historical edge state id")?;
             let mut resolved = Vec::new();
-            for edges in groups {
-                for edge in edges.iter().cloned() {
-                    if resolved.contains(&edge) {
-                        return EdgeSelection::Native(scope.id.clone());
+            for selection in selections {
+                let EdgeSelection::Historical { edges, .. } = selection else {
+                    return native();
+                };
+                for edge in edges.iter() {
+                    if let Some(ctx) = ctx {
+                        let work = u64::try_from(resolved.len()).map_err(|_| {
+                            ctx.refuse_codec_limit("f3d merged historical edge duplicate scan", 0, 1)
+                        })?;
+                        ctx.charge_work(work, "f3d merged historical edge duplicate scan")?;
                     }
-                    resolved.push(edge);
+                    if resolved.contains(edge) {
+                        return native();
+                    }
+                    let edge = copy_feature_identity(ctx, edge.as_str(),
+                        "f3d merged historical edge id")?;
+                    push_feature_item(ctx, &mut resolved, edge,
+                        "f3d merged historical edge")?;
                 }
             }
-            return EdgeSelection::historical(state, resolved, scope.id.clone())
-                .unwrap_or_else(|_| EdgeSelection::Native(scope.id.clone()));
+            if let Some(ctx) = ctx {
+                let count = u64::try_from(resolved.len()).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d merged historical edge uniqueness", 0, 1)
+                })?;
+                ctx.charge_collection_items(count, "f3d merged historical edge uniqueness")?;
+            }
+            let selected_native = copy_feature_text(ctx, &scope.id,
+                "f3d merged historical native id")?;
+            return match EdgeSelection::historical(state, resolved, selected_native) {
+                Ok(selection) => Ok(selection),
+                Err(_) => native(),
+            };
         }
     }
-    EdgeSelection::Native(scope.id.clone())
+    native()
 }
 
 fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::AxisAngle> {

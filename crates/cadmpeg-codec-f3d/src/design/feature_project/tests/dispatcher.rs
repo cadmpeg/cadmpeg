@@ -1110,6 +1110,123 @@ fn thread_face_native_id_refuses_retained_limit() {
 }
 
 #[test]
+fn merged_direct_edge_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::EdgeSelection;
+    use cadmpeg_ir::ids::EdgeId;
+
+    let scope = DesignParameterScope::empty(
+        "f3d:test:scope#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        100,
+    );
+    let edge = EdgeId::mint("f3d:brep:entity#1").expect("identity grammar");
+    let selections = [EdgeSelection::Edges(vec![edge])];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::merge_edge_selections(Some(&ctx), &scope, &selections),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d merged direct edge"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn merged_direct_edge_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::EdgeSelection;
+    use cadmpeg_ir::ids::EdgeId;
+
+    let scope = DesignParameterScope::empty(
+        "f3d:test:scope#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        100,
+    );
+    let edge = EdgeId::mint("f3d:brep:entity#1").expect("identity grammar");
+    let selections = [EdgeSelection::Edges(vec![edge])];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::merge_edge_selections(Some(&ctx), &scope, &selections),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d merged direct edge id"
+                && failure.dimension == ResourceDimension::RetainedBytes
+    ));
+}
+
+#[test]
+fn merged_historical_edge_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::EdgeSelection;
+    use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId};
+
+    let scope = DesignParameterScope::empty(
+        "f3d:test:scope#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        100,
+    );
+    let state = FeatureInputTopologyId::mint("f3d:history-input:state#100")
+        .expect("identity grammar");
+    let edge = HistoricalEdgeId::mint("f3d:history-input:edge#100:1")
+        .expect("identity grammar");
+    let selection = EdgeSelection::historical(state, vec![edge], scope.id.clone())
+        .expect("historical edge selection");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::merge_edge_selections(Some(&ctx), &scope, &[selection]),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d merged historical edge"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn merged_direct_edges_keep_source_order_and_native_fallback() {
+    use cadmpeg_ir::features::EdgeSelection;
+    use cadmpeg_ir::ids::EdgeId;
+
+    let scope = DesignParameterScope::empty(
+        "f3d:test:scope#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        100,
+    );
+    let first = EdgeId::mint("f3d:brep:entity#1").expect("identity grammar");
+    let second = EdgeId::mint("f3d:brep:entity#2").expect("identity grammar");
+    let selections = [
+        EdgeSelection::Edges(vec![first.clone()]),
+        EdgeSelection::Edges(vec![second.clone()]),
+    ];
+    assert_eq!(
+        crate::design::feature_project::merge_edge_selections(None, &scope, &selections)
+            .expect("unlimited merge"),
+        EdgeSelection::Resolved {
+            edges: vec![first.clone(), second],
+            native: scope.id.clone(),
+        }
+    );
+    let duplicate = [
+        EdgeSelection::Edges(vec![first.clone()]),
+        EdgeSelection::Edges(vec![first]),
+    ];
+    assert_eq!(
+        crate::design::feature_project::merge_edge_selections(None, &scope, &duplicate)
+            .expect("unlimited duplicate scan"),
+        EdgeSelection::Native(scope.id)
+    );
+}
+
+#[test]
 fn form_dispatcher_binds_a_unique_long_cage_list() {
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
