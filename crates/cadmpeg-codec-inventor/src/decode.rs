@@ -142,11 +142,7 @@ fn decode_container<'a>(
                 charge_retained_len(ctx, 32, "retain Inventor property-set CLSID")?;
                 property_sets.push(PropertySetRecord {
                     id,
-                    path: retained_clone(
-                        ctx,
-                        &descriptor.path,
-                        "retain Inventor property-set path",
-                    )?,
+                    path: ctx.copy_retained_text(&descriptor.path, "retain Inventor property-set path")?,
                     directory_id: descriptor.stream.directory_id(),
                     version: property_set.version,
                     system_identifier: property_set.system_identifier,
@@ -180,11 +176,7 @@ fn decode_container<'a>(
                         )?;
                         property_set_issues.push(PropertySetIssueRecord {
                             id,
-                            path: retained_clone(
-                                ctx,
-                                &descriptor.path,
-                                "retain Inventor property-set identity issue path",
-                            )?,
+                            path: ctx.copy_retained_text(&descriptor.path, "retain Inventor property-set identity issue path")?,
                             directory_id: descriptor.stream.directory_id(),
                             detail: "embedded property-set name does not match its FMTID".into(),
                         });
@@ -201,11 +193,7 @@ fn decode_container<'a>(
                     charge_retained_len(ctx, 32, "retain Inventor property section FMTID")?;
                     property_sections.push(PropertySectionRecord {
                         id: section_id,
-                        set_path: retained_clone(
-                            ctx,
-                            &descriptor.path,
-                            "retain Inventor property section path",
-                        )?,
+                        set_path: ctx.copy_retained_text(&descriptor.path, "retain Inventor property section path")?,
                         ordinal: record_ordinal(
                             ctx,
                             section_ordinal,
@@ -291,11 +279,7 @@ fn decode_container<'a>(
                         )?;
                         properties.push(PropertyRecord {
                             id: native_id,
-                            set_path: retained_clone(
-                                ctx,
-                                &descriptor.path,
-                                "retain Inventor property value path",
-                            )?,
+                            set_path: ctx.copy_retained_text(&descriptor.path, "retain Inventor property value path")?,
                             section_ordinal: record_ordinal(
                                 ctx,
                                 section_ordinal,
@@ -417,7 +401,7 @@ fn decode_container<'a>(
                 created_filetime: database.created_filetime,
                 saved_by: version_record(ctx, database.saved_by)?,
                 saved_filetime: database.saved_filetime,
-                note: retained_clone(ctx, &database.note, "retain Inventor database note")?,
+                note: ctx.copy_retained_text(&database.note, "retain Inventor database note")?,
             })
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
@@ -450,11 +434,7 @@ fn decode_container<'a>(
                         "retain Inventor registry entry id",
                     )?,
                     ordinal: record_ordinal(ctx, ordinal, "Inventor registry ordinal")?,
-                    display_name: retained_clone(
-                        ctx,
-                        &entry.display_name,
-                        "retain Inventor registry display name",
-                    )?,
+                    display_name: ctx.copy_retained_text(&entry.display_name, "retain Inventor registry display name")?,
                     segment_id: retained_hex(
                         ctx,
                         &entry.segment_id,
@@ -465,11 +445,7 @@ fn decode_container<'a>(
                         &entry.revision_id,
                         "retain Inventor registry revision GUID",
                     )?,
-                    type_name: retained_clone(
-                        ctx,
-                        &entry.type_name,
-                        "retain Inventor registry type name",
-                    )?,
+                    type_name: ctx.copy_retained_text(&entry.type_name, "retain Inventor registry type name")?,
                     object_count: wire_len(
                         ctx,
                         entry.objects.len(),
@@ -674,11 +650,7 @@ fn decode_container<'a>(
                 }
             },
             Err(detail) => {
-                geometry_failure = Some(retained_clone(
-                    ctx,
-                    detail,
-                    "retain Inventor kernel header failure",
-                )?);
+                geometry_failure = Some(ctx.copy_retained_text(detail, "retain Inventor kernel header failure")?);
                 None
             }
         },
@@ -713,11 +685,7 @@ fn decode_container<'a>(
         ActiveCarrierState::Selected(_)
     ) && geometry_failure.is_none()
     {
-        geometry_failure = Some(retained_clone(
-            ctx,
-            "the active kernel carrier decoded no surfaces, points, or faces",
-            "retain Inventor empty carrier failure",
-        )?);
+        geometry_failure = Some(ctx.copy_retained_text("the active kernel carrier decoded no surfaces, points, or faces", "retain Inventor empty carrier failure")?);
     }
     let presentation_projection = crate::presentation::project_bindings(
         ctx,
@@ -784,21 +752,13 @@ fn decode_container<'a>(
         let detail = match geometry_failure {
             Some(detail) => detail,
             None => match &container.rse.active_carrier {
-                ActiveCarrierState::Selected(_) => retained_clone(
-                    ctx,
-                    "The typed active kernel carrier has not been transferred.",
-                    "retain Inventor untransferred carrier detail",
-                )?,
+                ActiveCarrierState::Selected(_) => ctx.copy_retained_text("The typed active kernel carrier has not been transferred.", "retain Inventor untransferred carrier detail")?,
                 ActiveCarrierState::Unavailable(detail) => retained_format(
                     ctx,
                     format_args!("The active Inventor kernel carrier is unavailable: {detail}"),
                     "retain Inventor unavailable carrier detail",
                 )?,
-                ActiveCarrierState::NotApplicable => retained_clone(
-                    ctx,
-                    "Inventor geometry is not available for this document kind.",
-                    "retain Inventor missing geometry detail",
-                )?,
+                ActiveCarrierState::NotApplicable => ctx.copy_retained_text("Inventor geometry is not available for this document kind.", "retain Inventor missing geometry detail")?,
             },
         };
         losses.push(admitted_loss(
@@ -1378,14 +1338,7 @@ fn charge_retained_len(
     ctx.charge_retained(bytes, operation)
 }
 
-fn retained_clone(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    charge_retained_len(ctx, value.len(), operation)?;
-    Ok(value.to_owned())
-}
+
 
 fn retained_format(
     ctx: &DecodeContext<'_>,
@@ -1486,22 +1439,22 @@ fn project_root_product(
     let source_name = metadata
         .title
         .as_deref()
-        .map(|name| retained_clone(ctx, name, "retain Inventor root product source name"))
+        .map(|name| ctx.copy_retained_text(name, "retain Inventor root product source name"))
         .transpose()?;
     let label = metadata
         .title
         .as_deref()
-        .map(|name| retained_clone(ctx, name, "retain Inventor root product label"))
+        .map(|name| ctx.copy_retained_text(name, "retain Inventor root product label"))
         .transpose()?;
     let description = metadata
         .description
         .as_deref()
-        .map(|value| retained_clone(ctx, value, "retain Inventor root product description"))
+        .map(|value| ctx.copy_retained_text(value, "retain Inventor root product description"))
         .transpose()?;
     let part_number = metadata
         .part_number
         .as_deref()
-        .map(|value| retained_clone(ctx, value, "retain Inventor root part number"))
+        .map(|value| ctx.copy_retained_text(value, "retain Inventor root part number"))
         .transpose()?;
     charge_items(
         ctx,
@@ -1547,7 +1500,7 @@ fn insert_source_attribute(
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "collect Inventor source attribute")?;
-    let key = retained_clone(ctx, key, "retain Inventor source attribute key")?;
+    let key = ctx.copy_retained_text(key, "retain Inventor source attribute key")?;
     let value = retained_format(ctx, value, "retain Inventor source attribute value")?;
     attributes.insert(key, value);
     Ok(())
@@ -1667,8 +1620,8 @@ fn project_property_set_issue(
         format_args!("inventor:property:set-issue#{directory_id}"),
         "retain Inventor property-set issue id",
     )?;
-    let path = retained_clone(ctx, path, "retain Inventor property-set issue path")?;
-    let detail = retained_clone(ctx, detail, "retain Inventor property-set issue detail")?;
+    let path = ctx.copy_retained_text(path, "retain Inventor property-set issue path")?;
+    let detail = ctx.copy_retained_text(detail, "retain Inventor property-set issue detail")?;
     Ok(PropertySetIssueRecord {
         id,
         path,
@@ -1741,11 +1694,7 @@ fn project_protein_state(
     state: &ProteinState<'_>,
 ) -> Result<ProteinRecord, CodecError> {
     admit_native_items(ctx, 1)?;
-    let id = retained_clone(
-        ctx,
-        "inventor:protein:state#root",
-        "retain Inventor Protein state id",
-    )?;
+    let id = ctx.copy_retained_text("inventor:protein:state#root", "retain Inventor Protein state id")?;
     Ok(match state {
         ProteinState::Absent => ProteinRecord::Absent { id },
         ProteinState::Empty { stream } => ProteinRecord::Empty {
@@ -1755,7 +1704,7 @@ fn project_protein_state(
         ProteinState::Malformed { stream, detail } => ProteinRecord::Malformed {
             id,
             directory_id: stream.directory_id(),
-            detail: retained_clone(ctx, detail, "retain Inventor Protein state detail")?,
+            detail: ctx.copy_retained_text(detail, "retain Inventor Protein state detail")?,
         },
         ProteinState::Package(package) => {
             let entries = package
@@ -1772,11 +1721,7 @@ fn project_protein_state(
                             "retain Inventor Protein entry id",
                         )?,
                         ordinal: record_ordinal(ctx, ordinal, "Inventor Protein entry ordinal")?,
-                        name: retained_clone(
-                            ctx,
-                            &entry.name,
-                            "retain Inventor Protein entry name",
-                        )?,
+                        name: ctx.copy_retained_text(&entry.name, "retain Inventor Protein entry name")?,
                         compression: entry.compression,
                         crc32: entry.crc32,
                         compressed_size: entry.compressed_size,
@@ -1823,11 +1768,7 @@ fn project_protein_records(
                 format_args!("inventor:protein:asset#{}-{}", entry_digest, asset.ordinal),
                 "retain Inventor Protein asset id",
             )?;
-            let entry_name = retained_clone(
-                ctx,
-                &instance.entry_name,
-                "retain Inventor Protein asset entry name",
-            )?;
+            let entry_name = ctx.copy_retained_text(&instance.entry_name, "retain Inventor Protein asset entry name")?;
             let wire = ProteinAssetRecordWire {
                 id,
                 entry_name,
@@ -1847,11 +1788,7 @@ fn project_protein_records(
                 ),
                 "retain Inventor Protein rejection id",
             )?;
-            let entry_name = retained_clone(
-                ctx,
-                &instance.entry_name,
-                "retain Inventor Protein rejection entry name",
-            )?;
+            let entry_name = ctx.copy_retained_text(&instance.entry_name, "retain Inventor Protein rejection entry name")?;
             let wire = ProteinRejectionRecordWire {
                 id,
                 entry_name,
@@ -1878,20 +1815,12 @@ fn project_ufrx_state(
     admit_native_items(ctx, 1)?;
     Ok(match state {
         UfrxState::Absent => UfrxRecord::Absent {
-            id: retained_clone(
-                ctx,
-                "inventor:ufrx:state#root",
-                "retain Inventor UFRx state id",
-            )?,
+            id: ctx.copy_retained_text("inventor:ufrx:state#root", "retain Inventor UFRx state id")?,
         },
         UfrxState::Malformed { stream, detail } => UfrxRecord::Malformed {
-            id: retained_clone(
-                ctx,
-                "inventor:ufrx:state#root",
-                "retain Inventor UFRx state id",
-            )?,
+            id: ctx.copy_retained_text("inventor:ufrx:state#root", "retain Inventor UFRx state id")?,
             directory_id: stream.directory_id(),
-            detail: retained_clone(ctx, detail, "retain Inventor UFRx state detail")?,
+            detail: ctx.copy_retained_text(detail, "retain Inventor UFRx state detail")?,
         },
         UfrxState::Unsupported {
             stream,
@@ -1906,11 +1835,7 @@ fn project_ufrx_state(
                 "copy Inventor UFRx section versions",
             )?;
             UfrxRecord::Unsupported {
-                id: retained_clone(
-                    ctx,
-                    "inventor:ufrx:state#root",
-                    "retain Inventor UFRx state id",
-                )?,
+                id: ctx.copy_retained_text("inventor:ufrx:state#root", "retain Inventor UFRx state id")?,
                 directory_id: stream.directory_id(),
                 schema: *schema,
                 section_versions: section_versions.clone(),
@@ -1924,7 +1849,7 @@ fn project_ufrx_state(
                     source.window(),
                     "retain Inventor UFRx unsupported tail digest",
                 )?,
-                detail: retained_clone(ctx, detail, "retain Inventor UFRx state detail")?,
+                detail: ctx.copy_retained_text(detail, "retain Inventor UFRx state detail")?,
             }
         }
         UfrxState::Parsed(document) => {
@@ -1963,11 +1888,7 @@ fn project_ufrx_state(
                 .transpose()?
                 .flatten();
             UfrxRecord::ParsedPrefix {
-                id: retained_clone(
-                    ctx,
-                    "inventor:ufrx:state#root",
-                    "retain Inventor UFRx state id",
-                )?,
+                id: ctx.copy_retained_text("inventor:ufrx:state#root", "retain Inventor UFRx state id")?,
                 directory_id: document.stream.directory_id(),
                 schema: document.schema,
                 section_versions: {
@@ -1978,12 +1899,8 @@ fn project_ufrx_state(
                     )?;
                     document.section_versions.clone()
                 },
-                original_file_name: retained_clone(
-                    ctx,
-                    &document.original_file_name,
-                    "retain Inventor UFRx original file name",
-                )?,
-                caption: retained_clone(ctx, &document.caption, "retain Inventor UFRx caption")?,
+                original_file_name: ctx.copy_retained_text(&document.original_file_name, "retain Inventor UFRx original file name")?,
+                caption: ctx.copy_retained_text(&document.caption, "retain Inventor UFRx caption")?,
                 representation,
                 model_states,
                 external_references: references,
@@ -2032,15 +1949,11 @@ fn project_ufrx_model_state(
             ctx.charge_collection_items(1, "copy Inventor UFRx state parameters")?;
             ctx.charge_entities(1, "admit Inventor UFRx state parameter")?;
             Ok(UfrxModelStateParameterRecord {
-                name: retained_clone(ctx, &parameter.name, "retain Inventor UFRx parameter name")?,
+                name: ctx.copy_retained_text(&parameter.name, "retain Inventor UFRx parameter name")?,
                 tag: parameter.tag,
                 kind: parameter.kind,
                 state: parameter.state,
-                value: retained_clone(
-                    ctx,
-                    &parameter.value,
-                    "retain Inventor UFRx parameter value",
-                )?,
+                value: ctx.copy_retained_text(&parameter.value, "retain Inventor UFRx parameter value")?,
                 trailer: parameter.trailer,
             })
         })
@@ -2053,7 +1966,7 @@ fn project_ufrx_model_state(
         )?,
         ordinal: record_ordinal(ctx, ordinal, "Inventor UFRx model-state ordinal")?,
         prefix: state.prefix,
-        name: retained_clone(ctx, &state.name, "retain Inventor UFRx model-state name")?,
+        name: ctx.copy_retained_text(&state.name, "retain Inventor UFRx model-state name")?,
         state: state.state,
         prefix_count: state.prefix_count,
         parameters,
@@ -2110,18 +2023,10 @@ fn project_ufrx_external_reference(
             "retain Inventor UFRx external reference id",
         )?,
         ordinal: record_ordinal(ctx, ordinal, "Inventor UFRx external ordinal")?,
-        path: retained_clone(ctx, &reference.path, "retain Inventor UFRx external path")?,
+        path: ctx.copy_retained_text(&reference.path, "retain Inventor UFRx external path")?,
         library_id: reference.library_id,
-        library_name: retained_clone(
-            ctx,
-            &reference.library_name,
-            "retain Inventor UFRx external library name",
-        )?,
-        display_name: retained_clone(
-            ctx,
-            &reference.display_name,
-            "retain Inventor UFRx external display name",
-        )?,
+        library_name: ctx.copy_retained_text(&reference.library_name, "retain Inventor UFRx external library name")?,
+        display_name: ctx.copy_retained_text(&reference.display_name, "retain Inventor UFRx external display name")?,
         state_groups: reference.state_groups.clone(),
         state: reference.state,
         document_id: Some(retained_hex(
@@ -2182,19 +2087,11 @@ fn project_ufrx_embedded_reference(
         value_1: reference.value_1,
         extended_value: reference.extended_value,
         value_2: reference.value_2,
-        path: retained_clone(ctx, &reference.path, "retain Inventor UFRx embedded path")?,
+        path: ctx.copy_retained_text(&reference.path, "retain Inventor UFRx embedded path")?,
         library_id: reference.library_id,
-        library_name: retained_clone(
-            ctx,
-            &reference.library_name,
-            "retain Inventor UFRx embedded library name",
-        )?,
+        library_name: ctx.copy_retained_text(&reference.library_name, "retain Inventor UFRx embedded library name")?,
         state: reference.state,
-        display_name: retained_clone(
-            ctx,
-            &reference.display_name,
-            "retain Inventor UFRx embedded display name",
-        )?,
+        display_name: ctx.copy_retained_text(&reference.display_name, "retain Inventor UFRx embedded display name")?,
         state_values: reference.state_values,
         record_len: wire_len(
             ctx,
@@ -2254,7 +2151,7 @@ fn project_ufrx_occurrence(
         title: occurrence
             .title
             .as_deref()
-            .map(|title| retained_clone(ctx, title, "retain Inventor UFRx occurrence title"))
+            .map(|title| ctx.copy_retained_text(title, "retain Inventor UFRx occurrence title"))
             .transpose()?,
         header_padding_words: occurrence.header_padding_words,
         record_len: wire_len(
@@ -2306,16 +2203,8 @@ fn project_ufrx_representation(
     let (active_representation, active_representation_kind) =
         match state.active_representation.as_ref() {
             Some((name, kind)) => (
-                Some(retained_clone(
-                    ctx,
-                    name,
-                    "retain Inventor UFRx representation name",
-                )?),
-                Some(retained_clone(
-                    ctx,
-                    kind,
-                    "retain Inventor UFRx representation kind",
-                )?),
+                Some(ctx.copy_retained_text(name, "retain Inventor UFRx representation name")?),
+                Some(ctx.copy_retained_text(kind, "retain Inventor UFRx representation kind")?),
             ),
             None => (None, None),
         };
@@ -2324,11 +2213,7 @@ fn project_ufrx_representation(
         active_representation,
         active_representation_kind,
         secondary_active_lod_state: state.secondary_active_lod_state,
-        active_model_state: retained_clone(
-            ctx,
-            &state.active_model_state,
-            "retain Inventor UFRx active model state",
-        )?,
+        active_model_state: ctx.copy_retained_text(&state.active_model_state, "retain Inventor UFRx active model state")?,
         active_model_state_state: state.active_model_state_state,
     };
     admit_ufrx_record(
@@ -2354,8 +2239,7 @@ fn collect_body_ids<'b>(
     let mut output = Vec::new();
     for id in ids {
         ctx.charge_collection_items(1, "collect Inventor projected body ids")?;
-        charge_retained_len(ctx, id.as_str().len(), "retain Inventor projected body id")?;
-        output.push(id.clone());
+        output.push(id.try_clone_for_decode(ctx, "retain Inventor projected body id")?);
     }
     Ok(output)
 }
@@ -2366,15 +2250,19 @@ fn clone_product_body_ids(
     target: &mut Vec<BodyId>,
 ) -> Result<(), CodecError> {
     charge_items(ctx, body_ids.len(), "collect Inventor product body ids")?;
+    let mut copied = Vec::new();
+    copied.try_reserve_exact(body_ids.len()).map_err(|_| {
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            ctx.policy().limits.max_collection_items,
+            cadmpeg_core::decode::u64_from_index(body_ids.len()),
+            "collect Inventor product body ids",
+        ))
+    })?;
     for body_id in body_ids {
-        charge_retained_len(
-            ctx,
-            body_id.as_str().len(),
-            "retain Inventor product body id",
-        )?;
+        copied.push(body_id.try_clone_for_decode(ctx, "retain Inventor product body id")?);
     }
-    target.clear();
-    target.extend(body_ids.iter().cloned());
+    *target = copied;
     Ok(())
 }
 
@@ -2385,12 +2273,7 @@ fn index_projected_colors<'b>(
     let mut output = HashMap::new();
     for (id, color) in entries {
         ctx.charge_collection_items(1, "index Inventor projected appearance colors")?;
-        charge_retained_len(
-            ctx,
-            id.as_str().len(),
-            "retain Inventor projected appearance color id",
-        )?;
-        output.insert(id.clone(), color);
+        output.insert(id.try_clone_for_decode(ctx, "retain Inventor projected appearance color id")?, color);
     }
     Ok(output)
 }
@@ -2402,8 +2285,7 @@ fn index_face_colors<'b>(
     let mut output = HashMap::new();
     for (id, color) in entries {
         ctx.charge_collection_items(1, "index Inventor face colors")?;
-        charge_retained_len(ctx, id.as_str().len(), "retain Inventor face color id")?;
-        output.insert(id.clone(), color);
+        output.insert(id.try_clone_for_decode(ctx, "retain Inventor face color id")?, color);
     }
     Ok(output)
 }
@@ -2415,8 +2297,7 @@ fn index_asm_face_keys<'b>(
     let mut output = HashMap::new();
     for (id, key) in entries {
         ctx.charge_collection_items(1, "index Inventor ASM face keys")?;
-        charge_retained_len(ctx, id.as_str().len(), "retain Inventor ASM face key id")?;
-        output.insert(id.clone(), key);
+        output.insert(id.try_clone_for_decode(ctx, "retain Inventor ASM face key id")?, key);
     }
     Ok(output)
 }
@@ -2662,8 +2543,8 @@ fn structural_issue(
             format_args!("inventor:rse:structural-issue#{scope}"),
             "retain Inventor structural issue id",
         )?,
-        scope: retained_clone(ctx, scope, "retain Inventor structural issue scope")?,
-        detail: retained_clone(ctx, detail, "retain Inventor structural issue detail")?,
+        scope: ctx.copy_retained_text(scope, "retain Inventor structural issue scope")?,
+        detail: ctx.copy_retained_text(detail, "retain Inventor structural issue detail")?,
     })
 }
 
