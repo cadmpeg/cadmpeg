@@ -1053,34 +1053,40 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
 }
 
 pub(super) fn section_equal_length_coordinate_values(
+    ctx: &DecodeContext<'_>,
     constraints: &[SectionEqualLengthConstraint],
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
-) -> BTreeMap<SectionCoordinateVariable, Option<f64>> {
+) -> Result<BTreeMap<SectionCoordinateVariable, Option<f64>>, CodecError> {
     let mut candidates = BTreeMap::<SectionCoordinateVariable, Option<f64>>::new();
     for constraint in constraints {
-        let variables = constraint
+        let mut missing = None;
+        let mut ambiguous = false;
+        for variable in constraint
             .first
             .into_iter()
             .chain(constraint.second)
             .flat_map(|point| [(point, SectionAxis::U), (point, SectionAxis::V)])
-            .collect::<BTreeSet<_>>();
-        let missing = variables
-            .iter()
-            .copied()
-            .filter(|variable| {
-                coordinates
-                    .get(&variable.0)
-                    .and_then(|point| point[variable.1.index()])
-                    .is_none()
-            })
-            .collect::<Vec<_>>();
-        let [missing] = missing.as_slice() else {
+        {
+            if coordinates
+                .get(&variable.0)
+                .and_then(|point| point[variable.1.index()])
+                .is_some()
+            {
+                continue;
+            }
+            if missing.is_some_and(|earlier| earlier != variable) {
+                ambiguous = true;
+                break;
+            }
+            missing = Some(variable);
+        }
+        let Some(missing) = missing.filter(|_| !ambiguous) else {
             continue;
         };
 
         let component = |first: u32, second: u32, coordinate: SectionAxis| -> Option<(f64, f64)> {
             let value = |point: u32| {
-                if (point, coordinate) == *missing {
+                if (point, coordinate) == missing {
                     Some((1.0, 0.0))
                 } else {
                     coordinates
@@ -1149,8 +1155,11 @@ pub(super) fn section_equal_length_coordinate_values(
         let [value] = roots.as_slice() else {
             continue;
         };
+        if !candidates.contains_key(&missing) {
+            ctx.charge_collection_items(1, "creo equal-length coordinate candidates")?;
+        }
         candidates
-            .entry(*missing)
+            .entry(missing)
             .and_modify(|candidate| {
                 if candidate.is_some_and(|candidate| {
                     !(FiniteReal::new(candidate))
@@ -1162,7 +1171,7 @@ pub(super) fn section_equal_length_coordinate_values(
             })
             .or_insert(Some(*value));
     }
-    candidates
+    Ok(candidates)
 }
 
 fn quadratic_roots(
