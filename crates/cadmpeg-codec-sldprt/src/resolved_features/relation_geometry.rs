@@ -735,61 +735,78 @@ pub(crate) fn project_relation_point_geometry(
                 continue;
             }
             let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-            let positions = transforms
+            let mut unique_position = None;
+            let mut ambiguous = false;
+            for transform in transforms
                 .get(feature)
                 .into_iter()
                 .flatten()
-                .filter_map(|transform| transform.apply(native))
-                .collect::<HashSet<_>>();
-            let positions = if positions.len() == 1 {
-                positions
-            } else {
+            {
+                ctx.charge_work(1, "scan SLDPRT relation-point transforms")?;
+                let Some(position) = transform.apply(native) else {
+                    continue;
+                };
+                if unique_position.is_some_and(|previous| previous != position) {
+                    ambiguous = true;
+                } else if unique_position.is_none() {
+                    unique_position = Some(position);
+                }
+            }
+            let position = if ambiguous || unique_position.is_none() {
                 sketches
                     .iter()
                     .find(|candidate| candidate.id == *sketch)
                     .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
                     .and_then(|transform| transform.apply(native))
-                    .map(|position| HashSet::from([position]))
-                    .unwrap_or(positions)
+            } else {
+                unique_position
             };
-            let mut positions = positions.into_iter();
-            let (Some(position), None) = (positions.next(), positions.next()) else {
+            let Some(position) = position else {
                 continue;
             };
             let position = Point2::new(position.0 as f64 * QUANTUM, position.1 as f64 * QUANTUM);
-            entities.push(
-                SketchEntity::new(
-                    match SketchEntityId::mint(format!(
-                        "sldprt:model:sketch-entity#relation-point:{lane_key}:{}",
-                        marker.offset()
-                    )) {
-                        Ok(id) => id,
-                        Err(_) => continue,
-                    },
-                    sketch.clone(),
-                    match SketchGeometry::try_from(SketchGeometryDefinition::Point { position }) {
-                        Ok(geometry) => geometry,
-                        Err(_) => continue,
-                    },
-                )
-                .with_construction(true)
-                .with_native_ref(
-                    matches!(
-                        marker.kind(),
-                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                    )
-                    .then(|| marker.id().to_string()),
-                )
-                .with_geometry_ref(
-                    qualified_point
-                        .then(|| marker.id().to_string())
-                        .filter(|_| {
-                            matches!(
-                                marker.kind(),
-                                SketchInputKind::LineOrCircle | SketchInputKind::Arc
-                            )
-                        }),
+            let id_text = ctx.format_retained(
+                format_args!(
+                    "sldprt:model:sketch-entity#relation-point:{lane_key}:{}",
+                    marker.offset()
                 ),
+                "format SLDPRT relation-point entity identity",
+            )?;
+            let Ok(id) = SketchEntityId::mint(id_text) else {
+                continue;
+            };
+            let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point { position })
+            else {
+                continue;
+            };
+            let sketch_id = copy_planar_sketch_id(ctx, sketch)?;
+            let native_ref = if matches!(
+                marker.kind(),
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ) {
+                Some(ctx.format_retained(
+                    format_args!("{}", marker.id()),
+                    "copy SLDPRT relation-point native reference",
+                )?)
+            } else {
+                None
+            };
+            let geometry_ref = if qualified_point
+                && matches!(marker.kind(), SketchInputKind::LineOrCircle | SketchInputKind::Arc)
+            {
+                Some(ctx.format_retained(
+                    format_args!("{}", marker.id()),
+                    "copy SLDPRT relation-point geometry reference",
+                )?)
+            } else {
+                None
+            };
+            ctx.reserve_collection_vec(entities, 1, "append SLDPRT relation point")?;
+            entities.push(
+                SketchEntity::new(id, sketch_id, geometry)
+                    .with_construction(true)
+                    .with_native_ref(native_ref)
+                    .with_geometry_ref(geometry_ref),
             );
         }
         let markers_by_id = lane
