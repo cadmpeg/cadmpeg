@@ -1316,9 +1316,10 @@ impl NativeModel {
             &offset_store_named_points,
         )?;
         let feature_sketch_preceding_named_point_uses = feature_sketch_preceding_named_point_uses(
+            ctx,
             &feature_sketch_references,
             &offset_store_named_points,
-        );
+        )?;
         let feature_sketch_point_uses = feature_sketch_point_uses(
             &feature_sketch_point_groups,
             &offset_store_named_points,

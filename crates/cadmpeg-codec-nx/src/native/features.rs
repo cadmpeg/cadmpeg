@@ -7469,18 +7469,34 @@ fn block_key(block: &str) -> Option<(&str, u32)> {
 
 /// Join one named point to a complete sketch lane through unique consecutive block adjacency.
 pub(super) fn feature_sketch_preceding_named_point_uses(
+    ctx: &DecodeContext<'_>,
     references: &[FeatureSketchReference],
     points: &[OffsetStoreNamedPoint],
-) -> Vec<FeatureSketchPrecedingNamedPointUse> {
+) -> Result<Vec<FeatureSketchPrecedingNamedPointUse>, CodecError> {
     let mut references_by_operation = BTreeMap::<&str, Vec<&FeatureSketchReference>>::new();
+    let mut index_reservation = ctx.reserve_scoped(0, "index NX preceding named-point references")?;
     for reference in references {
-        references_by_operation
-            .entry(reference.operation_label.as_str())
-            .or_default()
-            .push(reference);
+        ctx.charge_work(u64::from(usize::BITS - references_by_operation.len().leading_zeros()),
+            "index NX preceding named-point references")?;
+        use std::collections::btree_map::Entry;
+        let group = match references_by_operation.entry(reference.operation_label.as_str()) {
+            Entry::Vacant(entry) => {
+                index_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(&str, Vec<&FeatureSketchReference>)>() + 64))?;
+                ctx.charge_collection_items(1, "NX preceding named-point operation index")?;
+                entry.insert(Vec::new())
+            }
+            Entry::Occupied(entry) => entry.into_mut(),
+        };
+        index_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&FeatureSketchReference>()))?;
+        ctx.charge_collection_items(1, "NX preceding named-point references")?;
+        group.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX preceding named-point references", 0, 1))?;
+        group.push(reference);
     }
     let mut uses = Vec::new();
-    for (operation_label, mut operation_references) in references_by_operation {
+    for (operation_label, operation_references) in &mut references_by_operation {
         operation_references.sort_by_key(|reference| reference.position.ordinal());
         let Some((first_reference, first_block)) = operation_references
             .first()
@@ -7488,59 +7504,93 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
         else {
             continue;
         };
-        let complete_lane = operation_references
-            .iter()
-            .enumerate()
-            .all(|(ordinal, reference)| {
-                reference.position.ordinal() == ordinal as u32
-                    && matches!(
-                        reference.position.declared_count(),
-                        crate::om::sketch_references::SketchReferenceCount::Declared(count)
-                            if usize::from(count.get()) == operation_references.len()
-                    )
-                    && reference.data_block.is_some()
-            });
+        let mut complete_lane = true;
+        for (ordinal, reference) in operation_references.iter().enumerate() {
+            let ordinal = u32::try_from(ordinal).map_err(|_|
+                ctx.refuse_codec_limit("NX preceding named-point reference ordinal", 0, 1))?;
+            if reference.position.ordinal() != ordinal
+                || !matches!(reference.position.declared_count(),
+                    crate::om::sketch_references::SketchReferenceCount::Declared(count)
+                        if usize::from(count.get()) == operation_references.len())
+                || reference.data_block.is_none() {
+                complete_lane = false;
+                break;
+            }
+        }
         if !complete_lane {
             continue;
         }
         let Some((first_store, first_ordinal)) = block_key(first_block) else {
             continue;
         };
-        let candidates = points
-            .iter()
-            .filter(|point| {
+        let mut candidate = None;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(points.len()),
+            "match NX preceding named point")?;
+        for point in points {
                 let Some(last_block) = point.data_blocks.last() else {
-                    return false;
+                    continue;
                 };
                 let Some((point_store, point_ordinal)) = block_key(last_block) else {
-                    return false;
+                    continue;
                 };
-                point_store == first_store && point_ordinal.checked_add(1) == Some(first_ordinal)
-            })
-            .collect::<Vec<_>>();
-        let [point] = candidates.as_slice() else {
+                if point_store == first_store && point_ordinal.checked_add(1) == Some(first_ordinal) {
+                    if candidate.replace(point).is_some() {
+                        candidate = None;
+                        break;
+                    }
+                }
+        }
+        let Some(point) = candidate else {
             continue;
         };
-        let operation_key = operation_label
+        let operation_key = (*operation_label)
             .rsplit_once('#')
-            .map_or(operation_label, |(_, key)| key);
+            .map_or(*operation_label, |(_, key)| key);
         let point_key = point
             .id
             .rsplit_once('#')
             .map_or(point.id.as_str(), |(_, key)| key);
+        let id = format_charged_text(ctx, format_args!(
+            "nx:feature-history:sketch-preceding-named-point-use#{operation_key}-{point_key}"),
+            "NX preceding named-point use identity")?;
+        let operation_label = copy_operation_text(ctx, operation_label,
+            "NX preceding named-point operation label")?;
+        let first_sketch_reference = copy_operation_text(ctx, &first_reference.id,
+            "NX preceding named-point first reference")?;
+        let named_point = copy_operation_text(ctx, &point.id,
+            "NX preceding named-point identity")?;
+        let following_data_block = copy_operation_text(ctx, first_block,
+            "NX preceding named-point following block")?;
+        let mut point_data_blocks = Vec::new();
+        for block in &point.data_blocks {
+            let block = copy_operation_text(ctx, block,
+                "NX preceding named-point source block")?;
+            ctx.charge_collection_items(1, "NX preceding named-point source blocks")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<String>()), "NX preceding named-point source blocks")?;
+            point_data_blocks.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX preceding named-point source blocks", 0, 1))?;
+            point_data_blocks.push(block);
+        }
+        ctx.charge_collection_items(1, "NX preceding named-point uses")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureSketchPrecedingNamedPointUse>()),
+            "NX preceding named-point uses")?;
+        uses.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX preceding named-point uses", 0, 1))?;
         uses.push(FeatureSketchPrecedingNamedPointUse {
-            id: format!(
-                "nx:feature-history:sketch-preceding-named-point-use#{operation_key}-{point_key}"
-            ),
-            operation_label: operation_label.to_string(),
-            first_sketch_reference: first_reference.id.clone(),
-            named_point: point.id.clone(),
-            point_data_blocks: point.data_blocks.clone(),
-            following_data_block: first_block.to_string(),
+            id,
+            operation_label,
+            first_sketch_reference,
+            named_point,
+            point_data_blocks,
+            following_data_block,
             source_offset: first_reference.source_offset,
         });
     }
-    uses
+    drop(references_by_operation);
+    drop(index_reservation);
+    Ok(uses)
 }
 
 /// Join the two exact encodings of a solved sketch point.
