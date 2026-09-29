@@ -77,13 +77,25 @@ impl RelationScalars {
         self.display.map(|index| self.refs[index].as_str())
     }
 
-    pub(crate) fn push(&mut self, id: String) {
-        self.refs.push(id);
+    pub(crate) fn push(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: &str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.reserve_collection_vec(&mut self.refs, 1, "collect SLDPRT relation scalar references")?;
+        self.refs.push(ctx.format_retained(format_args!("{id}"), "retain SLDPRT relation scalar identity")?);
+        Ok(())
     }
 
-    pub(crate) fn push_parameter(&mut self, id: String) {
-        self.parameter = Some(self.refs.len());
-        self.refs.push(id);
+    pub(crate) fn push_parameter(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: &str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let index = self.refs.len();
+        self.push(ctx, id)?;
+        self.parameter = Some(index);
+        Ok(())
     }
 
     #[cfg(test)]

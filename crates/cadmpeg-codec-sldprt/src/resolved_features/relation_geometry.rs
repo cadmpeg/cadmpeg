@@ -3284,7 +3284,7 @@ pub(crate) fn owned_relation_parameters<'a>(
                 parameter = relation_parameter_by_driving_name(ctx, relation, lane, features, parameters)?;
             }
             if parameter.is_none() {
-                parameter = circle_dimension_handle_driver(relation, lane)
+                parameter = circle_dimension_handle_driver(ctx, relation, lane)?
                     .and_then(|scalar| parameters_by_scalar.get(scalar.id.as_str()).copied());
             }
             if parameter.is_none() {
