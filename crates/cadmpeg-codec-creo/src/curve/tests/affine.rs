@@ -15,7 +15,133 @@ use crate::curve::ExternalRelationSymbols;
 use crate::curve::RelationDimension;
 use crate::curve::RelationEvaluationContext;
 use crate::curve::SolveUnknown;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Clone, Copy)]
+enum DimensionLimitCase {
+    Basic,
+    KnownNumber,
+    KnownText,
+}
+
+fn dimension_inference_limit_reaches(
+    case: DimensionLimitCase,
+    dimension: ResourceDimension,
+    operation: &'static str,
+) -> bool {
+    let block = CurveExpressionSolveBlock {
+        equations: vec![CurveExpressionEquation {
+            left: "1".to_owned(),
+            right: "x".to_owned(),
+            dependencies: vec!["x".to_owned()],
+            offset: 0,
+        }],
+        assignments: Vec::new(),
+        unknowns: vec![SolveUnknown {
+            name: "x".to_owned(),
+            solution: None,
+        }],
+        offset: 0,
+        for_offset: 1,
+    };
+    let values = match case {
+        DimensionLimitCase::Basic => BTreeMap::new(),
+        DimensionLimitCase::KnownNumber => {
+            BTreeMap::from([("driver".to_owned(), CurveExpressionValue::Number(2.0))])
+        }
+        DimensionLimitCase::KnownText => BTreeMap::from([(
+            "driver".to_owned(),
+            CurveExpressionValue::String("abc".to_owned()),
+        )]),
+    };
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
+            _ => panic!("unsupported dimension inference limit"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admits dimension inference test");
+        match crate::curve::infer_solve_variable_dimensions(
+            &ctx,
+            &block,
+            &values,
+            &[None],
+            RelationEvaluationContext::default(),
+        ) {
+            Err(CodecError::ResourceLimit(resource)) => {
+                if resource.dimension == dimension && resource.operation == operation {
+                    return true;
+                }
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected dimension inference error: {error}"),
+        }
+    }
+    false
+}
+
+macro_rules! dimension_limit_test {
+    ($name:ident, $case:expr, $dimension:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(dimension_inference_limit_reaches(
+                $case,
+                $dimension,
+                $operation
+            ));
+        }
+    };
+}
+
+dimension_limit_test!(dimension_inference_refuses_variable_key_vector, DimensionLimitCase::Basic, ResourceDimension::CollectionItems, "creo dimension variable keys");
+dimension_limit_test!(dimension_inference_refuses_variable_key_text, DimensionLimitCase::Basic, ResourceDimension::RetainedBytes, "creo dimension variable key text");
+dimension_limit_test!(dimension_inference_refuses_symbolic_variable_nodes, DimensionLimitCase::Basic, ResourceDimension::CollectionItems, "creo dimension variable nodes");
+dimension_limit_test!(dimension_inference_refuses_symbolic_variable_names, DimensionLimitCase::Basic, ResourceDimension::RetainedBytes, "creo dimension variable names");
+dimension_limit_test!(dimension_inference_refuses_unknown_value_nodes, DimensionLimitCase::Basic, ResourceDimension::CollectionItems, "creo dimension unknown value nodes");
+dimension_limit_test!(dimension_inference_refuses_unknown_value_names, DimensionLimitCase::Basic, ResourceDimension::RetainedBytes, "creo dimension unknown value names");
+dimension_limit_test!(dimension_inference_refuses_known_value_nodes, DimensionLimitCase::KnownNumber, ResourceDimension::CollectionItems, "creo dimension known value nodes");
+dimension_limit_test!(dimension_inference_refuses_known_value_names, DimensionLimitCase::KnownNumber, ResourceDimension::RetainedBytes, "creo dimension known value names");
+dimension_limit_test!(dimension_inference_refuses_known_text, DimensionLimitCase::KnownText, ResourceDimension::RetainedBytes, "creo dimension known text");
+dimension_limit_test!(dimension_inference_refuses_constraint_rows, DimensionLimitCase::Basic, ResourceDimension::CollectionItems, "creo dimension constraint rows");
+dimension_limit_test!(dimension_inference_refuses_axis_variable_keys, DimensionLimitCase::Basic, ResourceDimension::CollectionItems, "creo dimension axis variable keys");
+dimension_limit_test!(dimension_inference_refuses_axis_variable_names, DimensionLimitCase::Basic, ResourceDimension::RetainedBytes, "creo dimension axis variable names");
+dimension_limit_test!(dimension_inference_refuses_equation_coefficients, DimensionLimitCase::Basic, ResourceDimension::CollectionItems, "creo dimension equation coefficients");
+dimension_limit_test!(dimension_inference_refuses_equation_coefficient_work, DimensionLimitCase::Basic, ResourceDimension::WorkUnits, "creo dimension equation coefficient work");
+dimension_limit_test!(dimension_inference_refuses_equation_rows, DimensionLimitCase::Basic, ResourceDimension::CollectionItems, "creo dimension equation rows");
+dimension_limit_test!(dimension_inference_refuses_difference_variable_nodes, DimensionLimitCase::Basic, ResourceDimension::CollectionItems, "creo dimension difference variable nodes");
+dimension_limit_test!(dimension_inference_refuses_required_column_nodes, DimensionLimitCase::Basic, ResourceDimension::CollectionItems, "creo dimension required column nodes");
+dimension_limit_test!(dimension_inference_refuses_inferred_dimensions, DimensionLimitCase::Basic, ResourceDimension::CollectionItems, "creo inferred variable dimensions");
+
+#[test]
+fn dimension_inference_refuses_duplicate_comparison_work() {
+    let block = CurveExpressionSolveBlock {
+        equations: Vec::new(),
+        assignments: Vec::new(),
+        unknowns: vec![
+            SolveUnknown { name: "x".to_owned(), solution: None },
+            SolveUnknown { name: "X".to_owned(), solution: None },
+        ],
+        offset: 0,
+        for_offset: 1,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = crate::curve::infer_solve_variable_dimensions(
+        &ctx, &block, &BTreeMap::new(), &[None, None], RelationEvaluationContext::default(),
+    )
+    .expect_err("second variable comparison needs work");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo dimension duplicate checks"));
+}
 
 fn with_collection_limit<T>(
     limit: u64,
@@ -918,7 +1044,7 @@ fn dimension_components_refuse_collection_limit() {
         offset: 0,
         for_offset: 1,
     };
-    let error = with_collection_limit(0, |ctx| {
+    let error = with_collection_limit(7, |ctx| {
         crate::curve::infer_solve_variable_dimensions(
             ctx,
             &block,
