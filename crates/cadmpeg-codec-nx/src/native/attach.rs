@@ -4896,6 +4896,48 @@ struct ParasolidStringAttributeSources<'a> {
     strings: &'a [crate::native::parasolid::ParasolidEntity54StringRecord],
 }
 
+fn attribute_record_index<'a, T>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    records: &'a [T],
+    id: impl Fn(&'a T) -> &'a str,
+) -> Result<BTreeMap<&'a str, &'a T>, CodecError> {
+    let mut index = BTreeMap::new();
+    for record in records {
+        let key = id(record);
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(index.len()), "NX Parasolid attribute record lookup")?;
+        if !index.contains_key(key) {
+            ctx.charge_collection_items(1, "NX Parasolid attribute record index")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, &T)>() * 4))?;
+        }
+        index.insert(key, record);
+    }
+    Ok(index)
+}
+
+fn attribute_uses_by_entity<'a, T>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    uses: &'a [T],
+    entity: impl Fn(&'a T) -> &'a str,
+) -> Result<BTreeMap<&'a str, Vec<&'a T>>, CodecError> {
+    let mut grouped = BTreeMap::new();
+    for value_use in uses {
+        let key = entity(value_use);
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(grouped.len()), "NX Parasolid attribute entity lookup")?;
+        if !grouped.contains_key(key) {
+            ctx.charge_collection_items(1, "NX Parasolid attribute use groups")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, Vec<&T>)>() * 4))?;
+        }
+        ctx.charge_collection_items(1, "NX Parasolid attribute use")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&T>()))?;
+        let group = grouped.entry(key).or_insert_with(Vec::new);
+        reserve_attach_vec(ctx, group, 1, "NX Parasolid attribute use")?;
+        group.push(value_use);
+    }
+    Ok(grouped)
+}
+
 fn attach_parasolid_topology_string_attributes(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -4903,20 +4945,14 @@ fn attach_parasolid_topology_string_attributes(
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let strings_by_id = sources
-        .strings
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let mut uses_by_entity =
-        BTreeMap::<&str, Vec<&crate::native::parasolid::ParasolidEntity51StringUse>>::new();
-    for string_use in sources.string_uses {
-        uses_by_entity
-            .entry(string_use.entity_51_record.as_str())
-            .or_default()
-            .push(string_use);
-    }
+    let mut reservation = ctx.reserve_scoped(0, "NX Parasolid string attribute lookups")?;
+    let strings_by_id = attribute_record_index(ctx, &mut reservation, sources.strings, |record| record.id.as_str())?;
+    let mut uses_by_entity = attribute_uses_by_entity(ctx, &mut reservation, sources.string_uses, |value_use| value_use.entity_51_record.as_str())?;
     for uses in uses_by_entity.values_mut() {
+        let work = uses.len().checked_mul(uses.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid string attribute ordering", 0, cadmpeg_core::decode::u64_from_index(uses.len())))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX Parasolid string attribute ordering")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(uses.as_slice())))?;
         uses.sort_by_key(|string_use| string_use.position);
     }
     for context in &attribute_index.contexts {
@@ -5411,25 +5447,15 @@ fn attach_parasolid_topology_numeric_attributes(
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let integers_by_id = sources
-        .integers
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let doubles_by_id = sources
-        .doubles
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let mut uses_by_entity =
-        BTreeMap::<&str, Vec<&crate::native::parasolid::ParasolidEntity51NumericUse>>::new();
-    for numeric_use in sources.numeric_uses {
-        uses_by_entity
-            .entry(numeric_use.entity_51_record.as_str())
-            .or_default()
-            .push(numeric_use);
-    }
+    let mut reservation = ctx.reserve_scoped(0, "NX Parasolid numeric attribute lookups")?;
+    let integers_by_id = attribute_record_index(ctx, &mut reservation, sources.integers, |record| record.id.as_str())?;
+    let doubles_by_id = attribute_record_index(ctx, &mut reservation, sources.doubles, |record| record.id.as_str())?;
+    let mut uses_by_entity = attribute_uses_by_entity(ctx, &mut reservation, sources.numeric_uses, |value_use| value_use.entity_51_record.as_str())?;
     for uses in uses_by_entity.values_mut() {
+        let work = uses.len().checked_mul(uses.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid numeric attribute ordering", 0, cadmpeg_core::decode::u64_from_index(uses.len())))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX Parasolid numeric attribute ordering")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(uses.as_slice())))?;
         uses.sort_by_key(|numeric_use| numeric_use.position);
     }
     for context in &attribute_index.contexts {
@@ -5532,35 +5558,17 @@ fn attach_parasolid_topology_structured_attributes(
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let vectors_by_id = sources
-        .vectors
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let axes_by_id = sources
-        .axes
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let tags_by_id = sources
-        .tags
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let unicode_by_id = sources
-        .unicode
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let mut uses_by_entity =
-        BTreeMap::<&str, Vec<&crate::native::parasolid::ParasolidEntity51StructuredUse>>::new();
-    for structured_use in sources.structured_uses {
-        uses_by_entity
-            .entry(structured_use.entity_51_record.as_str())
-            .or_default()
-            .push(structured_use);
-    }
+    let mut reservation = ctx.reserve_scoped(0, "NX Parasolid structured attribute lookups")?;
+    let vectors_by_id = attribute_record_index(ctx, &mut reservation, sources.vectors, |record| record.id.as_str())?;
+    let axes_by_id = attribute_record_index(ctx, &mut reservation, sources.axes, |record| record.id.as_str())?;
+    let tags_by_id = attribute_record_index(ctx, &mut reservation, sources.tags, |record| record.id.as_str())?;
+    let unicode_by_id = attribute_record_index(ctx, &mut reservation, sources.unicode, |record| record.id.as_str())?;
+    let mut uses_by_entity = attribute_uses_by_entity(ctx, &mut reservation, sources.structured_uses, |value_use| value_use.entity_51_record.as_str())?;
     for uses in uses_by_entity.values_mut() {
+        let work = uses.len().checked_mul(uses.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid structured attribute ordering", 0, cadmpeg_core::decode::u64_from_index(uses.len())))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX Parasolid structured attribute ordering")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(uses.as_slice())))?;
         uses.sort_by_key(|structured_use| structured_use.position);
     }
     for context in &attribute_index.contexts {
