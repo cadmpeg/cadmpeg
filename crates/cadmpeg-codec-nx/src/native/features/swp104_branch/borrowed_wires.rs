@@ -67,7 +67,7 @@ impl Serialize for FeatureSwp104LeadingBranch {
         wire.serialize_entry(
             "terminal",
             &ReferenceView {
-                ordinal: u32::try_from(self.members.len()).map_err(serde::ser::Error::custom)?,
+                ordinal: u32::from(self.members.declared_count() - 1),
                 token: &self.terminal.token,
                 data_block: self.terminal.data_block.as_deref(),
                 source_offset: terminal_offset,

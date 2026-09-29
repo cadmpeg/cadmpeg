@@ -90,7 +90,7 @@ impl Serialize for BranchView<'_> {
         wire.serialize_entry(
             "terminal",
             &ReferenceView {
-                ordinal: u32::try_from(self.branch.members.len()).map_err(serde::ser::Error::custom)?,
+                ordinal: u32::from(self.branch.members.declared_count() - 1),
                 token: &self.branch.terminal.0,
                 data_block: self.branch.terminal.1.as_deref(),
                 source_offset: self.offset + self.branch.terminal_position(),
