@@ -1237,10 +1237,11 @@ fn dimension_quantity(dimension: &DimensionKind) -> PmiQuantity {
 }
 
 fn diameter_from_applied_geometry(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<PositiveReal> {
-    unique_diameter(diameter_contributors(annotation, feature_index).into_iter())
+) -> Result<Option<PositiveReal>, CodecError> {
+    Ok(unique_diameter(diameter_contributors(ctx, annotation, feature_index)?.into_iter()))
 }
 
 fn directional_distance(
@@ -1508,9 +1509,13 @@ fn diameter_nominal(
     feature_index: &BTreeMap<&str, &Entity>,
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<Option<ImplicitNominal>, CodecError> {
-    if let Some(geometry) = diameter_from_applied_geometry(annotation, feature_index)
-        .or_else(|| hole_diameter_excluding_counterbore(root, annotation, feature_index))
-    {
+    let direct = diameter_from_applied_geometry(ctx, annotation, feature_index)?;
+    let geometry = if direct.is_some() {
+        direct
+    } else {
+        hole_diameter_excluding_counterbore(ctx, root, annotation, feature_index)?
+    };
+    if let Some(geometry) = geometry {
         return Ok(Some(ImplicitNominal::RenderedOrExact {
             kind: RenderedDimensionKind::Diameter,
             geometry,
@@ -1560,10 +1565,11 @@ fn empty_pattern_hole_nominal(
 }
 
 fn hole_diameter_excluding_counterbore(
+    ctx: &DecodeContext<'_>,
     root: &Entity,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<PositiveReal> {
+) -> Result<Option<PositiveReal>, CodecError> {
     let context = annotation
         .features
         .references
@@ -1571,7 +1577,7 @@ fn hole_diameter_excluding_counterbore(
         .map(|reference| reference.id.clone())
         .collect::<BTreeSet<_>>();
     if context.is_empty() {
-        return None;
+        return Ok(None);
     }
     let counterbore_diameters = root
         .annotations
@@ -1585,8 +1591,8 @@ fn hole_diameter_excluding_counterbore(
                 == Some(&context)
         })
         .filter_map(|candidate| counterbore_from_direct_geometry(candidate, feature_index));
-    let counterbore_diameter = unique_measurement(counterbore_diameters)?;
-    let contributors = diameter_contributors(annotation, feature_index);
+    let Some(counterbore_diameter) = unique_measurement(counterbore_diameters) else { return Ok(None) };
+    let contributors = diameter_contributors(ctx, annotation, feature_index)?;
     let mut removed_counterbore = false;
     let remaining = contributors.into_iter().filter(|value| {
         if diameters_equivalent(value.get(), counterbore_diameter.get()) {
@@ -1597,60 +1603,64 @@ fn hole_diameter_excluding_counterbore(
         }
     });
     let remaining_diameter = unique_diameter(remaining);
-    removed_counterbore.then_some(remaining_diameter).flatten()
+    Ok(removed_counterbore.then_some(remaining_diameter).flatten())
 }
 
 fn diameter_contributors(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Vec<PositiveReal> {
+) -> Result<Vec<PositiveReal>, CodecError> {
     let mut values = Vec::new();
     for reference in &annotation.features.references {
         collect_diameter_contributors(
+            ctx,
             &reference.id,
             feature_index,
             &mut BTreeSet::new(),
             0,
             &mut values,
-        );
+        )?;
     }
-    values
+    Ok(values)
 }
 
 fn collect_diameter_contributors(
+    ctx: &DecodeContext<'_>,
     id: &str,
     feature_index: &BTreeMap<&str, &Entity>,
     visited: &mut BTreeSet<String>,
     depth: usize,
     values: &mut Vec<PositiveReal>,
-) {
-    if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
-        return;
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("scan SWIFT diameter features")?;
+    ctx.charge_work(1, "scan SWIFT diameter features")?;
+    if depth >= MAX_DEPTH || visited.contains(id) {
+        return Ok(());
     }
-    let Some(feature) = feature_index.get(id) else {
-        return;
-    };
-    let radius = match short_class(&feature.class) {
-        "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
-        "GdtSphere" => nominal_radius(feature, "NomSphere"),
-        _ => None,
-    };
-    if let Some(diameter) = radius.and_then(|radius| PositiveReal::new(radius.get() * 2.0)) {
-        values.push(diameter);
-        return;
-    }
-    let Some(next_depth) = depth.checked_add(1) else {
-        return;
-    };
-    for child in child_feature_ids(feature) {
-        collect_diameter_contributors(
-            child,
-            feature_index,
-            &mut visited.clone(),
-            next_depth,
-            values,
-        );
-    }
+    ctx.charge_collection_items(1, "track SWIFT diameter path")?;
+    let owned_id = ctx.format_retained(format_args!("{id}"), "retain SWIFT diameter path ID")?;
+    visited.insert(owned_id);
+    let result = (|| {
+        let Some(feature) = feature_index.get(id) else { return Ok(()) };
+        let radius = match short_class(&feature.class) {
+            "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
+            "GdtSphere" => nominal_radius(feature, "NomSphere"),
+            _ => None,
+        };
+        if let Some(diameter) = radius.and_then(|radius| PositiveReal::new(radius.get() * 2.0)) {
+            ctx.reserve_collection_vec(values, 1, "collect SWIFT diameter contributors")?;
+            values.push(diameter);
+            return Ok(());
+        }
+        let Some(next_depth) = depth.checked_add(1) else { return Ok(()) };
+        for child in child_feature_ids(feature) {
+            collect_diameter_contributors(ctx, child, feature_index, visited, next_depth, values)?;
+        }
+        Ok(())
+    })();
+    visited.remove(id);
+    result
 }
 
 fn depth_from_applied_geometry(
