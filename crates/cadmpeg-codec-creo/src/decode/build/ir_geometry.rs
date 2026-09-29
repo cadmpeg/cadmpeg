@@ -4,7 +4,9 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::AnnotationBuilder;
+use std::collections::BTreeSet;
 
 use crate::container::ContainerScan;
 use crate::feature::definitions::SolverSubtable;
@@ -55,6 +57,35 @@ use crate::decode::analytic::pcurves::{
 };
 use crate::decode::sketch_transfer::transfer::transfer_sketches;
 use crate::decode::source_carriers::SourceUnitCarriers;
+
+fn append_borrowed_curve_ids<'a>(
+    ctx: &DecodeContext<'_>,
+    target: &mut BTreeSet<CurveId>,
+    source: impl IntoIterator<Item = &'a CurveId>,
+) -> Result<(), CodecError> {
+    for id in source {
+        if target.contains(id) {
+            continue;
+        }
+        ctx.charge_collection_items(1, "creo derived intersection curve IDs")?;
+        target.insert(id.copy_admitted(ctx, "creo derived intersection curve ID copies")?);
+    }
+    Ok(())
+}
+
+fn append_owned_curve_ids(
+    ctx: &DecodeContext<'_>,
+    target: &mut BTreeSet<CurveId>,
+    source: BTreeSet<CurveId>,
+) -> Result<(), CodecError> {
+    for id in source {
+        if !target.contains(&id) {
+            ctx.charge_collection_items(1, "creo derived topology carrier IDs")?;
+            target.insert(id);
+        }
+    }
+    Ok(())
+}
 
 pub(super) fn transfer_and_record_scanned_geometry(
     ctx: &DecodeContext<'_>,
@@ -198,7 +229,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         &nurbs_boundary_curves.endpoint_witnesses,
         source_carriers,
     )?;
-    derived_intersection_curves.extend(nurbs_boundary_curves.ids.iter().cloned());
+    append_borrowed_curve_ids(ctx, &mut derived_intersection_curves, &nurbs_boundary_curves.ids)?;
     let topology_bound_plane_count = transfer_topology_bound_planes(
         ctx,
         scan,
@@ -207,15 +238,16 @@ pub(super) fn transfer_and_record_scanned_geometry(
         &nurbs_boundary_curves.endpoint_witnesses,
         source_carriers,
     )?;
-    derived_intersection_curves.extend(transfer_carrier_intersection_curves(
+    let topology_carriers = transfer_carrier_intersection_curves(
         ctx,
         scan,
         ir,
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
         source_carriers,
-    )?);
-    derived_intersection_curves.extend(analytic_pcurve_carriers.iter().cloned());
+    )?;
+    append_owned_curve_ids(ctx, &mut derived_intersection_curves, topology_carriers)?;
+    append_borrowed_curve_ids(ctx, &mut derived_intersection_curves, &analytic_pcurve_carriers)?;
     let NativeBrepTransferSummary {
         topological_point_count,
         native_topological_edge_count,
@@ -790,7 +822,9 @@ pub(super) fn transfer_and_record_scanned_geometry(
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use std::collections::BTreeSet;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -799,7 +833,54 @@ mod tests {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::AnnotationBuilder;
 
-    use super::transfer_and_record_scanned_geometry;
+    use super::{append_borrowed_curve_ids, append_owned_curve_ids, transfer_and_record_scanned_geometry};
+
+    #[test]
+    fn derived_curve_id_copy_refuses_each_resource_limit() {
+        let id = CurveId::mint("creo:visibgeom:curve#12").expect("identity grammar");
+        for (item_limit, byte_limit, dimension, operation) in [
+            (0, u64::MAX, ResourceDimension::CollectionItems, "creo derived intersection curve IDs"),
+            (1, 0, ResourceDimension::RetainedBytes, "creo derived intersection curve ID copies"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = item_limit;
+            policy.limits.max_retained_bytes = byte_limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let error = append_borrowed_curve_ids(&ctx, &mut BTreeSet::new(), &[id.clone()])
+                .expect_err("below-need limit");
+            assert!(matches!(error, CodecError::ResourceLimit(resource)
+                if resource.dimension == dimension && resource.operation == operation));
+        }
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut copied = BTreeSet::new();
+        append_borrowed_curve_ids(&ctx, &mut copied, &[id.clone()]).expect("service copy");
+        assert_eq!(copied, BTreeSet::from([id]));
+    }
+
+    #[test]
+    fn derived_topology_carrier_node_refuses_below_collection_limit() {
+        let id = CurveId::mint("creo:visibgeom:curve#12").expect("identity grammar");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = append_owned_curve_ids(&ctx, &mut BTreeSet::new(), BTreeSet::from([id.clone()]))
+            .expect_err("one node exceeds limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo derived topology carrier IDs"));
+
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut target = BTreeSet::new();
+        append_owned_curve_ids(&ctx, &mut target, BTreeSet::from([id.clone()]))
+            .expect("service node");
+        assert_eq!(target, BTreeSet::from([id]));
+    }
 
     #[test]
     fn intersections_revisit_carriers_proven_by_topology_bound_planes() {
