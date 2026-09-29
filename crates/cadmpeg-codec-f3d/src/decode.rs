@@ -5397,11 +5397,12 @@ fn extend_related_design_records(
         &native.persistent_subentity_tags,
     );
     crate::history::bind_edge_treatment_vertex_history(
+        Some(ctx),
         &mut native.design_edge_treatment_vertex_operands,
         &native.design_parameter_scopes,
         &native.asm_histories,
         &scope_histories,
-    );
+    )?;
     crate::design::decode::operands::bind_work_plane_constructions(
         scan,
         &mut native.design_parameter_scopes,
