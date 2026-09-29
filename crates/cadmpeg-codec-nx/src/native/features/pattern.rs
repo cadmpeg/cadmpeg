@@ -44,6 +44,7 @@ use super::format_feature_child_id;
 use super::copy_operation_text;
 
 use super::unique_offset_data_block;
+use super::charged_unique_offset_data_block;
 use super::visit_feature_history_operation_records;
 
 fn reserve_pattern_output<T>(
@@ -938,31 +939,54 @@ pub(in crate::native) fn feature_pattern_references(
 ) -> Result<Vec<FeaturePatternReference>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
             let Some(decoded) = PatternReferences::read(record.payload_view()) else {
                 return;
             };
             let layout = decoded.layout();
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            references.extend(decoded.into_references().into_iter().enumerate().map(|(ordinal, reference)| {
-                FeaturePatternReference {
-                    id: format!(
-                        "nx:feature-history:pattern-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
-                    ),
-                    operation_label: operation_label.clone(),
+            for (ordinal, reference) in decoded.into_references().into_iter().enumerate() {
+                let item = (|| -> Result<FeaturePatternReference, cadmpeg_core::CodecError> {
+                    let ordinal_u32 = u32::try_from(ordinal)
+                        .map_err(|_| ctx.refuse_codec_limit("NX pattern reference ordinal", 0, 1))?;
+                    Ok(FeaturePatternReference {
+                    id: format_feature_history_id(
+                        ctx, "pattern-reference", section_key, operation_ordinal, Some(ordinal),
+                    )?,
+                    operation_label: format_feature_history_id(
+                        ctx, "operation-label", section_key, operation_ordinal, None,
+                    )?,
                     layout,
-                    ordinal: ordinal as u32,
+                    ordinal: ordinal_u32,
                     token: reference.token,
-                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
-                    source_offset: entry_offset + reference.offset as u64,
+                    data_block: charged_unique_offset_data_block(
+                        ctx, &indexed, reference.token.value(),
+                    )?,
+                    source_offset: entry_offset
+                        + cadmpeg_core::decode::u64_from_index(reference.offset),
+                    })
+                })();
+                let item = match item {
+                    Ok(item) => item,
+                    Err(error) => { failure = Some(error); return; }
+                };
+                if let Err(error) = reserve_pattern_output(ctx, &mut references, "NX pattern references") {
+                    failure = Some(error);
+                    return;
                 }
-            }));
+                references.push(item);
+            }
         },
     )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(references)
 }
 
