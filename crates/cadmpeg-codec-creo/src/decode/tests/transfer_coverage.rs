@@ -5,7 +5,8 @@ use crate::decode::coverage::{
     surface_transfer_coverage,
 };
 use crate::decode::sketch_transfer::profiles::{
-    normalize_section_incidence_curve_family_evidence, SectionEntityIncidenceFamily,
+    normalize_section_incidence_curve_family_evidence, IncidenceEvidence,
+    SectionEntityIncidenceFamily,
 };
 use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
 use cadmpeg_ir::geometry::{
@@ -21,7 +22,7 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::SourceObjectAssociation;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 fn assert_collection_refusal<T>(result: Result<T, CodecError>, operation: &'static str) {
     assert!(matches!(result, Err(CodecError::ResourceLimit(refusal))
@@ -574,24 +575,24 @@ fn native_curve_families_accept_only_their_defined_loci() {
 
 #[test]
 fn incidence_family_lattice_narrows_endpoint_evidence() {
-    let mut line = BTreeSet::from([
+    let mut line: IncidenceEvidence = [
         SectionEntityIncidenceFamily::BoundedCurve,
         SectionEntityIncidenceFamily::Line,
-    ]);
+    ].into_iter().collect();
     normalize_section_incidence_curve_family_evidence(&mut line);
-    assert_eq!(line, BTreeSet::from([SectionEntityIncidenceFamily::Line]));
+    assert_eq!(line, [SectionEntityIncidenceFamily::Line].into_iter().collect());
 
-    let mut arc = BTreeSet::from([
+    let mut arc: IncidenceEvidence = [
         SectionEntityIncidenceFamily::BoundedCurve,
         SectionEntityIncidenceFamily::Circular,
-    ]);
+    ].into_iter().collect();
     normalize_section_incidence_curve_family_evidence(&mut arc);
-    assert_eq!(arc, BTreeSet::from([SectionEntityIncidenceFamily::Arc]));
+    assert_eq!(arc, [SectionEntityIncidenceFamily::Arc].into_iter().collect());
 
-    let mut conflicting = BTreeSet::from([
+    let mut conflicting: IncidenceEvidence = [
         SectionEntityIncidenceFamily::Line,
         SectionEntityIncidenceFamily::Circular,
-    ]);
+    ].into_iter().collect();
     normalize_section_incidence_curve_family_evidence(&mut conflicting);
     assert_eq!(conflicting.len(), 2);
 }
