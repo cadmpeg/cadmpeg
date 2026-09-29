@@ -5,6 +5,7 @@ use super::pmi_value;
 use super::reference;
 use super::semantic_root;
 use crate::swift::approximately_equal;
+use crate::swift::decode_rendered_utf16;
 use crate::swift::enrich_implicit_nominals;
 use crate::swift::pmi_id;
 use crate::swift::project;
@@ -17,6 +18,8 @@ use crate::swift::RelatedObject;
 use crate::swift::RenderedDimension;
 use crate::swift::RenderedDimensionKind;
 use crate::swift::ROOT_CLASS;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::pmi::DimensionKind;
 use cadmpeg_ir::pmi::DimensionTolerance;
 use cadmpeg_ir::pmi::PmiDefinition;
@@ -1200,8 +1203,11 @@ fn scans_explicit_rendered_diameter_literals() {
             payload.extend_from_slice(&unit.to_le_bytes());
         }
     }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("empty root fits policy");
     assert_eq!(
-        rendered_dimensions(&payload),
+        rendered_dimensions(&ctx, &payload).expect("rendered literals"),
         [
             RenderedDimension {
                 kind: RenderedDimensionKind::Diameter,
@@ -1230,6 +1236,59 @@ fn scans_explicit_rendered_diameter_literals() {
             },
         ]
     );
+}
+
+fn rendered_literal_limit_error(
+    set_limit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
+) -> CodecError {
+    let mut payload = vec![0xff, 0xfe, 0xff, 0];
+    let text = "<MOD-DIAM> .156";
+    payload[3] = u8::try_from(text.len()).expect("fixture length");
+    for unit in text.encode_utf16() {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    set_limit(&mut policy.limits);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits policy");
+    rendered_dimensions(&ctx, &payload).expect_err("rendered scan must refuse")
+}
+
+#[test]
+fn swift_rendered_literals_refuse_work_limit() {
+    let CodecError::ResourceLimit(limit) =
+        rendered_literal_limit_error(|limits| limits.max_work_units = 0)
+    else { panic!("expected work refusal") };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+}
+
+#[test]
+fn swift_rendered_literals_refuse_scoped_limit() {
+    let CodecError::ResourceLimit(limit) =
+        rendered_literal_limit_error(|limits| limits.max_materialized_bytes = 0)
+    else { panic!("expected scoped refusal") };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+}
+
+#[test]
+fn swift_rendered_literals_refuse_collection_limit() {
+    let CodecError::ResourceLimit(limit) =
+        rendered_literal_limit_error(|limits| limits.max_collection_items = 0)
+    else { panic!("expected collection refusal") };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn swift_rendered_utf16_preserves_surrogate_pairs_and_rejects_invalid_pairs() {
+    let mut text = String::new();
+    assert_eq!(
+        decode_rendered_utf16(&[0x3d, 0xd8, 0x00, 0xde], 0, 2, &mut text),
+        Some(())
+    );
+    assert_eq!(text, "😀");
+    text.clear();
+    assert_eq!(decode_rendered_utf16(&[0x00, 0xd8], 0, 1, &mut text), None);
 }
 fn zero_nominal_angle_root() -> Entity {
     let mut angle = entity("GdtAngleBetween");
