@@ -2697,6 +2697,7 @@ fn build_geometry_ir(
         &pmi_dimensions,
     )?;
     crate::resolved_features::projections::bind_parameter_scalars(
+        ctx,
         &mut ir.model.parameters,
         &ir.model.features,
         &histories,
@@ -4036,6 +4037,7 @@ fn build_metadata_ir(
         &pmi_dimensions,
     )?;
     crate::resolved_features::projections::bind_parameter_scalars(
+        ctx,
         &mut ir.model.parameters,
         &ir.model.features,
         &histories,
