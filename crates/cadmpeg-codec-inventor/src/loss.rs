@@ -100,7 +100,7 @@ pub(crate) enum InventorLossCode {
 
 impl InventorLossCode {
     /// Every code, in declaration order.
-    #[allow(dead_code)] // Catalog for crate tests and harness oracles.
+    #[cfg(test)]
     const ALL: &'static [InventorLossCode] = &[
         Self::GeometryKernelCarrierNotTransferred,
         Self::GeometryProceduralSurfaceNotTransferred,

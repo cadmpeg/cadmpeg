@@ -4,7 +4,7 @@
 use super::message_bytes;
 use crate::om::roll_forward::OperationStateGroupRow;
 use crate::om::{
-    audit_trail_rows, operation_state_group_table, operation_state_group_table_before_counter_map,
+    operation_state_group_table, operation_state_group_table_before_counter_map,
     operation_state_journal, operation_state_journal_groups_before_boundary,
     operation_state_journal_start, operation_state_messages,
 };
@@ -77,10 +77,16 @@ fn operation_state_group_table_anchors_to_counter_map_boundary() {
     ]);
     bytes.extend([0x99; 16]);
 
-    let map = crate::om::state_counter::StateCounterMap::read(&bytes, 0).expect("counter map");
-    let table = operation_state_group_table_before_counter_map(None, &bytes, map.offset(), 0)
-        .unwrap()
-        .expect("group table");
+    let map = crate::test_support::with_decode_context(|ctx| {
+        crate::om::state_counter::StateCounterMap::read(ctx, &bytes, 0)
+    })
+    .unwrap()
+    .expect("counter map");
+    let table = crate::test_support::with_decode_context(|ctx| {
+        operation_state_group_table_before_counter_map(ctx, &bytes, map.offset(), 0)
+    })
+    .unwrap()
+    .expect("group table");
     assert_eq!(table.offset(), 3);
     assert_eq!(table.end_offset(), map.offset());
     assert_eq!(table.groups().len(), 3);
@@ -114,19 +120,21 @@ fn operation_state_group_table_handles_a_long_adjacent_group_run_and_refuses_col
     bytes.extend([0x05, 0x01, 0x00, 0x01, 0x01, 0x4e]);
     bytes.extend([0x05, 0x02, 0x01, 0x01, 0x01, 0x4e]);
 
-    let table = operation_state_group_table_before_counter_map(None, &bytes, map_start, 0)
-        .unwrap()
-        .expect("long adjacent group run");
+    let table = crate::test_support::with_decode_context(|ctx| {
+        operation_state_group_table_before_counter_map(ctx, &bytes, map_start, 0)
+    })
+    .unwrap()
+    .expect("long adjacent group run");
     assert_eq!(table.groups().len(), GROUP_COUNT);
     assert_eq!(table.offset(), 0);
     assert_eq!(table.end_offset(), map_start);
     assert!(table.trailing_bytes().is_empty());
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = (GROUP_COUNT - 1) as u64;
+    policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(GROUP_COUNT - 1);
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = operation_state_group_table_before_counter_map(Some(&ctx), &bytes, map_start, 0)
+    let error = operation_state_group_table_before_counter_map(&ctx, &bytes, map_start, 0)
         .expect_err("the final group exceeds the admitted collection count");
     assert!(matches!(
         error,
@@ -164,10 +172,53 @@ fn operation_state_journal_start_accepts_count_token_runs() {
 
     let start = operation_state_journal_start(&bytes, 0).expect("journal prefix");
     assert_eq!(start, prefix.len());
-    let groups = operation_state_journal_groups_before_boundary(&bytes, start, bytes.len(), 0)
-        .expect("journal groups");
+    let groups = crate::test_support::with_decode_context(|ctx| {
+        operation_state_journal_groups_before_boundary(ctx, &bytes, start, bytes.len(), 0)
+    })
+    .unwrap()
+    .expect("journal groups");
     assert_eq!(groups.len(), 1);
     assert_eq!(Some(groups[0].rows().first().ordinal().value()), Some(0x2a));
+}
+
+fn state_journal_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let bytes = [
+        0x04, 0x01, 0x02, 0x00, 0x00, 0xe0, 0x65, 0x53, 0x4d, 0x20, 0xc0, 0x01, 0x02, 0x03, 0x83,
+        0x10, 0x2a, 0x13,
+    ];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    configure(&mut policy);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    crate::om::operation_state_journal_groups_before_boundary(&ctx, &bytes, 0, bytes.len(), 0)
+        .unwrap_err()
+}
+
+#[test]
+fn state_journal_groups_refuse_collection_limit() {
+    let error = state_journal_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn state_journal_groups_refuse_retained_limit() {
+    let error = state_journal_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn state_journal_groups_refuse_work_limit() {
+    let error = state_journal_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
@@ -177,7 +228,11 @@ fn audit_trail_rows_retain_optional_selector_variable_value_width_and_raw_bytes(
         0xe0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x03, 0x13, 0x04, 0x05, 0x07, 0x00, 0xe0, 0x65, 0x53,
         0x4d, 0x21, 0xc0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x04, 0x13, 0x04, 0x00,
     ];
-    let rows = audit_trail_rows(&bytes, 2, bytes.len(), 900).expect("audit rows");
+    let rows = crate::test_support::with_decode_context(|ctx| {
+        crate::om::audit_trail_rows(ctx, &bytes, 2, bytes.len(), 900)
+    })
+    .unwrap()
+    .expect("audit rows");
     assert_eq!(rows.len(), 2);
     assert_eq!(Some(rows[0].record().ordinal.value()), Some(2));
     assert_eq!(rows[0].record().frame_selector, None);
@@ -193,7 +248,51 @@ fn audit_trail_rows_retain_optional_selector_variable_value_width_and_raw_bytes(
     assert_eq!(rows[1].record().raw(), &bytes[20..36]);
     assert_eq!(rows[1].end_offset(), 900 + 36);
 
-    let truncated = audit_trail_rows(&bytes, 2, 35, 900).expect("bounded audit rows");
+    let truncated = crate::test_support::with_decode_context(|ctx| {
+        crate::om::audit_trail_rows(ctx, &bytes, 2, 35, 900)
+    })
+    .unwrap()
+    .expect("bounded audit rows");
     assert_eq!(truncated.len(), 1);
     assert_eq!(truncated[0].record().raw(), &bytes[7..20]);
+}
+
+fn audit_trail_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let bytes = [
+        0x41, 0x00, 0x03, 0x05, 0x01, 0x04, 0x00, 0x04, 0x02, 0x13, 0xe0, 0x65, 0x53, 0x4d, 0x20,
+        0xe0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x03, 0x13, 0x04, 0x05, 0x07, 0x00, 0xe0, 0x65, 0x53,
+        0x4d, 0x21, 0xc0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x04, 0x13, 0x04, 0x00,
+    ];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    configure(&mut policy);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    crate::om::audit_trail_rows(&ctx, &bytes, 2, bytes.len(), 900).unwrap_err()
+}
+
+#[test]
+fn audit_trail_rows_refuse_collection_limit() {
+    let error = audit_trail_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn audit_trail_rows_refuse_retained_limit() {
+    let error = audit_trail_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn audit_trail_rows_refuse_work_limit() {
+    let error = audit_trail_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }

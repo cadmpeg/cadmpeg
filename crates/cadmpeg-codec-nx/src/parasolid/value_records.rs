@@ -224,7 +224,7 @@ fn frame_at<'a>(
     if bytes.get(at) == Some(&0xff) {
         at += 1;
     }
-    let count = View::u32_be_at(bytes, at)? as usize;
+    let count = cadmpeg_core::decode::index_from_u32(View::u32_be_at(bytes, at)?);
     at += 4;
     let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
     let mut end = at.checked_add(count.checked_mul(width)?)?;

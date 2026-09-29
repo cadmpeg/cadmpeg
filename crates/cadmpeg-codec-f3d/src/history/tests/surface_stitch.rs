@@ -17,8 +17,18 @@ use crate::history_records::{
 };
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
-#[test]
-fn surface_stitch_binds_all_unique_entity_face_candidates() {
+struct StitchFixture {
+    scope_id: String,
+    feature_id: cadmpeg_ir::features::FeatureId,
+    scope: crate::records::feature::scope::DesignParameterScope,
+    groups: Vec<crate::records::topology::construction::DesignConstructionOperandGroup>,
+    operands: Vec<crate::records::topology::entity_selection::DesignEntitySelectionOperand>,
+    history: AsmHistory,
+    feature: cadmpeg_ir::features::Feature,
+    input_topologies: Vec<cadmpeg_ir::features::FeatureInputTopology>,
+}
+
+fn surface_stitch_fixture() -> StitchFixture {
     use crate::records::{
         feature::scope::DesignParameterScope,
         topology::{
@@ -210,7 +220,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         native_ref: None,
     };
     feature.native_ref = Some(scope_id.clone());
-    let mut input_topologies = vec![FeatureInputTopology {
+    let input_topologies = vec![FeatureInputTopology {
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
         bodies: (Vec::new()).try_into().unwrap(),
@@ -219,6 +229,59 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         vertices: (Vec::new()).try_into().unwrap(),
         native_ref: None,
     }];
+    StitchFixture {
+        scope_id,
+        feature_id,
+        scope,
+        groups,
+        operands,
+        history,
+        feature,
+        input_topologies,
+    }
+}
+
+#[test]
+fn surface_stitch_group_collection_refuses_limit() {
+    let mut fixture = surface_stitch_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = bind_feature_face_selections(
+        &ctx,
+        std::slice::from_mut(&mut fixture.feature),
+        &mut fixture.input_topologies,
+        std::slice::from_ref(&fixture.scope),
+        &fixture.groups,
+        &[],
+        &fixture.operands,
+        &[],
+        std::slice::from_ref(&fixture.history),
+    );
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
+    ));
+}
+
+#[test]
+fn surface_stitch_binds_all_unique_entity_face_candidates() {
+    use crate::records::topology::{
+        body_recipe::AsmHistoricalEntityKind, entity_selection::DesignEntitySelectionFaceCandidate,
+    };
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    let StitchFixture {
+        scope_id,
+        feature_id,
+        scope,
+        groups,
+        operands,
+        history,
+        mut feature,
+        mut input_topologies,
+    } = surface_stitch_fixture();
     let mut ambiguous_feature = feature.clone();
     let mut ambiguous_operands = operands.clone();
     ambiguous_operands[1]
@@ -235,7 +298,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let mut ambiguous_topologies = input_topologies.clone();
 
     bind_feature_face_selections(
-        None,
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
         std::slice::from_ref(&scope),
@@ -245,7 +308,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         &[],
         std::slice::from_ref(&history),
     )
-    .expect("history face binding resource budget");
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::KnitSurface {
         faces:
@@ -275,7 +338,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     assert_eq!(input_topologies[0].faces.as_slice(), faces.as_slice());
 
     bind_feature_face_selections(
-        None,
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut ambiguous_feature),
         &mut ambiguous_topologies,
         std::slice::from_ref(&scope),
@@ -285,7 +348,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         &[],
         std::slice::from_ref(&history),
     )
-    .expect("history face binding resource budget");
+    .unwrap();
     assert!(matches!(
         ambiguous_feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::KnitSurface {

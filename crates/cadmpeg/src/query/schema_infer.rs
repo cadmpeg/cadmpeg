@@ -39,7 +39,7 @@ pub(super) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
         bail!("{}", unknown_arena_message(&target, &doc.addressable()));
     };
 
-    let entry_count = arena_rec.records.len() as u64;
+    let entry_count = cadmpeg_core::decode::u64_from_index(arena_rec.records.len());
     let rows = infer_fields(&arena_rec.records, &doc.all_ids());
     if json {
         print_json("schema", json_payload(&target.dotted(), entry_count, &rows))?;

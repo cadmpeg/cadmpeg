@@ -4,13 +4,15 @@
 use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use super::{named_parameter, references, RecordExt, ValueExt};
+use super::reference::references;
+use super::{named_parameter, RecordExt, ValueExt};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{
-    AppearanceId, BodyId, CurveId, EdgeId, FaceId, IdentityKey, LayerId, OccurrenceId, PmiId,
-    PointId, ProductDefinitionId, SurfaceId, VertexId,
+    AppearanceId, BodyId, CurveId, EdgeId, FaceId, Identity, IdentityKey, LayerId, OccurrenceId,
+    PmiId, PointId, ProductDefinitionId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 use cadmpeg_ir::report::loss::LossNote;
@@ -21,7 +23,7 @@ use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text;
+use super::decode_text_charged;
 use super::topology::TopologyData;
 use super::StageOutcome;
 
@@ -30,75 +32,67 @@ pub(super) fn decode(
     topology: &TopologyData,
     ir: &mut CadIr,
     product_definition_ids_by_source: &BTreeMap<u64, Vec<ProductDefinitionId>>,
-    ctx: Option<&DecodeContext<'_>>,
-) -> StageOutcome<()> {
+    ctx: &DecodeContext<'_>,
+) -> Result<StageOutcome<()>, CodecError> {
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
     let graph_limit = super::record_graph_limit(ctx);
-    let face_indices = ir
-        .model
-        .faces
-        .iter()
-        .enumerate()
-        .map(|(index, face)| (face.id.as_str().to_owned(), index))
-        .collect::<BTreeMap<_, _>>();
-    let body_indices = ir
-        .model
-        .bodies
-        .iter()
-        .enumerate()
-        .map(|(index, body)| (body.id.as_str().to_owned(), index))
-        .collect::<BTreeMap<_, _>>();
+    let face_indices = collect_identity_indices(
+        ir.model.faces.iter().map(|face| face.id.as_str()),
+        ctx,
+        "step_presentation_face_indices",
+    )?;
+    let body_indices = collect_identity_indices(
+        ir.model.bodies.iter().map(|body| body.id.as_str()),
+        ctx,
+        "step_presentation_body_indices",
+    )?;
+    let indices = PresentationIndices {
+        faces: &face_indices,
+        bodies: &body_indices,
+    };
     let entity_ids = EntityIds {
-        edges: ir
-            .model
-            .edges
-            .iter()
-            .map(|item| item.id.as_str().to_owned())
-            .collect(),
-        vertices: ir
-            .model
-            .vertices
-            .iter()
-            .map(|item| item.id.as_str().to_owned())
-            .collect(),
-        points: ir
-            .model
-            .points
-            .iter()
-            .map(|item| item.id.as_str().to_owned())
-            .collect(),
-        curves: ir
-            .model
-            .curves
-            .iter()
-            .map(|item| item.id.as_str().to_owned())
-            .collect(),
-        surfaces: ir
-            .model
-            .surfaces
-            .iter()
-            .map(|item| item.id.as_str().to_owned())
-            .collect(),
-        products: product_definition_ids_by_source.clone(),
-        occurrences: ir
-            .model
-            .occurrences
-            .iter()
-            .map(|item| item.id.as_str().to_owned())
-            .collect(),
-        pmi: ir
-            .model
-            .pmi
-            .iter()
-            .map(|item| item.id.as_str().to_owned())
-            .collect(),
-        tessellations: ir
-            .model
-            .tessellations
-            .iter()
-            .map(|item| item.id.to_string())
-            .collect(),
+        edges: collect_borrowed_identity_set(
+            ir.model.edges.iter().map(|item| item.id.as_str()),
+            ctx,
+            "step_presentation_edge_ids",
+        )?,
+        vertices: collect_borrowed_identity_set(
+            ir.model.vertices.iter().map(|item| item.id.as_str()),
+            ctx,
+            "step_presentation_vertex_ids",
+        )?,
+        points: collect_borrowed_identity_set(
+            ir.model.points.iter().map(|item| item.id.as_str()),
+            ctx,
+            "step_presentation_point_ids",
+        )?,
+        curves: collect_borrowed_identity_set(
+            ir.model.curves.iter().map(|item| item.id.as_str()),
+            ctx,
+            "step_presentation_curve_ids",
+        )?,
+        surfaces: collect_borrowed_identity_set(
+            ir.model.surfaces.iter().map(|item| item.id.as_str()),
+            ctx,
+            "step_presentation_surface_ids",
+        )?,
+        products: product_definition_ids_by_source,
+        occurrences: collect_borrowed_identity_set(
+            ir.model.occurrences.iter().map(|item| item.id.as_str()),
+            ctx,
+            "step_presentation_occurrence_ids",
+        )?,
+        pmi: collect_borrowed_identity_set(
+            ir.model.pmi.iter().map(|item| item.id.as_str()),
+            ctx,
+            "step_presentation_pmi_ids",
+        )?,
+        tessellations: collect_borrowed_identity_set(
+            ir.model.tessellations.iter().map(|item| item.id.as_str()),
+            ctx,
+            "step_presentation_tessellation_ids",
+        )?,
     };
     let mut appearance_ids = BTreeMap::<(u64, u32), AppearanceId>::new();
     let mut hidden_style_ids = BTreeSet::new();
@@ -110,9 +104,11 @@ pub(super) fn decode(
         }
         let Some(items) = named_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
         else {
-            losses.push(
+            ctx.push_vec(
+                &mut losses,
                 StepLossCode::DecodeWarning.note(format!("INVISIBILITY #{id} has no item set")),
-            );
+                "step_presentation_losses",
+            )?;
             continue;
         };
         let mut supported = true;
@@ -124,8 +120,18 @@ pub(super) fn decode(
                 .get(&target)
                 .is_some_and(|record| record.partial("PRESENTATION_LAYER_ASSIGNMENT").is_some())
             {
-                hidden_layer_ids.insert(target);
-                layer_targets.insert(target);
+                ctx.insert_btree_set(
+                    &mut hidden_layer_ids,
+                    target,
+                    "step_presentation_hidden_layer_ids",
+                )
+                .map(|_| ())?;
+                ctx.insert_btree_set(
+                    &mut layer_targets,
+                    target,
+                    "step_presentation_invisibility_layer_targets",
+                )
+                .map(|_| ())?;
                 continue;
             }
             if exchange
@@ -133,8 +139,18 @@ pub(super) fn decode(
                 .get(&target)
                 .is_some_and(|record| styled_item_parts(record).is_some())
             {
-                hidden_style_ids.insert(target);
-                style_targets.insert(target);
+                ctx.insert_btree_set(
+                    &mut hidden_style_ids,
+                    target,
+                    "step_presentation_hidden_style_ids",
+                )
+                .map(|_| ())?;
+                ctx.insert_btree_set(
+                    &mut style_targets,
+                    target,
+                    "step_presentation_invisibility_style_targets",
+                )
+                .map(|_| ())?;
                 continue;
             }
             if exchange
@@ -152,7 +168,7 @@ pub(super) fn decode(
                 continue;
             }
             let (body_ids, target_supported) =
-                invisible_body_ids(target, exchange, topology, &body_indices);
+                invisible_body_ids(target, exchange, topology, &body_indices, ctx)?;
             let mut hidden = false;
             for body_id in body_ids {
                 if let Some(index) = body_indices.get(body_id.as_str()) {
@@ -161,16 +177,27 @@ pub(super) fn decode(
                 }
             }
             if !target_supported || !hidden {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "INVISIBILITY #{id} targets unsupported item #{target}"
-                )));
+                ctx.push_vec(
+                    &mut losses,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "INVISIBILITY #{id} targets unsupported item #{target}"
+                    )),
+                    "step_presentation_losses",
+                )?;
                 supported = false;
             }
         }
         if style_targets.is_empty() && layer_targets.is_empty() && supported {
-            typed.insert(id);
+            ctx.insert_hash_set(&mut typed, id, "step_presentation_typed_claims")
+                .map(|_| ())?;
         } else if !style_targets.is_empty() || !layer_targets.is_empty() {
-            deferred_invisibility.insert(id, (supported, style_targets, layer_targets));
+            ctx.insert_btree_map(
+                &mut deferred_invisibility,
+                id,
+                (supported, style_targets, layer_targets),
+                "step_presentation_deferred_invisibility",
+            )
+            .map(|_| ())?;
         }
     }
     for (&layer_id, layer) in exchange.records() {
@@ -180,80 +207,114 @@ pub(super) fn decode(
         let Some(assigned_items) =
             named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2).and_then(ValueExt::list)
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
-            )));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
+                )),
+                "step_presentation_losses",
+            )?;
             continue;
         };
         if assigned_items.is_empty() {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
-            )));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
+                )),
+                "step_presentation_losses",
+            )?;
             continue;
         }
-        let Some(name) =
-            named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0).and_then(|value| {
-                decode_text(
+        let Some(name) = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0)
+            .map(|value| {
+                decode_text_charged(
                     exchange,
                     value,
                     &mut losses,
                     layer_id,
                     "presentation layer name",
                     StepLossCode::MetadataStringInvalid,
+                    ctx,
                 )
             })
+            .transpose()?
+            .flatten()
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
-            )));
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
+                )),
+                "step_presentation_losses",
+            )?;
             continue;
         };
         let description = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
-            .and_then(|value| {
-                decode_text(
+            .map(|value| {
+                decode_text_charged(
                     exchange,
                     value,
                     &mut losses,
                     layer_id,
                     "presentation layer description",
                     StepLossCode::MetadataStringInvalid,
+                    ctx,
                 )
             })
+            .transpose()?
+            .flatten()
             .filter(|value| !value.is_empty());
         let mut items = Vec::new();
         for id in assigned_items.iter().filter_map(ValueExt::reference) {
-            items.extend(presentation_item(
+            append_presentation_items(
                 id,
                 exchange,
                 topology,
                 &entity_ids,
-                &face_indices,
-                &body_indices,
-            ));
+                indices,
+                &mut items,
+                ctx,
+            )?;
         }
-        ir.model.presentation_layers.push(PresentationLayer {
-            id: LayerId::from(ids::presentation(kind!("layer"), layer_id)),
-            name,
-            description,
-            visible: hidden_layer_ids.contains(&layer_id).then_some(false),
-            items,
-        });
-        typed.insert(layer_id);
+        ctx.push_vec(
+            &mut ir.model.presentation_layers,
+            PresentationLayer {
+                id: LayerId::from(ids::presentation(kind!("layer"), layer_id)),
+                name,
+                description,
+                visible: hidden_layer_ids.contains(&layer_id).then_some(false),
+                items,
+            },
+            "step_presentation_layer_records",
+        )?;
+        ctx.insert_hash_set(&mut typed, layer_id, "step_presentation_typed_claims")
+            .map(|_| ())?;
     }
-    let mut styles = exchange
-        .records()
-        .iter()
-        .filter_map(|(&id, record)| styled_item_parts(record).map(|_| id))
-        .collect::<Vec<_>>();
-    let overridden_styles = styles
-        .iter()
-        .filter_map(|id| overridden_style(&exchange.records()[id]))
-        .collect::<BTreeSet<_>>();
-    styles.sort_by_key(|id| style_application_order(*id, exchange, graph_limit));
+    let mut styles = Vec::new();
+    for (&id, record) in exchange.records() {
+        if styled_item_parts(record).is_some() {
+            let order = style_application_order(id, exchange, graph_limit, ctx)?;
+            ctx.push_vec(&mut styles, (id, order), "step_presentation_style_ids")?;
+        }
+    }
+    let mut overridden_styles = BTreeSet::new();
+    for (id, _) in &styles {
+        if let Some(overridden) = overridden_style(&exchange.records()[id]) {
+            ctx.insert_btree_set(
+                &mut overridden_styles,
+                overridden,
+                "step_presentation_overridden_styles",
+            )
+            .map(|_| ())?;
+        }
+    }
+    styles.sort_by_key(|(_, order)| *order);
     let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
-    for style_id in styles {
+    for (style_id, _) in styles {
         if overridden_styles.contains(&style_id) {
-            typed.insert(style_id);
+            ctx.insert_hash_set(&mut typed, style_id, "step_presentation_typed_claims")
+                .map(|_| ())?;
             continue;
         }
         let style = &exchange.records()[&style_id];
@@ -261,101 +322,114 @@ pub(super) fn decode(
             continue;
         };
         let Some(target_step) = parts.target.reference() else {
-            losses.push(
+            ctx.push_vec(
+                &mut losses,
                 StepLossCode::DecodeWarning
                     .note(format!("STYLED_ITEM #{style_id} has no resolved target")),
-            );
+                "step_presentation_losses",
+            )?;
             continue;
         };
         if parts.styles.list().is_some_and(<[Value]>::is_empty) {
-            typed.insert(style_id);
+            ctx.insert_hash_set(&mut typed, style_id, "step_presentation_typed_claims")
+                .map(|_| ())?;
             continue;
         }
-        let domain = style_domain(target_step, exchange);
+        let domain = style_domain(target_step, exchange, ctx)?;
         let mut active = BTreeSet::new();
         let mut color_cache = BTreeMap::new();
         let mut invalid_surface_sides = BTreeSet::new();
-        let style_references = parts
+        let mut style_references = Vec::new();
+        for reference in parts
             .styles
             .list()
             .into_iter()
             .flatten()
             .flat_map(references)
-            .collect::<Vec<_>>();
-        let context_style_ids = style_references
-            .iter()
-            .copied()
-            .filter(|reference| {
-                exchange
-                    .records()
-                    .get(reference)
-                    .is_some_and(is_presentation_style_by_context)
-            })
-            .collect::<BTreeSet<_>>();
+        {
+            ctx.push_vec(
+                &mut style_references,
+                reference,
+                "step_presentation_style_references",
+            )?;
+        }
+        let mut context_style_ids = BTreeSet::new();
+        for reference in &style_references {
+            if exchange
+                .records()
+                .get(reference)
+                .is_some_and(is_presentation_style_by_context)
+            {
+                ctx.insert_btree_set(
+                    &mut context_style_ids,
+                    *reference,
+                    "step_presentation_context_style_ids",
+                )
+                .map(|_| ())?;
+            }
+        }
         if !context_style_ids.is_empty() {
-            let contexts = context_style_ids
-                .iter()
-                .map(|context_style_id| {
-                    let context = exchange
-                        .records()
-                        .get(context_style_id)
-                        .and_then(presentation_style_context)
-                        .and_then(ValueExt::reference)
-                        .map_or_else(|| "unresolved".to_string(), |id| format!("#{id}"));
-                    format!("#{context_style_id} in {context}")
-                })
-                .collect::<Vec<_>>();
-            losses.push(StepLossCode::ContextDependentStyleUnresolved.note(format!(
-                "STYLED_ITEM #{style_id} has context-dependent style assignments {}; no presentation context is selected by the neutral model; those source branches remain opaque",
-                contexts.join(", ")
-            )));
+            let message = context_style_message(style_id, &context_style_ids, exchange, ctx)?;
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::ContextDependentStyleUnresolved.note(message),
+                "step_presentation_losses",
+            )?;
             continue;
         }
-        let color =
-            combine_color_resolutions(style_references.iter().copied().filter_map(|reference| {
+        let color = combine_color_resolutions(style_references.iter().copied().map(|reference| {
+            find_color(
+                reference,
+                exchange,
+                domain,
+                ColorSearchState {
+                    active: &mut active,
+                    cache: &mut color_cache,
+                    losses: &mut losses,
+                    invalid_surface_sides: &mut invalid_surface_sides,
+                },
+                0,
+                ctx,
+            )
+        }))?;
+        let color = if color.is_none() && matches!(domain, StyleDomain::Curve | StyleDomain::Point)
+        {
+            combine_color_resolutions(style_references.iter().copied().map(|reference| {
                 find_color(
                     reference,
                     exchange,
-                    domain,
-                    &mut active,
-                    &mut color_cache,
-                    &mut losses,
-                    &mut invalid_surface_sides,
-                    0,
-                )
-            }));
-        let color = color.or_else(|| {
-            matches!(domain, StyleDomain::Curve | StyleDomain::Point).then(|| {
-                combine_color_resolutions(style_references.iter().copied().filter_map(
-                    |reference| {
-                        find_color(
-                            reference,
-                            exchange,
-                            StyleDomain::Surface,
-                            &mut active,
-                            &mut color_cache,
-                            &mut losses,
-                            &mut invalid_surface_sides,
-                            0,
-                        )
+                    StyleDomain::Surface,
+                    ColorSearchState {
+                        active: &mut active,
+                        cache: &mut color_cache,
+                        losses: &mut losses,
+                        invalid_surface_sides: &mut invalid_surface_sides,
                     },
-                ))
-            })?
-        });
+                    0,
+                    ctx,
+                )
+            }))?
+        } else {
+            color
+        };
         let color = match color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
             Some(ColorResolution::Ambiguous { .. }) => {
-                losses.push(StepLossCode::ConflictingScalarColors.note(format!(
+                ctx.push_vec(&mut losses, StepLossCode::ConflictingScalarColors.note(format!(
                     "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
-                )));
+                )), "step_presentation_losses")?;
                 continue;
             }
             None => {
                 let mut visited = BTreeSet::new();
-                if !contains_null_style(parts.styles, exchange, &mut visited, 0) {
-                    losses.push(StepLossCode::DecodeWarning.note(format!(
-                        "STYLED_ITEM #{style_id} has no resolved surface color"
-                    )));
+                if !contains_null_style(parts.styles, exchange, &mut visited, 0, ctx)? {
+                    ctx.push_vec(
+                        &mut losses,
+                        StepLossCode::DecodeWarning.note(format!(
+                            "STYLED_ITEM #{style_id} has no resolved surface color"
+                        )),
+                        "step_presentation_losses",
+                    )?;
                 }
                 continue;
             }
@@ -366,18 +440,21 @@ pub(super) fn decode(
             name,
             ..
         } = color;
-        let appearance_id = appearance_ids
-            .entry((color_id, color.a().to_bits()))
-            .or_insert_with(|| {
-                let key = if color.a() == 1.0 {
-                    IdentityKey::from(color_id)
-                } else {
-                    IdentityKey::from(color_id)
-                        .dash(key_word!("alpha"))
-                        .dash(color.a().to_bits())
-                };
-                let id = AppearanceId::from(ids::presentation(kind!("appearance"), key));
-                ir.model.appearances.push(Appearance {
+        let appearance_key = (color_id, color.a().to_bits());
+        let appearance_id = if let Some(appearance_id) = appearance_ids.get(&appearance_key) {
+            appearance_id.clone()
+        } else {
+            let key = if color.a() == 1.0 {
+                IdentityKey::from(color_id)
+            } else {
+                IdentityKey::from(color_id)
+                    .dash(key_word!("alpha"))
+                    .dash(color.a().to_bits())
+            };
+            let id = AppearanceId::from(ids::presentation(kind!("appearance"), key));
+            ctx.push_vec(
+                &mut ir.model.appearances,
+                Appearance {
                     id: id.clone(),
                     name,
                     asset_guid: None,
@@ -389,10 +466,18 @@ pub(super) fn decode(
                     base_color: Some(color),
                     textures: Vec::new(),
                     properties: BTreeMap::new(),
-                });
-                id
-            })
-            .clone();
+                },
+                "step_presentation_appearance_records",
+            )?;
+            ctx.insert_btree_map(
+                &mut appearance_ids,
+                appearance_key,
+                id.clone(),
+                "step_presentation_appearance_ids",
+            )
+            .map(|_| ())?;
+            id
+        };
         let target_steps = expand_style_targets(
             target_step,
             exchange,
@@ -400,66 +485,65 @@ pub(super) fn decode(
             &mut BTreeSet::new(),
             0,
             graph_limit,
-        );
+            ctx,
+        )?;
         for (ordinal, target_step) in target_steps.into_iter().enumerate() {
-            let targets = appearance_targets(
-                target_step,
-                exchange,
-                topology,
-                &entity_ids,
-                &face_indices,
-                &body_indices,
-            );
+            let targets =
+                appearance_targets(target_step, exchange, topology, &entity_ids, indices, ctx)?;
             if targets.is_empty() {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"
-                )));
+                ctx.push_vec(
+                    &mut losses,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"
+                    )),
+                    "step_presentation_losses",
+                )?;
                 continue;
             }
             for (target_ordinal, target) in targets.into_iter().enumerate() {
-                match &target {
-                    AppearanceTarget::Face(_) | AppearanceTarget::Body(_) => {
-                        scalar_color_candidates
-                            .entry(target.clone())
-                            .or_default()
-                            .push((style_id, color));
-                    }
-                    _ => {}
-                }
-                ir.model.appearance_bindings.push(AppearanceBinding {
-                    id: ids::presentation(
-                        kind!("binding"),
-                        IdentityKey::from(style_id)
-                            .colon(ordinal)
-                            .dash(target_ordinal),
-                    )
-                    .into(),
-                    target,
-                    appearance: appearance_id.clone(),
-                    source_entity_id: Some(format!("#{style_id}")),
-                    object_type: None,
-                    visible: style_is_hidden(
-                        style_id,
-                        &hidden_style_ids,
-                        exchange,
-                        &mut BTreeSet::new(),
-                    )
-                    .then_some(false),
-                    channels: BTreeMap::new(),
-                });
+                push_scalar_candidate(&mut scalar_color_candidates, &target, style_id, color, ctx)?;
+                ctx.push_vec(
+                    &mut ir.model.appearance_bindings,
+                    AppearanceBinding {
+                        id: ids::presentation(
+                            kind!("binding"),
+                            IdentityKey::from(style_id)
+                                .colon(ordinal)
+                                .dash(target_ordinal),
+                        )
+                        .into(),
+                        target,
+                        appearance: appearance_id.clone(),
+                        source_entity_id: Some(format!("#{style_id}")),
+                        object_type: None,
+                        visible: style_is_hidden(
+                            style_id,
+                            &hidden_style_ids,
+                            exchange,
+                            &mut BTreeSet::new(),
+                            ctx,
+                        )?
+                        .then_some(false),
+                        channels: BTreeMap::new(),
+                    },
+                    "step_presentation_appearance_bindings",
+                )?;
             }
         }
-        typed.insert(style_id);
+        ctx.insert_hash_set(&mut typed, style_id, "step_presentation_typed_claims")
+            .map(|_| ())?;
         if let Some(overridden) = overridden_style(style) {
-            typed.insert(overridden);
+            ctx.insert_hash_set(&mut typed, overridden, "step_presentation_typed_claims")
+                .map(|_| ())?;
         }
-        typed.extend(
-            color_cache
-                .keys()
-                .filter(|(id, _)| !invalid_surface_sides.contains(id))
-                .map(|(id, _)| *id),
-        );
-        typed.insert(color_id);
+        for &(id, _) in color_cache.keys() {
+            if !invalid_surface_sides.contains(&id) {
+                ctx.insert_hash_set(&mut typed, id, "step_presentation_typed_claims")
+                    .map(|_| ())?;
+            }
+        }
+        ctx.insert_hash_set(&mut typed, color_id, "step_presentation_typed_claims")
+            .map(|_| ())?;
     }
     for (invisibility_id, (mut supported, style_targets, layer_targets)) in deferred_invisibility {
         for style_id in style_targets {
@@ -473,15 +557,25 @@ pub(super) fn decode(
                 else {
                     continue;
                 };
-                if style_inherits_from(binding_style_id, style_id, exchange, &mut BTreeSet::new()) {
+                if style_inherits_from(
+                    binding_style_id,
+                    style_id,
+                    exchange,
+                    &mut BTreeSet::new(),
+                    ctx,
+                )? {
                     binding.visible = Some(false);
                     matched = true;
                 }
             }
             if !matched {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "INVISIBILITY #{invisibility_id} targets unsupported item #{style_id}"
-                )));
+                ctx.push_vec(
+                    &mut losses,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "INVISIBILITY #{invisibility_id} targets unsupported item #{style_id}"
+                    )),
+                    "step_presentation_losses",
+                )?;
                 supported = false;
             }
         }
@@ -496,14 +590,23 @@ pub(super) fn decode(
                 }
             }
             if !matched {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "INVISIBILITY #{invisibility_id} targets unsupported item #{layer_id}"
-                )));
+                ctx.push_vec(
+                    &mut losses,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "INVISIBILITY #{invisibility_id} targets unsupported item #{layer_id}"
+                    )),
+                    "step_presentation_losses",
+                )?;
                 supported = false;
             }
         }
         if supported {
-            typed.insert(invisibility_id);
+            ctx.insert_hash_set(
+                &mut typed,
+                invisibility_id,
+                "step_presentation_typed_claims",
+            )
+            .map(|_| ())?;
         }
     }
     for (target, candidates) in scalar_color_candidates {
@@ -512,7 +615,7 @@ pub(super) fn decode(
             let Some(existing) = colors.iter_mut().find(|existing| {
                 existing.r() == color.r() && existing.g() == color.g() && existing.b() == color.b()
             }) else {
-                colors.push(*color);
+                ctx.push_vec(&mut colors, *color, "step_presentation_distinct_colors")?;
                 continue;
             };
             if color.a() < existing.a() {
@@ -534,23 +637,20 @@ pub(super) fn decode(
                 _ => {}
             }
         } else {
-            let style_ids = candidates
-                .iter()
-                .map(|(style_id, _)| format!("#{style_id}"))
-                .collect::<Vec<_>>();
-            losses.push(StepLossCode::ConflictingScalarColors.note(format!(
-                    "independent styled items {} assign conflicting scalar colors to {:?}; scalar color omitted and appearance bindings retain every assignment",
-                    style_ids.join(", "),
-                    target,
-                )));
+            let message = scalar_conflict_message(&candidates, &target, ctx)?;
+            ctx.push_vec(
+                &mut losses,
+                StepLossCode::ConflictingScalarColors.note(message),
+                "step_presentation_losses",
+            )?;
         }
     }
-    StageOutcome {
+    Ok(StageOutcome {
         value: (),
         claims: typed,
         losses,
         notes: Vec::new(),
-    }
+    })
 }
 
 fn invisible_body_ids(
@@ -558,7 +658,8 @@ fn invisible_body_ids(
     exchange: &Exchange,
     topology: &TopologyData,
     body_indices: &BTreeMap<String, usize>,
-) -> (Vec<BodyId>, bool) {
+    ctx: &DecodeContext<'_>,
+) -> Result<(BTreeSet<BodyId>, bool), CodecError> {
     let mut body_ids = BTreeSet::new();
     let mut active = BTreeSet::new();
     let supported = collect_invisible_body_ids(
@@ -568,8 +669,9 @@ fn invisible_body_ids(
         body_indices,
         &mut active,
         &mut body_ids,
-    );
-    (body_ids.into_iter().collect(), supported)
+        ctx,
+    )?;
+    Ok((body_ids, supported))
 }
 
 fn collect_invisible_body_ids(
@@ -579,27 +681,44 @@ fn collect_invisible_body_ids(
     body_indices: &BTreeMap<String, usize>,
     active: &mut BTreeSet<u64>,
     body_ids: &mut BTreeSet<BodyId>,
-) -> bool {
-    if !active.insert(id) {
-        return false;
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    if active.contains(&id) {
+        return Ok(false);
     }
+    let _nested = ctx.enter_nested("step_presentation_invisible_body_walk")?;
+    ctx.insert_btree_set(active, id, "step_presentation_invisible_body_active")
+        .map(|_| ())?;
     if let Some(ids) = topology.body_by_root.get(&id) {
-        body_ids.extend(ids.iter().cloned());
+        for body in ids {
+            if !body_ids.contains(body) {
+                let body = clone_presentation_identity::<BodyId>(
+                    body.as_str(),
+                    ctx,
+                    "step_presentation_invisible_body_identity",
+                )?;
+                ctx.insert_btree_set(body_ids, body, "step_presentation_invisible_body_ids")
+                    .map(|_| ())?;
+            }
+        }
         active.remove(&id);
-        return !ids.is_empty();
+        return Ok(!ids.is_empty());
     }
     let fallback = BodyId::from(ids::data(kind!("body"), id));
     if body_indices.contains_key(fallback.as_str()) {
-        body_ids.insert(fallback);
+        ctx.insert_btree_set(body_ids, fallback, "step_presentation_invisible_body_ids")
+            .map(|_| ())?;
         active.remove(&id);
-        return true;
+        return Ok(true);
     }
 
     let Some(record) = exchange.records().get(&id) else {
         active.remove(&id);
-        return false;
+        return Ok(false);
     };
-    let references = if record
+    let mut found_reference = false;
+    let mut supported = true;
+    if record
         .partials
         .iter()
         .any(|partial| partial.name == "STYLED_ITEM")
@@ -608,36 +727,42 @@ fn collect_invisible_body_ids(
             .iter()
             .any(|partial| partial.name == "OVER_RIDING_STYLED_ITEM")
     {
-        styled_item_parts(record)
-            .and_then(|parts| parts.target.reference())
-            .into_iter()
-            .collect::<Vec<_>>()
+        if let Some(reference) =
+            styled_item_parts(record).and_then(|parts| parts.target.reference())
+        {
+            found_reference = true;
+            supported &= collect_invisible_body_ids(
+                reference,
+                exchange,
+                topology,
+                body_indices,
+                active,
+                body_ids,
+                ctx,
+            )?;
+        }
     } else if record
         .partials
         .iter()
         .any(|partial| super::representation::is_representation_name(&partial.name))
     {
-        super::representation::items(record).unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-    if references.is_empty() {
-        active.remove(&id);
-        return false;
-    }
-    let mut supported = true;
-    for reference in references {
-        supported &= collect_invisible_body_ids(
-            reference,
-            exchange,
-            topology,
-            body_indices,
-            active,
-            body_ids,
-        );
+        if let Some(references) = super::representation::items(record) {
+            for reference in references {
+                found_reference = true;
+                supported &= collect_invisible_body_ids(
+                    reference,
+                    exchange,
+                    topology,
+                    body_indices,
+                    active,
+                    body_ids,
+                    ctx,
+                )?;
+            }
+        }
     }
     active.remove(&id);
-    supported
+    Ok(found_reference && supported)
 }
 
 fn expand_style_targets(
@@ -647,13 +772,19 @@ fn expand_style_targets(
     active: &mut BTreeSet<u64>,
     depth: usize,
     graph_limit: usize,
-) -> Vec<u64> {
-    if depth >= graph_limit || !active.insert(id) {
-        return Vec::new();
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<u64>, CodecError> {
+    if depth >= graph_limit || active.contains(&id) {
+        return Ok(Vec::new());
     }
+    let _nested = ctx.enter_nested("step_presentation_style_target_walk")?;
+    ctx.insert_btree_set(active, id, "step_presentation_style_target_active")
+        .map(|_| ())?;
     let Some(record) = exchange.records().get(&id) else {
         active.remove(&id);
-        return vec![id];
+        let mut targets = Vec::new();
+        ctx.push_vec(&mut targets, id, "step_presentation_style_target_items")?;
+        return Ok(targets);
     };
     let Some(set_name) = record.partials.iter().find_map(|partial| {
         matches!(
@@ -663,61 +794,105 @@ fn expand_style_targets(
         .then_some(partial.name.as_str())
     }) else {
         active.remove(&id);
-        return vec![id];
+        let mut targets = Vec::new();
+        ctx.push_vec(&mut targets, id, "step_presentation_style_target_items")?;
+        return Ok(targets);
     };
-    typed.insert(id);
-    let targets = named_parameter(record, set_name, 1)
+    ctx.insert_hash_set(typed, id, "step_presentation_typed_claims")
+        .map(|_| ())?;
+    let mut targets = Vec::new();
+    for item in named_parameter(record, set_name, 1)
         .and_then(ValueExt::list)
         .into_iter()
         .flatten()
         .filter_map(ValueExt::reference)
-        .flat_map(|item| {
-            expand_style_targets(item, exchange, typed, active, depth + 1, graph_limit)
-        })
-        .collect();
+    {
+        for target in
+            expand_style_targets(item, exchange, typed, active, depth + 1, graph_limit, ctx)?
+        {
+            ctx.push_vec(&mut targets, target, "step_presentation_style_target_items")?;
+        }
+    }
     active.remove(&id);
-    targets
+    Ok(targets)
 }
 
 fn appearance_targets(
     id: u64,
     exchange: &Exchange,
     topology: &TopologyData,
-    entity_ids: &EntityIds,
-    face_indices: &BTreeMap<String, usize>,
-    body_indices: &BTreeMap<String, usize>,
-) -> Vec<AppearanceTarget> {
+    entity_ids: &EntityIds<'_>,
+    indices: PresentationIndices<'_>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<AppearanceTarget>, CodecError> {
+    let mut targets = Vec::new();
     if let Some(bodies) = topology.body_by_root.get(&id) {
-        return bodies
-            .iter()
-            .filter(|body| body_indices.contains_key(body.as_str()))
-            .cloned()
-            .map(AppearanceTarget::Body)
-            .collect();
+        for body in bodies {
+            if indices.bodies.contains_key(body.as_str()) {
+                let body = clone_presentation_identity::<BodyId>(
+                    body.as_str(),
+                    ctx,
+                    "step_presentation_appearance_body_identity",
+                )?;
+                ctx.push_vec(
+                    &mut targets,
+                    AppearanceTarget::Body(body),
+                    "step_presentation_appearance_targets",
+                )?;
+            }
+        }
+        return Ok(targets);
     }
     if let Some(faces) = topology.faces_by_source.get(&id) {
-        return faces
-            .iter()
-            .filter(|face| face_indices.contains_key(face.as_str()))
-            .cloned()
-            .map(AppearanceTarget::Face)
-            .collect();
+        for face in faces {
+            if indices.faces.contains_key(face.as_str()) {
+                let face = clone_presentation_identity::<FaceId>(
+                    face.as_str(),
+                    ctx,
+                    "step_presentation_appearance_face_identity",
+                )?;
+                ctx.push_vec(
+                    &mut targets,
+                    AppearanceTarget::Face(face),
+                    "step_presentation_appearance_targets",
+                )?;
+            }
+        }
+        return Ok(targets);
     }
     if let Some(edges) = topology.edges_by_source.get(&id) {
-        return edges
-            .iter()
-            .filter(|edge| entity_ids.edges.contains(edge.as_str()))
-            .cloned()
-            .map(AppearanceTarget::Edge)
-            .collect();
+        for edge in edges {
+            if entity_ids.edges.contains(edge.as_str()) {
+                let edge = clone_presentation_identity::<EdgeId>(
+                    edge.as_str(),
+                    ctx,
+                    "step_presentation_appearance_edge_identity",
+                )?;
+                ctx.push_vec(
+                    &mut targets,
+                    AppearanceTarget::Edge(edge),
+                    "step_presentation_appearance_targets",
+                )?;
+            }
+        }
+        return Ok(targets);
     }
     if let Some(vertices) = topology.vertices_by_source.get(&id) {
-        return vertices
-            .iter()
-            .filter(|vertex| entity_ids.vertices.contains(vertex.as_str()))
-            .cloned()
-            .map(AppearanceTarget::Vertex)
-            .collect();
+        for vertex in vertices {
+            if entity_ids.vertices.contains(vertex.as_str()) {
+                let vertex = clone_presentation_identity::<VertexId>(
+                    vertex.as_str(),
+                    ctx,
+                    "step_presentation_appearance_vertex_identity",
+                )?;
+                ctx.push_vec(
+                    &mut targets,
+                    AppearanceTarget::Vertex(vertex),
+                    "step_presentation_appearance_targets",
+                )?;
+            }
+        }
+        return Ok(targets);
     }
     let face_id = ids::data(kind!("face"), id);
     let body_id = ids::data(kind!("body"), id);
@@ -726,109 +901,149 @@ fn appearance_targets(
     let curve_id = ids::data(kind!("curve"), id);
     let point_id = ids::data(kind!("point"), id);
     let tessellation_id = ids::tessellation(kind!("mesh"), id);
-    if face_indices.contains_key(face_id.as_str()) {
-        return vec![AppearanceTarget::Face(FaceId::from(face_id))];
-    }
-    if body_indices.contains_key(body_id.as_str()) {
-        return vec![AppearanceTarget::Body(BodyId::from(body_id))];
-    }
-    if entity_ids.edges.contains(edge_id.as_str()) {
-        return vec![AppearanceTarget::Edge(EdgeId::from(edge_id))];
-    }
-    if entity_ids.surfaces.contains(surface_id.as_str()) {
-        return vec![AppearanceTarget::Surface(SurfaceId::from(surface_id))];
-    }
-    if entity_ids.curves.contains(curve_id.as_str()) {
-        return vec![AppearanceTarget::Curve(CurveId::from(curve_id))];
-    }
-    if entity_ids.points.contains(point_id.as_str()) {
-        return vec![AppearanceTarget::Point(PointId::from(point_id))];
-    }
-    if entity_ids.tessellations.contains(tessellation_id.as_str()) {
-        return vec![AppearanceTarget::Tessellation(
+    let target = if indices.faces.contains_key(face_id.as_str()) {
+        Some(AppearanceTarget::Face(FaceId::from(face_id)))
+    } else if indices.bodies.contains_key(body_id.as_str()) {
+        Some(AppearanceTarget::Body(BodyId::from(body_id)))
+    } else if entity_ids.edges.contains(edge_id.as_str()) {
+        Some(AppearanceTarget::Edge(EdgeId::from(edge_id)))
+    } else if entity_ids.surfaces.contains(surface_id.as_str()) {
+        Some(AppearanceTarget::Surface(SurfaceId::from(surface_id)))
+    } else if entity_ids.curves.contains(curve_id.as_str()) {
+        Some(AppearanceTarget::Curve(CurveId::from(curve_id)))
+    } else if entity_ids.points.contains(point_id.as_str()) {
+        Some(AppearanceTarget::Point(PointId::from(point_id)))
+    } else if entity_ids.tessellations.contains(tessellation_id.as_str()) {
+        Some(AppearanceTarget::Tessellation(
             tessellation_id.into_string(),
-        )];
-    }
-    if exchange.records().contains_key(&id) {
-        return vec![AppearanceTarget::Source {
+        ))
+    } else if exchange.records().contains_key(&id) {
+        Some(AppearanceTarget::Source {
             source_id: format!("#{id}"),
-        }];
+        })
+    } else {
+        None
+    };
+    if let Some(target) = target {
+        ctx.push_vec(&mut targets, target, "step_presentation_appearance_targets")?;
     }
-    Vec::new()
+    Ok(targets)
 }
 
-fn presentation_item(
+fn append_presentation_items(
     id: u64,
     exchange: &Exchange,
     topology: &TopologyData,
-    entity_ids: &EntityIds,
-    face_indices: &BTreeMap<String, usize>,
-    body_indices: &BTreeMap<String, usize>,
-) -> Vec<PresentationItem> {
+    entity_ids: &EntityIds<'_>,
+    indices: PresentationIndices<'_>,
+    items: &mut Vec<PresentationItem>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     if let Some(bodies) = topology.body_by_root.get(&id) {
-        return bodies
-            .iter()
-            .filter(|body| body_indices.contains_key(body.as_str()))
-            .cloned()
-            .map(|body| PresentationItem::Body { body })
-            .collect();
+        for body in bodies {
+            if indices.bodies.contains_key(body.as_str()) {
+                let body = clone_presentation_identity::<BodyId>(
+                    body.as_str(),
+                    ctx,
+                    "step_presentation_layer_body_identity",
+                )?;
+                ctx.push_vec(
+                    items,
+                    PresentationItem::Body { body },
+                    "step_presentation_layer_items",
+                )?;
+            }
+        }
+        return Ok(());
     }
     if let Some(faces) = topology.faces_by_source.get(&id) {
-        return faces
-            .iter()
-            .filter(|face| face_indices.contains_key(face.as_str()))
-            .cloned()
-            .map(|face| PresentationItem::Face { face })
-            .collect();
+        for face in faces {
+            if indices.faces.contains_key(face.as_str()) {
+                let face = clone_presentation_identity::<FaceId>(
+                    face.as_str(),
+                    ctx,
+                    "step_presentation_layer_face_identity",
+                )?;
+                ctx.push_vec(
+                    items,
+                    PresentationItem::Face { face },
+                    "step_presentation_layer_items",
+                )?;
+            }
+        }
+        return Ok(());
     }
     if let Some(edges) = topology.edges_by_source.get(&id) {
-        return edges
-            .iter()
-            .filter(|edge| entity_ids.edges.contains(edge.as_str()))
-            .cloned()
-            .map(|edge| PresentationItem::Edge { edge })
-            .collect();
+        for edge in edges {
+            if entity_ids.edges.contains(edge.as_str()) {
+                let edge = clone_presentation_identity::<EdgeId>(
+                    edge.as_str(),
+                    ctx,
+                    "step_presentation_layer_edge_identity",
+                )?;
+                ctx.push_vec(
+                    items,
+                    PresentationItem::Edge { edge },
+                    "step_presentation_layer_items",
+                )?;
+            }
+        }
+        return Ok(());
     }
     if let Some(vertices) = topology.vertices_by_source.get(&id) {
-        return vertices
-            .iter()
-            .filter(|vertex| entity_ids.vertices.contains(vertex.as_str()))
-            .cloned()
-            .map(|vertex| PresentationItem::Vertex { vertex })
-            .collect();
+        for vertex in vertices {
+            if entity_ids.vertices.contains(vertex.as_str()) {
+                let vertex = clone_presentation_identity::<VertexId>(
+                    vertex.as_str(),
+                    ctx,
+                    "step_presentation_layer_vertex_identity",
+                )?;
+                ctx.push_vec(
+                    items,
+                    PresentationItem::Vertex { vertex },
+                    "step_presentation_layer_items",
+                )?;
+            }
+        }
+        return Ok(());
     }
     if let Some(products) = entity_ids.products.get(&id) {
-        return products
-            .iter()
-            .cloned()
-            .map(|product| PresentationItem::Product { product })
-            .collect();
+        for product in products {
+            let product = clone_presentation_identity::<ProductDefinitionId>(
+                product.as_str(),
+                ctx,
+                "step_presentation_layer_product_identity",
+            )?;
+            ctx.push_vec(
+                items,
+                PresentationItem::Product { product },
+                "step_presentation_layer_items",
+            )?;
+        }
+        return Ok(());
     }
-    vec![presentation_item_one(
-        id,
-        exchange,
-        entity_ids,
-        face_indices,
-        body_indices,
-    )]
+    ctx.push_vec(
+        items,
+        presentation_item_one(id, exchange, entity_ids, indices),
+        "step_presentation_layer_items",
+    )
 }
 
 fn presentation_item_one(
     id: u64,
     exchange: &Exchange,
-    entity_ids: &EntityIds,
-    face_indices: &BTreeMap<String, usize>,
-    body_indices: &BTreeMap<String, usize>,
+    entity_ids: &EntityIds<'_>,
+    indices: PresentationIndices<'_>,
 ) -> PresentationItem {
     let candidate = |kind: &crate::ids::IdentityKind| ids::data(kind, id);
     let body = candidate(kind!("body"));
-    if body_indices.contains_key(body.as_str()) {
+    if indices.bodies.contains_key(body.as_str()) {
         return PresentationItem::Body {
             body: BodyId::from(body),
         };
     }
     let face = candidate(kind!("face"));
-    if face_indices.contains_key(face.as_str()) {
+    if indices.faces.contains_key(face.as_str()) {
         return PresentationItem::Face {
             face: FaceId::from(face),
         };
@@ -908,16 +1123,116 @@ fn presentation_item_one(
     }
 }
 
-struct EntityIds {
-    edges: BTreeSet<String>,
-    vertices: BTreeSet<String>,
-    points: BTreeSet<String>,
-    curves: BTreeSet<String>,
-    surfaces: BTreeSet<String>,
-    products: BTreeMap<u64, Vec<ProductDefinitionId>>,
-    occurrences: BTreeSet<String>,
-    pmi: BTreeSet<String>,
-    tessellations: BTreeSet<String>,
+struct EntityIds<'a> {
+    edges: BTreeSet<&'a str>,
+    vertices: BTreeSet<&'a str>,
+    points: BTreeSet<&'a str>,
+    curves: BTreeSet<&'a str>,
+    surfaces: BTreeSet<&'a str>,
+    products: &'a BTreeMap<u64, Vec<ProductDefinitionId>>,
+    occurrences: BTreeSet<&'a str>,
+    pmi: BTreeSet<&'a str>,
+    tessellations: BTreeSet<&'a str>,
+}
+
+#[derive(Clone, Copy)]
+struct PresentationIndices<'a> {
+    faces: &'a BTreeMap<String, usize>,
+    bodies: &'a BTreeMap<String, usize>,
+}
+
+fn collect_borrowed_identity_set<'a>(
+    identities: impl IntoIterator<Item = &'a str>,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<BTreeSet<&'a str>, CodecError> {
+    let mut result = BTreeSet::new();
+    for identity in identities {
+        ctx.insert_btree_set(&mut result, identity, operation)
+            .map(|_| ())?;
+    }
+    Ok(result)
+}
+
+fn clone_presentation_identity<T: From<Identity>>(
+    value: &str,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<T, CodecError> {
+    let copy = ctx.copy_retained_text(value, operation)?;
+    Identity::new(copy)
+        .map(T::from)
+        .map_err(|_| CodecError::malformed("presentation identity is invalid"))
+}
+
+fn push_scalar_candidate(
+    candidates: &mut HashMap<AppearanceTarget, Vec<(u64, Color)>>,
+    target: &AppearanceTarget,
+    style_id: u64,
+    color: Color,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    if !matches!(
+        target,
+        AppearanceTarget::Face(_) | AppearanceTarget::Body(_)
+    ) {
+        return Ok(());
+    }
+    if !candidates.contains_key(target) {
+        let key = match target {
+            AppearanceTarget::Face(face) => AppearanceTarget::Face(clone_presentation_identity(
+                face.as_str(),
+                ctx,
+                "step_presentation_scalar_target_identity",
+            )?),
+            AppearanceTarget::Body(body) => AppearanceTarget::Body(clone_presentation_identity(
+                body.as_str(),
+                ctx,
+                "step_presentation_scalar_target_identity",
+            )?),
+            _ => return Ok(()),
+        };
+        ctx.charge_collection_items(1, "step_presentation_scalar_color_groups")?;
+        candidates.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "step_presentation_scalar_color_groups",
+                    ),
+                    0,
+                    1,
+                    "step_presentation_scalar_color_groups",
+                ),
+            )
+        })?;
+        candidates.insert(key, Vec::new());
+    }
+    let values = candidates
+        .get_mut(target)
+        .ok_or_else(|| CodecError::malformed("presentation scalar target was not indexed"))?;
+    ctx.push_vec(
+        values,
+        (style_id, color),
+        "step_presentation_scalar_color_members",
+    )
+}
+
+fn collect_identity_indices<'a>(
+    identities: impl IntoIterator<Item = &'a str>,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<BTreeMap<String, usize>, CodecError> {
+    let mut result = BTreeMap::new();
+    for (index, identity) in identities.into_iter().enumerate() {
+        if let Some(existing) = result.get_mut(identity) {
+            *existing = index;
+            continue;
+        }
+        ctx.charge_collection_items(1, operation)?;
+        let copy = ctx.copy_retained_text(identity, operation)?;
+        result.insert(copy, index);
+    }
+    Ok(result)
 }
 
 fn overridden_style(style: &RawRecord) -> Option<u64> {
@@ -977,6 +1292,65 @@ fn presentation_style_context(record: &RawRecord) -> Option<&Value> {
         .and_then(|partial| partial.parameters.last())
 }
 
+struct ContextStyleDetails<'a> {
+    ids: &'a BTreeSet<u64>,
+    exchange: &'a Exchange,
+}
+
+impl std::fmt::Display for ContextStyleDetails<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, context_style_id) in self.ids.iter().enumerate() {
+            if index > 0 {
+                formatter.write_str(", ")?;
+            }
+            let context = self
+                .exchange
+                .records()
+                .get(context_style_id)
+                .and_then(presentation_style_context)
+                .and_then(ValueExt::reference);
+            match context {
+                Some(context) => write!(formatter, "#{context_style_id} in #{context}")?,
+                None => write!(formatter, "#{context_style_id} in unresolved")?,
+            }
+        }
+        Ok(())
+    }
+}
+
+fn context_style_message(
+    style_id: u64,
+    ids: &BTreeSet<u64>,
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<String, CodecError> {
+    let details = ContextStyleDetails { ids, exchange };
+    ctx.format_retained(format_args!("STYLED_ITEM #{style_id} has context-dependent style assignments {details}; no presentation context is selected by the neutral model; those source branches remain opaque"), "step_presentation_context_style_text")
+}
+
+struct ScalarStyleIds<'a>(&'a [(u64, Color)]);
+
+impl std::fmt::Display for ScalarStyleIds<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, (style_id, _)) in self.0.iter().enumerate() {
+            if index > 0 {
+                formatter.write_str(", ")?;
+            }
+            write!(formatter, "#{style_id}")?;
+        }
+        Ok(())
+    }
+}
+
+fn scalar_conflict_message(
+    candidates: &[(u64, Color)],
+    target: &AppearanceTarget,
+    ctx: &DecodeContext<'_>,
+) -> Result<String, CodecError> {
+    let style_ids = ScalarStyleIds(candidates);
+    ctx.format_retained(format_args!("independent styled items {style_ids} assign conflicting scalar colors to {target:?}; scalar color omitted and appearance bindings retain every assignment"), "step_presentation_scalar_conflict_text")
+}
+
 pub(super) fn styled_item_target(record: &RawRecord) -> Option<u64> {
     styled_item_parts(record).and_then(|parts| parts.target.reference())
 }
@@ -990,9 +1364,10 @@ fn style_application_order(
     id: u64,
     exchange: &Exchange,
     graph_limit: usize,
-) -> (bool, Option<u32>) {
-    let depth = style_depth(id, exchange, &mut BTreeSet::new(), 0, graph_limit);
-    (depth.is_none(), depth)
+    ctx: &DecodeContext<'_>,
+) -> Result<(bool, Option<u32>), CodecError> {
+    let depth = style_depth(id, exchange, &mut BTreeSet::new(), 0, graph_limit, ctx)?;
+    Ok((depth.is_none(), depth))
 }
 
 fn style_depth(
@@ -1001,20 +1376,26 @@ fn style_depth(
     active: &mut BTreeSet<u64>,
     depth: usize,
     graph_limit: usize,
-) -> Option<u32> {
-    if depth >= graph_limit || !active.insert(id) {
-        return None;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<u32>, CodecError> {
+    if depth >= graph_limit || active.contains(&id) {
+        return Ok(None);
     }
-    let result = (|| {
-        let style = exchange.records().get(&id)?;
+    let _nested = ctx.enter_nested("step_presentation_style_depth_walk")?;
+    ctx.insert_btree_set(active, id, "step_presentation_style_depth_active")
+        .map(|_| ())?;
+    let result = if let Some(style) = exchange.records().get(&id) {
         if let Some(base) = overridden_style(style) {
-            style_depth(base, exchange, active, depth + 1, graph_limit)?.checked_add(1)
+            style_depth(base, exchange, active, depth + 1, graph_limit, ctx)?
+                .and_then(|depth| depth.checked_add(1))
         } else {
             Some(0)
         }
-    })();
+    } else {
+        None
+    };
     active.remove(&id);
-    result
+    Ok(result)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1025,7 +1406,6 @@ enum SurfaceSideRank {
     Both,
 }
 
-#[derive(Clone)]
 struct ColorCandidate {
     rank: SurfaceSideRank,
     id: u64,
@@ -1033,13 +1413,37 @@ struct ColorCandidate {
     name: Option<String>,
 }
 
-#[derive(Clone)]
 enum ColorResolution {
     Candidate(ColorCandidate),
     Ambiguous { rank: SurfaceSideRank },
 }
 
 type CachedColor = Option<ColorResolution>;
+
+fn clone_color_resolution(
+    resolution: &CachedColor,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<CachedColor, CodecError> {
+    Ok(match resolution {
+        Some(ColorResolution::Candidate(candidate)) => {
+            Some(ColorResolution::Candidate(ColorCandidate {
+                rank: candidate.rank,
+                id: candidate.id,
+                color: candidate.color,
+                name: candidate
+                    .name
+                    .as_deref()
+                    .map(|name| ctx.copy_retained_text(name, operation))
+                    .transpose()?,
+            }))
+        }
+        Some(ColorResolution::Ambiguous { rank }) => {
+            Some(ColorResolution::Ambiguous { rank: *rank })
+        }
+        None => None,
+    })
+}
 
 impl ColorResolution {
     fn priority(&self) -> SurfaceSideRank {
@@ -1065,12 +1469,15 @@ impl ColorResolution {
 }
 
 fn combine_color_resolutions(
-    resolutions: impl IntoIterator<Item = ColorResolution>,
-) -> CachedColor {
+    resolutions: impl IntoIterator<Item = Result<CachedColor, CodecError>>,
+) -> Result<CachedColor, CodecError> {
     let mut best_priority = None;
     let mut best = None;
     let mut ambiguous = false;
     for resolution in resolutions {
+        let Some(resolution) = resolution? else {
+            continue;
+        };
         let priority = resolution.priority();
         let replace = best_priority.is_none_or(|current| priority > current);
         if replace {
@@ -1105,44 +1512,67 @@ fn combine_color_resolutions(
             }
         }
     }
-    let rank = best_priority?;
+    let Some(rank) = best_priority else {
+        return Ok(None);
+    };
     if ambiguous {
-        Some(ColorResolution::Ambiguous { rank })
+        Ok(Some(ColorResolution::Ambiguous { rank }))
     } else {
-        best.map(ColorResolution::Candidate)
+        Ok(best.map(ColorResolution::Candidate))
     }
 }
 
-#[allow(clippy::too_many_arguments)] // Recursive search keeps cache, loss, and invalid-source tracking separate.
+struct ColorSearchState<'a> {
+    active: &'a mut BTreeSet<u64>,
+    cache: &'a mut BTreeMap<(u64, StyleDomain), CachedColor>,
+    losses: &'a mut Vec<LossNote>,
+    invalid_surface_sides: &'a mut BTreeSet<u64>,
+}
+
 fn find_color(
     id: u64,
     exchange: &Exchange,
     domain: StyleDomain,
-    active: &mut BTreeSet<u64>,
-    cache: &mut BTreeMap<(u64, StyleDomain), CachedColor>,
-    losses: &mut Vec<LossNote>,
-    invalid_surface_sides: &mut BTreeSet<u64>,
+    state: ColorSearchState<'_>,
     depth: usize,
-) -> CachedColor {
+    ctx: &DecodeContext<'_>,
+) -> Result<CachedColor, CodecError> {
+    let ColorSearchState {
+        active,
+        cache,
+        losses,
+        invalid_surface_sides,
+    } = state;
     if depth >= 256 {
-        return None;
+        return Ok(None);
     }
     if let Some(result) = cache.get(&(id, domain)) {
-        return result.clone();
+        return clone_color_resolution(result, ctx, "step_presentation_color_cache_copy");
     }
-    let record = exchange.records().get(&id)?;
+    let Some(record) = exchange.records().get(&id) else {
+        return Ok(None);
+    };
     if is_presentation_style_by_context(record) {
-        return None;
+        return Ok(None);
     }
-    if !active.insert(id) {
-        return None;
+    if active.contains(&id) {
+        return Ok(None);
     }
-    let transparency = (domain == StyleDomain::Surface)
-        .then(|| surface_transparency(id, record, exchange, losses))
-        .flatten();
-    let mut result = (|| {
+    let _nested = ctx.enter_nested("step_presentation_color_walk")?;
+    ctx.insert_btree_set(active, id, "step_presentation_color_active")
+        .map(|_| ())?;
+    let transparency = if domain == StyleDomain::Surface {
+        surface_transparency(id, record, exchange, losses, ctx)?
+    } else {
+        None
+    };
+    let result = (|| -> Result<CachedColor, CodecError> {
         let side_rank = if domain == StyleDomain::Surface {
-            surface_side_rank(id, record, losses, invalid_surface_sides)?
+            let Some(rank) = surface_side_rank(id, record, losses, invalid_surface_sides, ctx)?
+            else {
+                return Ok(None);
+            };
+            rank
         } else {
             SurfaceSideRank::NoUsage
         };
@@ -1175,30 +1605,42 @@ fn find_color(
                 .flat_map(|partial| partial.parameters.iter())
                 .flat_map(references)
             {
-                // discarded-value: caching the colour and recording its losses is the whole effect; a record of an incompatible domain states no colour of its own
-                let _ = find_color(
+                // The recursive search caches the colour and records its losses.
+                find_color(
                     reference,
                     exchange,
                     domain,
-                    active,
-                    cache,
-                    losses,
-                    invalid_surface_sides,
+                    ColorSearchState {
+                        active: &mut *active,
+                        cache: &mut *cache,
+                        losses: &mut *losses,
+                        invalid_surface_sides: &mut *invalid_surface_sides,
+                    },
                     depth + 1,
-                );
+                    ctx,
+                )?;
             }
-            return None;
+            return Ok(None);
         }
         match name {
             Some("COLOUR_RGB") => {
-                let rgb = record
+                let Some(rgb) = record
                     .partials
                     .iter()
-                    .find(|partial| partial.name == "COLOUR_RGB")?;
+                    .find(|partial| partial.name == "COLOUR_RGB")
+                else {
+                    return Ok(None);
+                };
                 let offset = usize::from(record.partials.len() == 1);
-                let r = rgb.parameters.get(offset)?.number()?;
-                let g = rgb.parameters.get(offset + 1)?.number()?;
-                let b = rgb.parameters.get(offset + 2)?.number()?;
+                let Some(r) = rgb.parameters.get(offset).and_then(ValueExt::number) else {
+                    return Ok(None);
+                };
+                let Some(g) = rgb.parameters.get(offset + 1).and_then(ValueExt::number) else {
+                    return Ok(None);
+                };
+                let Some(b) = rgb.parameters.get(offset + 2).and_then(ValueExt::number) else {
+                    return Ok(None);
+                };
                 let name_value = if record.partials.len() == 1 {
                     rgb.parameters.first()
                 } else {
@@ -1208,21 +1650,36 @@ fn find_color(
                         .find(|partial| partial.name == "COLOUR_SPECIFICATION")
                         .and_then(|partial| partial.parameters.first())
                 };
-                Some(ColorResolution::Candidate(ColorCandidate {
-                    rank: side_rank,
-                    id,
-                    color: Color::new(r as f32, g as f32, b as f32, 1.0)?,
-                    name: name_value.and_then(|value| {
-                        decode_text(
+                let Some((r, g, b)) = cadmpeg_core::convert::f32_from_f64(r)
+                    .zip(cadmpeg_core::convert::f32_from_f64(g))
+                    .zip(cadmpeg_core::convert::f32_from_f64(b))
+                    .map(|((r, g), b)| (r, g, b))
+                else {
+                    return Ok(None);
+                };
+                let Some(color) = Color::new(r, g, b, 1.0) else {
+                    return Ok(None);
+                };
+                let name = name_value
+                    .map(|value| {
+                        decode_text_charged(
                             exchange,
                             value,
                             losses,
                             id,
                             "colour name",
                             StepLossCode::AttributeStringInvalid,
+                            ctx,
                         )
-                    }),
-                }))
+                    })
+                    .transpose()?
+                    .flatten();
+                Ok(Some(ColorResolution::Candidate(ColorCandidate {
+                    rank: side_rank,
+                    id,
+                    color,
+                    name,
+                })))
             }
             Some("DRAUGHTING_PRE_DEFINED_COLOUR") => {
                 let name_value = if record.partials.len() == 1 {
@@ -1233,23 +1690,30 @@ fn find_color(
                         .iter()
                         .find(|partial| partial.name == "PRE_DEFINED_ITEM")
                         .and_then(|partial| partial.parameters.first())
-                }?;
-                let name = decode_text(
+                };
+                let Some(name_value) = name_value else {
+                    return Ok(None);
+                };
+                let Some(name) = decode_text_charged(
                     exchange,
                     name_value,
                     losses,
                     id,
                     "predefined colour name",
                     StepLossCode::AttributeStringInvalid,
-                )?;
-                predefined(&name).map(|color| {
+                    ctx,
+                )?
+                else {
+                    return Ok(None);
+                };
+                Ok(predefined(&name).map(|color| {
                     ColorResolution::Candidate(ColorCandidate {
                         rank: side_rank,
                         id,
                         color,
                         name: Some(name),
                     })
-                })
+                }))
             }
             _ => combine_color_resolutions(
                 record
@@ -1257,37 +1721,65 @@ fn find_color(
                     .iter()
                     .flat_map(|partial| partial.parameters.iter())
                     .flat_map(references)
-                    .filter_map(|reference| {
+                    .map(|reference| {
                         find_color(
                             reference,
                             exchange,
                             domain,
-                            active,
-                            cache,
-                            losses,
-                            invalid_surface_sides,
+                            ColorSearchState {
+                                active: &mut *active,
+                                cache: &mut *cache,
+                                losses: &mut *losses,
+                                invalid_surface_sides: &mut *invalid_surface_sides,
+                            },
                             depth + 1,
+                            ctx,
                         )
                     })
-                    .map(|candidate| candidate.with_min_rank(side_rank)),
+                    .map(|result| {
+                        result.map(|candidate| {
+                            candidate.map(|candidate| candidate.with_min_rank(side_rank))
+                        })
+                    }),
             ),
         }
     })();
+    active.remove(&id);
+    let mut result = result?;
     if let Some(transparency) = transparency {
         match result.as_mut() {
             Some(ColorResolution::Candidate(candidate)) => {
-                candidate.color = candidate
-                    .color
-                    .with_alpha((1.0 - transparency.get()) as f32)
-                    .unwrap_or(candidate.color);
+                if let Some(alpha) = cadmpeg_core::convert::f32_from_f64(1.0 - transparency.get()) {
+                    candidate.color = candidate.color.with_alpha(alpha).unwrap_or(candidate.color);
+                }
             }
             Some(ColorResolution::Ambiguous { .. }) => {}
             None => {}
         }
     }
-    active.remove(&id);
-    cache.insert((id, domain), result.clone());
-    result
+    let cached = clone_color_resolution(&result, ctx, "step_presentation_color_cache_value")?;
+    ctx.insert_btree_map(
+        cache,
+        (id, domain),
+        cached,
+        "step_presentation_color_cache_entries",
+    )
+    .map(|_| ())?;
+    Ok(result)
+}
+
+struct TransparencyDetails<'a>(&'a [(u64, Fraction)]);
+
+impl std::fmt::Display for TransparencyDetails<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, (property_id, transparency)) in self.0.iter().enumerate() {
+            if index > 0 {
+                formatter.write_str(", ")?;
+            }
+            write!(formatter, "#{property_id}={}", transparency.get())?;
+        }
+        Ok(())
+    }
 }
 
 fn surface_transparency(
@@ -1295,36 +1787,46 @@ fn surface_transparency(
     record: &RawRecord,
     exchange: &Exchange,
     losses: &mut Vec<LossNote>,
-) -> Option<Fraction> {
-    let candidates = record
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Fraction>, CodecError> {
+    let mut candidates = Vec::new();
+    for property_id in record
         .partials
         .iter()
         .filter(|partial| partial.name == "SURFACE_STYLE_RENDERING_WITH_PROPERTIES")
         .flat_map(|partial| partial.parameters.iter().flat_map(references))
-        .filter_map(|property_id| {
-            let property = exchange.records().get(&property_id)?;
-            let transparency = property
-                .partials
-                .iter()
-                .find(|partial| partial.name == "SURFACE_STYLE_TRANSPARENT")
-                .and_then(|partial| partial.parameters.first())
-                .and_then(ValueExt::number)?;
-            Fraction::new(transparency).map(|transparency| (property_id, transparency))
-        })
-        .collect::<Vec<_>>();
+    {
+        let Some(property) = exchange.records().get(&property_id) else {
+            continue;
+        };
+        let Some(transparency) = property
+            .partials
+            .iter()
+            .find(|partial| partial.name == "SURFACE_STYLE_TRANSPARENT")
+            .and_then(|partial| partial.parameters.first())
+            .and_then(ValueExt::number)
+            .and_then(Fraction::new)
+        else {
+            continue;
+        };
+        ctx.push_vec(
+            &mut candidates,
+            (property_id, transparency),
+            "step_presentation_transparency_candidates",
+        )?;
+    }
     match candidates.as_slice() {
-        [] => None,
-        [(_, transparency)] => Some(*transparency),
+        [] => Ok(None),
+        [(_, transparency)] => Ok(Some(*transparency)),
         _ => {
-            let details = candidates
-                .iter()
-                .map(|(property_id, transparency)| format!("#{property_id}={}", transparency.get()))
-                .collect::<Vec<_>>()
-                .join(", ");
-            losses.push(StepLossCode::SurfaceTransparencyConflict.note(format!(
-                "surface style rendering #{id} has conflicting transparency properties ({details}); transparency omitted"
-            )));
-            None
+            let details = TransparencyDetails(&candidates);
+            let message = ctx.format_retained(format_args!("surface style rendering #{id} has conflicting transparency properties ({details}); transparency omitted"), "step_presentation_transparency_conflict_text")?;
+            ctx.push_vec(
+                losses,
+                StepLossCode::SurfaceTransparencyConflict.note(message),
+                "step_presentation_losses",
+            )?;
+            Ok(None)
         }
     }
 }
@@ -1334,31 +1836,54 @@ fn surface_side_rank(
     record: &RawRecord,
     losses: &mut Vec<LossNote>,
     invalid_surface_sides: &mut BTreeSet<u64>,
-) -> Option<SurfaceSideRank> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<SurfaceSideRank>, CodecError> {
     let Some(partial) = record
         .partials
         .iter()
         .find(|partial| partial.name == "SURFACE_STYLE_USAGE")
     else {
-        return Some(SurfaceSideRank::NoUsage);
+        return Ok(Some(SurfaceSideRank::NoUsage));
     };
     let Some(side) = partial.parameters.first().and_then(ValueExt::enumeration) else {
-        invalid_surface_sides.insert(id);
-        losses.push(StepLossCode::SurfaceSideInvalid.note(format!(
-            "SURFACE_STYLE_USAGE #{id} has no valid surface_side; style omitted"
-        )));
-        return None;
+        ctx.insert_btree_set(
+            invalid_surface_sides,
+            id,
+            "step_presentation_invalid_surface_sides",
+        )
+        .map(|_| ())?;
+        ctx.push_vec(
+            losses,
+            StepLossCode::SurfaceSideInvalid.note(format!(
+                "SURFACE_STYLE_USAGE #{id} has no valid surface_side; style omitted"
+            )),
+            "step_presentation_losses",
+        )?;
+        return Ok(None);
     };
     match side {
-        "BOTH" => Some(SurfaceSideRank::Both),
-        "POSITIVE" => Some(SurfaceSideRank::Positive),
-        "NEGATIVE" => Some(SurfaceSideRank::Negative),
+        "BOTH" => Ok(Some(SurfaceSideRank::Both)),
+        "POSITIVE" => Ok(Some(SurfaceSideRank::Positive)),
+        "NEGATIVE" => Ok(Some(SurfaceSideRank::Negative)),
         _ => {
-            invalid_surface_sides.insert(id);
-            losses.push(StepLossCode::SurfaceSideInvalid.note(format!(
-                "SURFACE_STYLE_USAGE #{id} has invalid surface_side .{side}.; style omitted"
-            )));
-            None
+            ctx.insert_btree_set(
+                invalid_surface_sides,
+                id,
+                "step_presentation_invalid_surface_sides",
+            )
+            .map(|_| ())?;
+            let message = ctx.format_retained(
+                format_args!(
+                    "SURFACE_STYLE_USAGE #{id} has invalid surface_side .{side}.; style omitted"
+                ),
+                "step_presentation_invalid_surface_side_text",
+            )?;
+            ctx.push_vec(
+                losses,
+                StepLossCode::SurfaceSideInvalid.note(message),
+                "step_presentation_losses",
+            )?;
+            Ok(None)
         }
     }
 }
@@ -1371,17 +1896,29 @@ enum StyleDomain {
     Point,
 }
 
-fn style_domain(id: u64, exchange: &Exchange) -> StyleDomain {
-    style_domain_at(id, exchange, &mut BTreeSet::new())
+fn style_domain(
+    id: u64,
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<StyleDomain, CodecError> {
+    style_domain_at(id, exchange, &mut BTreeSet::new(), ctx)
 }
 
-fn style_domain_at(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> StyleDomain {
-    if !active.insert(id) {
-        return StyleDomain::Any;
+fn style_domain_at(
+    id: u64,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+    ctx: &DecodeContext<'_>,
+) -> Result<StyleDomain, CodecError> {
+    if active.contains(&id) {
+        return Ok(StyleDomain::Any);
     }
+    let _nested = ctx.enter_nested("step_presentation_style_domain_walk")?;
+    ctx.insert_btree_set(active, id, "step_presentation_style_domain_active")
+        .map(|_| ())?;
     let Some(record) = exchange.records().get(&id) else {
         active.remove(&id);
-        return StyleDomain::Any;
+        return Ok(StyleDomain::Any);
     };
     let set_name = record.partials.iter().find_map(|partial| {
         matches!(
@@ -1391,28 +1928,25 @@ fn style_domain_at(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> 
         .then_some(partial.name.as_str())
     });
     if let Some(set_name) = set_name {
-        let member_domains = named_parameter(record, set_name, 1)
+        let mut first = None;
+        let mut same = true;
+        for member in named_parameter(record, set_name, 1)
             .and_then(ValueExt::list)
             .into_iter()
             .flatten()
             .filter_map(ValueExt::reference)
-            .map(|member| style_domain_at(member, exchange, active))
-            .collect::<Vec<_>>();
-        if !member_domains.is_empty() {
-            let first = member_domains[0];
-            if member_domains.iter().all(|domain| *domain == first) {
-                active.remove(&id);
-                return first;
+        {
+            let domain = style_domain_at(member, exchange, active, ctx)?;
+            if first.is_some_and(|first| first != domain) {
+                same = false;
             }
-            if member_domains.iter().any(|domain| {
-                matches!(
-                    domain,
-                    StyleDomain::Surface | StyleDomain::Curve | StyleDomain::Point
-                )
-            }) {
-                active.remove(&id);
-                return StyleDomain::Any;
+            if first.is_none() {
+                first = Some(domain);
             }
+        }
+        if let Some(first) = first {
+            active.remove(&id);
+            return Ok(if same { first } else { StyleDomain::Any });
         }
     }
     let has_point = record.partials.iter().any(|partial| {
@@ -1421,7 +1955,7 @@ fn style_domain_at(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> 
     });
     if has_point {
         active.remove(&id);
-        return StyleDomain::Point;
+        return Ok(StyleDomain::Point);
     }
     let has_curve = record.partials.iter().any(|partial| {
         let name = partial.name.as_str();
@@ -1435,7 +1969,7 @@ fn style_domain_at(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> 
     });
     if has_curve {
         active.remove(&id);
-        return StyleDomain::Curve;
+        return Ok(StyleDomain::Curve);
     }
     let result = if record.partials.iter().any(|partial| {
         let name = partial.name.as_str();
@@ -1453,7 +1987,7 @@ fn style_domain_at(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> 
         StyleDomain::Any
     };
     active.remove(&id);
-    result
+    Ok(result)
 }
 
 fn style_is_hidden(
@@ -1461,17 +1995,21 @@ fn style_is_hidden(
     hidden_style_ids: &BTreeSet<u64>,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-) -> bool {
-    if hidden_style_ids.contains(&id) || !active.insert(id) {
-        return hidden_style_ids.contains(&id);
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    if hidden_style_ids.contains(&id) || active.contains(&id) {
+        return Ok(hidden_style_ids.contains(&id));
     }
-    let hidden = exchange
-        .records()
-        .get(&id)
-        .and_then(overridden_style)
-        .is_some_and(|base| style_is_hidden(base, hidden_style_ids, exchange, active));
+    let _nested = ctx.enter_nested("step_presentation_hidden_style_walk")?;
+    ctx.insert_btree_set(active, id, "step_presentation_hidden_style_active")
+        .map(|_| ())?;
+    let hidden = if let Some(base) = exchange.records().get(&id).and_then(overridden_style) {
+        style_is_hidden(base, hidden_style_ids, exchange, active, ctx)?
+    } else {
+        false
+    };
     active.remove(&id);
-    hidden
+    Ok(hidden)
 }
 
 fn style_inherits_from(
@@ -1479,17 +2017,21 @@ fn style_inherits_from(
     ancestor: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-) -> bool {
-    if id == ancestor || !active.insert(id) {
-        return id == ancestor;
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    if id == ancestor || active.contains(&id) {
+        return Ok(id == ancestor);
     }
-    let inherits = exchange
-        .records()
-        .get(&id)
-        .and_then(overridden_style)
-        .is_some_and(|base| style_inherits_from(base, ancestor, exchange, active));
+    let _nested = ctx.enter_nested("step_presentation_style_inheritance_walk")?;
+    ctx.insert_btree_set(active, id, "step_presentation_style_inheritance_active")
+        .map(|_| ())?;
+    let inherits = if let Some(base) = exchange.records().get(&id).and_then(overridden_style) {
+        style_inherits_from(base, ancestor, exchange, active, ctx)?
+    } else {
+        false
+    };
     active.remove(&id);
-    inherits
+    Ok(inherits)
 }
 
 fn contains_null_style(
@@ -1497,39 +2039,62 @@ fn contains_null_style(
     exchange: &Exchange,
     visited: &mut BTreeSet<u64>,
     depth: usize,
-) -> bool {
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     if depth >= 256 {
-        return false;
+        return Ok(false);
     }
+    let _nested = ctx.enter_nested("step_presentation_null_style_walk")?;
     match value {
-        Value::Typed(name, _) if name == "NULL_STYLE" => true,
-        Value::Typed(_, value) => contains_null_style(value, exchange, visited, depth + 1),
-        Value::List(values) => values
-            .iter()
-            .any(|value| contains_null_style(value, exchange, visited, depth + 1)),
-        Value::Reference(id) if visited.insert(*id) => {
-            exchange.records().get(id).is_some_and(|r| {
-                r.partials
+        Value::Typed(name, _) if name == "NULL_STYLE" => Ok(true),
+        Value::Typed(_, value) => contains_null_style(value, exchange, visited, depth + 1, ctx),
+        Value::List(values) => {
+            for value in values {
+                if contains_null_style(value, exchange, visited, depth + 1, ctx)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+        Value::Reference(id) if !visited.contains(id) => {
+            ctx.insert_btree_set(visited, *id, "step_presentation_null_style_visited")
+                .map(|_| ())?;
+            if let Some(record) = exchange.records().get(id) {
+                for value in record
+                    .partials
                     .iter()
                     .flat_map(|partial| partial.parameters.iter())
-                    .any(|value| contains_null_style(value, exchange, visited, depth + 1))
-            })
+                {
+                    if contains_null_style(value, exchange, visited, depth + 1, ctx)? {
+                        return Ok(true);
+                    }
+                }
+            }
+            Ok(false)
         }
-        _ => false,
+        _ => Ok(false),
     }
 }
 
 fn predefined(name: &str) -> Option<Color> {
-    let (r, g, b) = match name.to_ascii_lowercase().as_str() {
-        "black" => (0.0, 0.0, 0.0),
-        "white" => (1.0, 1.0, 1.0),
-        "red" => (1.0, 0.0, 0.0),
-        "green" => (0.0, 1.0, 0.0),
-        "blue" => (0.0, 0.0, 1.0),
-        "yellow" => (1.0, 1.0, 0.0),
-        "magenta" => (1.0, 0.0, 1.0),
-        "cyan" => (0.0, 1.0, 1.0),
-        _ => return None,
+    let (r, g, b) = if name.eq_ignore_ascii_case("black") {
+        (0.0, 0.0, 0.0)
+    } else if name.eq_ignore_ascii_case("white") {
+        (1.0, 1.0, 1.0)
+    } else if name.eq_ignore_ascii_case("red") {
+        (1.0, 0.0, 0.0)
+    } else if name.eq_ignore_ascii_case("green") {
+        (0.0, 1.0, 0.0)
+    } else if name.eq_ignore_ascii_case("blue") {
+        (0.0, 0.0, 1.0)
+    } else if name.eq_ignore_ascii_case("yellow") {
+        (1.0, 1.0, 0.0)
+    } else if name.eq_ignore_ascii_case("magenta") {
+        (1.0, 0.0, 1.0)
+    } else if name.eq_ignore_ascii_case("cyan") {
+        (0.0, 1.0, 1.0)
+    } else {
+        return None;
     };
     Color::new(r, g, b, 1.0)
 }

@@ -21,9 +21,9 @@ pub(crate) fn header(version: &str) -> Vec<u8> {
 pub(crate) fn long_chunk(archive: ArchiveVersion, typecode: u32, body: &[u8]) -> Vec<u8> {
     let mut bytes = typecode.to_le_bytes().to_vec();
     if archive.uses_eight_byte_values() {
-        bytes.extend((body.len() as i64).to_le_bytes());
+        bytes.extend((i64::try_from(body.len()).expect("fixture value fits i64")).to_le_bytes());
     } else {
-        bytes.extend((body.len() as i32).to_le_bytes());
+        bytes.extend((i32::try_from(body.len()).expect("fixture value fits i32")).to_le_bytes());
     }
     bytes.extend(body);
     bytes
@@ -57,9 +57,13 @@ pub(crate) fn eof(archive: ArchiveVersion, file_size: usize) -> Vec<u8> {
         archive,
         TCODE_ENDOFFILE,
         &if archive.uses_eight_byte_values() {
-            (file_size as u64).to_le_bytes().to_vec()
+            (cadmpeg_core::decode::u64_from_index(file_size))
+                .to_le_bytes()
+                .to_vec()
         } else {
-            (file_size as u32).to_le_bytes().to_vec()
+            (u32::try_from(file_size).expect("fixture value fits u32"))
+                .to_le_bytes()
+                .to_vec()
         },
     )
 }
@@ -71,7 +75,9 @@ pub(crate) fn uuid_bytes() -> Vec<u8> {
 pub(crate) fn utf16_bytes(value: &str) -> Vec<u8> {
     let mut units: Vec<u16> = value.encode_utf16().collect();
     units.push(0);
-    let mut bytes = (units.len() as u32).to_le_bytes().to_vec();
+    let mut bytes = (u32::try_from(units.len()).expect("fixture value fits u32"))
+        .to_le_bytes()
+        .to_vec();
     for unit in units {
         bytes.extend(unit.to_le_bytes());
     }
@@ -168,7 +174,7 @@ pub(crate) fn short_chunk(archive: ArchiveVersion, typecode: u32, value: i64) ->
     if archive.uses_eight_byte_values() {
         bytes.extend(value.to_le_bytes());
     } else {
-        bytes.extend((value as i32).to_le_bytes());
+        bytes.extend((i32::try_from(value).expect("fixture value fits i32")).to_le_bytes());
     }
     bytes
 }
@@ -454,7 +460,7 @@ pub(crate) fn v5_definition_payload_with_paths(
 ) -> DefinitionPayload {
     let mut payload = vec![0x10 | minor];
     payload.extend(id);
-    payload.extend((members.len() as i32).to_le_bytes());
+    payload.extend((i32::try_from(members.len()).expect("fixture value fits i32")).to_le_bytes());
     for member in members {
         payload.extend(member);
     }
@@ -520,7 +526,7 @@ pub(crate) fn v6_definition_payload(
     let members_present = kind != 3;
     body.push(u8::from(members_present));
     if members_present {
-        body.extend((members.len() as i32).to_le_bytes());
+        body.extend((i32::try_from(members.len()).expect("fixture value fits i32")).to_le_bytes());
         for member in members {
             body.extend(member);
         }

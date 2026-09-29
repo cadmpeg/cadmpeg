@@ -17,16 +17,24 @@ fn counted_lane_positions_follow_every_encoded_width() {
                     bytes.extend_from_slice(member_raw);
                 }
                 bytes.extend_from_slice(&[0x01, 0x11]);
-                let [lane]: [CountedLane; 1] = scan::counted_lanes(&bytes).try_into().unwrap();
+                let [lane]: [CountedLane; 1] = crate::test_support::with_decode_context(|ctx| {
+                    scan::counted_lanes(ctx, &bytes)
+                })
+                .unwrap()
+                .try_into()
+                .unwrap();
                 assert_eq!(lane.anchor().offset, anchor_offset);
                 assert_eq!(
                     lane.members().map(|index| index.offset).collect::<Vec<_>>(),
                     offsets
                 );
                 assert_eq!(lane.declared_count(), count);
-                let base = u64::MAX - bytes.len() as u64;
+                let base = u64::MAX - cadmpeg_core::decode::u64_from_index(bytes.len());
                 let absolute = lane.clone().into_absolute(base).unwrap();
-                assert_eq!(absolute.anchor().offset, base + anchor_offset as u64);
+                assert_eq!(
+                    absolute.anchor().offset,
+                    base + cadmpeg_core::decode::u64_from_index(anchor_offset)
+                );
                 assert_eq!(
                     absolute
                         .members()
@@ -34,7 +42,7 @@ fn counted_lane_positions_follow_every_encoded_width() {
                         .collect::<Vec<_>>(),
                     offsets
                         .iter()
-                        .map(|offset| base + *offset as u64)
+                        .map(|offset| base + cadmpeg_core::decode::u64_from_index(*offset))
                         .collect::<Vec<_>>()
                 );
                 assert!(lane.clone().into_absolute(base + 1).is_none());
@@ -59,21 +67,32 @@ fn abr_lane_positions_include_null_and_extended_widths() {
             bytes.extend_from_slice(raw);
         }
         bytes.extend_from_slice(&[0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03]);
-        let [lane]: [AbrLane; 1] = scan::abr_lanes(&bytes).try_into().unwrap();
+        let [lane]: [AbrLane; 1] =
+            crate::test_support::with_decode_context(|ctx| scan::abr_lanes(ctx, &bytes))
+                .unwrap()
+                .try_into()
+                .unwrap();
         assert_eq!(lane.slots().map(|slot| slot.offset), offsets);
-        let base = u64::MAX - bytes.len() as u64;
+        let base = u64::MAX - cadmpeg_core::decode::u64_from_index(bytes.len());
         let absolute = lane.clone().into_absolute(base).unwrap();
         assert_eq!(
             absolute.slots().map(|slot| slot.offset),
-            offsets.map(|offset| base + offset as u64)
+            offsets.map(|offset| base + cadmpeg_core::decode::u64_from_index(offset))
         );
         assert!(lane.clone().into_absolute(base + 1).is_none());
-        let resolved = lane.clone().try_resolve(|atom| Some(atom.value())).unwrap();
+        let resolved = lane
+            .clone()
+            .try_resolve(|atom| Ok(Some(atom.value())))
+            .unwrap()
+            .unwrap();
         assert!(resolved
             .slots()
             .iter()
             .all(|slot| slot.atom.map(|index| index.target)
                 == if raw == [0xff] { None } else { Some(2) }));
-        assert_eq!(lane.try_resolve(|_| None::<()>).is_some(), raw == [0xff]);
+        assert_eq!(
+            lane.try_resolve(|_| Ok(None::<()>)).unwrap().is_some(),
+            raw == [0xff]
+        );
     }
 }

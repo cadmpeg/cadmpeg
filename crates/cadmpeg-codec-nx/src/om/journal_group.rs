@@ -3,6 +3,8 @@
 
 use super::nonempty::NonEmpty;
 use super::state_journal::JournalRow;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Header {
@@ -42,31 +44,46 @@ impl<O: Copy + From<u8> + std::ops::Sub<Output = O>> JournalGroup<O> {
 }
 
 impl JournalGroup<usize> {
-    pub(super) fn read(bytes: &[u8], at: usize, end: usize, base: usize) -> Option<Self> {
-        let tail = bytes.get(at..end)?;
-        let [0x04, a, b, 0x00, ..] = tail else {
-            return None;
+    pub(super) fn read(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        at: usize,
+        end: usize,
+        base: usize,
+    ) -> Result<Option<Self>, CodecError> {
+        let Some(tail) = bytes.get(at..end) else {
+            return Ok(None);
         };
+        let [0x04, a, b, 0x00, ..] = tail else {
+            return Ok(None);
+        };
+        ctx.charge_work(u64_from_index(tail.len()), "scan NX state-journal group")?;
         let selector = [*a, *b];
         let header = if tail.get(4) == Some(&0) {
             Header::Padded
         } else {
             Header::Plain
         };
-        let mut cursor = at.checked_add(usize::from(header.byte_len()))?;
+        let Some(mut cursor) = at.checked_add(usize::from(header.byte_len())) else {
+            return Ok(None);
+        };
         let mut rows = Vec::new();
         while cursor < end {
             let Some(row) = JournalRow::read(bytes, cursor, end, base) else {
                 break;
             };
-            cursor = cursor.checked_add(row.byte_len())?;
+            let Some(next) = cursor.checked_add(row.byte_len()) else {
+                return Ok(None);
+            };
+            cursor = next;
+            ctx.reserve_retained_vec(&mut rows, 1, "NX state-journal rows")?;
             rows.push(row);
         }
-        Some(Self {
+        Ok(NonEmpty::from_vec(rows).map(|rows| Self {
             selector,
             header,
-            rows: NonEmpty::new(rows)?,
-        })
+            rows,
+        }))
     }
 
     pub(super) fn end_offset(&self) -> usize {
@@ -74,12 +91,19 @@ impl JournalGroup<usize> {
         last.offset() + last.byte_len()
     }
 
-    pub(crate) fn into_absolute(self, base: u64) -> Option<JournalGroup> {
-        Some(JournalGroup {
-            selector: self.selector,
-            header: self.header,
-            rows: self.rows.map(|row| row.into_absolute(base)).transpose()?,
-        })
+    pub(crate) fn into_absolute(
+        self,
+        ctx: &DecodeContext<'_>,
+        base: u64,
+    ) -> Result<Option<JournalGroup>, CodecError> {
+        Ok(self
+            .rows
+            .try_map_charged(ctx, |row| row.into_absolute(base))?
+            .map(|rows| JournalGroup {
+                selector: self.selector,
+                header: self.header,
+                rows,
+            }))
     }
 }
 
@@ -89,7 +113,7 @@ impl JournalGroup {
         source_offset: u64,
         rows: Vec<JournalRow>,
     ) -> Result<Self, &'static str> {
-        let rows = NonEmpty::new(rows).ok_or("rows: journal group must not be empty")?;
+        let rows = NonEmpty::from_vec(rows).ok_or("rows: journal group must not be empty")?;
         let header =
             match rows.first().offset().checked_sub(source_offset) {
                 Some(4) => Header::Plain,

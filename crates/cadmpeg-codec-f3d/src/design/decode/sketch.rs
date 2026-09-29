@@ -314,7 +314,7 @@ pub(crate) fn decode_sketch_placements(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(metadata) = metadata_for_bulk_stream(scan, &entry.name)? else {
+        let Some(metadata) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
         let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
@@ -1884,6 +1884,7 @@ fn admit_sketch_relation(
         _ => None,
     };
     let members = crate::records::sketch_relations::SketchRelationMembers::from_indices(
+        ctx,
         parsed.members.into_iter().map(|member| {
             (
                 member.reference.value,
@@ -1891,14 +1892,15 @@ fn admit_sketch_relation(
                 member.relation_ordinal,
             )
         }),
-    );
+    )?;
     let return_members =
         crate::records::sketch_relations::SketchRelationReturnMembers::from_indices(
+            ctx,
             parsed
                 .return_members
                 .into_iter()
                 .map(|member| (member.value, member.offset as u32)),
-        );
+        )?;
     let auxiliary_count = parsed.auxiliary_references.len();
     ctx.charge_collection_items(
         auxiliary_count as u64,
@@ -2166,8 +2168,9 @@ fn decode_sketch_points_from_stream(
         ctx.charge_collection_items(1, "f3d sketch point output")?;
         out.try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit("f3d sketch point output allocation", 0, 1))?;
-        out.push(
-            SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+        out.push(SketchPoint::try_from_charged(
+            ctx,
+            crate::records::sketch_geometry::SketchPointDraft {
                 id: design_record_id_charged(
                     ctx,
                     stream,
@@ -2185,9 +2188,8 @@ fn decode_sketch_points_from_stream(
                 companion,
                 paired_reference: decoded.paired_reference,
                 coordinates: Point2::new(u, v),
-            })
-            .map_err(CodecError::Malformed)?,
-        );
+            },
+        )?);
     }
     Ok(out)
 }
@@ -4103,7 +4105,7 @@ pub(crate) fn bind_sketch_graph(
                 .cloned()
                 .unwrap_or(SketchRelationOperand::Record { record_index })
         };
-        relation.resolve_members(resolve);
+        relation.resolve_members(ctx, resolve)?;
     }
     Ok(())
 }
@@ -5452,7 +5454,7 @@ fn decode_sketch_streams<T>(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+        let Some(meta) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
         extend_sketch_stream(ctx, &mut out, decode(ctx, bytes, &meta, &entry.name)?)?;

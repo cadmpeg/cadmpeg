@@ -189,7 +189,7 @@ fn native_arena_json_copy_refuses_retained_limit_before_materialization() {
         "id": "test:native:record#first",
         "payload": "a retained string"
     });
-    let needed = serde_json::to_vec(&record).unwrap().len() as u64;
+    let needed = cadmpeg_core::decode::u64_from_index(serde_json::to_vec(&record).unwrap().len());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = needed - 1;
@@ -257,16 +257,45 @@ fn native_arena_typed_load_refuses_retained_limit_before_value_clone() {
 }
 
 #[test]
+fn native_arena_typed_load_refuses_collection_limit_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let record = serde_json::json!({"id": "test:native:record#first", "payload": "one"});
+    let arena = DecodeArena::new();
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut namespace = crate::native::NativeNamespace::default();
+    namespace
+        .set_arena(&service, "records", std::slice::from_ref(&record))
+        .unwrap();
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::TYPED_RECORD_CLONE_COUNT.with(|count| count.set(0));
+    let error = namespace
+        .arena_as_charged::<serde_json::Value>(&limited, "records")
+        .unwrap_err();
+    super::TYPED_RECORD_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "load typed native record"
+    ));
+}
+
+#[test]
 fn native_arena_name_refuses_retained_limit_before_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = "records".len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("records".len()) - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut namespace = crate::native::NativeNamespace::default();
     let error = namespace
-        .set_arena(&limited, "records", &[] as &[serde_json::Value])
+        .set_arena(&limited, "records", &[serde_json::Value::Null; 0])
         .unwrap_err();
     let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
     else {
@@ -279,7 +308,7 @@ fn native_arena_name_refuses_retained_limit_before_copy() {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     namespace
-        .set_arena(&service, "records", &[] as &[serde_json::Value])
+        .set_arena(&service, "records", &[serde_json::Value::Null; 0])
         .unwrap();
     assert_eq!(namespace.arenas()["records"].len(), 0);
 }
@@ -323,7 +352,7 @@ fn native_arena_slot_refuses_collection_limit_before_insert() {
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut namespace = crate::native::NativeNamespace::default();
     let error = namespace
-        .set_arena(&limited, "records", &[] as &[serde_json::Value])
+        .set_arena(&limited, "records", &[serde_json::Value::Null; 0])
         .unwrap_err();
     let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
     else {
@@ -439,7 +468,11 @@ fn native_loss_counts_carry_a_nonempty_arena_population() {
         .insert("empty".into(), Vec::new());
     native.namespace_mut("future").arenas_mut().insert(
         "records".into(),
-        vec![NativeRecord::new("test:native:record#counted", serde_json::Map::new()).unwrap()],
+        vec![NativeRecord::new(
+            crate::ids::Identity::new("test:native:record#counted").expect("valid identity"),
+            serde_json::Map::new(),
+        )
+        .unwrap()],
     );
     let counts = native.loss_counts();
     assert_eq!(counts.len(), 1);
@@ -515,7 +548,11 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
     }
     let id = "test:native:record#deep";
     let fields = serde_json::Map::from_iter([("nested".to_owned(), nested.clone())]);
-    let constructed = NativeRecord::new(id, fields.clone()).unwrap();
+    let constructed = NativeRecord::new(
+        crate::ids::Identity::new(id).expect("valid identity"),
+        fields.clone(),
+    )
+    .unwrap();
     let typed = Record {
         id: id.into(),
         nested: nested.clone(),
@@ -566,7 +603,7 @@ fn a_field_nested_past_the_native_bound_never_enters_a_record() {
     };
     let record = |nested: serde_json::Value| {
         NativeRecord::new(
-            id,
+            crate::ids::Identity::new(id).expect("valid identity"),
             serde_json::Map::from_iter([("nested".to_owned(), nested)]),
         )
     };
@@ -625,8 +662,8 @@ fn native_identity_admission_is_shared_by_all_construction_paths() {
         "f3d:test:record#1#2",
     ] {
         assert!(matches!(
-            NativeRecord::new(id, serde_json::Map::new()),
-            Err(crate::native::NativeConvertError::InvalidIdentity(_))
+            crate::ids::Identity::new(id),
+            Err(crate::ids::IdentityError::InvalidId { .. })
         ));
         assert!(matches!(
             NativeRecord::from_typed(&Record { id }),
@@ -637,7 +674,7 @@ fn native_identity_admission_is_shared_by_all_construction_paths() {
 
     let id = "f3d:test:record#1";
     let record = NativeRecord::new(
-        id,
+        crate::ids::Identity::new(id).expect("valid identity"),
         serde_json::Map::from_iter([(
             "id".to_owned(),
             serde_json::Value::String("ignored".into()),
@@ -680,7 +717,11 @@ fn flat_fields_build_a_record_no_reader_has_to_measure() {
         Some(serde_json::json!(["step:test:target#0"]))
     );
     assert_eq!(
-        NativeRecord::new(id, record.fields()).unwrap(),
+        NativeRecord::new(
+            crate::ids::Identity::new(id).expect("valid identity"),
+            record.fields()
+        )
+        .unwrap(),
         record,
         "the measured constructor admits what the flat one builds"
     );
@@ -720,17 +761,19 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
     let mut right = left.clone();
     right.native.namespace_mut("f3d").arenas_mut().insert(
         "act_guids".into(),
-        vec![
-            NativeRecord::new("f3d:test:act-guid#0", serde_json::Map::new())
-                .expect("valid native identity"),
-        ],
+        vec![NativeRecord::new(
+            crate::ids::Identity::new("f3d:test:act-guid#0").expect("valid identity"),
+            serde_json::Map::new(),
+        )
+        .expect("valid native identity")],
     );
     right.native.namespace_mut("sldprt").arenas_mut().insert(
         "configurations".into(),
-        vec![
-            NativeRecord::new("sldprt:test:configuration#0", serde_json::Map::new())
-                .expect("valid native identity"),
-        ],
+        vec![NativeRecord::new(
+            crate::ids::Identity::new("sldprt:test:configuration#0").expect("valid identity"),
+            serde_json::Map::new(),
+        )
+        .expect("valid native identity")],
     );
     right.native.finalize();
 
@@ -763,8 +806,11 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
         .namespace_mut("sldprt")
         .arenas_mut()
         .get_mut("configurations")
-        .unwrap()[0] = NativeRecord::new("f3d:test:act-guid#0", serde_json::Map::new())
-        .expect("valid native identity");
+        .unwrap()[0] = NativeRecord::new(
+        crate::ids::Identity::new("f3d:test:act-guid#0").expect("valid identity"),
+        serde_json::Map::new(),
+    )
+    .expect("valid native identity");
     right.native.finalize();
     assert!(validate_neutral(&right, Vec::new())
         .expect("resource allocation did not fail")

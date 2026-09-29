@@ -134,11 +134,16 @@ impl PmDcReferenceList {
         metadata: Option<PmDcListMetadata>,
         references: Vec<PmDcReference>,
     ) -> Option<Self> {
+        let items = match paired_items(metadata, references) {
+            PairedItems::Empty => None,
+            PairedItems::Complete(metadata, references) => Some((metadata, references)),
+            PairedItems::Mismatch => return None,
+        };
         Some(Self {
             #[cfg(test)]
             clone_probe: PmDcListCloneProbe,
             marker,
-            items: paired_items(metadata, references)?,
+            items,
         })
     }
 
@@ -186,10 +191,15 @@ pub(crate) struct PmDcPairedReferenceList<M> {
 
 impl<M> PmDcPairedReferenceList<M> {
     pub(crate) fn new(metadata: Option<M>, references: Vec<PmDcReference>) -> Option<Self> {
+        let items = match paired_items(metadata, references) {
+            PairedItems::Empty => None,
+            PairedItems::Complete(metadata, references) => Some((metadata, references)),
+            PairedItems::Mismatch => return None,
+        };
         Some(Self {
             #[cfg(test)]
             clone_probe: PmDcListCloneProbe,
-            items: paired_items(metadata, references)?,
+            items,
         })
     }
 
@@ -264,18 +274,23 @@ impl PmDcU32List {
         metadata: Option<PmDcListMetadata>,
         values: Vec<u32>,
     ) -> Option<Self> {
+        let items = match paired_items(metadata, values) {
+            PairedItems::Empty => None,
+            PairedItems::Complete(metadata, values) => Some((metadata, values)),
+            PairedItems::Mismatch => return None,
+        };
         Some(Self {
             #[cfg(test)]
             clone_probe: PmDcListCloneProbe,
             marker,
-            items: paired_items(metadata, values)?,
+            items,
         })
     }
 
     pub(crate) fn values(&self) -> &[u32] {
         self.items
             .as_ref()
-            .map_or(&[] as &[_], |(_, values)| values.as_slice())
+            .map_or(&[][..], |(_, values)| values.as_slice())
     }
 }
 
@@ -305,13 +320,17 @@ impl TryFrom<PmDcU32ListWire> for PmDcU32List {
     }
 }
 
-// The outer option reports a mismatched metadata/list pair; the inner option is an empty list.
-#[allow(clippy::option_option)]
-fn paired_items<M, T>(metadata: Option<M>, values: Vec<T>) -> Option<Option<(M, Vec<T>)>> {
+enum PairedItems<M, T> {
+    Empty,
+    Complete(M, Vec<T>),
+    Mismatch,
+}
+
+fn paired_items<M, T>(metadata: Option<M>, values: Vec<T>) -> PairedItems<M, T> {
     match (metadata, values.is_empty()) {
-        (None, true) => Some(None),
-        (Some(metadata), false) => Some(Some((metadata, values))),
-        _ => None,
+        (None, true) => PairedItems::Empty,
+        (Some(metadata), false) => PairedItems::Complete(metadata, values),
+        _ => PairedItems::Mismatch,
     }
 }
 
@@ -392,7 +411,9 @@ impl<'a> Cursor<'a> {
         ctx: &DecodeContext<'_>,
         field: &str,
     ) -> Result<String, CodecError> {
-        let units = self.u32("string length")? as usize;
+        let units = usize::try_from(self.u32("string length")?).map_err(|_| {
+            CodecError::Malformed("Inventor numeric value exceeds target range".into())
+        })?;
         if units > 1_048_576 {
             return Err(CodecError::malformed(format_args!(
                 "Inventor PmDc {field} exceeds 1048576 code units"
@@ -404,8 +425,14 @@ impl<'a> Cursor<'a> {
         let utf8_bytes = crate::reader::utf16_utf8_len(self.source, units).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor PmDc {field} is not UTF-16"))
         })?;
-        let _units = ctx.reserve_scoped(len as u64, "decode Inventor PmDc UTF-16 units")?;
-        ctx.charge_retained(utf8_bytes as u64, "retain Inventor PmDc string")?;
+        let _units = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(len),
+            "decode Inventor PmDc UTF-16 units",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(utf8_bytes),
+            "retain Inventor PmDc string",
+        )?;
         self.source.utf16_le(units).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor PmDc {field} is not UTF-16"))
         })
@@ -446,7 +473,7 @@ pub(crate) fn reference_list(
 ) -> Result<PmDcReferenceList, CodecError> {
     let (count, metadata) =
         list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc references")?;
-    let mut references = Vec::with_capacity(count);
+    let mut references = DecodeContext::admitted_vec(count, "admit Inventor PmDc references")?;
     for _ in 0..count {
         references.push(cursor.reference("reference-list entry")?);
     }
@@ -468,8 +495,9 @@ fn list_preamble(
             "Inventor PmDc {field} marker is {actual:?}"
         )));
     }
-    let count = cursor.u32("list count")? as usize;
-    ctx.charge_collection_items(count as u64, admission)?;
+    let count = usize::try_from(cursor.u32("list count")?)
+        .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), admission)?;
     let metadata = if count == 0 {
         None
     } else if marker == 8 {
@@ -494,7 +522,7 @@ pub(crate) fn u32_list(
 ) -> Result<PmDcU32List, CodecError> {
     let (count, metadata) =
         list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc integers")?;
-    let mut values = Vec::with_capacity(count);
+    let mut values = DecodeContext::admitted_vec(count, "admit Inventor PmDc integers")?;
     for _ in 0..count {
         values.push(cursor.u32("integer-list value")?);
     }
@@ -509,7 +537,10 @@ pub(crate) fn unique_by<'a, T, K: Eq + std::hash::Hash>(
     operation: &'static str,
     key: impl Fn(&'a T) -> K,
 ) -> Result<std::collections::HashMap<K, &'a T>, CodecError> {
-    ctx.charge_collection_items(records.len() as u64, operation)?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(records.len()),
+        operation,
+    )?;
     let mut unique = std::collections::HashMap::new();
     for record in records {
         unique
@@ -518,7 +549,9 @@ pub(crate) fn unique_by<'a, T, K: Eq + std::hash::Hash>(
             .or_insert(Some(record));
     }
     ctx.charge_collection_items(
-        unique.values().filter(|value| value.is_some()).count() as u64,
+        cadmpeg_core::decode::u64_from_index(
+            unique.values().filter(|value| value.is_some()).count(),
+        ),
         "index distinct Inventor records",
     )?;
     Ok(unique
@@ -567,10 +600,15 @@ impl<V> PmDcPairedMap<V> {
         metadata: Option<[u32; 2]>,
         entries: Vec<(PmDcReference, V)>,
     ) -> Option<Self> {
+        let items = match paired_items(metadata, entries) {
+            PairedItems::Empty => None,
+            PairedItems::Complete(metadata, entries) => Some((metadata, entries)),
+            PairedItems::Mismatch => return None,
+        };
         Some(Self {
             #[cfg(test)]
             clone_probe: PmDcListCloneProbe,
-            items: paired_items(metadata, entries)?,
+            items,
         })
     }
 
@@ -590,7 +628,7 @@ impl<V> PmDcPairedMap<V> {
     pub(crate) fn entries(&self) -> &[(PmDcReference, V)] {
         self.items
             .as_ref()
-            .map_or(&[] as &[_], |(_, entries)| entries.as_slice())
+            .map_or(&[][..], |(_, entries)| entries.as_slice())
     }
 }
 

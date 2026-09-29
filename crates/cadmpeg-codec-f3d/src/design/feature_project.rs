@@ -632,11 +632,12 @@ impl<'a> ScopeHistoryGraph<'a> {
             ScopeHistoryBinding::Absent
         } else {
             ScopeHistoryBinding::Bound(crate::history::bind_scope_histories(
+                ctx,
                 scopes,
                 body_bindings,
                 body_recipe_operands,
                 histories,
-            ))
+            )?)
         };
         let mut component_namespaces = HashMap::new();
         for scope in scopes {
@@ -1052,7 +1053,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     .map_or_else(
                         || native_scope_definition(ctx, scope, &parameters),
                         |_| Ok(FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
-                            joint: crate::design::identity::neutral_assembly_joint_id(ctx,scope)?,
+                            joint: crate::design::identity::neutral_assembly_joint_id(ctx, scope)?,
                         })),
                     )?,
                 Some(DesignFeatureFamily::Extrude) => project_extrude(
@@ -4875,7 +4876,8 @@ fn project_hem(
         None => None,
     };
     let semantics = edge_slot
-        .map(|edge_slot| crate::history::hem_geometry_semantics(scope, edge_slot, histories));
+        .map(|edge_slot| crate::history::hem_geometry_semantics(ctx, scope, edge_slot, histories))
+        .transpose()?;
     let form = match (
         form,
         semantics.and_then(|semantics| semantics.gap_length_form),

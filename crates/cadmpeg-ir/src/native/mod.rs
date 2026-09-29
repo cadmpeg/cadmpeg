@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-format namespaces retained outside the format-neutral model.
-#![deny(clippy::disallowed_methods)]
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -219,14 +218,7 @@ impl Write for ChargingJsonWriter<'_, '_> {
                 .checked_mul(2)
                 .map_or(needed, |double| needed.max(double));
             let additional = next_capacity - current_capacity;
-            let amount = u64::try_from(additional).map_err(|_| {
-                self.refusal = Some(self.ctx.refuse_codec_limit(
-                    "serialize native record capacity",
-                    u64::MAX - 1,
-                    u64::MAX,
-                ));
-                std::io::Error::other("native record JSON capacity exceeds u64")
-            })?;
+            let amount = cadmpeg_core::decode::u64_from_index(additional);
             if let Err(error) = self.ctx.charge_retained(amount, "serialize native record") {
                 self.refusal = Some(error);
                 return Err(std::io::Error::other("native record resource limit"));
@@ -236,10 +228,15 @@ impl Write for ChargingJsonWriter<'_, '_> {
                 .try_reserve_exact(next_capacity - self.bytes.len())
                 .is_err()
             {
-                self.refusal = Some(self.ctx.refuse_codec_limit(
-                    "serialize native record allocation",
-                    u64::MAX - 1,
-                    u64::MAX,
+                self.refusal = Some(cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "serialize native record allocation",
+                        ),
+                        u64::MAX - 1,
+                        amount,
+                        "serialize native record allocation",
+                    ),
                 ));
                 return Err(std::io::Error::other("native record allocation failed"));
             }
@@ -315,15 +312,14 @@ impl NativeRecord {
     /// Build a record from a stable identity and an arbitrary field map.
     ///
     /// Any `id` member of `fields` is dropped in favour of `id`.
-    /// Identity syntax is checked here; document validation checks uniqueness.
+    /// The identity is checked before this call; document validation checks uniqueness.
     /// A field nested past [`MAX_NATIVE_NESTING_DEPTH`] is refused by name:
     /// the map is the caller's own, so nothing about it is bounded until it
     /// is measured here.
     pub fn new(
-        id: impl Into<String>,
+        id: crate::ids::Identity,
         mut fields: Map<String, Value>,
     ) -> Result<Self, NativeConvertError> {
-        let id = crate::ids::Identity::new(id)?;
         fields.remove("id");
         for (field, value) in &fields {
             if nests_past(value, MAX_NATIVE_NESTING_DEPTH) {
@@ -405,6 +401,18 @@ impl NativeRecord {
         self.fields.clone()
     }
 
+    /// Clone codec-owned fields after admitting the value tree and its bytes.
+    pub fn fields_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Map<String, Value>, NativeConvertError> {
+        let Value::Object(mut fields) = self.to_typed_charged::<Value>(ctx)? else {
+            return Err(NativeConvertError::NonObject);
+        };
+        fields.remove("id");
+        Ok(fields)
+    }
+
     /// One codec-owned field.
     ///
     /// `id` is not a codec-owned field and is never answered here.
@@ -443,9 +451,9 @@ impl NativeRecord {
 
         impl std::io::Write for ByteCount {
             fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-                let next = u64::try_from(buffer.len())
-                    .ok()
-                    .and_then(|length| self.bytes.checked_add(length));
+                let next = self
+                    .bytes
+                    .checked_add(cadmpeg_core::decode::u64_from_index(buffer.len()));
                 let Some(next) = next else {
                     self.overflowed = true;
                     return Err(std::io::Error::other("native record byte count overflow"));
@@ -469,13 +477,7 @@ impl NativeRecord {
                 Value::Array(values) => values,
                 Value::Object(values) => {
                     ctx.charge_collection_items(
-                        u64::try_from(values.len()).map_err(|_| {
-                            ctx.refuse_codec_limit(
-                                "native record object size",
-                                u64::MAX - 1,
-                                u64::MAX,
-                            )
-                        })?,
+                        cadmpeg_core::decode::u64_from_index(values.len()),
                         "load native record object fields",
                     )?;
                     for child in values.values() {
@@ -486,9 +488,7 @@ impl NativeRecord {
                 _ => return Ok(()),
             };
             ctx.charge_collection_items(
-                u64::try_from(children.len()).map_err(|_| {
-                    ctx.refuse_codec_limit("native record array size", u64::MAX - 1, u64::MAX)
-                })?,
+                cadmpeg_core::decode::u64_from_index(children.len()),
                 "load native record array elements",
             )?;
             for child in children {
@@ -499,9 +499,7 @@ impl NativeRecord {
 
         ctx.charge_collection_items(1, "load typed native record")?;
         ctx.charge_collection_items(
-            u64::try_from(self.fields.len()).map_err(|_| {
-                ctx.refuse_codec_limit("native record field count", u64::MAX - 1, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(self.fields.len()),
             "load native record fields",
         )?;
         for value in self.fields.values() {
@@ -546,7 +544,11 @@ impl<'de> Deserialize<'de> for NativeRecord {
                 NativeConvertError::MissingId,
             ));
         };
-        Self::new(id, fields).map_err(serde::de::Error::custom)
+        Self::new(
+            crate::ids::Identity::new(id).map_err(serde::de::Error::custom)?,
+            fields,
+        )
+        .map_err(serde::de::Error::custom)
     }
 }
 
@@ -611,7 +613,7 @@ where
     let scratch_bytes = converted
         .len()
         .checked_mul(std::mem::size_of::<NativeRecord>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
         .ok_or_else(|| {
             E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
                 "sort native records scratch size",
@@ -679,9 +681,7 @@ impl NativeNamespace {
     ) -> Result<(), NativeConvertError> {
         let name = name.as_ref();
         ctx.charge_retained(
-            u64::try_from(name.len()).map_err(|_| {
-                ctx.refuse_codec_limit("native arena name length", u64::MAX - 1, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(name.len()),
             "retain native arena name",
         )?;
         ctx.charge_collection_items(1, "store native arena")?;
@@ -735,6 +735,16 @@ impl NativeNamespace {
                     });
                 }
             };
+            typed.try_reserve(1).map_err(|_| {
+                NativeConvertError::Resource(cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec("load typed native record"),
+                        0,
+                        1,
+                        "load typed native record",
+                    ),
+                ))
+            })?;
             typed.push(value);
         }
         Ok(typed)

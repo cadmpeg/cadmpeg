@@ -23,23 +23,9 @@ pub(super) fn exact_copy_paste_bodies_operation(
         return Ok(None);
     }
     let body_count = scope.reference_members().len() - 1;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(body_count),
-        "f3d CopyPasteBodies operands",
-    )?;
-    let mut operands = Vec::new();
-    operands
-        .try_reserve(body_count)
-        .map_err(|_| ctx.refuse_codec_limit("f3d CopyPasteBodies operands allocation", 0, 1))?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(body_count),
-        "f3d CopyPasteBodies bodies",
-    )?;
-    let mut bodies = Vec::new();
-    bodies
-        .try_reserve(body_count)
-        .map_err(|_| ctx.refuse_codec_limit("f3d CopyPasteBodies bodies allocation", 0, 1))?;
-    Ok((|| {
+    let mut operands = ctx.collection_vec(body_count, "f3d CopyPasteBodies operands")?;
+    let mut bodies = ctx.collection_vec(body_count, "f3d CopyPasteBodies bodies")?;
+    let parsed = (|| -> Option<Result<DesignCopyPasteBodiesOperation, CodecError>> {
         let start = usize::try_from(scope.byte_offset()).ok()?;
         let body_group_record_index = marked_record_reference(bytes, start + 29)?;
         let relation_record_index = marked_record_reference(bytes, start + 40)?;
@@ -119,15 +105,25 @@ pub(super) fn exact_copy_paste_bodies_operation(
                 },
             });
         }
-        DesignCopyPasteBodiesOperation::try_new(
+        Some(DesignCopyPasteBodiesOperation::try_new_charged(
+            ctx,
             bodies,
-            body_group_record_index,
-            crate::design::decode::text::class_tag_from_view(body_group_class_tag).ok()?,
-            u64::try_from(body_group_at).ok()?,
-            relation_record_index,
-            crate::design::decode::text::class_tag_from_view(relation_class_tag).ok()?,
-            u64::try_from(relation_at).ok()?,
-        )
-        .ok()
-    })())
+            body_ops::CopyPasteRecordLocation {
+                record_index: body_group_record_index,
+                class_tag: crate::design::decode::text::class_tag_from_view(body_group_class_tag)
+                    .ok()?,
+                byte_offset: u64::try_from(body_group_at).ok()?,
+            },
+            body_ops::CopyPasteRecordLocation {
+                record_index: relation_record_index,
+                class_tag: crate::design::decode::text::class_tag_from_view(relation_class_tag)
+                    .ok()?,
+                byte_offset: u64::try_from(relation_at).ok()?,
+            },
+        ))
+    })();
+    match parsed.transpose() {
+        Err(CodecError::Malformed(_)) => Ok(None),
+        result => result,
+    }
 }

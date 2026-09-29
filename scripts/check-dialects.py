@@ -38,6 +38,7 @@ class GeneratedIdOwner(NamedTuple):
     path: Path
     visibility: str
     format_visibility: str = "pub(crate)"
+    include_detect_unreachable: bool = True
 
 
 # This map owns implementation placement, not identity. Id values and constant
@@ -75,7 +76,9 @@ GENERATED_ID_OWNERS = {
         Path("crates/cadmpeg-codec-rhino/src/dialect/registry_ids.rs"), "pub(crate)"
     ),
     "sat": GeneratedIdOwner(
-        Path("crates/cadmpeg-codec-sat/src/dialect/registry_ids.rs"), "pub(crate)"
+        Path("crates/cadmpeg-codec-sat/src/dialect/registry_ids.rs"),
+        "pub(crate)",
+        include_detect_unreachable=False,
     ),
     "sldprt": GeneratedIdOwner(
         Path("crates/cadmpeg-codec-sldprt/src/dialect/registry_ids.rs"), "pub(crate)"
@@ -465,6 +468,7 @@ def render_generated_id_module(
     rows: list[dict],
     visibility: str,
     format_visibility: str,
+    include_detect_unreachable: bool = True,
 ) -> tuple[str | None, list[str]]:
     """Render one format's constants and report generated-name collisions."""
     failures: list[str] = []
@@ -473,6 +477,11 @@ def render_generated_id_module(
     for row in rows:
         dialect_id = row.get("id")
         if not isinstance(dialect_id, str) or not dialect_id.startswith(f"{fmt}:"):
+            continue
+        if (
+            not include_detect_unreachable
+            and row.get("unknown_kind") == "detect-unreachable"
+        ):
             continue
         name = rust_constant_name(dialect_id)
         if previous := names.get(name):
@@ -538,7 +547,11 @@ def generated_id_modules(
     for fmt in sorted(row_formats & owners.keys()):
         owner = owners[fmt]
         rendered, render_failures = render_generated_id_module(
-            fmt, rows, owner.visibility, owner.format_visibility
+            fmt,
+            rows,
+            owner.visibility,
+            owner.format_visibility,
+            owner.include_detect_unreachable,
         )
         failures.extend(render_failures)
         if rendered is not None:

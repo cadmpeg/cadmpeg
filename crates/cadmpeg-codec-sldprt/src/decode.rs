@@ -98,7 +98,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         )?;
         let mut report = build_container_report(&scan, &classification);
         report.losses.append(&mut pmi_losses);
-        return decode_result(ir, report, annotations, unknowns);
+        return decode_result(ctx, ir, report, annotations, unknowns);
     }
 
     let streams = active_body_streams(&scan);
@@ -117,7 +117,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
             append_design_losses(ctx, &ir, &mut report)?;
-            return decode_result(ir, report, annotations, unknowns);
+            return decode_result(ctx, ir, report, annotations, unknowns);
         }
     }
 
@@ -131,7 +131,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let mut report = build_container_report(&scan, &classification);
     report.losses.append(&mut pmi_losses);
     append_design_losses(ctx, &ir, &mut report)?;
-    decode_result(ir, report, annotations, unknowns)
+    decode_result(ctx, ir, report, annotations, unknowns)
 }
 
 fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
@@ -151,6 +151,7 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
 }
 
 fn decode_result(
+    ctx: &DecodeContext<'_>,
     mut ir: CadIr,
     body: DecodeBody,
     annotations: Annotations,
@@ -161,7 +162,7 @@ fn decode_result(
         .iter()
         .position(|record| record.id().as_str() == "sldprt:file:source-image#0")
         .map(|index| unknowns.remove(index));
-    source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", unknowns)?;
+    source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", unknowns, ctx)?;
     if let Some(source_image) = source_image {
         source_fidelity.retain_unknown_records("source", [source_image])?;
     }
@@ -2884,11 +2885,16 @@ fn build_geometry_ir(
                 });
             }
             let mesh = display_face.mesh;
-            ir.model
-                .tessellations
-                .push(mesh.into_tessellation(id).map_err(|error| {
+            ir.model.tessellations.push(
+                mesh.into_tessellation(
+                    cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
+                        CodecError::malformed(format_args!("invalid display tessellation: {error}"))
+                    })?,
+                )
+                .map_err(|error| {
                     CodecError::malformed(format_args!("invalid display tessellation: {error}"))
-                })?);
+                })?,
+            );
         }
         let display_id = UnknownId::compose(
             &cadmpeg_ir::identity_namespace!("sldprt", "displaylist", "record"),

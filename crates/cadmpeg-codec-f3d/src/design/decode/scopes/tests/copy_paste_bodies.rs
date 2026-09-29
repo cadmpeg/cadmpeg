@@ -39,14 +39,16 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
         [1_500, 1_600]
     );
     assert_eq!(scope.frame_length(), 225);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("operation decode context")
+        .0;
     let operation =
         crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &records,
-            &scope,
+            &ctx, &bytes, &records, &scope,
         )
-        .unwrap()
+        .expect("operation decode resources")
         .expect("CopyPasteBodies operation");
     assert_eq!(operation.body_group_record_index, 1_500);
     assert_eq!(operation.relation_record_index, 1_700);
@@ -97,6 +99,7 @@ fn copy_paste_bodies_refuses_operand_and_body_limits() {
     for (cap, operation) in [
         (0, "f3d CopyPasteBodies operands"),
         (1, "f3d CopyPasteBodies bodies"),
+        (2, "index F3D copied body suffixes"),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -277,11 +280,7 @@ fn decoded_parameter_scopes_refuse_identifier_and_output_limits() {
             crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
                 &ctx,
                 scan,
-                &[],
-                &[],
-                (&[], &[]),
-                &[],
-                &[],
+                &crate::native::F3dNative::default(),
             )
         };
         assert!(!decode(&DecodePolicy::default()).unwrap().is_empty());

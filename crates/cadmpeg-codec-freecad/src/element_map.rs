@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
 
 use crate::native::element_map::{
@@ -13,6 +13,10 @@ use crate::native::{
     EntryRecord, PropertyRecord, StringTableEntry, StringTableRecord, StringTables,
 };
 use crate::topology_transfer::TopologyOccurrence;
+
+fn element_map_malformed(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> CodecError {
+    crate::resource::malformed_charged(ctx, message, "FreeCAD element map diagnostic")
+}
 
 const MAX_TABLE_ENTRIES: usize = 10_000_000;
 const MAX_MAP_NODES: usize = 1_000_000;
@@ -38,6 +42,7 @@ enum ElementMapCarrier<'a, 'input> {
 
 /// Recover every string table and element map carried by `Document.xml`.
 pub(crate) fn parse(
+    ctx: &DecodeContext<'_>,
     document: &[u8],
     file_version: usize,
     properties: &[PropertyRecord],
@@ -45,24 +50,38 @@ pub(crate) fn parse(
 ) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
     let text = std::str::from_utf8(document)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
-    let xml = roxmltree::Document::parse(text)
-        .map_err(|error| CodecError::malformed(format_args!("invalid Document.xml: {error}")))?;
-    let string_hasher_nodes = xml
-        .descendants()
-        .filter(|node| node.has_tag_name("StringHasher"))
-        .collect::<Vec<_>>();
+    let xml = roxmltree::Document::parse(text).map_err(|error| {
+        element_map_malformed(ctx, format_args!("invalid Document.xml: {error}"))
+    })?;
     validate_string_hasher_framing(xml.root_element())?;
-    let entry_data = entries
-        .iter()
-        .map(|entry| (entry.name.as_str(), entry.data.as_slice()))
-        .collect::<HashMap<_, _>>();
+    let mut entry_data = HashMap::new();
+    for entry in entries {
+        if !entry_data.contains_key(entry.name.as_str()) {
+            ctx.charge_collection_items(1, "FreeCAD element entry lookup")?;
+            entry_data.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "FreeCAD element entry lookup",
+                    ),
+                )
+            })?;
+        }
+        entry_data.insert(entry.name.as_str(), entry.data.as_slice());
+    }
 
     let mut tables = Vec::new();
-    for node in string_hasher_nodes {
+    for node in xml
+        .descendants()
+        .filter(|node| node.has_tag_name("StringHasher"))
+    {
         let index = tables.len();
-        let save_all = require_bool(node.attribute("saveall").unwrap_or("0"))?;
-        let threshold = parse_decimal(node.attribute("threshold").unwrap_or("0"), "threshold")?;
-        let owner_property = owning_property(node, properties)?;
+        let save_all = require_bool(ctx, node.attribute("saveall").unwrap_or("0"))?;
+        let threshold =
+            parse_decimal(ctx, node.attribute("threshold").unwrap_or("0"), "threshold")?;
+        let owner_property = owning_property(ctx, node, properties)?;
         let new_layout = node.attribute("new").is_some_and(|value| value != "0");
         let data_node = if new_layout {
             string_hasher_successor(node)?
@@ -70,18 +89,26 @@ pub(crate) fn parse(
             node
         };
         let source_entry = data_node.attribute("file").filter(|name| !name.is_empty());
-        let inline_bytes = source_entry.is_none().then(|| node_text_bytes(data_node));
+        let inline_bytes = source_entry
+            .is_none()
+            .then(|| node_text_bytes(ctx, data_node))
+            .transpose()?;
         let bytes = if let Some(name) = source_entry {
             *entry_data.get(name).ok_or_else(|| {
-                CodecError::malformed(format_args!("StringHasher references missing entry {name}"))
+                element_map_malformed(
+                    ctx,
+                    format_args!("StringHasher references missing entry {name}"),
+                )
             })?
         } else {
-            inline_bytes.as_deref().unwrap_or_default()
+            inline_bytes
+                .as_ref()
+                .map_or(&[][..], |(bytes, _)| bytes.as_slice())
         };
         let declared_count = if source_entry.is_some() {
-            let header_count = string_table_header_count(bytes)?;
+            let header_count = string_table_header_count(ctx, bytes)?;
             if !new_layout {
-                let xml_count = parse_count(data_node, "StringHasher")?;
+                let xml_count = parse_count(ctx, data_node, "StringHasher")?;
                 if xml_count != header_count {
                     return Err(CodecError::Malformed(
                         "string-table XML and side-entry counts disagree".into(),
@@ -90,16 +117,21 @@ pub(crate) fn parse(
             }
             header_count
         } else {
-            parse_count(data_node, "StringHasher")?
+            parse_count(ctx, data_node, "StringHasher")?
         };
-        let entries = parse_string_table(bytes, declared_count, source_entry.is_some())?;
+        let entries = parse_string_table(ctx, bytes, declared_count, source_entry.is_some())?;
+        ctx.reserve_vec(&mut tables, 1, "FreeCAD string table records")?;
         tables.push(
             StringTableRecord::try_new(
                 index,
                 owner_property,
                 save_all,
                 threshold,
-                source_entry.map(str::to_owned),
+                source_entry
+                    .map(|name| {
+                        ctx.copy_retained_text(name, "FreeCAD string table side-entry name")
+                    })
+                    .transpose()?,
                 entries,
             )
             .map_err(CodecError::Malformed)?,
@@ -112,40 +144,50 @@ pub(crate) fn parse(
         .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
         let property_xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
-            CodecError::malformed(format_args!(
-                "invalid shape property XML {}: {error}",
-                property.id
-            ))
+            element_map_malformed(
+                ctx,
+                format_args!("invalid shape property XML {}: {error}", property.id),
+            )
         })?;
-        let Some((part, carrier)) = direct_element_map(property_xml.root_element())? else {
+        let Some((part, carrier)) = direct_element_map(ctx, property_xml.root_element())? else {
             continue;
         };
-        let version = part.attribute("ElementMap").unwrap_or("").to_owned();
+        let version = ctx.copy_retained_text(
+            part.attribute("ElementMap").unwrap_or(""),
+            "FreeCAD element map version",
+        )?;
         let hasher_index = part
             .attribute("HasherIndex")
-            .map(|value| parse_usize(value, "HasherIndex"))
+            .map(|value| parse_usize(ctx, value, "HasherIndex"))
             .transpose()?;
         let payload = match carrier {
             ElementMapCarrier::New(map_node) => {
                 let declared_count = map_node
                     .attribute("count")
-                    .map(|count| parse_usize(count, "ElementMap2 count"))
+                    .map(|count| parse_usize(ctx, count, "ElementMap2 count"))
                     .transpose()?;
                 let source_entry = map_node
                     .attribute("file")
                     .filter(|name| !name.is_empty())
-                    .map(str::to_owned);
-                let inline_bytes = source_entry.is_none().then(|| node_text_bytes(map_node));
+                    .map(|name| ctx.copy_retained_text(name, "FreeCAD element map side-entry name"))
+                    .transpose()?;
+                let inline_bytes = source_entry
+                    .is_none()
+                    .then(|| node_text_bytes(ctx, map_node))
+                    .transpose()?;
                 let bytes = if let Some(name) = source_entry.as_deref() {
                     *entry_data.get(name).ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "ElementMap2 references missing entry {name}"
-                        ))
+                        element_map_malformed(
+                            ctx,
+                            format_args!("ElementMap2 references missing entry {name}"),
+                        )
                     })?
                 } else {
-                    inline_bytes.as_deref().unwrap_or_default()
+                    inline_bytes
+                        .as_ref()
+                        .map_or(&[][..], |(bytes, _)| bytes.as_slice())
                 };
-                let parsed = parse_element_map(bytes, source_entry.is_some())?;
+                let parsed = parse_element_map(ctx, bytes, source_entry.is_some())?;
                 let declared_count = match declared_count {
                     Some(count) => count,
                     None => mapped_name_count(&parsed),
@@ -157,7 +199,7 @@ pub(crate) fn parse(
                 })
             }
             ElementMapCarrier::Legacy(marker) => {
-                parse_legacy_element_map(marker, file_version, &entry_data)?
+                parse_legacy_element_map(ctx, marker, file_version, &entry_data)?
             }
         };
         let Some(payload) = payload else {
@@ -168,9 +210,10 @@ pub(crate) fn parse(
             declared_count,
             parsed,
         } = payload;
+        ctx.reserve_vec(&mut maps, 1, "FreeCAD element map records")?;
         maps.push(ElementMapRecord {
-            id: crate::native::native_child_id("element-map", &property.id, "map"),
-            property: property.id.clone(),
+            id: crate::native::native_child_id_charged(ctx, "element-map", &property.id, "map")?,
+            property: ctx.copy_retained_text(&property.id, "FreeCAD element map property")?,
             version,
             hasher_index,
             source_entry,
@@ -183,7 +226,7 @@ pub(crate) fn parse(
     Ok((StringTables::try_from(tables)?, maps))
 }
 
-fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
+fn string_table_header_count(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<usize, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("string table is not UTF-8".into()))?;
     let mut tokens = text.split_ascii_whitespace();
@@ -195,36 +238,44 @@ fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
     let count = tokens
         .next()
         .ok_or_else(|| CodecError::Malformed("string-table side entry has no count".into()))?;
-    let count = parse_usize(count, "string-table header count")?;
+    let count = parse_usize(ctx, count, "string-table header count")?;
     if count > MAX_TABLE_ENTRIES {
-        return Err(CodecError::malformed(format_args!(
-            "string-table entry count exceeds {MAX_TABLE_ENTRIES}"
-        )));
+        return Err(element_map_malformed(
+            ctx,
+            format_args!("string-table entry count exceeds {MAX_TABLE_ENTRIES}"),
+        ));
     }
     Ok(count)
 }
 
 /// Connect kernel indexed-map positions to every neutral placed occurrence.
-pub(crate) fn bind_topology(maps: &mut [ElementMapRecord], occurrences: &[TopologyOccurrence]) {
+pub(crate) fn bind_topology(
+    ctx: &DecodeContext<'_>,
+    maps: &mut [ElementMapRecord],
+    occurrences: &[TopologyOccurrence],
+) -> Result<(), CodecError> {
     for map in maps {
         for occurrence in occurrences
             .iter()
             .filter(|occurrence| occurrence.property == map.property)
         {
             map.maps.bind_root_topology(
+                ctx,
                 occurrence.indexed_name,
                 occurrence.source_index,
                 &occurrence.topology_id,
-            );
+            )?;
         }
     }
+    Ok(())
 }
 
 fn owning_property(
+    ctx: &DecodeContext<'_>,
     node: roxmltree::Node<'_, '_>,
     properties: &[PropertyRecord],
 ) -> Result<Option<String>, CodecError> {
-    let start = node.range().start as u64;
+    let start = cadmpeg_core::decode::u64_from_index(node.range().start);
     let mut owners = properties
         .iter()
         .filter(|property| property.xml.start() <= start && start < property.xml.end());
@@ -236,7 +287,10 @@ fn owning_property(
             "StringHasher has multiple enclosing properties".into(),
         ));
     }
-    Ok(Some(owner.id.clone()))
+    Ok(Some(ctx.copy_retained_text(
+        &owner.id,
+        "FreeCAD string table owner",
+    )?))
 }
 
 fn validate_string_hasher_framing(
@@ -259,47 +313,48 @@ fn validate_string_hasher_framing(
             ));
         }
 
-        let children = parent
+        let mut marker_index = None;
+        let mut marker_count = 0;
+        let mut part_index = None;
+        let mut part_count = 0;
+        let mut successor_index = None;
+        let mut successor_count = 0;
+        for (index, child) in parent
             .children()
             .filter(roxmltree::Node::is_element)
-            .collect::<Vec<_>>();
-        let marker_indices = children
-            .iter()
             .enumerate()
-            .filter_map(|(index, child)| child.has_tag_name("StringHasher").then_some(index))
-            .collect::<Vec<_>>();
-        if marker_indices.len() != 1 {
+        {
+            if child.has_tag_name("StringHasher") {
+                marker_index = Some(index);
+                marker_count += 1;
+            }
+            if child.has_tag_name("Part") {
+                part_index = Some(index);
+                part_count += 1;
+            }
+            if child.has_tag_name("StringHasher2") {
+                successor_index = Some(index);
+                successor_count += 1;
+            }
+        }
+        if marker_count != 1 {
             return Err(CodecError::Malformed(
                 "StringHasher has duplicate direct carriers".into(),
             ));
         }
-        if parent_is_shape_property {
-            let part_indices = children
-                .iter()
-                .enumerate()
-                .filter_map(|(index, child)| child.has_tag_name("Part").then_some(index))
-                .collect::<Vec<_>>();
-            if part_indices.len() != 1 || marker_indices[0] <= part_indices[0] {
-                return Err(CodecError::Malformed(
-                    "StringHasher is not owned by a direct Part carrier".into(),
-                ));
-            }
+        if parent_is_shape_property && (part_count != 1 || marker_index <= part_index) {
+            return Err(CodecError::Malformed(
+                "StringHasher is not owned by a direct Part carrier".into(),
+            ));
         }
-
-        let successor_indices = children
-            .iter()
-            .enumerate()
-            .filter_map(|(index, child)| child.has_tag_name("StringHasher2").then_some(index))
-            .collect::<Vec<_>>();
-        let marker = children[marker_indices[0]];
-        let new_layout = marker.attribute("new").is_some_and(|value| value != "0");
+        let new_layout = node.attribute("new").is_some_and(|value| value != "0");
         if new_layout {
-            if successor_indices.len() != 1 || successor_indices[0] != marker_indices[0] + 1 {
+            if successor_count != 1 || successor_index != marker_index.map(|index| index + 1) {
                 return Err(CodecError::Malformed(
                     "StringHasher new=1 is not followed by one direct StringHasher2".into(),
                 ));
             }
-        } else if !successor_indices.is_empty() {
+        } else if successor_count != 0 {
             return Err(CodecError::Malformed(
                 "legacy StringHasher has a direct StringHasher2 successor".into(),
             ));
@@ -315,12 +370,15 @@ fn validate_string_hasher_framing(
                 "StringHasher2 has no enclosing root".into(),
             ));
         };
+        let mut prior_is_marker = false;
         let direct_successor = parent
             .children()
             .filter(roxmltree::Node::is_element)
-            .collect::<Vec<_>>()
-            .windows(2)
-            .any(|pair| pair[0].has_tag_name("StringHasher") && pair[1] == node);
+            .any(|child| {
+                let direct = prior_is_marker && child == node;
+                prior_is_marker = child.has_tag_name("StringHasher");
+                direct
+            });
         if !direct_successor {
             return Err(CodecError::Malformed(
                 "StringHasher2 is not the direct successor of StringHasher".into(),
@@ -338,47 +396,53 @@ fn is_shape_property(node: roxmltree::Node<'_, '_>) -> bool {
 }
 
 fn direct_element_map<'a, 'input>(
+    ctx: &DecodeContext<'_>,
     root: roxmltree::Node<'a, 'input>,
 ) -> Result<Option<(roxmltree::Node<'a, 'input>, ElementMapCarrier<'a, 'input>)>, CodecError> {
-    let children = root
+    let mut part = None;
+    let mut marker = None;
+    let mut map = None;
+    let mut part_count = 0;
+    let mut marker_count = 0;
+    let mut map_count = 0;
+    for (index, node) in root
         .children()
         .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let part_indices = children
-        .iter()
         .enumerate()
-        .filter_map(|(index, node)| node.has_tag_name("Part").then_some(index))
-        .collect::<Vec<_>>();
-    if part_indices.len() > 1 {
+    {
+        if node.has_tag_name("Part") {
+            part = Some((index, node));
+            part_count += 1;
+        }
+        if node.has_tag_name("ElementMap") {
+            marker = Some((index, node));
+            marker_count += 1;
+        }
+        if node.has_tag_name("ElementMap2") {
+            map = Some((index, node));
+            map_count += 1;
+        }
+    }
+    if part_count > 1 {
         return Err(CodecError::Malformed(
             "shape property has multiple direct Part carriers".into(),
         ));
     }
-    let Some(part_index) = part_indices.first().copied() else {
+    let Some((part_index, part)) = part else {
         return Ok(None);
     };
-    let marker_indices = children
-        .iter()
-        .enumerate()
-        .filter_map(|(index, node)| node.has_tag_name("ElementMap").then_some(index))
-        .collect::<Vec<_>>();
-    if marker_indices.len() > 1 {
+    if marker_count > 1 {
         return Err(CodecError::Malformed(
             "shape property has multiple direct ElementMap markers".into(),
         ));
     }
-    let map_indices = children
-        .iter()
-        .enumerate()
-        .filter_map(|(index, node)| node.has_tag_name("ElementMap2").then_some(index))
-        .collect::<Vec<_>>();
-    if map_indices.len() > 1 {
+    if map_count > 1 {
         return Err(CodecError::Malformed(
             "shape property has multiple direct ElementMap2 carriers".into(),
         ));
     }
-    let Some(marker_index) = marker_indices.first().copied() else {
-        if !map_indices.is_empty() {
+    let Some((marker_index, marker)) = marker else {
+        if map.is_some() {
             return Err(CodecError::Malformed(
                 "ElementMap2 has no direct ElementMap marker".into(),
             ));
@@ -390,22 +454,18 @@ fn direct_element_map<'a, 'input>(
             "ElementMap marker precedes the direct Part carrier".into(),
         ));
     }
-    let marker = children[marker_index];
     let is_new = marker
         .attribute("new")
-        .map(require_bool)
+        .map(|value| require_bool(ctx, value))
         .transpose()?
         .unwrap_or(false);
-    let Some(map_index) = map_indices.first().copied() else {
+    let Some((map_index, map)) = map else {
         if is_new {
             return Err(CodecError::Malformed(
                 "new ElementMap marker has no direct ElementMap2 successor".into(),
             ));
         }
-        return Ok(Some((
-            children[part_index],
-            ElementMapCarrier::Legacy(marker),
-        )));
+        return Ok(Some((part, ElementMapCarrier::Legacy(marker))));
     };
     if !is_new {
         return Err(CodecError::Malformed(
@@ -417,13 +477,10 @@ fn direct_element_map<'a, 'input>(
             "ElementMap2 is not the direct successor of ElementMap".into(),
         ));
     }
-    Ok(Some((
-        children[part_index],
-        ElementMapCarrier::New(children[map_index]),
-    )))
+    Ok(Some((part, ElementMapCarrier::New(map))))
 }
 
-fn element_map_size(parsed: &ParsedMap) -> Result<usize, CodecError> {
+fn element_map_size(ctx: &DecodeContext<'_>, parsed: &ParsedMap) -> Result<usize, CodecError> {
     let root = parsed.maps.root();
     let mapped_name_count = root
         .groups
@@ -439,7 +496,7 @@ fn element_map_size(parsed: &ParsedMap) -> Result<usize, CodecError> {
             let count = child.split_ascii_whitespace().nth(2).ok_or_else(|| {
                 CodecError::Malformed("element-map child descriptor has no count".into())
             })?;
-            parse_usize(count, "element-map child count")
+            parse_usize(ctx, count, "element-map child count")
         })
         .try_fold(0_usize, |total, count| {
             total
@@ -462,6 +519,7 @@ fn mapped_name_count(parsed: &ParsedMap) -> usize {
 }
 
 fn parse_legacy_element_map(
+    ctx: &DecodeContext<'_>,
     marker: roxmltree::Node<'_, '_>,
     file_version: usize,
     entry_data: &HashMap<&str, &[u8]>,
@@ -469,7 +527,8 @@ fn parse_legacy_element_map(
     let source_entry = marker
         .attribute("file")
         .filter(|name| !name.is_empty())
-        .map(str::to_owned);
+        .map(|name| ctx.copy_retained_text(name, "FreeCAD legacy element map side-entry name"))
+        .transpose()?;
     if let Some(name) = source_entry.as_deref() {
         let bytes = *entry_data.get(name).ok_or_else(|| {
             CodecError::Malformed("legacy ElementMap references missing entry".into())
@@ -479,10 +538,10 @@ fn parse_legacy_element_map(
         let mut header = text.split_ascii_whitespace();
         let first = header.next().unwrap_or_default();
         if first == "BeginElementMap" && header.next() == Some("v1") {
-            let parsed = parse_element_map(bytes, true)?;
+            let parsed = parse_element_map(ctx, bytes, true)?;
             let declared_count = match marker.attribute("count") {
-                Some(count) => parse_usize(count, "ElementMap count")?,
-                None => element_map_size(&parsed)?,
+                Some(count) => parse_usize(ctx, count, "ElementMap count")?,
+                None => element_map_size(ctx, &parsed)?,
             };
             return Ok(Some(MapPayload {
                 source_entry,
@@ -490,25 +549,27 @@ fn parse_legacy_element_map(
                 parsed,
             }));
         }
-        let (declared_count, records) = parse_legacy_stream(bytes, None)?;
+        let (declared_count, records) = parse_legacy_stream(ctx, bytes, None)?;
         return Ok(Some(legacy_map_payload(
+            ctx,
             records,
             declared_count,
             source_entry,
         )?));
     }
 
-    let declared_count = parse_count(marker, "ElementMap")?;
+    let declared_count = parse_count(ctx, marker, "ElementMap")?;
     if declared_count == 0 {
         return Ok(None);
     }
     let records = if file_version > 1 {
-        let bytes = node_text_bytes(marker);
-        parse_legacy_stream(&bytes, Some(declared_count))?.1
+        let (bytes, _reservation) = node_text_bytes(ctx, marker)?;
+        parse_legacy_stream(ctx, &bytes, Some(declared_count))?.1
     } else {
-        parse_legacy_elements(marker, declared_count)?
+        parse_legacy_elements(ctx, marker, declared_count)?
     };
     Ok(Some(legacy_map_payload(
+        ctx,
         records,
         declared_count,
         source_entry,
@@ -516,6 +577,7 @@ fn parse_legacy_element_map(
 }
 
 fn parse_legacy_stream(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     expected_count: Option<usize>,
 ) -> Result<(usize, Vec<LegacyElementRecord>), CodecError> {
@@ -525,13 +587,14 @@ fn parse_legacy_stream(
     let count = expected_count.map_or_else(
         || {
             parse_usize(
-                next_token(&mut tokens, "element-map record count")?,
+                ctx,
+                next_token(ctx, &mut tokens, "element-map record count")?,
                 "element-map record count",
             )
         },
         Ok,
     )?;
-    let records = parse_legacy_records(&mut tokens, count)?;
+    let records = parse_legacy_records(ctx, &mut tokens, count)?;
     if tokens.next().is_some() {
         return Err(CodecError::Malformed(
             "legacy element map has trailing data".into(),
@@ -541,6 +604,7 @@ fn parse_legacy_stream(
 }
 
 fn parse_legacy_records<'a>(
+    ctx: &DecodeContext<'_>,
     tokens: &mut impl Iterator<Item = &'a str>,
     count: usize,
 ) -> Result<Vec<LegacyElementRecord>, CodecError> {
@@ -549,12 +613,19 @@ fn parse_legacy_records<'a>(
             "legacy element-map record count exceeds limit".into(),
         ));
     }
-    let mut records = Vec::with_capacity(count);
+    let mut records = ctx.collection_vec(count, "FreeCAD legacy element records")?;
     for _ in 0..count {
-        let indexed_name = next_token(tokens, "legacy element indexed name")?.to_owned();
-        let mapped_name = next_token(tokens, "legacy mapped name")?.to_owned();
+        let indexed_name = ctx.copy_retained_text(
+            next_token(ctx, tokens, "legacy element indexed name")?,
+            "FreeCAD legacy indexed name",
+        )?;
+        let mapped_name = ctx.copy_retained_text(
+            next_token(ctx, tokens, "legacy mapped name")?,
+            "FreeCAD legacy mapped name",
+        )?;
         let sid_count = parse_usize(
-            next_token(tokens, "legacy string-id count")?,
+            ctx,
+            next_token(ctx, tokens, "legacy string-id count")?,
             "legacy string-id count",
         )?;
         if sid_count > MAX_NAMES {
@@ -562,10 +633,10 @@ fn parse_legacy_records<'a>(
                 "legacy string-id count exceeds limit".into(),
             ));
         }
-        let mut string_ids = Vec::with_capacity(sid_count);
+        let mut string_ids = ctx.collection_vec(sid_count, "FreeCAD legacy string IDs")?;
         for _ in 0..sid_count {
             string_ids.push(
-                next_token(tokens, "legacy string id")?
+                next_token(ctx, tokens, "legacy string id")?
                     .parse::<i64>()
                     .map_err(|_| CodecError::Malformed("invalid legacy string id".into()))?,
             );
@@ -580,13 +651,13 @@ fn parse_legacy_records<'a>(
 }
 
 fn parse_legacy_elements(
+    ctx: &DecodeContext<'_>,
     marker: roxmltree::Node<'_, '_>,
     count: usize,
 ) -> Result<Vec<LegacyElementRecord>, CodecError> {
-    let elements = marker
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
+    let element_nodes = marker.children().filter(roxmltree::Node::is_element);
+    let mut elements = ctx.collection_vec(count, "FreeCAD legacy element nodes")?;
+    elements.extend(element_nodes);
     if elements.len() != count
         || elements
             .iter()
@@ -596,58 +667,74 @@ fn parse_legacy_elements(
             "legacy ElementMap count does not match direct Element children".into(),
         ));
     }
-    elements
-        .into_iter()
-        .map(|element| {
-            let indexed_name = element
+    let mut records = ctx.collection_vec(count, "FreeCAD legacy element records")?;
+    for element in elements {
+        let indexed_name = ctx.copy_retained_text(
+            element
                 .attribute("value")
-                .ok_or_else(|| CodecError::Malformed("legacy Element has no value".into()))?
-                .to_owned();
-            let mapped_name = element
+                .ok_or_else(|| CodecError::Malformed("legacy Element has no value".into()))?,
+            "FreeCAD legacy indexed name",
+        )?;
+        let mapped_name = ctx.copy_retained_text(
+            element
                 .attribute("key")
-                .ok_or_else(|| CodecError::Malformed("legacy Element has no key".into()))?
-                .to_owned();
-            let string_ids = element
-                .attribute("sid")
-                .map(parse_legacy_string_ids)
-                .transpose()?
-                .unwrap_or_default();
-            Ok(LegacyElementRecord {
-                indexed_name,
-                mapped_name,
-                string_ids,
-            })
-        })
-        .collect()
+                .ok_or_else(|| CodecError::Malformed("legacy Element has no key".into()))?,
+            "FreeCAD legacy mapped name",
+        )?;
+        let string_ids = element
+            .attribute("sid")
+            .map(|value| parse_legacy_string_ids(ctx, value))
+            .transpose()?
+            .unwrap_or_default();
+        records.push(LegacyElementRecord {
+            indexed_name,
+            mapped_name,
+            string_ids,
+        });
+    }
+    Ok(records)
 }
 
-fn parse_legacy_string_ids(value: &str) -> Result<Vec<i64>, CodecError> {
-    value
+fn parse_legacy_string_ids(ctx: &DecodeContext<'_>, value: &str) -> Result<Vec<i64>, CodecError> {
+    let mut ids = Vec::new();
+    for token in value
         .split(|character: char| !character.is_ascii_digit() && character != '-')
         .filter(|token| !token.is_empty())
-        .map(|token| {
-            token
-                .parse::<i64>()
-                .map_err(|_| CodecError::Malformed("invalid legacy string id".into()))
-        })
-        .filter(|id| !matches!(id, Ok(0)))
-        .collect()
+    {
+        let id = token
+            .parse::<i64>()
+            .map_err(|_| CodecError::Malformed("invalid legacy string id".into()))?;
+        if id != 0 {
+            ctx.reserve_vec(&mut ids, 1, "FreeCAD legacy string IDs")?;
+            ids.push(id);
+        }
+    }
+    Ok(ids)
 }
 
 fn legacy_map_payload(
+    ctx: &DecodeContext<'_>,
     records: Vec<LegacyElementRecord>,
     declared_count: usize,
     source_entry: Option<String>,
 ) -> Result<MapPayload, CodecError> {
     let mut groups = BTreeMap::<String, Vec<Vec<ElementMappedName>>>::new();
     for record in records {
-        let (indexed_name, index) = split_indexed_name(&record.indexed_name)?;
+        let (indexed_name, index) = split_indexed_name(ctx, &record.indexed_name)?;
+        if !groups.contains_key(&indexed_name) {
+            ctx.charge_collection_items(1, "FreeCAD legacy element groups")?;
+        }
         let names = groups.entry(indexed_name).or_default();
         if names.len() <= index {
-            names.resize_with(index + 1, Vec::new);
+            let additional = index + 1 - names.len();
+            ctx.reserve_vec(names, additional, "FreeCAD legacy name slots")?;
+            for _ in 0..additional {
+                names.push(Vec::new());
+            }
         }
+        ctx.reserve_vec(&mut names[index], 1, "FreeCAD legacy mapped names")?;
         names[index].push(ElementMappedName {
-            encoded: record.mapped_name.clone(),
+            encoded: ctx.copy_retained_text(&record.mapped_name, "FreeCAD legacy encoded name")?,
             resolved: Some(record.mapped_name),
             string_ids: record.string_ids,
             topology_ids: Vec::new(),
@@ -656,7 +743,7 @@ fn legacy_map_payload(
     let parsed = ParsedMap {
         map_id: 0,
         postfixes: Vec::new(),
-        maps: ElementMapNodes::from_root_names(0, groups),
+        maps: ElementMapNodes::from_root_names(ctx, 0, groups)?,
     };
     Ok(MapPayload {
         source_entry,
@@ -665,7 +752,7 @@ fn legacy_map_payload(
     })
 }
 
-fn split_indexed_name(value: &str) -> Result<(String, usize), CodecError> {
+fn split_indexed_name(ctx: &DecodeContext<'_>, value: &str) -> Result<(String, usize), CodecError> {
     if value.is_empty() {
         return Err(CodecError::Malformed("legacy indexed name is empty".into()));
     }
@@ -694,7 +781,10 @@ fn split_indexed_name(value: &str) -> Result<(String, usize), CodecError> {
             "legacy indexed-name index exceeds limit".into(),
         ));
     }
-    Ok((type_name.to_owned(), index))
+    Ok((
+        ctx.copy_retained_text(type_name, "FreeCAD legacy element family")?,
+        index,
+    ))
 }
 
 fn string_hasher_successor<'a, 'input>(
@@ -720,20 +810,37 @@ fn string_hasher_successor<'a, 'input>(
     }
 }
 
-fn node_text_bytes(node: roxmltree::Node<'_, '_>) -> Vec<u8> {
-    node.children()
+fn node_text_bytes<'a>(
+    ctx: &'a DecodeContext<'_>,
+    node: roxmltree::Node<'_, '_>,
+) -> Result<(Vec<u8>, cadmpeg_core::decode::ScopedReservation<'a>), CodecError> {
+    let count = node
+        .children()
         .filter_map(|child| child.is_text().then(|| child.text()).flatten())
-        .flat_map(str::bytes)
-        .collect()
+        .try_fold(0_usize, |total, text| total.checked_add(text.len()))
+        .ok_or_else(|| CodecError::Malformed("inline element-map text length overflows".into()))?;
+    let (mut bytes, reservation) = ctx.temporary_vec::<u8>(count, "FreeCAD inline element text")?;
+    for text in node
+        .children()
+        .filter_map(|child| child.is_text().then(|| child.text()).flatten())
+    {
+        bytes.extend_from_slice(text.as_bytes());
+    }
+    Ok((bytes, reservation))
 }
 
-fn parse_count(node: roxmltree::Node<'_, '_>, kind: &str) -> Result<usize, CodecError> {
+fn parse_count(
+    ctx: &DecodeContext<'_>,
+    node: roxmltree::Node<'_, '_>,
+    kind: &str,
+) -> Result<usize, CodecError> {
     let count = node.attribute("count").unwrap_or("0");
-    let count = parse_usize(count, &format!("{kind} count"))?;
+    let count = parse_usize(ctx, count, &format!("{kind} count"))?;
     if count > MAX_TABLE_ENTRIES {
-        return Err(CodecError::malformed(format_args!(
-            "{kind} count exceeds limit"
-        )));
+        return Err(element_map_malformed(
+            ctx,
+            format_args!("{kind} count exceeds limit"),
+        ));
     }
     Ok(count)
 }
@@ -741,41 +848,43 @@ fn parse_count(node: roxmltree::Node<'_, '_>, kind: &str) -> Result<usize, Codec
 /// Reads an element-map boolean attribute, which is `0`, `1`, `false` or `true`.
 ///
 /// Any other text is malformed.
-fn require_bool(value: &str) -> Result<bool, CodecError> {
+fn require_bool(ctx: &DecodeContext<'_>, value: &str) -> Result<bool, CodecError> {
     match value {
         "0" | "false" => Ok(false),
         "1" | "true" => Ok(true),
-        _ => Err(CodecError::malformed(format_args!(
-            "invalid boolean {value:?}"
-        ))),
+        _ => Err(element_map_malformed(
+            ctx,
+            format_args!("invalid boolean {value:?}"),
+        )),
     }
 }
 
-fn parse_decimal(value: &str, field: &str) -> Result<i64, CodecError> {
+fn parse_decimal(ctx: &DecodeContext<'_>, value: &str, field: &str) -> Result<i64, CodecError> {
     value
         .parse()
-        .map_err(|_| CodecError::malformed(format_args!("invalid {field} {value:?}")))
+        .map_err(|_| element_map_malformed(ctx, format_args!("invalid {field} {value:?}")))
 }
 
-fn parse_usize(value: &str, field: &str) -> Result<usize, CodecError> {
+fn parse_usize(ctx: &DecodeContext<'_>, value: &str, field: &str) -> Result<usize, CodecError> {
     value
         .parse()
-        .map_err(|_| CodecError::malformed(format_args!("invalid {field} {value:?}")))
+        .map_err(|_| element_map_malformed(ctx, format_args!("invalid {field} {value:?}")))
 }
 
-fn parse_hex(value: &str, field: &str) -> Result<i64, CodecError> {
+fn parse_hex(ctx: &DecodeContext<'_>, value: &str, field: &str) -> Result<i64, CodecError> {
     let (negative, digits) = value
         .strip_prefix('-')
         .map_or((false, value), |digits| (true, digits));
     if digits.is_empty() {
-        return Err(CodecError::malformed(format_args!("empty {field}")));
+        return Err(element_map_malformed(ctx, format_args!("empty {field}")));
     }
     let value = i64::from_str_radix(digits, 16)
-        .map_err(|_| CodecError::malformed(format_args!("invalid {field} {value:?}")))?;
+        .map_err(|_| element_map_malformed(ctx, format_args!("invalid {field} {value:?}")))?;
     Ok(if negative { -value } else { value })
 }
 
 fn parse_string_table(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     declared_count: usize,
     side_entry: bool,
@@ -789,7 +898,7 @@ fn parse_string_table(
                 "string-table side entry has invalid header".into(),
             ));
         }
-        if parse_usize(scanner.token()?, "string-table header count")? != declared_count {
+        if parse_usize(ctx, scanner.token()?, "string-table header count")? != declared_count {
             return Err(CodecError::Malformed(
                 "string-table XML and side-entry counts disagree".into(),
             ));
@@ -797,23 +906,27 @@ fn parse_string_table(
     }
     // Each record consumes at least one non-whitespace byte, so the declared count
     // cannot exceed the table's byte length.
-    let capacity = bounded_len(declared_count as u64, 1, text.len())
-        .ok_or_else(|| CodecError::Malformed("string-table record count exceeds input".into()))?;
-    let mut output = Vec::with_capacity(capacity);
+    let capacity = bounded_len(
+        cadmpeg_core::decode::u64_from_index(declared_count),
+        1,
+        text.len(),
+    )
+    .ok_or_else(|| CodecError::Malformed("string-table record count exceeds input".into()))?;
+    let mut output = ctx.collection_vec(capacity, "FreeCAD string table entries")?;
     let mut previous_id = 0_i64;
-    let mut previous_components = Vec::<i64>::new();
     for _ in 0..declared_count {
         scanner.skip_whitespace();
         let record_start = scanner.position;
         let header = scanner.token()?;
-        let fields = header.split('.').collect::<Vec<_>>();
-        if fields.len() < 2 {
-            return Err(CodecError::Malformed(
-                "string-table record has incomplete numeric header".into(),
-            ));
-        }
-        let relative = fields[0].starts_with('-');
-        let encoded_id = parse_hex(fields[0], "string id")?;
+        let mut fields = header.split('.');
+        let encoded_id_field = fields.next().ok_or_else(|| {
+            CodecError::Malformed("string-table record has incomplete numeric header".into())
+        })?;
+        let flags_field = fields.next().ok_or_else(|| {
+            CodecError::Malformed("string-table record has incomplete numeric header".into())
+        })?;
+        let relative = encoded_id_field.starts_with('-');
+        let encoded_id = parse_hex(ctx, encoded_id_field, "string id")?;
         let string_id = if relative {
             previous_id
                 .checked_add(-encoded_id)
@@ -821,13 +934,16 @@ fn parse_string_table(
         } else {
             encoded_id
         };
-        let flags = u64::from_str_radix(fields[1], 16)
+        let flags = u64::from_str_radix(flags_field, 16)
             .map_err(|_| CodecError::Malformed("invalid string-table flags".into()))?;
         let mut components = Vec::new();
-        for (position, field) in fields.iter().skip(2).enumerate() {
-            let encoded = parse_hex(field, "string component")?;
+        for (position, field) in fields.enumerate() {
+            let encoded = parse_hex(ctx, field, "string component")?;
             let component = if relative {
-                if let Some(previous) = previous_components.get(position) {
+                if let Some(previous) = output
+                    .last()
+                    .and_then(|entry: &StringTableEntry| entry.components.get(position))
+                {
                     previous.checked_add(encoded).ok_or_else(|| {
                         CodecError::Malformed("relative string component overflows".into())
                     })?
@@ -839,34 +955,41 @@ fn parse_string_table(
             } else {
                 encoded
             };
+            ctx.reserve_vec(&mut components, 1, "FreeCAD string table components")?;
             components.push(component);
         }
         let payload = if flags & 0x8 == 0 {
-            scanner.encoded_text()?
+            scanner.encoded_text(ctx)?
         } else {
             let derived_prefix = flags & (0x10 | 0x20 | 0x40) != 0;
             let encoded_postfix = flags & 0x4 != 0;
             let mut values = Vec::new();
             if !derived_prefix {
-                values.push(scanner.token()?.to_owned());
+                ctx.reserve_vec(&mut values, 1, "FreeCAD string table value words")?;
+                values.push(
+                    ctx.copy_retained_text(scanner.token()?, "FreeCAD string table value word")?,
+                );
             }
             if !encoded_postfix {
-                values.push(scanner.token()?.to_owned());
+                ctx.reserve_vec(&mut values, 1, "FreeCAD string table value words")?;
+                values.push(
+                    ctx.copy_retained_text(scanner.token()?, "FreeCAD string table value word")?,
+                );
             }
-            values.join(" ")
+            ctx.join_retained(&values, " ", "FreeCAD string table joined value")?
         };
-        let raw = text[record_start..scanner.position]
-            .trim_end_matches(char::is_whitespace)
-            .to_owned();
+        let raw = ctx.copy_retained_text(
+            text[record_start..scanner.position].trim_end_matches(char::is_whitespace),
+            "FreeCAD string table raw record",
+        )?;
         output.push(StringTableEntry {
             string_id,
             flags,
-            components: components.clone(),
+            components,
             payload,
             raw,
         });
         previous_id = string_id;
-        previous_components = components;
     }
     scanner.skip_whitespace();
     if !scanner.is_done() {
@@ -913,7 +1036,7 @@ impl<'a> TextScanner<'a> {
         Ok(&self.text[start..self.position])
     }
 
-    fn encoded_text(&mut self) -> Result<String, CodecError> {
+    fn encoded_text(&mut self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
         self.skip_whitespace();
         let count_start = self.position;
         while self
@@ -929,7 +1052,11 @@ impl<'a> TextScanner<'a> {
                 "string-table text has invalid line-count prefix".into(),
             ));
         }
-        let line_count = parse_usize(&self.text[count_start..self.position], "text line count")?;
+        let line_count = parse_usize(
+            ctx,
+            &self.text[count_start..self.position],
+            "text line count",
+        )?;
         self.position += 1;
         let content_start = self.position;
         for _ in 0..=line_count {
@@ -941,7 +1068,10 @@ impl<'a> TextScanner<'a> {
             };
             self.position += newline + 1;
         }
-        Ok(self.text[content_start..self.position - 1].to_owned())
+        ctx.copy_retained_text(
+            &self.text[content_start..self.position - 1],
+            "FreeCAD string table encoded text",
+        )
     }
 
     fn is_done(&self) -> bool {
@@ -955,72 +1085,102 @@ struct ParsedMap {
     maps: ElementMapNodes,
 }
 
-fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecError> {
+fn parse_element_map(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    side_entry: bool,
+) -> Result<ParsedMap, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("element map is not UTF-8".into()))?;
     let mut tokens = text.split_whitespace();
     if side_entry {
-        expect(&mut tokens, "BeginElementMap")?;
-        expect(&mut tokens, "v1")?;
+        expect(ctx, &mut tokens, "BeginElementMap")?;
+        expect(ctx, &mut tokens, "v1")?;
     }
-    let map_id = next_u64(&mut tokens, "element-map id")?;
-    expect(&mut tokens, "PostfixCount")?;
-    let postfix_count = next_count(&mut tokens, "postfix count", MAX_NAMES)?;
-    let postfixes = (0..postfix_count)
-        .map(|_| next_token(&mut tokens, "postfix").map(str::to_owned))
-        .collect::<Result<Vec<_>, _>>()?;
-    expect(&mut tokens, "MapCount")?;
-    let map_count = next_count(&mut tokens, "map count", MAX_MAP_NODES)?;
+    let map_id = next_u64(ctx, &mut tokens, "element-map id")?;
+    expect(ctx, &mut tokens, "PostfixCount")?;
+    let postfix_count = next_count(ctx, &mut tokens, "postfix count", MAX_NAMES)?;
+    let mut postfixes = ctx.collection_vec(postfix_count, "FreeCAD element map postfixes")?;
+    for _ in 0..postfix_count {
+        postfixes.push(ctx.copy_retained_text(
+            next_token(ctx, &mut tokens, "postfix")?,
+            "FreeCAD element map postfix text",
+        )?);
+    }
+    expect(ctx, &mut tokens, "MapCount")?;
+    let map_count = next_count(ctx, &mut tokens, "map count", MAX_MAP_NODES)?;
     // Each map node consumes at least one whitespace-separated token, so its count
     // cannot exceed the element map's byte length.
-    let map_capacity = bounded_len(map_count as u64, 1, text.len())
-        .ok_or_else(|| CodecError::Malformed("element-map node count exceeds input".into()))?;
-    let mut maps = Vec::with_capacity(map_capacity);
+    let map_capacity = bounded_len(
+        cadmpeg_core::decode::u64_from_index(map_count),
+        1,
+        text.len(),
+    )
+    .ok_or_else(|| CodecError::Malformed("element-map node count exceeds input".into()))?;
+    let mut maps = ctx.collection_vec(map_capacity, "FreeCAD element map nodes")?;
     for expected_index in 1..=map_count {
-        expect(&mut tokens, "ElementMap")?;
-        let index = next_count(&mut tokens, "map index", MAX_MAP_NODES)?;
+        expect(ctx, &mut tokens, "ElementMap")?;
+        let index = next_count(ctx, &mut tokens, "map index", MAX_MAP_NODES)?;
         if index != expected_index {
             return Err(CodecError::Malformed(
                 "element-map node indices are not contiguous".into(),
             ));
         }
-        let node_id = next_u64(&mut tokens, "map node id")?;
-        let group_count = next_count(&mut tokens, "group count", MAX_GROUPS)?;
+        let node_id = next_u64(ctx, &mut tokens, "map node id")?;
+        let group_count = next_count(ctx, &mut tokens, "group count", MAX_GROUPS)?;
         // Each group consumes at least one token, so its count cannot exceed the byte length.
-        let group_capacity = bounded_len(group_count as u64, 1, text.len())
-            .ok_or_else(|| CodecError::Malformed("element-map group count exceeds input".into()))?;
-        let mut groups = Vec::with_capacity(group_capacity);
+        let group_capacity = bounded_len(
+            cadmpeg_core::decode::u64_from_index(group_count),
+            1,
+            text.len(),
+        )
+        .ok_or_else(|| CodecError::Malformed("element-map group count exceeds input".into()))?;
+        let mut groups = ctx.collection_vec(group_capacity, "FreeCAD element map groups")?;
         for _ in 0..group_count {
-            let indexed_name = next_token(&mut tokens, "indexed name")?.to_owned();
-            expect(&mut tokens, "ChildCount")?;
-            let child_count = next_count(&mut tokens, "child count", MAX_NAMES)?;
+            let indexed_name = ctx.copy_retained_text(
+                next_token(ctx, &mut tokens, "indexed name")?,
+                "FreeCAD indexed element name",
+            )?;
+            expect(ctx, &mut tokens, "ChildCount")?;
+            let child_count = next_count(ctx, &mut tokens, "child count", MAX_NAMES)?;
             // Each child consumes at least one token, so its count cannot exceed the byte length.
-            let child_capacity =
-                bounded_len(child_count as u64, 1, text.len()).ok_or_else(|| {
-                    CodecError::Malformed("element-map child count exceeds input".into())
-                })?;
-            let mut children = Vec::with_capacity(child_capacity);
+            let child_capacity = bounded_len(
+                cadmpeg_core::decode::u64_from_index(child_count),
+                1,
+                text.len(),
+            )
+            .ok_or_else(|| CodecError::Malformed("element-map child count exceeds input".into()))?;
+            let mut children =
+                ctx.collection_vec(child_capacity, "FreeCAD element map children")?;
             for _ in 0..child_count {
                 let fields = (0..7)
-                    .map(|_| next_token(&mut tokens, "child descriptor"))
+                    .map(|_| next_token(ctx, &mut tokens, "child descriptor"))
                     .collect::<Result<Vec<_>, _>>()?;
-                children.push(fields.join(" "));
+                children.push(ctx.join_retained(
+                    &fields,
+                    " ",
+                    "FreeCAD element child descriptor",
+                )?);
             }
-            expect(&mut tokens, "NameCount")?;
-            let name_count = next_count(&mut tokens, "name count", MAX_NAMES)?;
+            expect(ctx, &mut tokens, "NameCount")?;
+            let name_count = next_count(ctx, &mut tokens, "name count", MAX_NAMES)?;
             // Each name consumes at least one token, so its count cannot exceed the byte length.
-            let name_capacity = bounded_len(name_count as u64, 1, text.len()).ok_or_else(|| {
-                CodecError::Malformed("element-map name count exceeds input".into())
-            })?;
-            let mut names = Vec::with_capacity(name_capacity);
+            let name_capacity = bounded_len(
+                cadmpeg_core::decode::u64_from_index(name_count),
+                1,
+                text.len(),
+            )
+            .ok_or_else(|| CodecError::Malformed("element-map name count exceeds input".into()))?;
+            let mut names = ctx.collection_vec(name_capacity, "FreeCAD element map names")?;
             for _ in 0..name_count {
                 let mut chain = Vec::new();
                 loop {
-                    let encoded = next_token(&mut tokens, "mapped name")?;
+                    let encoded = next_token(ctx, &mut tokens, "mapped name")?;
                     if encoded == "0" {
                         break;
                     }
-                    chain.push(parse_mapped_name(encoded, &postfixes)?);
+                    ctx.reserve_vec(&mut chain, 1, "FreeCAD mapped name chain")?;
+                    chain.push(parse_mapped_name(ctx, encoded, &postfixes)?);
                 }
                 names.push(chain);
             }
@@ -1030,7 +1190,7 @@ fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecE
                 names,
             });
         }
-        expect(&mut tokens, "EndMap")?;
+        expect(ctx, &mut tokens, "EndMap")?;
         maps.push(ElementMapNode {
             map_id: node_id,
             groups,
@@ -1048,8 +1208,14 @@ fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecE
     })
 }
 
-fn parse_mapped_name(encoded: &str, postfixes: &[String]) -> Result<ElementMappedName, CodecError> {
-    let fields = encoded.split('.').collect::<Vec<_>>();
+fn parse_mapped_name(
+    ctx: &DecodeContext<'_>,
+    encoded: &str,
+    postfixes: &[String],
+) -> Result<ElementMappedName, CodecError> {
+    let field_count = encoded.split('.').count();
+    let mut fields = ctx.collection_vec(field_count, "FreeCAD mapped name fields")?;
+    fields.extend(encoded.split('.'));
     let (base, postfix_position, id_position) =
         if let Some(dictionary) = fields[0].strip_prefix(':') {
             if fields.len() < 3 {
@@ -1057,7 +1223,7 @@ fn parse_mapped_name(encoded: &str, postfixes: &[String]) -> Result<ElementMappe
                     "indexed mapped name has incomplete dictionary fields".into(),
                 ));
             }
-            let dictionary = parse_usize(dictionary, "mapped-name prefix index")?;
+            let dictionary = parse_usize(ctx, dictionary, "mapped-name prefix index")?;
             let prefix = postfixes
                 .get(dictionary.checked_sub(1).ok_or_else(|| {
                     CodecError::Malformed("mapped-name prefix index is zero".into())
@@ -1065,14 +1231,22 @@ fn parse_mapped_name(encoded: &str, postfixes: &[String]) -> Result<ElementMappe
                 .ok_or_else(|| {
                     CodecError::Malformed("mapped-name prefix index is out of range".into())
                 })?;
-            let element = usize::try_from(parse_hex(fields[1], "mapped-name element index")?)
+            let element = usize::try_from(parse_hex(ctx, fields[1], "mapped-name element index")?)
                 .map_err(|_| CodecError::Malformed("negative mapped-name element index".into()))?;
-            (format!("{prefix}{element}"), 2, 3)
+            (
+                ctx.retained_suffix(prefix, &element.to_string(), "FreeCAD mapped name base")?,
+                2,
+                3,
+            )
         } else if let Some(base) = fields[0]
             .strip_prefix(';')
             .or_else(|| fields[0].strip_prefix('$'))
         {
-            (base.to_owned(), 1, 2)
+            (
+                ctx.copy_retained_text(base, "FreeCAD mapped name base")?,
+                1,
+                2,
+            )
         } else {
             return Err(CodecError::Malformed(
                 "mapped name has unknown base encoding".into(),
@@ -1082,23 +1256,34 @@ fn parse_mapped_name(encoded: &str, postfixes: &[String]) -> Result<ElementMappe
         .get(postfix_position)
         .ok_or_else(|| CodecError::Malformed("mapped name has no postfix index".into()))
         .and_then(|value| {
-            usize::try_from(parse_hex(value, "mapped-name postfix index")?)
+            usize::try_from(parse_hex(ctx, value, "mapped-name postfix index")?)
                 .map_err(|_| CodecError::Malformed("negative mapped-name postfix index".into()))
         })?;
     let mut resolved = base;
     if postfix_index != 0 {
-        resolved.push_str(postfixes.get(postfix_index - 1).ok_or_else(|| {
-            CodecError::Malformed("mapped-name postfix index is out of range".into())
-        })?);
+        ctx.append_retained(
+            &mut resolved,
+            postfixes.get(postfix_index - 1).ok_or_else(|| {
+                CodecError::Malformed("mapped-name postfix index is out of range".into())
+            })?,
+            "FreeCAD mapped name postfix",
+        )?;
     }
-    let string_ids = fields
+    let id_count = fields
         .iter()
         .skip(id_position)
         .filter(|value| !value.is_empty())
-        .map(|value| parse_hex(value, "mapped-name string id"))
-        .collect::<Result<Vec<_>, _>>()?;
+        .count();
+    let mut string_ids = ctx.collection_vec(id_count, "FreeCAD mapped name string IDs")?;
+    for value in fields
+        .iter()
+        .skip(id_position)
+        .filter(|value| !value.is_empty())
+    {
+        string_ids.push(parse_hex(ctx, value, "mapped-name string id")?);
+    }
     Ok(ElementMappedName {
-        encoded: encoded.to_owned(),
+        encoded: ctx.copy_retained_text(encoded, "FreeCAD encoded mapped name")?,
         resolved: Some(resolved),
         string_ids,
         topology_ids: Vec::new(),
@@ -1106,697 +1291,55 @@ fn parse_mapped_name(encoded: &str, postfixes: &[String]) -> Result<ElementMappe
 }
 
 fn next_token<'a>(
+    ctx: &DecodeContext<'_>,
     tokens: &mut impl Iterator<Item = &'a str>,
     field: &str,
 ) -> Result<&'a str, CodecError> {
     tokens
         .next()
-        .ok_or_else(|| CodecError::malformed(format_args!("element map ends before {field}")))
+        .ok_or_else(|| element_map_malformed(ctx, format_args!("element map ends before {field}")))
 }
 
 fn expect<'a>(
+    ctx: &DecodeContext<'_>,
     tokens: &mut impl Iterator<Item = &'a str>,
     expected: &str,
 ) -> Result<(), CodecError> {
-    let actual = next_token(tokens, expected)?;
+    let actual = next_token(ctx, tokens, expected)?;
     if actual != expected {
-        return Err(CodecError::malformed(format_args!(
-            "expected element-map token {expected:?}, found {actual:?}"
-        )));
+        return Err(element_map_malformed(
+            ctx,
+            format_args!("expected element-map token {expected:?}, found {actual:?}"),
+        ));
     }
     Ok(())
 }
 
 fn next_count<'a>(
+    ctx: &DecodeContext<'_>,
     tokens: &mut impl Iterator<Item = &'a str>,
     field: &str,
     limit: usize,
 ) -> Result<usize, CodecError> {
-    let value = parse_usize(next_token(tokens, field)?, field)?;
+    let value = parse_usize(ctx, next_token(ctx, tokens, field)?, field)?;
     if value > limit {
-        return Err(CodecError::malformed(format_args!("{field} exceeds limit")));
+        return Err(element_map_malformed(
+            ctx,
+            format_args!("{field} exceeds limit"),
+        ));
     }
     Ok(value)
 }
 
 fn next_u64<'a>(
+    ctx: &DecodeContext<'_>,
     tokens: &mut impl Iterator<Item = &'a str>,
     field: &str,
 ) -> Result<u64, CodecError> {
-    next_token(tokens, field)?
+    next_token(ctx, tokens, field)?
         .parse()
-        .map_err(|_| CodecError::malformed(format_args!("invalid {field}")))
+        .map_err(|_| element_map_malformed(ctx, format_args!("invalid {field}")))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        node_text_bytes, owning_property, parse, parse_element_map, parse_legacy_string_ids,
-        parse_string_table, validate_string_hasher_framing,
-    };
-    use crate::native::{EntryRecord, PropertyRecord};
-    use crate::test_support::test_archive::{
-        archive, archive_entries, assert_valid_document, GEOMETRY,
-    };
-    use crate::FcstdCodec;
-    use cadmpeg_ir::{Codec, DecodeOptions};
-    use std::io::{Cursor, Read};
-
-    #[test]
-    fn legacy_string_ids_keep_parse_errors_while_dropping_zero() {
-        assert_eq!(
-            parse_legacy_string_ids("0,12,-3").expect("valid ids"),
-            vec![12, -3]
-        );
-        assert!(parse_legacy_string_ids("12,9999999999999999999999").is_err());
-    }
-
-    fn test_property(type_name: &str, raw_xml: &str) -> PropertyRecord {
-        PropertyRecord {
-            id: "fcstd:test:property#Shape".into(),
-            owner: "fcstd:test:object#Shape".into(),
-            name: "Shape".into(),
-            type_name: type_name.into(),
-            family: crate::native::PropertyFamily::Unknown,
-            status: None,
-            body: crate::native::PropertyBody::Persisted {
-                values: Vec::new(),
-                links: Vec::new(),
-                side_entries: Vec::new(),
-                dynamic: None,
-            },
-            order: 0,
-            xml: crate::native::RetainedXml::from_text(raw_xml.into(), 0).unwrap(),
-        }
-    }
-
-    #[test]
-    fn restores_absolute_and_relative_string_table_headers() {
-        let records = parse_string_table(b"a.c.2 alpha\n-3.c.-1 beta\n", 2, false)
-            .expect("parse relative string table");
-        assert_eq!(records[0].string_id, 10);
-        assert_eq!(records[0].components, [2]);
-        assert_eq!(records[1].string_id, 13);
-        assert_eq!(records[1].components, [1]);
-        assert_eq!(records[1].payload, "beta");
-    }
-
-    #[test]
-    fn parses_map_nodes_and_mapped_name_chains() {
-        let input = b"7 PostfixCount 1 :tag MapCount 1\n\
-            ElementMap 1 7 1 Face ChildCount 0 NameCount 2\n\
-            ;Generated.0.a 0 :1.a.0.b 0 EndMap";
-        let parsed = parse_element_map(input, false).expect("parse element map");
-        assert_eq!(parsed.map_id, 7);
-        assert_eq!(parsed.postfixes, [":tag"]);
-        assert_eq!(parsed.maps[0].groups[0].names.len(), 2);
-        assert_eq!(parsed.maps[0].groups[0].names[1][0].string_ids, [11]);
-        assert_eq!(
-            parsed.maps[0].groups[0].names[1][0].resolved.as_deref(),
-            Some(":tag10")
-        );
-    }
-
-    #[test]
-    fn rejects_declared_string_table_count_mismatch() {
-        assert!(parse_string_table(b"1.c name\n", 2, false).is_err());
-    }
-
-    #[test]
-    fn accepts_document_and_direct_shape_string_hasher_roots() {
-        let xml = roxmltree::Document::parse(
-            r#"<Document>
-<StringHasher saveall="0" threshold="0" count="0" new="1"/>
-<StringHasher2 count="0"></StringHasher2>
-<Property name="Shape" type="Part::PropertyPartShape">
-<Part/>
-<StringHasher saveall="0" threshold="0" count="0" new="1"/>
-<StringHasher2 count="0"></StringHasher2>
-</Property>
-</Document>"#,
-        )
-        .expect("framed string hashers");
-        validate_string_hasher_framing(xml.root_element()).expect("valid roots");
-    }
-
-    #[test]
-    fn accepts_legacy_document_string_hasher_carrier() {
-        let (tables, maps) = parse(
-            br#"<Document><StringHasher count="1">a.c legacy</StringHasher></Document>"#,
-            0,
-            &[],
-            &[],
-        )
-        .expect("legacy string table carrier");
-        assert_eq!(tables.as_slice().len(), 1);
-        assert_eq!(tables.as_slice()[0].entries()[0].payload, "legacy");
-        assert!(maps.is_empty());
-    }
-
-    #[test]
-    fn rejects_nested_string_hasher_carrier() {
-        let xml = roxmltree::Document::parse(
-            r#"<Document><Property name="Shape" type="Part::PropertyPartShape">
-<Part/><Wrapper><StringHasher count="0"></StringHasher></Wrapper>
-</Property></Document>"#,
-        )
-        .expect("nested string hasher");
-        assert!(validate_string_hasher_framing(xml.root_element()).is_err());
-    }
-
-    #[test]
-    fn rejects_duplicate_direct_string_hasher_carriers() {
-        let xml = roxmltree::Document::parse(
-            r#"<Document><Property name="Shape" type="Part::PropertyPartShape">
-<Part/><StringHasher count="0"></StringHasher><StringHasher count="0"></StringHasher>
-</Property></Document>"#,
-        )
-        .expect("duplicate string hashers");
-        assert!(validate_string_hasher_framing(xml.root_element()).is_err());
-    }
-
-    #[test]
-    fn rejects_orphan_string_hasher2_carrier() {
-        let xml = roxmltree::Document::parse("<Document><StringHasher2/></Document>")
-            .expect("orphan string hasher successor");
-        assert!(validate_string_hasher_framing(xml.root_element()).is_err());
-    }
-
-    #[test]
-    fn rejects_non_successor_string_hasher2_carrier() {
-        let xml = roxmltree::Document::parse(
-            r#"<Document><StringHasher new="1"/><Wrapper/><StringHasher2/></Document>"#,
-        )
-        .expect("non-successor string hasher");
-        assert!(validate_string_hasher_framing(xml.root_element()).is_err());
-    }
-
-    #[test]
-    fn restores_multiline_length_prefixed_string() {
-        let records = parse_string_table(b"1.0 1:first\nsecond\n", 1, false)
-            .expect("parse multiline string table");
-        assert_eq!(records[0].payload, "first\nsecond");
-    }
-
-    #[test]
-    fn parses_side_entry_headers() {
-        let table = parse_string_table(b"StringTableStart v1 1\n1.c value\n", 1, true)
-            .expect("parse absolute string table");
-        assert_eq!(table[0].payload, "value");
-        let map = parse_element_map(
-            b"BeginElementMap v1 1 PostfixCount 0 MapCount 1 ElementMap 1 1 0 EndMap",
-            true,
-        )
-        .expect("parse absolute element map");
-        assert_eq!(map.map_id, 1);
-    }
-
-    fn legacy_entry(name: &str, data: &[u8]) -> EntryRecord {
-        EntryRecord {
-            id: name.into(),
-            name: name.into(),
-            role: cadmpeg_core::container::ContainerRole::Auxiliary,
-            referenced_by: Vec::new(),
-            data: data.to_vec(),
-        }
-    }
-
-    #[test]
-    fn admits_legacy_direct_element_carrier() {
-        let property = test_property(
-            "Part::PropertyPartShape",
-            r#"<Property><Part ElementMap="1.0"/><ElementMap count="3">
-<Element key="FaceStable" value="Face1"/>
-<Element key="EdgeStable" value="Edge1"/>
-<Element key="VertexStable" value="Vertex1"/>
-</ElementMap></Property>"#,
-        );
-        let (_, maps) = parse(br#"<Document FileVersion="1"/>"#, 1, &[property], &[])
-            .expect("legacy direct element map");
-        assert_eq!(maps.len(), 1);
-        assert_eq!(maps[0].declared_count, 3);
-        assert_eq!(maps[0].source_entry, None);
-        assert_eq!(maps[0].maps[0].groups[0].indexed_name, "Edge");
-        assert_eq!(
-            maps[0].maps[0].groups[0].names[1][0].resolved.as_deref(),
-            Some("EdgeStable")
-        );
-        assert_eq!(
-            maps[0].maps[0].groups[1].names[1][0].resolved.as_deref(),
-            Some("FaceStable")
-        );
-    }
-
-    #[test]
-    fn admits_legacy_inline_stream_carrier() {
-        let property = test_property(
-            "Part::PropertyPartShape",
-            r#"<Property><Part ElementMap="1.0"/><ElementMap count="2">
-Face1 FaceStable 0
-Edge1 EdgeStable 1 7
-</ElementMap></Property>"#,
-        );
-        let (_, maps) = parse(br#"<Document FileVersion="2"/>"#, 2, &[property], &[])
-            .expect("legacy inline element map");
-        assert_eq!(maps[0].declared_count, 2);
-        let edge = &maps[0].maps[0].groups[0].names[1][0];
-        assert_eq!(edge.resolved.as_deref(), Some("EdgeStable"));
-        assert_eq!(edge.string_ids, [7]);
-    }
-
-    #[test]
-    fn admits_legacy_side_entry_record_stream() {
-        let data = b"2\nFace1 FaceStable 0\nEdge1 EdgeStable 1 7\n";
-        let property = test_property(
-            "Part::PropertyPartShape",
-            r#"<Property><Part ElementMap="1.0"/><ElementMap file="Shape.Map.txt"/></Property>"#,
-        );
-        let (_, maps) = parse(
-            br#"<Document FileVersion="1"/>"#,
-            1,
-            &[property],
-            &[legacy_entry("Shape.Map.txt", data)],
-        )
-        .expect("legacy side-entry record stream");
-        assert_eq!(maps[0].declared_count, 2);
-        assert_eq!(maps[0].source_entry.as_deref(), Some("Shape.Map.txt"));
-        assert_eq!(maps[0].maps[0].groups[0].indexed_name, "Edge");
-        assert_eq!(maps[0].maps[0].groups[0].names[1][0].string_ids, [7]);
-    }
-
-    #[test]
-    fn admits_legacy_side_entry_v1_map_stream() {
-        let data = b"BeginElementMap v1\n\
-1 PostfixCount 0\n\
-MapCount 1\n\
-ElementMap 1 1 1\n\
-Face\n\
-ChildCount 1\n\
-1 0 3 0 0 0 0\n\
-NameCount 0\n\
-EndMap\n";
-        let property = test_property(
-            "Part::PropertyPartShape",
-            r#"<Property><Part ElementMap="1.0"/><ElementMap file="Shape.Map.txt"/></Property>"#,
-        );
-        let (_, maps) = parse(
-            br#"<Document FileVersion="1"/>"#,
-            1,
-            &[property],
-            &[legacy_entry("Shape.Map.txt", data)],
-        )
-        .expect("legacy v1 side-entry map");
-        assert_eq!(maps[0].declared_count, 3);
-        assert_eq!(maps[0].maps[0].groups[0].children.len(), 1);
-    }
-
-    #[test]
-    fn rejects_child_map_index_that_is_not_a_prior_node() {
-        let data = b"BeginElementMap v1\n\
-1 PostfixCount 0\n\
-MapCount 1\n\
-ElementMap 1 1 1\n\
-Face\n\
-ChildCount 1\n\
-1 0 3 0 1 0 0\n\
-NameCount 0\n\
-EndMap\n";
-        let Err(error) = parse_element_map(data, true) else {
-            panic!("forward child map index")
-        };
-        assert!(error.to_string().contains("mapIndex"), "{error}");
-    }
-
-    #[test]
-    fn treats_legacy_empty_marker_as_no_map() {
-        let property = test_property(
-            "Part::PropertyPartShape",
-            r#"<Property><Part ElementMap="1.0"/><ElementMap/></Property>"#,
-        );
-        let (_, maps) = parse(br#"<Document FileVersion="1"/>"#, 1, &[property], &[])
-            .expect("legacy empty element map");
-        assert!(maps.is_empty());
-    }
-
-    #[test]
-    fn rejects_legacy_element_count_and_side_entry_errors() {
-        let direct = test_property(
-            "Part::PropertyPartShape",
-            r#"<Property><Part/><ElementMap count="2"><Element key="Face" value="Face1"/></ElementMap></Property>"#,
-        );
-        assert!(matches!(
-            parse(br#"<Document FileVersion="1"/>"#, 1, &[direct], &[]),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-
-        let missing = test_property(
-            "Part::PropertyPartShape",
-            r#"<Property><Part/><ElementMap file="Missing.Map.txt"/></Property>"#,
-        );
-        assert!(matches!(
-            parse(br#"<Document FileVersion="1"/>"#, 1, &[missing], &[]),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-
-        let trailing = test_property(
-            "Part::PropertyPartShape",
-            r#"<Property><Part/><ElementMap count="1">Face1 FaceStable 0 trailing</ElementMap></Property>"#,
-        );
-        assert!(matches!(
-            parse(br#"<Document FileVersion="2"/>"#, 2, &[trailing], &[]),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-    }
-
-    #[test]
-    fn joins_inline_text_and_cdata_sections() {
-        let xml = roxmltree::Document::parse("<Table>\n<![CDATA[1.c value\n]]>\n</Table>")
-            .expect("inline table XML");
-        let bytes = node_text_bytes(xml.root_element());
-        let table = parse_string_table(&bytes, 1, false).expect("inline string table");
-        assert_eq!(table[0].payload, "value");
-    }
-
-    #[test]
-    fn connects_persistent_element_names_to_neutral_topology() {
-        let document = r#"<Document SchemaVersion="4" FileVersion="1" StringHasher="1">
-<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
-<ObjectData Count="1"><Object name="Shape"><Properties Count="2">
-<Property name="AuxShape" type="Part::PropertyPartShape">
-<Part HasherIndex="0" SaveHasher="1" ElementMap="1.0" file="AuxShape.brp"/>
-<ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
-<ElementMap2 count="5">
-41 PostfixCount 0 MapCount 1
-ElementMap 1 41 3
-Face ChildCount 0 NameCount 2
-0
-;FaceStable.0.a 0
-Edge ChildCount 0 NameCount 3
-0
-;EdgeStable1.0.a 0
-;EdgeStable2.0.a 0
-Vertex ChildCount 0 NameCount 3
-0
-;VertexStable1.0.a 0
-;VertexStable2.0.a 0
-EndMap
-</ElementMap2>
-</Property>
-<Property name="Shape" type="Part::PropertyPartShape">
-<Part HasherIndex="0" SaveHasher="1" ElementMap="1.0" file="Shape.brp"/>
-<StringHasher saveall="0" threshold="16" count="0" new="1"/>
-<StringHasher2 count="1">
-a.c PersistentSource
-</StringHasher2>
-<ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
-<ElementMap2 count="5">
-41 PostfixCount 0 MapCount 1
-ElementMap 1 41 3
-Face ChildCount 0 NameCount 2
-0
-;FaceStable.0.a 0
-Edge ChildCount 0 NameCount 3
-0
-;EdgeStable1.0.a 0
-;EdgeStable2.0.a 0
-Vertex ChildCount 0 NameCount 3
-0
-;VertexStable1.0.a 0
-;VertexStable2.0.a 0
-EndMap
-</ElementMap2>
-</Property></Properties></Object></ObjectData>
-</Document>"#;
-        let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Shape"><Properties Count="4">
-<Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3435973632"/></Property>
-<Property name="DiffuseColor" type="App::PropertyColorList"><ColorList file="DiffuseColor"/></Property>
-<Property name="LineColorArray" type="App::PropertyColorList"><ColorList file="LineColorArray"/></Property>
-<Property name="PointColorArray" type="App::PropertyColorList"><ColorList file="PointColorArray"/></Property>
-</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
-        let brep = b"CASCADE Topology V1, (c) Matra-Datavision
-Locations 0
-Curve2ds 2
-1 0 0 1 0
-1 1 0 -1 0
-Curves 2
-1 0 0 0 1 0 0
-1 1 0 0 -1 0 0
-Polygon3D 0
-PolygonOnTriangulations 0
-Surfaces 1
-1 0 0 0 0 0 1 1 0 0 0 1 0
-Triangulations 0
-TShapes 9
-Ve 0.001 0 0 0 0 0 1001000 *
-Ve 0.001 1 0 0 0 0 1001000 *
-Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 0 1001000 +9 0 -8 0 *
-Ed 0.001 1 1 0 1 2 0 0 1 2 2 1 0 0 1 0 1001000 +8 0 -9 0 *
-Wi 1001000 +7 0 +6 0 *
-Fa 0 0.001 1 0 1001000 +5 0 *
-Sh 1001000 +4 0 *
-So 1001000 +3 0 *
-Co 1001000 +2 0 *
-+1 0 *";
-        let face_colors = [1_u8, 0, 0, 0, 0, 0, 0, 255];
-        let edge_colors = [2_u8, 0, 0, 0, 255, 0, 0, 255, 0, 255, 0, 255];
-        let point_colors = [2_u8, 0, 0, 0, 0, 0, 255, 255, 255, 255, 0, 255];
-        let bytes = archive_entries(&[
-            ("Document.xml", document.as_bytes()),
-            ("GuiDocument.xml", gui),
-            ("DiffuseColor", &face_colors),
-            ("LineColorArray", &edge_colors),
-            ("PointColorArray", &point_colors),
-            ("AuxShape.brp", brep),
-            ("Shape.brp", brep),
-        ]);
-        let result = FcstdCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .expect("persistent element map");
-        let namespace = result
-            .ir()
-            .native
-            .namespace("fcstd")
-            .expect("required invariant");
-        let tables = namespace
-            .arena_as::<crate::native::StringTableRecord>("string_tables")
-            .expect("required invariant");
-        assert_eq!(tables.len(), 1);
-        assert_eq!(tables[0].entries()[0].string_id, 10);
-        let maps = namespace
-            .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
-            .expect("required invariant");
-        assert_eq!(maps.len(), 2);
-        let shape_map = maps
-            .iter()
-            .find(|map| map.property.ends_with("#Shape:Shape"))
-            .expect("displayed Shape element map");
-        assert_eq!(shape_map.hasher_index, Some(0));
-        let groups = &shape_map.maps[0].groups;
-        assert_eq!(groups[0].names[1][0].topology_ids.len(), 1);
-        assert_eq!(groups[1].names[1][0].topology_ids.len(), 1);
-        assert_eq!(groups[1].names[2][0].topology_ids.len(), 1);
-        assert_eq!(groups[2].names[1][0].topology_ids.len(), 1);
-        assert_eq!(groups[2].names[2][0].topology_ids.len(), 1);
-        let shape_face_ids = groups[0]
-            .names
-            .iter()
-            .flatten()
-            .flat_map(|name| &name.topology_ids)
-            .map(String::as_str)
-            .collect::<std::collections::HashSet<_>>();
-        assert!(result.ir().model.appearance_bindings.iter().any(|binding| {
-        matches!(
-            &binding.target,
-            cadmpeg_ir::appearance::AppearanceTarget::Face(face) if shape_face_ids.contains(face.as_str())
-        ) && binding.channels.get("precedence").map(String::as_str) == Some("face_over_object")
-    }));
-        assert_eq!(
-            result
-                .ir()
-                .model
-                .appearance_bindings
-                .iter()
-                .filter(|binding| {
-                    matches!(
-                        binding.target,
-                        cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
-                    ) && binding.channels.get("precedence").map(String::as_str)
-                        == Some("edge_array_over_line")
-                })
-                .count(),
-            2
-        );
-        assert_eq!(
-            result
-                .ir()
-                .model
-                .appearance_bindings
-                .iter()
-                .filter(|binding| {
-                    matches!(
-                        binding.target,
-                        cadmpeg_ir::appearance::AppearanceTarget::Vertex(_)
-                    ) && binding.channels.get("precedence").map(String::as_str)
-                        == Some("vertex_array_over_point")
-                })
-                .count(),
-            2
-        );
-        assert!(crate::validate_native(result.ir()).is_empty());
-        assert_valid_document(result.ir());
-    }
-
-    #[test]
-    fn rejects_interleaved_new_string_hasher_payload() {
-        let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
-<ObjectData Count="1"><Object name="Shape"><Properties Count="1">
-<Property name="Shape" type="Part::PropertyPartShape"><Part file=""/>
-<StringHasher new="1" count="0"/><Interleaved/><StringHasher2 count="0"/>
-</Property></Properties></Object></ObjectData></Document>"#;
-        let error = FcstdCodec
-            .decode(
-                &mut Cursor::new(archive(document)),
-                &DecodeOptions::default(),
-            )
-            .expect_err("interleaved string table must fail");
-
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
-    }
-
-    #[test]
-    fn rejects_interleaved_new_string_hasher_payload_when_parsed_directly() {
-        let document = br#"<Document><StringHasher new="1" count="0"/><Interleaved/><StringHasher2 count="0"/></Document>"#;
-        let error = parse(document, 0, &[], &[]).expect_err("interleaved string table must fail");
-
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
-    }
-
-    #[test]
-    fn rejects_ambiguous_shape_carriers() {
-        let duplicate_part = test_property(
-            "Part::PropertyPartShape",
-            "<Property><Part/><Part/></Property>",
-        );
-        assert!(matches!(
-            parse(b"<Document/>", 0, &[duplicate_part], &[]),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-
-        let duplicate_map = test_property(
-            "Part::PropertyPartShape",
-            "<Property><Part/><ElementMap2/><ElementMap2/></Property>",
-        );
-        assert!(matches!(
-            parse(b"<Document/>", 0, &[duplicate_map], &[]),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-    }
-
-    #[test]
-    fn rejects_nested_element_map_successor() {
-        let nested_map = test_property(
-            "Part::PropertyPartShape",
-            r#"<Property><Part ElementMap="1.0"/><ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap><Wrapper><ElementMap2/></Wrapper></Property>"#,
-        );
-        assert!(matches!(
-            parse(b"<Document/>", 0, &[nested_map], &[]),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-    }
-
-    #[test]
-    fn rejects_non_adjacent_element_map_successor() {
-        let non_adjacent_map = test_property(
-            "Part::PropertyPartShape",
-            r#"<Property><Part ElementMap="1.0"/><ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap><Wrapper/><ElementMap2/></Property>"#,
-        );
-        assert!(matches!(
-            parse(b"<Document/>", 0, &[non_adjacent_map], &[]),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-    }
-
-    #[test]
-    fn rejects_element_map_without_compatibility_marker() {
-        let unmarked_map = test_property(
-            "Part::PropertyPartShape",
-            r#"<Property><Part ElementMap="1.0"/><ElementMap2/></Property>"#,
-        );
-        assert!(matches!(
-            parse(b"<Document/>", 0, &[unmarked_map], &[]),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-    }
-
-    #[test]
-    fn ignores_non_shape_runtime_names() {
-        let custom = test_property(
-            "Custom::PropertyPartShape",
-            "<Property><Part/><ElementMap2/></Property>",
-        );
-        let (tables, maps) = parse(b"<Document/>", 0, &[custom], &[]).expect("unknown type");
-
-        assert!(tables.as_slice().is_empty());
-        assert!(maps.is_empty());
-    }
-
-    #[test]
-    fn rejects_ambiguous_string_table_property_ownership() {
-        let xml = roxmltree::Document::parse("<Document><StringHasher count=\"0\"/></Document>")
-            .expect("test XML");
-        let node = xml.root_element().first_element_child().expect("hasher");
-        let mut first = test_property("App::PropertyString", "<Property/>");
-        first.xml = crate::native::RetainedXml::from_text(" ".repeat(1000), 0).unwrap();
-        let mut second = test_property("App::PropertyString", "<Property/>");
-        second.id = "fcstd:test:property#Other".into();
-        second.xml = crate::native::RetainedXml::from_text(" ".repeat(1000), 0).unwrap();
-
-        assert!(matches!(
-            owning_property(node, &[first, second]),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-    }
-
-    #[test]
-    fn child_map_reference_is_rejected_by_complete_source_admission() {
-        let mut source = zip::ZipArchive::new(Cursor::new(GEOMETRY)).expect("geometry archive");
-        let mut entries = Vec::new();
-        let mut changed = false;
-        let original = b"1 0 3 1 0 ;:H,E;:H:5,E 0";
-        let replacement = b"1 0 3 1 9 ;:H,E;:H:5,E 0";
-        for index in 0..source.len() {
-            let mut entry = source.by_index(index).expect("geometry member");
-            let name = entry.name().to_owned();
-            let mut data = Vec::new();
-            entry.read_to_end(&mut data).expect("read geometry member");
-            if !changed {
-                if let Some(offset) = data
-                    .windows(original.len())
-                    .position(|window| window == original)
-                {
-                    data[offset..offset + replacement.len()].copy_from_slice(replacement);
-                    changed = true;
-                }
-            }
-            entries.push((name, data));
-        }
-        assert!(
-            changed,
-            "geometry fixture must contain a child-map descriptor with a mapped child"
-        );
-        let references = entries
-            .iter()
-            .map(|(name, data)| (name.as_str(), data.as_slice()))
-            .collect::<Vec<_>>();
-        let result = FcstdCodec.decode(
-            &mut Cursor::new(archive_entries(&references)),
-            &DecodeOptions::default(),
-        );
-        let error = result.expect_err("current source route rejects the mutated child-map index");
-        assert!(error.to_string().contains("mapIndex"), "{error}");
-    }
-}
+mod tests;

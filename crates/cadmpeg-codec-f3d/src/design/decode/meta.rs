@@ -100,11 +100,9 @@ pub(crate) fn decode_types(
         .iter()
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
-        let meta = scan.parsed_metastream(&entry.entry.name)?;
+        let meta = scan.parsed_metastream(ctx, &entry.entry.name)?;
         for design_type in &meta.types {
-            ctx.charge_collection_items(1, "f3d design type table")?;
-            out.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("f3d design type table allocation", 0, 1))?;
+            ctx.reserve_vec(&mut out, 1, "f3d design type table")?;
             out.push(copy_design_type(ctx, design_type, &entry.entry.name)?);
         }
     }
@@ -223,7 +221,7 @@ pub(crate) fn decode_component_naming_spaces(
         .iter()
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
-        let meta = scan.parsed_metastream(&meta_entry.entry.name)?;
+        let meta = scan.parsed_metastream(ctx, &meta_entry.entry.name)?;
         let mut component_entities = HashSet::new();
         for design_type in meta.types.iter().filter(|design_type| {
             design_type.module == COMPONENT_MODULE
@@ -236,14 +234,11 @@ pub(crate) fn decode_component_naming_spaces(
                     })
         }) {
             for &entity_id in design_type.entities.values() {
-                if component_entities.contains(&entity_id) {
-                    continue;
-                }
-                ctx.charge_collection_items(1, "f3d component naming registered entities")?;
-                component_entities.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("f3d component naming entities allocation", 0, 1)
-                })?;
-                component_entities.insert(entity_id);
+                ctx.insert_hash_set(
+                    &mut component_entities,
+                    entity_id,
+                    "f3d component naming registered entities",
+                )?;
             }
         }
         if component_entities.is_empty() {
@@ -362,6 +357,7 @@ pub(crate) fn decode_component_naming_spaces(
 
 /// Parse the `MetaStream` paired with one Design `BulkStream`.
 pub(crate) fn metadata_for_bulk_stream(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     bulk_entry_name: &str,
 ) -> Result<Option<std::rc::Rc<crate::metastream::MetaStream>>, CodecError> {
@@ -375,7 +371,7 @@ pub(crate) fn metadata_for_bulk_stream(
     else {
         return Ok(None);
     };
-    scan.parsed_metastream(&meta_entry.name).map(Some)
+    scan.parsed_metastream(ctx, &meta_entry.name).map(Some)
 }
 
 /// One live Design record selected by the primary index and resolved through
@@ -430,28 +426,19 @@ pub(super) fn design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    let indexed = crate::metastream::primary_record_frames(meta, bytes.len())?;
+    let indexed = crate::metastream::primary_record_frames(ctx, meta, bytes.len())?;
     let mut registered_entities = HashSet::new();
     for (ordinal, design_type) in meta.types.iter().enumerate() {
         for &entity_id in design_type.entities.values() {
-            if registered_entities.contains(&(ordinal, entity_id)) {
-                continue;
-            }
-            ctx.charge_collection_items(1, "f3d registered primary entities")?;
-            registered_entities.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d registered primary entities allocation", 0, 1)
-            })?;
-            registered_entities.insert((ordinal, entity_id));
+            ctx.insert_hash_set(
+                &mut registered_entities,
+                (ordinal, entity_id),
+                "f3d registered primary entities",
+            )?;
         }
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(indexed.len()),
-        "f3d design primary frames",
-    )?;
     let mut frames = Vec::new();
-    frames
-        .try_reserve(indexed.len())
-        .map_err(|_| ctx.refuse_codec_limit("f3d design primary frames allocation", 0, 1))?;
+    ctx.reserve_vec(&mut frames, indexed.len(), "f3d design primary frames")?;
     for frame in indexed {
         let entity_id = frame.entity_id;
         let Some(class_tag) = record_header_class_tag(bytes, frame.start, frame.end, entity_id)
@@ -843,6 +830,7 @@ pub(crate) fn decode_feature_timelines(
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
         let meta = crate::metastream::parse(
+            ctx,
             scan.entry_bytes(&meta_entry.entry.name)?,
             &meta_entry.entry.name,
         )?;

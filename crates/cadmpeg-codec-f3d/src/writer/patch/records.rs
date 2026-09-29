@@ -674,7 +674,7 @@ pub(crate) fn patch_sketch_curves(
                     bytes,
                     start,
                     geometry.fit_tolerance().get(),
-                    &knots,
+                    knots,
                     geometry.poles(),
                 )?;
                 continue;

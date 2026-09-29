@@ -15,6 +15,48 @@ use crate::test_support::test_formula::{
 use crate::CatiaCodec;
 
 #[test]
+fn suffix_schema_selection_refuses_retained_limit() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+        0x81, 0x92, 0x82, 0x32, 4, 0, 0, 0, 0x81, 0x81, 0x49,
+    ]));
+    let record = &native.entity_records[0];
+    let catalog = native.catalogs.first();
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::entity_suffix_schema_selection(ctx, record.suffix_value(), catalog)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_suffix_selection_entry")
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::entity_suffix_schema_selection(ctx, record.suffix_value(), catalog)
+    })
+    .expect("service profile admits suffix schema selection");
+    assert_eq!(admitted, record.suffix_schema_selection);
+}
+
+#[test]
+fn nested_suffix_schema_resolution_refuses_retained_limit() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+        0x84, 0x93, 0x82, 0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0, 0x81, 0x49,
+    ]));
+    let record = &native.entity_records[0];
+    let catalog = native.catalogs.first();
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::entity_suffix_schema_selection(ctx, record.suffix_value(), catalog)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_suffix_nested_entry")
+    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::entity_suffix_schema_selection(ctx, record.suffix_value(), catalog)
+    })
+    .expect("service profile admits nested suffix selection");
+    assert_eq!(admitted, record.suffix_schema_selection);
+}
+
+#[test]
 fn entity_suffix_values_accept_8193_trailers() {
     use crate::native::{
         CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySuffixPayload,

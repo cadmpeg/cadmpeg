@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked physical chart layouts and paired samples for solved charts.
 
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::math::Point3;
@@ -28,6 +30,58 @@ impl ChartParameter {
 }
 
 impl ChartSamples {
+    pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let mut values = ctx.retained_vec(self.samples.len(), "NX solved chart sample copy")?;
+        ctx.charge_work(
+            u64_from_index(self.samples.len()),
+            "copy NX solved chart samples",
+        )?;
+        values.extend(self.samples.iter().copied());
+        let samples = crate::om::nonempty::NonEmpty::from_vec(values)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX solved chart sample copy", 0, 0))?;
+        Ok(Self { samples })
+    }
+    fn from_source_charged(
+        ctx: &DecodeContext<'_>,
+        points: Vec<FinitePoint3>,
+        parameters: Vec<FiniteReal>,
+    ) -> Result<Option<Self>, CodecError> {
+        if points.len() != parameters.len() || points.len() < 2 {
+            return Ok(None);
+        }
+        let mut samples = ctx.retained_vec(points.len(), "NX chart sample pairs")?;
+        for (point, parameter) in points.into_iter().zip(parameters) {
+            samples.push((point, ChartParameter::Source(parameter)));
+        }
+        ctx.charge_work(u64_from_index(samples.len()), "form NX chart sample pairs")?;
+        Ok(crate::om::nonempty::NonEmpty::from_vec(samples).map(|samples| Self { samples }))
+    }
+
+    fn from_xyz3_charged(
+        ctx: &DecodeContext<'_>,
+        points: Vec<FinitePoint3>,
+        preamble: ChartPreamble,
+    ) -> Result<Option<Self>, CodecError> {
+        if points.len() < 2 {
+            return Ok(None);
+        }
+        let mut samples = ctx.retained_vec(points.len(), "NX derived chart sample pairs")?;
+        let mut parameter = preamble.base_parameter();
+        let mut previous = None::<FinitePoint3>;
+        for point in points {
+            if let Some(before) = previous {
+                let chord_m = before.get().distance(point.get()) / 1000.0;
+                parameter += chord_m * preamble.base_scale();
+            }
+            samples.push((point, ChartParameter::Derived(parameter)));
+            previous = Some(point);
+        }
+        ctx.charge_work(
+            u64_from_index(samples.len()),
+            "form NX derived chart sample pairs",
+        )?;
+        Ok(crate::om::nonempty::NonEmpty::from_vec(samples).map(|samples| Self { samples }))
+    }
     fn new(
         points: Vec<FinitePoint3>,
         parameters: Vec<ChartParameter>,
@@ -59,11 +113,35 @@ impl ChartSamples {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn points(&self) -> Vec<Point3> {
         self.samples.iter().map(|sample| sample.0.get()).collect()
     }
+    pub(crate) fn points_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<Point3>, CodecError> {
+        let mut points = ctx.retained_vec(self.samples.len(), "NX chart points")?;
+        points.extend(self.samples.iter().map(|sample| sample.0.get()));
+        Ok(points)
+    }
+    pub(crate) fn iter_points(&self) -> impl DoubleEndedIterator<Item = Point3> + '_ {
+        self.samples.iter().map(|sample| sample.0.get())
+    }
+    pub(crate) fn len(&self) -> usize {
+        self.samples.len()
+    }
+    #[cfg(test)]
     pub(crate) fn parameters(&self) -> Vec<f64> {
         self.samples.iter().map(|sample| sample.1.get()).collect()
+    }
+    pub(crate) fn parameters_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<f64>, CodecError> {
+        let mut parameters = ctx.retained_vec(self.samples.len(), "NX chart parameters")?;
+        parameters.extend(self.samples.iter().map(|sample| sample.1.get()));
+        Ok(parameters)
     }
 
     pub(crate) fn endpoints(&self) -> [Point3; 2] {
@@ -75,15 +153,28 @@ impl ChartSamples {
     }
 
     /// Replace the parameterization when both charts have the same sample count.
-    pub(super) fn replace_parameters_from(&mut self, other: &Self) -> bool {
-        let Ok(replacement) = Self::new(
-            self.samples.iter().map(|sample| sample.0).collect(),
-            other.samples.iter().map(|sample| sample.1).collect(),
-        ) else {
-            return false;
+    pub(super) fn replace_parameters_from_charged(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        other: &Self,
+    ) -> Result<bool, CodecError> {
+        if self.samples.len() != other.samples.len() || self.samples.len() < 2 {
+            return Ok(false);
+        }
+        let mut replacement =
+            ctx.retained_vec(self.samples.len(), "NX chart parameter replacement")?;
+        for (old, new) in self.samples.iter().zip(other.samples.iter()) {
+            replacement.push((old.0, new.1));
+        }
+        ctx.charge_work(
+            u64_from_index(replacement.len()),
+            "replace NX chart sample pairs",
+        )?;
+        let Some(samples) = crate::om::nonempty::NonEmpty::from_vec(replacement) else {
+            return Ok(false);
         };
-        *self = replacement;
-        true
+        self.samples = samples;
+        Ok(true)
     }
 }
 
@@ -156,25 +247,128 @@ enum SourceEncoding {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SourceChartData {
     encoding: SourceEncoding,
+    count: u32,
 }
 impl SourceChartData {
-    fn checked_points(points: Vec<Point3>) -> Result<Vec<FinitePoint3>, &'static str> {
-        u32::try_from(points.len()).map_err(|_| "points: count exceeds u32")?;
+    fn checked_points_charged(
+        ctx: &DecodeContext<'_>,
+        points: Vec<Point3>,
+    ) -> Result<Option<(Vec<FinitePoint3>, u32)>, CodecError> {
+        let Ok(count) = u32::try_from(points.len()) else {
+            return Ok(None);
+        };
+        if points.len() < 2 {
+            return Ok(None);
+        }
+        let mut checked = ctx.retained_vec(points.len(), "NX finite chart points")?;
+        for point in points {
+            let Some(point) = FinitePoint3::new(point) else {
+                return Ok(None);
+            };
+            checked.push(point);
+        }
+        Ok(Some((checked, count)))
+    }
+
+    pub(crate) fn xyz3_charged(
+        ctx: &DecodeContext<'_>,
+        points: Vec<Point3>,
+    ) -> Result<Option<Self>, CodecError> {
+        if !points.windows(2).any(|pair| pair[0] != pair[1]) {
+            return Ok(None);
+        }
+        let Some((points, count)) = Self::checked_points_charged(ctx, points)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            count,
+            encoding: SourceEncoding::Xyz3 { points },
+        }))
+    }
+
+    pub(crate) fn ext11_charged(
+        ctx: &DecodeContext<'_>,
+        points: Vec<Point3>,
+        parameters: Vec<f64>,
+        support_uv: [Option<Vec<[f64; 2]>>; 2],
+    ) -> Result<Option<Self>, CodecError> {
+        if parameters.len() != points.len()
+            || support_uv
+                .iter()
+                .flatten()
+                .any(|lane| lane.len() != points.len())
+        {
+            return Ok(None);
+        }
+        let mut checked_parameters =
+            ctx.retained_vec(parameters.len(), "NX finite chart parameters")?;
+        for value in parameters {
+            let Some(value) = FiniteReal::new(value) else {
+                return Ok(None);
+            };
+            if checked_parameters
+                .last()
+                .is_some_and(|previous: &FiniteReal| value <= *previous)
+            {
+                return Ok(None);
+            }
+            checked_parameters.push(value);
+        }
+        let [first, second] = support_uv;
+        let first = match first {
+            Some(values) => {
+                let Some(lane) = super::SupportUvLane::from_present_values_charged(ctx, values)?
+                else {
+                    return Ok(None);
+                };
+                Some(lane)
+            }
+            None => None,
+        };
+        let second = match second {
+            Some(values) => {
+                let Some(lane) = super::SupportUvLane::from_present_values_charged(ctx, values)?
+                else {
+                    return Ok(None);
+                };
+                Some(lane)
+            }
+            None => None,
+        };
+        let Some((points, count)) = Self::checked_points_charged(ctx, points)? else {
+            return Ok(None);
+        };
+        let Some(samples) = ChartSamples::from_source_charged(ctx, points, checked_parameters)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            count,
+            encoding: SourceEncoding::Ext11 {
+                samples,
+                support_uv: [first, second],
+            },
+        }))
+    }
+    fn checked_points(points: Vec<Point3>) -> Result<(Vec<FinitePoint3>, u32), &'static str> {
+        let count = u32::try_from(points.len()).map_err(|_| "points: count exceeds u32")?;
         if points.len() < 2 {
             return Err("points: at least two points required");
         }
-        points
+        let points = points
             .into_iter()
             .map(|point| FinitePoint3::new(point).ok_or("points: coordinates must be finite"))
-            .collect()
+            .collect::<Result<_, _>>()?;
+        Ok((points, count))
     }
 
     pub(crate) fn xyz3(points: Vec<Point3>) -> Result<Self, &'static str> {
         if !points.windows(2).any(|pair| pair[0] != pair[1]) {
             return Err("points: xyz3 requires distinct points");
         }
-        let points = Self::checked_points(points)?;
+        let (points, count) = Self::checked_points(points)?;
         Ok(Self {
+            count,
             encoding: SourceEncoding::Xyz3 { points },
         })
     }
@@ -210,12 +404,13 @@ impl SourceChartData {
         });
         let [first, second] = support_uv;
         let support_uv = [first?, second?];
-        let points = Self::checked_points(points)?;
+        let (points, count) = Self::checked_points(points)?;
         let samples = ChartSamples::new(
             points,
             parameters.into_iter().map(ChartParameter::Source).collect(),
         )?;
         Ok(Self {
+            count,
             encoding: SourceEncoding::Ext11 {
                 samples,
                 support_uv,
@@ -255,10 +450,7 @@ impl SourceChartData {
         }
     }
     pub(crate) fn count(&self) -> u32 {
-        match &self.encoding {
-            SourceEncoding::Xyz3 { points } => points.len() as u32,
-            SourceEncoding::Ext11 { samples, .. } => samples.samples.len() as u32,
-        }
+        self.count
     }
     pub(crate) fn point_layout(&self) -> super::ChartPointLayout {
         match self.encoding {
@@ -281,6 +473,7 @@ impl SourceChartData {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn into_samples(
         self,
         preamble: ChartPreamble,
@@ -304,11 +497,64 @@ impl SourceChartData {
             } => Some((samples, support_uv)),
         }
     }
+
+    pub(super) fn into_samples_charged(
+        self,
+        ctx: &DecodeContext<'_>,
+        preamble: ChartPreamble,
+    ) -> Result<Option<(ChartSamples, super::SupportUv)>, CodecError> {
+        match self.encoding {
+            SourceEncoding::Xyz3 { points } => {
+                Ok(ChartSamples::from_xyz3_charged(ctx, points, preamble)?
+                    .map(|samples| (samples, [None, None])))
+            }
+            SourceEncoding::Ext11 {
+                samples,
+                support_uv,
+            } => Ok(Some((samples, support_uv))),
+        }
+    }
 }
 #[cfg(test)]
 mod tests {
     use super::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAMETER};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn chart_point_projection_refuses_collection_limit() {
+        let samples = ChartSamples::from_test_values(
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            vec![0.0, 1.0],
+        )
+        .unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            samples.points_charged(&ctx),
+            Err(CodecError::ResourceLimit(_))
+        ));
+    }
+
+    #[test]
+    fn chart_parameter_projection_refuses_retained_limit() {
+        let samples = ChartSamples::from_test_values(
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            vec![0.0, 1.0],
+        )
+        .unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 15;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            samples.parameters_charged(&ctx),
+            Err(CodecError::ResourceLimit(_))
+        ));
+    }
 
     #[test]
     fn chart_preamble_retains_finite_parameter_scale_and_angle() {

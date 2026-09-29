@@ -6464,6 +6464,18 @@ impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for DistinctMembers<T> {
 }
 
 impl<T: PartialEq> DistinctMembers<T> {
+    /// Wrap an already allocated sequence after checking distinctness without allocating.
+    pub fn try_from_unique_vec(value: Vec<T>) -> Result<Self, &'static str> {
+        if value
+            .iter()
+            .enumerate()
+            .any(|(index, member)| value[..index].contains(member))
+        {
+            return Err("members must be distinct");
+        }
+        Ok(Self(value))
+    }
+
     /// Inserts a member unless it is already present, and returns whether it was added.
     pub fn insert(&mut self, value: T) -> bool {
         if self.0.contains(&value) {
@@ -6475,7 +6487,7 @@ impl<T: PartialEq> DistinctMembers<T> {
 }
 
 impl<T> DistinctMembers<T> {
-    /// Reserve capacity before adding members under a caller resource policy.
+    /// Reserve storage before inserting already admitted members.
     pub fn try_reserve(
         &mut self,
         additional: usize,

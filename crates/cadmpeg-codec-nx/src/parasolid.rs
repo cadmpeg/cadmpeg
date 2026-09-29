@@ -632,8 +632,8 @@ pub(crate) fn extract_streams<'a>(
     let part_view = ctx.register_slice(
         root,
         ByteRange {
-            start: start as u64,
-            end: end as u64,
+            start: cadmpeg_core::decode::u64_from_index(start),
+            end: cadmpeg_core::decode::u64_from_index(end),
         },
     )?;
     let part = part_view.window();
@@ -696,7 +696,8 @@ fn append_all_zlib_streams<'a>(
                 let body = classify(&inflated);
                 let file_offset = file_start + i;
                 if seen.insert(file_offset)
-                    && (!structural_only || structural_stream_candidate(body.kind(), &inflated))
+                    && (!structural_only
+                        || structural_stream_candidate(ctx, body.kind(), &inflated)?)
                 {
                     streams.push(Stream {
                         file_offset,
@@ -734,19 +735,23 @@ fn append_unindexed_structural_streams<'a>(
     append_all_zlib_streams(ctx, part_view, file_start, streams, true)
 }
 
-fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> bool {
+fn structural_stream_candidate(
+    ctx: &DecodeContext<'_>,
+    kind: StreamKind,
+    inflated: &[u8],
+) -> Result<bool, CodecError> {
     if !kind.is_parasolid() {
-        return false;
+        return Ok(false);
     }
-    let census = crate::deltas::census::walk(inflated);
+    let census = crate::deltas::census::walk(ctx, inflated)?;
     if !census.records.is_empty() || !census.tombstones.is_empty() {
-        return true;
+        return Ok(true);
     }
     if kind == StreamKind::Deltas {
-        return false;
+        return Ok(false);
     }
-    let graph = crate::topology::Graph::parse(inflated);
-    [
+    let graph = crate::topology::Graph::parse(ctx, inflated)?;
+    Ok([
         NodeKind::Body,
         NodeKind::Shell,
         NodeKind::Face,
@@ -757,7 +762,7 @@ fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> bool {
         NodeKind::Region,
     ]
     .into_iter()
-    .any(|kind| graph.of_kind(kind).next().is_some())
+    .any(|kind| graph.of_kind(kind).next().is_some()))
 }
 
 /// Locate clear Parasolid transmit sections in a legacy `UG_PART/UG_PART`

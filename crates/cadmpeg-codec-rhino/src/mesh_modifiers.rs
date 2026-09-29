@@ -88,7 +88,6 @@ pub(crate) struct MeshModifiers {
 
 /// The XML parameters written by `ON_DisplacementUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct DisplacementModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
@@ -130,7 +129,6 @@ pub(crate) struct DisplacementModifier {
 
 /// A displacement override for one sub-object face index.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct DisplacementSubItem {
     /// Sub-object face index.
     pub(crate) face_index: i32,
@@ -148,7 +146,6 @@ pub(crate) struct DisplacementSubItem {
 
 /// The XML parameters written by `ON_EdgeSofteningUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct EdgeSofteningModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
@@ -156,37 +153,43 @@ pub(crate) struct EdgeSofteningModifier {
     pub(crate) on: bool,
     /// Edge-softening radius.
     pub(crate) softening: FiniteReal,
-    /// Whether softened edges are chamfered.
-    pub(crate) chamfer: bool,
-    /// Whether edges are left faceted; serialized as `unweld`.
-    pub(crate) faceted: bool,
-    /// Whether to soften edges despite an excessive radius.
-    pub(crate) force_softening: bool,
+    /// Edge treatment switches.
+    pub(crate) options: EdgeSofteningOptions,
     /// Adjacent-face angle threshold in degrees.
     pub(crate) edge_angle_threshold: FiniteReal,
 }
 
+/// Edge treatment switches for a softening modifier.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub(crate) struct EdgeSofteningOptions {
+    pub(crate) chamfer: bool,
+    pub(crate) faceted: bool,
+    pub(crate) force_softening: bool,
+}
+
 /// The XML parameters written by `ON_ThickeningUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ThickeningModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
     /// Whether thickening is enabled.
     pub(crate) on: bool,
-    /// Whether an open mesh receives side walls.
-    pub(crate) solid: bool,
-    /// Whether thickening is applied to both sides.
-    pub(crate) both_sides: bool,
-    /// Whether only the offset surface is produced.
-    pub(crate) offset_only: bool,
+    /// Thickening side and surface switches.
+    pub(crate) options: ThickeningOptions,
     /// Thickening distance.
     pub(crate) distance: FiniteReal,
 }
 
+/// Side and surface switches for a thickening modifier.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub(crate) struct ThickeningOptions {
+    pub(crate) solid: bool,
+    pub(crate) both_sides: bool,
+    pub(crate) offset_only: bool,
+}
+
 /// The XML parameters written by `ON_CurvePipingUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct CurvePipingModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
@@ -236,7 +239,6 @@ impl CapType {
 
 /// One ordered curve entry written by `ON_ShutLining`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ShutLiningCurve {
     /// Curve object UUID; nil UUIDs are represented as `None`.
     pub(crate) uuid: Option<Uuid>,
@@ -254,29 +256,33 @@ pub(crate) struct ShutLiningCurve {
 
 /// The XML parameters and ordered curves written by `ON_ShutLiningUserData`.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ShutLiningModifier {
     /// `ON_XMLUserData` payload version.
     pub(crate) xml_version: i32,
     /// Whether shut lining is enabled.
     pub(crate) on: bool,
-    /// Whether shut lining is faceted.
-    pub(crate) faceted: bool,
-    /// Whether shut lining updates automatically.
-    pub(crate) auto_update: bool,
-    /// Whether shut lining updates are forced.
-    pub(crate) force_update: bool,
+    /// Shut-lining update and facet switches.
+    pub(crate) options: ShutLiningOptions,
     /// Direct curve children, including empty entries, in serialized order.
     pub(crate) curves: Vec<ShutLiningCurve>,
 }
 
+/// Update and facet switches for a shut-lining modifier.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub(crate) struct ShutLiningOptions {
+    pub(crate) faceted: bool,
+    pub(crate) auto_update: bool,
+    pub(crate) force_update: bool,
+}
+
 /// Reads the first matching mesh-modifier items from an object-attributes userdata stream.
 pub(crate) fn parse_attribute_userdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     descriptors: &[AttributeUserdataDescriptor],
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
-) -> Option<MeshModifiers> {
+) -> Result<Option<MeshModifiers>, FramingError> {
     let displacement_descriptor =
         first_matching_descriptor(descriptors, DISPLACEMENT_CLASS, DISPLACEMENT_ITEM);
     let edge_softening_descriptor =
@@ -293,75 +299,65 @@ pub(crate) fn parse_attribute_userdata(
         && curve_piping_descriptor.is_none()
         && shut_lining_descriptor.is_none()
     {
-        return None;
+        return Ok(None);
     }
 
-    let displacement = displacement_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_displacement(bytes, payload_range, archive) {
-            Ok(displacement) => Some(displacement),
-            Err(error) => {
-                warnings.push(format!(
-                    "displacement userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    let edge_softening = edge_softening_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_edge_softening(bytes, payload_range) {
-            Ok(edge_softening) => Some(edge_softening),
-            Err(error) => {
-                warnings.push(format!(
-                    "edge-softening userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    let thickening = thickening_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_thickening(bytes, payload_range) {
-            Ok(thickening) => Some(thickening),
-            Err(error) => {
-                warnings.push(format!(
-                    "thickening userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    let curve_piping = curve_piping_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_curve_piping(bytes, payload_range) {
-            Ok(curve_piping) => Some(curve_piping),
-            Err(error) => {
-                warnings.push(format!(
-                    "curve-piping userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    let shut_lining = shut_lining_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_shut_lining(bytes, payload_range) {
-            Ok(shut_lining) => Some(shut_lining),
-            Err(error) => {
-                warnings.push(format!(
-                    "shut-lining userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    (displacement.is_some()
+    let displacement = if let Some(descriptor) = displacement_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_displacement(bytes, descriptor.payload_range.clone(), archive),
+            "displacement",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    let edge_softening = if let Some(descriptor) = edge_softening_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_edge_softening(bytes, descriptor.payload_range.clone()),
+            "edge-softening",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    let thickening = if let Some(descriptor) = thickening_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_thickening(bytes, descriptor.payload_range.clone()),
+            "thickening",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    let curve_piping = if let Some(descriptor) = curve_piping_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_curve_piping(bytes, descriptor.payload_range.clone()),
+            "curve-piping",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    let shut_lining = if let Some(descriptor) = shut_lining_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_shut_lining(bytes, descriptor.payload_range.clone()),
+            "shut-lining",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    Ok((displacement.is_some()
         || edge_softening.is_some()
         || thickening.is_some()
         || curve_piping.is_some()
@@ -372,7 +368,27 @@ pub(crate) fn parse_attribute_userdata(
         thickening,
         curve_piping,
         shut_lining,
-    })
+    }))
+}
+
+fn optional_modifier<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    warnings: &mut Diagnostics,
+    parsed: Result<T, FramingError>,
+    label: &str,
+    offset: usize,
+) -> Result<Option<T>, FramingError> {
+    match parsed {
+        Ok(value) => Ok(Some(value)),
+        Err(error @ FramingError::Resource(_)) => Err(error),
+        Err(error) => {
+            warnings.push_admitted(
+                ctx,
+                format_args!("{label} userdata at {offset} dropped: {error}"),
+            )?;
+            Ok(None)
+        }
+    }
 }
 
 fn first_matching_descriptor(
@@ -542,9 +558,11 @@ fn parse_edge_softening_xml(
         xml_version,
         on: field_bool(edge_softening, "on", false)?,
         softening: field_f64(edge_softening, "softening", 0.1)?,
-        chamfer: field_bool(edge_softening, "chamfer", false)?,
-        faceted: field_bool(edge_softening, "unweld", false)?,
-        force_softening: field_bool(edge_softening, "force-softening", false)?,
+        options: EdgeSofteningOptions {
+            chamfer: field_bool(edge_softening, "chamfer", false)?,
+            faceted: field_bool(edge_softening, "unweld", false)?,
+            force_softening: field_bool(edge_softening, "force-softening", false)?,
+        },
         edge_angle_threshold: field_f64(edge_softening, "edge-threshold", 5.0)?,
     })
 }
@@ -565,9 +583,11 @@ fn parse_thickening_xml(xml: &str, xml_version: i32) -> Result<ThickeningModifie
     Ok(ThickeningModifier {
         xml_version,
         on: field_bool(thickening, "on", false)?,
-        solid: field_bool(thickening, "solid", true)?,
-        both_sides: field_bool(thickening, "both-sides", false)?,
-        offset_only: field_bool(thickening, "offset-only", false)?,
+        options: ThickeningOptions {
+            solid: field_bool(thickening, "solid", true)?,
+            both_sides: field_bool(thickening, "both-sides", false)?,
+            offset_only: field_bool(thickening, "offset-only", false)?,
+        },
         distance: field_f64(thickening, "distance", 0.1)?,
     })
 }
@@ -619,26 +639,28 @@ fn parse_shut_lining_xml(xml: &str, xml_version: i32) -> Result<ShutLiningModifi
         .children()
         .filter(|node| node.is_element() && same_name(*node, "curve"))
         .map(parse_shut_lining_curve)
-        .collect();
+        .collect::<Result<_, _>>()?;
     Ok(ShutLiningModifier {
         xml_version,
         on: field_bool(shut_lining, "on", false)?,
-        faceted: field_bool(shut_lining, "faceted", false)?,
-        auto_update: field_bool(shut_lining, "auto-update", false)?,
-        force_update: field_bool(shut_lining, "force-update", false)?,
+        options: ShutLiningOptions {
+            faceted: field_bool(shut_lining, "faceted", false)?,
+            auto_update: field_bool(shut_lining, "auto-update", false)?,
+            force_update: field_bool(shut_lining, "force-update", false)?,
+        },
         curves,
     })
 }
 
-fn parse_shut_lining_curve(node: roxmltree::Node<'_, '_>) -> ShutLiningCurve {
-    ShutLiningCurve {
+fn parse_shut_lining_curve(node: roxmltree::Node<'_, '_>) -> Result<ShutLiningCurve, FramingError> {
+    Ok(ShutLiningCurve {
         uuid: field_uuid_untyped(node, "uuid"),
         radius: field_f64_untyped(node, "radius", FiniteReal::ONE),
-        profile: field_i32_untyped(node, "profile", 0),
+        profile: field_i32_untyped(node, "profile", 0)?,
         enabled: field_bool_untyped(node, "enabled", false),
         pull: field_bool_untyped(node, "pull", false),
         is_bump: field_bool_untyped(node, "is-bump", false),
-    }
+    })
 }
 
 fn parse_sub_item(node: roxmltree::Node<'_, '_>) -> Result<DisplacementSubItem, FramingError> {
@@ -746,7 +768,7 @@ fn field_i32_optional(
                 && value >= f64::from(i32::MIN)
                 && value < f64::from(i32::MAX) + 1.0
             {
-                Some(value as i32)
+                cadmpeg_core::convert::truncate_f64_to_i32(value)
             } else {
                 None
             }
@@ -822,15 +844,23 @@ fn field_bool_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: bool
         || text.parse::<i32>().is_ok_and(|value| value != 0)
 }
 
-fn field_i32_untyped(parent: roxmltree::Node<'_, '_>, name: &str, default: i32) -> i32 {
+fn field_i32_untyped(
+    parent: roxmltree::Node<'_, '_>,
+    name: &str,
+    default: i32,
+) -> Result<i32, FramingError> {
     let Some(node) = direct_child(parent, name) else {
-        return default;
+        return Ok(default);
     };
     let text = node.text().unwrap_or_default().trim();
     if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") {
-        1
+        Ok(1)
     } else {
-        text.parse::<f64>().ok().map_or(0, |value| value as i32)
+        match text.parse::<f64>() {
+            Ok(value) => cadmpeg_core::convert::truncate_f64_to_i32(value)
+                .ok_or_else(|| FramingError::unpositioned(format!("{name} is outside i32 range"))),
+            Err(_) => Ok(0),
+        }
     }
 }
 
@@ -873,7 +903,7 @@ fn parse_uuid(value: &str) -> Option<Uuid> {
     while index < bytes.len() {
         let high = digits.next()?.to_digit(16)?;
         let low = digits.next()?.to_digit(16)?;
-        bytes[index] = ((high << 4) | low) as u8;
+        bytes[index] = u8::try_from((high << 4) | low).ok()?;
         index += 1;
     }
     digits.next().is_none().then(|| Uuid::from_canonical(bytes))
@@ -885,16 +915,83 @@ fn same_name(node: roxmltree::Node<'_, '_>, name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn shut_lining_profile_refuses_positive_overflow() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>2147483648</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+    }
+
+    #[test]
+    fn shut_lining_profile_refuses_negative_overflow() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>-2147483649</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+    }
+
+    #[test]
+    fn shut_lining_profile_refuses_nan() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>NaN</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+    }
+
+    #[test]
+    fn shut_lining_profile_refuses_infinity() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>inf</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+    }
+    #[test]
+    fn shut_lining_profile_refuses_negative_infinity() {
+        let xml = "<xml><shut-lining-object-data><curve><profile>-inf</profile></curve></shut-lining-object-data></xml>";
+        assert!(super::parse_shut_lining_xml(xml, 2).is_err());
+    }
+
     use super::{
-        field_uuid, parse_attribute_userdata, parse_xml, CapType, CURVE_PIPING_CLASS,
-        CURVE_PIPING_ITEM, DISPLACEMENT_CLASS, DISPLACEMENT_ITEM, EDGE_SOFTENING_CLASS,
-        EDGE_SOFTENING_ITEM, MESH_MODIFIER_PLUGIN, SHUT_LINING_CLASS, SHUT_LINING_ITEM,
-        THICKENING_CLASS, THICKENING_ITEM, XML_USERDATA_VERSION,
+        field_uuid, parse_xml, CapType, CURVE_PIPING_CLASS, CURVE_PIPING_ITEM, DISPLACEMENT_CLASS,
+        DISPLACEMENT_ITEM, EDGE_SOFTENING_CLASS, EDGE_SOFTENING_ITEM, MESH_MODIFIER_PLUGIN,
+        SHUT_LINING_CLASS, SHUT_LINING_ITEM, THICKENING_CLASS, THICKENING_ITEM,
+        XML_USERDATA_VERSION,
     };
     use crate::chunks::{ArchiveVersion, FramingError};
     use crate::loss::Diagnostics;
     use crate::objects::{AttributeUserdata, AttributeUserdataDescriptor};
     use crate::wire::Uuid;
+
+    fn parse_attribute_userdata(
+        bytes: &[u8],
+        descriptors: &[AttributeUserdataDescriptor],
+        archive: ArchiveVersion,
+        warnings: &mut Diagnostics,
+    ) -> Option<super::MeshModifiers> {
+        super::parse_attribute_userdata(
+            &cadmpeg_test_support::service_decode_context(),
+            bytes,
+            descriptors,
+            archive,
+            warnings,
+        )
+        .expect("service profile admits modifier diagnostics")
+    }
+
+    #[test]
+    fn malformed_modifier_diagnostic_refuses_collection_limit() {
+        let payload = v2_payload("<xml><new-displacement-object-data><on type=\"bool\">maybe</on></new-displacement-object-data></xml>");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+                .expect("root bytes admitted");
+        let refused = super::parse_attribute_userdata(
+            &ctx,
+            &payload,
+            &[descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
+            ArchiveVersion::V6,
+            &mut Diagnostics::new(),
+        )
+        .expect_err("modifier diagnostic exceeds zero collection items");
+        assert!(
+            matches!(refused, FramingError::Resource(limit) if limit.operation == "Rhino diagnostics")
+        );
+    }
 
     fn descriptor(payload: &[u8], application_uuid: Option<Uuid>) -> AttributeUserdataDescriptor {
         descriptor_with_ids(
@@ -971,7 +1068,7 @@ mod tests {
 
     fn v2_payload(xml: &str) -> Vec<u8> {
         let mut payload = XML_USERDATA_VERSION.to_le_bytes().to_vec();
-        payload.extend((xml.len() as i32).to_le_bytes());
+        payload.extend((i32::try_from(xml.len()).expect("fixture value fits i32")).to_le_bytes());
         payload.extend(xml.as_bytes());
         payload.extend([0xde, 0xad]);
         payload
@@ -981,7 +1078,7 @@ mod tests {
         let mut units = xml.encode_utf16().collect::<Vec<_>>();
         units.push(0);
         let mut payload = 1_i32.to_le_bytes().to_vec();
-        payload.extend((units.len() as u32).to_le_bytes());
+        payload.extend((u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes());
         for unit in units {
             payload.extend(unit.to_le_bytes());
         }
@@ -1160,9 +1257,9 @@ mod tests {
         assert_eq!(edge_softening.xml_version, 2);
         assert!(edge_softening.on);
         assert_eq!(edge_softening.softening.get(), 0.25);
-        assert!(edge_softening.chamfer);
-        assert!(!edge_softening.faceted);
-        assert!(edge_softening.force_softening);
+        assert!(edge_softening.options.chamfer);
+        assert!(!edge_softening.options.faceted);
+        assert!(edge_softening.options.force_softening);
         assert_eq!(edge_softening.edge_angle_threshold.get(), 17.5);
         assert!(modifiers.displacement.is_none());
         assert!(warnings.is_empty());
@@ -1188,9 +1285,9 @@ mod tests {
         let edge_softening = modifiers.edge_softening.expect("edge softening");
         assert!(edge_softening.on);
         assert_eq!(edge_softening.softening.get(), 0.1);
-        assert!(!edge_softening.chamfer);
-        assert!(!edge_softening.faceted);
-        assert!(!edge_softening.force_softening);
+        assert!(!edge_softening.options.chamfer);
+        assert!(!edge_softening.options.faceted);
+        assert!(!edge_softening.options.force_softening);
         assert_eq!(edge_softening.edge_angle_threshold.get(), 12.5);
         assert!(warnings.is_empty());
     }
@@ -1209,9 +1306,9 @@ mod tests {
         let thickening = modifiers.thickening.expect("thickening");
         assert_eq!(thickening.xml_version, 2);
         assert!(thickening.on);
-        assert!(!thickening.solid);
-        assert!(thickening.both_sides);
-        assert!(thickening.offset_only);
+        assert!(!thickening.options.solid);
+        assert!(thickening.options.both_sides);
+        assert!(thickening.options.offset_only);
         assert_eq!(thickening.distance.get(), 0.25);
         assert!(modifiers.displacement.is_none());
         assert!(modifiers.edge_softening.is_none());
@@ -1239,9 +1336,9 @@ mod tests {
         .expect("thickening userdata");
         let thickening = modifiers.thickening.expect("thickening");
         assert!(thickening.on);
-        assert!(!thickening.solid);
-        assert!(thickening.both_sides);
-        assert!(thickening.offset_only);
+        assert!(!thickening.options.solid);
+        assert!(thickening.options.both_sides);
+        assert!(thickening.options.offset_only);
         assert_eq!(thickening.distance.get(), 0.1);
         assert!(warnings.is_empty());
     }
@@ -1317,9 +1414,9 @@ mod tests {
         let shut_lining = modifiers.shut_lining.expect("shut lining");
         assert_eq!(shut_lining.xml_version, 2);
         assert!(shut_lining.on);
-        assert!(shut_lining.faceted);
-        assert!(shut_lining.auto_update);
-        assert!(shut_lining.force_update);
+        assert!(shut_lining.options.faceted);
+        assert!(shut_lining.options.auto_update);
+        assert!(shut_lining.options.force_update);
         assert_eq!(shut_lining.curves.len(), 3);
         assert_eq!(shut_lining.curves[0].uuid, None);
         assert_eq!(shut_lining.curves[0].radius.get(), 1.0);
@@ -1363,9 +1460,9 @@ mod tests {
         .expect("shut-lining userdata");
         let shut_lining = modifiers.shut_lining.expect("shut lining");
         assert!(!shut_lining.on);
-        assert!(!shut_lining.faceted);
-        assert!(!shut_lining.auto_update);
-        assert!(!shut_lining.force_update);
+        assert!(!shut_lining.options.faceted);
+        assert!(!shut_lining.options.auto_update);
+        assert!(!shut_lining.options.force_update);
         assert_eq!(shut_lining.curves.len(), 1);
         let curve = &shut_lining.curves[0];
         assert_eq!(curve.radius.get(), 3.25);
@@ -1391,9 +1488,9 @@ mod tests {
         let shut_lining = modifiers.shut_lining.expect("shut lining");
         assert_eq!(shut_lining.xml_version, 1);
         assert!(!shut_lining.on);
-        assert!(!shut_lining.faceted);
-        assert!(!shut_lining.auto_update);
-        assert!(!shut_lining.force_update);
+        assert!(!shut_lining.options.faceted);
+        assert!(!shut_lining.options.auto_update);
+        assert!(!shut_lining.options.force_update);
         assert_eq!(shut_lining.curves.len(), 1);
         assert_eq!(shut_lining.curves[0].radius.get(), 2.75);
         assert_eq!(shut_lining.curves[0].profile, 3);

@@ -1734,8 +1734,14 @@ where
                 mesh_feature_id_charged(ctx, &stream, scope_offset)?,
                 scope.scope,
                 collection.collection,
-                DesignMeshTextureTable::new(texture_table.identity, textures)
-                    .map_err(|message| malformed_mesh_graph(ctx, &stream, &message))?,
+                DesignMeshTextureTable::new_charged(ctx, texture_table.identity, textures).map_err(
+                    |error| match error {
+                        CodecError::Malformed(message) => {
+                            malformed_mesh_graph(ctx, &stream, &message)
+                        }
+                        other => other,
+                    },
+                )?,
                 collection_owner.owner,
                 feature_bodies,
             )
@@ -1768,7 +1774,7 @@ fn decode_mesh_design_records(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+        let Some(meta) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
         let mut asset_for_filename = |filename: &str| mesh_image_asset(ctx, scan, filename);
@@ -1912,7 +1918,7 @@ pub(crate) fn decode_mesh_bodies(
     {
         let container = match scan
             .entry_bytes(&entry.name)
-            .and_then(decode_mesh_container)
+            .and_then(|bytes| decode_mesh_container(ctx, bytes))
         {
             Ok(container) => container,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),

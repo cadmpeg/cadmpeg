@@ -989,7 +989,11 @@ fn arena_coverage_meets_floor() {
     println!(
         "golden arena coverage: {hit}/{} known arenas ({:.1}%)\nuncovered: {uncovered:?}",
         KNOWN_ARENAS.len(),
-        100.0 * hit as f64 / KNOWN_ARENAS.len() as f64,
+        100.0
+            * cadmpeg_core::convert::f64_from_index(hit)
+                .expect("fixture integer is exactly representable")
+            / cadmpeg_core::convert::f64_from_index(KNOWN_ARENAS.len())
+                .expect("fixture integer is exactly representable"),
     );
     assert!(
         hit >= ARENA_COVERAGE_FLOOR,

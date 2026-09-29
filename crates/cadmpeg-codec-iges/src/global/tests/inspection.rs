@@ -10,6 +10,48 @@ use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::IgesCodec;
 
 #[test]
+fn global_summary_refuses_note_slot_and_text_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (global, _) = super::resolve_global_fields(&valid_global_fields());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = global.summary_notes(&ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges global summary notes"
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(b"parameter_delimiter=,".len()) - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = global.summary_notes(&ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == cadmpeg_core::decode::u64_from_index(b"parameter_delimiter=,".len())
+                && limit.operation == "iges global summary text"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        global.summary_notes(&ctx).unwrap()[0],
+        "parameter_delimiter=,"
+    );
+}
+
+#[test]
 fn inspect_reports_the_resolution_losses_it_charges_as_typed_losses() {
     let mut fields = valid_global_fields();
     fields[11] = "7Hproduct".into();

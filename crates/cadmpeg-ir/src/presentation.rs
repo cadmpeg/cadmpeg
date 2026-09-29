@@ -133,6 +133,10 @@ impl PresentationDocument {
 
     /// Replace persisted states after checking that their orders are distinct.
     pub fn set_states(&mut self, states: Vec<PresentationState>) -> Result<(), String> {
+        if states.windows(2).all(|pair| pair[0].order < pair[1].order) {
+            self.states = states;
+            return Ok(());
+        }
         let mut orders = std::collections::HashSet::new();
         if states.iter().any(|state| !orders.insert(state.order)) {
             return Err("states must have distinct order values".into());
@@ -437,7 +441,7 @@ mod tests {
             );
             let state = PresentationState {
                 kind,
-                order: order as u32,
+                order: u32::try_from(order).expect("test order fits u32"),
                 attributes: BTreeMap::new(),
                 assets: Vec::new(),
             };
@@ -483,7 +487,9 @@ mod tests {
             }],
         });
 
-        assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 
     #[test]
@@ -499,7 +505,9 @@ mod tests {
             }],
         });
 
-        assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 
     #[test]
@@ -515,7 +523,8 @@ mod tests {
             }],
         });
 
-        assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+        assert!(validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .iter()
             .any(|finding| finding.check == Check::Presentation));

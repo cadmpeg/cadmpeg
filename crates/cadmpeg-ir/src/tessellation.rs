@@ -14,7 +14,7 @@ use crate::scalar::NonNegativeReal;
 
 crate::ids::id_type!(
     /// Stable tessellation identity.
-    TessellationId, into_string
+    TessellationId, compose, into_string
 );
 
 /// Admission error in a tessellation mesh or channel carrier.
@@ -133,7 +133,7 @@ impl<V> Strips<V> {
             return None;
         }
         let span = strips.iter().try_fold(0u64, |total, strip| {
-            total.checked_add(strip.vertices().len() as u64)
+            total.checked_add(cadmpeg_core::decode::u64_from_index(strip.vertices().len()))
         })?;
         u32::try_from(span).is_ok().then_some(Self(strips))
     }
@@ -183,7 +183,7 @@ impl<V> Strips<V> {
     #[must_use]
     pub fn from_spans(vertices: Vec<V>, spans: &[u32]) -> Option<Self> {
         let mut remaining = vertices.into_iter();
-        let mut strips = Vec::with_capacity(spans.len());
+        let mut strips = Vec::new();
         for span in spans {
             let span = usize::try_from(*span).ok()?;
             let run: Vec<V> = remaining.by_ref().take(span).collect();
@@ -975,7 +975,7 @@ fn require_triangle_indices(
     if triangles
         .iter()
         .flatten()
-        .any(|index| *index as usize >= vertex_count)
+        .any(|index| cadmpeg_core::decode::index_from_u32(*index) >= vertex_count)
     {
         return Err(tessellation_error(
             "contains an out-of-range tessellation index",
@@ -1033,7 +1033,9 @@ fn require_triangle_groups(
     if triangle_groups.is_empty() {
         return Ok(());
     }
-    let mut memberships = std::iter::repeat_n(false, triangle_count).collect::<Vec<_>>();
+    let mut memberships = std::iter::repeat_with(|| false)
+        .take(triangle_count)
+        .collect::<Vec<_>>();
     let mut source_ids = std::collections::BTreeSet::new();
     let valid = triangle_groups.iter().all(|group| {
         !group.triangles.is_empty()
@@ -1072,7 +1074,9 @@ fn require_texture_assignments(
     if texture_assignments.is_empty() {
         return Ok(());
     }
-    let mut memberships = std::iter::repeat_n(false, triangle_count).collect::<Vec<_>>();
+    let mut memberships = std::iter::repeat_with(|| false)
+        .take(triangle_count)
+        .collect::<Vec<_>>();
     let mut source_ids = std::collections::BTreeSet::new();
     let mut anonymous_textures = std::collections::BTreeSet::new();
     let valid = texture_assignments.iter().all(|assignment| {
@@ -1109,7 +1113,7 @@ fn require_texture_assignments(
 impl Tessellation {
     /// Build a tessellation from its mesh rows and channels.
     pub fn new(
-        id: impl Into<String>,
+        id: TessellationId,
         mesh: TessellationMesh,
         channels: Vec<TessellationChannel>,
     ) -> Result<Self, TessellationError> {
@@ -1121,7 +1125,7 @@ impl Tessellation {
 
     /// Build from admitted positions and normals; check only relationships.
     pub fn from_parts(
-        id: impl Into<String>,
+        id: TessellationId,
         mesh: TessellationMesh<FinitePoint3, FiniteVector3>,
         channels: Vec<TessellationChannel>,
     ) -> Result<Self, TessellationError> {
@@ -1129,7 +1133,7 @@ impl Tessellation {
         require_triangle_indices(mesh.vertex_count(), &triangles)?;
         require_channel_indices(triangles.len(), &channels)?;
         Ok(Self {
-            id: TessellationId::mint(id).map_err(|error| tessellation_error(error.to_string()))?,
+            id,
             body: None,
             faces: Vec::new(),
             chordal_deflection: None,
@@ -1499,7 +1503,7 @@ impl TryFrom<TessellationWire> for Tessellation {
             body: wire.body,
             faces: wire.faces,
             source_object: wire.source_object,
-            ..Self::new(wire.id.into_string(), wire.mesh, wire.channels)?
+            ..Self::new(wire.id, wire.mesh, wire.channels)?
         };
         mesh.set_chordal_deflection(wire.chordal_deflection)?;
         mesh = mesh.with_feature_edges(wire.feature_edges)?;

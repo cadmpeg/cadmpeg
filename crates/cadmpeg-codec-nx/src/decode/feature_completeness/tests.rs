@@ -18,7 +18,73 @@ use crate::decode::feature_completeness::{
     datum_coordinate_system_is_incomplete, projected_curve_direction_is_incomplete,
     shell_definition_is_incomplete,
 };
-use crate::decode::report::append_design_intent_losses;
+
+fn append_design_intent_losses(
+    ir: &cadmpeg_ir::document::CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::decode::report::append_design_intent_losses(ctx, ir, losses)
+    })
+    .unwrap();
+}
+
+fn one_incomplete_expression_parameter() -> cadmpeg_ir::CadIr {
+    use cadmpeg_ir::features::{DesignParameter, ParameterId};
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters.push(DesignParameter {
+        id: ParameterId::mint("test:model:parameter#incomplete")
+            .expect("parameter identity grammar"),
+        owner: None,
+        ordinal: 0,
+        name: "p1".into(),
+        expression: "p2".into(),
+        display: None,
+        value: None,
+        dependencies: Default::default(),
+        properties: Default::default(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir
+}
+
+#[test]
+fn expression_completeness_refuses_owner_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let ir = one_incomplete_expression_parameter();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits service policy");
+    let result = super::incomplete_expression_parameters(&ctx, &ir);
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+        panic!("expected expression collection refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "nx expression parameter owners");
+}
+
+#[test]
+fn expression_completeness_refuses_incomplete_identity_retention() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let ir = one_incomplete_expression_parameter();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits service policy");
+    let result = super::incomplete_expression_parameters(&ctx, &ir);
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+        panic!("expected expression identity refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "nx incomplete expression identity");
+}
 
 #[test]
 fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {
@@ -1841,3 +1907,5 @@ fn nx_shell_completeness_requires_each_construction_field() {
     assert!(!shell_definition_is_incomplete(&complete));
     assert_eq!(complete.body_output_family(), Some("shell"));
 }
+
+mod numeric;

@@ -52,7 +52,11 @@ fn projection_caches_end_after_history_consumers() {
         states: vec![state],
     }];
 
-    discard_projection_caches(&mut histories);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("decode context");
+    discard_projection_caches(&ctx, &mut histories).expect("projection cache budget");
 
     let state = &histories[0].states[0];
     assert!(histories[0].projection_finalized());
@@ -113,7 +117,7 @@ fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
     ];
 
     assert_eq!(
-        side_one_recipe_edge(Some(&structure), &contexts, &[], &[40, 41, 42]),
+        side_one_recipe_edge(None, Some(&structure), &contexts, &[], &[40, 41, 42]).unwrap(),
         Some(41)
     );
 
@@ -131,12 +135,39 @@ fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
     };
     assert_eq!(
         side_one_recipe_edge(
+            None,
             Some(&structure),
             &ambiguous_contexts,
             &[selector],
             &[40, 41, 42],
-        ),
+        )
+        .unwrap(),
         Some(41)
+    );
+}
+
+#[test]
+fn recipe_side_ordinals_refuse_collection_limit() {
+    let structure = crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+        root: 2,
+        sides: vec![
+            crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
+                header_value: 1,
+                scalars: Vec::new(),
+                payload_prefix: Vec::new(),
+                entries: Vec::new(),
+            },
+        ],
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = side_one_recipe_edge(Some(&ctx), Some(&structure), &[], &[], &[]).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D recipe side ordinals")
     );
 }
 

@@ -1944,31 +1944,32 @@ fn parse_dimension_annotation_frame(
         Ok(bytes) => bytes,
         Err(error) => return Some(Err(error)),
     };
-    DesignDimensionAnnotationFrame::try_new(
-        crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
-            id: String::new(),
-            companion_record_index,
-            governing_companion_record_index,
-            byte_offset: start as u64,
-            class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
-            record_index,
-            frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
-            operands,
-            entity_genesis,
-            annotation_bytes,
-            annotation_byte_offset: annotation_byte_offset as u64,
-            governing_owner_record_index,
-            governing_owner_reference_offset: (tail + 1) as u64,
-            return_members,
-            paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
-                .ok()?,
-            paired_byte_offset: paired_byte_offset as u64,
-            owner_reference,
-            owner_reference_offset: (paired_byte_offset + 20) as u64,
-        },
-    )
-    .ok()
-    .map(Ok)
+    let draft = crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
+        id: String::new(),
+        companion_record_index,
+        governing_companion_record_index,
+        byte_offset: start as u64,
+        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
+        record_index,
+        frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
+        operands,
+        entity_genesis,
+        annotation_bytes,
+        annotation_byte_offset: annotation_byte_offset as u64,
+        governing_owner_record_index,
+        governing_owner_reference_offset: (tail + 1) as u64,
+        return_members,
+        paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
+            .ok()?,
+        paired_byte_offset: paired_byte_offset as u64,
+        owner_reference,
+        owner_reference_offset: (paired_byte_offset + 20) as u64,
+    };
+    match DesignDimensionAnnotationFrame::try_new_charged(ctx, draft) {
+        Ok(frame) => Some(Ok(frame)),
+        Err(error @ CodecError::ResourceLimit(_)) => Some(Err(error)),
+        Err(_) => None,
+    }
 }
 
 /// Stable Fusion type whose indexed records carry the older direct dimension

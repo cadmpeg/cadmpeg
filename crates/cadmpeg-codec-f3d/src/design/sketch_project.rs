@@ -560,7 +560,7 @@ pub(crate) fn project_sketch_design(
                     .transpose()?;
                 SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     geometry.degree(),
-                    geometry.knots(),
+                    geometry.knots_copy(ctx)?,
                     planar_poles,
                     weights,
                     false,
@@ -943,7 +943,7 @@ pub(crate) fn project_spatial_sketch_design(
                             .transpose()?;
                         let curve3d = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                             geometry.degree(),
-                            geometry.knots(),
+                            geometry.knots_copy(ctx)?,
                             transformed_poles,
                             weights,
                             false,

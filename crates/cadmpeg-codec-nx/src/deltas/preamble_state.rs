@@ -12,12 +12,6 @@ enum StateForm {
     Two,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EntryKind {
-    Type81,
-    Type82,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "PreambleWire")]
 pub(crate) struct PreambleState {
@@ -27,7 +21,7 @@ pub(crate) struct PreambleState {
     form: StateForm,
     last_word: u32,
     count: NonZeroU16,
-    entries: Vec<(EntryKind, u32)>,
+    entries: Vec<(u16, u32)>,
     terminal_value: u16,
 }
 
@@ -43,18 +37,7 @@ impl Serialize for PreambleState {
         }
         wire.serialize_field("state_words", &self.state_words())?;
         wire.serialize_field("count", &self.count())?;
-        wire.serialize_field(
-            "entries",
-            &IterWire(self.entries.iter().map(|(kind, reference)| {
-                (
-                    match kind {
-                        EntryKind::Type81 => 81_u16,
-                        EntryKind::Type82 => 82_u16,
-                    },
-                    *reference,
-                )
-            })),
-        )?;
+        wire.serialize_field("entries", &IterWire(self.entries.iter().copied()))?;
         wire.serialize_field("terminal_value", &self.terminal_value())?;
         wire.end()
     }
@@ -98,20 +81,14 @@ impl PreambleState {
         if entries.is_empty() {
             return Err("entries: require at least one entry");
         }
-        let entries = entries
-            .into_iter()
-            .map(|(kind, reference)| {
-                if reference <= 1 {
-                    return Err("entries.reference: must exceed one");
-                }
-                let kind = match kind {
-                    81 => EntryKind::Type81,
-                    82 => EntryKind::Type82,
-                    _ => return Err("entries.kind: must be 81 or 82"),
-                };
-                Ok((kind, reference))
-            })
-            .collect::<Result<_, _>>()?;
+        for (kind, reference) in &entries {
+            if *reference <= 1 {
+                return Err("entries.reference: must exceed one");
+            }
+            if !matches!(*kind, 81 | 82) {
+                return Err("entries.kind: must be 81 or 82");
+            }
+        }
         Ok(Self {
             identity,
             first_reference,
@@ -153,18 +130,7 @@ impl PreambleState {
     }
     #[cfg(test)]
     pub(crate) fn entries(&self) -> Vec<(u16, u32)> {
-        self.entries
-            .iter()
-            .map(|(kind, reference)| {
-                (
-                    match kind {
-                        EntryKind::Type81 => 81,
-                        EntryKind::Type82 => 82,
-                    },
-                    *reference,
-                )
-            })
-            .collect()
+        self.entries.clone()
     }
     pub(crate) fn terminal_value(&self) -> u16 {
         self.terminal_value

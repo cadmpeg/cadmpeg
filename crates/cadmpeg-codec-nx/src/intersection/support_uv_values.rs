@@ -2,6 +2,8 @@
 //! Finite support-UV tuples with their exact packing marker.
 
 use super::{SupportUv, SupportUvLane};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
 
@@ -43,10 +45,37 @@ impl SupportUvPacking {
 pub(crate) struct SupportUvValues {
     packing: SupportUvPacking,
     values: Vec<FiniteReal>,
+    count: u32,
 }
 impl SupportUvValues {
+    pub(crate) fn new_charged(
+        ctx: &DecodeContext<'_>,
+        packing: SupportUvPacking,
+        values: Vec<f64>,
+    ) -> Result<Option<Self>, CodecError> {
+        let Ok(wire_count) = u32::try_from(values.len()) else {
+            return Ok(None);
+        };
+        if values.len() < packing.width() * 2 || !values.len().is_multiple_of(packing.width()) {
+            return Ok(None);
+        }
+        let count = values.len();
+        let operation = "NX finite support-UV values";
+        let mut finite = ctx.retained_vec(count, operation)?;
+        for value in values {
+            let Some(value) = FiniteReal::new(value) else {
+                return Ok(None);
+            };
+            finite.push(value);
+        }
+        Ok(Some(Self {
+            packing,
+            values: finite,
+            count: wire_count,
+        }))
+    }
     pub(crate) fn new(packing: SupportUvPacking, values: Vec<f64>) -> Result<Self, &'static str> {
-        u32::try_from(values.len()).map_err(|_| "values: scalar count exceeds u32")?;
+        let count = u32::try_from(values.len()).map_err(|_| "values: scalar count exceeds u32")?;
         if values.len() < packing.width() * 2 || !values.len().is_multiple_of(packing.width()) {
             return Err("values: must contain at least two complete tuples for marker");
         }
@@ -54,11 +83,15 @@ impl SupportUvValues {
             .into_iter()
             .map(|value| FiniteReal::new(value).ok_or("values: scalars must be finite"))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self { packing, values })
+        Ok(Self {
+            packing,
+            values,
+            count,
+        })
     }
 
     pub(crate) fn count(&self) -> u32 {
-        self.values.len() as u32
+        self.count
     }
     pub(crate) fn marker(&self) -> u8 {
         self.packing.marker()
@@ -74,6 +107,7 @@ impl SupportUvValues {
         self.values.into_iter().map(FiniteReal::get).collect()
     }
 
+    #[cfg(test)]
     pub(super) fn support_uv(&self, sample_count: usize) -> SupportUv {
         let first = self
             .values()
@@ -93,6 +127,56 @@ impl SupportUvValues {
             SupportUvLane::from_checked(first, sample_count),
             second.and_then(|values| SupportUvLane::from_checked(values, sample_count)),
         ]
+    }
+
+    pub(super) fn support_uv_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        sample_count: usize,
+    ) -> Result<SupportUv, CodecError> {
+        let count = self.values.len() / self.packing.width();
+        if count != sample_count {
+            return Ok([None, None]);
+        }
+        let operation = "NX solved support-UV values";
+        let count_u64 = u64_from_index(count);
+        let lane_count = if self.packing == SupportUvPacking::Form4 {
+            2
+        } else {
+            1
+        };
+        ctx.charge_collection_items(
+            count_u64
+                .checked_mul(lane_count)
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?,
+            operation,
+        )?;
+        let bytes = count_u64
+            .checked_mul(lane_count)
+            .and_then(|slots| {
+                slots.checked_mul(u64_from_index(std::mem::size_of::<FiniteVector<2>>()))
+            })
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        ctx.charge_retained(bytes, operation)?;
+        let mut first = Vec::new();
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut first, count, operation)?;
+        let mut second = if lane_count == 2 {
+            let mut lane = Vec::new();
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut lane, count, operation)?;
+            Some(lane)
+        } else {
+            None
+        };
+        for row in self.values.chunks_exact(self.packing.width()) {
+            first.push(FiniteVector::from([row[0], row[1]]));
+            if let Some(values) = &mut second {
+                values.push(FiniteVector::from([row[2], row[3]]));
+            }
+        }
+        Ok([
+            SupportUvLane::from_checked(first, sample_count),
+            second.and_then(|values| SupportUvLane::from_checked(values, sample_count)),
+        ])
     }
 }
 

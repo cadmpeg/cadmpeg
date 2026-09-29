@@ -1820,17 +1820,38 @@ pub(crate) fn parameter_domain_trimmed_surface_file(trimmed_surface_parameters: 
 }
 
 pub(crate) fn subrange_nurbs_surface_boundary_file(preference: i64) -> Vec<u8> {
-    subrange_nurbs_surface_boundary_file_with_global(
+    subrange_nurbs_surface_boundary_file_with_pcurve(
         preference,
         "126,2,2,1,1,1,0,0,0,0,1,1,1,1,1,1,0.2,0.2,0,0.1,0.5,0,0.2,0.2,0,0,1,0,0,1;",
+    )
+}
+
+pub(crate) fn subrange_nurbs_surface_boundary_file_with_pcurve(
+    preference: i64,
+    pcurve_parameters: &str,
+) -> Vec<u8> {
+    subrange_nurbs_surface_boundary_file_with_global(
+        preference,
+        pcurve_parameters,
         b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,64,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
     )
 }
 
 pub(crate) fn subrange_nurbs_surface_boundary_file_with_source_precision() -> Vec<u8> {
+    subrange_nurbs_surface_boundary_file_with_source_precision_at("0.1999999")
+}
+
+pub(crate) fn subrange_nurbs_surface_boundary_file_with_source_precision_outside_nominal() -> Vec<u8>
+{
+    subrange_nurbs_surface_boundary_file_with_source_precision_at("0.1999993")
+}
+
+fn subrange_nurbs_surface_boundary_file_with_source_precision_at(
+    source_coordinate: &str,
+) -> Vec<u8> {
     subrange_nurbs_surface_boundary_file_with_global(
         3,
-        "126,2,2,1,1,1,0,0,0,0,1,1,1,1,1,1,0.1999999,0.1999999,0,0.5,0.5,0,0.1999999,0.1999999,0,0,1,0,0,1;",
+        &format!("126,2,2,1,1,1,0,0,0,0,1,1,1,1,1,1,{source_coordinate},{source_coordinate},0,0.5,0.5,0,{source_coordinate},{source_coordinate},0,0,1,0,0,1;"),
         b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,64,38,6,308,6,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
     )
 }

@@ -23,8 +23,15 @@ impl<S: AsRef<str>> ProductText<S> {
 }
 
 impl ProductText<&str> {
-    pub(crate) fn into_owned(self) -> ProductText<String> {
-        ProductText(self.0.into_owned())
+    pub(crate) fn try_into_owned_for_decode(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<ProductText<String>, cadmpeg_core::CodecError> {
+        let value = self.as_str();
+        let mut owned = ctx.retained_string(value.len(), "retain NX store version")?;
+        owned.push_str(value);
+        ProductText::new(owned)
+            .map_err(|_| ctx.refuse_codec_limit("validate NX store version", 0, 1))
     }
 }
 
@@ -83,7 +90,15 @@ mod tests {
     #[test]
     fn product_text_preserves_wire_and_length_bound() {
         let text = format!("NX {}", "x".repeat(250));
-        let value = ProductText::new(text.as_str()).unwrap().into_owned();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy)
+                .unwrap();
+        let value = ProductText::new(text.as_str())
+            .unwrap()
+            .try_into_owned_for_decode(&ctx)
+            .unwrap();
         let wire = serde_json::to_string(&value).unwrap();
         assert_eq!(wire, serde_json::to_string(&text).unwrap());
         assert_eq!(

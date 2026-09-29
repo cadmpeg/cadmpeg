@@ -23,13 +23,13 @@ fn display_jt_inflate_propagates_expansion_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_decompressed_bytes_total = 16;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::inflate_display_jt(Some((&ctx, source)), &member).unwrap_err();
+    let error = super::inflate_display_jt(&ctx, source).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::DecompressedBytes));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        super::inflate_display_jt(Some((&service, source)), &member)
+        super::inflate_display_jt(&service, source)
             .unwrap()
             .as_deref(),
         Some(b"DisplayJT payload".as_slice())
@@ -44,14 +44,14 @@ fn display_jt_inflate_propagates_retained_copy_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 16;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::inflate_display_jt(Some((&ctx, source)), &member).unwrap_err();
+    let error = super::inflate_display_jt(&ctx, source).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "retain inflated DisplayJT payload"));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        super::inflate_display_jt(Some((&service, source)), &member)
+        super::inflate_display_jt(&service, source)
             .unwrap()
             .as_deref(),
         Some(b"DisplayJT payload".as_slice())
@@ -65,22 +65,23 @@ fn display_jt_segment_entity_refuses_before_identity_and_record_allocation() {
     data[165..181].copy_from_slice(&[2; 16]);
     data[181..185].copy_from_slice(&1_u32.to_le_bytes());
     data[185..189].copy_from_slice(&24_u32.to_le_bytes());
-    let indices = super::display_jt_indices(None, &container).unwrap();
-    let documents = super::display_jt_documents(None, &container, &indices).unwrap();
+    let index_arena = DecodeArena::new();
+    let index_policy = DecodePolicy::service();
+    let (index_ctx, _) = DecodeContext::from_root_bytes(&[], &index_arena, &index_policy).unwrap();
+    let indices = super::display_jt_indices(&index_ctx, &container).unwrap();
+    let documents = super::display_jt_documents(&index_ctx, &container, &indices).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let source = View::over_retained(container.data.as_ref());
-    let error =
-        super::display_jt_segments(Some((&ctx, source)), &container, &documents).unwrap_err();
+    let error = super::display_jt_segments((&ctx, source), &container, &documents).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::Entities
             && limit.operation == "store DisplayJT segment"));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let segments =
-        super::display_jt_segments(Some((&service, source)), &container, &documents).unwrap();
+    let segments = super::display_jt_segments((&service, source), &container, &documents).unwrap();
     assert_eq!(segments.len(), 1);
 }
 
@@ -98,7 +99,7 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
     data.extend_from_slice(&16_u32.to_le_bytes());
     data.extend_from_slice(&[0xff; 16]);
     data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
-    let data_len = data.len() as u64;
+    let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = Container {
         data: data.into(),
         physical_size: data_len,
@@ -122,7 +123,7 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
         segment_id: [1; 16],
         segment_type: 7,
         segment_byte_len: 78,
-        payload_sha256: super::Sha256Hex::digest(&[]),
+        payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]),
         compression: None,
         source_offset: 0,
     };
@@ -132,7 +133,7 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let source = View::over_retained(container.data.as_ref());
     let error = super::display_jt_shape_lod_elements(
-        Some((&ctx, source)),
+        (&ctx, source),
         &container,
         std::slice::from_ref(&segment),
     )
@@ -143,7 +144,6 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let elements =
-        super::display_jt_shape_lod_elements(Some((&service, source)), &container, &[segment])
-            .unwrap();
+        super::display_jt_shape_lod_elements((&service, source), &container, &[segment]).unwrap();
     assert_eq!(elements.len(), 1);
 }

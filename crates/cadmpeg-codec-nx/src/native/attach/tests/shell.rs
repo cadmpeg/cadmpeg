@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::attach::shell_feature_definition;
+use crate::native::attach::feature_projection::shell_feature_definition;
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
 #[test]

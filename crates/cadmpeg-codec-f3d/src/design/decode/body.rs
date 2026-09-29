@@ -559,7 +559,7 @@ fn snapshot_body_map_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
-    let frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
+    let frames = crate::metastream::primary_record_frames(ctx, meta, bytes.len())?;
     let mut primary_by_entity = HashMap::new();
     for (ordinal, frame) in frames.iter().enumerate() {
         if !primary_by_entity.contains_key(&frame.entity_id) {
@@ -788,7 +788,7 @@ fn body_map_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
-    let record_frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
+    let record_frames = crate::metastream::primary_record_frames(ctx, meta, bytes.len())?;
 
     let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
     for (ordinal, record) in meta.records.iter().enumerate() {
@@ -997,7 +997,7 @@ pub(crate) fn design_model_blob_names(
         saw_design_stream = true;
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
             continue;
         };
@@ -1222,7 +1222,7 @@ pub(crate) fn decode_design_body_bindings(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
             continue;
         };
@@ -1245,7 +1245,10 @@ pub(crate) fn decode_design_body_bindings(
                 }
             }
             for (ordinal, binding) in (0..pair_count).zip(&record.bindings) {
-                let body = crate::brep::resolve_body_selector(&source_bodies, binding.asm_key)?;
+                let body = crate::brep::resolve_body_selector(
+                    source_bodies.iter().copied(),
+                    binding.asm_key,
+                )?;
                 let record =
                     DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
                         id: design_record_id_charged(
@@ -1269,7 +1272,9 @@ pub(crate) fn decode_design_body_bindings(
                             "f3d body-binding blob name",
                         )?,
                         blob_name_offset: record.blob_name_offset as u64,
-                        body,
+                        body: body
+                            .map(|id| crate::brep::copy_body_id(ctx, id))
+                            .transpose()?,
                     })
                     .map_err(CodecError::Malformed)?;
                 ctx.charge_collection_items(1, "f3d decoded body bindings")?;
@@ -1354,7 +1359,7 @@ pub(crate) fn decode_all_body_visibility(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
             continue;
         };
@@ -1473,24 +1478,21 @@ pub(crate) fn scanned_browser_node_entities(
 ) -> Result<HashMap<String, u64>, CodecError> {
     let mut entities = HashMap::new();
     let mut ambiguous = std::collections::HashSet::new();
-    for record in scan_browser_node_identities(bytes) {
+    for record in scan_browser_node_identities(ctx, bytes)? {
         let key = record.guid.to_ascii_lowercase();
-        if let Some(previous) = entities.get_mut(&key) {
-            if *previous != record.entity_suffix {
-                *previous = record.entity_suffix;
-                if !ambiguous.contains(&key) {
-                    ctx.charge_collection_items(1, "f3d ambiguous browser GUIDs")?;
-                    ambiguous.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("f3d ambiguous browser GUIDs allocation", 0, 1)
-                    })?;
-                    ambiguous.insert(key);
-                }
+        if let Some(previous) = entities.get(&key) {
+            if *previous != record.entity_suffix && !ambiguous.contains(&key) {
+                ctx.charge_collection_items(1, "index F3D ambiguous browser nodes")?;
+                ambiguous.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index F3D ambiguous browser nodes", 0, 1)
+                })?;
+                ambiguous.insert(key);
             }
         } else {
-            ctx.charge_collection_items(1, "f3d scanned browser GUIDs")?;
-            entities.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d scanned browser GUIDs allocation", 0, 1)
-            })?;
+            ctx.charge_collection_items(1, "index F3D browser node entities")?;
+            entities
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("index F3D browser node entities", 0, 1))?;
             entities.insert(key, record.entity_suffix);
         }
     }
@@ -1505,35 +1507,36 @@ struct ScannedBrowserNodeIdentity {
 }
 
 fn scan_browser_node_identities(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
-) -> impl Iterator<Item = ScannedBrowserNodeIdentity> + '_ {
+) -> Result<Vec<ScannedBrowserNodeIdentity>, cadmpeg_core::CodecError> {
     const GUID_CHARS: usize = 36;
     const GUID_BYTES: usize = GUID_CHARS * 2;
+    let mut out = Vec::new();
     let mut at = 0usize;
-    std::iter::from_fn(move || {
-        while at + 4 + GUID_BYTES + 3 + 8 <= bytes.len() {
-            let candidate_at = at;
+    while at + 4 + GUID_BYTES + 3 + 8 <= bytes.len() {
+        if View::u32_le_at(bytes, at) != Some(GUID_CHARS as u32)
+            || !is_utf16_guid(&bytes[at + 4..at + 4 + GUID_BYTES])
+        {
             at += 1;
-            if View::u32_le_at(bytes, candidate_at) != Some(GUID_CHARS as u32)
-                || !is_utf16_guid(&bytes[candidate_at + 4..candidate_at + 4 + GUID_BYTES])
-            {
-                continue;
-            }
-            let flag_at = candidate_at + 4 + GUID_BYTES;
-            if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
-                if let (0 | 1, Some(member)) = (bytes[flag_at], View::u64_le_at(bytes, flag_at + 3))
-                {
-                    return Some(ScannedBrowserNodeIdentity {
-                        guid: utf16_le_string(
-                            &bytes[candidate_at + 4..candidate_at + 4 + GUID_BYTES],
-                        ),
-                        entity_suffix: member,
-                    });
-                }
+            continue;
+        }
+        let flag_at = at + 4 + GUID_BYTES;
+        if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
+            if let (0 | 1, Some(member)) = (bytes[flag_at], View::u64_le_at(bytes, flag_at + 3)) {
+                ctx.charge_collection_items(1, "collect F3D browser node identities")?;
+                out.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("collect F3D browser node identities", 0, 1)
+                })?;
+                out.push(ScannedBrowserNodeIdentity {
+                    guid: utf16_le_string(&bytes[at + 4..at + 4 + GUID_BYTES]),
+                    entity_suffix: member,
+                });
             }
         }
-        None
-    })
+        at += 1;
+    }
+    Ok(out)
 }
 
 fn utf16_le_string(bytes: &[u8]) -> String {
@@ -2325,6 +2328,10 @@ mod tests {
                     blob_len + scope_len + suffix_len + stream_name.len() as u64,
                     "f3d body-binding blob name",
                 ),
+                (
+                    blob_len * 2 + scope_len + suffix_len + stream_name.len() as u64,
+                    "copy F3D BREP body ID",
+                ),
             ] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();
@@ -2560,8 +2567,8 @@ mod tests {
         push_browser_node(&mut bytes, 100, GUID, false, 42);
         push_browser_node(&mut bytes, 101, GUID, true, 43);
         for (items, operation) in [
-            (0, "f3d scanned browser GUIDs"),
-            (1, "f3d ambiguous browser GUIDs"),
+            (2, "index F3D browser node entities"),
+            (3, "index F3D ambiguous browser nodes"),
         ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();

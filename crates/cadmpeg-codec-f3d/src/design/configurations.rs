@@ -124,7 +124,10 @@ fn configuration_scalar_text(
             format_args!("{number}"),
             "f3d configuration scalar text",
         ),
-        _ => Ok(value.text()),
+        _ => match ctx {
+            Some(ctx) => value.text_charged(ctx),
+            None => Ok(value.text()),
+        },
     }
 }
 
@@ -342,12 +345,13 @@ pub(crate) fn decode_configurations(
         };
         let entry_name =
             copy_configuration_text(Some(ctx), &entry.name, "f3d configuration entry name")?;
-        let configuration = DesignConfiguration::try_new(entry_name, kind, variant_order, payload)?;
-        ctx.charge_collection_items(1, "f3d configuration record")?;
-        configurations
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("f3d configuration record allocation", 0, 1))?;
-        configurations.push(configuration);
+        let configuration =
+            DesignConfiguration::try_new_charged(ctx, entry_name, kind, variant_order, payload)?;
+        ctx.push_vec(
+            &mut configurations,
+            configuration,
+            "f3d configuration record",
+        )?;
     }
     let mut names = HashSet::new();
     for configuration in &configurations {

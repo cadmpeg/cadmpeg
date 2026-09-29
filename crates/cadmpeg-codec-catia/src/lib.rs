@@ -56,13 +56,14 @@ mod ids;
 /// Byte-offset constants generated from `docs/layouts/catia.toml`.
 mod layout;
 mod legacy_entity;
-#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
+// Loss catalog is consumed by tests and the writer.
 mod loss;
 mod math;
 mod native;
 mod nurbs;
 mod object_graph;
 mod pmi;
+mod resource;
 mod sketch;
 mod solve;
 mod unique_index;
@@ -75,7 +76,7 @@ pub mod fuzz;
 
 /// Maximum number of exact rational-quadratic spans materialized for one
 /// angular curve or surface direction from untrusted native parameters.
-const MAX_EXACT_ARC_SPANS: usize = 4_096;
+const MAX_EXACT_ARC_SPANS: f64 = 4_096.0;
 
 /// Maximum number of control points materialized for one NURBS surface from
 /// untrusted native cardinalities.
@@ -114,7 +115,7 @@ impl CodecBackend for CatiaCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan_bytes(ctx, root.window())?;
-        Ok(container::summarize(&scan))
+        container::summarize(ctx, &scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {

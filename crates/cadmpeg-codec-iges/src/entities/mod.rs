@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed IGES entity accessors and neutral projection.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use std::collections::BTreeSet;
+use std::fmt;
 
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::CurveId;
@@ -12,39 +15,91 @@ use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 
-fn directed_cycle(
+fn push_attributed_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    code: IgesLossCode,
+    message: fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    ctx.reserve_vec(losses, 1, "iges entity loss slots")?;
+    let message = ctx.format_retained(message, "iges entity loss message")?;
+    ctx.charge_retained(
+        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+        "iges entity loss kind",
+    )?;
+    losses.push(
+        code.note(message)
+            .with_provenance(entry.admitted_loss_provenance(ctx)?),
+    );
+    Ok(())
+}
+
+fn push_entity_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    reason: fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    push_attributed_loss(
+        ctx,
+        losses,
+        entry,
+        IgesLossCode::EntityNotProjected,
+        format_args!(
+            "IGES entity type {} form {} was not projected: {reason}",
+            entry.entity_type, entry.form
+        ),
+    )
+}
+
+fn non_resource_error(error: CodecError, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+    match error {
+        CodecError::ResourceLimit(_) => Err(error),
+        other => ctx.format_retained(format_args!("{other}"), "iges diagnostic error text"),
+    }
+}
+
+fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     sequence: u32,
     visited: &mut BTreeSet<u32>,
-    successors: impl Fn(u32) -> Vec<u32>,
-) -> bool {
+    ctx: &DecodeContext<'_>,
+    successors: impl Fn(u32) -> I,
+) -> Result<bool, CodecError> {
     if visited.contains(&sequence) {
-        return false;
+        return Ok(false);
     }
     let mut active = BTreeSet::new();
-    let mut stack = vec![(sequence, false)];
+    let mut stack = Vec::new();
+    ctx.reserve_vec(&mut stack, 1, "iges cycle stack")?;
+    stack.push((sequence, false));
     while let Some((current, expanded)) = stack.pop() {
+        ctx.charge_work(1, "iges cycle work")?;
         if expanded {
             active.remove(&current);
-            visited.insert(current);
+            ctx.insert_btree_set(visited, current, "iges cycle visited")?;
             continue;
         }
         if visited.contains(&current) {
             continue;
         }
-        if !active.insert(current) {
-            return true;
+        if !ctx.insert_btree_set(&mut active, current, "iges cycle active")? {
+            return Ok(true);
         }
+        ctx.reserve_vec(&mut stack, 1, "iges cycle stack")?;
         stack.push((current, true));
-        for target in successors(current).into_iter().rev() {
+        for target in successors(current).rev() {
+            ctx.charge_work(1, "iges cycle work")?;
             if active.contains(&target) {
-                return true;
+                return Ok(true);
             }
             if !visited.contains(&target) {
+                ctx.reserve_vec(&mut stack, 1, "iges cycle stack")?;
                 stack.push((target, false));
             }
         }
     }
-    false
+    Ok(false)
 }
 
 fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
@@ -60,17 +115,6 @@ fn mirror_flag_valid(value: i64) -> bool {
 
 fn vertical_text_flag_valid(value: i64) -> bool {
     matches!(value, 0..=1)
-}
-
-fn presentation_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
-    IgesLossCode::DisplayDataNotProjected
-        .note(format!(
-            "IGES entity type {} form {} display data was not projected: {}",
-            entry.entity_type,
-            entry.form,
-            message.into()
-        ))
-        .with_provenance(entry.loss_provenance())
 }
 
 pub(crate) fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {

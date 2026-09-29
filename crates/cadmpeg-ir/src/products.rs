@@ -1256,8 +1256,6 @@ pub struct JointConnector {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "arity", rename_all = "snake_case", deny_unknown_fields)]
-// Inline fixed-size arrays encode the one-or-two connector invariant directly.
-#[allow(clippy::large_enum_variant)]
 pub enum JointOperands {
     /// One grounded connector and its optional attachment offset.
     Grounded {
@@ -1276,7 +1274,7 @@ pub enum JointOperands {
         /// Non-grounded joint family.
         kind: PairedJointKind,
         /// Connectors in operand order.
-        connectors: [JointConnector; 2],
+        connectors: Box<[JointConnector; 2]>,
         /// Connector attachment offsets in operand order.
         #[serde(
             default,
@@ -1578,7 +1576,7 @@ impl AssemblyJoint {
             id,
             JointOperands::Pair {
                 kind,
-                connectors,
+                connectors: Box::new(connectors),
                 offset_frames,
             },
         )
@@ -1597,7 +1595,7 @@ impl AssemblyJoint {
     pub fn connectors(&self) -> impl Iterator<Item = &JointConnector> {
         let slice: &[JointConnector] = match &self.operands {
             JointOperands::Grounded { connector, .. } => std::slice::from_ref(connector),
-            JointOperands::Pair { connectors, .. } => connectors,
+            JointOperands::Pair { connectors, .. } => connectors.as_slice(),
         };
         slice.iter()
     }

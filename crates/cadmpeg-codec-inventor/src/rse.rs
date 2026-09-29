@@ -74,7 +74,10 @@ impl SegmentToken {
         if token.is_empty() || token.contains('#') || token.chars().any(char::is_whitespace) {
             return Ok(None);
         }
-        ctx.charge_retained(token.len() as u64, "retain RSe segment token")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(token.len()),
+            "retain RSe segment token",
+        )?;
         let Ok(token) = IdentityKey::try_new(token) else {
             return Ok(None);
         };
@@ -208,11 +211,17 @@ impl SegmentKind {
             Some("NotebookSegmentType") => Self::Notebook,
             Some("FWxDesignViewType" | "FWxDesignViewManagerType") => Self::DesignView,
             Some(type_name) => {
-                ctx.charge_retained(type_name.len() as u64, "retain RSe unknown segment kind")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(type_name.len()),
+                    "retain RSe unknown segment kind",
+                )?;
                 Self::Unknown(type_name.into())
             }
             None => {
-                ctx.charge_retained(display_name.len() as u64, "retain RSe unknown segment kind")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(display_name.len()),
+                    "retain RSe unknown segment kind",
+                )?;
                 Self::Unknown(display_name.into())
             }
         };
@@ -293,9 +302,7 @@ impl SegmentMetaState<'_> {
         };
         declaration
             .map(|declaration| {
-                let bytes = u64::try_from(declaration.marker.len()).map_err(|_| {
-                    ctx.refuse_codec_limit("Inventor dialect marker length", u64::MAX - 1, u64::MAX)
-                })?;
+                let bytes = cadmpeg_core::decode::u64_from_index(declaration.marker.len());
                 ctx.charge_retained(bytes, "retain Inventor dialect declaration marker")?;
                 Ok(declaration.clone())
             })
@@ -401,9 +408,7 @@ impl DatabaseDescriptor {
                 Ok(Some(DatabaseHeader::unframed_detail(*schema, detail)))
             }
             DatabaseState::Unreadable(detail) => {
-                let bytes = u64::try_from(detail.len()).map_err(|_| {
-                    ctx.refuse_codec_limit("Inventor database issue length", u64::MAX - 1, u64::MAX)
-                })?;
+                let bytes = cadmpeg_core::decode::u64_from_index(detail.len());
                 ctx.charge_retained(bytes, "retain Inventor database issue detail")?;
                 Ok(Some(detail.clone()))
             }
@@ -463,8 +468,12 @@ impl<'a> RseInventory<'a> {
             }
         }
         databases.sort_by_key(|(band, _)| *band);
-        ctx.charge_collection_items(databases.len() as u64, "admit RSe database descriptors")?;
-        let mut database_descriptors = Vec::with_capacity(databases.len());
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(databases.len()),
+            "admit RSe database descriptors",
+        )?;
+        let mut database_descriptors =
+            DecodeContext::admitted_vec(databases.len(), "admit RSe database descriptors")?;
         for (band, stream_id) in databases {
             let state = match snapshot.stream_by_id(stream_id) {
                 Some(stream) => match snapshot
@@ -479,7 +488,9 @@ impl<'a> RseInventory<'a> {
                 },
                 None => {
                     ctx.charge_retained(
-                        "RSe database stream handle is absent".len() as u64,
+                        cadmpeg_core::decode::u64_from_index(
+                            "RSe database stream handle is absent".len(),
+                        ),
                         "retain RSe missing database detail",
                     )?;
                     DatabaseState::Unreadable("RSe database stream handle is absent".into())
@@ -521,14 +532,20 @@ impl<'a> RseInventory<'a> {
                 continue;
             };
             ctx.charge_collection_items(1, "pair RSe segment streams")?;
-            ctx.charge_retained(token.as_str().len() as u64, "retain RSe paired token")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(token.as_str().len()),
+                "retain RSe paired token",
+            )?;
             pairs.push(SegmentPair {
                 token: token.clone(),
                 metadata: *metadata_id,
                 bulk: *bulk_id,
             });
         }
-        ctx.charge_collection_items(pairs.len() as u64, "admit RSe segment descriptors")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(pairs.len()),
+            "admit RSe segment descriptors",
+        )?;
         let mut segments = pairs
             .into_iter()
             .map(
@@ -590,7 +607,7 @@ impl<'a> RseInventory<'a> {
         for token in metadata.keys().filter(|token| !bulk.contains_key(*token)) {
             ctx.charge_collection_items(1, "collect RSe unpaired metadata")?;
             ctx.charge_retained(
-                token.as_str().len() as u64,
+                cadmpeg_core::decode::u64_from_index(token.as_str().len()),
                 "retain RSe unpaired metadata token",
             )?;
             unpaired_metadata.push(token.clone());
@@ -599,7 +616,7 @@ impl<'a> RseInventory<'a> {
         for token in bulk.keys().filter(|token| !metadata.contains_key(*token)) {
             ctx.charge_collection_items(1, "collect RSe unpaired bulk")?;
             ctx.charge_retained(
-                token.as_str().len() as u64,
+                cadmpeg_core::decode::u64_from_index(token.as_str().len()),
                 "retain RSe unpaired bulk token",
             )?;
             unpaired_bulk.push(token.clone());
@@ -744,7 +761,10 @@ fn frame_segment_records<'a>(
     ctx: &DecodeContext<'a>,
     segments: Vec<SegmentDescriptor<'a, BulkEnvelope<'a>>>,
 ) -> Result<Vec<SegmentDescriptor<'a>>, CodecError> {
-    ctx.charge_collection_items(segments.len() as u64, "admit RSe framed segments")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(segments.len()),
+        "admit RSe framed segments",
+    )?;
     segments
         .into_iter()
         .map(|segment| {
@@ -810,7 +830,7 @@ fn parse_meta_stream<'a>(
     // grammar is attempted on every stream, and a body that does not obey it is
     // `Malformed` with the declaration intact.
     ctx.charge_retained(
-        declared.marker.len() as u64,
+        cadmpeg_core::decode::u64_from_index(declared.marker.len()),
         "retain RSe metadata declaration marker",
     )?;
     match parse_meta_stream_v8(ctx, source, cursor, declared.clone()) {
@@ -934,7 +954,10 @@ impl<'a> MetaCursor<'a> {
         let bytes = self.take(len, what)?;
         let text = std::str::from_utf8(bytes)
             .map_err(|_| CodecError::malformed(format_args!("RSe metadata {what} is not UTF-8")))?;
-        ctx.charge_retained(text.len() as u64, "retain RSe metadata UTF-8 field")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(text.len()),
+            "retain RSe metadata UTF-8 field",
+        )?;
         Ok(text.to_owned())
     }
 
@@ -952,8 +975,14 @@ impl<'a> MetaCursor<'a> {
         let malformed = || CodecError::malformed(format_args!("RSe metadata {what} is not UTF-16"));
         let utf8_bytes =
             crate::reader::utf16_utf8_len(self.source, len / 2).ok_or_else(malformed)?;
-        let _units = ctx.reserve_scoped(len as u64, "decode RSe metadata UTF-16 units")?;
-        ctx.charge_retained(utf8_bytes as u64, "retain RSe metadata UTF-16 field")?;
+        let _units = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(len),
+            "decode RSe metadata UTF-16 units",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(utf8_bytes),
+            "retain RSe metadata UTF-16 field",
+        )?;
         self.source.utf16_le(len / 2).ok_or_else(malformed)
     }
 }
@@ -1011,7 +1040,7 @@ mod tests {
             .expect("service admission")
             .expect("unframed issue");
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = (detail.len() - 1) as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(detail.len() - 1);
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(
@@ -1054,7 +1083,8 @@ mod tests {
             .expect("service admission")
             .expect("metadata declaration");
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = (expected.marker.len() - 1) as u64;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(expected.marker.len() - 1);
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(
@@ -1245,7 +1275,7 @@ mod tests {
         let detail = error.to_string();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = (detail.len() - 1) as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(detail.len() - 1);
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
             .expect("empty root fits input cap");
         assert!(matches!(
@@ -1375,8 +1405,9 @@ mod tests {
         let bytes = meta_fixture(false);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            (MetaStreamDeclaration::VERIFIED_MARKER.len() * 2 - 1) as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            MetaStreamDeclaration::VERIFIED_MARKER.len() * 2 - 1,
+        );
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("metadata stream fits input cap");
         assert!(matches!(
@@ -1530,13 +1561,17 @@ mod tests {
     }
 
     fn push_bytes(output: &mut Vec<u8>, value: &[u8]) {
-        output.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        output.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         output.extend_from_slice(value);
     }
 
     fn push_utf16(output: &mut Vec<u8>, value: &str) {
         let units = value.encode_utf16().collect::<Vec<_>>();
-        output.extend_from_slice(&(units.len() as u32).to_le_bytes());
+        output.extend_from_slice(
+            &(u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for unit in units {
             output.extend_from_slice(&unit.to_le_bytes());
         }
