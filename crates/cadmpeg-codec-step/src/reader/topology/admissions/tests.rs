@@ -2,7 +2,7 @@
 use super::{pcurve_admission_note, PcurveAdmission, PCURVE_UNPROVED_NOTE_EXEMPLARS};
 
 fn admissions(count: usize) -> Vec<PcurveAdmission> {
-    (0..count as u64)
+    (0..cadmpeg_core::decode::u64_from_index(count))
         .map(|index| PcurveAdmission {
             curve: index,
             surface: 100 + index,
@@ -27,7 +27,7 @@ fn admission_warning_names_the_bounded_exemplars_and_counts_the_rest() {
         )),
         "{message}"
     );
-    for index in 0..PCURVE_UNPROVED_NOTE_EXEMPLARS as u64 {
+    for index in 0..cadmpeg_core::decode::u64_from_index(PCURVE_UNPROVED_NOTE_EXEMPLARS) {
         assert!(
             message.contains(&format!(
                 "curve #{index} on surface #{} at coedge use #{}",
@@ -38,7 +38,7 @@ fn admission_warning_names_the_bounded_exemplars_and_counts_the_rest() {
         );
     }
     for index in
-        PCURVE_UNPROVED_NOTE_EXEMPLARS as u64..(PCURVE_UNPROVED_NOTE_EXEMPLARS + extra) as u64
+        cadmpeg_core::decode::u64_from_index(PCURVE_UNPROVED_NOTE_EXEMPLARS)..cadmpeg_core::decode::u64_from_index(PCURVE_UNPROVED_NOTE_EXEMPLARS + extra)
     {
         assert!(
             !message.contains(&format!("curve #{index} on surface")),

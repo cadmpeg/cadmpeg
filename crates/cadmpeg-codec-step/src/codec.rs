@@ -337,7 +337,7 @@ fn inspect_parsed_exchange(
                     format!("SIGNATURE[{index}]")
                 },
                 role: ContainerRole::Signature,
-                storage: EntryStorage::verbatim(VerbatimLabel::None, signature.len() as u64),
+                storage: EntryStorage::verbatim(VerbatimLabel::None, cadmpeg_core::decode::u64_from_index(signature.len())),
                 attributes: BTreeMap::default(),
             },
         )?;

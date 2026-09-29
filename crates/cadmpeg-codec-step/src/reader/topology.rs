@@ -644,7 +644,7 @@ pub(super) fn decode(
                 .with_provenance(
                     cadmpeg_ir::SourceProvenance::root(
                         crate::dialect::FORMAT,
-                        record.span.start as u64,
+                        u64_from_index(record.span.start),
                     )
                     .with_tag("oriented_shell"),
                 ),
@@ -3244,7 +3244,7 @@ fn build_one(
                     note.with_provenance(
                         cadmpeg_ir::SourceProvenance::root(
                             crate::dialect::FORMAT,
-                            fr.span.start as u64,
+                            u64_from_index(fr.span.start),
                         )
                         .with_tag("face"),
                     ),
@@ -3939,7 +3939,7 @@ fn build_one(
                 note.with_provenance(
                     cadmpeg_ir::SourceProvenance::root(
                         crate::dialect::FORMAT,
-                        sr.span.start as u64,
+                        u64_from_index(sr.span.start),
                     )
                     .with_tag(shell_type.to_ascii_lowercase()),
                 ),
@@ -4600,7 +4600,9 @@ fn implicit_face_plane(
             .then_with(|| left.y.total_cmp(&right.y))
             .then_with(|| left.z.total_cmp(&right.z))
     });
-    let point_count = points.len() as f64;
+    let Some(point_count) = cadmpeg_core::convert::f64_from_index(points.len()) else {
+        return Ok(None);
+    };
     let origin = Point3::new(
         points.iter().map(|point| point.x).sum::<f64>() / point_count,
         points.iter().map(|point| point.y).sum::<f64>() / point_count,
@@ -4616,7 +4618,9 @@ fn implicit_face_plane(
     }
     let mut loop_normals = Vec::new();
     for loop_points in &loops {
-        let loop_count = loop_points.len() as f64;
+        let Some(loop_count) = cadmpeg_core::convert::f64_from_index(loop_points.len()) else {
+            return Ok(None);
+        };
         let loop_origin = Point3::new(
             loop_points.iter().map(|point| point.x).sum::<f64>() / loop_count,
             loop_points.iter().map(|point| point.y).sum::<f64>() / loop_count,
@@ -4942,7 +4946,10 @@ fn pcurve_locus_witness(
     for step in 0..PCURVE_LOCUS_SAMPLE_COUNT {
         push_topology_vec(
             &mut fractions,
-            step as f64 / (PCURVE_LOCUS_SAMPLE_COUNT - 1) as f64,
+            cadmpeg_core::convert::f64_from_index(step)
+                .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_locus_fractions", 0, 1))?
+                / cadmpeg_core::convert::f64_from_index(PCURVE_LOCUS_SAMPLE_COUNT - 1)
+                    .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_locus_fractions", 0, 1))?,
             ctx,
             "step_pcurve_locus_fractions",
         )?;
@@ -5429,7 +5436,10 @@ fn pcurve_selection_seeds(
         }
         push_topology_vec(&mut seeds, end, ctx, "step_pcurve_selection_seeds")?;
         for step in 0..=PCURVE_ENDPOINT_GRID_DIVISIONS {
-            let fraction = step as f64 / PCURVE_ENDPOINT_GRID_DIVISIONS as f64;
+            let fraction = cadmpeg_core::convert::f64_from_index(step)
+                .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_selection_seeds", 0, 1))?
+                / cadmpeg_core::convert::f64_from_index(PCURVE_ENDPOINT_GRID_DIVISIONS)
+                    .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_selection_seeds", 0, 1))?;
             if let Some(seed) = at_fraction(fraction) {
                 push_topology_vec(&mut seeds, seed, ctx, "step_pcurve_selection_seeds")?;
             }

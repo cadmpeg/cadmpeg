@@ -867,13 +867,13 @@ impl<'a> Builder<'a> {
         let emitted: BTreeSet<&str> = self.face_step_refs.keys().map(String::as_str).collect();
         let mut unstyled_targets = face_colors
             .keys()
-            .filter(|id| !emitted.contains(**id as &str))
+            .filter(|id| !emitted.contains(*id))
             .map(|id| (*id).to_string())
             .collect::<BTreeSet<_>>();
         unstyled_targets.extend(
             body_colors
                 .keys()
-                .filter(|id| !styled_bodies.contains(**id as &str))
+                .filter(|id| !styled_bodies.contains(*id))
                 .map(|id| (*id).to_string()),
         );
         unstyled_targets.extend(direct_unstyled);
@@ -1985,7 +1985,7 @@ impl<'a> Builder<'a> {
                 || mesh_triangles
                     .iter()
                     .flatten()
-                    .any(|index| *index as usize >= mesh_vertices.len())
+                    .any(|index| cadmpeg_core::decode::index_from_u32(*index) >= mesh_vertices.len())
                 || (!mesh_normals.is_empty() && mesh_normals.len() != mesh_vertices.len())
             {
                 self.loss(

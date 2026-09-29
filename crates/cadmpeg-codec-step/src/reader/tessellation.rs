@@ -356,7 +356,7 @@ pub(super) fn decode(
             if triangles
                 .iter()
                 .flatten()
-                .any(|index| *index == 0 || *index as usize > vertices.len())
+                .any(|index| *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len())
             {
                 push_loss(
                     &mut losses,
@@ -411,7 +411,7 @@ pub(super) fn decode(
                 "step_tessellation_local_vertices",
                 coordinate_indices
                     .iter()
-                    .map(|index| vertices[*index as usize - 1]),
+                    .map(|index| vertices[cadmpeg_core::decode::index_from_u32(*index) - 1]),
             )?;
             let local_triangle_bytes = temporary_collection::<[u32; 3]>(
                 ctx,
@@ -437,11 +437,11 @@ pub(super) fn decode(
         } else {
             if pnindex
                 .iter()
-                .any(|index| *index == 0 || *index as usize > vertices.len())
+                .any(|index| *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len())
                 || triangles
                     .iter()
                     .flatten()
-                    .any(|index| *index == 0 || *index as usize > pnindex.len())
+                    .any(|index| *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > pnindex.len())
             {
                 push_loss(
                     &mut losses,
@@ -466,7 +466,7 @@ pub(super) fn decode(
                     ctx,
                     pnindex.len(),
                     "step_tessellation_pn_vertices",
-                    pnindex.iter().map(|index| vertices[*index as usize - 1]),
+                    pnindex.iter().map(|index| vertices[cadmpeg_core::decode::index_from_u32(*index) - 1]),
                 )?,
                 collect_checked(
                     ctx,
@@ -539,7 +539,7 @@ pub(super) fn decode(
                         "step_tessellation_projected_normals",
                         coordinate_indices
                             .iter()
-                            .map(|index| source_normals[*index as usize - 1]),
+                            .map(|index| source_normals[cadmpeg_core::decode::index_from_u32(*index) - 1]),
                     )?)
                 }
                 CoordinateAddressing::PnIndex | CoordinateAddressing::TriangleIndices(_) => {

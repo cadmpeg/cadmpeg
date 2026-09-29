@@ -4890,7 +4890,8 @@ fn trim_parameter_value(
         context.ctx,
     )?;
     match value {
-        Value::Integer(value) => Ok(Some(scale * *value as f64 + context.parameter_offset)),
+        Value::Integer(value) => Ok(cadmpeg_core::convert::f64_from_i64(*value)
+            .map(|value| scale * value + context.parameter_offset)),
         Value::Real(value) => Ok(Some(scale * *value + context.parameter_offset)),
         Value::Typed(name, value) if name == "PARAMETER_VALUE" => {
             trim_parameter_value(value, context)
@@ -5604,7 +5605,9 @@ fn default_nurbs_knots(
     match kind {
         DefaultNurbsKnotKind::Uniform => {
             for index in 0..expected {
-                let knot = geometry_or_none!(FiniteReal::new(index as f64 - degree as f64));
+                let index = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
+                let degree = geometry_or_none!(cadmpeg_core::convert::f64_from_index(degree));
+                let knot = geometry_or_none!(FiniteReal::new(index - degree));
                 push_geometry_vec(&mut knots, knot, ctx, "step_default_nurbs_knots")?;
             }
         }
@@ -5618,7 +5621,7 @@ fn default_nurbs_knots(
                 } else {
                     1
                 };
-                let knot = geometry_or_none!(FiniteReal::new(index as f64));
+                let knot = geometry_or_none!(FiniteReal::new(geometry_or_none!(cadmpeg_core::convert::f64_from_index(index))));
                 for _ in 0..multiplicity {
                     push_geometry_vec(&mut knots, knot, ctx, "step_default_nurbs_knots")?;
                 }
@@ -5640,7 +5643,7 @@ fn default_nurbs_knots(
                 } else {
                     degree
                 };
-                let knot = geometry_or_none!(FiniteReal::new(index as f64));
+                let knot = geometry_or_none!(FiniteReal::new(geometry_or_none!(cadmpeg_core::convert::f64_from_index(index))));
                 for _ in 0..multiplicity {
                     push_geometry_vec(&mut knots, knot, ctx, "step_default_nurbs_knots")?;
                 }
@@ -6073,7 +6076,7 @@ fn decode_pcurve_geometry(
 fn pcurve_trim_parameter(value: &Value) -> Option<FiniteReal> {
     fn bare_number(value: &Value) -> Option<f64> {
         match value {
-            Value::Integer(value) => Some(*value as f64),
+            Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             Value::Real(value) => Some(*value),
             _ => None,
         }
@@ -6522,11 +6525,12 @@ fn polyline_pcurve(
     if control_points.len() < 2 {
         return Ok(None);
     }
-    let last = (control_points.len() - 1) as f64;
+    let last = geometry_or_none!(cadmpeg_core::convert::f64_from_index(control_points.len() - 1));
     let mut knots = Vec::new();
     push_geometry_vec(&mut knots, 0.0, ctx, "step_polyline_pcurve_knots")?;
     for index in 0..control_points.len() {
-        push_geometry_vec(&mut knots, index as f64, ctx, "step_polyline_pcurve_knots")?;
+        let knot = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
+        push_geometry_vec(&mut knots, knot, ctx, "step_polyline_pcurve_knots")?;
     }
     push_geometry_vec(&mut knots, last, ctx, "step_polyline_pcurve_knots")?;
     match PcurveNurbs::from_lanes(1, knots, control_points, None, false) {
@@ -6563,11 +6567,12 @@ fn polyline(
     if control_points.len() < 2 {
         return Ok(None);
     }
-    let last = (control_points.len() - 1) as f64;
+    let last = geometry_or_none!(cadmpeg_core::convert::f64_from_index(control_points.len() - 1));
     let mut knots = Vec::new();
     push_geometry_vec(&mut knots, 0.0, ctx, "step_polyline_knots")?;
     for index in 0..control_points.len() {
-        push_geometry_vec(&mut knots, index as f64, ctx, "step_polyline_knots")?;
+        let knot = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
+        push_geometry_vec(&mut knots, knot, ctx, "step_polyline_knots")?;
     }
     push_geometry_vec(&mut knots, last, ctx, "step_polyline_knots")?;
     match NurbsCurve::from_lanes(1, knots, control_points, None, false) {
@@ -6629,7 +6634,7 @@ fn nurbs_surface(
         || v_degree >= v_count
         || rows
             .iter()
-            .any(|row| row.list().is_none_or(|row| row.len() != v_count as usize))
+            .any(|row| row.list().is_none_or(|row| row.len() != cadmpeg_core::decode::index_from_u32(v_count)))
     {
         return Ok(None);
     }

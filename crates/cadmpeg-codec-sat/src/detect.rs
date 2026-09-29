@@ -198,7 +198,7 @@ pub(crate) fn inspect(
                 StreamKind::AcisBinary(_) => ContainerRole::AcisBinary,
                 StreamKind::Text => ContainerRole::BrepText,
             },
-            storage: EntryStorage::verbatim(VerbatimLabel::Stored, bytes.len() as u64),
+            storage: EntryStorage::verbatim(VerbatimLabel::Stored, cadmpeg_core::decode::u64_from_index(bytes.len())),
             attributes,
         }],
         losses,
