@@ -2818,9 +2818,10 @@ impl<'a> F3dDecodeSession<'a> {
             .spatial_sketch_constraints
             .sort_by(|a, b| a.id.cmp(&b.id));
         crate::design::configurations::bind_configuration_suppressed_features(
+            Some(ctx),
             &mut self.ir.model.configurations,
             &self.ir.model.features,
-        );
+        )?;
         Ok(())
     }
 

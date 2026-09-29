@@ -27,9 +27,10 @@ pub(super) fn validate_configuration_projection(
         &target.model.parameters,
     )?;
     crate::design::configurations::bind_configuration_suppressed_features(
+        None,
         &mut projected,
         &target.model.features,
-    );
+    )?;
     if target.model.configurations != projected {
         return Err(CodecError::Malformed(
             "neutral F3D configurations must equal the projection of native configuration tables"
