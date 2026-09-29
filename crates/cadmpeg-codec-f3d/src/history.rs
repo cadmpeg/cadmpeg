@@ -4039,10 +4039,13 @@ pub(crate) fn bind_face_operand_history_candidates(
         .then(|| grouped_reference_face_candidate(operand, topology, &changed_faces))
         .flatten()
         .map(|face| vec![face]);
-        let legacy_face_candidates = (feature_family
-            == Some(crate::design::DesignFeatureFamily::Extrude))
-        .then(|| {
-            let group_record_index = operand.group_record_index()?;
+        let legacy_face_candidates = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+            if feature_family != Some(crate::design::DesignFeatureFamily::Extrude) {
+                return Ok(None);
+            }
+            let Some(group_record_index) = operand.group_record_index() else {
+                return Ok(None);
+            };
             let mut groups = operand_groups.iter().filter(|group| {
                 crate::ids::native_stream(&group.id) == stream
                     && group.scope_record_index == scope.record_index
@@ -4055,17 +4058,21 @@ pub(crate) fn bind_face_operand_history_candidates(
                     })
                     && group.extrude_face_role().is_some()
             });
-            groups.next()?;
-            if groups.next().is_some() {
-                return None;
+            if groups.next().is_none() {
+                return Ok(None);
             }
-            let recipe_record_index = recipe_record_indices.get(operand.recipe_id.as_str())?;
+            if groups.next().is_some() {
+                return Ok(None);
+            }
+            let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) else {
+                return Ok(None);
+            };
             crate::design::face_resolve::legacy_face_recipe_reference_candidates(
+                ctx,
                 operand,
                 *recipe_record_index,
             )
-        })
-        .flatten();
+        })()?;
         let history_candidates = direct_face_candidates.clone().unwrap_or_else(|| {
             thread_face_candidates
                 .clone()
