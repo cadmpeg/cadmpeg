@@ -323,11 +323,9 @@ pub(crate) fn decode(
             version_offset,
         )?;
         let start_curve = DecodedCurve::leaf(
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(copy_nurbs(
-                expand.ctx(),
-                &start_nurbs,
-                "Rhino extrusion start curve",
-            )?)),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                start_nurbs.try_clone_for_decode(expand.ctx(), "Rhino extrusion start curve")?,
+            )),
             source.into_warnings(),
         );
         let start_frame = cap_frame(xaxis.into(), up, tangent, active_miters[0], version_offset)?;
@@ -427,39 +425,6 @@ fn split_profiles(
         crate::curves::charged_vec(ctx, children.len(), "Rhino extrusion profile split")?;
     profiles.extend(children.into_iter().map(|(_, child)| child));
     Ok(profiles)
-}
-
-fn copy_nurbs(
-    ctx: &DecodeContext<'_>,
-    source: &NurbsCurve,
-    operation: &'static str,
-) -> Result<NurbsCurve, GeometryError> {
-    let knots = cadmpeg_core::decode::u64_from_index(source.knots().len());
-    let poles = cadmpeg_core::decode::u64_from_index(source.pole_count());
-    let items = knots.checked_add(poles).ok_or_else(|| {
-        GeometryError::not_implemented("Rhino extrusion NURBS copy count exceeds address space")
-    })?;
-    let pole_size = match source.pole_rows() {
-        NurbsPoles3::Polynomial { .. } => std::mem::size_of::<FinitePoint3>(),
-        NurbsPoles3::Rational { .. } => {
-            std::mem::size_of::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>()
-        }
-    };
-    let bytes = knots
-        .checked_mul(std::mem::size_of::<f64>() as u64)
-        .and_then(|size| {
-            poles
-                .checked_mul(pole_size as u64)
-                .and_then(|poles| size.checked_add(poles))
-        })
-        .ok_or_else(|| {
-            GeometryError::not_implemented("Rhino extrusion NURBS copy bytes exceed address space")
-        })?;
-    ctx.charge_collection_items(items, operation)?;
-    ctx.charge_retained(bytes, operation)?;
-    source
-        .try_clone()
-        .map_err(|_| crate::curves::allocation_failed(operation, bytes))
 }
 
 fn exact_orientation(
@@ -657,7 +622,7 @@ fn transform_nurbs(
     frame: &ProfileFrame,
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
-    copy_nurbs(ctx, curve, "Rhino extrusion transformed NURBS")?.try_map_owned_control_points(
+    curve.try_clone_for_decode(ctx, "Rhino extrusion transformed NURBS")?.try_map_owned_control_points(
         |point| {
             let transformed = transform_local(
                 point.get(),
@@ -1124,7 +1089,7 @@ pub(crate) mod tests {
     const EPS_MITER_DIRECTION: f64 = 1.0e-12;
 
     use super::{
-        active_miter, cap_frame, cap_pcurve, copy_nurbs, exact_orientation, mitered_local,
+        active_miter, cap_frame, cap_pcurve, exact_orientation, mitered_local,
         read_mesh_cache, read_v5_mesh_cache, split_profiles, transform_nurbs, ANONYMOUS,
         CLOSURE_ABSOLUTE_TOLERANCE, ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
     };
@@ -1141,6 +1106,7 @@ pub(crate) mod tests {
     use crate::test_support::test_dump::{
         crc_chunk, crc_chunk_excluding, long_chunk, push_f64, push_i32,
     };
+    use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::scalar::FiniteReal;
@@ -1777,17 +1743,68 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn extrusion_transformed_nurbs_refuses_retained_limit_one_byte_below_copy() {
+        let curve = polygon_nurbs();
+        let bytes = curve.knots().len() * std::mem::size_of::<f64>()
+            + curve.pole_count() * std::mem::size_of::<FinitePoint3>();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(bytes - 1).expect("copy size");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input");
+        let refusal = transform_nurbs(
+            &ctx,
+            &curve,
+            &super::ProfileFrame {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                xaxis: Vector3::new(1.0, 0.0, 0.0),
+                yaxis: Vector3::new(0.0, 1.0, 0.0),
+                zaxis: Vector3::new(0.0, 0.0, 1.0),
+                miter: None,
+            },
+            0,
+        )
+        .expect_err("full transformed copy exceeds limit by one byte");
+        assert!(matches!(
+            refusal,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino extrusion transformed NURBS"
+                    && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        ));
+    }
+
+    #[test]
     fn extrusion_start_curve_copy_refuses_collection_limit() {
         let curve = polygon_nurbs();
         let needed = curve.knots().len() + curve.pole_count();
         let refusal = with_collection_limit((needed - 1) as u64, |ctx| {
-            copy_nurbs(ctx, &curve, "Rhino extrusion start curve")
+            curve.try_clone_for_decode(ctx, "Rhino extrusion start curve")
         })
         .expect_err("start curve copy exceeds collection limit");
         assert!(matches!(
             refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "Rhino extrusion start curve"
+        ));
+    }
+
+    #[test]
+    fn extrusion_nurbs_copy_refuses_retained_limit_one_byte_below_full_copy() {
+        let curve = polygon_nurbs();
+        let bytes = curve.knots().len() * std::mem::size_of::<f64>()
+            + curve.pole_count() * std::mem::size_of::<FinitePoint3>();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(bytes - 1).expect("copy size");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input");
+        let error = curve.try_clone_for_decode(&ctx, "Rhino extrusion start curve")
+            .expect_err("full copy exceeds limit by one byte");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "Rhino extrusion start curve"
+                    && refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
         ));
     }
 

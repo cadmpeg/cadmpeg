@@ -8,7 +8,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{DraftAccounting, ModelCheckpoint, ModelDraft};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsError},
+    nurbs::{KnotVector, NurbsCurve, NurbsError},
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2},
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
@@ -5748,20 +5748,20 @@ struct DecodedPcurves {
     warnings: Diagnostics,
 }
 
-fn clone_pcurve_nurbs(
+fn copy_brep_pcurve_knots(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    nurbs: &NurbsCurve,
-    operation: &'static str,
-) -> Result<NurbsCurve, crate::curves::GeometryError> {
-    let items = nurbs
-        .knots()
-        .len()
-        .checked_add(nurbs.pole_count())
-        .ok_or_else(|| crate::curves::GeometryError::unpositioned("C2 curve size overflow"))?;
-    ctx.charge_collection_items(u64_from_index(items), operation)?;
-    nurbs
+    source: &KnotVector,
+) -> Result<KnotVector, crate::curves::GeometryError> {
+    const OPERATION: &str = "Rhino Brep pcurve knots";
+    let count = u64_from_index(source.len());
+    let bytes = count
+        .checked_mul(8)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX, count))?;
+    ctx.charge_collection_items(count, OPERATION)?;
+    ctx.charge_retained(bytes, OPERATION)?;
+    source
         .try_clone()
-        .map_err(|_| crate::curves::collection_allocation_failed(operation, items))
+        .map_err(|_| crate::curves::allocation_failed(OPERATION, bytes))
 }
 
 fn decode_pcurves(
@@ -5805,7 +5805,7 @@ fn decode_pcurves(
         };
         let nurbs = if let Some(nurbs) = decoded_slots.get(&trim_curve) {
             let Some(nurbs) = nurbs else { continue };
-            clone_pcurve_nurbs(ctx, nurbs, "Rhino Brep reused C2 curve")?
+            nurbs.try_clone_for_decode(ctx, "Rhino Brep reused C2 curve")?
         } else {
             let decoded = (|| -> Result<crate::curves::NurbsJoin, crate::curves::GeometryError> {
                 let child = raw
@@ -5838,8 +5838,9 @@ fn decode_pcurves(
                         joined.warnings,
                         format_args!("trim {index}"),
                     )?;
-                    let cached =
-                        clone_pcurve_nurbs(ctx, &joined.curve, "Rhino Brep cached C2 curve")?;
+                    let cached = joined
+                        .curve
+                        .try_clone_for_decode(ctx, "Rhino Brep cached C2 curve")?;
                     ctx.charge_collection_items(1, "Rhino Brep decoded C2 slots")?;
                     decoded_slots.try_reserve(1).map_err(|_| {
                         crate::curves::collection_allocation_failed(
@@ -5923,16 +5924,7 @@ fn decode_pcurves(
                 .then(cadmpeg_ir::identity_key!(".trim-"))
                 .then(index),
         );
-        ctx.charge_collection_items(
-            u64_from_index(nurbs.knots().len()),
-            "Rhino Brep pcurve knots",
-        )?;
-        let knots = nurbs.knots().try_clone().map_err(|_| {
-            crate::curves::collection_allocation_failed(
-                "Rhino Brep pcurve knots",
-                nurbs.knots().len(),
-            )
-        })?;
+        let knots = copy_brep_pcurve_knots(ctx, nurbs.knots())?;
         let nurbs =
             match PcurveNurbs::from_admitted_rows(nurbs.degree(), knots, poles, nurbs.periodic()) {
                 Ok(nurbs) => nurbs,
