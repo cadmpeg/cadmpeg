@@ -1609,19 +1609,19 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     )
     .unwrap();
     assert!(matches!(
-        resolved_face_group(&group, std::slice::from_ref(&direct_face)),
+        resolved_face_group(None, &group, std::slice::from_ref(&direct_face)).expect("projection resource budget"),
         Some(FaceSelection::Resolved { faces, native })
             if faces == [FaceId::mint("f3d:brep:entity#50").expect("identity grammar")] && native == group.id
     ));
     assert!(matches!(
-        resolved_face_group(&group, std::slice::from_ref(&operand)),
+        resolved_face_group(None, &group, std::slice::from_ref(&operand)).expect("projection resource budget"),
         Some(FaceSelection::Resolved { faces, native })
             if faces == [FaceId::mint("f3d:brep:entity#51").expect("identity grammar")] && native == group.id
     ));
     operand
         .unreferenced_candidate_faces
         .push(FaceId::mint("f3d:brep:entity#50").expect("identity grammar"));
-    assert!(resolved_face_group(&group, std::slice::from_ref(&operand)).is_none());
+    assert!(resolved_face_group(None, &group, std::slice::from_ref(&operand)).expect("projection resource budget").is_none());
     operand.recipe_program = vec![0, -1, 1];
     operand.recipe_kind = ConstructionRecipeKind::BoundedFace;
     operand.recipe_nodes.clear();
@@ -1652,12 +1652,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         }),
     });
     assert!(matches!(
-        resolved_face_group(&group, std::slice::from_ref(&operand)),
+        resolved_face_group(None, &group, std::slice::from_ref(&operand)).expect("projection resource budget"),
         Some(FaceSelection::Resolved { faces, native })
             if faces == operand.unreferenced_candidate_faces && native == group.id
     ));
     operand.recipe_nodes[0].recipe_structure = None;
-    assert!(resolved_face_group(&group, std::slice::from_ref(&operand)).is_none());
+    assert!(resolved_face_group(None, &group, std::slice::from_ref(&operand)).expect("projection resource budget").is_none());
     operand.preceding_candidate_faces =
         vec![FaceId::mint("f3d:brep:entity#50").expect("identity grammar")];
     assert_eq!(
@@ -1666,7 +1666,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     operand.resolved_face_slots = vec![50];
     assert!(matches!(
-        resolved_face_group(&group, std::slice::from_ref(&operand)),
+        resolved_face_group(None, &group, std::slice::from_ref(&operand)).expect("projection resource budget"),
         Some(FaceSelection::Resolved { faces, native })
             if faces == [FaceId::mint("f3d:brep:entity#50").expect("identity grammar")] && native == group.id
     ));
@@ -1675,13 +1675,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         vec![FaceId::mint("f3d:brep/example.smbh/brep:entity#50").expect("identity grammar")];
     namespaced_slot.unreferenced_candidate_faces.clear();
     assert!(matches!(
-        resolved_face_group(&group, std::slice::from_ref(&namespaced_slot)),
+        resolved_face_group(None, &group, std::slice::from_ref(&namespaced_slot)).expect("projection resource budget"),
         Some(FaceSelection::Resolved { faces, native })
             if faces == [FaceId::mint("f3d:brep/example.smbh/brep:entity#50").expect("identity grammar")]
                 && native == group.id
     ));
     namespaced_slot.resolved_face_slots = vec![51];
-    assert!(resolved_face_group(&group, std::slice::from_ref(&namespaced_slot)).is_none());
+    assert!(resolved_face_group(None, &group, std::slice::from_ref(&namespaced_slot)).expect("projection resource budget").is_none());
     let mut historical_face_scope = face_scope.clone();
     historical_face_scope
         .try_edit(|draft| {
@@ -1714,7 +1714,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         FaceId::mint("f3d:brep:entity#51").expect("identity grammar"),
     ];
     assert!(matches!(
-        resolved_face_group(&group, std::slice::from_ref(&operand)),
+        resolved_face_group(None, &group, std::slice::from_ref(&operand)).expect("projection resource budget"),
         Some(FaceSelection::Resolved { faces, native })
             if faces == operand.alternate_selector_candidate_faces && native == group.id
     ));
