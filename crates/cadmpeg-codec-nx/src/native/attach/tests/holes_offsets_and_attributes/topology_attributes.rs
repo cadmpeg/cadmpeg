@@ -1,4 +1,5 @@
 use crate::native::attach::attach_parasolid_topology_numeric_attributes;
+use crate::native::attach::attach_parasolid_topology_string_attributes;
 use crate::native::attach::attach_parasolid_topology_structured_attributes;
 use crate::native::attach::attribute_record_index;
 use crate::native::attach::attribute_uses_by_entity;
@@ -9,6 +10,7 @@ use crate::native::attach::topology_attribute_name;
 use crate::native::attach::ParasolidAttributeNameIndex;
 use crate::native::attach::ParasolidNumericAttributeSources;
 use crate::native::attach::ParasolidStructuredAttributeSources;
+use crate::native::attach::ParasolidStringAttributeSources;
 use crate::native::attach::ParasolidTopologyAttributeIndex;
 use std::collections::BTreeMap;
 
@@ -212,6 +214,147 @@ fn fallback_attribute_name_refuses_work_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
+
+#[derive(Clone, Copy)]
+enum AttributeRoute {
+    String,
+    Numeric,
+    Structured,
+}
+
+fn attribute_output_route(
+    route: AttributeRoute,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<usize, cadmpeg_core::CodecError> {
+    use crate::native::parasolid::structured_value_kind::StructuredValueKind;
+    use crate::native::parasolid::{
+        ParasolidEntity51NumericKind, ParasolidEntity51NumericUse, ParasolidEntity51StringUse,
+        ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord,
+        ParasolidEntity54StringRecord, ParasolidEntityVectorRecord,
+        ParasolidTopologyAttributeListReference, ParasolidVectorValueKind,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    ir.model.faces[0].id = cadmpeg_ir::ids::FaceId::mint("nx:s3:face#60").unwrap();
+    let reference = ParasolidTopologyAttributeListReference {
+        id: "reference".into(),
+        stream_ordinal: 3,
+        topology_type: TopologyAttributeKind::Face,
+        topology_xmt: 60,
+        attribute_list_xmt: 50,
+        attribute_list_record: Some("entity".into()),
+        inflated_offset: 300,
+    };
+    let index_arena = cadmpeg_core::decode::DecodeArena::new();
+    let index_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (index_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &index_arena, &index_policy)?;
+    let index = ParasolidTopologyAttributeIndex::new(
+        &index_ctx,
+        &ir,
+        std::slice::from_ref(&reference),
+        &[], &[], &[], &[],
+    )?;
+    assert_eq!(index.contexts.len(), 1);
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    match route {
+        AttributeRoute::String => {
+            let value_use: ParasolidEntity51StringUse = serde_json::from_value(serde_json::json!({
+                "id": "string-use", "stream_ordinal": 3, "entity_51_record": "entity",
+                "reference_ordinal": 5, "referenced_xmt": 70, "string_record": "string-value",
+                "inflated_offset": 200
+            })).unwrap();
+            let value: ParasolidEntity54StringRecord = serde_json::from_value(serde_json::json!({
+                "id": "string-value", "stream_ordinal": 3, "xmt": 70,
+                "value": "TEXT", "byte_len": 18, "inflated_offset": 400
+            })).unwrap();
+            attach_parasolid_topology_string_attributes(
+                &ctx, &mut ir,
+                &ParasolidStringAttributeSources { string_uses: &[value_use], strings: &[value] },
+                &index, &mut annotations,
+            )?;
+        }
+        AttributeRoute::Numeric => {
+            let value_use = ParasolidEntity51NumericUse {
+                id: "numeric-use".into(), stream_ordinal: 3,
+                entity_51_record: "entity".into(),
+                position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
+                referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+                kind: ParasolidEntity51NumericKind::UnsignedIntegers,
+                value_record: "numeric-value".into(), inflated_offset: 200,
+            };
+            let value = ParasolidEntity52IntegerRecord {
+                id: "numeric-value".into(), stream_ordinal: 3,
+                xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+                values: crate::parasolid::counted_values::CountedValues::new(vec![7]).unwrap(),
+                byte_len: 14, inflated_offset: 400,
+            };
+            attach_parasolid_topology_numeric_attributes(
+                &ctx, &mut ir,
+                &ParasolidNumericAttributeSources { numeric_uses: &[value_use], integers: &[value], doubles: &[] },
+                &index, &mut annotations,
+            )?;
+        }
+        AttributeRoute::Structured => {
+            let value_use = ParasolidEntity51StructuredUse {
+                id: "structured-use".into(), stream_ordinal: 3,
+                entity_51_record: "entity".into(),
+                position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
+                referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+                kind: StructuredValueKind::Points,
+                value_record: "structured-value".into(), inflated_offset: 200,
+            };
+            let value = ParasolidEntityVectorRecord {
+                id: "structured-value".into(), stream_ordinal: 3,
+                kind: ParasolidVectorValueKind::Points,
+                xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+                values: crate::parasolid::counted_values::CountedValues::new(vec![[1.0, 2.0, 3.0]]).unwrap(),
+                byte_len: 36, inflated_offset: 400,
+            };
+            attach_parasolid_topology_structured_attributes(
+                &ctx, &mut ir,
+                &ParasolidStructuredAttributeSources {
+                    structured_uses: &[value_use], vectors: &[value], axes: &[], tags: &[], unicode: &[],
+                },
+                &index, &mut annotations,
+            )?;
+        }
+    }
+    Ok(ir.model.attributes.len())
+}
+
+#[test]
+fn string_attribute_output_preserves_value() {
+    assert_eq!(attribute_output_route(AttributeRoute::String, |_| {}).unwrap(), 1);
+}
+
+macro_rules! attribute_output_limit_test {
+    ($name:ident, $route:expr, $field:ident, $dimension:ident) => {
+        #[test]
+        fn $name() {
+            let error = attribute_output_route($route, |policy| policy.limits.$field = 0).unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::$dimension));
+        }
+    };
+}
+
+attribute_output_limit_test!(string_attribute_route_refuses_collection_limit, AttributeRoute::String, max_collection_items, CollectionItems);
+attribute_output_limit_test!(string_attribute_route_refuses_retained_limit, AttributeRoute::String, max_retained_bytes, RetainedBytes);
+attribute_output_limit_test!(string_attribute_route_refuses_scoped_limit, AttributeRoute::String, max_materialized_bytes, MaterializedBytes);
+attribute_output_limit_test!(string_attribute_route_refuses_work_limit, AttributeRoute::String, max_work_units, WorkUnits);
+attribute_output_limit_test!(numeric_attribute_route_refuses_collection_limit, AttributeRoute::Numeric, max_collection_items, CollectionItems);
+attribute_output_limit_test!(numeric_attribute_route_refuses_retained_limit, AttributeRoute::Numeric, max_retained_bytes, RetainedBytes);
+attribute_output_limit_test!(numeric_attribute_route_refuses_scoped_limit, AttributeRoute::Numeric, max_materialized_bytes, MaterializedBytes);
+attribute_output_limit_test!(numeric_attribute_route_refuses_work_limit, AttributeRoute::Numeric, max_work_units, WorkUnits);
+attribute_output_limit_test!(structured_attribute_route_refuses_collection_limit, AttributeRoute::Structured, max_collection_items, CollectionItems);
+attribute_output_limit_test!(structured_attribute_route_refuses_retained_limit, AttributeRoute::Structured, max_retained_bytes, RetainedBytes);
+attribute_output_limit_test!(structured_attribute_route_refuses_scoped_limit, AttributeRoute::Structured, max_materialized_bytes, MaterializedBytes);
+attribute_output_limit_test!(structured_attribute_route_refuses_work_limit, AttributeRoute::Structured, max_work_units, WorkUnits);
 
 #[test]
 fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
