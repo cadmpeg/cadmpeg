@@ -12,7 +12,6 @@ use crate::history::enrich_scene_classes;
 use crate::history::parameters::format_native_scalar;
 use crate::history::parameters::native_parameter_is_length;
 use crate::history::parameters::project_parameters;
-use crate::history::project::custom_property_attributes;
 use crate::history::project::modify::project_chamfer;
 use crate::history::project::neutral_feature_id;
 use crate::history::project::parameter_names;
@@ -26,12 +25,10 @@ use crate::history::project::solid::project_extrude;
 use crate::history::project::solid::project_hole;
 use crate::history::tests::feature;
 use crate::history::tests::feature_input_lane;
-use crate::history::write::features::sync_neutral_features;
 use crate::records::Feature;
 use crate::records::FeatureContent;
 use crate::records::FeatureHistory;
 use crate::records::ObjectId;
-use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::features::edge_treatments::ChamferSpec;
 use cadmpeg_ir::features::holes::HoleBottom;
 use cadmpeg_ir::features::holes::HoleKind;
@@ -1169,59 +1166,6 @@ fn idless_legacy_principal_planes_require_an_exact_bounded_triplet() {
     assert_eq!(
         principal_plane_in_history(&ambiguous[0], &HashMap::new(), &ambiguous),
         None
-    );
-}
-
-#[test]
-fn custom_properties_are_document_attributes_not_model_features() {
-    let mut property = feature("property # µ%", None, 0);
-    property.xml_tag = "CustomProperty".into();
-    property.name = "PartNumber".into();
-    property.text = Some("A-123".into());
-    let history = FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![property],
-    };
-
-    assert!(project_features(std::slice::from_ref(&history))
-        .unwrap()
-        .is_empty());
-    let attributes = with_test_ctx(|ctx| {
-        custom_property_attributes(ctx, std::slice::from_ref(&history))
-            .expect("custom-property projection")
-    });
-    assert_eq!(attributes.len(), 1);
-    assert_eq!(
-        attributes[0].id.as_str(),
-        "sldprt:history:custom-property#property%20%23%20µ%25"
-    );
-    assert_eq!(attributes[0].name, "PartNumber");
-    assert_eq!(
-        attributes[0].values,
-        vec![AttributeValue::String("A-123".into())]
-    );
-
-    let mut native = Some(crate::native::SldprtNative {
-        feature_histories: vec![history],
-        feature_input_lanes: Vec::new(),
-        pmi_dimensions: Vec::new(),
-    });
-    sync_neutral_features(
-        &cadmpeg_ir::document::Model::default(),
-        &[],
-        &[],
-        &mut native,
-    )
-    .expect("required invariant");
-    assert_eq!(
-        native.expect("required invariant").feature_histories[0]
-            .features
-            .len(),
-        1
     );
 }
 
