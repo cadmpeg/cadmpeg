@@ -5770,12 +5770,13 @@ fn validate_edge_identity_operands<'a>(
         &native.asm_histories,
     )?;
     history::bind_edge_identity_history(
+        decode,
         &mut expected_edge_identity_operands,
         &native.design_construction_operand_identities,
         &native.design_parameter_scopes,
         &native.asm_histories,
         &scope_histories,
-    );
+    )?;
     history::bind_edge_identity_bounded_face_rules(
         &mut expected_edge_identity_operands,
         expected_face_operands,

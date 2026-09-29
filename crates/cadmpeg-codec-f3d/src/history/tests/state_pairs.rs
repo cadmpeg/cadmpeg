@@ -990,38 +990,41 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
         ..AsmHistoricalTopology::default()
     };
     let candidates = treatment_radius_candidates(
+        None,
         Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
         &[20],
         &result,
         &preceding,
         &[17],
-    );
+    ).unwrap();
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].edge_slot, 17);
     assert_eq!(candidates[0].radius.get(), 3.0);
     assert_eq!(
-        treatment_transition_edge_candidates(&[20], &result, &preceding, &[17]),
+        treatment_transition_edge_candidates(&[20], &result, &preceding, &[17]).unwrap(),
         [17]
     );
 
     let mut existing_carrier = preceding.clone();
     existing_carrier.surfaces.push(200);
     assert!(treatment_radius_candidates(
+        None,
         Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
         &[20],
         &result,
         &existing_carrier,
         &[17],
-    )
+    ).unwrap()
     .is_empty());
-    assert!(treatment_transition_edge_candidates(&[20], &result, &preceding, &[18]).is_empty());
+    assert!(treatment_transition_edge_candidates(&[20], &result, &preceding, &[18]).unwrap().is_empty());
     assert!(treatment_radius_candidates(
+        None,
         Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
         &[20],
         &result,
         &preceding,
         &[18],
-    )
+    ).unwrap()
     .is_empty());
 }
 

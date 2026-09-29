@@ -5358,12 +5358,13 @@ fn extend_related_design_records(
         &scope_histories,
     );
     crate::history::bind_edge_identity_history(
+        Some(ctx),
         &mut native.design_edge_identity_operands,
         &native.design_construction_operand_identities,
         &native.design_parameter_scopes,
         &native.asm_histories,
         &scope_histories,
-    );
+    )?;
     native.design_edge_operands = crate::design::decode::operands::decode_edge_operands(
         scan,
         &native.design_parameter_scopes,
