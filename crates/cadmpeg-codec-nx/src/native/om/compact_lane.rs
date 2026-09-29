@@ -247,7 +247,8 @@ mod tests {
 
     #[test]
     fn native_compact_lane_routes_keep_resolved_frames() {
-        for (lane, route) in [(COUNTED, counted_count as Route), (ABR, abr_count)] {
+        let routes: [(_, Route); 2] = [(COUNTED, counted_count), (ABR, abr_count)];
+        for (lane, route) in routes {
             let container = lane_container(lane);
             assert_eq!(
                 crate::test_support::with_decode_context(|ctx| route(ctx, &container))
