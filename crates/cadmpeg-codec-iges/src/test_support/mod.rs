@@ -21,10 +21,7 @@ pub(crate) fn parse_global(
     ),
     cadmpeg_core::CodecError,
 > {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    crate::global::parse(scan, &ctx)
+    with_service_context(&[], |ctx| crate::global::parse(scan, ctx))
 }
 
 /// Plans a write at one Fixed ASCII target, the request the command line
