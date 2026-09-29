@@ -81,6 +81,7 @@ dependencies = [
  "memchr",
  "serde",
  "serde-value",
+ "serde_json",
 ]
 
 [[package]]
