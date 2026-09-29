@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 
 use cadmpeg_core::decode::{
-    ByteRange, DecodeContext, ExpandSpec, ResourceDimension, ResourceLimit, View,
+    ByteRange, DecodeContext, ExpandSpec, View,
 };
 use cadmpeg_core::{CodecError, ContainerEntry};
 use zip::{CompressionMethod, HasZipMetadata};
@@ -345,7 +345,7 @@ impl<'a> ArchiveSnapshot<'a> {
         ctx: &DecodeContext<'_>,
         classify: impl Fn(&str) -> cadmpeg_core::container::ContainerRole,
     ) -> Result<Vec<ContainerEntry>, CodecError> {
-        let mut output = collection_vec(ctx, self.entries.len(), "ZIP container summaries")?;
+        let mut output = ctx.collection_vec(self.entries.len(), "ZIP container summaries")?;
         for entry in &self.entries {
             let mut attributes = BTreeMap::new();
             ctx.charge_collection_items(4, "ZIP summary attributes")?;
@@ -701,40 +701,6 @@ fn signature_at(bytes: &[u8], offset: u64) -> Option<[u8; 4]> {
         .map(|raw| [raw[0], raw[1], raw[2], raw[3]])
 }
 
-fn collection_vec<T>(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
-    let mut values = Vec::new();
-    values.try_reserve_exact(count).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::CollectionItems,
-            ctx.policy().limits.max_collection_items,
-            cadmpeg_core::decode::u64_from_index(count),
-            operation,
-        ))
-    })?;
-    Ok(values)
-}
-
-fn reserve_vec_item<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    values.try_reserve(1).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::CollectionItems,
-            ctx.policy().limits.max_collection_items,
-            cadmpeg_core::decode::u64_from_index(1),
-            operation,
-        ))
-    })
-}
-
 fn push_region(
     ctx: &DecodeContext<'_>,
     regions: &mut Vec<PhysicalSpan>,
@@ -743,7 +709,7 @@ fn push_region(
     role: ZipSpanRole,
 ) -> Result<(), CodecError> {
     if start < end {
-        reserve_vec_item(ctx, regions, "ZIP ledger regions")?;
+        ctx.reserve_vec(regions, 1, "ZIP ledger regions")?;
         regions.push(PhysicalSpan { start, end, role });
     }
     Ok(())
@@ -757,7 +723,7 @@ fn physical_ledger(
 ) -> Result<Vec<PhysicalSpan>, CodecError> {
     let len = cadmpeg_core::decode::u64_from_index(bytes.len());
     let mut regions = Vec::new();
-    let mut local_order = collection_vec(ctx, entries.len(), "ZIP ledger local order")?;
+    let mut local_order = ctx.collection_vec(entries.len(), "ZIP ledger local order")?;
     local_order.extend(entries.iter());
     local_order.sort_by_key(|entry| entry.header_start);
     if central_begin > len {
@@ -869,7 +835,7 @@ fn physical_ledger(
         }
     }
 
-    let mut central_order = collection_vec(ctx, entries.len(), "ZIP ledger central order")?;
+    let mut central_order = ctx.collection_vec(entries.len(), "ZIP ledger central order")?;
     central_order.extend(entries.iter());
     central_order.sort_by_key(|entry| entry.central_start);
     let mut central_end = central_begin;
@@ -1056,9 +1022,9 @@ fn partition(
             boundaries.insert(region.end);
         }
     }
-    let mut points = collection_vec(ctx, boundaries.len(), "ZIP ledger boundary points")?;
+    let mut points = ctx.collection_vec(boundaries.len(), "ZIP ledger boundary points")?;
     points.extend(boundaries);
-    let mut ordered_regions = collection_vec(ctx, regions.len(), "ZIP ledger ordered regions")?;
+    let mut ordered_regions = ctx.collection_vec(regions.len(), "ZIP ledger ordered regions")?;
     ordered_regions.extend(regions.iter());
     ordered_regions.sort_by_key(|region| (region.start, region.end));
     let mut region_index = 0_usize;
@@ -1080,7 +1046,7 @@ fn partition(
                     "physical ZIP ledger contains an unclassified byte range".into(),
                 )
             })?;
-        reserve_vec_item(ctx, &mut spans, "ZIP ledger spans")?;
+        ctx.reserve_vec(&mut spans, 1, "ZIP ledger spans")?;
         spans.push(PhysicalSpan {
             start,
             end,
