@@ -908,7 +908,13 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         point("B", 21),
     ];
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &policy,
+    ).unwrap();
     bind_dimension_loci(
+        &ctx,
         &[placement("A", 100), placement("B", 200)],
         &[owner("A"), owner("B")],
         &[pair("A"), pair("B")],
@@ -926,4 +932,111 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
             .collect::<Vec<_>>(),
         [Some(100), Some(100), Some(200), Some(200)]
     );
+}
+
+#[test]
+fn dimension_binding_scope_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut bindings = std::collections::HashMap::new();
+    assert!(matches!(
+        crate::design::dimensions::insert_dimension_binding(
+            &ctx, &mut bindings, "stream", 20, 100,
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d dimension binding scope"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn dimension_binding_record_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut bindings = std::collections::HashMap::new();
+    assert!(matches!(
+        crate::design::dimensions::insert_dimension_binding(
+            &ctx, &mut bindings, "stream", 20, 100,
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d dimension binding record"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn dimension_placement_scope_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let placement = DesignSketchPlacement {
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
+            0, crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
+        ).unwrap(),
+        id: "f3d:test:placement#1".into(),
+        scope_record_index: Some(10),
+        entity_id: "0_100".to_owned().try_into().unwrap(),
+        visibility: None,
+        class_tag: "356".to_owned().try_into().unwrap(),
+        record_index: 11,
+        paired_class_tag: "259".to_owned().try_into().unwrap(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        bind_dimension_loci(
+            &ctx, &[placement], &[], &[], &[], &[], &[], &mut [], &mut [],
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d dimension placement scope"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn dimension_companion_scope_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let owner = crate::records::parameters::DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
+            id: "f3d:test:owner#1".into(),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: "305".to_owned().try_into().unwrap(),
+            record_index: 10,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 1.0,
+            evaluated_value_offset: 40,
+            parameter_record_index: 11,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 12,
+        },
+    ).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        bind_dimension_loci(
+            &ctx, &[], &[owner], &[], &[], &[], &[], &mut [], &mut [],
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d dimension companion scope"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
 }

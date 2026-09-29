@@ -2419,6 +2419,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_dimension_null_locus_pairs,
         );
         crate::design::dimensions::bind_dimension_loci(
+            ctx,
             &self.native.design_sketch_placements,
             &self.native.design_parameter_owners,
             &self.native.design_dimension_locus_pairs,
