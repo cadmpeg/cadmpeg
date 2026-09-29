@@ -104,6 +104,124 @@ pattern_output_lane_limit_tests!(
     crate::native::features::pattern::feature_identical_instance_output_lanes
 );
 
+fn pattern_content_refusal<T>(
+    bytes: Vec<u8>,
+    route: for<'ctx, 'input> fn(
+        &cadmpeg_core::decode::DecodeContext<'ctx>,
+        &crate::container::Container<'input>,
+        &[crate::native::features::FeatureConstructionPayload],
+    ) -> Result<Vec<T>, cadmpeg_core::CodecError>,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    use crate::native::features::payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
+    use crate::native::features::{FeatureConstructionOwner, FeatureConstructionPayload, FeaturePatternKind};
+    let store = (0..600).map(|_| bytes.as_slice()).collect::<Vec<_>>();
+    let part = crate::test_support::test_om::composed_feature_history_payload(
+        &[(&[0xff; 4], "Pattern Feature", Vec::new())], &store,
+    );
+    let file = crate::test_support::test_prt::prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", part),
+    ]);
+    let container = crate::test_support::with_decode_context(move |ctx| {
+        crate::container::scan_bytes(ctx, file)
+    }).expect("pattern construction container");
+    let payload = crate::test_support::with_decode_context(|ctx| {
+        let blocks = crate::native::features::offset_data_block_bytes(ctx, &container)?;
+        let id = blocks.keys().find(|key| key.ends_with(":block#1"))
+            .cloned().expect("synthetic pattern block");
+        let content: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
+            FeaturePayloadContent::from_source(ctx, [id], &blocks)?
+                .expect("pattern source block");
+        Ok::<FeatureConstructionPayload, cadmpeg_core::CodecError>(FeatureConstructionPayload {
+            id: "pattern-payload".to_string(),
+            operation_label: "pattern-operation".to_string(),
+            owner: FeatureConstructionOwner::Pattern {
+                operation_kind: FeaturePatternKind::Feature,
+                reference_layout: crate::om::pattern_references::PatternPayloadReferenceLayout::CanonicalGraph,
+                construction_references: Vec::new(),
+            },
+            content,
+        })
+    }).expect("pattern construction payload");
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        route(ctx, &container, std::slice::from_ref(&payload))
+    }).expect("admitted pattern construction result");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx, &container, &[payload]).err()
+        .expect("pattern construction resource limit")
+}
+
+fn pattern_string_bytes() -> Vec<u8> {
+    b"\x66\x32\x03\x03A\0".to_vec()
+}
+
+fn pattern_fixed_bytes() -> Vec<u8> {
+    let mut bytes = vec![0xff, 0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01,
+        0xc0, 0x45, 0x10, 0x00, 0x80, 0x86, 0x02, 0x00, 0x01, 0x00];
+    bytes.extend_from_slice(&[0x30, 0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0xb0, 0xc0, 0, 0, 0, 0, 0, 0]);
+    bytes.push(0);
+    bytes
+}
+
+macro_rules! pattern_content_limit_tests {
+    ($collection:ident, $retained:ident, $scoped:ident, $work:ident, $bytes:expr, $route:path) => {
+        #[test]
+        fn $collection() {
+            let error = pattern_content_refusal($bytes, $route,
+                |policy| policy.limits.max_collection_items = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        }
+
+        #[test]
+        fn $retained() {
+            let error = pattern_content_refusal($bytes, $route,
+                |policy| policy.limits.max_retained_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        }
+
+        #[test]
+        fn $scoped() {
+            let error = pattern_content_refusal($bytes, $route,
+                |policy| policy.limits.max_materialized_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+        }
+
+        #[test]
+        fn $work() {
+            let error = pattern_content_refusal($bytes, $route,
+                |policy| policy.limits.max_work_units = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        }
+    };
+}
+
+pattern_content_limit_tests!(
+    pattern_string_route_refuses_collection_limit,
+    pattern_string_route_refuses_retained_limit,
+    pattern_string_route_refuses_scoped_limit,
+    pattern_string_route_refuses_work_limit,
+    pattern_string_bytes(),
+    crate::native::features::pattern::feature_pattern_construction_strings
+);
+pattern_content_limit_tests!(
+    pattern_fixed_route_refuses_collection_limit,
+    pattern_fixed_route_refuses_retained_limit,
+    pattern_fixed_route_refuses_scoped_limit,
+    pattern_fixed_route_refuses_work_limit,
+    pattern_fixed_bytes(),
+    crate::native::features::pattern::feature_pattern_construction_fixed_lanes
+);
+
 #[test]
 fn pattern_fixed_lane_preserves_parallel_wire_and_requires_complete_tokens() {
     check_lane_wire::<FeaturePatternConstructionFixedLane>(

@@ -40,6 +40,8 @@ mod borrowed_wires;
 
 use super::offset_data_block_bytes;
 use super::format_feature_history_id;
+use super::format_feature_child_id;
+use super::copy_operation_text;
 
 use super::unique_offset_data_block;
 use super::visit_feature_history_operation_records;
@@ -1109,12 +1111,27 @@ pub(in crate::native) fn feature_pattern_construction_strings(
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
+            let ordinal_u32 = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX pattern string ordinal", 0, 1))?;
+            let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
+            let value = copy_operation_text(
+                ctx, value.value.as_str(), "NX pattern construction string value",
+            )?;
+            let value = PrintableString::new(value)
+                .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?;
+            let operation_label = copy_operation_text(
+                ctx, &payload.operation_label, "NX pattern construction string label",
+            )?;
+            let construction_payload = copy_operation_text(
+                ctx, &payload.id, "NX pattern construction string payload",
+            )?;
+            reserve_pattern_output(ctx, &mut strings, "NX pattern construction strings")?;
             strings.push(FeaturePatternConstructionString {
-                id: format!("{}-string-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
-                construction_payload: payload.id.clone(),
-                ordinal: ordinal as u32,
-                value: value.value.into_owned(),
+                id,
+                operation_label,
+                construction_payload,
+                ordinal: ordinal_u32,
+                value,
                 payload_offset,
                 source_offset,
             });
@@ -1146,11 +1163,21 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
+            let ordinal_u32 = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX pattern fixed lane ordinal", 0, 1))?;
+            let id = format_feature_child_id(ctx, &payload.id, "-fixed-lane-", ordinal)?;
+            let operation_label = copy_operation_text(
+                ctx, &payload.operation_label, "NX pattern fixed lane label",
+            )?;
+            let construction_payload = copy_operation_text(
+                ctx, &payload.id, "NX pattern fixed lane payload",
+            )?;
+            reserve_pattern_output(ctx, &mut lanes, "NX pattern construction fixed lanes")?;
             lanes.push(FeaturePatternConstructionFixedLane {
-                id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
-                construction_payload: payload.id.clone(),
-                ordinal: ordinal as u32,
+                id,
+                operation_label,
+                construction_payload,
+                ordinal: ordinal_u32,
                 lane,
                 source_offset,
             });
