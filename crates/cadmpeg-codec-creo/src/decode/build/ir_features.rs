@@ -829,7 +829,7 @@ pub(super) fn finish_feature_transfers(
             decoded_dimension_count.saturating_sub(resolved_dimension_count),
         );
     }
-    close_sketch_constraint_parameter_references(ir);
+    close_sketch_constraint_parameter_references(ctx, ir)?;
     Ok((feature_result_topology_count, feature_result_edge_count))
 }
 
