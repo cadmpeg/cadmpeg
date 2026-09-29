@@ -53,53 +53,74 @@ pub(super) fn same_draft_operands(left: &DraftOperands, right: &DraftOperands) -
 }
 
 fn draft_operands(
+    ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
     object_start: usize,
     object_end: usize,
-) -> Option<DraftOperands> {
+) -> Result<Option<DraftOperands>, CodecError> {
     if classify(feature) != Some(FeatureClass::Draft) || object_start >= object_end {
-        return None;
+        return Ok(None);
     }
-    if let Some(operands) = declared_draft_operands(lane, object_start, object_end) {
-        return Some(operands);
+    if let Some(operands) = declared_draft_operands(ctx, lane, object_start, object_end)? {
+        return Ok(Some(operands));
     }
-    compact_parting_line_draft_operands(lane, object_start, object_end)
+    Ok(compact_parting_line_draft_operands(lane, object_start, object_end))
 }
 
 fn declared_draft_operands(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     object_start: usize,
     object_end: usize,
-) -> Option<DraftOperands> {
-    let token = unique_declared_plane_reference_token(lane)?;
-    let end = super::DeclaredEnd::of(object_end, lane.native_payload.len())?.get();
-    let final_record_start = end.checked_sub(draft_plane::LEN)?;
-    let records = (object_start..=final_record_start)
-        .filter(|offset| lane.native_payload.get(*offset..*offset + 2) == Some(token.as_slice()))
-        .filter_map(|offset| draft_plane_reference_at(&lane.native_payload, offset, end))
-        .collect::<Vec<_>>();
+) -> Result<Option<DraftOperands>, CodecError> {
+    const OPERATION: &str = "collect SLDPRT declared draft references";
+    let Some(token) = unique_declared_plane_reference_token(lane) else {
+        return Ok(None);
+    };
+    let Some(end) = super::DeclaredEnd::of(object_end, lane.native_payload.len()) else {
+        return Ok(None);
+    };
+    let end = end.get();
+    let Some(final_record_start) = end.checked_sub(draft_plane::LEN) else {
+        return Ok(None);
+    };
+    let mut records = Vec::new();
+    for offset in object_start..=final_record_start {
+        if lane.native_payload.get(offset..offset + 2) != Some(token.as_slice()) {
+            continue;
+        }
+        if let Some(record) = draft_plane_reference_at(&lane.native_payload, offset, end) {
+            ctx.reserve_collection_vec(&mut records, 1, OPERATION)?;
+            records.push(record);
+        }
+    }
     let mut records = records.into_iter();
-    let (_, neutral_plane, neutral_end) = records.next()?;
-    let pull_direction = unique_draft_direction(
+    let Some((_, neutral_plane, neutral_end)) = records.next() else {
+        return Ok(None);
+    };
+    let Some(pull_direction) = unique_draft_direction(
         &lane.native_payload,
         neutral_end,
         records.as_slice().first().map_or(end, |record| record.0),
-    )?;
+    ) else {
+        return Ok(None);
+    };
     let mut faces = Vec::<Vec<FeatureInputComponentPathEntry>>::new();
     for path in records.map(|(_, path, _)| path) {
         if !faces
             .iter()
             .any(|existing| same_component_path_semantics(existing, &path))
         {
+            ctx.reserve_collection_vec(&mut faces, 1, "collect SLDPRT declared draft faces")?;
             faces.push(path);
         }
     }
-    (!faces.is_empty()).then_some(DraftOperands {
+    Ok((!faces.is_empty()).then_some(DraftOperands {
         anchor: DraftAnchor::NeutralPlane(neutral_plane),
         faces,
         pull_direction,
-    })
+    }))
 }
 
 fn compact_parting_line_draft_operands(
@@ -369,7 +390,7 @@ pub(super) fn draft_operand_candidates(
             .get(index + 1)
             .and_then(|(offset, _)| usize::try_from(*offset).ok())
             .unwrap_or(lane.native_payload.len());
-        if let Some(operands) = draft_operands(feature, lane, start, end) {
+        if let Some(operands) = draft_operands(ctx, feature, lane, start, end)? {
             let mut id = String::new();
             ctx.reserve_retained_string(&mut id, feature.id.len(), OPERATION)?;
             id.push_str(&feature.id);
@@ -501,6 +522,69 @@ mod tests {
                 && limit.operation == "collect SLDPRT draft operand candidates"));
     }
 
+    #[test]
+    fn draft_operand_candidates_refuses_declared_reference_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let token = 0x8096;
+        let mut payload = vec![0; 64];
+        let object_start = payload.len();
+        payload.extend(plane_reference(token, [0x40, 0], 101, 3));
+        payload.extend(plane_reference(token, [0x40, 0], 102, 8));
+        let class_offset = payload.len();
+        let class_name = "moPlaneRef_w";
+        payload.extend([0; 6]);
+        payload.extend(class_name.as_bytes());
+        payload.extend(token.to_le_bytes());
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: vec![FeatureInputClass {
+                id: "plane-ref".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: class_offset as u64,
+                name: class_name.into(),
+            }],
+            names: vec![FeatureInputName {
+                id: "name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: object_start as u64,
+                value: "Draft1".into(),
+                object_id: ObjectId::from_value(7),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![draft_feature()],
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
+            .expect("test context");
+        let error = super::draft_operand_candidates(&ctx, &[history], &lane)
+            .expect_err("declared draft references exceed collection limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect SLDPRT declared draft references"));
+    }
+
     fn compact_selection(role: u8, paths: &[&[(u16, u32, u32, u32)]]) -> Vec<u8> {
         let mut bytes = 6u32.to_le_bytes().to_vec();
         bytes.extend([0, role, 0, 0]);
@@ -629,7 +713,15 @@ mod tests {
             2
         );
 
-        let operands = draft_operands(&feature, &lane, object_start, object_end)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("test decode context");
+        let operands = draft_operands(&ctx, &feature, &lane, object_start, object_end)
+            .expect("draft parse")
             .expect("compact parting-line draft operands");
         assert!(matches!(operands.anchor, DraftAnchor::PartingTool(ref paths) if paths.len() == 2));
         assert_eq!(operands.faces.len(), 2);
@@ -696,7 +788,15 @@ mod tests {
             unique_draft_direction(&lane.native_payload, neutral.2, first_face),
             Some(Vector3::new(0.0, 0.0, 1.0))
         );
-        let operands = draft_operands(&feature, &lane, object_start, class_offset)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("test decode context");
+        let operands = draft_operands(&ctx, &feature, &lane, object_start, class_offset)
+            .expect("draft parse")
             .expect("complete draft operands");
         assert!(matches!(
             operands.anchor,
@@ -709,7 +809,9 @@ mod tests {
         let mut malformed = lane.clone();
         malformed.native_payload[object_start + 15..object_start + 19]
             .copy_from_slice(&103u32.to_le_bytes());
-        assert!(draft_operands(&feature, &malformed, object_start, class_offset).is_none());
+        assert!(draft_operands(&ctx, &feature, &malformed, object_start, class_offset)
+            .expect("malformed draft parse")
+            .is_none());
 
         let history = FeatureHistory {
             id: "history".into(),
@@ -743,7 +845,6 @@ mod tests {
             ),
             native_ref: Some("draft".into()),
         }];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &lane.native_payload,
             &arena,
