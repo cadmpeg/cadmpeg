@@ -6,62 +6,42 @@
 
 /// Assemble a 16-bit little-endian integer from an exact byte array.
 pub const fn assemble_u16_le(bytes: [u8; 2]) -> u16 {
-    bytes[0] as u16 | ((bytes[1] as u16) << 8)
+    u16::from_le_bytes(bytes)
 }
 
 /// Assemble a 16-bit big-endian integer from an exact byte array.
 pub const fn assemble_u16_be(bytes: [u8; 2]) -> u16 {
-    ((bytes[0] as u16) << 8) | bytes[1] as u16
+    u16::from_be_bytes(bytes)
 }
 
 /// Assemble a 24-bit little-endian integer from an exact byte array.
 pub const fn assemble_u24_le(bytes: [u8; 3]) -> u32 {
-    bytes[0] as u32 | ((bytes[1] as u32) << 8) | ((bytes[2] as u32) << 16)
+    u32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0])
 }
 
 /// Assemble a 24-bit big-endian integer from an exact byte array.
 pub const fn assemble_u24_be(bytes: [u8; 3]) -> u32 {
-    ((bytes[0] as u32) << 16) | ((bytes[1] as u32) << 8) | bytes[2] as u32
+    u32::from_be_bytes([0, bytes[0], bytes[1], bytes[2]])
 }
 
 /// Assemble a 32-bit little-endian integer from an exact byte array.
 pub const fn assemble_u32_le(bytes: [u8; 4]) -> u32 {
-    bytes[0] as u32
-        | ((bytes[1] as u32) << 8)
-        | ((bytes[2] as u32) << 16)
-        | ((bytes[3] as u32) << 24)
+    u32::from_le_bytes(bytes)
 }
 
 /// Assemble a 32-bit big-endian integer from an exact byte array.
 pub const fn assemble_u32_be(bytes: [u8; 4]) -> u32 {
-    ((bytes[0] as u32) << 24)
-        | ((bytes[1] as u32) << 16)
-        | ((bytes[2] as u32) << 8)
-        | bytes[3] as u32
+    u32::from_be_bytes(bytes)
 }
 
 /// Assemble a 64-bit little-endian integer from an exact byte array.
 pub const fn assemble_u64_le(bytes: [u8; 8]) -> u64 {
-    bytes[0] as u64
-        | ((bytes[1] as u64) << 8)
-        | ((bytes[2] as u64) << 16)
-        | ((bytes[3] as u64) << 24)
-        | ((bytes[4] as u64) << 32)
-        | ((bytes[5] as u64) << 40)
-        | ((bytes[6] as u64) << 48)
-        | ((bytes[7] as u64) << 56)
+    u64::from_le_bytes(bytes)
 }
 
 /// Assemble a 64-bit big-endian integer from an exact byte array.
 pub const fn assemble_u64_be(bytes: [u8; 8]) -> u64 {
-    ((bytes[0] as u64) << 56)
-        | ((bytes[1] as u64) << 48)
-        | ((bytes[2] as u64) << 40)
-        | ((bytes[3] as u64) << 32)
-        | ((bytes[4] as u64) << 24)
-        | ((bytes[5] as u64) << 16)
-        | ((bytes[6] as u64) << 8)
-        | bytes[7] as u64
+    u64::from_be_bytes(bytes)
 }
 
 /// Assemble an IEEE-754 binary32 value from exact little-endian bytes.

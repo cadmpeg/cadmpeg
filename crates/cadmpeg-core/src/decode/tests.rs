@@ -10,6 +10,7 @@ use super::{
     refuse_local_limit, ByteRange, DecodeArena, DecodeContext, DecodePolicy, ExpandSpec,
     ResourceDimension, ResourceLimits, WorkBudget,
 };
+use super::u64_from_index;
 
 fn policy_with(mut edit: impl FnMut(&mut ResourceLimits)) -> DecodePolicy {
     let mut policy = DecodePolicy::default();
@@ -32,7 +33,7 @@ fn root_limit_is_enforced() {
 #[test]
 fn read_root_uses_sized_and_fallback_read_paths() {
     let bytes = vec![0_u8; 32];
-    let policy = policy_with(|limits| limits.max_input_bytes = bytes.len() as u64);
+    let policy = policy_with(|limits| limits.max_input_bytes = u64_from_index(bytes.len()));
 
     let arena = DecodeArena::new();
     let mut seekable = Cursor::new(bytes.clone());
