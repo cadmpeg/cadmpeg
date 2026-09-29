@@ -844,17 +844,14 @@ pub(in super::super) fn section_skamp_midpoint(
         item.sense == 4 && unique_centered_line_segment(definition, item.entity_id).is_some()
     };
     if centered_target(first) || centered_target(second) {
-        let candidates = [(first, second), (second, first)]
+        let candidate = crate::decode::uniqueness::exactly_one([(first, second), (second, first)]
             .into_iter()
             .filter(|(target, point)| centered_target(target) && point.sense == 0)
             .filter_map(|(target_item, point_item)| {
                 Some((point(point_item)?, target(target_item)?))
             })
-            .collect::<Vec<_>>();
-        let [candidate] = candidates.as_slice() else {
-            return None;
-        };
-        return Some(candidate.clone());
+        )?;
+        return Some(candidate);
     }
     let candidate = |target, point| Some((point?, target?));
     match (
@@ -1039,14 +1036,11 @@ pub(in super::super) fn section_skamp_line_midpoint_sources(
     let point = |item: &crate::feature::definitions::FeatureSkampItem| {
         section_skamp_incidence_point(definition, item)
     };
-    let candidates = [(first, second), (second, first)]
+    let candidate = crate::decode::uniqueness::exactly_one([(first, second), (second, first)]
         .into_iter()
         .filter_map(|(target_item, point_item)| Some((target(target_item)?, point(point_item)?)))
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+    )?;
+    Some(candidate)
 }
 
 pub(in super::super) fn section_skamp_arc_midpoint_source(
@@ -1057,7 +1051,7 @@ pub(in super::super) fn section_skamp_arc_midpoint_source(
     let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
         return None;
     };
-    let candidates = [(first, second), (second, first)]
+    let candidate = crate::decode::uniqueness::exactly_one([(first, second), (second, first)]
         .into_iter()
         .filter_map(|(target, point)| {
             (target.sense == 0 && section_skamp_is_arc(definition, target)).then_some(())?;
@@ -1066,11 +1060,8 @@ pub(in super::super) fn section_skamp_arc_midpoint_source(
                 section_skamp_arc_midpoint(definition, target, coordinates)?,
             ))
         })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+    )?;
+    Some(candidate)
 }
 
 fn section_skamp_arc_midpoint(
