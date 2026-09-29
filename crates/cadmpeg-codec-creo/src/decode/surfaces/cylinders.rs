@@ -966,16 +966,26 @@ pub(in super::super) fn transfer_positional_cylinders(
     let mut constant_round_radii = BTreeMap::new();
     for feature_id in round_feature_ids {
         if let Some(radius) = round_constant_radius(ctx, scan, ir, source_carriers, feature_id)? {
+            ctx.charge_collection_items(1, "creo constant round radius nodes")?;
             constant_round_radii.insert(feature_id, radius);
         }
     }
     let local_planes = placed_planes(scan);
-    let unique_rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
-        .into_iter()
-        .map(|row| (row.id, row))
-        .collect::<BTreeMap<_, _>>();
+    let mut unique_rows = BTreeMap::new();
+    for row in crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.surfaces.rows,
+        |row| row.id,
+    )? {
+        ctx.charge_collection_items(1, "creo positional cylinder row nodes")?;
+        unique_rows.insert(row.id, row);
+    }
     let mut adjacent_plane_ids = BTreeMap::<u32, BTreeSet<u32>>::new();
-    for edge in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
+    for edge in crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )? {
         let [Some(left), Some(right)] = edge.faces else {
             continue;
         };
@@ -988,27 +998,34 @@ pub(in super::super) fn transfer_positional_cylinders(
                     .get(&other_id)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
             {
-                adjacent_plane_ids
-                    .entry(surface_id)
-                    .or_default()
-                    .insert(other_id);
+                let plane_ids = match adjacent_plane_ids.entry(surface_id) {
+                    std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        ctx.charge_collection_items(1, "creo positional adjacent cylinder nodes")?;
+                        entry.insert(BTreeSet::new())
+                    }
+                };
+                if !plane_ids.contains(&other_id) {
+                    ctx.charge_collection_items(1, "creo positional adjacent plane ID nodes")?;
+                    plane_ids.insert(other_id);
+                }
             }
         }
     }
-    let round_edge_support_planes = adjacent_plane_ids
-        .into_iter()
-        .map(|(surface_id, plane_ids)| {
-            (
-                surface_id,
-                plane_ids
-                    .into_iter()
-                    .filter_map(|plane_id| {
-                        reconciled_model_plane(&local_planes, ir, source_carriers, plane_id)
-                    })
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut round_edge_support_planes = BTreeMap::new();
+    for (surface_id, plane_ids) in adjacent_plane_ids {
+        let mut planes = Vec::new();
+        for plane_id in plane_ids {
+            if let Some(plane) =
+                reconciled_model_plane(&local_planes, ir, source_carriers, plane_id)
+            {
+                ctx.try_reserve_items(&mut planes, 1, "creo positional support planes")?;
+                planes.push(plane);
+            }
+        }
+        ctx.charge_collection_items(1, "creo positional support plane nodes")?;
+        round_edge_support_planes.insert(surface_id, planes);
+    }
     let mut summary = PositionalCylinderTransferSummary::default();
     for record in &scan.surfaces.parameters {
         if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
@@ -1142,20 +1159,33 @@ pub(in super::super) fn transfer_positional_cylinders(
         {
             continue;
         }
-        let reference_bound_frame = || {
-            let entity_ids = scan
+        let reference_bound_frame = || -> Result<
+            Option<(crate::surface::PositionalCylinderFrame, CylinderFrameMechanism)>,
+            cadmpeg_core::CodecError,
+        > {
+            let mut entity_ids = BTreeSet::new();
+            for entity_id in scan
                 .features
                 .entity_tables
                 .iter()
                 .filter(|table| table.feature_id == row.feature_id)
-                .flat_map(crate::feature::entity::FeatureEntityTable::entry_ids)
-                .collect::<BTreeSet<_>>();
-            let circles = scan
+                .flat_map(|table| table.entries.iter().map(|entry| entry.entity_id))
+            {
+                if !entity_ids.contains(&entity_id) {
+                    ctx.charge_collection_items(1, "creo reference cylinder entity ID nodes")?;
+                    entity_ids.insert(entity_id);
+                }
+            }
+            let mut circles = Vec::new();
+            for circle in scan
                 .references
                 .circles
                 .iter()
                 .filter(|circle| entity_ids.contains(&circle.entity_id))
-                .collect::<Vec<_>>();
+            {
+                ctx.try_reserve_items(&mut circles, 1, "creo reference cylinder circles")?;
+                circles.push(circle);
+            }
             let generated_cylinder_count = scan
                 .surfaces
                 .rows
@@ -1167,12 +1197,14 @@ pub(in super::super) fn transfer_positional_cylinders(
                 .count();
             if generated_cylinder_count == 1 {
                 if let Some(frame) = reference_circle_pair_cylinder_frame(&circles) {
-                    return Some((frame, CylinderFrameMechanism::ReferenceCirclePair));
+                    return Ok(Some((frame, CylinderFrameMechanism::ReferenceCirclePair)));
                 }
             }
-            let envelope = record.type24_scalar_frame_round_envelope()?;
-            reference_cap_bound_round_frame(envelope, &circles)
-                .map(|frame| (frame, CylinderFrameMechanism::RoundReferenceCap))
+            let Some(envelope) = record.type24_scalar_frame_round_envelope() else {
+                return Ok(None);
+            };
+            Ok(reference_cap_bound_round_frame(envelope, &circles)
+                .map(|frame| (frame, CylinderFrameMechanism::RoundReferenceCap)))
         };
         let (frame, mechanism) = if selector_corner_interval {
             let Some(frame) = record.positional_cylinder_frame() else {
@@ -1195,7 +1227,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         } else if let Some(frame) = record.positional_cylinder_frame() {
             (frame, CylinderFrameMechanism::PositionalCylinderFrame)
         } else {
-            let Some(frame) = reference_bound_frame() else {
+            let Some(frame) = reference_bound_frame()? else {
                 continue;
             };
             frame

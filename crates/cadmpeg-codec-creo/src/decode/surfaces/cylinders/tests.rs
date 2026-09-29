@@ -425,6 +425,205 @@ fn split_outline_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::CodecE
     .expect_err("split outline collection exceeds limit")
 }
 
+fn positional_map_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::CodecError {
+    let scan = split_outline_scan();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    super::transfer_positional_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("positional cylinder collection exceeds limit")
+}
+
+fn reference_bound_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::CodecError {
+    let mut scan = split_outline_scan();
+    scan.features.entity_tables.push(crate::feature::entity::FeatureEntityTable::new(
+        10,
+        29,
+        vec![crate::feature::entity::dummy_table_entry(99)],
+        &std::collections::BTreeSet::new(),
+        0,
+    ));
+    scan.references.circles.push(crate::reference::ReferenceCircle {
+        entity_id: 99,
+        center: cadmpeg_ir::features::FinitePoint3::ZERO,
+        center_stored: true,
+        radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
+        axis: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        start: cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 0.0].into())
+            .expect("finite start"),
+        end: cadmpeg_ir::features::FinitePoint3::new([0.0, 1.0, 0.0].into())
+            .expect("finite end"),
+        offset: 0,
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    super::transfer_positional_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("reference cylinder collection exceeds limit")
+}
+
+#[test]
+fn reference_bound_entity_id_nodes_refuse_collection_limit() {
+    let error = reference_bound_refusal_at_collection_limit(21);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo reference cylinder entity ID nodes"));
+}
+
+#[test]
+fn reference_bound_circles_refuse_collection_limit() {
+    let error = reference_bound_refusal_at_collection_limit(22);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo reference cylinder circles"));
+}
+
+#[test]
+fn positional_surface_unique_row_count_refuses_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row count nodes"));
+}
+
+#[test]
+fn positional_surface_unique_row_projection_refuses_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(3);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row projection"));
+}
+
+#[test]
+fn positional_topology_unique_row_count_refuses_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(9);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row count nodes"));
+}
+
+#[test]
+fn positional_topology_unique_row_projection_refuses_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(11);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo unique-row projection"));
+}
+
+#[test]
+fn positional_cylinder_row_nodes_refuse_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(6);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo positional cylinder row nodes"));
+}
+
+#[test]
+fn positional_adjacent_cylinder_nodes_refuse_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(13);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo positional adjacent cylinder nodes"));
+}
+
+#[test]
+fn positional_adjacent_plane_id_nodes_refuse_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(14);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo positional adjacent plane ID nodes"));
+}
+
+#[test]
+fn positional_support_plane_vector_refuses_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(17);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo positional support planes"));
+}
+
+#[test]
+fn positional_support_plane_nodes_refuse_collection_limit() {
+    let error = positional_map_refusal_at_collection_limit(18);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo positional support plane nodes"));
+}
+
+#[test]
+fn constant_round_radius_nodes_refuse_collection_limit() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
+        feature_id: 913,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0,
+        offset: 0,
+    });
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 7,
+        kind: crate::surface::SurfaceKind::Cylinder,
+        feature_id: 913,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 7,
+    });
+    scan.features.legacy_rounds.push(crate::legacy_feature::LegacyRoundFeature {
+        feature_id: 913,
+        radius: crate::legacy_feature::LegacyRoundRadius::Constant(
+            cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive radius"),
+        ),
+        edge_ids: None,
+        offset: 0,
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::transfer_positional_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("constant round radius node exceeds limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo constant round radius nodes"));
+
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_positional_cylinders(
+            ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("service round radius admitted")
+    .transferred, 0);
+}
+
 #[test]
 fn split_outline_surface_row_count_nodes_refuse_collection_limit() {
     let error = split_outline_refusal_at_collection_limit(0);
