@@ -6,7 +6,7 @@ use crate::decode::append_design_losses;
 use crate::decode::complete_resolved_configuration_parameter_snapshots;
 use crate::decode::snapshot_active_configuration;
 use crate::decode::sync_active_configuration_resolutions;
-use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{
@@ -402,7 +402,12 @@ fn active_configuration_inherits_late_feature_resolutions() {
         native_ref: None,
     });
 
-    sync_active_configuration_resolutions(&mut ir).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"configuration", &arena, &policy,
+    ).unwrap();
+    sync_active_configuration_resolutions(&ctx, &mut ir).unwrap();
 
     assert!(
         matches!(&(ir.model.configurations[0].feature_states[&feature_id].definition),
@@ -450,7 +455,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
         edited_diameter,
     )
     .unwrap();
-    sync_active_configuration_resolutions(&mut ir).unwrap();
+    sync_active_configuration_resolutions(&ctx, &mut ir).unwrap();
     assert!(matches!(
         &ir.model.configurations[0].feature_states[&hole_id].definition, FeatureDefinition::Operation(FeatureOperation::Hole {
             placements,
@@ -459,6 +464,71 @@ fn active_configuration_inherits_late_feature_resolutions() {
             bottom: None,
             ..
         }) if matches!((&shape.diameter(),), (Some(actual_diameter),) if (placements.as_ref().is_some_and(|placements| placements.len() == 1)) && actual_diameter.get() == 8.0)));
+}
+
+#[test]
+fn active_configuration_cosmetic_face_refuses_collection_limit() {
+    let feature_id = FeatureId::mint("synthetic:test:id#cosmetic").unwrap();
+    let source_face = FaceId::mint("synthetic:test:id#cosmetic-face").unwrap();
+    let mut ir = CadIr::empty();
+    ir.model.features.push(Feature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+                face: FaceSelection::Faces(vec![source_face]),
+                diameter: None,
+                extent: None,
+            }),
+        ),
+        native_ref: None,
+    });
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#active").unwrap(),
+        ordinal: 0,
+        active: true,
+        source_index: Some(0),
+        name: Some("Active".to_owned()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::from([(
+            feature_id.clone(),
+            ConfigurationFeatureState {
+                evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
+                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                definition: FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+                    face: FaceSelection::Unresolved,
+                    diameter: None,
+                    extent: None,
+                }),
+            },
+        )]),
+        native_ref: None,
+    });
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"configuration", &arena, &policy,
+    ).unwrap();
+    let error = sync_active_configuration_resolutions(&ctx, &mut ir).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    assert!(matches!(
+        ir.model.configurations[0].feature_states[&feature_id].definition,
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            face: FaceSelection::Unresolved, ..
+        })
+    ));
 }
 
 #[test]
