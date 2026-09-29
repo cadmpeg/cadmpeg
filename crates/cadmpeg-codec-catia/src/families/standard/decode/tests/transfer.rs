@@ -67,6 +67,35 @@ fn standard_population_scope_preserves_a_body_name_that_spells_its_identity() {
 }
 
 #[test]
+fn standard_initial_carrier_identity_refuses_retained_limit() {
+    let file = standard_catpart();
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.clone())
+    }).expect("service scan");
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::super::try_decode_standard_population(
+            ctx, &scan, None, &mut crate::nurbs::LaneRefusals::new(),
+            &[], &std::collections::HashMap::new())
+    };
+    assert!(crate::test_support::with_service_context(decode)
+        .expect("service budget").is_some());
+    let mut found = false;
+    for cap in 0..32_768 {
+        match crate::test_support::with_retained_limit(cap, decode) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_standard_payload_id"
+                    || limit.operation == "catia_standard_surface_id" => {
+                    found = true;
+                    break;
+                }
+            Err(cadmpeg_core::CodecError::ResourceLimit(_)) => {}
+            _ => panic!("standard carrier passed without an identity refusal"),
+        }
+    }
+    assert!(found, "the retained sweep must reach initial carrier creation");
+}
+
+#[test]
 fn standard_decode_retains_native_surface_carrier_tags() {
     let decoded = CatiaCodec
         .decode(

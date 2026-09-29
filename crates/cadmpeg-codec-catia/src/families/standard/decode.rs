@@ -2497,10 +2497,8 @@ fn try_decode_standard_population(
         &mut unknowns,
         &mut annotations,
         scan,
-        cadmpeg_ir::ids::UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
-            cadmpeg_ir::identity_key!("brep-stream"),
-        ),
+        admitted!(crate::resource::copy_id(ctx, "catia:payload:unknown#brep-stream",
+            UnknownId::mint, "catia_standard_payload_id")),
     ) {
         Ok(index) => index,
         Err(error) => return Some(Err(error)),
@@ -2521,23 +2519,25 @@ fn try_decode_standard_population(
                 forward,
                 ..
             } => {
-                let id = SurfaceId::compose(
+                let id = admitted!(crate::resource::compose_index_id(ctx,
                     &cadmpeg_ir::identity_namespace!("catia", "standard", "surf"),
-                    i,
-                );
-                let geometry =
-                    freeform_geometries
-                        .get(tag)
-                        .cloned()
-                        .unwrap_or(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                            record: None,
-                        }));
-                face_bindings.push((id.clone(), *forward, *pos));
-                surface_annotations.push((
-                    id.clone(),
+                    i, SurfaceId::mint, "catia_standard_surface_id"));
+                let geometry = admitted!(freeform_geometries.get(tag)
+                    .map(|geometry| copy_e5_surface_geometry(ctx, geometry)).transpose())
+                    .unwrap_or(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                        record: None,
+                    }));
+                admitted!(crate::resource::push(ctx, &mut face_bindings,
+                    (admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
+                        "catia_standard_face_binding_surface_id")), *forward, *pos),
+                    "catia_standard_face_bindings"));
+                admitted!(crate::resource::push(ctx, &mut surface_annotations, (
+                    admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
+                        "catia_standard_annotation_surface_id")),
                     "MainDataStream+SurfacicReps",
                     *pos,
-                    "surfacic_reps_freeform_alias".to_string(),
+                    admitted!(crate::resource::copy_retained_str(ctx,
+                        "surfacic_reps_freeform_alias", "catia_standard_surface_annotation_tag")),
                     if freeform_procedural_surfaces.contains_key(tag)
                         || e5_freeform_tags.contains(tag)
                     {
@@ -2550,24 +2550,28 @@ fn try_decode_standard_population(
                     } else {
                         Exactness::ByteExact
                     },
-                ));
+                ), "catia_standard_surface_annotations"));
                 if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                     return Some(Err(error));
                 }
                 surfaces.push(Surface {
-                    id: id.clone(),
+                    id: admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
+                        "catia_standard_surface_record_id")),
                     geometry,
                     source_object: Some(admitted!(cgm_source(ctx, "carrier", *tag))),
                 });
                 if let Some(procedure) = freeform_procedural_surfaces.get(tag).cloned() {
-                    procedural_surface_plans.push((i, id, *tag, procedure));
+                    admitted!(crate::resource::push(ctx, &mut procedural_surface_plans,
+                        (i, id, *tag, procedure), "catia_standard_procedural_surface_plans"));
                 }
                 continue;
             }
         };
         // A bridged plane parameter record contains the same `00 33 32`
         // marker as its SurfacicReps carrier.  One carrier exists per tag.
-        if prefix.kind == AnalyticSurfaceKind::Plane && !decoded_plane_targets.insert(prefix.target)
+        if prefix.kind == AnalyticSurfaceKind::Plane
+            && !admitted!(crate::resource::insert_set(ctx, &mut decoded_plane_targets,
+                prefix.target, "catia_standard_decoded_plane_targets"))
         {
             continue;
         }
@@ -2581,36 +2585,36 @@ fn try_decode_standard_population(
         match decoded {
             Some(geom) => {
                 typed.record(&geom);
-                let id = SurfaceId::compose(
+                let id = admitted!(crate::resource::compose_index_id(ctx,
                     &cadmpeg_ir::identity_namespace!("catia", "standard", "surf"),
-                    i,
-                );
+                    i, SurfaceId::mint, "catia_standard_surface_id"));
                 if let Some(forward) = crate::families::standard::records::face_sense(brep, prefix)
                 {
-                    face_bindings.push((id.clone(), forward, prefix.pos));
+                    admitted!(crate::resource::push(ctx, &mut face_bindings,
+                        (admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
+                            "catia_standard_face_binding_surface_id")), forward, prefix.pos),
+                        "catia_standard_face_bindings"));
                 }
                 let (annotation_stream, annotation_offset, annotation_tag) =
-                    refined_analytic_surfaces.get(&i).map_or(
-                        (
-                            "MainDataStream+SurfacicReps",
-                            prefix.pos,
-                            format!("surfacic_reps_{:02x}", prefix.kind.marker()),
-                        ),
-                        |source_pos| {
-                            (
-                                "consolidated_b2_03",
-                                *source_pos,
-                                "consolidated_exact_analytic_surface".to_string(),
-                            )
-                        },
-                    );
-                surface_annotations.push((
-                    id.clone(),
+                    if let Some(source_pos) = refined_analytic_surfaces.get(&i) {
+                        ("consolidated_b2_03", *source_pos,
+                            admitted!(crate::resource::copy_retained_str(ctx,
+                                "consolidated_exact_analytic_surface",
+                                "catia_standard_surface_annotation_tag")))
+                    } else {
+                        ("MainDataStream+SurfacicReps", prefix.pos,
+                            admitted!(crate::resource::format_retained(ctx,
+                                format_args!("surfacic_reps_{:02x}", prefix.kind.marker()),
+                                "catia_standard_surface_annotation_tag")))
+                    };
+                admitted!(crate::resource::push(ctx, &mut surface_annotations, (
+                    admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
+                        "catia_standard_annotation_surface_id")),
                     annotation_stream,
                     annotation_offset,
                     annotation_tag,
                     Exactness::ByteExact,
-                ));
+                ), "catia_standard_surface_annotations"));
                 if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                     return Some(Err(error));
                 }
@@ -2624,31 +2628,35 @@ fn try_decode_standard_population(
                 if prefix.kind == AnalyticSurfaceKind::Plane {
                     plane_faces += 1;
                 }
-                let id = SurfaceId::compose(
+                let id = admitted!(crate::resource::compose_index_id(ctx,
                     &cadmpeg_ir::identity_namespace!("catia", "standard", "surf"),
-                    i,
-                );
+                    i, SurfaceId::mint, "catia_standard_surface_id"));
                 if let Some(forward) = crate::families::standard::records::face_sense(brep, prefix)
                 {
-                    face_bindings.push((id.clone(), forward, prefix.pos));
+                    admitted!(crate::resource::push(ctx, &mut face_bindings,
+                        (admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
+                            "catia_standard_face_binding_surface_id")), forward, prefix.pos),
+                        "catia_standard_face_bindings"));
                 }
-                surface_annotations.push((
-                    id.clone(),
+                admitted!(crate::resource::push(ctx, &mut surface_annotations, (
+                    admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
+                        "catia_standard_annotation_surface_id")),
                     "MainDataStream+SurfacicReps",
                     prefix.pos,
-                    format!("surfacic_reps_{:02x}", prefix.kind.marker()),
+                    admitted!(crate::resource::format_retained(ctx,
+                        format_args!("surfacic_reps_{:02x}", prefix.kind.marker()),
+                        "catia_standard_surface_annotation_tag")),
                     Exactness::Unknown,
-                ));
+                ), "catia_standard_surface_annotations"));
                 if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                     return Some(Err(error));
                 }
                 surfaces.push(Surface {
                     id,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                        record: Some(UnknownId::compose(
-                            &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
-                            cadmpeg_ir::identity_key!("brep-stream"),
-                        )),
+                        record: Some(admitted!(crate::resource::copy_id(ctx,
+                            "catia:payload:unknown#brep-stream", UnknownId::mint,
+                            "catia_standard_unknown_record_id"))),
                     }),
                     source_object: Some(admitted!(cgm_source(ctx, "carrier", prefix.target))),
                 });
@@ -2659,10 +2667,9 @@ fn try_decode_standard_population(
     let mut procedural_supports = HashMap::<u32, SurfaceId>::new();
     let mut extrusion_definitions = HashMap::new();
     for (index, surface, tag, procedure) in procedural_surface_plans {
-        let procedural_id = ProceduralSurfaceId::compose(
+        let procedural_id = admitted!(crate::resource::compose_index_id(ctx,
             &cadmpeg_ir::identity_namespace!("catia", "standard", "procedural-surf"),
-            index,
-        );
+            index, ProceduralSurfaceId::mint, "catia_standard_procedural_surface_id"));
         let record_bounds = match &procedure {
             StandardSurfaceProcedure::Extrusion(extrusion) => {
                 Some(parameter_record_bounds(extrusion.parameter_bounds))
@@ -2698,16 +2705,17 @@ fn try_decode_standard_population(
                     crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(support) => {
                         let source_object = admitted!(cgm_source(ctx, "surface", support_object_id));
                         if let Some(id) = procedural_supports.get(&support_object_id) {
-                            id.clone()
+                            admitted!(crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint,
+                                "catia_standard_existing_support_id"))
                         } else {
-                            let id = SurfaceId::compose(
+                            let id = admitted!(crate::resource::compose_u32_id(ctx,
                                 &cadmpeg_ir::identity_namespace!(
                                     "catia",
                                     "standard",
                                     "procedural-support"
                                 ),
-                                support_object_id,
-                            );
+                                support_object_id, SurfaceId::mint,
+                                "catia_standard_procedural_support_id"));
                             admitted!(annotate(
                                 ctx,
                                 &mut annotations,
@@ -2720,24 +2728,29 @@ fn try_decode_standard_population(
                                 return Some(Err(error));
                             }
                             surfaces.push(Surface {
-                                id: id.clone(),
+                                id: admitted!(crate::resource::copy_id(ctx, id.as_str(),
+                                    SurfaceId::mint, "catia_standard_support_record_id")),
                                 geometry: support,
                                 source_object: Some(source_object),
                             });
-                            procedural_supports.insert(support_object_id, id.clone());
+                            admitted!(crate::resource::insert_map(ctx, &mut procedural_supports,
+                                support_object_id,
+                                admitted!(crate::resource::copy_id(ctx, id.as_str(),
+                                    SurfaceId::mint, "catia_standard_support_map_id")),
+                                "catia_standard_procedural_supports"));
                             id
                         }
                     }
                     crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(extrusion) => {
                         let record_bounds = parameter_record_bounds(extrusion.parameter_bounds);
-                        let support_id = SurfaceId::compose(
+                        let support_id = admitted!(crate::resource::compose_u32_id(ctx,
                             &cadmpeg_ir::identity_namespace!(
                                 "catia",
                                 "standard",
                                 "procedural-support"
                             ),
-                            support_object_id,
-                        );
+                            support_object_id, SurfaceId::mint,
+                            "catia_standard_procedural_support_id"));
                         admitted!(annotate(
                             ctx,
                             &mut annotations,
@@ -2750,7 +2763,8 @@ fn try_decode_standard_population(
                             return Some(Err(error));
                         }
                         surfaces.push(Surface {
-                            id: support_id.clone(),
+                            id: admitted!(crate::resource::copy_id(ctx, support_id.as_str(),
+                                SurfaceId::mint, "catia_standard_support_record_id")),
                             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                                 record: None,
                             }),
@@ -2769,14 +2783,14 @@ fn try_decode_standard_population(
                             Ok(definition) => definition,
                             Err(error) => return Some(Err(error)),
                         };
-                        let construction = ProceduralSurfaceId::compose(
+                        let construction = admitted!(crate::resource::compose_u32_id(ctx,
                             &cadmpeg_ir::identity_namespace!(
                                 "catia",
                                 "standard",
                                 "procedural-support-definition"
                             ),
-                            support_object_id,
-                        );
+                            support_object_id, ProceduralSurfaceId::mint,
+                            "catia_standard_support_construction_id"));
                         let attached = if let Some(surface) =
                             surfaces.iter_mut().find(|surface| surface.id == support_id)
                         {
@@ -2789,7 +2803,9 @@ fn try_decode_standard_population(
                             match cache {
                                 SurfaceGeometry::Solved(cache) => {
                                     surface.geometry = SurfaceGeometry::Procedural {
-                                        construction: construction.clone(),
+                                        construction: admitted!(crate::resource::copy_id(ctx,
+                                            construction.as_str(), ProceduralSurfaceId::mint,
+                                            "catia_standard_support_construction_ref")),
                                         cache: Some(cache),
                                     };
                                     true
@@ -2812,7 +2828,11 @@ fn try_decode_standard_population(
                                 Some(record_bounds),
                             ));
                         }
-                        procedural_supports.insert(support_object_id, support_id.clone());
+                        admitted!(crate::resource::insert_map(ctx, &mut procedural_supports,
+                            support_object_id,
+                            admitted!(crate::resource::copy_id(ctx, support_id.as_str(),
+                                SurfaceId::mint, "catia_standard_support_map_id")),
+                            "catia_standard_procedural_supports"));
                         support_id
                     }
                 };
@@ -2856,10 +2876,9 @@ fn try_decode_standard_population(
                 )
             }
             StandardSurfaceProcedure::Revolution(revolution) => {
-                let directrix_id = CurveId::compose(
+                let directrix_id = admitted!(crate::resource::compose_u32_id(ctx,
                     &cadmpeg_ir::identity_namespace!("catia", "standard", "revolution-profile"),
-                    tag,
-                );
+                    tag, CurveId::mint, "catia_standard_revolution_profile_id"));
                 admitted!(annotate(
                     ctx,
                     &mut annotations,
@@ -2873,9 +2892,10 @@ fn try_decode_standard_population(
                     return Some(Err(error));
                 }
                 ir.model.curves.push(Curve {
-                    id: directrix_id.clone(),
+                    id: admitted!(crate::resource::copy_id(ctx, directrix_id.as_str(),
+                        CurveId::mint, "catia_standard_revolution_curve_record_id")),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        revolution.directrix.clone(),
+                        revolution.directrix,
                     )),
                     source_object: None,
                 });
@@ -2888,35 +2908,40 @@ fn try_decode_standard_population(
             }
         };
         let cacheless = matches!(&definition, ProceduralSurfaceDefinition::RollingBallJet(_));
-        let attached = surfaces
-            .iter_mut()
-            .find(|candidate| candidate.id == surface)
-            .is_some_and(|surface_record| {
-                if cacheless {
-                    surface_record.geometry = SurfaceGeometry::Procedural {
-                        construction: procedural_id.clone(),
-                        cache: None,
-                    };
-                    return true;
-                }
+        let attached = if let Some(surface_record) = surfaces.iter_mut()
+            .find(|candidate| candidate.id == surface) {
+            if cacheless {
+                surface_record.geometry = SurfaceGeometry::Procedural {
+                    construction: admitted!(crate::resource::copy_id(ctx,
+                        procedural_id.as_str(), ProceduralSurfaceId::mint,
+                        "catia_standard_procedural_surface_ref")),
+                    cache: None,
+                };
+                true
+            } else if matches!(surface_record.geometry, SurfaceGeometry::Solved(_)) {
+                let construction = admitted!(crate::resource::copy_id(ctx,
+                    procedural_id.as_str(), ProceduralSurfaceId::mint,
+                    "catia_standard_procedural_surface_ref"));
                 let cache = std::mem::replace(
                     &mut surface_record.geometry,
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 );
-                match cache {
-                    SurfaceGeometry::Solved(cache) => {
-                        surface_record.geometry = SurfaceGeometry::Procedural {
-                            construction: procedural_id.clone(),
-                            cache: Some(cache),
-                        };
-                        true
-                    }
-                    cache @ SurfaceGeometry::Procedural { .. } => {
-                        surface_record.geometry = cache;
-                        false
-                    }
+                if let SurfaceGeometry::Solved(cache) = cache {
+                    surface_record.geometry = SurfaceGeometry::Procedural {
+                        construction,
+                        cache: Some(cache),
+                    };
+                    true
+                } else {
+                    surface_record.geometry = cache;
+                    false
                 }
-            });
+            } else {
+                false
+            }
+        } else {
+            false
+        };
         admitted!(annotate(
             ctx,
             &mut annotations,
@@ -2958,10 +2983,9 @@ fn try_decode_standard_population(
     };
 
     for (i, p) in points.iter().enumerate() {
-        let point_id = PointId::compose(
+        let point_id = admitted!(crate::resource::compose_index_id(ctx,
             &cadmpeg_ir::identity_namespace!("catia", "standard", "pt"),
-            i,
-        );
+            i, PointId::mint, "catia_standard_point_id"));
         admitted!(annotate(
             ctx,
             &mut annotations,
@@ -2978,14 +3002,14 @@ fn try_decode_standard_population(
             None => None,
         };
         ir.model.points.push(Point::new(
-            point_id.clone(),
+            admitted!(crate::resource::copy_id(ctx, point_id.as_str(), PointId::mint,
+                "catia_standard_point_record_id")),
             *p,
             source_object,
         ));
-        let vertex_id = VertexId::compose(
+        let vertex_id = admitted!(crate::resource::compose_index_id(ctx,
             &cadmpeg_ir::identity_namespace!("catia", "standard", "v"),
-            i,
-        );
+            i, VertexId::mint, "catia_standard_vertex_id"));
         admitted!(annotate(
             ctx,
             &mut annotations,
