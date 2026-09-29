@@ -161,7 +161,8 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
     use crate::history::parameters::{
         definite_parameter_reference, expression_identifier_tokens, ExpressionIdentifier,
     };
-    let tokens = expression_identifier_tokens("\"\" + Width").expect("closed quotes");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let tokens = expression_identifier_tokens(&ctx, "\"\" + Width").unwrap().expect("closed quotes");
     assert_eq!(
         tokens
             .iter()
@@ -171,7 +172,7 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
     );
     assert!(!tokens.iter().any(definite_parameter_reference));
 
-    let named = expression_identifier_tokens("\"D1@Sketch1\"").expect("closed quotes");
+    let named = expression_identifier_tokens(&ctx, "\"D1@Sketch1\"").unwrap().expect("closed quotes");
     assert_eq!(
         named
             .iter()
@@ -225,8 +226,8 @@ fn numeric_literals_do_not_bind_numeric_parameter_names() {
     );
     assert!(!unquoted_expression_identifier("4"));
     assert_eq!(
-        rewrite_parameter_expression("Width * 2", &HashMap::from([("Width".into(), "4".into())]),)
-            .as_deref(),
+        rewrite_parameter_expression(&cadmpeg_test_support::service_decode_context(), "Width * 2", &HashMap::from([("Width".into(), "4".into())]),)
+            .unwrap().as_deref(),
         Some("\"4\" * 2")
     );
 }

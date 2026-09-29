@@ -82,7 +82,7 @@ pub(crate) fn write_semantic_with_records(
     crate::history::write::apply_feature_name_changes(
         &mut normalized.model.parameters,
         &feature_name_changes,
-    );
+    )?;
     let ir = &normalized;
     let feature_input_renames = crate::history::write::prepare_features_for_write(ir, &mut native)?;
     crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;

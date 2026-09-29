@@ -71,7 +71,7 @@ pub(crate) fn native_parameters_match_source(
 pub(crate) fn apply_feature_name_changes(
     parameters: &mut [DesignParameter],
     changes: &HashMap<FeatureId, (String, String)>,
-) {
+) -> Result<(), CodecError> {
     let owners = parameters
         .iter()
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
@@ -94,9 +94,10 @@ pub(crate) fn apply_feature_name_changes(
             .filter_map(|dependency| owners.get(dependency))
             .filter_map(|owner| owner.as_ref().and_then(|owner| changes.get(owner)))
             .collect::<Vec<_>>();
-        let aliases = expression_identifier_tokens(&parameter.expression)
-            .into_iter()
-            .flatten()
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(parameter.expression.as_bytes(), &arena, &DecodePolicy::service())?;
+        let aliases = expression_identifier_tokens(&ctx, &parameter.expression)?
+            .unwrap_or_default().into_iter()
             .filter_map(|token| {
                 dependency_changes
                     .iter()
@@ -108,10 +109,11 @@ pub(crate) fn apply_feature_name_changes(
                     })
             })
             .collect::<HashMap<_, _>>();
-        if let Some(rewritten) = rewrite_parameter_expression(&parameter.expression, &aliases) {
+        if let Some(rewritten) = rewrite_parameter_expression(&ctx, &parameter.expression, &aliases)? {
             parameter.expression = rewritten;
         }
     }
+    Ok(())
 }
 
 /// Resolve neutral/native feature edit authority and update the write history.

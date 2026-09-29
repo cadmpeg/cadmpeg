@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native Keywords parameter projection and equation evaluation.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use crate::classification::{classify, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureHistory};
@@ -103,41 +103,38 @@ pub(crate) fn project_parameters(ctx: &DecodeContext<'_>, histories: &[FeatureHi
     order_parameters_by_dependencies(ctx, &mut parameters)?;
     evaluate_parameter_expressions(ctx, &mut parameters, &feature_names, &global_owners)?;
     for parameter in parameters.iter_mut().filter(|parameter| parameter.value.is_none()) {
-        parameter.value = text_parameter_literal(&parameter.name, &parameter.expression);
+        parameter.value = text_parameter_literal(ctx, &parameter.name, &parameter.expression)?;
     }
     Ok(parameters)
 }
 
-fn text_parameter_literal(name: &str, expression: &str) -> Option<ParameterValue> {
-    bare_text_parameter_literal(expression)
-        .or_else(|| formatted_text_dimension_literal(name, expression))
+fn text_parameter_literal(ctx: &DecodeContext<'_>, name: &str, expression: &str) -> Result<Option<ParameterValue>, CodecError> {
+    match bare_text_parameter_literal(ctx, expression)? {
+        Some(value) => Ok(Some(value)),
+        None => formatted_text_dimension_literal(ctx, name, expression),
+    }
 }
 
-fn bare_text_parameter_literal(expression: &str) -> Option<ParameterValue> {
+fn bare_text_parameter_literal(ctx: &DecodeContext<'_>, expression: &str) -> Result<Option<ParameterValue>, CodecError> {
+    ctx.charge_work(expression.len() as u64, "parse SLDPRT text parameter literal")?;
     let expression = expression.trim();
-    if expression.is_empty()
-        || expression.chars().any(|character| {
-            matches!(
-                character,
-                '+' | '-' | '*' | '/' | '^' | '=' | '<' | '>' | '(' | ')' | ','
-            )
-        })
-    {
-        return None;
-    }
-    let Ok(identifiers) = expression_identifier_tokens(expression) else {
-        return None;
-    };
-    if identifiers
-        .iter()
-        .any(|identifier| definite_parameter_reference(identifier))
-    {
-        return None;
-    }
-    Some(ParameterValue::String(expression.to_owned()))
+    if expression.is_empty() || expression.chars().any(|character| {
+        matches!(character, '+' | '-' | '*' | '/' | '^' | '=' | '<' | '>' | '(' | ')' | ',')
+    }) { return Ok(None); }
+    let Some(identifiers) = expression_identifier_tokens(ctx, expression)? else { return Ok(None); };
+    if identifiers.iter().any(definite_parameter_reference) { return Ok(None); }
+    Ok(Some(ParameterValue::String(ctx.format_retained(format_args!("{expression}"), "retain SLDPRT text parameter literal")?)))
 }
 
-fn formatted_text_dimension_literal(name: &str, expression: &str) -> Option<ParameterValue> {
+fn formatted_text_dimension_literal(ctx: &DecodeContext<'_>, name: &str, expression: &str) -> Result<Option<ParameterValue>, CodecError> {
+    ctx.charge_work(name.len() as u64, "parse SLDPRT formatted parameter name")?;
+    ctx.charge_work(expression.len() as u64, "parse SLDPRT formatted parameter literal")?;
+    formatted_text_dimension_value(name, expression).map(|value| ctx.format_retained(
+        format_args!("{value}"), "retain SLDPRT formatted parameter literal",
+    ).map(ParameterValue::String)).transpose()
+}
+
+fn formatted_text_dimension_value<'a>(name: &str, expression: &'a str) -> Option<&'a str> {
     let suffix = name.strip_prefix("TXD")?;
     if suffix.is_empty() || !suffix.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
@@ -158,7 +155,7 @@ fn formatted_text_dimension_literal(name: &str, expression: &str) -> Option<Para
         tags += 1;
         rest = &after_start[end + 1..];
     }
-    (tags > 0 && !rest.contains('>')).then(|| ParameterValue::String(expression.to_owned()))
+    (tags > 0 && !rest.contains('>')).then_some(expression)
 }
 
 /// Features whose parameters are document-global equation-manager values.
@@ -340,7 +337,7 @@ fn project_parameter_dependencies(
 ) -> Result<cadmpeg_ir::features::DistinctMembers<ParameterId>, CodecError> {
     const OPERATION: &str = "collect SLDPRT parameter dependencies";
     let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
-    let Ok(tokens) = expression_identifier_tokens(&parameter.expression) else { return Ok(dependencies); };
+    let Some(tokens) = expression_identifier_tokens(ctx, &parameter.expression)? else { return Ok(dependencies); };
     for token in tokens.iter().filter(|token| !token.is_syntax()) {
         ctx.charge_work(1, OPERATION)?;
         let Some(dependency) = aliases.get(token.value()).and_then(Option::as_ref) else { continue; };
@@ -609,9 +606,9 @@ pub(crate) fn parameters_with_unresolved_references(
     for parameter in parameters {
         ctx.charge_work(1, "check SLDPRT parameter references")?;
         let aliases = aliases.for_owner(parameter.owner.as_ref());
-        let unresolved = match expression_identifier_tokens(&parameter.expression) {
-            Err(_) => true,
-            Ok(parsed) => parsed.iter().filter(|identifier| !identifier.is_syntax())
+        let unresolved = match expression_identifier_tokens(ctx, &parameter.expression)? {
+            None => true,
+            Some(parsed) => parsed.iter().filter(|identifier| !identifier.is_syntax())
                 .filter(|identifier| definite_parameter_reference(identifier))
                 .any(|identifier| aliases.get(identifier.value()).and_then(Option::as_ref)
                     .is_none_or(|dependency| dependency == &parameter.id)),
@@ -634,8 +631,10 @@ pub(crate) fn parameters_with_unevaluable_expressions(
         for values in &mut states {
             ctx.charge_work(1, "check SLDPRT parameter evaluation")?;
             let own = values.remove_entry(&parameter.id);
-            let evaluated = ParameterExpressionParser::new(ctx, &parameter.expression, aliases, values).parse()?
-                .or_else(|| text_parameter_literal(&parameter.name, &parameter.expression));
+            let evaluated = match ParameterExpressionParser::new(ctx, &parameter.expression, aliases, values).parse()? {
+                Some(value) => Some(value),
+                None => text_parameter_literal(ctx, &parameter.name, &parameter.expression)?,
+            };
             if let Some((id, value)) = own {
                 values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("restore SLDPRT parameter evaluation value", u64::MAX - 1, u64::MAX))?;
                 values.insert(id, value);
@@ -736,7 +735,7 @@ fn equivalent_parameter_values(left: &ParameterValue, right: &ParameterValue) ->
     }
 }
 
-pub(super) fn definite_parameter_reference(identifier: &ExpressionIdentifier<'_>) -> bool {
+pub(super) fn definite_parameter_reference(identifier: &ExpressionIdentifier<'_, '_>) -> bool {
     identifier.is_quoted()
         || identifier.value().contains('@')
         || identifier.value().strip_prefix('D').is_some_and(|ordinal| {
@@ -745,46 +744,46 @@ pub(super) fn definite_parameter_reference(identifier: &ExpressionIdentifier<'_>
 }
 
 #[cfg(test)]
-fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
-    expression_identifier_tokens(expression)
-        .into_iter()
-        .flatten()
-        .filter(|token| !token.is_syntax())
-        .map(|token| token.value().to_owned())
+fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    expression_identifier_tokens(&ctx, expression).unwrap().unwrap_or_default().into_iter()
+        .filter(|token| !token.is_syntax()).map(|token| token.value().to_owned()).collect::<Vec<_>>().into_iter()
 }
 
-/// An expression whose quoted identifier is never closed.
-#[derive(Debug)]
-pub(in crate::history) struct UnclosedQuote;
+enum ParameterTokenText<'a, 'ctx> {
+    Borrowed(&'a str),
+    Owned { value: String, _reservation: ScopedReservation<'ctx> },
+}
+
+impl ParameterTokenText<'_, '_> {
+    fn as_str(&self) -> &str {
+        match self { Self::Borrowed(value) => value, Self::Owned { value, .. } => value }
+    }
+}
 
 /// One identifier token of the expression it borrows from.
-pub(super) struct ExpressionIdentifier<'a> {
+pub(super) struct ExpressionIdentifier<'a, 'ctx> {
     raw: &'a str,
     following: &'a str,
-    value: std::borrow::Cow<'a, str>,
+    value: ParameterTokenText<'a, 'ctx>,
     quoted: bool,
 }
 
-impl<'a> ExpressionIdentifier<'a> {
+impl<'a, 'ctx> ExpressionIdentifier<'a, 'ctx> {
     /// The token spanning `start..end`, which must be a quoted run around a nonempty name.
-    fn quoted(expression: &'a str, start: usize, end: usize) -> Option<Self> {
-        let raw = expression.get(start..end)?;
-        let following = expression.get(end..)?;
-        let inner = raw
-            .strip_prefix('"')
-            .and_then(|inner| inner.strip_suffix('"'))
-            .filter(|inner| !inner.is_empty())?;
+    fn quoted(ctx: &'ctx DecodeContext<'_>, expression: &'a str, start: usize, end: usize) -> Result<Option<Self>, CodecError> {
+        let Some(raw) = expression.get(start..end) else { return Ok(None); };
+        let Some(following) = expression.get(end..) else { return Ok(None); };
+        let Some(inner) = raw.strip_prefix('"').and_then(|inner| inner.strip_suffix('"')).filter(|inner| !inner.is_empty()) else { return Ok(None); };
+        ctx.charge_work(inner.len() as u64, "unescape SLDPRT parameter identifier")?;
         let value = if inner.contains("\"\"") {
-            std::borrow::Cow::Owned(inner.replace("\"\"", "\""))
-        } else {
-            std::borrow::Cow::Borrowed(inner)
-        };
-        Some(Self {
-            raw,
-            following,
-            value,
-            quoted: true,
-        })
+            let (mut value, reservation) = ctx.reserve_scoped_string(inner.len(), "unescape SLDPRT parameter identifier")?;
+            let mut segments = inner.split("\"\"");
+            if let Some(first) = segments.next() { value.push_str(first); }
+            for segment in segments { value.push('"'); value.push_str(segment); }
+            ParameterTokenText::Owned { value, _reservation: reservation }
+        } else { ParameterTokenText::Borrowed(inner) };
+        Ok(Some(Self { raw, following, value, quoted: true }))
     }
 
     /// The unquoted token spanning `start..end`.
@@ -793,14 +792,14 @@ impl<'a> ExpressionIdentifier<'a> {
         Some(Self {
             raw,
             following: expression.get(end..)?,
-            value: std::borrow::Cow::Borrowed(raw),
+            value: ParameterTokenText::Borrowed(raw),
             quoted: false,
         })
     }
 
     /// The identifier text, with the quotes and doubled quotes resolved.
     pub(super) fn value(&self) -> &str {
-        &self.value
+        self.value.as_str()
     }
 
     /// Whether the source spelled this identifier in quotes.
@@ -843,9 +842,10 @@ impl<'a> ExpressionIdentifier<'a> {
     }
 }
 
-pub(super) fn expression_identifier_tokens(
-    expression: &str,
-) -> Result<Vec<ExpressionIdentifier<'_>>, UnclosedQuote> {
+pub(super) fn expression_identifier_tokens<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>, expression: &'a str,
+) -> Result<Option<Vec<ExpressionIdentifier<'a, 'ctx>>>, CodecError> {
+    ctx.charge_work(expression.len() as u64, "scan SLDPRT parameter identifiers")?;
     let mut identifiers = Vec::new();
     let mut at = 0;
     while let Some(character) = expression[at..].chars().next() {
@@ -866,13 +866,14 @@ pub(super) fn expression_identifier_tokens(
                 }
             }
             if closed {
-                if let Some(identifier) = ExpressionIdentifier::quoted(expression, at, cursor) {
+                if let Some(identifier) = ExpressionIdentifier::quoted(ctx, expression, at, cursor)? {
+                    ctx.reserve_collection_vec(&mut identifiers, 1, "collect SLDPRT parameter identifiers")?;
                     identifiers.push(identifier);
                 }
                 at = cursor;
                 continue;
             }
-            return Err(UnclosedQuote);
+            return Ok(None);
         }
 
         if character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.') {
@@ -883,6 +884,7 @@ pub(super) fn expression_identifier_tokens(
                 })
                 .unwrap_or(rest.len());
             if let Some(identifier) = ExpressionIdentifier::plain(expression, at, at + end) {
+                ctx.reserve_collection_vec(&mut identifiers, 1, "collect SLDPRT parameter identifiers")?;
                 identifiers.push(identifier);
             }
             at += end;
@@ -890,5 +892,5 @@ pub(super) fn expression_identifier_tokens(
             at += character.len_utf8();
         }
     }
-    Ok(identifiers)
+    Ok(Some(identifiers))
 }
