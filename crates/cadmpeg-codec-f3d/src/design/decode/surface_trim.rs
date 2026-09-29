@@ -233,7 +233,7 @@ pub(crate) fn decode_surface_trim_operations(
         })?;
         out.push(operation);
     }
-    out.sort_by(|left, right| left.id.cmp(&right.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |left, right| left.id.cmp(&right.id))?;
     Ok(out)
 }
 

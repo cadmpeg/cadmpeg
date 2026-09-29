@@ -235,11 +235,11 @@ fn exact_rectangular_pattern_instances(
             }
         }
     }
-    runs.sort_by(|a, b| {
+    if let Err(error) = crate::design::sort::sort_by(Some(ctx), &mut runs[..], |a, b| {
         a.iter()
             .map(|(_, offset)| *offset)
             .cmp(b.iter().map(|(_, offset)| *offset))
-    });
+    }) { return Some(Err(error)); }
     runs.dedup_by(|left, right| left == right);
     let [run] = runs.as_slice() else {
         return None;
@@ -501,13 +501,13 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             angle_candidates.push((angle, *record_index, scalar.value_offset));
         }
     }
-    angle_candidates.sort_by(|left, right| {
+    if let Err(error) = crate::design::sort::sort_by(Some(ctx), &mut angle_candidates[..], |left, right| {
         left.0
             .get()
             .total_cmp(&right.0.get())
             .then_with(|| left.1.cmp(&right.1))
             .then_with(|| left.2.cmp(&right.2))
-    });
+    }) { return Some(Err(error)); }
     angle_candidates.dedup();
     let [(angle, angle_record_index, angle_offset)] = angle_candidates.as_slice() else {
         return None;

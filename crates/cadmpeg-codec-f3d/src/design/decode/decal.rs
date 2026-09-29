@@ -99,7 +99,7 @@ pub(crate) fn project_decal_images(
             })?;
             faces.push(copied);
         }
-        faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        crate::design::sort::sort_by(Some(ctx), &mut faces[..], |a, b| a.as_str().cmp(b.as_str()))?;
         faces.dedup();
         if faces.is_empty() {
             continue;
@@ -137,7 +137,7 @@ pub(crate) fn project_decal_images(
         })?;
         assets.push(asset);
     }
-    assets.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut assets[..], |a, b| a.id.cmp(&b.id))?;
     assets.dedup_by(|a, b| a.id == b.id);
     Ok(assets)
 }

@@ -504,7 +504,7 @@ pub(crate) fn bind_extrude_profile_selections(
                 push_profile_item(resolution.ctx, &mut matching_groups, group,
                     "f3d extrude matching selection group")?;
             }
-            matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
+            crate::design::sort::sort_by_key(resolution.ctx, &mut matching_groups[..], |group| group.scope_reference_ordinal)?;
             let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
                 definition
             else {
@@ -789,7 +789,7 @@ fn historical_face_profile_selection(
             push_profile_item(ctx, &mut group_members, member,
                 "f3d historical profile group member")?;
         }
-        group_members.sort_by_key(|member| member.group_member_ordinal);
+        crate::design::sort::sort_by_key(ctx, &mut group_members[..], |member| member.group_member_ordinal)?;
         if group_members.len() != group.members().len()
             || group_members
                 .iter()
@@ -1251,7 +1251,7 @@ pub(super) fn resolved_extrude_profile_selection(
         push_profile_item(resolution.ctx, &mut selection_members, member,
             "f3d extrude selection member")?;
     }
-    selection_members.sort_by_key(|member| member.group_member_ordinal);
+    crate::design::sort::sort_by_key(resolution.ctx, &mut selection_members[..], |member| member.group_member_ordinal)?;
     let exact_member_run = selection_members.len() == group.members().len()
         && selection_members
             .iter()
@@ -1594,7 +1594,7 @@ fn resolved_spatial_extrude_profile_selection(
         push_profile_item(resolution.ctx, &mut group_members, member,
             "f3d spatial profile group member")?;
     }
-    group_members.sort_by_key(|member| member.group_member_ordinal);
+    crate::design::sort::sort_by_key(resolution.ctx, &mut group_members[..], |member| member.group_member_ordinal)?;
     let exact_member_run = group_members.len() == group.members().len()
         && group_members
             .iter()

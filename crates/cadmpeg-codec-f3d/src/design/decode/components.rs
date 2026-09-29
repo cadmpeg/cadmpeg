@@ -40,7 +40,7 @@ pub(crate) fn decode_component_occurrences(
             at = next_at;
         }
     }
-    occurrences.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut occurrences[..], |a, b| a.id.cmp(&b.id))?;
     occurrences.dedup_by(|left, right| left.id == right.id);
     Ok(occurrences)
 }

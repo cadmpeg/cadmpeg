@@ -2582,7 +2582,7 @@ pub(super) fn project_fixed_fillet_with_corners(
         }) {
         push_edge_item(ctx, &mut scope_groups, group, "f3d fixed fillet scope group")?;
     }
-    scope_groups.sort_by_key(|group| group.scope_reference_ordinal);
+    crate::design::sort::sort_by_key(ctx, &mut scope_groups[..], |group| group.scope_reference_ordinal)?;
     let mut complete_edge_groups = Vec::new();
     for group in scope_groups.iter().copied().filter(|group| {
             group

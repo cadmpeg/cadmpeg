@@ -114,7 +114,7 @@ pub(crate) fn project_canvas_images(
                 },
             ));
     }
-    assets.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut assets[..], |a, b| a.id.cmp(&b.id))?;
     Ok(assets)
 }
 

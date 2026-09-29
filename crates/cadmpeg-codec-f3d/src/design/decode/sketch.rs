@@ -479,7 +479,7 @@ pub(crate) fn decode_sketch_placements(
             .get(&(stream, placement.entity_id.suffix()))
             .copied();
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -874,7 +874,7 @@ fn finish_persistent_references(
     ctx: &DecodeContext<'_>,
     mut out: Vec<(usize, PersistentReference)>,
 ) -> Result<Vec<PersistentReference>, CodecError> {
-    out.sort_by_key(|(entry_ordinal, reference)| (*entry_ordinal, reference.byte_offset));
+    crate::design::sort::sort_by_key(Some(ctx), &mut out[..], |(entry_ordinal, reference)| (*entry_ordinal, reference.byte_offset))?;
     ctx.charge_collection_items(out.len() as u64, "f3d persistent reference output")?;
     let mut references = Vec::new();
     references.try_reserve_exact(out.len()).map_err(|_| {
@@ -1452,7 +1452,7 @@ pub(crate) fn decode_entity_headers(
             })?;
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -1604,7 +1604,7 @@ fn decode_headers_for_indices<'a>(
         let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
         decode_headers_for_indices_from_stream(ctx, &entry.name, &scope, bytes, wanted, &mut out)?;
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -3603,7 +3603,7 @@ pub(crate) fn decode_sketch_surfaces(
             });
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 

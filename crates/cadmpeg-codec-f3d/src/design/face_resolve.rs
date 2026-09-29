@@ -283,7 +283,7 @@ pub(super) fn resolved_direct_face_selection(
         }) {
         push_face_item(ctx, &mut matching, operand, "f3d direct face operand")?;
     }
-    matching.sort_by_key(|operand| operand.scope_reference_ordinal);
+    crate::design::sort::sort_by_key(ctx, &mut matching[..], |operand| operand.scope_reference_ordinal)?;
     if matching.is_empty()
         || matching
             .iter()
@@ -292,13 +292,13 @@ pub(super) fn resolved_direct_face_selection(
         return Ok(None);
     }
     let Some(mut faces) = resolved_face_operand(ctx, matching[0])? else { return Ok(None); };
-    faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    crate::design::sort::sort_by(ctx, &mut faces[..], |left, right| left.as_str().cmp(right.as_str()))?;
     if faces.is_empty() {
         return Ok(None);
     }
     for operand in &matching[1..] {
         let Some(mut candidate) = resolved_face_operand(ctx, operand)? else { return Ok(None); };
-        candidate.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        crate::design::sort::sort_by(ctx, &mut candidate[..], |left, right| left.as_str().cmp(right.as_str()))?;
         if candidate != faces {
             return Ok(None);
         }
@@ -463,7 +463,7 @@ pub(crate) fn extrude_profile_group_roots<'a>(
         }) {
         push_face_item(ctx, &mut profile_groups, group, "f3d Extrude profile group")?;
     }
-    profile_groups.sort_by_key(|group| group.scope_reference_ordinal);
+    crate::design::sort::sort_by_key(ctx, &mut profile_groups[..], |group| group.scope_reference_ordinal)?;
     if profile_groups.windows(2).any(|groups| {
         groups[0].scope_reference_ordinal == groups[1].scope_reference_ordinal
             || groups[0].record_index == groups[1].record_index
@@ -1442,9 +1442,9 @@ fn explicit_bounded_face_candidates(
         push_face_item(ctx, &mut ordered_lanes, lane, "f3d explicit bounded face ordered lane")?;
     }
     for lane in &mut ordered_lanes {
-        lane.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        crate::design::sort::sort_by(ctx, &mut lane[..], |left, right| left.as_str().cmp(right.as_str()))?;
     }
-    ordered_lanes.sort_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
+    crate::design::sort::sort_by(ctx, &mut ordered_lanes[..], |left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)))?;
     let [lane, next @ ..] = ordered_lanes.as_slice() else {
         return Ok(None);
     };
@@ -1524,7 +1524,7 @@ pub(crate) fn legacy_face_recipe_reference_candidates(
         let face = copy_face_id(ctx, face, "f3d legacy face candidate id")?;
         push_face_item(ctx, &mut candidates, face, "f3d legacy face candidate")?;
     }
-    candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    crate::design::sort::sort_by(ctx, &mut candidates[..], |left, right| left.as_str().cmp(right.as_str()))?;
     candidates.dedup();
     if !operand.candidate_faces.is_empty() {
         let mut active = HashSet::new();
@@ -1990,7 +1990,7 @@ pub(crate) fn historical_face_operand_candidates(
             let candidate = copy_face_id(ctx, candidate, "f3d historical face candidate id")?;
             push_face_item(ctx, &mut referenced, candidate, "f3d historical face candidate")?;
         }
-        referenced.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        crate::design::sort::sort_by(ctx, &mut referenced[..], |left, right| left.as_str().cmp(right.as_str()))?;
         referenced.dedup();
         if !referenced.is_empty() {
             return Ok(referenced);
@@ -2043,7 +2043,7 @@ pub(crate) fn nested_bounded_face_history_candidates(
         let candidate = copy_face_id(ctx, candidate, "f3d nested bounded face candidate id")?;
         push_face_item(ctx, &mut candidates, candidate, "f3d nested bounded face candidate")?;
     }
-    candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    crate::design::sort::sort_by(ctx, &mut candidates[..], |left, right| left.as_str().cmp(right.as_str()))?;
     candidates.dedup();
     Ok((!candidates.is_empty()).then_some(candidates))
 }
@@ -2201,7 +2201,7 @@ pub(crate) fn bind_extrude_start_planes(
                         "f3d start plane operand candidate")?;
                 }
             }
-            candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+            crate::design::sort::sort_by(ctx, &mut candidates[..], |left, right| left.as_str().cmp(right.as_str()))?;
             candidates.dedup();
             if candidates.is_empty() {
                 if let Some(geometry_candidates) = extrude_start_plane_geometry_candidates(

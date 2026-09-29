@@ -239,7 +239,7 @@ pub(crate) fn decode_body_bounds(
         })?;
         out.push(record);
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -378,7 +378,7 @@ pub(super) fn decode_stream(
             out.push(recipe);
         }
     }
-    out.sort_by_key(|recipe| recipe.record_index.map(|index| index.value));
+    crate::design::sort::sort_by_key(Some(ctx), &mut out[..], |recipe| recipe.record_index.map(|index| index.value))?;
     Ok(())
 }
 
@@ -1008,7 +1008,7 @@ pub(crate) fn design_model_blob_names(
             ctx.refuse_codec_limit("f3d archive BREP names allocation", 0, 1)
         })?;
         names.extend(archive_counts.into_keys());
-        names.sort();
+        crate::design::sort::sort_by(Some(ctx), &mut names[..], Ord::cmp)?;
         return Ok(names);
     }
     if carrier_counts != archive_counts {
@@ -1016,7 +1016,7 @@ pub(crate) fn design_model_blob_names(
             "Design body-map carriers do not classify every binary BREP entry exactly once",
         ));
     }
-    model_names.sort();
+    crate::design::sort::sort_by(Some(ctx), &mut model_names[..], Ord::cmp)?;
     model_names.dedup();
     Ok(model_names)
 }
@@ -1213,7 +1213,7 @@ pub(crate) fn decode_design_body_bindings(
             }
         }
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -1241,7 +1241,7 @@ pub(crate) fn bind_body_bounds(
             })?;
             matches.push(binding);
         }
-        matches.sort_by_key(|binding| binding.asm_body_key_offset());
+        crate::design::sort::sort_by_key(Some(ctx), &mut matches[..], |binding| binding.asm_body_key_offset())?;
         let mut ids = Vec::new();
         for binding in matches {
             let id = copy_body_map_name(ctx, &binding.id, "f3d body bounds binding identifier")?;
@@ -1367,7 +1367,7 @@ fn typed_browser_node_hidden_flags(
             })?;
             linked.push(node);
         }
-        linked.sort_by_key(|node| node.record_index);
+        crate::design::sort::sort_by_key(Some(ctx), &mut linked[..], |node| node.record_index)?;
         linked.dedup_by_key(|node| node.record_index);
         let selected = match linked.as_slice() {
             [node] => Some(*node),
