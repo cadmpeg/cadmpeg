@@ -38,6 +38,34 @@ use crate::resolved_features::holes::unclaimed_seeded_hole_candidates;
 use crate::resolved_features::holes::HoleTopology;
 
 #[test]
+fn generated_hole_axis_route_refuses_feature_index_collection() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = project_generated_hole_axes(
+        &ctx, &mut [], &[native_history()], &[], &[], &[], &[],
+    ).expect_err("native feature index requires collection admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "index SLDPRT generated hole features"));
+}
+
+#[test]
+fn generated_hole_axis_route_refuses_feature_index_work() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = project_generated_hole_axes(
+        &ctx, &mut [], &[native_history()], &[], &[], &[], &[],
+    ).expect_err("native feature index requires work admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "index SLDPRT generated hole features"));
+}
+
+#[test]
 fn hole_topology_axes_refuse_unresolved_collection_growth() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -392,14 +420,17 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         ),
     ];
     let mut hole = model_hole();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     project_generated_hole_axes(
+        &ctx,
         std::slice::from_mut(&mut hole),
         &[native_history()],
         &[lane()],
         &identities,
         &faces,
         &surfaces,
-    );
+    ).unwrap();
     let updated_hole_evaluation = &mut hole.evaluation;
     let mut updated_hole_definition = updated_hole_evaluation.definition().clone();
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
@@ -416,13 +447,14 @@ fn generated_face_identities_resolve_primary_bore_axes() {
     }
     updated_hole_evaluation.set_definition(updated_hole_definition);
     project_generated_hole_axes(
+        &ctx,
         std::slice::from_mut(&mut hole),
         &[native_history()],
         &[lane(), conflicting_lane],
         &identities,
         &faces,
         &surfaces,
-    );
+    ).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         hole.evaluation.definition()
     else {

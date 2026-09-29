@@ -3029,13 +3029,14 @@ fn build_geometry_ir(
         &all_lanes,
     )?;
     crate::resolved_features::holes::project_generated_hole_axes(
+        ctx,
         &mut ir.model.features,
         &histories,
         &all_lanes,
         &face_identities,
         &ir.model.faces,
         &ir.model.surfaces,
-    );
+    )?;
     crate::resolved_features::holes::project_topological_hole_constructions(
         ctx,
         &mut ir.model.features,

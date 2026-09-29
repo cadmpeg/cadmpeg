@@ -2030,45 +2030,68 @@ fn coplanar_spatial_position_placements(
 /// axes; local identities that name planar or secondary-diameter faces do not
 /// participate.
 pub(crate) fn project_generated_hole_axes(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
     faces: &[Face],
     surfaces: &[Surface],
-) {
+) -> Result<(), CodecError> {
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
     let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
-    let native_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
-    let faces_by_id = faces
-        .iter()
-        .map(|face| (face.id.as_str(), face))
-        .collect::<HashMap<_, _>>();
-    let surfaces_by_id = surfaces
-        .iter()
-        .map(|surface| (surface.id.as_str(), surface))
-        .collect::<HashMap<_, _>>();
+    let mut native_features = HashMap::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, "index SLDPRT generated hole features")?;
+        let key = feature.id.as_str();
+        if !native_features.contains_key(key) {
+            ctx.charge_collection_items(1, "index SLDPRT generated hole features")?;
+            native_features.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "index SLDPRT generated hole features", u64::MAX - 1, u64::MAX,
+            ))?;
+        }
+        native_features.insert(key, feature);
+    }
+    let mut faces_by_id = HashMap::new();
+    for face in faces {
+        ctx.charge_work(1, "index SLDPRT generated hole faces")?;
+        let key = face.id.as_str();
+        if !faces_by_id.contains_key(key) {
+            ctx.charge_collection_items(1, "index SLDPRT generated hole faces")?;
+            faces_by_id.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "index SLDPRT generated hole faces", u64::MAX - 1, u64::MAX,
+            ))?;
+        }
+        faces_by_id.insert(key, face);
+    }
+    let mut surfaces_by_id = HashMap::new();
+    for surface in surfaces {
+        ctx.charge_work(1, "index SLDPRT generated hole surfaces")?;
+        let key = surface.id.as_str();
+        if !surfaces_by_id.contains_key(key) {
+            ctx.charge_collection_items(1, "index SLDPRT generated hole surfaces")?;
+            surfaces_by_id.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "index SLDPRT generated hole surfaces", u64::MAX - 1, u64::MAX,
+            ))?;
+        }
+        surfaces_by_id.insert(key, surface);
+    }
 
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
+        let solution = (|| -> Result<Option<Vec<HolePlacement>>, CodecError> {
             let FeatureDefinition::Operation(FeatureOperation::Hole {
                 placements, shape, ..
-            }) = &mut definition
+            }) = feature.evaluation.definition()
             else {
-                break 'feature_edit;
+                return Ok(None);
             };
             let Some(diameter) = shape.diameter() else {
-                break 'feature_edit;
+                return Ok(None);
             };
             let diameter = diameter.get();
 
             if placements.is_some() {
-                break 'feature_edit;
+                return Ok(None);
             }
             let Some(source) = feature
                 .native_ref
@@ -2077,25 +2100,32 @@ pub(crate) fn project_generated_hole_axes(
                 .and_then(|native| native.source_id)
                 .and_then(FeatureSource::id)
             else {
-                break 'feature_edit;
+                return Ok(None);
             };
             let radius = diameter * 0.5;
             let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
             let mut lane_solutions = Vec::new();
             for lane in lanes {
-                let local_identities = lane
-                    .generated_surface_identities
-                    .iter()
-                    .filter(|identity| identity.feature_source_id == source)
-                    .map(|identity| identity.local_identity)
-                    .collect::<HashSet<_>>();
-                if local_identities.is_empty() {
+                let local_identities = &lane.generated_surface_identities;
+                let mut local_ids = HashSet::new();
+                for identity in local_identities.iter().filter(|identity| identity.feature_source_id == source) {
+                    ctx.charge_work(1, "index SLDPRT generated hole surface identities")?;
+                    if !local_ids.contains(&identity.local_identity) {
+                        ctx.charge_collection_items(1, "index SLDPRT generated hole surface identities")?;
+                        local_ids.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                            "index SLDPRT generated hole surface identities", u64::MAX - 1, u64::MAX,
+                        ))?;
+                    }
+                    local_ids.insert(identity.local_identity);
+                }
+                if local_ids.is_empty() {
                     continue;
                 }
                 let mut axes = HashMap::<[GridCoordinate; 6], HolePlacement>::new();
                 for (face, identity) in face_identities {
+                    ctx.charge_work(1, "scan SLDPRT generated hole faces")?;
                     if identity.feature_source_id != source
-                        || !local_identities.contains(&identity.local_id)
+                        || !local_ids.contains(&identity.local_id)
                     {
                         continue;
                     }
@@ -2128,15 +2158,21 @@ pub(crate) fn project_generated_hole_axes(
                         axes.clear();
                         break;
                     };
-                    axes.entry([
+                    let key = [
                         quantize(closest.x),
                         quantize(closest.y),
                         quantize(closest.z),
                         quantize(axis.x),
                         quantize(axis.y),
                         quantize(axis.z),
-                    ])
-                    .or_insert(HolePlacement::Axis {
+                    ];
+                    if !axes.contains_key(&key) {
+                        ctx.charge_collection_items(1, "index SLDPRT generated hole axes")?;
+                        axes.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                            "index SLDPRT generated hole axes", u64::MAX - 1, u64::MAX,
+                        ))?;
+                    }
+                    axes.entry(key).or_insert(HolePlacement::Axis {
                         origin: closest,
                         axis,
                     });
@@ -2144,38 +2180,46 @@ pub(crate) fn project_generated_hole_axes(
                 if axes.is_empty() {
                     continue;
                 }
-                let mut solution = axes.into_iter().collect::<Vec<_>>();
+                let mut solution = Vec::new();
+                ctx.reserve_collection_vec(&mut solution, axes.len(), "sort SLDPRT generated hole axes")?;
+                solution.extend(axes);
+                ctx.charge_work(u64_from_index(solution.len()), "sort SLDPRT generated hole axes")?;
                 solution.sort_by_key(|(key, _)| *key);
-                lane_solutions.push(
-                    solution
-                        .into_iter()
-                        .map(|(_, placement)| placement)
-                        .collect::<Vec<_>>(),
-                );
+                let mut placements = Vec::new();
+                ctx.reserve_collection_vec(&mut placements, solution.len(), "collect SLDPRT generated hole placements")?;
+                placements.extend(solution.into_iter().map(|(_, placement)| placement));
+                ctx.reserve_collection_vec(&mut lane_solutions, 1, "collect SLDPRT generated hole lanes")?;
+                lane_solutions.push(placements);
             }
-            lane_solutions.sort_by_key(|solution| {
-                solution
+            let placement_key = |placement: &HolePlacement| match placement {
+                HolePlacement::Axis { origin, axis } => [
+                    quantize(origin.x), quantize(origin.y), quantize(origin.z),
+                    quantize(axis.x), quantize(axis.y), quantize(axis.z),
+                ],
+                HolePlacement::Directed { .. } => [GridCoordinate::Cell(0); 6],
+            };
+            ctx.charge_work(u64_from_index(lane_solutions.len()), "sort SLDPRT generated hole lanes")?;
+            lane_solutions.sort_by(|left, right| {
+                left
                     .iter()
-                    .map(|placement| match placement {
-                        HolePlacement::Axis { origin, axis } => [
-                            quantize(origin.x),
-                            quantize(origin.y),
-                            quantize(origin.z),
-                            quantize(axis.x),
-                            quantize(axis.y),
-                            quantize(axis.z),
-                        ],
-                        HolePlacement::Directed { .. } => [GridCoordinate::Cell(0); 6],
-                    })
-                    .collect::<Vec<_>>()
+                    .map(placement_key)
+                    .cmp(right.iter().map(placement_key))
             });
             lane_solutions.dedup();
-            if let [solution] = lane_solutions.as_slice() {
-                *placements = Some(solution.clone());
+            if lane_solutions.len() == 1 {
+                return Ok(lane_solutions.pop());
             }
+            Ok(None)
+        })()?;
+        if let Some(solution) = solution {
+            feature.evaluation.edit(|definition, _| {
+                if let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition {
+                    *placements = Some(solution);
+                }
+            });
         }
-        feature.evaluation.set_definition(definition);
     }
+    Ok(())
 }
 
 /// Resolve placements from exact dimensional topology matches.
