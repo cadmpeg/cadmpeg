@@ -1181,10 +1181,11 @@ fn legacy_scope_ranges(
 /// neither a valid root record, an outer `ND:` name, nor a complete legacy
 /// ASCII object remains unknown.
 fn identify_layout(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     sections: &[ScannedSection<'_>],
     legacy_ascii: Option<LegacyAsciiFraming>,
-) -> Layout {
+) -> Result<Layout, CodecError> {
     let has_depdb_root = sections.iter().any(|section| {
         if section.section.name() != "DEPDB_DATA" {
             return false;
@@ -1205,7 +1206,7 @@ fn identify_layout(
     let has_nd_decoration = sections
         .iter()
         .any(|s| s.section.raw_name.starts_with("ND:"));
-    if has_depdb_section {
+    Ok(if has_depdb_section {
         if has_depdb_root {
             Layout::Depdb
         } else {
@@ -1214,10 +1215,11 @@ fn identify_layout(
     } else if has_nd_decoration {
         Layout::Nd
     } else if let Some(framing) = legacy_ascii {
+        ctx.charge_collection_items(1, "creo legacy framing box")?;
         Layout::LegacyAscii(Box::new(framing))
     } else {
         Layout::Unknown(UnknownLayout::NoDiscriminant)
-    }
+    })
 }
 
 /// Sum every valid `<label>\0 [skip] f8 <count>` header in `region`.
@@ -1965,12 +1967,11 @@ fn candidate_feature_ids(
     structural: &BTreeSet<u32>,
     additions: impl IntoIterator<Item = u32>,
 ) -> Result<BTreeSet<u32>, CodecError> {
-    ctx.charge_collection_items(
-        u64::try_from(structural.len())
-            .map_err(|_| CodecError::malformed("structural feature ID count exceeds u64"))?,
-        "creo candidate structural feature ids",
-    )?;
-    let mut ids = structural.clone();
+    let mut ids = BTreeSet::new();
+    for id in structural {
+        ctx.charge_collection_items(1, "creo candidate structural feature ids")?;
+        ids.insert(*id);
+    }
     for id in additions {
         if !ids.contains(&id) {
             ctx.charge_collection_items(1, "creo candidate feature ids")?;
@@ -2783,7 +2784,7 @@ pub(crate) fn scan_bytes<'a>(
     let expanded_sections = expanded_sections(ctx, &data, &sections)?;
     let primitives = scan_primitives(ctx, &expanded_sections)?;
     let references = reference_scan(ctx, &sections)?;
-    let layout = identify_layout(&data, &sections, legacy_ascii);
+    let layout = identify_layout(ctx, &data, &sections, legacy_ascii)?;
     if model_name.is_none() && !matches!(layout, Layout::LegacyAscii(_)) {
         if let Some((name, offset)) = native_model_name(ctx, &sections).transpose()? {
             model_name = Some(ModelName { name, offset });

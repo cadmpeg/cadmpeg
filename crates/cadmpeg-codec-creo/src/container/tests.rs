@@ -1996,3 +1996,14 @@ fn a_section_region_is_absent_from_a_slice_shorter_than_the_section() {
         Some(&data[section.offset()..section.end()])
     );
 }
+
+#[test]
+fn legacy_framing_box_refuses_its_retained_slot() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let framing = super::LegacyAsciiFraming { schema: "6".into(), product_release: None, banner_offset: 0, object_offset: 0, persistence: crate::legacy::Persistence::default() };
+    assert!(matches!(super::identify_layout(&ctx, &[], &[], Some(framing)), Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "creo legacy framing box"));
+}

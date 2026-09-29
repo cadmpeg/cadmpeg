@@ -1210,3 +1210,15 @@ fn curve_expression_native_parameters_refuse_before_tree_creation() {
             if limit.operation == "creo curve-expression native parameters"
     ), "{error:?}");
 }
+
+#[test]
+fn curve_expression_native_parameter_keys_refuse_retained_copy() {
+    let initial = "CurveFromEquation".len() + "7".len() + "1".len();
+    for (cap, operation) in [
+        (initial + "entity_id".len() - 1, "creo curve-expression native entity key"),
+        (initial + "entity_id".len() + "assignment_count".len() - 1, "creo curve-expression native assignment key"),
+    ] {
+        let error = with_retained_limit(u64::try_from(cap).expect("key byte count"), |ctx| super::native_curve_expression_definition(ctx, 7, 1)).expect_err("key exceeds retained bytes");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource) if resource.operation == operation));
+    }
+}

@@ -690,9 +690,10 @@ impl SectionCoordinateEquation {
         delta: f64,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_collection_items(if first == second { 1 } else { 2 }, operation)?;
         let mut equation = Self::default();
+        ctx.charge_collection_items(1, operation)?;
         equation.terms.insert((first, coordinate), -1.0);
+        if first != second { ctx.charge_collection_items(1, operation)?; }
         *equation.terms.entry((second, coordinate)).or_default() += 1.0;
         equation.rhs = delta;
         Ok(equation)
@@ -926,11 +927,12 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     1,
                     "creo section component equation rows",
                 )?;
-                ctx.charge_collection_items(
-                    equation.terms.len() as u64,
-                    "creo section component equation terms",
-                )?;
-                component_equations.push(equation.clone());
+                let mut terms = BTreeMap::new();
+                for (variable, coefficient) in &equation.terms {
+                    ctx.charge_collection_items(1, "creo section component equation terms")?;
+                    terms.insert(*variable, *coefficient);
+                }
+                component_equations.push(SectionCoordinateEquation { terms, rhs: equation.rhs });
             }
         }
         let mut solutions = Vec::new();
@@ -943,11 +945,12 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                 "creo section branch equation rows",
             )?;
             for equation in &component_equations {
-                ctx.charge_collection_items(
-                    equation.terms.len() as u64,
-                    "creo section branch equation terms",
-                )?;
-                branched.push(equation.clone());
+                let mut terms = BTreeMap::new();
+                for (variable, coefficient) in &equation.terms {
+                    ctx.charge_collection_items(1, "creo section branch equation terms")?;
+                    terms.insert(*variable, *coefficient);
+                }
+                branched.push(SectionCoordinateEquation { terms, rhs: equation.rhs });
             }
             for (index, &(first, second, coordinate, magnitude)) in
                 component_distances.iter().enumerate()
@@ -963,11 +966,11 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                 )?);
             }
             let candidate = solve_section_coordinate_equations(ctx, &branched, stored_coordinates)?;
-            ctx.charge_collection_items(
-                stored_coordinates.len() as u64,
-                "creo section stored coordinate copies",
-            )?;
-            let mut values = stored_coordinates.clone();
+            let mut values = BTreeMap::new();
+            for (variable, value) in stored_coordinates {
+                ctx.charge_collection_items(1, "creo section stored coordinate copies")?;
+                values.insert(*variable, *value);
+            }
             for (point, coordinates) in &candidate {
                 for (coordinate, value) in SectionAxis::ALL
                     .into_iter()

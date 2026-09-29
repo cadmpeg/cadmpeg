@@ -633,29 +633,19 @@ fn native_curve_expression_definition(
     entity_id: u32,
     assignment_count: usize,
 ) -> Result<IrFeatureDefinition, CodecError> {
-    ctx.charge_collection_items(2, "creo curve-expression native parameters")?;
-    Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-        kind: ctx.copy_retained_text(
-            "CurveFromEquation",
-            "creo curve-expression native kind",
-        )?.into(),
-        parameters: BTreeMap::from([
-            (
-                cadmpeg_core::nonblank_literal!("entity_id"),
-                ctx.format_retained(
-                    format_args!("{entity_id}"),
-                    "creo curve-expression native entity value",
-                )?,
-            ),
-            (
-                cadmpeg_core::nonblank_literal!("assignment_count"),
-                ctx.format_retained(
-                    format_args!("{assignment_count}"),
-                    "creo curve-expression native assignment count",
-                )?,
-            ),
-        ]),
-    }))
+    let mut parameters = BTreeMap::new();
+    ctx.charge_collection_items(1, "creo curve-expression native parameters")?;
+    let kind = ctx.copy_retained_text("CurveFromEquation", "creo curve-expression native kind")?.into();
+    let entity_value = ctx.format_retained(format_args!("{entity_id}"), "creo curve-expression native entity value")?;
+    let assignment_value = ctx.format_retained(format_args!("{assignment_count}"), "creo curve-expression native assignment count")?;
+    let entity_key = cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(
+        "entity_id", "creo curve-expression native entity key")?).ok_or_else(|| CodecError::malformed("native entity key is blank"))?;
+    parameters.insert(entity_key, entity_value);
+    ctx.charge_collection_items(1, "creo curve-expression native parameters")?;
+    let assignment_key = cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(
+        "assignment_count", "creo curve-expression native assignment key")?).ok_or_else(|| CodecError::malformed("native assignment key is blank"))?;
+    parameters.insert(assignment_key, assignment_value);
+    Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native { kind, parameters }))
 }
 
 fn curve_expression_feature_labels(
