@@ -1618,18 +1618,13 @@ fn uncovered_spans(
     let mut at = 0;
     for (start, end) in covered {
         if at < start {
-            ctx.charge_collection_items(1, "NX deltas uncovered spans")?;
-            gaps.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("NX deltas uncovered spans allocation", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut gaps, 1, "NX deltas uncovered spans")?;
             gaps.push((at, start));
         }
         at = at.max(end);
     }
     if at < stream_len {
-        ctx.charge_collection_items(1, "NX deltas uncovered spans")?;
-        gaps.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("NX deltas uncovered spans allocation", 0, 1))?;
+        ctx.reserve_vec(&mut gaps, 1, "NX deltas uncovered spans")?;
         gaps.push((at, stream_len));
     }
     Ok(gaps.into_iter())
@@ -1785,10 +1780,7 @@ fn merged_event_spans(
         if let Some((_, merged_end)) = merged.last_mut().filter(|(_, end)| start <= *end) {
             *merged_end = (*merged_end).max(end);
         } else {
-            ctx.charge_collection_items(1, "NX deltas merged spans")?;
-            merged
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("NX deltas merged spans allocation", 0, 1))?;
+            ctx.reserve_vec(&mut merged, 1, "NX deltas merged spans")?;
             merged.push((start, end));
         }
     }

@@ -80,10 +80,7 @@ pub(super) fn saved_offset_carriers(
             .then_some((id, geometry))
         });
         if let Some(candidate) = candidate {
-            ctx.charge_collection_items(1, "nx offset candidates")?;
-            candidates
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx offset candidates", 0, 1))?;
+            ctx.reserve_vec(&mut candidates, 1, "nx offset candidates")?;
             candidates.push(candidate);
         }
     }
@@ -141,19 +138,13 @@ pub(super) fn saved_offset_carriers(
                     ctx.charge_collection_items(1, "nx offset match owners")?;
                 }
                 let group = matches.entry(offset.xmt).or_default();
-                ctx.charge_collection_items(1, "nx offset matches")?;
-                group
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx offset matches", 0, 1))?;
+                ctx.reserve_vec(group, 1, "nx offset matches")?;
                 group.push((*candidate_id, fit));
                 if !candidate_owners.contains_key(*candidate_id) {
                     ctx.charge_collection_items(1, "nx offset candidate owners")?;
                 }
                 let owners = candidate_owners.entry(*candidate_id).or_default();
-                ctx.charge_collection_items(1, "nx offset candidate owner entries")?;
-                owners.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx offset candidate owner entries", 0, 1)
-                })?;
+                ctx.reserve_vec(owners, 1, "nx offset candidate owner entries")?;
                 owners.push(offset.xmt);
             }
         }
@@ -2684,10 +2675,7 @@ pub(super) fn normalize_pcurve_parameters(
                 let Some(position) = surface_parameters(surface, [point.u, point.v]) else {
                     return Ok(None);
                 };
-                ctx.charge_collection_items(1, "nx normalized pcurve controls")?;
-                converted
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx normalized pcurve controls", 0, 1))?;
+                ctx.reserve_vec(&mut converted, 1, "nx normalized pcurve controls")?;
                 converted.push(position);
                 ordinal = ordinal.checked_add(1).ok_or_else(|| {
                     ctx.refuse_codec_limit("nx normalized pcurve controls", 0, u64::MAX)

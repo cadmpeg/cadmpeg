@@ -161,10 +161,7 @@ fn edge_indices_by_curve(
         let group = indices
             .entry(curve.try_clone_for_decode(ctx, "nx pcurve edge curve identity")?)
             .or_insert_with(Vec::new);
-        ctx.charge_collection_items(1, "nx pcurve edge indices")?;
-        group
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx pcurve edge indices", 0, 1))?;
+        ctx.reserve_vec(group, 1, "nx pcurve edge indices")?;
         group.push(index);
     }
     Ok(indices)
@@ -240,10 +237,7 @@ impl IntersectionIncidenceIndex {
                 .procedural_by_curve
                 .entry(owner.try_clone_for_decode(ctx, "nx incidence owner identity")?)
                 .or_default();
-            ctx.charge_collection_items(1, "nx incidence procedural indices")?;
-            indices
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx incidence procedural indices", 0, 1))?;
+            ctx.reserve_vec(indices, 1, "nx incidence procedural indices")?;
             indices.push(index);
             ctx.charge_collection_items(1, "nx affected incidence curves")?;
             affected_curves.insert(owner.try_clone_for_decode(ctx, "nx affected curve identity")?);
@@ -265,10 +259,7 @@ impl IntersectionIncidenceIndex {
                 .entry(curve.try_clone_for_decode(ctx, "nx incident curve identity")?)
                 .or_default();
             if !surfaces.contains(surface) {
-                ctx.charge_collection_items(1, "nx incident surfaces")?;
-                surfaces
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx incident surfaces", 0, 1))?;
+                ctx.reserve_vec(surfaces, 1, "nx incident surfaces")?;
                 surfaces.push(surface.try_clone_for_decode(ctx, "nx incident surface identity")?);
             }
             ctx.charge_collection_items(1, "nx incident pcurve owners")?;
@@ -281,10 +272,7 @@ impl IntersectionIncidenceIndex {
                 .or_default();
             for pcurve in &coedge.pcurves {
                 if !pcurves.contains(&pcurve.pcurve) {
-                    ctx.charge_collection_items(1, "nx incident pcurves")?;
-                    pcurves
-                        .try_reserve(1)
-                        .map_err(|_| ctx.refuse_codec_limit("nx incident pcurves", 0, 1))?;
+                    ctx.reserve_vec(pcurves, 1, "nx incident pcurves")?;
                     pcurves.push(pcurve.pcurve.try_clone_for_decode(ctx, "nx incident pcurve identity")?);
                 }
             }
@@ -587,10 +575,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                     .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
             );
             if !candidates.contains(&candidate) {
-                ctx.charge_collection_items(1, "nx serialized branch candidates")?;
-                candidates
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx serialized branch candidates", 0, 1))?;
+                ctx.reserve_vec(candidates, 1, "nx serialized branch candidates")?;
                 candidates.push(candidate);
             }
         }
@@ -739,10 +724,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 else {
                     continue;
                 };
-                ctx.charge_collection_items(1, "nx serialized branch replacements")?;
-                replacements.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx serialized branch replacements", 0, 1)
-                })?;
+                ctx.reserve_vec(&mut replacements, 1, "nx serialized branch replacements")?;
                 replacements.push((
                     procedural.id.try_clone_for_decode(ctx, "nx branch procedural identity")?,
                     edge.id.try_clone_for_decode(ctx, "nx branch edge identity")?,
@@ -1397,10 +1379,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         };
         let priority =
             opposite_chart_transfer_priority(&model_index, source_surface, target_surface);
-        ctx.charge_collection_items(1, "nx opposite chart candidates")?;
-        candidates
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx opposite chart candidates", 0, 1))?;
+        ctx.reserve_vec(&mut candidates, 1, "nx opposite chart candidates")?;
         candidates.push((priority, procedural.id.as_str(), procedural_index));
     }
     candidates.sort_by(|first, second| {
@@ -1518,10 +1497,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             ));
         }
         if let Some(replacement) = replacement? {
-            ctx.charge_collection_items(1, "nx opposite chart replacements")?;
-            replacements
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx opposite chart replacements", 0, 1))?;
+            ctx.reserve_vec(&mut replacements, 1, "nx opposite chart replacements")?;
             replacements.push(replacement);
         }
     }
@@ -1844,10 +1820,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             [None, None] => continue,
         };
         let fit_tolerance = cadmpeg_ir::geometry::FitTolerance::from(admitted_tolerance);
-        ctx.charge_collection_items(1, "nx exact boundary replacements")?;
-        replacements
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx exact boundary replacements", 0, 1))?;
+        ctx.reserve_vec(&mut replacements, 1, "nx exact boundary replacements")?;
         replacements.push((
             procedural.id.try_clone_for_decode(ctx, "nx exact boundary procedural identity")?,
             pcurves,
@@ -1897,10 +1870,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             procedural.require_cache_fit_tolerance(tolerance)?;
         }
         if let Some(range) = tolerant_range {
-            ctx.charge_collection_items(1, "nx bounded tolerant curves")?;
-            bounded_tolerant_curves
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx bounded tolerant curves", 0, 1))?;
+            ctx.reserve_vec(&mut bounded_tolerant_curves, 1, "nx bounded tolerant curves")?;
             bounded_tolerant_curves.push((curve, range));
         }
     }
@@ -4255,10 +4225,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             if !endpoints_bound_supports {
                 continue;
             }
-            ctx.charge_collection_items(1, "nx tolerant edge candidates")?;
-            candidates
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx tolerant edge candidates", 0, 1))?;
+            ctx.reserve_vec(&mut candidates, 1, "nx tolerant edge candidates")?;
             candidates.push((
                 xmt,
                 edge_id.try_clone_for_decode(ctx, "nx tolerant edge candidate identity")?,
@@ -4328,11 +4295,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
         annotations
             .derived(&procedural_id, "definition")
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        ctx.charge_collection_items(1, "nx tolerant edge curves")?;
-        ir.model
-            .curves
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx tolerant edge curves", 0, 1))?;
+        ctx.reserve_vec(&mut ir.model.curves, 1, "nx tolerant edge curves")?;
         ir.model.curves.push(Curve {
             id: curve_id.try_clone_for_decode(ctx, "nx tolerant carrier identity")?,
             geometry: CurveGeometry::Procedural {
@@ -4341,11 +4304,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             },
             source_object: None,
         });
-        ctx.charge_collection_items(1, "nx tolerant procedural curves")?;
-        ir.model
-            .procedural_curves
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx tolerant procedural curves", 0, 1))?;
+        ctx.reserve_vec(&mut ir.model.procedural_curves, 1, "nx tolerant procedural curves")?;
         let _attached = ir.model.add_procedural_curve(&curve_id, procedural);
     }
     Ok(())

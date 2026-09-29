@@ -1359,11 +1359,7 @@ impl NativeModel {
         let (rmfastload_object_id_tables, rmfastload_object_ids) =
             match rmfastload_object_id_table(ctx, container)? {
                 Some((table, object_ids)) => {
-                    ctx.charge_collection_items(1, "nx RMFastLoad object ID tables")?;
-                    let mut tables = Vec::new();
-                    tables.try_reserve_exact(1).map_err(|_| {
-                        ctx.refuse_codec_limit("nx RMFastLoad object ID tables", 0, 1)
-                    })?;
+                    let mut tables = ctx.collection_vec(1, "nx RMFastLoad object ID tables")?;
                     tables.push(table);
                     (tables, object_ids)
                 }

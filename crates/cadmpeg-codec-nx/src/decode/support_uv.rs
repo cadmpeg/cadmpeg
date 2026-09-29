@@ -493,10 +493,7 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
                     entry.insert(Vec::new())
                 }
             };
-            ctx.charge_collection_items(1, "nx validated endpoint witnesses")?;
-            entries
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx validated endpoint witnesses", 0, 1))?;
+            ctx.reserve_vec(entries, 1, "nx validated endpoint witnesses")?;
             entries.push((
                 pcurve
                     .geometry
@@ -723,17 +720,7 @@ pub(super) fn complete_ext11_support_uv_with_budget(
                 continue;
             }
             let mut controls = Vec::new();
-            ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(values.len()),
-                "nx serialized support UV controls",
-            )?;
-            controls.try_reserve_exact(values.len()).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "nx serialized support UV controls",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(values.len()),
-                )
-            })?;
+            ctx.reserve_vec(&mut controls, values.len(), "nx serialized support UV controls")?;
             let mut valid = true;
             for uv in values.iter() {
                 if let Some(point) = surface_parameters(surface_geometry, **uv) {
@@ -753,10 +740,7 @@ pub(super) fn complete_ext11_support_uv_with_budget(
             };
             let replacement =
                 linear_pcurve_geometry(ctx, parameters, &control_points, geometry_budget)?;
-            ctx.charge_collection_items(1, "nx serialized support UV replacements")?;
-            replacements.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx serialized support UV replacements", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut replacements, 1, "nx serialized support UV replacements")?;
             replacements.push((
                 procedural_id.try_clone_for_decode(ctx, "nx serialized support UV owner")?,
                 side,
@@ -1021,10 +1005,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                     lane_geometry_exhausted |= child_exhausted || parent_exhausted;
                 }
                 if inconsistent {
-                    ctx.charge_collection_items(1, "nx inconsistent support UV lanes")?;
-                    invalid.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("nx inconsistent support UV lanes", 0, 1)
-                    })?;
+                    ctx.reserve_vec(&mut invalid, 1, "nx inconsistent support UV lanes")?;
                     invalid.push((
                         procedural_id.try_clone_for_decode(ctx, "nx inconsistent support UV owner")?,
                         side,
@@ -1042,10 +1023,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                                 entry.insert(Vec::new())
                             }
                         };
-                        ctx.charge_collection_items(1, "nx validated endpoint witnesses")?;
-                        entries.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("nx validated endpoint witnesses", 0, 1)
-                        })?;
+                        ctx.reserve_vec(entries, 1, "nx validated endpoint witnesses")?;
                         entries.push((
                             pcurve
                                 .geometry
@@ -1459,10 +1437,7 @@ fn complete_support_uv_wave(
                             return Ok(None);
                         };
                         all_parameters_certified &= certified;
-                        ctx.charge_collection_items(1, "nx support UV fitted parameters")?;
-                        uv.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("nx support UV fitted parameters", 0, 1)
-                        })?;
+                        ctx.reserve_vec(&mut uv, 1, "nx support UV fitted parameters")?;
                         uv.push(parameters);
                     }
                     Ok(Some((uv, all_parameters_certified)))
@@ -1584,20 +1559,14 @@ fn complete_support_uv_wave(
                                 entry.insert(Vec::new())
                             }
                         };
-                        ctx.charge_collection_items(1, "nx support UV endpoint witnesses")?;
-                        entries.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("nx support UV endpoint witnesses", 0, 1)
-                        })?;
+                        ctx.reserve_vec(entries, 1, "nx support UV endpoint witnesses")?;
                         entries.push((
                             pcurve.try_clone_for_decode(ctx, "nx support UV witness pcurve")?,
                             parameter_range,
                             [first, last],
                         ));
                     }
-                    ctx.charge_collection_items(1, "nx support UV replacements")?;
-                    replacements
-                        .try_reserve(1)
-                        .map_err(|_| ctx.refuse_codec_limit("nx support UV replacements", 0, 1))?;
+                    ctx.reserve_vec(&mut replacements, 1, "nx support UV replacements")?;
                     replacements.push((
                         procedural_id.try_clone_for_decode(ctx, "nx support UV replacement owner")?,
                         side,
@@ -1994,20 +1963,14 @@ fn complete_coupled_support_uv(
                             entry.insert(Vec::new())
                         }
                     };
-                    ctx.charge_collection_items(1, "nx coupled support UV endpoint witnesses")?;
-                    entries.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("nx coupled support UV endpoint witnesses", 0, 1)
-                    })?;
+                    ctx.reserve_vec(entries, 1, "nx coupled support UV endpoint witnesses")?;
                     entries.push((
                         pcurve.try_clone_for_decode(ctx, "nx coupled support UV witness pcurve")?,
                         parameter_range,
                         [first, last],
                     ));
                 }
-                ctx.charge_collection_items(1, "nx coupled support UV replacements")?;
-                replacements.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx coupled support UV replacements", 0, 1)
-                })?;
+                ctx.reserve_vec(&mut replacements, 1, "nx coupled support UV replacements")?;
                 replacements.push((
                     procedural_id.try_clone_for_decode(ctx, "nx coupled support UV replacement owner")?,
                     side,
@@ -2117,10 +2080,7 @@ pub(super) fn complete_parameterization_equivalent_support_uv(
                 target_surface,
                 source_surface,
             ) {
-                ctx.charge_collection_items(1, "nx equivalent support UV replacements")?;
-                replacements.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx equivalent support UV replacements", 0, 1)
-                })?;
+                ctx.reserve_vec(&mut replacements, 1, "nx equivalent support UV replacements")?;
                 replacements.push((procedural_index, target, source));
             }
         }
@@ -2373,10 +2333,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         let Some(curve) = edge_curves.get(&coedge.edge) else {
             continue;
         };
-        ctx.charge_collection_items(1, "nx completion coedge candidates")?;
-        coedge_candidates
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx completion coedge candidates", 0, 1))?;
+        ctx.reserve_vec(&mut coedge_candidates, 1, "nx completion coedge candidates")?;
         coedge_candidates.push((
             coedge.id.try_clone_for_decode(ctx, "nx completion coedge identity")?,
             coedge.edge.try_clone_for_decode(ctx, "nx completion edge identity")?,
@@ -2458,10 +2415,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                     .map(cadmpeg_ir::geometry::FitTolerance::get),
             );
             if !values.contains(&candidate) {
-                ctx.charge_collection_items(1, "nx completion candidate values")?;
-                values
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx completion candidate values", 0, 1))?;
+                ctx.reserve_vec(values, 1, "nx completion candidate values")?;
                 values.push(candidate);
             }
         }
@@ -2634,10 +2588,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             let Some(metadata) = metadata else {
                 continue;
             };
-            ctx.charge_collection_items(1, "nx completion pcurve replacements")?;
-            replacements
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx completion pcurve replacements", 0, 1))?;
+            ctx.reserve_vec(&mut replacements, 1, "nx completion pcurve replacements")?;
             replacements.push((
                 coedge_id,
                 source_index,
@@ -2716,11 +2667,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 .derived(&pcurve_id, "fit_tolerance")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        ctx.charge_collection_items(1, "nx completed pcurve records")?;
-        ir.model
-            .pcurves
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx completed pcurve records", 0, 1))?;
+        ctx.reserve_vec(&mut ir.model.pcurves, 1, "nx completed pcurve records")?;
         ir.model.pcurves.push(Pcurve {
             id: pcurve_id.try_clone_for_decode(ctx, "nx completed pcurve record identity")?,
             geometry,
@@ -2732,11 +2679,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             .iter_mut()
             .find(|coedge| coedge.id == coedge_id && coedge.pcurves.is_empty())
         {
-            ctx.charge_collection_items(1, "nx completed coedge pcurve uses")?;
-            coedge
-                .pcurves
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx completed coedge pcurve uses", 0, 1))?;
+            ctx.reserve_vec(&mut coedge.pcurves, 1, "nx completed coedge pcurve uses")?;
             coedge.pcurves.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: pcurve_id,
                 isoparametric: None,

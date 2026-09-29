@@ -252,10 +252,7 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
                         ctx.refuse_codec_limit("retain NX projected curve block IDs", 0, 1)
                     })?,
             ))?;
-            ctx.charge_collection_items(1, "NX projected curve block IDs")?;
-            data_blocks.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX projected curve block IDs", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut data_blocks, 1, "NX projected curve block IDs")?;
             let mut copy = String::new();
             copy.try_reserve_exact(block.len())
                 .map_err(|_| ctx.refuse_codec_limit("copy NX projected curve block ID", 0, 1))?;
@@ -2333,15 +2330,7 @@ pub(in crate::native) fn feature_block_constructions(
             ),
             "NX block construction member array",
         )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(members.len()),
-            "NX block construction member array",
-        )?;
-        owned_members
-            .try_reserve_exact(members.len())
-            .map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX block construction member array", 0, 1)
-            })?;
+        ctx.reserve_vec(&mut owned_members, members.len(), "NX block construction member array")?;
         for reference in members {
             let Some(block) = reference.data_block.as_deref() else {
                 continue;

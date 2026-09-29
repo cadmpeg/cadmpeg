@@ -24,14 +24,7 @@ pub(super) fn summarize(
         .len()
         .checked_add(scan.streams.len())
         .ok_or_else(|| ctx.refuse_codec_limit("nx summary entries", 0, u64::MAX))?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(entry_count),
-        "nx summary entries",
-    )?;
-    let mut entries = Vec::new();
-    entries
-        .try_reserve_exact(entry_count)
-        .map_err(|_| ctx.refuse_codec_limit("nx summary entries", 0, 1))?;
+    let mut entries = ctx.collection_vec(entry_count, "nx summary entries")?;
     let semantic_streams = scan
         .streams
         .iter()
@@ -310,10 +303,7 @@ pub(super) fn summarize(
                         .ok_or_else(|| {
                             ctx.refuse_codec_limit("nx summary storage note", 0, u64::MAX)
                         })?;
-                        ctx.charge_collection_items(1, "nx summary storage notes")?;
-                        storage_notes.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("nx summary storage notes", 0, 1)
-                        })?;
+                        ctx.reserve_vec(&mut storage_notes, 1, "nx summary storage notes")?;
                         storage_notes.push(render_summary_text(
                             ctx,
                             "nx summary storage note",
@@ -350,13 +340,7 @@ pub(super) fn summarize(
     }
 
     let (classification, mut notes) = crate::scan_notes::summarize(ctx, scan)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(storage_notes.len()),
-        "nx combined inspection notes",
-    )?;
-    notes
-        .try_reserve(storage_notes.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx combined inspection notes", 0, 1))?;
+    ctx.reserve_vec(&mut notes, storage_notes.len(), "nx combined inspection notes")?;
     notes.extend(storage_notes);
     let container_kind = classification.container_kind();
     let (dialects, dialect_losses) = classification.into_report_parts();

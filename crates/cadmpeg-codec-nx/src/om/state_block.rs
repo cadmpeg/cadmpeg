@@ -183,10 +183,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
     let mut opaque_lane_starts = Vec::new();
     for at in start..end.saturating_sub(1) {
         if bytes.get(at..at + 2) == Some(&[0x02, 0x11]) {
-            ctx.charge_collection_items(1, "nx opaque state lanes")?;
-            opaque_lane_starts
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx opaque state lanes", 0, 1))?;
+            ctx.reserve_vec(&mut opaque_lane_starts, 1, "nx opaque state lanes")?;
             opaque_lane_starts.push(at);
         }
     }
@@ -206,10 +203,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
                     return Ok(None);
                 };
                 let path_end = continuation.map_or(next, |path| path.end);
-                ctx.charge_collection_items(1, "nx state message paths")?;
-                message_paths
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx state message paths", 0, 1))?;
+                ctx.reserve_vec(&mut message_paths, 1, "nx state message paths")?;
                 message_paths.push((
                     at,
                     OperationStatePath {
@@ -239,10 +233,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
             .filter(|status| message_path.is_none_or(|message| status.length >= message.length))
             .or(message_path);
         if let Some(path) = best_path {
-            ctx.charge_collection_items(1, "nx state status paths")?;
-            status_paths
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx state status paths", 0, 1))?;
+            ctx.reserve_vec(&mut status_paths, 1, "nx state status paths")?;
             status_paths.push((at, path));
         }
     }

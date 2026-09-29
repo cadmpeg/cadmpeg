@@ -4488,14 +4488,7 @@ pub(super) fn object_records(
             cadmpeg_core::decode::u64_from_index(record_bytes_len),
             "NX object record byte views",
         )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(records.len()),
-            "NX object record byte views",
-        )?;
-        let mut record_bytes = Vec::new();
-        record_bytes
-            .try_reserve_exact(records.len())
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX object record byte views", 0, 1))?;
+        let mut record_bytes = ctx.collection_vec(records.len(), "NX object record byte views")?;
         for record in records {
             record_bytes.push(record.bytes);
         }
@@ -4606,14 +4599,7 @@ pub(super) fn object_records(
         cadmpeg_core::decode::u64_from_index(flags_bytes),
         "NX object record identity flags",
     )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(output.len()),
-        "NX object record identity flags",
-    )?;
-    let mut unique_flags = Vec::new();
-    unique_flags
-        .try_reserve_exact(output.len())
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX object record identity flags", 0, 1))?;
+    let mut unique_flags = ctx.collection_vec(output.len(), "NX object record identity flags")?;
     for record in &output {
         let unique = record.stable_identity.as_deref().is_some_and(|identity| {
             identity_counts.get(&(record.source_entry.as_str(), identity)) == Some(&1)
@@ -5677,10 +5663,7 @@ fn push_data_block_target<'a>(
         ctx.charge_collection_items(1, "NX data block target index keys")?;
     }
     let candidates = index.entry((source, object)).or_default();
-    ctx.charge_collection_items(1, "NX data block target index members")?;
-    candidates
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX data block target index", 0, 1))?;
+    ctx.reserve_vec(candidates, 1, "NX data block target index members")?;
     candidates.push(id);
     Ok(())
 }
@@ -6022,9 +6005,7 @@ pub(super) fn data_block_column_index_tables(
             ctx.charge_collection_items(1, "NX linked row section index")?;
         }
         let rows = linked_by_section.entry(row.section_ordinal).or_default();
-        ctx.charge_collection_items(1, "NX linked row section members")?;
-        rows.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX linked row section members", 0, 1))?;
+        ctx.reserve_vec(rows, 1, "NX linked row section members")?;
         rows.push(row);
     }
     let mut targets_by_section = BTreeMap::<u32, Vec<&DataBlockTargetIndexRow>>::new();
@@ -6033,9 +6014,7 @@ pub(super) fn data_block_column_index_tables(
             ctx.charge_collection_items(1, "NX target row section index")?;
         }
         let rows = targets_by_section.entry(row.section_ordinal).or_default();
-        ctx.charge_collection_items(1, "NX target row section members")?;
-        rows.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX target row section members", 0, 1))?;
+        ctx.reserve_vec(rows, 1, "NX target row section members")?;
         rows.push(row);
     }
     let mut output = Vec::new();
@@ -6389,10 +6368,7 @@ pub(super) fn object_record_handle_pairs(
             ctx.charge_collection_items(1, "NX record handle pair groups")?;
         }
         let group = by_record.entry(reference.record.as_str()).or_default();
-        ctx.charge_collection_items(1, "NX record handle pair references")?;
-        group.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX record handle pair references", 0, 1)
-        })?;
+        ctx.reserve_vec(group, 1, "NX record handle pair references")?;
         group.push((reference, handle));
     }
     let mut pairs = Vec::new();
@@ -6502,10 +6478,7 @@ pub(super) fn persistent_handles(
         if group.records.last().copied() != Some(reference.record.as_str())
             && !group.records.contains(&reference.record.as_str())
         {
-            ctx.charge_collection_items(1, "NX persistent handle record index")?;
-            group.records.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX persistent handle record index", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut group.records, 1, "NX persistent handle record index")?;
             group.records.push(reference.record.as_str());
         }
     }
@@ -6522,10 +6495,7 @@ pub(super) fn persistent_handles(
             .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit("NX persistent handle occurrence count", 0, 1))?;
         if !group.data_blocks.contains(&reference.data_block.as_str()) {
-            ctx.charge_collection_items(1, "NX persistent handle data block index")?;
-            group.data_blocks.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX persistent handle data block index", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut group.data_blocks, 1, "NX persistent handle data block index")?;
             group.data_blocks.push(reference.data_block.as_str());
         }
     }
@@ -6542,10 +6512,7 @@ pub(super) fn persistent_handles(
                     ctx.refuse_codec_limit("NX external handle occurrence count", 0, 1)
                 })?;
             if !group.external_records.contains(&record.id.as_str()) {
-                ctx.charge_collection_items(1, "NX persistent external record index")?;
-                group.external_records.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX persistent external record index", 0, 1)
-                })?;
+                ctx.reserve_vec(&mut group.external_records, 1, "NX persistent external record index")?;
                 group.external_records.push(record.id.as_str());
             }
         }
@@ -6563,10 +6530,7 @@ pub(super) fn persistent_handles(
             .external_records
             .contains(&pair.handle_set_record.as_str())
         {
-            ctx.charge_collection_items(1, "NX persistent external record index")?;
-            group.external_records.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX persistent external record index", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut group.external_records, 1, "NX persistent external record index")?;
             group.external_records.push(pair.handle_set_record.as_str());
         }
     }
@@ -6711,10 +6675,7 @@ pub(super) fn expressions(
             ctx.charge_collection_items(1, "NX declaration name groups")?;
         }
         let group = declarations_by_name.entry(key).or_default();
-        ctx.charge_collection_items(1, "NX declaration name members")?;
-        group
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX declaration name members", 0, 1))?;
+        ctx.reserve_vec(group, 1, "NX declaration name members")?;
         group.push(declaration);
     }
     let sections = container.indexed_om_sections(ctx)?;
@@ -6955,14 +6916,7 @@ fn evaluate_expression_graphs(
         cadmpeg_core::decode::u64_from_index(result_bytes),
         "NX expression graph results",
     )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(expressions.len()),
-        "NX expression graph results",
-    )?;
-    let mut results = Vec::new();
-    results
-        .try_reserve_exact(expressions.len())
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX expression graph results", 0, 1))?;
+    let mut results = ctx.collection_vec(expressions.len(), "NX expression graph results")?;
     for expression in expressions.iter() {
         let key = (
             expression.source_table.as_str(),

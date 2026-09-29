@@ -3743,18 +3743,7 @@ fn assign_operation_header_identities(
         cadmpeg_core::decode::u64_from_index(key_bytes),
         "reserve NX operation header keys",
     )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(labels.len()),
-        "NX operation header keys",
-    )?;
-    let mut keys = Vec::new();
-    keys.try_reserve_exact(labels.len()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "allocate NX operation header keys",
-            0,
-            cadmpeg_core::decode::u64_from_index(labels.len()),
-        )
-    })?;
+    let mut keys = ctx.collection_vec(labels.len(), "NX operation header keys")?;
     for label in labels.iter() {
         keys.push(operation_header_identity_key(
             ctx,
@@ -7233,10 +7222,7 @@ pub(super) fn feature_sketch_records(
             input_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
                 &FeatureInputBlock,
             >()))?;
-            ctx.charge_collection_items(1, "NX sketch input block order")?;
-            input_blocks.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX sketch input block order", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut input_blocks, 1, "NX sketch input block order")?;
             input_blocks.push(input);
         }
         input_blocks.sort_by_key(|input| input.input_slot);
@@ -7254,10 +7240,7 @@ pub(super) fn feature_sketch_records(
             reference_reservation.grow(cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<&FeatureSketchReference>(),
             ))?;
-            ctx.charge_collection_items(1, "NX sketch reference order")?;
-            payload_references
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch reference order", 0, 1))?;
+            ctx.reserve_vec(&mut payload_references, 1, "NX sketch reference order")?;
             payload_references.push(reference);
         }
         payload_references.sort_by_key(|reference| reference.position.ordinal());
@@ -7344,10 +7327,7 @@ pub(super) fn feature_sketch_construction_inputs(
             field_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
                 &FeatureSketchReference,
             >()))?;
-            ctx.charge_collection_items(1, "NX sketch construction reference order")?;
-            field.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX sketch construction reference order", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut field, 1, "NX sketch construction reference order")?;
             field.push(reference);
         }
         field.sort_by_key(|reference| reference.position.ordinal());
@@ -8501,10 +8481,7 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
         index_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             &FeatureSketchReference,
         >()))?;
-        ctx.charge_collection_items(1, "NX preceding named-point references")?;
-        group.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX preceding named-point references", 0, 1)
-        })?;
+        ctx.reserve_vec(group, 1, "NX preceding named-point references")?;
         group.push(reference);
     }
     let mut uses = Vec::new();
@@ -8655,10 +8632,7 @@ pub(super) fn feature_sketch_point_uses(
             order_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
                 &FeatureSketchNamedPointBlockUse,
             >()))?;
-            ctx.charge_collection_items(1, "NX sketch point block use order")?;
-            point_block_uses.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX sketch point block use order", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut point_block_uses, 1, "NX sketch point block use order")?;
             point_block_uses.push(candidate);
         }
         point_block_uses.sort_by_key(|block_use| {

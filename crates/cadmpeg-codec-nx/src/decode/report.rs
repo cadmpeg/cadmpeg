@@ -56,10 +56,7 @@ fn push_report_loss(
         cadmpeg_core::decode::u64_from_index(code.code().len()),
         "nx geometry report loss code",
     )?;
-    ctx.charge_collection_items(1, "nx geometry report losses")?;
-    losses
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("nx geometry report losses", 0, 1))?;
+    ctx.reserve_vec(losses, 1, "nx geometry report losses")?;
     losses.push(code.note(message));
     Ok(())
 }
@@ -393,10 +390,7 @@ pub(super) fn build_geometry_report(
     }
 
     for loss in dialect_losses {
-        ctx.charge_collection_items(1, "nx geometry report losses")?;
-        losses
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx geometry report losses", 0, 1))?;
+        ctx.reserve_vec(&mut losses, 1, "nx geometry report losses")?;
         losses.push(loss.clone_admitted(ctx, "nx geometry report dialect loss")?);
     }
     let note_count = cadmpeg_core::decode::u64_from_index(notes.len());

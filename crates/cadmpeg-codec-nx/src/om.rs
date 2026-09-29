@@ -490,17 +490,7 @@ pub(crate) fn offset_store_named_point<'a>(
             cadmpeg_core::decode::u64_from_index(length),
             "NX named point block bytes",
         )?);
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(block.len()),
-            "NX named point block bytes",
-        )?;
-        bytes.try_reserve(block.len()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "NX named point block bytes",
-                0,
-                cadmpeg_core::decode::u64_from_index(length),
-            )
-        })?;
+        ctx.reserve_vec(&mut bytes, block.len(), "NX named point block bytes")?;
         bytes.extend_from_slice(block);
         let names = name_field::scan(ctx, &bytes)?;
         let Some(name) = names.first() else {
@@ -4829,18 +4819,7 @@ pub(crate) fn offset_store_control_class_ordinals(
     let Some(boundary) = boundary else {
         return Ok(None);
     };
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(boundary),
-        "nx offset-store class ordinals",
-    )?;
-    let mut ordinals = Vec::new();
-    ordinals.try_reserve_exact(boundary).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "nx offset-store class ordinals",
-            0,
-            cadmpeg_core::decode::u64_from_index(boundary),
-        )
-    })?;
+    let mut ordinals = ctx.collection_vec(boundary, "nx offset-store class ordinals")?;
     for index in 0..boundary {
         let Some(identity) = value_at(index) else {
             return Ok(None);
