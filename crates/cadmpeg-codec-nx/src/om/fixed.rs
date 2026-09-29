@@ -110,6 +110,6 @@ impl Q155LaneFrame {
 impl super::scalar_run::ScalarFrame for Q155LaneFrame {
     type Atom = Q155Atom;
     fn prefix_len(self) -> u64 {
-        Self::DISCRIMINATOR.len() as u64
+        cadmpeg_core::decode::u64_from_index(Self::DISCRIMINATOR.len())
     }
 }

@@ -26,7 +26,7 @@ impl ExtrudeProfileReferenceField {
             .references
             .as_slice()
             .iter()
-            .map(|token| token.raw().len() as u64)
+            .map(|token| cadmpeg_core::decode::u64_from_index(token.raw().len()))
             .sum();
         self.primary_offset = base.checked_add(self.primary_offset)?;
         self.primary_offset.checked_add(width)?.checked_add(3)?;
@@ -44,7 +44,7 @@ impl ExtrudeProfileReferenceField {
         let mut relative = 0;
         self.references.as_slice().iter().map(move |token| {
             let position = relative;
-            relative += token.raw().len() as u64;
+            relative += cadmpeg_core::decode::u64_from_index(token.raw().len());
             (
                 *token,
                 self.primary_offset + position,

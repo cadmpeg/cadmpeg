@@ -26,19 +26,19 @@ impl DraftFeaturePayloadReferenceField {
         let width = self
             .tokens
             .iter()
-            .map(|token| token.raw().len() as u64)
+            .map(|token| cadmpeg_core::decode::u64_from_index(token.raw().len()))
             .sum::<u64>();
-        origin.checked_add(2 * GRAPH_PREFIX.len() as u64 + MIDDLE.len() as u64 + 5 + width)?;
+        origin.checked_add(2 * cadmpeg_core::decode::u64_from_index(GRAPH_PREFIX.len()) + cadmpeg_core::decode::u64_from_index(MIDDLE.len()) + 5 + width)?;
         self.origin = origin;
         Some(self)
     }
     pub(crate) fn references(&self) -> [(PayloadIndexToken, u64); 4] {
         let mut at = self.origin;
         std::array::from_fn(|slot| {
-            at += [GRAPH_PREFIX.len(), GRAPH_PREFIX.len(), MIDDLE.len(), 4][slot] as u64;
+            at += cadmpeg_core::decode::u64_from_index([GRAPH_PREFIX.len(), GRAPH_PREFIX.len(), MIDDLE.len(), 4][slot]);
             let offset = at;
             let token = self.tokens[slot];
-            at += token.raw().len() as u64;
+            at += cadmpeg_core::decode::u64_from_index(token.raw().len());
             (token, offset)
         })
     }
@@ -72,7 +72,7 @@ pub(crate) fn draft_feature_payload_references(
         (record.payload().get(at) == Some(&0xff)).then_some(())?;
         Some(DraftFeaturePayloadReferenceField {
             tokens: [first, second, third, fourth],
-            origin: (record.payload_offset() + start) as u64,
+            origin: cadmpeg_core::decode::u64_from_index(record.payload_offset() + start),
         })
     };
     super::unique_candidate(

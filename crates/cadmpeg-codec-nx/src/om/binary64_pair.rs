@@ -146,7 +146,7 @@ impl<F: Binary64PairForm, O: Copy + Add<Output = O> + From<u16>> Binary64Pair<F,
 impl<F: Binary64PairForm> Binary64Pair<F, u64> {
     pub(crate) fn new(form: F, offset: u64, values: [ShiftedBinary64; 2]) -> Option<Self> {
         offset
-            .checked_add(form.discriminator().len() as u64 + 16 + form.separator_width() as u64)?;
+            .checked_add(cadmpeg_core::decode::u64_from_index(form.discriminator().len()) + 16 + cadmpeg_core::decode::u64_from_index(form.separator_width()))?;
         Some(Self {
             form,
             offset,

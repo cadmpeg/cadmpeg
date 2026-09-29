@@ -28,7 +28,7 @@ impl<B> FsetReferences<B> {
             return Err("selector: requires 1 through 247 graphic ASCII bytes excluding >");
         }
         offset
-            .checked_add(selector.len() as u64 + 22)
+            .checked_add(cadmpeg_core::decode::u64_from_index(selector.len()) + 22)
             .ok_or("source_offset: FSET frame overflows")?;
         Ok(Self {
             offset,
@@ -51,11 +51,11 @@ impl<B> FsetReferences<B> {
         &self.second
     }
     pub(crate) fn first_offsets(&self) -> [u64; 2] {
-        let start = self.offset + 3 + self.selector.len() as u64;
+        let start = self.offset + 3 + cadmpeg_core::decode::u64_from_index(self.selector.len());
         [start, start + 3]
     }
     pub(crate) fn second_offsets(&self) -> [u64; 3] {
-        let start = self.offset + 10 + self.selector.len() as u64;
+        let start = self.offset + 10 + cadmpeg_core::decode::u64_from_index(self.selector.len());
         [start, start + 3, start + 6]
     }
 }
@@ -106,7 +106,7 @@ impl FsetReferences<()> {
                 return None;
             }
             Self::new(
-                (record.payload_offset() + start) as u64,
+                cadmpeg_core::decode::u64_from_index(record.payload_offset() + start),
                 selector.to_string(),
                 first,
                 second,

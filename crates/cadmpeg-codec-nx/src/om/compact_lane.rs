@@ -66,7 +66,7 @@ impl<T> CountedLane<T, usize> {
         CountedLane::<T, u64>::new(
             self.anchor,
             self.members,
-            base.checked_add(self.offset as u64)?,
+            base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset))?,
         )
     }
 }
@@ -168,7 +168,7 @@ impl<T, O: Copy + Add<Output = O> + From<u16>> AbrLane<T, O> {
 
 impl<T> AbrLane<T, usize> {
     pub(crate) fn into_absolute(self, base: u64) -> Option<AbrLane<T, u64>> {
-        AbrLane::<T, u64>::new(self.slots, base.checked_add(self.offset as u64)?)
+        AbrLane::<T, u64>::new(self.slots, base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset))?)
     }
 }
 

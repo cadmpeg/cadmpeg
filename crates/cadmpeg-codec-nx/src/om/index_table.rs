@@ -150,7 +150,7 @@ impl<'a> FixedIndex<'a> {
         let ids_start = self.object_id_table_offset + 8;
         let ids = std::iter::from_fn(move || {
             let offset = ids_start + ids.position();
-            ids.u32_le().map(|value| (value, offset as u64))
+            ids.u32_le().map(|value| (value, cadmpeg_core::decode::u64_from_index(offset)))
         });
         self.records
             .records()

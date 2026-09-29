@@ -260,21 +260,21 @@ pub(super) fn try_decode_geometry(
         .sum::<usize>();
     let transfer_limit = completion_transfer_budget_limit(chart_count);
     let support_uv_limit = support_uv_completion_budget_limit(chart_count);
-    let exact_transfer_budget = ctx.work_budget(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES as u64);
-    let transfer_budget = ctx.work_budget(transfer_limit as u64);
-    let support_uv_validation_budget = ctx.work_budget(support_uv_limit as u64);
-    let support_budget = ctx.work_budget(support_uv_limit as u64);
-    let coupled_support_budget = ctx.work_budget(support_uv_limit as u64);
+    let exact_transfer_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES));
+    let transfer_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(transfer_limit));
+    let support_uv_validation_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(support_uv_limit));
+    let support_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(support_uv_limit));
+    let coupled_support_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(support_uv_limit));
     let adaptive_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK as u64);
+        GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     let completion_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, MAX_PCURVE_COMPLETION_GEOMETRY_WORK as u64);
+        GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_PCURVE_COMPLETION_GEOMETRY_WORK));
     let support_uv_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK as u64);
+        GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK));
     let coupled_support_uv_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK as u64);
+        GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK));
     let serialized_support_uv_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK as u64);
+        GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK));
     let mut support_uv_lane_geometry_exhausted = false;
     let mut intersection_index = IntersectionIncidenceIndex::default();
     let mut model_endpoint_witnesses = EndpointWitnesses::new();
@@ -306,7 +306,7 @@ pub(super) fn try_decode_geometry(
                 &mut annotations,
                 unknown.id().as_str(),
                 &container_stream,
-                stream.file_offset as u64,
+                cadmpeg_core::decode::u64_from_index(stream.file_offset),
                 stream.kind().label(),
             )?;
             super::annotations::exactness(
@@ -451,7 +451,7 @@ pub(super) fn try_decode_geometry(
                 &mut annotations,
                 id.as_str(),
                 &source_stream,
-                surf.pos as u64,
+                cadmpeg_core::decode::u64_from_index(surf.pos),
                 "B_SPLINE_SURFACE",
             )?;
             super::annotations::derived(ctx, &mut annotations, id.as_str(), "geometry")?;
@@ -497,7 +497,7 @@ pub(super) fn try_decode_geometry(
                     &mut annotations,
                     surface_id.as_str(),
                     &source_stream,
-                    offset.pos as u64,
+                    cadmpeg_core::decode::u64_from_index(offset.pos),
                     "OFFSET_SURF",
                 )?;
                 super::annotations::derived(
@@ -539,7 +539,7 @@ pub(super) fn try_decode_geometry(
                 &mut annotations,
                 procedural_id.as_str(),
                 &source_stream,
-                offset.pos as u64,
+                cadmpeg_core::decode::u64_from_index(offset.pos),
                 "OFFSET_SURF",
             )?;
             super::annotations::derived(
@@ -593,7 +593,7 @@ pub(super) fn try_decode_geometry(
                 &mut annotations,
                 surface_id.as_str(),
                 &source_stream,
-                blend.pos as u64,
+                cadmpeg_core::decode::u64_from_index(blend.pos),
                 "BLEND_SURF",
             )?;
             super::annotations::derived(ctx, &mut annotations, surface_id.as_str(), "geometry")?;
@@ -626,7 +626,7 @@ pub(super) fn try_decode_geometry(
                 &mut annotations,
                 procedural_id.as_str(),
                 &source_stream,
-                blend.pos as u64,
+                cadmpeg_core::decode::u64_from_index(blend.pos),
                 "BLEND_SURF",
             )?;
             super::annotations::derived(
@@ -752,7 +752,7 @@ pub(super) fn try_decode_geometry(
                 &mut annotations,
                 id.as_str(),
                 &source_stream,
-                crv.pos as u64,
+                cadmpeg_core::decode::u64_from_index(crv.pos),
                 "B_SPLINE_CURVE",
             )?;
             super::annotations::derived(ctx, &mut annotations, id.as_str(), "geometry")?;
@@ -776,7 +776,7 @@ pub(super) fn try_decode_geometry(
                 &mut annotations,
                 id.as_str(),
                 &source_stream,
-                pcurve.pos as u64,
+                cadmpeg_core::decode::u64_from_index(pcurve.pos),
                 "B_CURVE_2D",
             )?;
             super::annotations::derived(ctx, &mut annotations, id.as_str(), "geometry")?;
@@ -970,7 +970,7 @@ pub(super) fn try_decode_geometry(
                 &mut annotations,
                 curve_id.as_str(),
                 &source_stream,
-                construction.pos as u64,
+                cadmpeg_core::decode::u64_from_index(construction.pos),
                 "INTERSECTION",
             )?;
             if charted.is_some() || uncharted.is_some() {
@@ -1035,7 +1035,7 @@ pub(super) fn try_decode_geometry(
                 &mut annotations,
                 procedural_id.as_str(),
                 &source_stream,
-                construction.pos as u64,
+                cadmpeg_core::decode::u64_from_index(construction.pos),
                 "INTERSECTION",
             )?;
             if charted.is_some() || uncharted.is_some() {
@@ -1468,7 +1468,7 @@ pub(super) fn try_decode_geometry(
             &mut annotations,
             unknown.id().as_str(),
             &container_stream,
-            stream.file_offset as u64,
+            cadmpeg_core::decode::u64_from_index(stream.file_offset),
             stream.kind().label(),
         )?;
         super::annotations::exactness(
@@ -1509,7 +1509,7 @@ pub(super) fn try_decode_geometry(
     ir.source = Some(source_meta(ctx, scan, dialects)?);
 
     ctx.admit_entities(
-        ir.model.entity_count() as u64,
+        cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
         admitted_entities,
         "admit NX entities",
     )?;
