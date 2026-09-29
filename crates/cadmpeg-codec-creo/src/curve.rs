@@ -5901,22 +5901,33 @@ fn solve_unique_affine_system(
         .then_some(solution)
 }
 
-fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, AffineValue> {
-    let mut values = BTreeMap::from([(
-        "t".to_string(),
+fn evaluate_affine_program(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &CurveExpressionRecord,
+) -> Result<BTreeMap<String, AffineValue>, cadmpeg_core::CodecError> {
+    let mut values = BTreeMap::new();
+    ctx.charge_collection_items(1, "creo affine time value node")?;
+    values.insert(
+        ctx.copy_retained_text("t", "creo affine time value name")?,
         AffineValue {
             constant: 0.0,
             linear: 1.0,
         },
-    )]);
-    let mut defined_symbols = BTreeSet::from(["t".to_string()]);
+    );
+    let mut defined_symbols = BTreeSet::new();
+    ctx.charge_collection_items(1, "creo affine defined time node")?;
+    defined_symbols.insert(ctx.copy_retained_text("t", "creo affine defined time name")?);
     for assignment in &record.assignments {
         let Some((name, declared_unit)) = assignment.parameter_target() else {
             continue;
         };
-        let key = expression_identifier_key(name);
+        let mut key = ctx.copy_retained_text(name, "creo affine assignment names")?;
+        key.make_ascii_lowercase();
         let declaration_is_valid = declared_unit.is_none() || !defined_symbols.contains(&key);
-        defined_symbols.insert(key.clone());
+        if !defined_symbols.contains(&key) {
+            ctx.charge_collection_items(1, "creo affine defined symbol nodes")?;
+            defined_symbols.insert(ctx.copy_retained_text(&key, "creo affine defined symbol names")?);
+        }
         match assignment.activation {
             CurveExpressionActivation::Active => {
                 let value = declaration_is_valid
@@ -5933,6 +5944,9 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
                             .map_or(Some(value), |unit| value.with_unit(relation_unit(unit)?))
                     });
                 if let Some(value) = value {
+                    if !values.contains_key(&key) {
+                        ctx.charge_collection_items(1, "creo affine value nodes")?;
+                    }
                     values.insert(key, value);
                 } else {
                     values.remove(&key);
@@ -5944,16 +5958,23 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
             }
         }
     }
-    values
+    Ok(values)
 }
 
 /// Recognize an exact cylindrical helix program expressed by the conventional
 /// Creo outputs `r`, `theta` (degrees), and `z` over `t` in `[0, 1]`.
-pub(crate) fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressionHelix> {
-    record.prohibited_constructs.is_empty().then_some(())?;
-    record.solve_blocks.is_empty().then_some(())?;
-    (!record.unresolved_solve_control).then_some(())?;
-    let values = evaluate_affine_program(record);
+pub(crate) fn expression_helix(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &CurveExpressionRecord,
+) -> Result<Option<CurveExpressionHelix>, cadmpeg_core::CodecError> {
+    if !record.prohibited_constructs.is_empty()
+        || !record.solve_blocks.is_empty()
+        || record.unresolved_solve_control
+    {
+        return Ok(None);
+    }
+    let values = evaluate_affine_program(ctx, record)?;
+    Ok((|| {
     let radius = values.get("r")?;
     let theta = values.get("theta")?;
     let z = values.get("z")?;
@@ -5969,6 +5990,7 @@ pub(crate) fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveEx
         start_angle: cadmpeg_ir::scalar::Angle::new(theta.constant.to_radians())?,
         clockwise: angular_travel < 0.0,
     })
+    })())
 }
 
 /// Decode positional `crv_array` rows whose terminal suffix has one

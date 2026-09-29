@@ -9,6 +9,8 @@ const ONE_COMMENT: &[u8] = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
 const WITH_LOCAL_SYSTEM: &[u8] = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
     \xe0\x02local_sys\0\xf9\x04\x03\xe4\x0f\x0f\x0f\x0f\x0f\x18\xe5\x0f\x0f\x0f\
     \xe0\x0aexpression\0\xf8\x01/*x*/\0";
+const AFFINE_HELIX: &[u8] = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+    \xe0\x0aexpression\0\xf8\x03r=5\0theta=t*360\0z=20*t\0";
 
 fn parse(
     payload: &[u8],
@@ -492,6 +494,61 @@ macro_rules! evaluation_materialized_test {
 }
 
 evaluation_materialized_test!(solve_snapshot_lookup_refuses_temporary_bytes, &["SOLVE", "x=1", "FOR x"], "creo solve snapshot lookup");
+
+fn affine_helix_limit_reaches(dimension: ResourceDimension, operation: &'static str) {
+    let record = super::super::expression_records(AFFINE_HELIX)
+        .pop()
+        .expect("complete helix expression");
+    assert!(with_expression_policy(DecodePolicy::service(), |ctx| {
+        super::super::expression_helix(ctx, &record)
+    })
+    .expect("service profile")
+    .is_some());
+    for limit in 0..256 {
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            _ => panic!("unsupported affine test limit"),
+        }
+        let result = with_expression_policy(policy, |ctx| {
+            super::super::expression_helix(ctx, &record)
+        });
+        if matches!(result, Err(CodecError::ResourceLimit(ref refusal))
+            if refusal.dimension == dimension && refusal.operation == operation)
+        {
+            return;
+        }
+    }
+    panic!("no limit reaches {operation}");
+}
+
+macro_rules! affine_helix_collection_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            affine_helix_limit_reaches(ResourceDimension::CollectionItems, $operation);
+        }
+    };
+}
+
+macro_rules! affine_helix_retained_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            affine_helix_limit_reaches(ResourceDimension::RetainedBytes, $operation);
+        }
+    };
+}
+
+affine_helix_collection_test!(affine_time_value_node_refuses, "creo affine time value node");
+affine_helix_retained_test!(affine_time_value_name_refuses, "creo affine time value name");
+affine_helix_collection_test!(affine_defined_time_node_refuses, "creo affine defined time node");
+affine_helix_retained_test!(affine_defined_time_name_refuses, "creo affine defined time name");
+affine_helix_retained_test!(affine_assignment_names_refuse, "creo affine assignment names");
+affine_helix_collection_test!(affine_defined_symbol_nodes_refuse, "creo affine defined symbol nodes");
+affine_helix_retained_test!(affine_defined_symbol_names_refuse, "creo affine defined symbol names");
+affine_helix_collection_test!(affine_value_nodes_refuse, "creo affine value nodes");
 
 #[test]
 fn solve_unknowns_refuse_before_vector_growth() {
