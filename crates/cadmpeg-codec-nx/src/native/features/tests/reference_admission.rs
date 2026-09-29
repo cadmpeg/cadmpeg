@@ -5,6 +5,7 @@ use crate::native::features::feature_projected_curve_construction_payloads;
 use crate::native::features::feature_projected_curve_construction_strings;
 use crate::native::features::feature_operation_labels;
 use crate::native::features::feature_point_construction_headers;
+use crate::native::features::feature_point_construction_scalar_lanes;
 use crate::native::features::feature_surface_construction_references;
 use crate::native::features::feature_surface_construction_payloads;
 use crate::native::features::feature_thru_curve_construction_envelopes;
@@ -38,6 +39,71 @@ fn projected_curve_container() -> crate::container::Container<'static> {
 fn point_header_container() -> crate::container::Container<'static> {
     reference_container("POINT",
         b"\x72\x00\x00\x01\x00\x00\x00\xf1\x1c\x8f\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0d\x01\x02\x01\x00\x00\x00\x89\x02\x01\x01\x01\x00\xa5\x57\x95\x01\x00\x00\xff\x02\xc0\x1f\xff\xfd\x01\x00\x00\x01\x01\x01\x03\x02\x01\x01\x01\x00\x00\x00\x00\x00\xaa".to_vec())
+}
+
+fn point_lane_container() -> crate::container::Container<'static> {
+    let mut store = vec![vec![b'A']; 7311];
+    let mut encoded = Vec::new();
+    for value in [1.0_f64, -2.0, 3.5, 4.0, 5.25, -6.0] {
+        encoded.extend_from_slice(&crate::test_support::test_bytes::shifted_f64_bytes(value));
+    }
+    let mut preceding = vec![0xaa, 0xbb];
+    preceding.extend_from_slice(&encoded[..3]);
+    store[7309] = preceding;
+    let mut target = encoded[3..].to_vec();
+    target.extend_from_slice(&[
+        0x00, 0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86,
+        0x02, 0x00, 0x01, 0x00, 0xcc,
+    ]);
+    store[7310] = target;
+    let blocks = store.iter().map(Vec::as_slice).collect::<Vec<_>>();
+    let payload = b"\x72\x00\x00\x01\x00\x00\x00\xf1\x1c\x8f\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0d\x01\x02\x01\x00\x00\x00\x89\x02\x01\x01\x01\x00\xa5\x57\x95\x01\x00\x00\xff\x02\xc0\x1f\xff\xfd\x01\x00\x00\x01\x01\x01\x03\x02\x01\x01\x01\x00\x00\x00\x00\x00\xaa".to_vec();
+    let part = crate::test_support::test_om::composed_feature_history_payload(
+        &[(&[0xff; 4], "POINT", payload)], &blocks);
+    let file = crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
+    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
+        .expect("synthetic point scalar lane container")
+}
+
+fn point_lane_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = point_lane_container();
+    let headers = crate::test_support::with_decode_context(|ctx| {
+        feature_point_construction_headers(ctx, &container)
+    }).expect("point construction headers");
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_point_construction_scalar_lanes(ctx, &container, &headers)
+    };
+    assert_eq!(crate::test_support::with_decode_context(|ctx| decode(ctx))
+        .expect("admitted point scalar lanes").len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    decode(&ctx).expect_err("point scalar lane resource limit")
+}
+
+#[test]
+fn point_lane_refuses_collection_limit() {
+    let error = point_lane_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn point_lane_refuses_retained_limit() {
+    let error = point_lane_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn point_lane_refuses_work_limit() {
+    let error = point_lane_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 fn point_header_refusal(

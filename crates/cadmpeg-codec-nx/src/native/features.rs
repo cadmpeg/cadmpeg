@@ -8321,26 +8321,54 @@ pub(super) fn feature_point_construction_scalar_lanes(
         let Ok(target_ordinal) = usize::try_from(header.token.value()) else {
             continue;
         };
-        let candidates = indexed
-            .iter()
-            .enumerate()
-            .filter_map(|(section_ordinal, (entry, section))| {
-                let records = section.as_offset_only()?.2;
-                if target_ordinal < 2 {
-                    return None;
-                }
-                let target_id =
-                    format!("nx:om-data-blocks-{section_ordinal}:block#{target_ordinal}");
-                if target_id != expected_target {
-                    return None;
-                }
-                let preceding = records.get(target_ordinal - 2)?;
-                let target = records.get(target_ordinal - 1)?;
-                let lane = crate::om::point_feature_scalar_lane(preceding.bytes, target.bytes)?;
-                Some((section_ordinal, *entry, preceding, target, lane))
-            })
-            .collect::<Vec<_>>();
-        let [(section_ordinal, entry, preceding, target, lane)] = candidates.as_slice() else {
+        if target_ordinal < 2 {
+            continue;
+        }
+        let Some((expected_section, expected_block)) = expected_target
+            .strip_prefix("nx:om-data-blocks-")
+            .and_then(|tail| tail.split_once(":block#")) else {
+            continue;
+        };
+        let section_ordinal = expected_section.parse::<usize>().ok();
+        let block_ordinal = expected_block.parse::<usize>().ok();
+        let canonical = section_ordinal.is_some_and(|section| {
+            expected_section.len() == section.checked_ilog10().map_or(1, |digits| digits as usize + 1)
+        }) && block_ordinal.is_some_and(|block| {
+            expected_block.len() == block.checked_ilog10().map_or(1, |digits| digits as usize + 1)
+        });
+        if !canonical || block_ordinal != Some(target_ordinal) {
+            continue;
+        }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(indexed.len()),
+            "match NX point scalar lane")?;
+        let mut candidate = None;
+        let mut ambiguous = false;
+        for (ordinal, (entry, section)) in indexed.iter().enumerate() {
+            if section_ordinal != Some(ordinal) {
+                continue;
+            }
+            let Some((_, _, records)) = section.as_offset_only() else {
+                continue;
+            };
+            let (Some(preceding), Some(target)) = (
+                records.get(target_ordinal - 2), records.get(target_ordinal - 1),
+            ) else {
+                continue;
+            };
+            let Some(lane) = crate::om::point_feature_scalar_lane(preceding.bytes, target.bytes)
+            else {
+                continue;
+            };
+            if candidate.is_some() {
+                ambiguous = true;
+                break;
+            }
+            candidate = Some((ordinal, *entry, preceding, target, lane));
+        }
+        if ambiguous {
+            continue;
+        }
+        let Some((section_ordinal, entry, preceding, target, lane)) = candidate else {
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
@@ -8357,23 +8385,29 @@ pub(super) fn feature_point_construction_scalar_lanes(
         else {
             continue;
         };
+        let id = replace_operation_text(ctx, &header.id,
+            "point-construction-header#", "point-construction-scalar-lane#",
+            "NX point scalar lane identity")?;
+        let operation_label = copy_operation_text(ctx, &header.operation_label,
+            "NX point scalar lane operation")?;
+        let construction_header = copy_operation_text(ctx, &header.id,
+            "NX point scalar lane header")?;
+        let first_block = format_charged_text(ctx,
+            format_args!("nx:om-data-blocks-{section_ordinal}:block#{}", target_ordinal - 1),
+            "NX point scalar lane first block")?;
+        let second_block = format_charged_text(ctx,
+            format_args!("nx:om-data-blocks-{section_ordinal}:block#{target_ordinal}"),
+            "NX point scalar lane second block")?;
+        let data_blocks = [first_block, second_block];
+        ctx.charge_collection_items(1, "NX point scalar lanes")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeaturePointConstructionScalarLane>()),
+            "NX point scalar lanes")?;
+        lanes.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX point scalar lanes", 0, 1))?;
         lanes.push(FeaturePointConstructionScalarLane {
-            id: header.id.replacen(
-                "point-construction-header#",
-                "point-construction-scalar-lane#",
-                1,
-            ),
-            operation_label: header.operation_label.clone(),
-            construction_header: header.id.clone(),
-            data_blocks: [
-                format!(
-                    "nx:om-data-blocks-{section_ordinal}:block#{}",
-                    target_ordinal - 1
-                ),
-                format!("nx:om-data-blocks-{section_ordinal}:block#{target_ordinal}"),
-            ],
-            scalars: lane.values,
-            positions,
+            id, operation_label, construction_header, data_blocks,
+            scalars: lane.values, positions,
         });
     }
     Ok(lanes)
