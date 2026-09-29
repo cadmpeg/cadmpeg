@@ -451,7 +451,11 @@ pub(crate) fn parse_topology(
         let mut pcurves = BTreeMap::new();
         for record in &records {
             if record.class == 0xff {
-                let edge = parse_edge(record)?;
+                let edge = match parse_edge(ctx, record) {
+                    Ok(Some(edge)) => edge,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
                 if let Err(error) = ctx.charge_collection_items(1, "catia_e5_topology_edges") {
                     return Some(Err(error));
                 }
@@ -1701,25 +1705,26 @@ fn parse_loop_signs(trailing: &[u8], edge_count: usize) -> Result<Option<bool>, 
     Ok(Some(signs[1] == 1))
 }
 
-fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {
+fn parse_edge(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<E5Edge>, CodecError> {
     if record.payload.first() != Some(&0x85) {
-        return None;
+        return Ok(None);
     }
     let mut position = 1;
-    let support = wire::tokens::object_ref(record.payload, &mut position, false)?;
-    let start_vertex = wire::tokens::object_ref(record.payload, &mut position, false)?;
-    let end_vertex = wire::tokens::object_ref(record.payload, &mut position, false)?;
-    let parameter_start = wire::tokens::object_ref(record.payload, &mut position, false)?;
-    let parameter_end = wire::tokens::object_ref(record.payload, &mut position, false)?;
-    let tail = record.payload[position..].to_vec();
-    Some(E5Edge {
+    let Some(support) = wire::tokens::object_ref(record.payload, &mut position, false) else { return Ok(None) };
+    let Some(start_vertex) = wire::tokens::object_ref(record.payload, &mut position, false) else { return Ok(None) };
+    let Some(end_vertex) = wire::tokens::object_ref(record.payload, &mut position, false) else { return Ok(None) };
+    let Some(parameter_start) = wire::tokens::object_ref(record.payload, &mut position, false) else { return Ok(None) };
+    let Some(parameter_end) = wire::tokens::object_ref(record.payload, &mut position, false) else { return Ok(None) };
+    let tail = crate::resource::copy_retained_slice(ctx, &record.payload[position..],
+        "catia_e5_edge_tail")?;
+    Ok(Some(E5Edge {
         support,
         start_vertex,
         end_vertex,
         parameter_start,
         parameter_end,
         tail,
-    })
+    }))
 }
 
 fn solve_loop_chain(
@@ -2530,6 +2535,18 @@ mod tests {
         ] {
             assert!(operations.contains(operation), "no refusal at {operation}");
         }
+    }
+
+    #[test]
+    fn e5_edge_tail_refuses_retained_limit_before_absent_topology() {
+        let mut bytes = Vec::new();
+        append_e5_record(&mut bytes, 0xff, 110,
+            &[0x85, 0x08, 200, 0x08, 10, 0x08, 11, 0x80, 0x80, 0x7f]);
+        let service = crate::test_support::with_service_context(|ctx| parse_topology(ctx, &bytes));
+        assert!(matches!(service, Ok(None)));
+        let limited = crate::test_support::with_retained_limit(0, |ctx| parse_topology(ctx, &bytes));
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_e5_edge_tail"));
     }
 
     #[test]
