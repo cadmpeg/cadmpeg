@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod body_uses_and_history;
+mod block_limits;
 mod datum_block_use_limits;
 mod column_relation_limits;
 mod datum_csys_limits;

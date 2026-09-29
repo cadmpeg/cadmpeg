@@ -9658,58 +9658,100 @@ pub(super) fn feature_block_construction_references(
 }
 
 /// Join complete, uniquely resolved `BLOCK` construction-reference fields.
-// Names follow the ordered source slots in this fixed-width lane.
-#[allow(clippy::many_single_char_names)]
 pub(super) fn feature_block_constructions(
+    ctx: &DecodeContext<'_>,
     references: &[FeatureBlockConstructionReference],
-) -> Vec<FeatureBlockConstruction> {
-    let mut by_operation = BTreeMap::<&str, Vec<&FeatureBlockConstructionReference>>::new();
+) -> Result<Vec<FeatureBlockConstruction>, CodecError> {
+    let mut operations = BTreeSet::new();
+    let mut operation_reservation = ctx.reserve_scoped(0, "NX block construction operations")?;
     for reference in references {
-        by_operation
-            .entry(reference.operation_label.as_str())
-            .or_default()
-            .push(reference);
+        ctx.charge_collection_items(1, "NX block construction operations")?;
+        operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&str>() * 4))?;
+        operations.insert(reference.operation_label.as_str());
     }
     let mut constructions = Vec::new();
-    for (operation_label, mut field) in by_operation {
+    for operation_label in operations {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(references.len()),
+            "join NX block construction references")?;
+        let mut field = Vec::new();
+        let mut field_reservation = ctx.reserve_scoped(0, "NX block construction field order")?;
+        for reference in references.iter().filter(|reference| {
+            reference.operation_label == operation_label
+        }) {
+            ctx.charge_collection_items(1, "NX block construction field order")?;
+            field_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<&FeatureBlockConstructionReference>()))?;
+            field.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX block construction field order", 0, 1))?;
+            field.push(reference);
+        }
+        let sort_work = field.len().checked_mul(field.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("sort NX block construction field", 0, 1))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sort_work),
+            "sort NX block construction field")?;
         field.sort_by_key(|reference| reference.position.ordinal());
         let Ok(field): Result<[_; 19], _> = field.try_into() else {
             continue;
         };
         if field.iter().enumerate().any(|(ordinal, reference)| {
-            reference.position.ordinal() != ordinal as u32 || reference.control != field[0].control
+            u32::try_from(ordinal) != Ok(reference.position.ordinal())
+                || reference.control != field[0].control
         }) {
             continue;
         }
         let [members @ .., terminal] = &field;
-        let resolved = members.map(|reference| {
-            reference
-                .data_block
-                .as_ref()
-                .map(|data_block| FeatureConstructionMember {
-                    reference: reference.id.clone(),
-                    data_block: data_block.clone(),
-                })
-        });
-        let [Some(a), Some(b), Some(c), Some(d), Some(e), Some(f), Some(g), Some(h), Some(i), Some(j), Some(k), Some(l), Some(m), Some(n), Some(o), Some(p), Some(q), Some(r)] =
-            resolved
-        else {
+        if field.iter().any(|reference| reference.data_block.is_none()) {
+            continue;
+        }
+        let mut owned_members = Vec::new();
+        let member_reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(
+            members.len() * std::mem::size_of::<FeatureConstructionMember>()),
+            "NX block construction member array")?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(members.len()),
+            "NX block construction member array")?;
+        owned_members.try_reserve_exact(members.len()).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX block construction member array", 0, 1))?;
+        for reference in members {
+            let Some(block) = reference.data_block.as_deref() else {
+                continue;
+            };
+            owned_members.push(FeatureConstructionMember {
+                reference: copy_operation_text(ctx, &reference.id,
+                    "NX block construction member reference")?,
+                data_block: copy_operation_text(ctx, block,
+                    "NX block construction member block")?,
+            });
+        }
+        let Ok(members): Result<[FeatureConstructionMember; 18], _> = owned_members.try_into() else {
             continue;
         };
-        let members = [a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r];
-        let Some(terminal_data_block) = terminal.data_block.clone() else {
+        drop(member_reservation);
+        let Some(terminal_block) = terminal.data_block.as_deref() else {
             continue;
         };
+        let terminal_data_block = copy_operation_text(ctx, terminal_block,
+            "NX block construction terminal block")?;
+        let terminal_reference = copy_operation_text(ctx, &terminal.id,
+            "NX block construction terminal reference")?;
+        let id = replace_operation_text(ctx, operation_label,
+            "operation-label", "block-construction", "NX block construction identity")?;
+        let operation_label = copy_operation_text(ctx, operation_label,
+            "NX block construction operation")?;
+        ctx.charge_collection_items(1, "NX block constructions")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureBlockConstruction>()), "NX block constructions")?;
+        constructions.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX block constructions", 0, 1))?;
         constructions.push(FeatureBlockConstruction {
-            id: operation_label.replacen("operation-label", "block-construction", 1),
-            operation_label: operation_label.to_string(),
+            id, operation_label,
             control: field[0].control,
             members,
-            terminal_reference: terminal.id.clone(),
+            terminal_reference,
             terminal_data_block,
         });
     }
-    constructions
+    Ok(constructions)
 }
 
 /// Reconstruct complete `BLOCK` construction payloads in reference order.
