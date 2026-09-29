@@ -381,6 +381,78 @@ fn assert_recipe_group_refusal(operation: &'static str) {
     panic!("no {operation} refusal");
 }
 
+fn assert_recipe_projection_refusal(
+    operation: &'static str,
+    dimension: ResourceDimension,
+) {
+    let mut fixture = fixture();
+    let mut parameter = parse_design_parameter_record(&parameter_record(
+        Some(21), "0.1 rad", "Angular Dimension", Some("rad"), "a1", 0.1,
+    )).unwrap();
+    parameter.id = fixture.parameter.id.clone();
+    parameter.record_index = fixture.parameter.record_index;
+    fixture.parameter = parameter;
+    let companion = parameter_companion();
+    let recipes = [dimension_recipe_record(40), dimension_recipe_record(41)];
+    let mut inputs = fixture.inputs();
+    inputs.companions = std::slice::from_ref(&companion);
+    inputs.recipe_records = &recipes;
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            _ => panic!("unsupported recipe projection limit"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn recipe_dimension_sketch_refuses_retained_limit() {
+    assert_recipe_projection_refusal("f3d recipe dimension sketch id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn recipe_repeated_parameter_refuses_retained_limit() {
+    assert_recipe_projection_refusal("f3d recipe repeated parameter id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn recipe_native_operand_reference_refuses_retained_limit() {
+    assert_recipe_projection_refusal("f3d recipe native operand reference",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn recipe_native_operand_refuses_collection_limit() {
+    assert_recipe_projection_refusal("f3d recipe native operand",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn recipe_constraint_native_reference_refuses_retained_limit() {
+    assert_recipe_projection_refusal("f3d recipe constraint native reference",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn recipe_dimension_constraint_refuses_collection_limit() {
+    assert_recipe_projection_refusal("f3d recipe dimension constraint",
+        ResourceDimension::CollectionItems);
+}
+
 #[test]
 fn dimension_recipe_group_refuses_collection_limit() {
     assert_recipe_group_refusal("f3d dimension recipe group");
