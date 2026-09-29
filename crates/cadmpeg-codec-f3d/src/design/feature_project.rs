@@ -2695,11 +2695,11 @@ fn project_thread_face_selection(
             faces: group_faces,
             ..
         }) = resolved_historical_face_group(
-            scope,
+            ctx, scope,
             scope.previous_history_state_id(),
             group,
             face_operands,
-        )
+        )?
         else {
             return Ok(FaceSelection::Native(native));
         };
@@ -3552,7 +3552,7 @@ fn project_face_selection(
                     transition.topology.faces.updated.as_slice()
                 });
             if let Some(selection) = resolved_historical_face_group(
-                scope, Some(previous_state_id), group, face_operands)
+                ctx, scope, Some(previous_state_id), group, face_operands)?
             {
                 Some(selection)
             } else {
@@ -7343,11 +7343,11 @@ fn project_circular_pattern(
         })) else { return Ok(None); };
     let seed = if group.role() == DesignOperandRole::BODIES_A {
         PatternSeed::Faces(match resolved_historical_face_group(
-                scope,
+                ctx, scope,
                 scope.previous_history_state_id(),
                 group,
                 face_operands,
-            ) {
+            )? {
                 Some(selection) => selection,
                 None => cadmpeg_ir::features::FaceSelection::Native(copy_feature_text(
                     ctx, &group.id, "f3d circular face seed id")?),
@@ -7493,11 +7493,11 @@ fn project_rectangular_pattern_scalars(
         match (first, second) {
             (Some(group), None) => Some(if group.role() == DesignOperandRole::BODIES_A {
                 PatternSeed::Faces(match resolved_historical_face_group(
-                    scope,
+                    ctx, scope,
                     scope.previous_history_state_id(),
                     group,
                     face_operands,
-                ) {
+                )? {
                     Some(selection) => selection,
                     None => cadmpeg_ir::features::FaceSelection::Native(copy_feature_text(
                         ctx, &group.id, "f3d rectangular face seed id")?),
@@ -7577,11 +7577,11 @@ fn project_mirror(
         ))
     } else {
         PatternSeed::Faces(match resolved_historical_face_group(
-                scope,
+                ctx, scope,
                 scope.previous_history_state_id(),
                 seed_group,
                 face_operands,
-            ) {
+            )? {
                 Some(selection) => selection,
                 None => cadmpeg_ir::features::FaceSelection::Native(copy_feature_text(
                     ctx, &seed_group.id, "f3d mirror face seed id")?),
@@ -7786,11 +7786,11 @@ pub(super) fn project_fixed_sweep(
     let orientation = match guide_surfaces.first() {
         Some(group) => Some(SweepOrientation::GuideSurface {
             faces: match resolved_historical_face_group(
-                scope,
+                ctx, scope,
                 scope.previous_history_state_id(),
                 group,
                 face_operands,
-            ) {
+            )? {
                 Some(selection) => selection,
                 None => FaceSelection::Native(copy_feature_text(
                     ctx, &group.id, "f3d Sweep guide surface id")?),
@@ -8530,11 +8530,11 @@ fn project_replace_face(
     let replacements = or_none!(resolved_body_recipe_selection(
         ctx, scope, replacement_group, body_recipe_operands)?);
     let targets = or_none!(resolved_historical_face_group(
-        scope,
+        ctx, scope,
         scope.previous_history_state_id(),
         target_group,
         face_operands,
-    ));
+    )?);
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::ReplaceFace {
             operands: or_none!(cadmpeg_ir::features::ReplaceFaceOperands::new(targets, replacements).ok()),
@@ -8737,7 +8737,7 @@ pub(super) fn project_split(
             let Some(tool) = tool else {
                 return Ok(None);
             };
-            let mut tools = if let Some(selection) = resolved_historical_face_operand(scope, tool) {
+            let mut tools = if let Some(selection) = resolved_historical_face_operand(ctx, scope, tool)? {
                 selection
             } else {
                 direct_face_selection(ctx, scope, face_operands)?
@@ -8951,11 +8951,11 @@ fn project_delete_face(
         return Ok(None);
     }
     let faces = resolved_historical_face_group(
-        scope,
+        ctx, scope,
         scope.previous_history_state_id(),
         group,
         face_operands,
-    )
+    )?
     .map_or_else(|| resolved_face_group(ctx, group, face_operands), |face| Ok(Some(face)))?;
     let faces = match faces {
         Some(faces) => faces,
@@ -9243,8 +9243,8 @@ fn project_extrude(
     }
     let selected_face = |group: &DesignConstructionOperandGroup| -> Result<FaceSelection, CodecError> {
         if let Some(selection) = resolved_historical_face_group(
-            scope, scope.previous_history_state_id(), group, face_operands,
-        ) {
+            ctx, scope, scope.previous_history_state_id(), group, face_operands,
+        )? {
             return Ok(selection);
         }
         match resolved_face_group(ctx, group, face_operands)? {

@@ -1817,12 +1817,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     split_context.changed_candidate_faces.clear();
     assert!(matches!(
         resolved_historical_split_face_target_group(
+            None,
             &split_scope,
             split_scope.previous_history_state_id(),
             &split_group,
             &[split_selected.clone(), split_context.clone()],
         ),
-        Some(FaceSelection::Historical { state, faces, native })
+        Ok(Some(FaceSelection::Historical { state, faces, native }))
             if state == feature_input_topology_id(&crate::ids::neutral_feature_id(&split_scope), 49)
                 && faces.len() == 1
                 && faces[0].as_str().ends_with(":49:50")
@@ -1838,24 +1839,26 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .push(candidate_context.recipe_nodes[0].clone());
     candidate_context.recipe_program = vec![0, -1, 2];
     assert!(resolved_historical_split_face_target_group(
+        None,
         &split_scope,
         split_scope.previous_history_state_id(),
         &split_group,
         &[split_selected.clone(), candidate_context],
     )
-    .is_some());
+    .unwrap().is_some());
     let mut unresolved_context = split_context;
     for reference in &mut unresolved_context.recipe_references {
         reference.candidate_faces.clear();
         reference.alternate_selector_faces.clear();
     }
     assert!(resolved_historical_split_face_target_group(
+        None,
         &split_scope,
         split_scope.previous_history_state_id(),
         &split_group,
         &[split_selected, unresolved_context],
     )
-    .is_none());
+    .unwrap().is_none());
 }
 
 #[test]

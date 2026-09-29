@@ -119,6 +119,37 @@ fn face_slot_id(
     cadmpeg_ir::ids::FaceId::try_from(text).map_err(CodecError::malformed)
 }
 
+fn historical_face_id(
+    ctx: Option<&DecodeContext<'_>>,
+    prefix: &cadmpeg_ir::ids::IdentityKey,
+    slot: i64,
+) -> Result<cadmpeg_ir::ids::HistoricalFaceId, CodecError> {
+    let Some(ctx) = ctx else { return Ok(ids::history_input_face_id(prefix, slot)); };
+    const NAMESPACE: &str = "f3d:history-input:face#";
+    let mut magnitude = slot.unsigned_abs();
+    let mut digits = 1usize;
+    while magnitude >= 10 {
+        magnitude /= 10;
+        digits += 1;
+    }
+    let operation = "f3d historical face id";
+    let len = NAMESPACE.len().checked_add(prefix.as_str().len())
+        .and_then(|len| len.checked_add(1 + digits + usize::from(slot.is_negative())))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.charge_retained(u64::try_from(len).map_err(|_| {
+        ctx.refuse_codec_limit(operation, 0, 1)
+    })?, operation)?;
+    let mut text = String::new();
+    text.try_reserve(len).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    text.push_str(NAMESPACE);
+    text.push_str(prefix.as_str());
+    text.push(':');
+    use std::fmt::Write;
+    write!(&mut text, "{slot}")
+        .map_err(|_| CodecError::malformed("historical face ID formatting failed"))?;
+    cadmpeg_ir::ids::HistoricalFaceId::try_from(text).map_err(CodecError::malformed)
+}
+
 /// Admit the legacy reference-aware face-target frame that omits its zero
 /// `Side1Offset` owner and parameter.
 pub(crate) fn extrude_omits_zero_side_one_offset(
@@ -287,16 +318,19 @@ pub(super) fn resolved_direct_face_selection(
 /// current-face slot. The caller must still admit the operand's exact recipe
 /// form; this helper only applies the unique historical-face proof.
 pub(super) fn resolved_historical_face_operand(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     operand: &DesignFaceOperand,
-) -> Option<cadmpeg_ir::features::FaceSelection> {
-    let previous_state_id = scope.previous_history_state_id()?;
-    let face_slot = resolve_face_operand_history_candidates(operand)?;
+) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
+    let Some(previous_state_id) = scope.previous_history_state_id() else { return Ok(None); };
+    let Some(face_slot) = resolve_face_operand_history_candidates(operand) else { return Ok(None); };
+    let native = copy_face_text(ctx, &operand.id, "f3d historical face operand id")?;
     historical_face_selection_with_native(
+        ctx,
         scope,
         previous_state_id,
         vec![face_slot],
-        operand.id.clone(),
+        native,
     )
 }
 
@@ -360,7 +394,7 @@ pub(super) fn resolved_body_recipe_selection(
         }
     }
     let Some(state_id) = state_id else { return Ok(None); };
-    Ok(historical_face_selection_in_state(scope, group, state_id, faces))
+    historical_face_selection_in_state(ctx, scope, group, state_id, faces)
 }
 
 /// Resolve the complete input-state body boundaries selected by an Extrude
@@ -390,7 +424,7 @@ pub(super) fn resolved_profile_face_group(
     use cadmpeg_ir::features::ProfileRef;
 
     let Some(selection) = resolved_historical_face_group(
-        scope, scope.previous_history_state_id(), group, operands) else { return Ok(None); };
+        ctx, scope, scope.previous_history_state_id(), group, operands)? else { return Ok(None); };
     let cadmpeg_ir::features::FaceSelection::Historical {
         state,
         faces,
@@ -706,7 +740,7 @@ pub(crate) fn resolved_extrude_profile_face_group(
             }
         }
     }
-    let Some(selection) = historical_face_selection(scope, root, faces) else { return Ok(None); };
+    let Some(selection) = historical_face_selection(ctx, scope, root, faces)? else { return Ok(None); };
     let cadmpeg_ir::features::FaceSelection::Historical {
         state,
         faces,
@@ -841,7 +875,7 @@ pub(super) fn resolved_loft_edge_profile_group(
     let Some(face_slot) = loft_edge_profile_face_slot(group.members().len(), &member_operands) else {
         return Ok(None);
     };
-    let Some(selection) = historical_face_selection(scope, group, vec![face_slot]) else {
+    let Some(selection) = historical_face_selection(ctx, scope, group, vec![face_slot])? else {
         return Ok(None);
     };
     let cadmpeg_ir::features::FaceSelection::Historical {
@@ -996,62 +1030,67 @@ fn loft_edge_profile_face_slot(
 }
 
 pub(super) fn resolved_historical_face_group(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
-    let faces = historical_face_group_slots(group, operands, FaceGroupMembers::Resolved)?;
-    historical_face_selection_in_state(scope, group, previous_state_id?, faces)
+) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
+    let Some(faces) = historical_face_group_slots(ctx, group, operands, FaceGroupMembers::Resolved)? else { return Ok(None); };
+    let Some(previous_state_id) = previous_state_id else { return Ok(None); };
+    historical_face_selection_in_state(ctx, scope, group, previous_state_id, faces)
 }
 
 fn historical_face_selection(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     faces: Vec<i64>,
-) -> Option<cadmpeg_ir::features::FaceSelection> {
-    let previous_state_id = scope.previous_history_state_id()?;
-    historical_face_selection_in_state(scope, group, previous_state_id, faces)
+) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
+    let Some(previous_state_id) = scope.previous_history_state_id() else { return Ok(None); };
+    historical_face_selection_in_state(ctx, scope, group, previous_state_id, faces)
 }
 
 fn historical_face_selection_in_state(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     previous_state_id: i64,
     faces: Vec<i64>,
-) -> Option<cadmpeg_ir::features::FaceSelection> {
-    historical_face_selection_with_native(scope, previous_state_id, faces, group.id.clone())
+) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
+    let native = copy_face_text(ctx, &group.id, "f3d historical face group id")?;
+    historical_face_selection_with_native(ctx, scope, previous_state_id, faces, native)
 }
 
 fn historical_face_selection_with_native(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     previous_state_id: i64,
     faces: Vec<i64>,
     native: String,
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
     use cadmpeg_ir::features::FaceSelection;
 
     if faces.is_empty() {
-        return None;
+        return Ok(None);
     }
     let feature = neutral_feature_id(scope);
     let feature_key = feature.key();
-    Some(
+    let prefix = ids::history_input_prefix(&feature_key, previous_state_id);
+    let mut historical_faces = Vec::new();
+    for face in faces {
+        let id = historical_face_id(ctx, &prefix, face)?;
+        push_face_item(ctx, &mut historical_faces, id, "f3d historical face member")?;
+    }
+    let fallback_native = copy_face_text(ctx, &native, "f3d historical face fallback id")?;
+    Ok(Some(
         FaceSelection::historical(
             feature_input_topology_id(&feature, previous_state_id),
-            faces
-                .into_iter()
-                .map(|face| {
-                    ids::history_input_face_id(
-                        &ids::history_input_prefix(&feature_key, previous_state_id),
-                        face,
-                    )
-                })
-                .collect(),
-            native.clone(),
+            historical_faces,
+            native,
         )
-        .unwrap_or(FaceSelection::Native(native)),
-    )
+        .unwrap_or(FaceSelection::Native(fallback_native)),
+    ))
 }
 
 /// Resolve `SplitFace` target groups whose bounded-face member run can include
@@ -1061,18 +1100,20 @@ fn historical_face_selection_with_native(
 /// other member must prove its preceding face slots, and at least one member
 /// must contribute a face.
 pub(super) fn resolved_historical_split_face_target_group(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SplitFace
         || group.role() != DesignOperandRole::ROLE_0X10
     {
-        return None;
+        return Ok(None);
     }
-    let faces = historical_face_group_slots(group, operands, FaceGroupMembers::SplitFaceContext)?;
-    historical_face_selection_in_state(scope, group, previous_state_id?, faces)
+    let Some(faces) = historical_face_group_slots(ctx, group, operands, FaceGroupMembers::SplitFaceContext)? else { return Ok(None); };
+    let Some(previous_state_id) = previous_state_id else { return Ok(None); };
+    historical_face_selection_in_state(ctx, scope, group, previous_state_id, faces)
 }
 
 /// Resolve a `SplitFace` target from the operation transition when the member
@@ -1098,14 +1139,14 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
         return Ok(None);
     }
     if let Some(selection) =
-        resolved_historical_split_face_target_group(scope, previous_state_id, group, operands)
+        resolved_historical_split_face_target_group(ctx, scope, previous_state_id, group, operands)?
     {
         return Ok(Some(selection));
     }
     let Some(faces) = split_face_updated_target_slots(
         ctx, scope, group, operands, updated_face_slots)? else { return Ok(None); };
     let Some(previous_state_id) = previous_state_id else { return Ok(None); };
-    Ok(historical_face_selection_in_state(scope, group, previous_state_id, faces))
+    historical_face_selection_in_state(ctx, scope, group, previous_state_id, faces)
 }
 
 fn split_face_updated_target_slots(
@@ -1175,12 +1216,13 @@ enum FaceGroupMembers {
 }
 
 fn historical_face_group_slots(
+    ctx: Option<&DecodeContext<'_>>,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
     members: FaceGroupMembers,
-) -> Option<Vec<i64>> {
-    let stream = native_stream(&group.id)?;
-    let mut faces = Vec::with_capacity(group.members().len());
+) -> Result<Option<Vec<i64>>, CodecError> {
+    let Some(stream) = native_stream(&group.id) else { return Ok(None); };
+    let mut faces = Vec::new();
     let mut contributing_members = 0;
     for (ordinal, record_index) in group
         .members()
@@ -1188,7 +1230,7 @@ fn historical_face_group_slots(
         .map(|member| &member.value)
         .enumerate()
     {
-        let ordinal = u32::try_from(ordinal).ok()?;
+        let Some(ordinal) = u32::try_from(ordinal).ok() else { return Ok(None); };
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == group.scope_record_index
@@ -1196,37 +1238,40 @@ fn historical_face_group_slots(
                 && operand.group_member_ordinal() == Some(ordinal)
                 && operand.record_index() == *record_index
         });
-        let operand = matches.next()?;
+        let Some(operand) = matches.next() else { return Ok(None); };
         if matches.next().is_some() {
-            return None;
+            return Ok(None);
         }
-        let member_slots = if operand.resolved_face_slots.is_empty() {
+        let mut candidate_slots = None;
+        if operand.resolved_face_slots.is_empty() {
             if matches!(members, FaceGroupMembers::SplitFaceContext) {
-                if let Some(slots) = split_face_complete_candidate_slots(operand) {
-                    Some(slots)
+                if let Some(slots) = split_face_complete_candidate_slots(ctx, operand)? {
+                    candidate_slots = Some(slots);
                 } else if is_split_face_context_member(operand) {
                     continue;
                 } else {
-                    return None;
+                    return Ok(None);
                 }
             } else {
-                return None;
+                return Ok(None);
             }
-        } else {
-            Some(operand.resolved_face_slots.clone())
-        }?;
+        }
+        let member_slots = candidate_slots.as_deref().unwrap_or(&operand.resolved_face_slots);
         contributing_members += 1;
         for face in member_slots {
-            if !faces.contains(&face) {
-                faces.push(face);
+            if !faces.contains(face) {
+                push_face_item(ctx, &mut faces, *face, "f3d historical face group slot")?;
             }
         }
     }
-    (contributing_members > 0 && !faces.is_empty()).then_some(faces)
+    Ok((contributing_members > 0 && !faces.is_empty()).then_some(faces))
 }
 
-fn split_face_complete_candidate_slots(operand: &DesignFaceOperand) -> Option<Vec<i64>> {
-    complete_counted_face_recipe(operand)?;
+fn split_face_complete_candidate_slots(
+    ctx: Option<&DecodeContext<'_>>,
+    operand: &DesignFaceOperand,
+) -> Result<Option<Vec<i64>>, CodecError> {
+    if complete_counted_face_recipe(operand).is_none() { return Ok(None); }
     let faces = if let Some(face) = &operand.resolved_active_face {
         std::slice::from_ref(face)
     } else {
@@ -1235,20 +1280,22 @@ fn split_face_complete_candidate_slots(operand: &DesignFaceOperand) -> Option<Ve
             && operand.unreferenced_candidate_faces.is_empty()
             && candidates.len() != 1
         {
-            return None;
+            return Ok(None);
         }
         candidates
     };
-    let slots = faces
-        .iter()
-        .map(|face| face.as_str().rsplit_once('#')?.1.parse::<i64>().ok())
-        .collect::<Option<Vec<_>>>()?;
-    let preceding = operand
-        .preceding_candidate_faces
-        .iter()
-        .filter_map(|face| face.as_str().rsplit_once('#')?.1.parse::<i64>().ok())
-        .collect::<HashSet<_>>();
-    (!slots.is_empty() && slots.iter().all(|slot| preceding.contains(slot))).then_some(slots)
+    let mut slots = Vec::new();
+    for face in faces {
+        let Some(slot) = face.as_str().rsplit_once('#').and_then(|(_, slot)| slot.parse::<i64>().ok()) else { return Ok(None); };
+        push_face_item(ctx, &mut slots, slot, "f3d SplitFace complete candidate slot")?;
+    }
+    let mut preceding = HashSet::new();
+    for face in &operand.preceding_candidate_faces {
+        if let Some(slot) = face.as_str().rsplit_once('#').and_then(|(_, slot)| slot.parse::<i64>().ok()) {
+            insert_face_set(ctx, &mut preceding, slot, "f3d SplitFace preceding candidate index")?;
+        }
+    }
+    Ok((!slots.is_empty() && slots.iter().all(|slot| preceding.contains(slot))).then_some(slots))
 }
 
 fn is_split_face_context_member(operand: &DesignFaceOperand) -> bool {
@@ -2511,7 +2558,8 @@ mod tests {
         loft_edge_profile_face_slot, resolve_stable_bounded_face_history_set,
         resolve_surface_delete_face_history_set,
         resolved_explicit_bounded_face_group, resolved_extrude_profile_face_group,
-        resolved_face_group, resolved_historical_split_face_target_group_with_updated_faces,
+        resolved_face_group, resolved_historical_face_group, resolved_historical_face_operand,
+        resolved_historical_split_face_target_group_with_updated_faces,
         resolved_profile_face_group,
         retain_face_operand_resolution, stable_face_support_set, ExtrudeFaceResolution,
     };
@@ -3411,6 +3459,136 @@ mod tests {
             },
         );
         operand
+    }
+
+    fn assert_historical_face_group_collection_refusal(limit: u64, operation: &'static str) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (mut operand, group, _) = start_geometry_fixture();
+        operand.resolved_face_slots = vec![10];
+        let scope = loft_scope();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = resolved_historical_face_group(Some(&ctx), &scope,
+            scope.previous_history_state_id(), &group, std::slice::from_ref(&operand));
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == operation), "expected {operation} refusal, got {result:?}");
+    }
+
+    fn assert_historical_face_group_retained_refusal(limit: u64, operation: &'static str) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (mut operand, group, _) = start_geometry_fixture();
+        operand.resolved_face_slots = vec![10];
+        let scope = loft_scope();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = resolved_historical_face_group(Some(&ctx), &scope,
+            scope.previous_history_state_id(), &group, std::slice::from_ref(&operand));
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+            if failure.dimension == ResourceDimension::RetainedBytes
+                && failure.operation == operation), "expected {operation} refusal, got {result:?}");
+    }
+
+    #[test]
+    fn historical_face_group_slot_refuses_collection_limit() {
+        assert_historical_face_group_collection_refusal(0, "f3d historical face group slot");
+    }
+
+    #[test]
+    fn historical_face_member_refuses_collection_limit() {
+        assert_historical_face_group_collection_refusal(1, "f3d historical face member");
+    }
+
+    #[test]
+    fn historical_face_group_id_refuses_retained_limit() {
+        assert_historical_face_group_retained_refusal(0, "f3d historical face group id");
+    }
+
+    #[test]
+    fn historical_face_id_refuses_retained_limit() {
+        let (_, group, _) = start_geometry_fixture();
+        assert_historical_face_group_retained_refusal(
+            u64::try_from(group.id.len()).unwrap(), "f3d historical face id");
+    }
+
+    #[test]
+    fn historical_face_fallback_id_refuses_retained_limit() {
+        let (mut operand, group, _) = start_geometry_fixture();
+        operand.resolved_face_slots = vec![10];
+        let scope = loft_scope();
+        let selection = resolved_historical_face_group(None, &scope,
+            scope.previous_history_state_id(), &group, std::slice::from_ref(&operand))
+            .unwrap().unwrap();
+        let cadmpeg_ir::features::FaceSelection::Historical { faces, .. } = selection else {
+            panic!("expected historical selection");
+        };
+        let limit = u64::try_from(group.id.len() + faces[0].as_str().len()).unwrap();
+        assert_historical_face_group_retained_refusal(limit, "f3d historical face fallback id");
+    }
+
+    #[test]
+    fn historical_face_operand_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (mut operand, _, _) = start_geometry_fixture();
+        operand.candidate_faces = vec![face(10)];
+        operand.preceding_candidate_faces = vec![face(10)];
+        let scope = loft_scope();
+        assert!(resolved_historical_face_operand(None, &scope, &operand).unwrap().is_some());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = resolved_historical_face_operand(Some(&ctx), &scope, &operand);
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+            if failure.dimension == ResourceDimension::RetainedBytes
+                && failure.operation == "f3d historical face operand id"),
+            "expected historical operand ID refusal, got {result:?}");
+    }
+
+    #[test]
+    fn split_face_complete_candidate_slot_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let mut operand = stable_bounded_face_operand();
+        operand.resolved_active_face = Some(face(10));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::split_face_complete_candidate_slots(Some(&ctx), &operand);
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d SplitFace complete candidate slot"),
+            "expected SplitFace slot refusal, got {result:?}");
+    }
+
+    #[test]
+    fn split_face_preceding_candidate_index_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let mut operand = stable_bounded_face_operand();
+        operand.resolved_active_face = Some(face(10));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::split_face_complete_candidate_slots(Some(&ctx), &operand);
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d SplitFace preceding candidate index"),
+            "expected SplitFace preceding index refusal, got {result:?}");
     }
 
     #[test]
