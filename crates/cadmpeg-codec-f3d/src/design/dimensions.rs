@@ -76,6 +76,32 @@ fn push_dimension_item<T>(
     Ok(())
 }
 
+fn copy_dimension_entity_id(
+    ctx: Option<&DecodeContext<'_>>,
+    id: &cadmpeg_ir::sketches::SketchEntityId,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::sketches::SketchEntityId, CodecError> {
+    let Some(ctx) = ctx else { return Ok(id.clone()); };
+    let bytes = ctx.copy_retained(id.as_str().as_bytes(), operation)?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| CodecError::malformed("validated sketch entity ID is not UTF-8"))?;
+    cadmpeg_ir::sketches::SketchEntityId::try_from(text).map_err(CodecError::malformed)
+}
+
+fn copy_dimension_locus(
+    ctx: Option<&DecodeContext<'_>>,
+    locus: &cadmpeg_ir::sketches::SketchLocus,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::sketches::SketchLocus, CodecError> {
+    use cadmpeg_ir::sketches::SketchLocus;
+    Ok(match locus {
+        SketchLocus::Entity(id) => SketchLocus::Entity(copy_dimension_entity_id(ctx, id, operation)?),
+        SketchLocus::Start(id) => SketchLocus::Start(copy_dimension_entity_id(ctx, id, operation)?),
+        SketchLocus::End(id) => SketchLocus::End(copy_dimension_entity_id(ctx, id, operation)?),
+        SketchLocus::Center(id) => SketchLocus::Center(copy_dimension_entity_id(ctx, id, operation)?),
+    })
+}
+
 const EPS_DIMENSIONS_OWNER_SCOPED_PARALLEL_LINE_SET_DIMENSION_DEFINITION_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_OWNER_SCOPED_LINE_LENGTH_DIMENSION_DEFINITION_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_UNIQUE_POINT_CLASS_DIMENSION_DEFINITION_E9: f64 = 1.0e-9;
@@ -4354,18 +4380,30 @@ pub(super) fn exact_coincident_loci(
     let loci = |entity: &cadmpeg_ir::sketches::SketchEntity| {
         let mut loci = Vec::new();
         if let Some([start, end]) = sketch_entity_endpoints(entity, ctx)? {
-            loci.push((SketchLocus::Start(entity.id().clone()), start));
-            loci.push((SketchLocus::End(entity.id().clone()), end));
+            push_dimension_item(ctx, &mut loci,
+                (SketchLocus::Start(copy_dimension_entity_id(ctx, entity.id(),
+                    "f3d coincident local entity id")?), start),
+                "f3d coincident local locus")?;
+            push_dimension_item(ctx, &mut loci,
+                (SketchLocus::End(copy_dimension_entity_id(ctx, entity.id(),
+                    "f3d coincident local entity id")?), end),
+                "f3d coincident local locus")?;
         }
         match entity.geometry.definition() {
             Geometry::Point { position } => {
-                loci.push((SketchLocus::Entity(entity.id().clone()), position.get()));
+                push_dimension_item(ctx, &mut loci,
+                    (SketchLocus::Entity(copy_dimension_entity_id(ctx, entity.id(),
+                        "f3d coincident local entity id")?), position.get()),
+                    "f3d coincident local locus")?;
             }
             Geometry::Circle { center, .. }
             | Geometry::Arc { center, .. }
             | Geometry::Ellipse { center, .. }
             | Geometry::Hyperbola { center, .. } => {
-                loci.push((SketchLocus::Center(entity.id().clone()), center.get()));
+                push_dimension_item(ctx, &mut loci,
+                    (SketchLocus::Center(copy_dimension_entity_id(ctx, entity.id(),
+                        "f3d coincident local entity id")?), center.get()),
+                    "f3d coincident local locus")?;
             }
             Geometry::Line { .. }
             | Geometry::ReferenceLine { .. }
@@ -4378,45 +4416,54 @@ pub(super) fn exact_coincident_loci(
         Ok::<_, CodecError>(loci)
     };
 
-    if entities.len() < 2
-        || entities
-            .iter()
-            .map(|entity| entity.id())
-            .collect::<HashSet<_>>()
-            .len()
-            != entities.len()
-    {
+    if entities.len() < 2 {
         return Ok(None);
     }
-    let loci = entities
-        .iter()
-        .map(|entity| loci(entity))
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut solutions = Vec::new();
-    for (first_locus, position) in &loci[0] {
-        let mut solution = vec![first_locus.clone()];
-        for member_loci in loci.iter().skip(1) {
-            let matches = member_loci
-                .iter()
-                .filter(|(_, candidate)| {
+    let mut unique = HashSet::new();
+    let mut loci_by_entity = Vec::new();
+    for entity in entities {
+        if unique.contains(entity.id()) { return Ok(None); }
+        insert_dimension_set(ctx, &mut unique, entity.id(),
+            "f3d coincident entity uniqueness")?;
+        push_dimension_item(ctx, &mut loci_by_entity, loci(entity)?,
+            "f3d coincident member loci")?;
+    }
+    let mut unique_solution: Option<Vec<SketchLocus>> = None;
+    for (first_locus, position) in &loci_by_entity[0] {
+        let mut solution = Vec::new();
+        push_dimension_item(ctx, &mut solution, copy_dimension_locus(ctx, first_locus,
+            "f3d coincident solution entity id")?, "f3d coincident solution locus")?;
+        for member_loci in loci_by_entity.iter().skip(1) {
+            if let Some(ctx) = ctx {
+                let count = u64::try_from(member_loci.len()).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d coincident locus matching", 0, 1)
+                })?;
+                ctx.charge_work(count, "f3d coincident locus matching")?;
+            }
+            let mut matches = member_loci.iter().filter(|(_, candidate)| {
                     (candidate.u - position.u).hypot(candidate.v - position.v)
                         <= EPS_DIMENSIONS_EXACT_COINCIDENT_LOCI_E9
-                })
-                .collect::<Vec<_>>();
-            let [matched] = matches.as_slice() else {
+                });
+            let Some(matched) = matches.next() else {
                 solution.clear();
                 break;
             };
-            solution.push(matched.0.clone());
+            if matches.next().is_some() {
+                solution.clear();
+                break;
+            }
+            push_dimension_item(ctx, &mut solution, copy_dimension_locus(ctx, &matched.0,
+                "f3d coincident solution entity id")?, "f3d coincident solution locus")?;
         }
-        if solution.len() == entities.len() && !solutions.contains(&solution) {
-            solutions.push(solution);
+        if solution.len() == entities.len() {
+            if let Some(existing) = &unique_solution {
+                if existing != &solution { return Ok(None); }
+            } else {
+                unique_solution = Some(solution);
+            }
         }
     }
-    let [loci] = solutions.as_slice() else {
-        return Ok(None);
-    };
-    Ok(Some(Definition::CoincidentLoci { loci: loci.clone() }))
+    Ok(unique_solution.map(|loci| Definition::CoincidentLoci { loci }))
 }
 
 fn midpoint_constraint(

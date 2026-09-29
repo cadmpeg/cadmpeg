@@ -347,6 +347,96 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
     assert!(exact_atomic_constraint(SketchConstraintKind::Coincident, &[&line, &line]).is_none());
 }
 
+fn coincident_limit_fixture() -> [cadmpeg_ir::sketches::SketchEntity; 2] {
+    let sketch = SketchId::mint("generated:test:sketch#coincident-limit").unwrap();
+    [
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId::mint("generated:test:line#coincident-limit").unwrap(),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(1.0, 2.0),
+                end: Point2::new(4.0, 2.0),
+            }).unwrap(),
+        ),
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId::mint("generated:test:point#coincident-limit").unwrap(),
+            sketch,
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: Point2::new(1.0, 2.0),
+            }).unwrap(),
+        ),
+    ]
+}
+
+fn assert_coincident_limit(operation: &'static str, dimension: cadmpeg_core::decode::ResourceDimension) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let entities = coincident_limit_fixture();
+    for limit in 0..256 {
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
+            _ => panic!("unsupported dimension"),
+        }
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match crate::design::dimensions::exact_coincident_loci(
+            &[&entities[0], &entities[1]], Some(&ctx)) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation
+                && failure.dimension == dimension => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn coincident_local_entity_id_refuses_retained_limit() {
+    assert_coincident_limit("f3d coincident local entity id",
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn coincident_solution_entity_id_refuses_retained_limit() {
+    assert_coincident_limit("f3d coincident solution entity id",
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn coincident_entity_uniqueness_refuses_collection_limit() {
+    assert_coincident_limit("f3d coincident entity uniqueness",
+        cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn coincident_local_locus_refuses_collection_limit() {
+    assert_coincident_limit("f3d coincident local locus",
+        cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn coincident_member_loci_refuse_collection_limit() {
+    assert_coincident_limit("f3d coincident member loci",
+        cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn coincident_solution_locus_refuses_collection_limit() {
+    assert_coincident_limit("f3d coincident solution locus",
+        cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn coincident_locus_matching_refuses_work_limit() {
+    assert_coincident_limit("f3d coincident locus matching",
+        cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}
+
 #[test]
 fn polygon_constraint_requires_three_distinct_resolved_members() {
     let entity = |id: &str| {
